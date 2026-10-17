@@ -134,15 +134,25 @@ export function TopBar() {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              fontSize: 20,
-              lineHeight: 1,
-              padding: 4,
+              color: 'inherit',
+              // Same 32px circle as the avatar beside it (MemberUserMenu).
+              width: 32,
+              height: 32,
+              padding: 0,
+              borderRadius: '50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            🔔
+            {/* Strokes in currentColor so it follows the header's themed text colour. */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
             {unreadNotifications > 0 && (
               <span style={{
-                position: 'absolute', top: 0, right: 0,
+                position: 'absolute', top: 4, right: 5,
                 width: 8, height: 8, borderRadius: '50%',
                 background: memberTheme.statusError,
               }} />

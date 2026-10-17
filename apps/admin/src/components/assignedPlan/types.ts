@@ -277,6 +277,8 @@ export interface AssignedPlanDetail {
   starts_at: string;
   ends_at: string | null;
   closed_at: string | null;
+  /** #1695: when the plan was first paid for / committed; `null` for rows older than the column. */
+  purchased_at?: string | null;
   next_billing_date: string | null;
   created_at: string;
   /** #1182: the plain-text actor snapshots — a person, or `System` for a run / the payment webhook. */

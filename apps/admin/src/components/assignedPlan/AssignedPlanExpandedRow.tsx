@@ -106,12 +106,14 @@ function fmtMoney(v: string | number | null) {
  * (#797). Expanding a plan on the Member page reads it; editing the assignment
  * stays on the Assigned Plans page, which is where its own card lives.
  */
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false }: {
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false, editToken = 0 }: {
   assignedPlanId: number;
   onChanged: () => void;
   embedded?: boolean;
   /** #1533: open straight into Edit mode — a Draft just created from the Member card. */
   startEditing?: boolean;
+  /** #1725: bumped by the host's own `⋮ → Edit` to open this body in Edit mode. */
+  editToken?: number;
   /** #1191: the Member whose context this is; a Linked one reads and never edits. */
   viewAsMemberId?: number;
 }) {
@@ -128,10 +130,15 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   const [detail, setDetail] = useState<AssignedPlanDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // #1724: the Membership Fee Simulation starts collapsed.
+  const [feeSimOpen, setFeeSimOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(startEditing);
+  useEffect(() => {
+    if (editToken > 0) setIsEditing(true);
+  }, [editToken]);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -375,7 +382,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   return (
     <div style={panel}>
-      {!hostEmbedded && (
+      {/* #1725: an embedded Draft is driven from the row's one `⋮` in the host. */}
+      {!embedded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
@@ -424,11 +432,14 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 tFreq,
               ),
             },
+            !!detail.purchased_at && {
+              key: 'purchased_at', label: t('label_purchase_date'), value: fmtDate(detail.purchased_at, gymFmt),
+            },
             { key: 'starts_at', label: t('label_start_date'), value: fmtDay(detail.starts_at, gymFmt) },
             {
               key: 'ends_at',
               label: t('label_end_date'),
-              value: detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : t('open_ended'),
+              value: detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : detail.lifecycle_status === 'cancelled' ? '—' : t('open_ended'),
             },
             !!detail.closed_at && {
               key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at, gymFmt),
@@ -489,8 +500,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           Promotion and the Personal Membership Fee Benefit are already in those
           numbers. Read-only by nature: computed on every read, persisted
           nowhere, and it charges nothing. */}
-      <CardSection label={t('section_fee_simulation')}>
-        {detail.example_timeline?.available ? (
+      <CardSection
+        label={t('section_fee_simulation')}
+        action={
+          <button
+            type="button"
+            onClick={() => setFeeSimOpen((o) => !o)}
+            aria-expanded={feeSimOpen}
+            aria-label={t('section_fee_simulation')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 13 }}
+          >
+            {feeSimOpen ? '▾' : '▸'}
+          </button>
+        }
+      >
+        {!feeSimOpen ? null : detail.example_timeline?.available ? (
           <>
             {detail.example_timeline.anchorDate && (
               <p style={{ ...cardMutedTextStyle, fontSize: 12, margin: '0 0 8px' }}>

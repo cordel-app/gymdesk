@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(11);
+    expect(sendMock).toHaveBeenCalledTimes(14);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -146,6 +146,12 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/plans/',
       // #1623, appended last for the same reason: a Nutrition Goal's image.
       'gym_123-GymName/nutrition_goals/',
+      // #1711, appended last for the same reason: a Promotion's image.
+      'gym_123-GymName/promotions/',
+      // #1715, appended last for the same reason: a Product's image.
+      'gym_123-GymName/products/',
+      // #1765, appended last for the same reason: a standalone Calendar Event's image.
+      'gym_123-GymName/calendar_events/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -170,7 +176,7 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/ and nutrition_goals/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/, nutrition_goals/, promotions/, products/ and calendar_events/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -181,7 +187,7 @@ describe('initializeGymBucket()', () => {
     // #1374 appended `members/` the same way: a Member's profile image is its
     // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions', 'products', 'calendar_events']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
@@ -239,15 +245,39 @@ describe('initializeGymBucket()', () => {
   });
 
   // #1623: `nutrition_goals/` holds a Nutrition Goal's image, appended last, no leaf.
-  it('creates nutrition_goals/ last, and with no leaf below it', async () => {
+  it('creates nutrition_goals/ after plans/, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('nutrition_goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-4)).toBe('nutrition_goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/nutrition_goals/')))
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);
+  });
+
+  // #1711: `promotions/` holds a Promotion's image, appended last, no leaf.
+  it('creates promotions/ before products/, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-3)).toBe('promotions');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/promotions/')))
+      .toEqual(['gyms/gym_123-GymName/promotions/']);
+  });
+
+  // #1715: `products/` holds a Product's image, appended last, no leaf.
+  it('creates products/ before calendar_events/, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('products');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/products/')))
+      .toEqual(['gyms/gym_123-GymName/products/']);
   });
 
   // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
@@ -324,7 +354,7 @@ describe('initializeGymBucket()', () => {
     const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
     const { buildGymExerciseGenderImageKey, buildGymExerciseGenderVideoKey } = await import('../domain/exerciseGenderMedia');
     const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
-    const { buildGymPersonalGoalImageKey } = await import('../domain/personalGoalImages');
+    const { GOAL_IMAGE_FOLDERS, buildNutritionGoalImageKey } = await import('../domain/nutritionGoalImages');
     const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
     await initializeGymBucket(prefix);
 
@@ -335,7 +365,7 @@ describe('initializeGymBucket()', () => {
     expect(markers).toContain(folderOf(buildGymExerciseGenderImageKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildGymExerciseGenderVideoKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
-    expect(markers).toContain(folderOf(buildGymPersonalGoalImageKey(prefix, 'pg_1', 'Weight Loss')));
+    expect(markers).toContain(folderOf(buildNutritionGoalImageKey(prefix, 'pg_1', 'Weight Loss', GOAL_IMAGE_FOLDERS.personal)));
   });
 
   // ─── #735: the gym-level themes/ folder ────────────────────────────────────

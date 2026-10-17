@@ -31,7 +31,7 @@ import {
   saveProductPurchaseDraft,
   startProductPurchase,
 } from './me-products';
-import { loadAppliedPromotionLists, loadPromotionOffers } from './member-product-promotions';
+import { loadAppliedPromotionLists, loadPromotionOffersDetailed } from './member-product-promotions';
 import { shapeMemberProduct, staffProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { isRecurringFrequency } from '../domain/productClassification';
 import {
@@ -43,6 +43,9 @@ import {
 } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { startRecurringPurchaseDraft } from './recurring-purchase-draft';
+import { DateTime } from 'luxon';
+import { endDateOnCancel } from '../domain/productValidity';
+import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLock } from './product-set-checkout';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
@@ -127,13 +130,15 @@ async function staffCatalogue(gymId: string, memberId: number) {
     // #1521 (decision 3): a one-time Product already held is not offered again;
     // a recurring one always is.
     .filter((item) => isRecurringFrequency(item.billing_frequency) || !owned.has(item.id));
-  const offers = await loadPromotionOffers(gymId, memberId, items.map((item) => ({
+  const { offers, skipped } = await loadPromotionOffersDetailed(gymId, memberId, items.map((item) => ({
     id: item.id, type: item.type, billing_frequency: item.billing_frequency, price_incl_tax: item.price_incl_tax,
   })));
   return items.map((item) => ({
     ...item,
     recurring: isRecurringFrequency(item.billing_frequency),
     promotions: offers.get(item.id) ?? [],
+    // #1655 — hidden only by the new-members-only rule; explanatory, never applicable.
+    unavailable_promotions: skipped.get(item.id) ?? [],
   }));
 }
 
@@ -383,4 +388,61 @@ memberProductPurchasesRouter.delete('/:purchaseId', requireModuleWrite('MEMBERS'
     });
     res.json({ id: purchaseId, deleted: true });
   } catch (err) { next(err); }
+});
+
+/**
+ * #1693 — POST /members/:memberId/product-purchases/:id/cancel
+ *
+ * Records the cancellation day of a completed (`active`) one-time purchase. It
+ * never moves `valid_until`: the member keeps what they paid for through the end
+ * date; a purchase with no defined validity ends the day it is cancelled.
+ * Idempotent — a repeat returns the stored dates untouched. `status` is not
+ * changed (`cancelled` there means the payment never completed).
+ */
+memberProductPurchasesRouter.post('/:id/cancel', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(memberId) || memberId <= 0 || !Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    const result = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<any>(
+        `SELECT mp.status, DATE_FORMAT(mp.valid_until, '%Y-%m-%d') AS valid_until,
+                DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on, g.time_zone
+           FROM member_products_oneoff_snapshot mp JOIN gyms g ON g.id = mp.gym_id
+          WHERE mp.id = ? AND mp.gym_id = ? AND mp.member_id = ? FOR UPDATE`,
+        [id, gymId, memberId],
+      );
+      const row = rows[0];
+      if (!row) return { status: 404 as const };
+      if (row.status !== 'active') return { status: 409 as const };
+      if (row.cancelled_on) return { status: 200 as const, changed: false, row };
+      const today = DateTime.now().setZone(resolveTimeZone(row.time_zone)).toISODate()!;
+      const validUntil = endDateOnCancel(row.valid_until, today);
+      const actor = resolveRequestActor(tenantCtx) ?? member.name;
+      await tx.query(
+        `UPDATE member_products_oneoff_snapshot
+            SET cancelled_on = ?, valid_until = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ? AND cancelled_on IS NULL`,
+        [today, validUntil, actor, id, gymId],
+      );
+      return { status: 200 as const, changed: true, row: { cancelled_on: today, valid_until: validUntil } };
+    });
+    if (result.status === 404) return res.status(404).json({ error: 'Purchase not found' });
+    if (result.status === 409) return res.status(409).json({ error: 'not_active', message: 'Only a completed purchase can be cancelled' });
+    if (result.changed) {
+      recordAudit(req, {
+        action: 'cancel', entityType: 'member', entityId: memberId,
+        next: { product_purchase: id, cancelled_on: result.row.cancelled_on, valid_until: result.row.valid_until },
+      });
+    }
+    res.json({ id, cancelled_on: result.row.cancelled_on, valid_until: result.row.valid_until });
+  } catch (err) {
+    next(err);
+  }
 });

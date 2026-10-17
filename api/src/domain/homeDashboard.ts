@@ -148,3 +148,58 @@ export function groupPendingPaymentMembers(rows: OutstandingEventRow[]): Pending
     }))
     .sort((a, b) => a.oldest_at.localeCompare(b.oldest_at) || a.member_id - b.member_id);
 }
+
+/** #1754: the four-week attendance KPIs look at this many complete weeks. */
+export const FOUR_WEEKS = 4;
+
+/**
+ * The last `count` complete gym-local ISO weeks (Monday–Sunday) before the week
+ * containing `today`, oldest first. ISO weeks rather than the gym's first day of
+ * week: the KPI is defined as "each of the last four weeks", and a fixed week
+ * boundary keeps it comparable between gyms.
+ */
+export function completedWeekWindows(today: string, zone: string, count: number = FOUR_WEEKS): UtcWindow[] {
+  const thisMonday = DateTime.fromISO(today, { zone }).startOf('day').minus({ days: DateTime.fromISO(today, { zone }).weekday - 1 });
+  const out: UtcWindow[] = [];
+  for (let i = count; i >= 1; i--) {
+    const start = thisMonday.minus({ weeks: i });
+    out.push(toWindow(start, start.plus({ weeks: 1 })));
+  }
+  return out;
+}
+
+export interface AttendanceKpis {
+  /** Members who attended at least one session in every one of the weeks. */
+  top_trainers: number;
+  /** Attended sessions per active member per week; 0 with no members. */
+  average_classes_per_member_per_week: number;
+  weeks: number;
+}
+
+/**
+ * Pure: `at` is a `YYYY-MM-DD HH:mm:ss` UTC string of the attended session,
+ * `weeks` the windows from `completedWeekWindows()`. An attendance outside every
+ * window is ignored.
+ */
+export function attendanceKpis(
+  attended: { member_id: number; at: string }[],
+  weeks: UtcWindow[],
+  activeMembers: number,
+): AttendanceKpis {
+  const perMember = new Map<number, Set<number>>();
+  let total = 0;
+  for (const a of attended) {
+    const w = weeks.findIndex((x) => a.at >= x.from && a.at < x.to);
+    if (w < 0) continue;
+    total += 1;
+    if (!perMember.has(a.member_id)) perMember.set(a.member_id, new Set());
+    perMember.get(a.member_id)!.add(w);
+  }
+  const top = [...perMember.values()].filter((s) => s.size === weeks.length).length;
+  const avg = activeMembers > 0 && weeks.length > 0 ? total / activeMembers / weeks.length : 0;
+  return {
+    top_trainers: weeks.length > 0 ? top : 0,
+    average_classes_per_member_per_week: Math.round(avg * 100) / 100,
+    weeks: weeks.length,
+  };
+}

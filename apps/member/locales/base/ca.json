@@ -28,7 +28,10 @@
     "reminder_trainer": "Entrenador: {name}",
     "nutrition_today": "Nutrició d'avui",
     "goals": "Objectius",
-    "no_nutrition_today": "Sense pla de nutrició per avui."
+    "no_nutrition_today": "Sense pla de nutrició per avui.",
+    "booking_center": "Centre",
+    "booking_trainer": "Entrenador",
+    "booking_space": "Espai"
   },
   "nav": {
     "back_home": "Torna a l'inici",
@@ -222,6 +225,7 @@
   },
   "member_calendar": {
     "filter_all": "Tots",
+    "filter_activity_label": "Activitat",
     "filter_button": "Filtrar",
     "filter_center_label": "Centre",
     "filter_trainer_label": "Entrenador",

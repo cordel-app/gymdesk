@@ -37,6 +37,10 @@ export interface PurchasedProduct {
   amount: number;
   currency: string;
   purchased_at: string | null;
+  /** #1693 — last valid day (inclusive), cancellation day and derived state. */
+  valid_until?: string | null;
+  cancelled_on?: string | null;
+  validity_state?: string | null;
   created_at: string | null;
   created_by: string | null;
   /** The price before the Promotion, VAT included. */
@@ -112,6 +116,8 @@ export interface PurchasableProductOption {
   tax_rate_percent?: number | null;
   recurring: boolean;
   promotions: PurchasableProductPromotion[];
+  /** #1655 — hidden only by the new-members-only rule; explanatory, never applicable. */
+  unavailable_promotions?: { promotion_id: number; promotion_name: string; reason: 'new_members_only' }[];
 }
 
 export interface PurchasableProductPromotion {

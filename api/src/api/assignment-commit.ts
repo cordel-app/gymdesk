@@ -129,7 +129,8 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
 
   const { rowCount } = await tx.query(
     `UPDATE user_memberships
-        SET status = 'active', modified_at = UTC_TIMESTAMP(), modified_by = ?
+        SET status = 'active', purchased_at = COALESCE(purchased_at, UTC_TIMESTAMP()),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ? AND status = ?`,
     [input.actor, row.id, input.gymId, row.status],
   );

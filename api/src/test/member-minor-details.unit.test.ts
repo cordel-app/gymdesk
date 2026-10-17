@@ -26,7 +26,6 @@ describe('Cancelling a booking asks first', () => {
   for (const [name, file] of [
     ['My Bookings', 'src/app/[locale]/schedule/page.tsx'],
     ['the Calendar sheet', 'src/app/[locale]/calendar/page.tsx'],
-    ['the Home card', 'src/app/[locale]/page.tsx'],
   ] as const) {
     it(`${name} raises the confirmation instead of calling the API from the button`, () => {
       const src = read(file);
@@ -36,6 +35,13 @@ describe('Cancelling a booking asks first', () => {
       expect(src).not.toMatch(/onClick=\{cancelBooking\}[^>]*statusError/);
     });
   }
+
+  it('the Home card offers no cancellation at all (#1764)', () => {
+    const src = read('src/app/[locale]/page.tsx');
+    expect(src).not.toContain('CancelBookingConfirmDialog');
+    expect(src).not.toContain('cancel_booking');
+    expect(src).not.toContain('BOOKED_ON_KEY');
+  });
 
   it('has its words in the three locales', () => {
     for (const l of ['en', 'es', 'ca']) {

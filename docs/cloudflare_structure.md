@@ -4,6 +4,14 @@
 │   │   ├── {food_id}-{food_name}.webp                              — 1080 × 1080 px
 │   │   └── {food_id}-{food_name}-thumbnail.webp                    — 256 × 256 px
 │   │
+│   ├── payment_method/
+│   │   ├── {payment_method_id}-{payment_method_name}.webp                              — 1080 × 1080 px
+│   │   └── {payment_method_id}-{payment_method_name}-thumbnail.webp                    — 256 × 256 px
+│   │
+│   ├── products/
+│   │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
+│   │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
 │   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
@@ -55,6 +63,10 @@
         │   ├── {food_id}-{food_name}.webp                                    — 1080 × 1080 px
         │   └── {food_id}-{food_name}-thumbnail.webp                          — 256 × 256 px
         │        
+        ├── products
+        │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
+        │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
+        │  
         ├── goals
         │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
         │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
@@ -70,6 +82,14 @@
         ├── plans
         │   ├── {plan_id}-{plan_name}.webp                                    — 1080 × 1080 px
         │   └── {plan_id}-{plan_name}-thumbnail.webp                          — 256 × 256 px
+        │        
+        ├── promotions
+        │   ├── {promotion_id}-{promotion_name}.webp                           — 1080 × 1080 px
+        │   └── {promotion_id}-{promotion_name}-thumbnail.webp                 — 256 × 256 px        
+        │        
+        ├── calendar_events
+        │   ├── {calendar_event_id}-{calendar_event_name}.webp                 — 1080 × 1080 px
+        │   └── {calendar_event_id}-{calendar_event_name}-thumbnail.webp       — 256 × 256 px   
         │        
         ├── members
         │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px
@@ -117,7 +137,7 @@ Every name comes from one constant — `NUTRITION_STORAGE_FOLDER`,
 `EXERCISE_STORAGE_FOLDER` and its two leaves, `THEMES_FOLDER`, `GOALS_FOLDER` and
 `MEMBERS_FOLDER`, all in `api/src/infra/storage.ts` — which the key builders in
 `domain/baseNutritionImages.ts`, `domain/exerciseImages.ts`,
-`domain/exerciseVideos.ts`, `domain/themeFolders.ts`, `domain/personalGoalImages.ts`
+`domain/exerciseVideos.ts`, `domain/themeFolders.ts`, `domain/nutritionGoalImages.ts`
 and `domain/memberImages.ts` re-export, so a marker can never disagree with the keys
 written into it. `goals/` is appended last, so a gym's existing markers
 keep the order they were written in, and a gym initialized before stage 2 gets the
@@ -137,23 +157,22 @@ platform tree above is created by hand in the Cloudflare console. Nothing breaks
 before it exists — R2 has no directories, and each platform upload route writes its
 own markers on first use.
 
-**`goals/` holds a Personal Goal's image**, the same key one root apart:
-`{gym prefix}/goals/{personal_goal_id}-{personal_goal_name}.png` written by
-`POST /personal-goals/:id/image`, and `cordel/goals/…` written by
-`POST /platform/personal-goals/:id/image` (superadmin) for a System goal
-(`personal_goals.gym_id IS NULL`). One column holds both —
-`personal_goals.image_url` (migration 225) — and the ownership of the *row* decides
-which root its key hangs off; `api/src/domain/personalGoalImages.ts` is the one
-place that builds either. The key comes from the row's own id and name and never
-from the uploaded file's, so it is deterministic: replacing an image overwrites its
-own object, and only a rename moves one (the object left behind is swept then,
-best-effort, and only when it belongs to the side doing the replacing — a gym never
-deletes a `cordel/` object and the platform never deletes a gym's). The file is a
-**PNG of at most 512 × 512 with no transparency requirement**, validated from the
-bytes rather than from the `Content-Type` header — deliberately looser than the
-exact-square-with-alpha rule a base food's image one folder over is held to. A
-Nutrition Goal has no image at all: `IMAGE_GOAL_KINDS` says so, and its
-`/:id/image` is a 404 rather than a control that writes nowhere.
+**`goals/` holds a Personal Goal's image**, the Nutrition Goal's pipeline (#1623)
+one folder over (#1722 replaced the PNG-only implementation):
+`{gym prefix}/goals/{personal_goal_id}-{personal_goal_name}.webp` (1080 × 1080)
+plus `…-thumbnail.webp` (256 × 256), written by `POST /personal-goals/:id/image`,
+and `cordel/goals/…` written by `POST /platform/personal-goals/:id/image`
+(superadmin) for a System goal (`personal_goals.gym_id IS NULL`). The columns are
+`personal_goals.image_url` (migration 225) and `image_thumbnail_url` (migration
+293); the ownership of the *row* decides which root the keys hang off, and
+`api/src/domain/nutritionGoalImages.ts` (with `GOAL_IMAGE_FOLDERS`) is the one place
+that builds them for both goal kinds. The server makes both files from one uploaded
+original (`processMemberImage()`), the key comes from the row's own id and name,
+and a rename moves both objects (best-effort; a pre-#1722 `.png` master keeps its
+key). A replacement sweeps only what belongs to the side doing it — a gym never
+deletes a `cordel/` object and the platform never deletes a gym's — which includes a
+pre-#1722 PNG in the same folder. A Nutrition Goal's image is the same shape under
+`nutrition_goals/`.
 
 `goals/` is the first-level folder that proves #826's rule rather than bending it:
 stage 1 deliberately left it out because nothing wrote a Personal Goal image, and it
@@ -192,12 +211,20 @@ may delete, and `PUT /membership-plans/:id` moves the objects on a rename
 (copy, re-point, delete). Gym root only (no `cordel/plans/`); appended last to the
 gym's first-level markers with its writer.
 
+**`promotions/` holds a Promotion's image** (#1711):
+`{gym prefix}/promotions/{promotion_id}-{promotion_name}.webp` (1080 × 1080) and
+`…-thumbnail.webp` (256 × 256), written by `POST /promotions/:id/image` (admin) and
+cleared by its `DELETE`, over `api/src/api/promotion-image-storage.ts`; the pipeline,
+the rename move and the delete rule are the Plan image's. Gym root only; appended
+last to the gym's first-level markers with its writer.
+
 **`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
 `cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
 `…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`
 and cleared by its `DELETE`. The client sends **one** picture as it is (JPEG, PNG,
-WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** fits it into a transparent
-1080 × 1080 square without distortion or cropping and encodes both WebP files in
+WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** centre-crops it to a
+1080 × 1080 square without distortion (since the #1527 follow-up; before it the
+picture was contained with transparent padding) and encodes both WebP files in
 memory (`api/src/domain/muscleImageProcessing.ts`), so no dimension is required of
 the upload and no browser-side processing exists. A rename of the muscle moves the
 objects (copy, re-point, delete).

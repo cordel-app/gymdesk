@@ -54,7 +54,7 @@ import { apiErrorMessage } from '@/lib/apiClient';
 import { formControlStyle, formErrorStyle, inlineEditorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignPlanToMembersEditor } from '../plans/AssignPlanToMembersEditor';
-import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
+import { AssignedPlansTable, type AssignedPlanRowHelpers } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
@@ -174,11 +174,15 @@ export function MemberMembershipPlans({
    * status". `Details` is every row's: reading what a past assignment was
    * agreed with is the whole point of keeping it.
    */
-  function rowActions(plan: MemberPlanRow): ContextMenuItem[] {
+  function rowActions(plan: MemberPlanRow, helpers: AssignedPlanRowHelpers): ContextMenuItem[] {
     // #1191: a Linked plan is the owner's contract seen from another Member —
     // it offers no Assign New Plan or Cancel Plan, only Details.
     const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live && plan.assignment_relationship !== 'linked'
       ? [
+        // #1725: a Draft is configured in place — the row's own Edit opens it.
+        ...(plan.status === 'draft'
+          ? [{ label: t('action_edit_plan'), onClick: () => helpers.startEdit(plan.id) }]
+          : []),
         ...(canEditLivePlan(plan)
           ? [{ label: t('action_edit_plan'), onClick: () => void editPlan(plan), disabled: creating || assignBusy }]
           : []),
@@ -201,7 +205,8 @@ export function MemberMembershipPlans({
   return (
     <div>
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
-      <div style={subLabel}>{t(visible.heading === 'draft' ? 'membership_plans_draft' : 'membership_plans_active')}</div>
+      {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
+      {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
       <AssignedPlansTable
         rows={visible.rows}
         loadingText={t('add_membership_plan_loading')}
@@ -248,7 +253,12 @@ export function MemberMembershipPlans({
               planOptions={selectable}
               initialMember={{ id: memberId, name: memberName, email: memberEmail }}
               onCancel={() => setAdding(false)}
-              onAssigned={() => { setAdding(false); onChanged(); }}
+              onAssigned={(created) => {
+                setAdding(false);
+                // #1692: open the card of the plan just assigned.
+                if (created) setNewDraftId(created.id);
+                onChanged();
+              }}
             />
           )}
         </>

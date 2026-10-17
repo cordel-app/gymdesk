@@ -22,7 +22,7 @@ import {
 /**
  * #1374 — a Member's profile image, in the two moments the Member card needs it.
  *
- * **`immediate`** is the Edit-mode control, `GoalImageField`'s arrangement
+ * **`immediate`** is the Edit-mode control, `the goal image control`'s arrangement
  * (#1035): the upload and the removal act on the server straight away
  * (`POST`/`DELETE /members/:id/image`) and hand the page the row that came back,
  * so the surrounding `PUT` neither carries nor can undo them — the object key is

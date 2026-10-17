@@ -209,7 +209,13 @@ export function AddProductPurchase({
             disabled={busy}
             emptyText={t('add_product_no_promotions')}
           />
-
+          {product.promotions.length === 0 && (product.unavailable_promotions ?? []).length > 0 && (
+            <p style={cardHintStyle} data-unavailable-promotions>
+              {t('add_product_promotions_new_members_only', {
+                names: (product.unavailable_promotions ?? []).map((u) => u.promotion_name).join(', '),
+              })}
+            </p>
+          )}
         </>
       )}
 

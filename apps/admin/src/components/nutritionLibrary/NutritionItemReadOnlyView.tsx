@@ -52,6 +52,7 @@ export function NutritionItemReadOnlyView({
   const assignedCategoryIds = new Set(item.categories.map((c) => c.id));
   const assignedQualityIds = new Set(item.qualities.map((q) => q.id));
   const translationLocales = locales ?? Object.keys(item.translations ?? {}).sort();
+  const descriptionLocales = locales ?? Object.keys(item.description_translations ?? {}).sort();
 
   /**
    * A slug-keyed label from the catalogue namespaces, falling back to the slug
@@ -74,6 +75,23 @@ export function NutritionItemReadOnlyView({
           {displayValue(item.description)}
         </span>
       </Section>
+
+      {descriptionLocales.length > 0 && (
+        <Section label={t('label_description_translations')}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {descriptionLocales.map((locale) => (
+              <div key={locale} style={{ display: 'flex', gap: 10 }}>
+                <span style={{ width: 110, flexShrink: 0, color: 'var(--text-muted, #888)' }}>
+                  {label(`locale_${locale}`, locale.toUpperCase())}
+                </span>
+                <span style={{ ...valueStyle, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                  {displayValue(item.description_translations?.[locale])}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section label={t('col_status')}>
         <StatusBadge status={item.status} label={t(`status_${item.status}`)} />

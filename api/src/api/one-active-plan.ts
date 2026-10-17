@@ -168,7 +168,7 @@ export async function supersedeLiveAssignments(
   for (const conflict of args.conflicts) {
     await tx.query(
       `UPDATE user_memberships
-       SET status = 'cancelled', closed_at = UTC_TIMESTAMP(), ends_at = ?,
+       SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()), ends_at = ?,
            modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ?`,
       [args.newStartsAt, args.actor, conflict.id, args.gymId],

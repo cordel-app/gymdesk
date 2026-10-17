@@ -1,3 +1,6 @@
+import { DateTime } from 'luxon';
+import { computeValidUntil } from '../domain/productValidity';
+import { resolveTimeZone } from '../domain/homeDashboard';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 // #1121 stages 1 and 2 — the I/O half of the member's own Products: what
 // `GET /me/products` answers, and what `POST /me/products/:id/purchase` does.
@@ -90,7 +93,7 @@ function professionalServiceFilterSql(ids: number[]): string {
 export const PRODUCT_COLUMNS = `
   p.id, p.name, p.description, p.type, p.units,
   p.billing_frequency, p.amount, p.currency, p.charge_type_id,
-  p.tax_behavior, tr.rate_percent AS tax_rate_percent`;
+  p.tax_behavior, p.validity_days, tr.rate_percent AS tax_rate_percent`;
 
 /**
  * Every Product of the gym a member may be shown, alphabetically, with the
@@ -547,8 +550,8 @@ export async function startProductPurchase(
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
             payment_request_id, created_by,
-            list_price, direct_discount_percent, direct_discount_amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            list_price, direct_discount_percent, direct_discount_amount, validity_days)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -557,6 +560,8 @@ export async function startProductPurchase(
           price.list_price.toFixed(2),
           price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
           price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
+          // #1693: the validity agreed at purchase time.
+          row.validity_days == null ? null : Number(row.validity_days),
         ],
       );
 
@@ -627,16 +632,33 @@ export async function completeProductPurchase(
   gymId: string,
   paymentRequestId: number,
 ): Promise<number> {
+  // #1693: the purchase day is the gym's calendar day of the confirmation, and
+  // the end date is computed once, here. The UPDATE below is still constrained on
+  // `pending_payment`, so a duplicate webhook rewrites neither date.
+  const { rows: pending } = await tx.query<any>(
+    `SELECT mp.id, mp.validity_days, mp.billing_frequency, g.time_zone
+       FROM member_products_oneoff_snapshot mp
+       JOIN gyms g ON g.id = mp.gym_id
+      WHERE mp.gym_id = ? AND mp.payment_request_id = ? AND mp.status = ?`,
+    [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+  );
+  if (!pending[0]) return 0;
+  const purchasedOn = DateTime.now().setZone(resolveTimeZone(pending[0].time_zone)).toISODate()!;
+  const validUntil = computeValidUntil({
+    purchasedOn,
+    validityDays: pending[0].validity_days == null ? null : Number(pending[0].validity_days),
+    billingFrequency: pending[0].billing_frequency ?? null,
+  });
   const { rowCount } = await tx.query(
     // `gym_id` is in the WHERE although `payment_request_id` is unique on its
     // own: every query of a domain table filters by the gym (CLAUDE.md), and
     // the webhook has the request's own `gym_id` in hand.
     `UPDATE member_products_oneoff_snapshot
-        SET status = 'active', purchased_at = UTC_TIMESTAMP(),
+        SET status = 'active', purchased_at = UTC_TIMESTAMP(), valid_until = ?,
             modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
     // The provider's confirmation is the system's act, not the member's (#1182).
-    [SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+    [validUntil, SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }

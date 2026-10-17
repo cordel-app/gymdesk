@@ -17,6 +17,19 @@ import { db } from '../infra/db';
  * only name a System food, because its goals are copied into every gym.
  */
 
+/**
+ * #1717 — a plan goal's `item_name` is the slug of a System Nutrition Goal
+ * where one exists (weight_loss … energy), and that catalogue row owns the
+ * goal's image. It is resolved by this join on every read, never copied onto
+ * the template or the member plan, so replacing the goal's image reaches
+ * every plan at once. A goal with no catalogue row (protein, water, …) or a
+ * row with no image reads `NULL`, and the food illustration (#932), then the
+ * standard fallback, apply. Alias `g` is the plan-goal table.
+ */
+export const NUTRITION_GOAL_IMAGE_JOIN_SQL = `LEFT JOIN nutrition_goals ng
+            ON ng.slug = g.item_name AND ng.gym_id IS NULL AND ng.status <> 'deleted'`;
+export const NUTRITION_GOAL_IMAGE_COLUMNS_SQL = `ng.image_url AS goal_image_url, ng.image_thumbnail_url AS goal_image_thumbnail_url`;
+
 export function parseGoalIllustrationInput(value: unknown): { id: number | null } | { error: string } {
   if (value === null || value === undefined || value === '') return { id: null };
   const id = typeof value === 'number' ? value : parseInt(String(value), 10);
@@ -49,9 +62,11 @@ export async function validateGoalIllustration(gymId: string | null, id: number 
  * table alias `g`.
  */
 export function goalRowsSql(table: 'nutrition_plan_template_goals' | 'member_nutrition_plan_goals', where: string): string {
-  return `SELECT g.*, nli.name AS illustration_name, nli.image_url AS illustration_image_url
+  return `SELECT g.*, nli.name AS illustration_name, nli.image_url AS illustration_image_url,
+                 ${NUTRITION_GOAL_IMAGE_COLUMNS_SQL}
           FROM ${table} g
           LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+          ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
           WHERE ${where}
           ORDER BY g.position ASC`;
 }

@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { CrudModal } from '@/components/CrudModal';
-import { cardHintStyle, cardSectionLabelStyle } from '@/components/formChrome';
+import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
 import { changeMessage, confirmAction, type ChangeLike, type ReviewLike } from './recurringProductsView';
@@ -23,8 +23,16 @@ interface Review extends ReviewLike {
   status: string;
   has_previous: boolean;
   changes: ChangeLike[];
-  immediate_lines: Array<{ item_name: string | null; quantity: number; amount: number }>;
+  immediate_lines: Array<{
+    item_name: string | null; quantity: number; amount: number;
+    regular_unit_price?: number | null; promotion_name?: string | null;
+    tax_rate_percent?: number | null; amount_excl_tax?: number | null;
+  }>;
   currency: string;
+  /** #1664 — the active Base Payment Methods and whether each can be used for this member. */
+  payment_methods?: Array<{ code: string; name: string; available: boolean; reason: string | null }>;
+  net_total?: number;
+  tax_total?: number | null;
 }
 
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
@@ -45,12 +53,15 @@ export function ReviewChangesModal({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [method, setMethod] = useState<string>('');
+  const [notice, setNotice] = useState<string | null>(null);
   // A second click while the first is in flight must not reach the server.
   const inFlight = useRef(false);
 
   function describe(err: any): string {
     const code = err?.body?.error ?? err?.message;
     if (code === 'draft_expired') return t('review_error_expired');
+    if (code === 'monei_token_missing') return t('pay_monei_no_token');
     if (code === 'edit_locked') return t('review_error_locked');
     return apiErrorMessage(err) ?? t('review_error_generic');
   }
@@ -58,7 +69,7 @@ export function ReviewChangesModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setReview(null); setForecast(null); setError(null); setLoading(true);
+    setReview(null); setForecast(null); setError(null); setNotice(null); setMethod(''); setLoading(true);
     Promise.all([
       apiFetch<Review>(`/product-sets/${productSetId}/review`),
       apiFetch<BillingEventSimulationData>(`/product-sets/${productSetId}/billing-event-simulation`).catch(() => null),
@@ -71,10 +82,13 @@ export function ReviewChangesModal({
   }, [open, productSetId]);
 
   const action = confirmAction(review);
+  const owes = action?.key === 'review_confirm_pay';
+  const methods = review?.payment_methods ?? [];
+  const chosen = methods.find((m) => m.code === method && m.available) ?? null;
   const saveLabel = action == null
     ? t('review_confirm')
-    : action.key === 'review_confirm_pay'
-      ? t('review_confirm_pay', { amount: money(action.amount ?? 0, review?.currency) })
+    : owes
+      ? (chosen ? t(`pay_action_${chosen.code}` as any, { amount: money(action.amount ?? 0, review?.currency) }) : t('review_confirm_pay', { amount: money(action.amount ?? 0, review?.currency) }))
       : t('review_confirm');
 
   async function confirm() {
@@ -94,10 +108,13 @@ export function ReviewChangesModal({
         return;
       }
       try {
-        const res = await apiFetch<{ checkout_url: string | null }>(`/product-sets/${productSetId}/save-and-pay`, {
-          method: 'POST', body: JSON.stringify({}),
+        if (!chosen) { setError(t('pay_error_method_required')); return; }
+        const res = await apiFetch<{ checkout_url?: string | null; outcome?: string }>(`/product-sets/${productSetId}/pay`, {
+          method: 'POST', body: JSON.stringify({ method: chosen.code }),
         });
-        onCommitted({ activated: false, checkoutUrl: res.checkout_url ?? null });
+        if (res.outcome === 'failed') { setNotice(null); setError(t('pay_outcome_failed')); onCommitted({ activated: false, checkoutUrl: null }); return; }
+        if (res.outcome === 'pending' || res.outcome === 'unknown') { setNotice(t(res.outcome === 'pending' ? 'pay_outcome_pending' : 'pay_outcome_unknown')); onCommitted({ activated: false, checkoutUrl: null }); return; }
+        onCommitted({ activated: res.outcome === 'paid', checkoutUrl: res.checkout_url ?? null });
       } catch (err: any) {
         if ((err?.body?.error ?? err?.message) === 'nothing_to_pay') {
           await apiFetch(`/product-sets/${productSetId}/activate`, { method: 'POST', body: JSON.stringify({}) });
@@ -118,9 +135,9 @@ export function ReviewChangesModal({
     <CrudModal
       open={open}
       title={t('review_title')}
-      error={error}
+      error={error ?? notice}
       saving={busy}
-      saveDisabled={loading || busy || action == null}
+      saveDisabled={loading || busy || action == null || (owes && !chosen)}
       cancelLabel={t('close')}
       saveLabel={saveLabel}
       onCancel={onClose}
@@ -147,11 +164,49 @@ export function ReviewChangesModal({
           ) : (
             <>
               {review.immediate_lines.map((l, i) => (
-                <div key={i} style={{ fontSize: 14 }}>{l.item_name ?? '—'} × {l.quantity}: {money(l.amount, review.currency)}</div>
+                <div key={i} style={{ fontSize: 14, marginBottom: 4 }}>
+                  <div>
+                    {l.item_name ?? '—'} × {l.quantity}: {money(l.amount, review.currency)}
+                  </div>
+                  <div style={{ ...cardHintStyle, margin: 0 }}>
+                    {l.regular_unit_price != null ? `${t('pay_original_price')}: ${money(l.regular_unit_price * l.quantity, review.currency)}` : ''}
+                    {l.promotion_name ? ` · ${t('pay_promotion')}: ${l.promotion_name}` : ''}
+                    {l.tax_rate_percent != null && l.amount_excl_tax != null
+                      ? ` · ${t('pay_vat_line', { rate: l.tax_rate_percent, net: money(l.amount_excl_tax, review.currency), tax: money(l.amount - l.amount_excl_tax, review.currency) })}`
+                      : ''}
+                  </div>
+                </div>
               ))}
+              {review.amount_due > 0 && review.tax_total != null && (
+                <div style={{ fontSize: 13 }}>
+                  {t('pay_net_total')}: {money(review.net_total ?? 0, review.currency)} · {t('pay_tax_total')}: {money(review.tax_total, review.currency)}
+                </div>
+              )}
               <div style={{ fontWeight: 600, fontSize: 14, margin: '4px 0 12px' }}>
-                {review.amount_due > 0 ? money(review.amount_due, review.currency) : t('review_nothing_due')}
+                {review.amount_due > 0 ? `${t('pay_total_incl_vat')}: ${money(review.amount_due, review.currency)}` : t('review_nothing_due')}
               </div>
+              {owes && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={cardSectionLabelStyle}>{t('pay_method')}</div>
+                  <select
+                    aria-label={t('pay_method')}
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value)}
+                    disabled={busy}
+                    style={{ ...formControlStyle, maxWidth: 320 }}
+                  >
+                    <option value="">{t('pay_method_choose')}</option>
+                    {methods.map((m) => (
+                      <option key={m.code} value={m.code} disabled={!m.available} style={m.available ? undefined : { opacity: 0.5 }}>
+                        {m.name}{m.available ? '' : ` — ${m.reason === 'monei_token_missing' ? t('pay_monei_no_token') : t('pay_method_unavailable')}`}
+                      </option>
+                    ))}
+                  </select>
+                  {methods.some((m) => m.code === 'monei' && m.reason === 'monei_token_missing') && (
+                    <p style={cardHintStyle}>{t('pay_monei_no_token')}</p>
+                  )}
+                </div>
+              )}
             </>
           )}
 

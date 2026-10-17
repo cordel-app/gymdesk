@@ -30,6 +30,7 @@ import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
@@ -80,6 +81,7 @@ import {
   resolveCardUpdateMembership,
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
+import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -1368,9 +1370,11 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     // `null`, which the page renders as the standard fallback.
     const { rows: goalRows } = await db.query(
       `SELECT g.id, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days,
-              g.nutrition_library_item_id, nli.image_url
+              g.nutrition_library_item_id,
+              COALESCE(ng.image_thumbnail_url, ng.image_url, nli.image_url) AS image_url
        FROM member_nutrition_plan_goals g
        LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+       ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
        WHERE g.member_nutrition_plan_id = ? AND g.gym_id = ?
        ORDER BY g.position ASC`,
       [plan.id, gymId],
@@ -2135,14 +2139,14 @@ meRouter.get('/notifications', requireRole('member'), async (req: Request, res: 
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 100);
     const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
     const { rows } = await db.query(
-      `SELECT id, type, entity_type, entity_id, payload, read_at, created_at
-       FROM member_notifications
-       WHERE gym_id = ? AND member_id = ?
-       ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT mn.id, mn.type, mn.entity_type, mn.entity_id, mn.payload, mn.read_at, mn.created_at
+       FROM member_notifications mn
+       WHERE mn.gym_id = ? AND mn.member_id = ? AND ${ACTIVE_REMINDER_ONLY_SQL}
+       ORDER BY mn.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
     const { rows: countRows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     // #1391: Staff vs Auto is derived from the type, never stored.
@@ -2163,7 +2167,7 @@ meRouter.get('/notifications/count', requireRole('member'), async (req: Request,
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     res.json({ unread: Number(rows[0].unread) });

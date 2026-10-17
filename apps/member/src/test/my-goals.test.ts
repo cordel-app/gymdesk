@@ -265,7 +265,7 @@ describe('the page reuses the app rather than restating it (§19, §983)', () =>
   it('takes its surfaces, inputs and buttons from memberChrome', () => {
     for (const name of [
       'sectionCardStyle', 'inputStyle', 'primaryButtonStyle',
-      'secondaryButtonStyle', 'destructiveButtonStyle', 'statusPillStyle', 'statusTone',
+      'secondaryButtonStyle', 'destructiveButtonStyle',
     ]) {
       expect(pageSrc).toContain(name);
     }
@@ -284,7 +284,6 @@ describe('the page reuses the app rather than restating it (§19, §983)', () =>
     expect(pageSrc).not.toMatch(/target_value\s*===\s*null\s*\?/);
     expect(pageSrc).not.toMatch(/status\s*===\s*'achieved'/);
     expect(pageSrc).toContain('formatGoalTarget');
-    expect(pageSrc).toContain('goalStatusKey');
   });
 });
 
@@ -561,9 +560,9 @@ describe('#1037 the Add reading dialog (§3, §21, §30, §32)', () => {
   it('is offered on a live goal only, and refreshes both halves after a save (§30)', () => {
     expect(pageSrc).toContain("openReading(goal, 'reading')");
     expect(pageSrc).toContain("openReading(goal, 'initial')");
-    // A past goal is read-only: no reading action anywhere in that section.
-    const past = pageSrc.slice(pageSrc.indexOf('pastGoals.length > 0'), pageSrc.indexOf('goal-reading-title'));
-    expect(past).not.toContain('openReading');
+    // #1710: past goals are not rendered in the Members App at all.
+    expect(pageSrc).not.toContain('pastGoals');
+    expect(pageSrc).not.toContain('goals.past_title');
     expect(pageSrc).toMatch(/await load\(\);\s*\n\s*setEditing\(null\);\s*\n\s*setNotice\(t\(kind/);
   });
 });
@@ -734,7 +733,7 @@ describe('#1115 creating and editing are inline (§2, §3)', () => {
   });
 
   it('offers Edit and Remove on every saved card (§4)', () => {
-    const menu = pageSrc.slice(pageSrc.indexOf('function cardMenu'), pageSrc.indexOf('function pastSummary'));
+    const menu = pageSrc.slice(pageSrc.indexOf('function cardMenu'), pageSrc.indexOf('function chartLabels'));
     expect(menu).toContain("goals.edit");
     expect(menu).toContain("goals.remove");
     expect(menu).toContain('danger: true');

@@ -52,11 +52,13 @@ async function statusOf(id: number): Promise<string | null> {
 
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';
+  process.env.MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
   gymId = await createTestGym('Purchase Draft Gym');
   await createTestMembership(gymId, 'admin');
 });
 afterAll(async () => {
   delete process.env.MONEI_API_KEY;
+  delete process.env.MONEI_WEBHOOK_SECRET;
   await db.query('DELETE FROM payment_requests WHERE gym_id = ?', [gymId]);
   await db.query('DELETE FROM billing_events WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();

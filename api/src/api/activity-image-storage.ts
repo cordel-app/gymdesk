@@ -3,24 +3,22 @@
 // upload first, point the row at it second, sweep the previous object last — so a
 // failure at any step leaves the activity pointing at an object that exists.
 
-import express from 'express';
 import { db } from '../infra/db';
 import {
-  ACTIVITY_IMAGE_MAX_BYTES,
-  ACTIVITY_IMAGE_MIME,
-  ACTIVITY_IMAGE_REJECTION_MESSAGES,
   activityImageFolderKeys,
+  activityImageThumbnailUrl,
   buildActivityImageKey,
+  buildActivityImageThumbnailKey,
   isGymOwnedActivityImageUrl,
-  validateActivityImage,
 } from '../domain/activityImages';
+import { MEMBER_IMAGE_STORED_MIME } from '../domain/memberImages';
+import type { ProcessedMemberImage } from '../domain/memberImageProcessing';
 import {
   buildStorageObjectUrl,
   copyStorageObject,
   deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
-  getMissingStorageConfigKeys,
   getStorageDiagnostics,
   isStorageConfigured,
   StorageOperationError,
@@ -28,7 +26,14 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { logger } from '../lib/logger';
-import { gymStorageFolderPrefix } from './member-image-storage';
+import {
+  gymStorageFolderPrefix,
+  isMemberImageRefusal,
+  memberImageBodyParser,
+  memberImageUploadRateLimit,
+  parseMemberImageRequest,
+  type MemberImageRefusal,
+} from './member-image-storage';
 
 export { gymStorageFolderPrefix };
 
@@ -38,51 +43,13 @@ export interface ActivityImageRow {
   image_url: string | null;
 }
 
-export interface ActivityImageRefusal {
-  status: number;
-  body: Record<string, unknown>;
-}
+export type ActivityImageRefusal = MemberImageRefusal;
+export const isActivityImageRefusal = isMemberImageRefusal;
 
-export function isActivityImageRefusal(value: unknown): value is ActivityImageRefusal {
-  return typeof value === 'object' && value !== null && 'status' in value && 'body' in value;
-}
-
-export const activityImageBodyParser = express.raw({
-  type: (req) => (req.headers['content-type'] ?? '').startsWith('image/'),
-  limit: ACTIVITY_IMAGE_MAX_BYTES + 64 * 1024,
-});
-
-/** The bytes an upload carries, or the refusal saying why there are none. */
-export function parseActivityImageRequest(req: express.Request): Buffer | ActivityImageRefusal {
-  const mime = req.headers['content-type']?.split(';')[0]?.trim();
-  if (mime !== ACTIVITY_IMAGE_MIME) {
-    return { status: 415, body: { error: `Unsupported image type. Allowed: ${ACTIVITY_IMAGE_MIME}` } };
-  }
-  const raw: unknown = req.body;
-  if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
-    return { status: 400, body: { error: 'Request body must be raw image bytes' } };
-  }
-  const body: Buffer = raw;
-  if (body.length === 0) return { status: 400, body: { error: 'Request body is empty' } };
-  if (body.length > ACTIVITY_IMAGE_MAX_BYTES) {
-    return { status: 413, body: { error: `Image exceeds ${ACTIVITY_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` } };
-  }
-  const rejection = validateActivityImage(body);
-  if (rejection) {
-    return { status: 400, body: { error: ACTIVITY_IMAGE_REJECTION_MESSAGES[rejection], reason: rejection } };
-  }
-  if (!isStorageConfigured()) {
-    const missingConfig = getMissingStorageConfigKeys();
-    return {
-      status: 503,
-      body: {
-        error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-        missingConfig,
-      },
-    };
-  }
-  return body;
-}
+/** #1714: the Member photo's upload plumbing — one limiter, one raw-body parser, one processor. */
+export const activityImageUploadRateLimit = memberImageUploadRateLimit;
+export const activityImageBodyParser = memberImageBodyParser;
+export const parseActivityImageRequest = parseMemberImageRequest;
 
 export const ACTIVITY_STORAGE_NOT_INITIALIZED: ActivityImageRefusal = {
   status: 409,
@@ -102,13 +69,21 @@ export async function sweepReplacedActivityImage(
   if (!staleKey) return;
   const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
   if (keepKey && staleKey === keepKey) return;
-  try {
-    await deleteStorageObject(staleKey);
-  } catch (err: any) {
-    const details = err instanceof StorageOperationError
-      ? err.details
-      : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
-    logger.warn({ err, details, activityId }, 'Replaced activity image left an orphaned object in Cloudflare R2');
+  const keys = [staleKey];
+  const staleThumb = activityImageThumbnailUrl(staleUrl);
+  const staleThumbKey = staleThumb ? storageKeyFromObjectUrl(staleThumb) : null;
+  const keepThumb = activityImageThumbnailUrl(keepUrl);
+  const keepThumbKey = keepThumb ? storageKeyFromObjectUrl(keepThumb) : null;
+  if (staleThumbKey && staleThumbKey !== keepThumbKey) keys.push(staleThumbKey);
+  for (const key of keys) {
+    try {
+      await deleteStorageObject(key);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'deleteStorageObject', key });
+      logger.warn({ err, details, activityId }, 'Replaced activity image left an orphaned object in Cloudflare R2');
+    }
   }
 }
 
@@ -117,20 +92,24 @@ export async function storeActivityImage(args: {
   gymId: string;
   folderPrefix: string;
   activity: ActivityImageRow;
-  body: Buffer;
+  images: ProcessedMemberImage;
   modifiedBy: string | null;
 }): Promise<string | ActivityImageRefusal> {
-  const { gymId, folderPrefix, activity, body, modifiedBy } = args;
+  const { gymId, folderPrefix, activity, images, modifiedBy } = args;
   const key = buildActivityImageKey(folderPrefix, activity.id, activity.name);
+  const thumbnailKey = buildActivityImageThumbnailKey(folderPrefix, activity.id, activity.name);
   const url = buildStorageObjectUrl(key) as string;
 
+  let failingKey = key;
   try {
     await ensureStorageFolders(activityImageFolderKeys(folderPrefix));
-    await uploadStorageObject(key, ACTIVITY_IMAGE_MIME, body);
+    await uploadStorageObject(key, MEMBER_IMAGE_STORED_MIME, images.image);
+    failingKey = thumbnailKey;
+    await uploadStorageObject(thumbnailKey, MEMBER_IMAGE_STORED_MIME, images.thumbnail);
   } catch (err: any) {
     const details = err instanceof StorageOperationError
       ? err.details
-      : describeStorageError(err, { operation: 'uploadStorageObject', key });
+      : describeStorageError(err, { operation: 'uploadStorageObject', key: failingKey });
     logger.error(
       { err, details, diagnostics: getStorageDiagnostics(), gymId, activityId: activity.id },
       'Cloudflare R2 activity image upload failed',
@@ -181,9 +160,17 @@ export async function migrateActivityImageOnRename(
   const oldKey = storageKeyFromObjectUrl(activity.image_url);
   const newKey = buildActivityImageKey(folderPrefix, activity.id, activity.name);
   if (!oldKey || oldKey === newKey) return null;
+  // A pre-#1714 PNG keeps its key: copying PNG bytes to a `.webp` key would lie about the format.
+  if (!oldKey.endsWith('.webp')) return null;
   const newUrl = buildStorageObjectUrl(newKey) as string;
+  const oldThumbUrl = activityImageThumbnailUrl(activity.image_url);
+  const oldThumbKey = oldThumbUrl ? storageKeyFromObjectUrl(oldThumbUrl) : null;
+  const newThumbKey = oldThumbKey ? buildActivityImageThumbnailKey(folderPrefix, activity.id, activity.name) : null;
   try {
     await copyStorageObject(oldKey, newKey);
+    if (oldThumbKey && newThumbKey) {
+      try { await copyStorageObject(oldThumbKey, newThumbKey); } catch { /* thumbnail is optional: the master still renders */ }
+    }
   } catch (err: any) {
     const details = err instanceof StorageOperationError
       ? err.details

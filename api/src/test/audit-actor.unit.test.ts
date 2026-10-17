@@ -108,7 +108,10 @@ describe('gate: audited tables', () => {
   const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
     { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
     { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/product-image-storage.ts', table: 'products', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/promotion-image-storage.ts', table: 'promotions', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/plan-image-storage.ts', table: 'membership_plans', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/payment-method-image-storage.ts', table: 'base_payment_methods', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },
     { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
     { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },
@@ -119,6 +122,7 @@ describe('gate: audited tables', () => {
     { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
     { file: 'api/product-sets.ts', table: 'product_sets', why: 'root_product_set_id, last_activity_at and status moves of a version; product_sets keeps only created_by (a version is replaced, never edited)' },
     { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'user_membership_id pointer relink between the version and the assignment projection' },
+    { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'user_membership_id link written by the projection' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },

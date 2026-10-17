@@ -87,14 +87,17 @@ describe('muscle image processing is the server\'s (#1413)', () => {
     }
   });
 
-  it('contains the picture: no distortion, no crop, transparent padding', async () => {
+  it('centre-crops the picture to the square: no transparent band (#1527 follow-up)', async () => {
     const out = await processMuscleImage(await picture(2000, 500));
     if ('rejection' in out) throw new Error('rejected');
-    const { data, info } = await sharp(out.image).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    const alphaAt = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
-    expect(alphaAt(540, 5)).toBe(0); // padding above the wide picture
-    expect(alphaAt(540, 540)).toBe(255); // the picture itself
-    expect(alphaAt(2, 540)).toBe(255); // reaches both left and right edges: nothing cropped
+    for (const buf of [out.image, out.thumbnail]) {
+      const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const alphaAt = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
+      const last = info.width - 1;
+      for (const [x, y] of [[0, 0], [last >> 1, 0], [last >> 1, last], [0, last >> 1], [last, last]]) {
+        expect(alphaAt(x, y)).toBe(255); // the picture reaches every edge
+      }
+    }
   });
 
   it('refuses what is not a decodable image of an accepted format', async () => {
