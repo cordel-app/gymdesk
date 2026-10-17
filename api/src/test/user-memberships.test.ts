@@ -976,7 +976,7 @@ describe('DELETE /user-memberships/:id', () => {
   });
 
   // #1694: a cancelled assignment is never open-ended.
-  it('stamps an end date when it cancels, and keeps an existing one', async () => {
+  it('stamps an end date when it cancels, and ends an unpaid one the day before (#1196)', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
@@ -987,10 +987,17 @@ describe('DELETE /user-memberships/:id', () => {
     expect(rows[0].ends_at).not.toBeNull();
 
     const other = await createUserMembershipDirect(gymId, await createMember(gymId), planId);
-    await db.query("UPDATE user_memberships SET ends_at = '2030-01-31' WHERE id = ?", [other]);
+    // A stored end date is not what the member paid for: with nothing paid,
+    // access ends the day before the cancellation (cancellationEndDate()).
+    await db.query("UPDATE user_memberships SET starts_at = '2020-01-01', ends_at = '2030-01-31' WHERE id = ?", [other]);
     await request.delete(`/user-memberships/${other}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-    const kept = await db.query("SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS d FROM user_memberships WHERE id = ?", [other]);
-    expect(kept.rows[0].d).toBe('2030-01-31');
+    const ended = await db.query(
+      `SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS d,
+              DATE_FORMAT(UTC_DATE() - INTERVAL 1 DAY, '%Y-%m-%d') AS yesterday
+         FROM user_memberships WHERE id = ?`,
+      [other],
+    );
+    expect(ended.rows[0].d).toBe(ended.rows[0].yesterday);
   });
 
   it('returns 404 when cancelling an already-cancelled membership', async () => {
