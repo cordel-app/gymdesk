@@ -8,11 +8,14 @@
 
 import { db } from '../infra/db';
 import {
-  EVENT_IMAGE_MIME,
   buildEventImageKey,
+  buildEventImageThumbnailKey,
   eventImageFolderKeys,
   isGymOwnedEventImageUrl,
 } from '../domain/calendarEventImages';
+import { activityImageThumbnailUrl } from '../domain/activityImages';
+import { MEMBER_IMAGE_STORED_MIME } from '../domain/memberImages';
+import type { ProcessedMemberImage } from '../domain/memberImageProcessing';
 import {
   buildStorageObjectUrl,
   deleteStorageObject,
@@ -45,13 +48,21 @@ async function sweepReplacedEventImage(
   if (!staleKey) return;
   const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
   if (keepKey && staleKey === keepKey) return;
-  try {
-    await deleteStorageObject(staleKey);
-  } catch (err: any) {
-    const details = err instanceof StorageOperationError
-      ? err.details
-      : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
-    logger.warn({ err, details, eventId }, 'Replaced event image left an orphaned object in Cloudflare R2');
+  const keys = [staleKey];
+  const staleThumb = activityImageThumbnailUrl(staleUrl);
+  const staleThumbKey = staleThumb ? storageKeyFromObjectUrl(staleThumb) : null;
+  const keepThumb = activityImageThumbnailUrl(keepUrl);
+  const keepThumbKey = keepThumb ? storageKeyFromObjectUrl(keepThumb) : null;
+  if (staleThumbKey && staleThumbKey !== keepThumbKey) keys.push(staleThumbKey);
+  for (const key of keys) {
+    try {
+      await deleteStorageObject(key);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'deleteStorageObject', key });
+      logger.warn({ err, details, eventId }, 'Replaced event image left an orphaned object in Cloudflare R2');
+    }
   }
 }
 
@@ -60,20 +71,24 @@ export async function storeEventImage(args: {
   gymId: string;
   folderPrefix: string;
   event: EventImageRow;
-  body: Buffer;
+  images: ProcessedMemberImage;
   modifiedBy: string | null;
 }): Promise<string | ActivityImageRefusal> {
-  const { gymId, folderPrefix, event, body, modifiedBy } = args;
+  const { gymId, folderPrefix, event, images, modifiedBy } = args;
   const key = buildEventImageKey(folderPrefix, event.id, event.activity_name);
+  const thumbnailKey = buildEventImageThumbnailKey(folderPrefix, event.id, event.activity_name);
   const url = buildStorageObjectUrl(key) as string;
 
+  let failingKey = key;
   try {
     await ensureStorageFolders(eventImageFolderKeys(folderPrefix));
-    await uploadStorageObject(key, EVENT_IMAGE_MIME, body);
+    await uploadStorageObject(key, MEMBER_IMAGE_STORED_MIME, images.image);
+    failingKey = thumbnailKey;
+    await uploadStorageObject(thumbnailKey, MEMBER_IMAGE_STORED_MIME, images.thumbnail);
   } catch (err: any) {
     const details = err instanceof StorageOperationError
       ? err.details
-      : describeStorageError(err, { operation: 'uploadStorageObject', key });
+      : describeStorageError(err, { operation: 'uploadStorageObject', key: failingKey });
     logger.error(
       { err, details, diagnostics: getStorageDiagnostics(), gymId, eventId: event.id },
       'Cloudflare R2 event image upload failed',

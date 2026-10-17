@@ -5,22 +5,20 @@
 //
 // The key sits under the gym's existing `activities/` folder, prefixed `event-`
 // so it can never collide with an Activity's own `<activity_id>-<name>.png`:
-// `<gym prefix>/activities/event-<event_id>-<sanitized activity name>.png`.
+// `<gym prefix>/activities/event-<event_id>-<sanitized activity name>.webp`.
 // No new first-level folder, so no new marker to write.
 
 import { ACTIVITIES_FOLDER, storageKeyFromObjectUrl } from '../infra/storage';
 import { sanitizeActivityImageName } from './activityImages';
 
-export {
-  ACTIVITY_IMAGE_MAX_BYTES as EVENT_IMAGE_MAX_BYTES,
-  ACTIVITY_IMAGE_MIME as EVENT_IMAGE_MIME,
-  ACTIVITY_IMAGE_REJECTION_MESSAGES as EVENT_IMAGE_REJECTION_MESSAGES,
-  activityImageFolderKeys as eventImageFolderKeys,
-  validateActivityImage as validateEventImage,
-} from './activityImages';
+export { activityImageFolderKeys as eventImageFolderKeys } from './activityImages';
 
 export function buildEventImageKey(folderPrefix: string, eventId: number | string, activityName: string): string {
-  return `${folderPrefix}/${ACTIVITIES_FOLDER}/event-${eventId}-${sanitizeActivityImageName(activityName)}.png`;
+  return `${folderPrefix}/${ACTIVITIES_FOLDER}/event-${eventId}-${sanitizeActivityImageName(activityName)}.webp`;
+}
+
+export function buildEventImageThumbnailKey(folderPrefix: string, eventId: number | string, activityName: string): string {
+  return `${folderPrefix}/${ACTIVITIES_FOLDER}/event-${eventId}-${sanitizeActivityImageName(activityName)}-thumbnail.webp`;
 }
 
 /** Whether `url` is an event-specific object **this gym** owns — never an Activity's own image. */
