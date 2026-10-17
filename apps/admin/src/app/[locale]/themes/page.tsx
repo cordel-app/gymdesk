@@ -842,6 +842,11 @@ export default function GymThemesPage() {
             <ThemeBrandingEditor
               values={{ name: editForm.name, description: editForm.description, logoContainsGymName: editForm.logoContainsGymName }}
               onChange={(next) => setEditForm({ ...editForm, ...next })}
+              motivationalSentence={editForm.tokens.motivationalSentence ?? ''}
+              onMotivationalSentenceChange={(value) => {
+                const { motivationalSentence: _drop, ...rest } = editForm.tokens;
+                setEditForm({ ...editForm, tokens: value.trim() ? { ...rest, motivationalSentence: value } : rest });
+              }}
               t={t}
               logoPreview={editLogoPreview}
               onLogoPick={handleLogoPick}

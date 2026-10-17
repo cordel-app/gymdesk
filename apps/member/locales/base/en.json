@@ -28,7 +28,10 @@
     "reminder_trainer": "Trainer: {name}",
     "nutrition_today": "Today's Nutrition Plan",
     "goals": "Goals",
-    "no_nutrition_today": "No nutrition plan for today."
+    "no_nutrition_today": "No nutrition plan for today.",
+    "booking_center": "Centre",
+    "booking_trainer": "Trainer",
+    "booking_space": "Space"
   },
   "nav": {
     "back_home": "Back to home",
@@ -222,6 +225,7 @@
   },
   "member_calendar": {
     "filter_all": "All",
+    "filter_activity_label": "Activity",
     "filter_button": "Filter",
     "filter_center_label": "Center",
     "filter_trainer_label": "Trainer",

@@ -29,7 +29,7 @@ import {
   grossPrice,
   startProductPurchase,
 } from './me-products';
-import { loadPromotionOffers } from './member-product-promotions';
+import { loadPromotionOffersDetailed } from './member-product-promotions';
 import { shapeMemberProduct, staffProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { isRecurringFrequency } from '../domain/productClassification';
 import {
@@ -128,13 +128,15 @@ async function staffCatalogue(gymId: string, memberId: number) {
     // #1521 (decision 3): a one-time Product already held is not offered again;
     // a recurring one always is.
     .filter((item) => isRecurringFrequency(item.billing_frequency) || !owned.has(item.id));
-  const offers = await loadPromotionOffers(gymId, memberId, items.map((item) => ({
+  const { offers, skipped } = await loadPromotionOffersDetailed(gymId, memberId, items.map((item) => ({
     id: item.id, type: item.type, billing_frequency: item.billing_frequency, price_incl_tax: item.price_incl_tax,
   })));
   return items.map((item) => ({
     ...item,
     recurring: isRecurringFrequency(item.billing_frequency),
     promotions: offers.get(item.id) ?? [],
+    // #1655 — hidden only by the new-members-only rule; explanatory, never applicable.
+    unavailable_promotions: skipped.get(item.id) ?? [],
   }));
 }
 

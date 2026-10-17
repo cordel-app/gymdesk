@@ -85,7 +85,7 @@ export const EXERCISE_VIDEOS_STORAGE_FOLDER = `${EXERCISE_STORAGE_FOLDER}/videos
  * {@link initializeGymBucket} creates and the key an upload lands under can
  * never disagree in case — in R2 a case difference is a different key, so a
  * marker spelled `Goals/` would add a folder beside the one uploads populate
- * rather than rename it. `domain/personalGoalImages.ts` re-exports it, and that
+ * rather than rename it. `domain/nutritionGoalImages.ts` re-exports it, and that
  * module is the only place a goal-image key is built.
  *
  * Lowercase, like `themes` (#829) and the tree in `docs/cloudflare_structure.md`:
@@ -128,12 +128,32 @@ export const ACTIVITIES_FOLDER = 'activities';
 export const PLANS_FOLDER = 'plans';
 
 /**
+ * `promotions` — the gym-root branch holding a Promotion's image (#1711):
+ * `<gym prefix>/promotions/<promotion_id>-<promotion_name>.webp` plus its
+ * `-thumbnail.webp`. Declared here for {@link GOALS_FOLDER}'s reason;
+ * `domain/promotionImages.ts` re-exports it.
+ */
+export const PROMOTIONS_FOLDER = 'promotions';
+/** #1715: a Product's image folder, directly under the gym root. */
+export const PRODUCTS_FOLDER = 'products';
+/** #1765: the gym-level `calendar_events/` root, holding a Calendar Event's own image. */
+export const CALENDAR_EVENTS_FOLDER = 'calendar_events';
+
+/**
  * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
  * prefix and under {@link PLATFORM_STORAGE_ROOT} for a System goal. Distinct from
  * `nutrition/` (foods) and `goals/` (Personal Goals). Declared here for
  * {@link GOALS_FOLDER}'s reason; `domain/nutritionGoalImages.ts` re-exports it.
  */
 export const NUTRITION_GOALS_FOLDER = 'nutrition_goals';
+
+/**
+ * `payment_method` — a Base Payment Method's image (#1702), platform-owned only:
+ * `cordel/payment_method/<id>-<name>.webp` plus its `-thumbnail.webp`. It is not
+ * a gym-root folder, so it is deliberately absent from `GYM_FOLDERS`.
+ * `domain/paymentMethodImages.ts` re-exports it.
+ */
+export const PAYMENT_METHOD_FOLDER = 'payment_method';
 
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
@@ -162,7 +182,7 @@ export const NUTRITION_GOALS_FOLDER = 'nutrition_goals';
 // Every name here is the key builders' own constant and never a literal: the
 // strings come from `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`,
 // `domain/baseNutritionImages.ts`, `domain/themeFolders.ts` and
-// `domain/personalGoalImages.ts`, because a marker that disagreed with a builder
+// `domain/nutritionGoalImages.ts`, because a marker that disagreed with a builder
 // in case alone would add a folder *beside* the one uploads populate rather than
 // rename it.
 const GYM_FOLDERS = [
@@ -199,6 +219,15 @@ const GYM_FOLDERS = [
   // #1623: the gym-level `nutrition_goals/` root, holding a Nutrition Goal's
   // image. Appended last, with its writer (`POST /nutrition-goals/:id/image`).
   `${NUTRITION_GOALS_FOLDER}/`,
+  // #1711: the gym-level `promotions/` root, holding a Promotion's image.
+  // Appended last, with its writer (`POST /promotions/:id/image`).
+  `${PROMOTIONS_FOLDER}/`,
+  // #1715: the gym-level `products/` root, holding a Product's image.
+  // Appended last, with its writer (`POST /products/:id/image`).
+  `${PRODUCTS_FOLDER}/`,
+  // #1765: the gym-level `calendar_events/` root, holding a Calendar Event's image.
+  // Appended last, with its writer (`POST /(class-sessions|calendar-events)/:id/image`).
+  `${CALENDAR_EVENTS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

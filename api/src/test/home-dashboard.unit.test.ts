@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  dayWindow, weekWindow, parseDashboardDate, homeAccess, visibleTasks, groupPendingPaymentMembers, resolveTimeZone,
+  dayWindow, weekWindow, parseDashboardDate, completedWeekWindows, attendanceKpis, homeAccess, visibleTasks, groupPendingPaymentMembers, resolveTimeZone,
 } from '../domain/homeDashboard';
 
 describe('parseDashboardDate', () => {
@@ -86,5 +86,39 @@ describe('groupPendingPaymentMembers (#1466)', () => {
     expect(g.map((x) => x.member_id)).toEqual([2, 1]);
     expect(g[0].outstanding_amount).toBe(15.3);
     expect(g[0].oldest_at).toBe('2026-09-20T10:00:00.000Z');
+  });
+});
+
+describe('completedWeekWindows (#1754)', () => {
+  it('is the four complete Monday–Sunday gym-local weeks before this one, oldest first', () => {
+    // 2026-10-14 is a Wednesday; this week starts Mon 2026-10-12.
+    const w = completedWeekWindows('2026-10-14', 'Europe/Madrid', 4);
+    expect(w).toHaveLength(4);
+    expect(w[3]).toEqual({ from: '2026-10-04 22:00:00', to: '2026-10-11 22:00:00' });
+    expect(w[0].from).toBe('2026-09-13 22:00:00');
+    expect(w[0].to).toBe(w[1].from);
+  });
+  it('treats a Monday as the start of the current week', () => {
+    const w = completedWeekWindows('2026-10-12', 'UTC', 1);
+    expect(w[0]).toEqual({ from: '2026-10-05 00:00:00', to: '2026-10-12 00:00:00' });
+  });
+});
+
+describe('attendanceKpis (#1754)', () => {
+  const weeks = completedWeekWindows('2026-10-14', 'UTC', 4);
+  const inWeek = (i: number) => weeks[i].from;
+  it('needs an attendance in every week and averages over active members', () => {
+    const att = [
+      ...[0, 1, 2, 3].map((i) => ({ member_id: 1, at: inWeek(i) })),
+      ...[0, 1, 2].map((i) => ({ member_id: 2, at: inWeek(i) })),
+      { member_id: 2, at: inWeek(0) },
+      { member_id: 3, at: '2000-01-01 00:00:00' },
+    ];
+    const k = attendanceKpis(att, weeks, 10);
+    expect(k.top_trainers).toBe(1);
+    expect(k.average_classes_per_member_per_week).toBe(0.20); // 8 / 10 / 4
+  });
+  it('handles no data and no members without dividing by zero', () => {
+    expect(attendanceKpis([], weeks, 0)).toEqual({ top_trainers: 0, average_classes_per_member_per_week: 0, weeks: 4 });
   });
 });

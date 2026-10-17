@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -184,6 +185,9 @@ interface Product {
   created_by: string | null;
   modified_at: string | null;
   modified_by: string | null;
+  // #1715: the product's image (1080 WebP) and its 256 thumbnail.
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
 }
 
 // #974: the form's values and the row → values mapping are declared beside the
@@ -1024,6 +1028,35 @@ export default function ProductsPage() {
               renderField={renderEditControl}
               renderValue={renderReadOnlyValue}
             />
+            {/* #1715 — the product's image. Read-only outside Edit mode; in it
+                the control acts on the server straight away (`POST`/`DELETE
+                /products/:id/image`), so the surrounding PUT neither carries
+                nor can undo it. The key carries the product's id, so the create
+                row offers none. */}
+            <div style={{ margin: '12px 0 4px' }}>
+              {isEditing ? (
+                <MemberImageField
+                  target={{
+                    kind: 'immediate',
+                    memberId: item.id,
+                    basePath: '/products',
+                    imageUrl: item.image_url ?? null,
+                    stamp: item.modified_at,
+                    onChanged: (updated) => {
+                      setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, ...(updated as Product) } : p)));
+                    },
+                  }}
+                  disabled={!canWrite}
+                  disabledTitle={readOnlyTitle}
+                  label={(key) => t(key as any)}
+                />
+              ) : (
+                <MemberImagePreview
+                  src={memberImagePreviewSrc(item.image_url ?? null, item.modified_at)}
+                  emptyLabel={t('image_none')}
+                />
+              )}
+            </div>
             {isEditing && editForm && (
               <>
                 {editError && <p style={formErrorStyle}>{editError}</p>}

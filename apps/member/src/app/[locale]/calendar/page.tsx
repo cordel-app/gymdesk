@@ -132,7 +132,18 @@ export default function MemberCalendarPage() {
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   // #1637 — the activity image opens uncropped in place on click.
   const [imageExpanded, setImageExpanded] = useState(false);
-  useEffect(() => { setImageExpanded(false); }, [selected?.id]);
+  // #1746 — a swipe up on the sheet's drag handle expands the description.
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  useEffect(() => { setImageExpanded(false); setSheetExpanded(false); }, [selected?.id]);
+  const handleSwipeStartY = useRef<number | null>(null);
+  function handleSwipeEnd(clientY: number) {
+    const start = handleSwipeStartY.current;
+    handleSwipeStartY.current = null;
+    if (start === null) return;
+    const dy = clientY - start;
+    if (dy > SHEET_SWIPE_THRESHOLD) { setSelected(null); setActionMsg(null); }
+    else if (dy < -SHEET_SWIPE_THRESHOLD) setSheetExpanded(true);
+  }
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -331,7 +342,7 @@ export default function MemberCalendarPage() {
           <button
             onClick={() => (showFilterPanel ? setShowFilterPanel(false) : openFilterPanel())}
             style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+              padding: '4px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
               border: `1px solid ${memberTheme.inputBorder}`,
               // #983 §5 — a control in the Calendar's own filter bar takes the
               // Calendar Buttons Colour, the setting FullCalendar's navigation
@@ -413,38 +424,19 @@ export default function MemberCalendarPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-          <button
-            onClick={() => { setFilterAtId(''); }}
-            style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              border: `1px solid ${memberTheme.inputBorder}`,
-              background: !filterAtId ? memberTheme.calendarButton : 'transparent',
-              color:      !filterAtId ? memberTheme.calendarButtonText : 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {t('filter_all')}
-          </button>
+        {/* #1740 — one compact dropdown instead of a chip per activity; the API
+            list (`/me/activity-types`) already holds active activities only. */}
+        <select
+          aria-label={t('filter_activity_label')}
+          value={filterAtId}
+          onChange={(e) => setFilterAtId(e.target.value)}
+          style={{ ...modalInputStyle, flex: 1, minWidth: 0, width: 'auto' }}
+        >
+          <option value="">{t('filter_all')}</option>
           {activityTypes.map((at) => (
-            <button
-              key={at.id}
-              onClick={() => setFilterAtId(String(at.id))}
-              style={{
-                padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                border: `1px solid ${memberTheme.inputBorder}`,
-                // The Activity Type's own colour stays its own (#975): only the
-                // chip for an Activity Type that configures none falls back to
-                // the Calendar Buttons Colour.
-                background: filterAtId === String(at.id) ? (at.color ?? memberTheme.calendarButton) : 'transparent',
-                color:      filterAtId === String(at.id) ? memberTheme.calendarButtonText : 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {at.name}
-            </button>
+            <option key={at.id} value={String(at.id)}>{at.name}</option>
           ))}
-        </div>
+        </select>
       </div>
 
       {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
@@ -526,11 +518,22 @@ export default function MemberCalendarPage() {
               // #833 §7 — the event window's own surface setting. It used to
               // borrow the Admin sidebar's colour, which was never its own.
               width: '100%', background: memberTheme.calendarModalBackground,
+              color: memberTheme.text,
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
+              maxHeight: '90vh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}
           >
-            <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
+            {/* #1746 — the handle is the swipe target: down closes, up expands. */}
+            <div
+              data-testid="sheet-handle"
+              onPointerDown={(e) => { handleSwipeStartY.current = e.clientY; e.currentTarget.setPointerCapture?.(e.pointerId); }}
+              onPointerUp={(e) => handleSwipeEnd(e.clientY)}
+              onPointerCancel={() => { handleSwipeStartY.current = null; }}
+              style={{ padding: '4px 0 16px', margin: '-4px 0 0', touchAction: 'none', cursor: 'grab' }}
+            >
+              <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto' }} />
+            </div>
             {selected.class_type_image_url && (
               <button
                 type="button"
@@ -570,7 +573,9 @@ export default function MemberCalendarPage() {
               <p
                 style={{
                   margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                  ...(sheetExpanded
+                    ? { whiteSpace: 'pre-wrap' as const, overflowWrap: 'anywhere' as const }
+                    : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
                 }}
               >
                 {selected.class_type_description.trim()}
@@ -681,6 +686,9 @@ export default function MemberCalendarPage() {
     </div>
   );
 }
+
+/** #1746 — minimum vertical travel (px) for a handle swipe to count. */
+const SHEET_SWIPE_THRESHOLD = 40;
 
 const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
   available:       memberTheme.statusInfo,

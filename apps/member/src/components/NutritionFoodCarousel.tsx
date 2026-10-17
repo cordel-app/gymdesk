@@ -171,8 +171,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '2px 2px 6px', margin: '8px -2px 0',
   },
   // One card at a time on a phone with the next one peeking (§1); on a wider
-  // screen the same 320px cards simply sit side by side (§8).
-  slide:    { flex: '0 0 min(320px, 82%)', scrollSnapAlign: 'center', minWidth: 0 },
+  // screen the same 300px cards simply sit side by side (§8).
+  slide:    { flex: '0 0 min(300px, 82%)', scrollSnapAlign: 'center', minWidth: 0 },
   controls: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 8 },
   navButton: {
     width: 36, height: 36, borderRadius: 18, border: `1px solid ${memberTheme.cardBorderColor}`, background: memberTheme.surface,

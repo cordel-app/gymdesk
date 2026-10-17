@@ -217,7 +217,15 @@ describe('the price: stacked Promotions then the Admin’s direct discount (deci
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', ?)`, [gymId, m, planId, day(-10)]);
     const later = await auth(request.get(`${base(m)}/catalogue`));
-    expect(later.body.items.find((i: any) => i.id === p).promotions).toHaveLength(0);
+    const hidden = later.body.items.find((i: any) => i.id === p);
+    expect(hidden.promotions).toHaveLength(0);
+    // #1655 — the staff selector is told why, so "no promotions" is explicable;
+    // the Promotion is still not an offer and cannot be applied.
+    expect(hidden.unavailable_promotions).toEqual([
+      { promotion_id: promo, promotion_name: 'Welcome', reason: 'new_members_only' },
+    ]);
+    const quote = await auth(request.post(`${base(m)}/quote`)).send({ product_id: p, promotion_ids: [promo] });
+    expect(quote.status).toBe(409);
   });
 
   it('lets only an Admin apply a direct discount', async () => {

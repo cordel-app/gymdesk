@@ -6,29 +6,36 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { canWriteFeature, canWriteModule } from '@/config/permissions';
+import { MemberCommunicationModal } from '../members/MemberCommunicationModal';
+import { ClassCommunicationModal } from '../calendar/ClassCommunicationModal';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
-import { formatGymAmount, formatGymDate, formatGymTime } from '@/lib/gymFormat';
-import { cardSurfaceStyle } from '@/components/ui';
+import { useModuleAccess } from '@/lib/useModuleAccess';
+import { formatGymAmount, formatGymDate, formatGymNumber, formatGymTime } from '@/lib/gymFormat';
+import { cardSurfaceStyle, primaryActionColors, primaryBtnSmall } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
 import {
-  HomeData, TASK_ACTION_KEY, memberHref, orderedTasks, shiftDate, taskHref,
+  HomeData, TASK_ACTION_KEY, canStartClass, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
+  type QuickActionKey,
 } from '@/lib/homeDashboard';
 
-// #1367 — Home. One request (`GET /dashboard/home`) feeds every section; the
-// date arrows refetch it. Sections the caller's role may not read are absent
-// from the response and therefore from the page.
+// #1367 / #1754 — Home. One request (`GET /dashboard/home`) feeds every section
+// and always describes today in the gym's zone (no date navigation). Sections
+// the caller's role may not read are absent from the response and therefore
+// from the page.
 
-const cardsGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 20 };
+const cardsGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 20 };
 const panelsGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' };
 const panel: React.CSSProperties = { ...cardSurfaceStyle, padding: 20 };
 const panelTitle: React.CSSProperties = { margin: '0 0 12px', fontSize: 16, fontWeight: 700 };
 const row: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--gd-border, #e5e7eb)' };
 const linkStyle: React.CSSProperties = { color: 'var(--gd-link, #2563eb)', fontSize: 13, textDecoration: 'none', whiteSpace: 'nowrap' };
 
-function SummaryCard({ label, value, sub, href }: { label: string; value: string; sub: string; href?: string }) {
+function SummaryCard({ label, value, sub, href, hint }: { label: string; value: string; sub: string; href?: string; hint?: string }) {
   const body = (
-    <div style={{ ...cardSurfaceStyle, padding: 18, height: '100%' }}>
+    <div style={{ ...cardSurfaceStyle, padding: 18, height: '100%' }} title={hint}>
       <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)' }}>{label}</div>
       <div style={{ fontSize: 30, fontWeight: 700, margin: '6px 0 4px' }}>{value}</div>
       <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{sub}</div>
@@ -42,22 +49,35 @@ export default function HomePage() {
   const tm = useTranslations('members');
   const locale = useLocale();
   const { apiFetch } = useApiClient();
-  const { activeGymId } = useGym();
+  const { activeGymId, activeGym, isSuperadmin } = useGym();
+  const { flags: featureFlags } = useFeatureFlags();
+  const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
+  const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
+  const tc = useTranslations('calendar');
+  const { canWrite: canWriteCalendar } = useModuleAccess('CALENDAR');
+  const { canWrite: canMessageClass } = useModuleAccess('CALENDAR', 'calendar.staff_communications');
+  const canWriteMembers = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
+  const classMessagingOn = canMessageClass && featureFlags['calendar.staff_communications'] !== false && featureFlags['calendar'] !== false;
+  // Same gate as Members → ⋮ → Send communication, plus MEMBERS write because a
+  // sent welcome also stamps `welcomed_at` (PUT /members/:id/welcomed).
+  const canWelcomeHere = (isSuperadmin
+    || (activeGym?.role != null
+      && canWriteFeature(activeGym.role, 'MEMBERS', 'membership.staff_communications')
+      && canWriteModule(activeGym.role, 'MEMBERS')))
+    && featureFlags['membership.staff_communications'] !== false;
   const { user } = useUser();
   const fmt = useGymFormatSettings();
-  const [date, setDate] = useState<string | null>(null);
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (d: string | null) => {
+  const load = useCallback(async () => {
     if (!activeGymId) return;
     setLoading(true);
     setError(false);
     try {
-      const res = await apiFetch<HomeData>(`/dashboard/home${d ? `?date=${d}` : ''}`);
+      const res = await apiFetch<HomeData>('/dashboard/home');
       setData(res);
-      setDate(res.date);
     } catch {
       setError(true);
     } finally {
@@ -65,29 +85,31 @@ export default function HomePage() {
     }
   }, [activeGymId, apiFetch]);
 
-  useEffect(() => { load(null); }, [activeGymId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [activeGymId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = (days: number) => date && load(shiftDate(date, days));
   const name = user?.firstName ?? user?.fullName ?? null;
   const tasks = data ? orderedTasks(data.tasks) : [];
   const c = data?.cards;
+  const quickActions: { key: QuickActionKey }[] = [
+    ...(data?.access.members && canWriteMembers ? [{ key: 'add_member' as const }] : []),
+    ...(data?.access.members ? [{ key: 'manage_member' as const }] : []),
+    ...(data?.access.classes && canWriteCalendar ? [{ key: 'new_class' as const }] : []),
+    ...(data?.access.payments ? [{ key: 'review_payments' as const }] : []),
+  ];
 
   return (
     <div style={{ padding: 24, maxWidth: 1200 }}>
-      <header style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24 }}>{name ? t('greeting', { name }) : t('greeting_anonymous')}</h1>
-          <p style={{ ...mutedTextStyle, margin: '4px 0 0' }}>{t('intro')}</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button type="button" style={secondaryBtnSmall} onClick={() => go(-1)} disabled={!date || loading} aria-label={t('prev_day')}>‹</button>
-          <strong data-testid="home-date" style={{ minWidth: 110, textAlign: 'center' }}>{date ? formatGymDate(`${date}T12:00:00Z`, { ...fmt, time_zone: 'UTC' }) : '—'}</strong>
-          <button type="button" style={secondaryBtnSmall} onClick={() => go(1)} disabled={!date || loading} aria-label={t('next_day')}>›</button>
-          {data && date !== data.today && (
-            <button type="button" style={secondaryBtnSmall} onClick={() => load(data.today)} disabled={loading}>{t('today')}</button>
-          )}
-        </div>
+      <header style={{ marginBottom: 20 }}>
+        <h1 style={{ margin: 0, fontSize: 24 }}>{name ? t('greeting', { name }) : t('greeting_anonymous')}</h1>
+        <p style={{ ...mutedTextStyle, margin: '4px 0 0' }}>{t('intro')}</p>
       </header>
+
+      <section aria-label={t('banner_title')} data-testid="home-banner"
+        style={{ ...primaryActionColors, borderRadius: 'var(--gd-card-radius, 8px)', padding: '22px 24px', marginBottom: 20 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.85 }}>{t('banner_kicker')}</div>
+        <h2 style={{ margin: '6px 0 4px', fontSize: 20 }}>{t('banner_title')}</h2>
+        <p style={{ margin: 0, fontSize: 14, opacity: 0.9, maxWidth: 640 }}>{t('banner_text')}</p>
+      </section>
 
       {error && <p style={mutedTextStyle}>{t('error')}</p>}
       {!data && loading && <p style={mutedTextStyle}>{t('loading')}</p>}
@@ -133,7 +155,7 @@ export default function HomePage() {
             )}
             {c?.new_members && (
               <SummaryCard label={t('card_new_members')} value={String(c.new_members.count)}
-                sub={t('card_new_members_sub')} href={`/${locale}/members`} />
+                sub={t('card_new_members_sub')} hint={t('card_new_members_hint')} href={`/${locale}/members`} />
             )}
             {c?.classes_today && (
               <SummaryCard label={t('card_classes')} value={`${c.classes_today.count} / ${c.classes_today.total}`}
@@ -144,31 +166,74 @@ export default function HomePage() {
                 sub={t('card_payments_sub', { count: c.outstanding_payments.count, paid: c.outstanding_payments.paid_count })}
                 href={taskHref('payments_with_issues', locale)} />
             )}
+            {c?.attendance && (
+              <>
+                <SummaryCard label={t('card_top_trainers')} value={String(c.attendance.top_trainers)}
+                  sub={t('card_top_trainers_sub', { weeks: c.attendance.weeks })} hint={t('card_top_trainers_hint', { weeks: c.attendance.weeks })} />
+                <SummaryCard label={t('card_avg_classes')}
+                  value={formatGymNumber(c.attendance.average_classes_per_member_per_week, fmt)}
+                  sub={t('card_avg_classes_sub', { weeks: c.attendance.weeks })} hint={t('card_avg_classes_hint', { weeks: c.attendance.weeks })} />
+              </>
+            )}
           </div>
 
-          <section style={{ ...panel, marginBottom: 16 }} aria-label={t('tasks_title')}>
-            <h2 style={panelTitle}>{t('tasks_title')}</h2>
+          <div style={{ ...panelsGrid, marginBottom: 20 }}>
+
+          <section style={panel} aria-label={t('tasks_title')}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+              <h2 style={panelTitle}>{t('tasks_title')}</h2>
+              <span style={mutedTextStyle} data-testid="home-task-count">{t('tasks_count', { count: tasks.length })}</span>
+            </div>
             {tasks.length === 0 ? (
               <p style={{ ...mutedTextStyle, margin: 0 }} data-testid="home-all-clear">{t('tasks_all_clear')}</p>
             ) : tasks.map((task) => (
-              <div key={task.key} style={row} data-testid={`home-task-${task.key}`}>
-                <div>
-                  <div>{t(`task_${task.key}`, { count: task.count, people: task.secondary ?? 0 })}</div>
-                  {task.samples && task.samples.length > 0 && (
-                    <div style={{ fontSize: 12, marginTop: 2 }}>
-                      {task.samples.map((s, i) => (
-                        <span key={s.id}>
-                          {i > 0 && ', '}
-                          <Link href={memberHref(s.id, locale)} style={{ color: 'inherit' }}>{s.name}{s.detail ? ` (${s.detail})` : ''}</Link>
-                        </span>
-                      ))}
+              <div key={task.key} data-testid={`home-task-${task.key}`}>
+                {task.key === 'welcome_new_members' && canWelcomeHere && task.samples && task.samples.length > 0 ? (
+                  <>
+                    <div style={{ ...row, borderTop: '1px solid var(--gd-border, #e5e7eb)' }}>
+                      <div>{t(`task_${task.key}`, { count: task.count, people: 0 })}</div>
                     </div>
-                  )}
-                </div>
-                <Link href={taskHref(task.key, locale)} style={linkStyle}>{t(TASK_ACTION_KEY[task.key])}</Link>
+                    {task.samples.map((s) => (
+                      <div key={s.id} style={{ ...row, borderTop: 0, paddingTop: 4 }} data-testid={`home-welcome-${s.id}`}>
+                        <Link href={memberHref(s.id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{s.name}</Link>
+                        <button type="button" style={primaryBtnSmall()} onClick={() => setWelcomeFor(s)}>{t(TASK_ACTION_KEY[task.key])}</button>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div style={row}>
+                    <div>
+                      <div>{t(`task_${task.key}`, { count: task.count, people: task.secondary ?? 0 })}</div>
+                      {task.samples && task.samples.length > 0 && (
+                        <div style={{ fontSize: 12, marginTop: 2 }}>
+                          {task.samples.map((s, i) => (
+                            <span key={s.id}>
+                              {i > 0 && ', '}
+                              <Link href={memberHref(s.id, locale)} style={{ color: 'inherit' }}>{s.name}{s.detail ? ` (${s.detail})` : ''}</Link>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Link href={taskHref(task.key, locale)} style={linkStyle}>{t(TASK_ACTION_KEY[task.key])}</Link>
+                  </div>
+                )}
               </div>
             ))}
           </section>
+
+          <section style={panel} aria-label={t('quick_title')} data-testid="home-quick-actions">
+            <h2 style={panelTitle}>{t('quick_title')}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+              {quickActions.map((qa) => (
+                <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
+                  style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box' }}>
+                  {t(`quick_${qa.key}`)}
+                </Link>
+              ))}
+            </div>
+          </section>
+          </div>
 
           <div style={panelsGrid}>
             {data.classes && (
@@ -177,13 +242,25 @@ export default function HomePage() {
                 {data.classes.length === 0 ? (
                   <p style={{ ...mutedTextStyle, margin: 0 }}>{t('classes_empty')}</p>
                 ) : data.classes.map((k) => (
-                  <div key={k.id} style={row}>
-                    <div>
+                  <div key={k.id} style={row} data-testid={`home-class-${k.id}`}>
+                    <div style={{ minWidth: 0 }}>
                       <strong>{formatGymTime(k.starts_at, fmt)}</strong> {k.name}
+                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
+                        {t('class_duration', { minutes: Math.max(1, Math.round((new Date(k.ends_at).getTime() - new Date(k.starts_at).getTime()) / 60000)) })}
+                        {k.trainer_name ? ` · ${k.trainer_name}` : ''}{k.space_name ? ` · ${k.space_name}` : ''}
+                      </div>
+                      <div style={{ fontSize: 12 }}>
+                        {k.booked_count}{k.capacity != null ? `/${k.capacity}` : ''} {t('class_booked')}
+                        {k.waitlist_count > 0 && ` · ${t('class_waitlist', { count: k.waitlist_count })}`}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 13, textAlign: 'right' }}>
-                      {k.booked_count}{k.capacity != null ? `/${k.capacity}` : ''}
-                      {k.waitlist_count > 0 && <div style={{ fontSize: 12 }}>{t('class_waitlist', { count: k.waitlist_count })}</div>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {canStartClass(k.status) && (
+                        <Link href={startClassHref(k.id, locale)} style={{ ...primaryBtnSmall(), textDecoration: 'none' }}>{t('class_start')}</Link>
+                      )}
+                      {classMessagingOn && canStartClass(k.status) && (
+                        <button type="button" style={secondaryBtnSmall} onClick={() => setMessageClass({ id: k.id, name: k.name })}>{tc('send_communication')}</button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -213,6 +290,22 @@ export default function HomePage() {
             )}
           </div>
         </>
+      )}
+      {messageClass && (
+        <ClassCommunicationModal sessionId={messageClass.id} sessionName={messageClass.name} onClose={() => setMessageClass(null)} />
+      )}
+      {welcomeFor && (
+        <MemberCommunicationModal
+          memberId={welcomeFor.id}
+          memberName={welcomeFor.name}
+          onClose={() => setWelcomeFor(null)}
+          onSent={async () => {
+            // The task counts `welcomed_at IS NULL`, so a sent welcome stamps it
+            // and the refetch drops this member (and only this member).
+            try { await apiFetch(`/members/${welcomeFor.id}/welcomed`, { method: 'PUT', body: JSON.stringify({ welcomed: true }) }); } catch { /* task simply stays */ }
+            load();
+          }}
+        />
       )}
     </div>
   );

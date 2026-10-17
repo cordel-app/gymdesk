@@ -12,9 +12,11 @@ import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { primaryBtnStyle } from '@/components/ui';
+import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { nextHalfHour } from '@/lib/homeDashboard';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
-import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
+import { EventDetailsPanel, type EventImageInfo, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -79,7 +81,7 @@ export default function CalendarPage() {
   const t = useTranslations('calendar');
   const router = useRouter();
   const locale = useLocale();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const gymFormat = useGymFormatSettings();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   // #930 — the Center filter lives in this page's filter bar now, over the same
@@ -112,6 +114,7 @@ export default function CalendarPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingMeta, setEditingMeta] = useState<EventMeta | null>(null);
+  const [editingImage, setEditingImage] = useState<EventImageInfo>({ image_url: null, effective_image_url: null, modified_at: null });
   const [initialForm, setInitialForm] = useState<CalendarEventForm>(EMPTY_FORM);
 
   // Class session panel
@@ -229,6 +232,30 @@ export default function CalendarPage() {
     setPanelOpen(true);
   }
 
+  // #1754 — Home's deep links: `?new=1` opens the new-event form on the next
+  // HH:00/HH:30 for one hour (nothing is created until it is saved) and
+  // `?session=<id>` opens that class's panel, attendance included.
+  const homeIntentRef = useRef<{ create: boolean; session: number | null } | null>(null);
+  if (homeIntentRef.current === null) {
+    const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const sid = Number(q.get('session'));
+    homeIntentRef.current = { create: q.get('new') === '1', session: Number.isInteger(sid) && sid > 0 ? sid : null };
+  }
+  useEffect(() => {
+    const intent = homeIntentRef.current;
+    if (!intent || gymLoading || !activeGymId) return;
+    homeIntentRef.current = { create: false, session: null };
+    if (intent.session) {
+      setSessionPanelId(intent.session);
+      setPanelOpen(false);
+      setEditingId(null);
+    } else if (intent.create && canWrite) {
+      const start = nextHalfHour(new Date());
+      openCreate(start, new Date(start.getTime() + 60 * 60000));
+    }
+    if (intent.session || intent.create) window.history.replaceState(null, '', window.location.pathname);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleEventClick(info: any) {
     const e = info.event.extendedProps;
     if (e._type === 'session') {
@@ -246,6 +273,11 @@ export default function CalendarPage() {
     const allDay = !!e.all_day;
     setSessionPanelId(null);
     setEditingId(e.id);
+    setEditingImage({
+      image_url: e.image_url ?? null,
+      effective_image_url: e.effective_image_url ?? e.image_url ?? null,
+      modified_at: e.modified_at ?? null,
+    });
     setEditingMeta({
       created_by:  e.created_by  ?? null,
       created_at:       e.created_at       ?? null,
@@ -280,7 +312,7 @@ export default function CalendarPage() {
     setSessionPanelId(null);
   }
 
-  async function handleSave(form: CalendarEventForm) {
+  async function handleSave(form: CalendarEventForm, image: Blob | null) {
     const body: Record<string, any> = {
       title:                 form.title.trim(),
       activity_type_id:      form.activity_type_id ? Number(form.activity_type_id) : null,
@@ -298,9 +330,38 @@ export default function CalendarPage() {
       // editingId is the raw numeric id from extendedProps (not prefixed)
       await apiFetch(`/calendar-events/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
     } else {
-      await apiFetch('/calendar-events', { method: 'POST', body: JSON.stringify(body) });
+      const created = await apiFetch<any>('/calendar-events', { method: 'POST', body: JSON.stringify(body) });
+      if (image && created?.id) {
+        // #1765: the key needs the new id, so the staged original goes up right
+        // after the create. A failure keeps the panel open on the new event, in
+        // edit mode, so the control there is the retry -- the event exists.
+        try {
+          await uploadFetch(`/calendar-events/${created.id}/image`, image);
+        } catch (err: any) {
+          setEditingId(created.id);
+          setEditingImage({ image_url: null, effective_image_url: null, modified_at: created.modified_at ?? null });
+          setEditingMeta({
+            created_by: created.created_by ?? null, created_at: created.created_at ?? null,
+            modified_by: created.modified_by ?? null, modified_at: created.modified_at ?? null,
+            deleted_by: null, deleted_at: null,
+          });
+          refetch();
+          throw err;
+        }
+      }
     }
     closePanel();
+    refetch();
+  }
+
+  async function handleImageChanged() {
+    if (!editingId) return;
+    const row = await apiFetch<any>(`/calendar-events/${editingId}`);
+    setEditingImage({
+      image_url: row.image_url ?? null,
+      effective_image_url: row.effective_image_url ?? null,
+      modified_at: row.modified_at ?? null,
+    });
     refetch();
   }
 
@@ -426,6 +487,7 @@ export default function CalendarPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', gap: 12 }}>
+      <div style={{ flexShrink: 0 }}><CalendarSectionTabs active="calendar" /></div>
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
@@ -617,13 +679,14 @@ export default function CalendarPage() {
             <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden' }}>
               <EventDetailsPanel
                 open={panelOpen}
-                editing={editingId && editingMeta ? { id: editingId, meta: editingMeta } : null}
+                editing={editingId && editingMeta ? { id: editingId, meta: editingMeta, image: editingImage } : null}
                 initialForm={initialForm}
                 activityTypes={activityTypes}
                 spaces={spaces}
                 centers={centers}
                 trainers={trainers}
                 onSave={handleSave}
+                onImageChanged={handleImageChanged}
                 onDelete={handleDelete}
                 onClose={closePanel}
                 canWrite={canWrite}

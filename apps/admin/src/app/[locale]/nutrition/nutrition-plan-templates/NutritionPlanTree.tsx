@@ -134,6 +134,9 @@ export interface HierGoal {
   nutrition_library_item_id?: number | null;
   illustration_name?: string | null;
   illustration_image_url?: string | null;
+  /** #1717: the Nutrition Goal's own image, resolved by the API from the catalogue. */
+  goal_image_url?: string | null;
+  goal_image_thumbnail_url?: string | null;
 }
 export interface Hierarchy {
   id: number; name: string; status: string;
@@ -1261,7 +1264,8 @@ function GoalsSection({
       )}
       {goals.map((g) => (
         <div key={g.id} style={tagRowStyle}>
-          <span style={{ fontSize: 13.5, fontWeight: 500 }}>
+          <FoodThumbnail imageUrl={g.goal_image_thumbnail_url ?? g.goal_image_url ?? g.illustration_image_url ?? null} size={TREE_AVATAR_SIZE} />
+          <span style={{ fontSize: 13.5, fontWeight: 500, marginLeft: 8 }}>
             {t(`nutrition_plan_templates.tree_goal_name_${g.item_name}`, { defaultValue: g.item_name })}
           </span>
           <span style={{ fontSize: 12.5, color: '#6b7280', marginLeft: 8 }}>{g.quantity} {g.unit} · {g.frequency}</span>

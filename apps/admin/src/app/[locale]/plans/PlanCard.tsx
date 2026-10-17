@@ -4,6 +4,7 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
 import { cardSurfaceStyle } from '@/components/ui';
+import { CardSquareImage } from '@/components/CardGrid';
 import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
 
 const MAX_BENEFITS = 4;
@@ -23,6 +24,10 @@ export interface PlanCardData {
   taxNote: string | null;
   periodText: string | null;
   benefits: { key: string; label: string }[];
+  /** The plan's own image (#1514); null renders no image area at all (#1712). */
+  imageUrl?: string | null;
+  /** Cache-buster for the image, the row's `modified_at`. */
+  imageVersion?: string | null;
 }
 
 /** One Membership Plan in the card grid (#1369). Presentation only. */
@@ -35,7 +40,12 @@ export function PlanCard({ plan, menuItems, active }: {
   const shown = plan.benefits.slice(0, MAX_BENEFITS);
   const extra = plan.benefits.length - shown.length;
   return (
-    <div style={{ ...cardSurfaceStyle, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, outline: active ? '2px solid var(--brand, #6c63ff)' : undefined }}>
+    <div style={{ ...cardSurfaceStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, outline: active ? '2px solid var(--brand, #6c63ff)' : undefined }}>
+      {/* Same square image the Exercise cards use; absent → no empty container. */}
+      {plan.imageUrl && (
+        <CardSquareImage src={plan.imageUrl} alt={plan.name} version={plan.imageVersion} placeholder={null} />
+      )}
+      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ fontWeight: 700, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} title={plan.name}>{plan.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -57,6 +67,7 @@ export function PlanCard({ plan, menuItems, active }: {
       </ul>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTop: '1px solid var(--gd-card-border, #eee)', paddingTop: 10 }}>
         <span style={{ fontSize: 13, color: '#888' }}>{t('members_count', { n: plan.member_count ?? 0 })}</span>
+      </div>
       </div>
     </div>
   );

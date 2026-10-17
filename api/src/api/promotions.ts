@@ -1,8 +1,15 @@
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
+import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import {
+  clearPromotionImage, migratePromotionImageOnRename, PROMOTION_IMAGE_COLUMNS, storePromotionImage,
+} from './promotion-image-storage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
@@ -90,6 +97,7 @@ promotionsRouter.get('/', async (req, res, next) => {
               p.lifecycle_status, p.created_at, p.deleted_at,
               p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.created_by, p.modified_at, p.modified_by,
+              p.image_url, p.image_thumbnail_url,
               IF(mfb.enabled = 1, mfb.action, NULL) AS fee_benefit_action,
               IF(mfb.enabled = 1, mfb.value, NULL) AS fee_benefit_value,
               IF(mfb.enabled = 1, mfb.duration_months, NULL) AS fee_benefit_duration_months
@@ -316,10 +324,83 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Promotion not found' });
-    const { rows } = await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    let { rows } = await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    // #1711: the image key carries the promotion's name, so a rename moves it.
+    if (rows[0]?.image_url) {
+      const migrated = await migratePromotionImageOnRename(gymId, await gymStorageFolderPrefix(gymId), {
+        id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url,
+        image_thumbnail_url: rows[0].image_thumbnail_url,
+      });
+      if (migrated) {
+        rows = (await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId])).rows;
+      }
+    }
     recordAudit(req, { action: 'update', entityType: 'promotion', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(rows[0]);
   } catch (e) { next(e); }
+});
+
+// ─── Image (#1711) ─────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `promotions.image_url` /
+// `image_thumbnail_url`. They touch nothing else of the promotion (eligibility,
+// benefits, pricing, status). Processing and limits are the Member photo's.
+
+async function loadPromotionForImage(req: Request, res: any, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${PROMOTION_IMAGE_COLUMNS} FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: 'Promotion not found' }); return null; }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return {
+    gymId, folderPrefix,
+    promotion: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url },
+  };
+}
+
+async function readPromotionForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [id, gymId]);
+  return rows[0];
+}
+
+promotionsRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadPromotionForImage(req, res, true);
+    if (!context) return;
+    const { gymId, promotion } = context;
+    const stored = await storePromotionImage({
+      gymId, folderPrefix: context.folderPrefix as string, promotion, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'promotion', entityId: promotion.id, entityName: promotion.name,
+      previous: { image_url: promotion.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readPromotionForImageAnswer(gymId, promotion.id));
+  } catch (err) { next(err); }
+});
+
+promotionsRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadPromotionForImage(req, res, false);
+    if (!context) return;
+    const { gymId, folderPrefix, promotion } = context;
+    await clearPromotionImage({ gymId, folderPrefix, promotion, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'promotion', entityId: promotion.id, entityName: promotion.name,
+      previous: { image_url: promotion.image_url }, next: { image_url: null },
+    });
+    res.json(await readPromotionForImageAnswer(gymId, promotion.id));
+  } catch (err) { next(err); }
 });
 
 promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {

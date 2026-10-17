@@ -47,6 +47,7 @@ import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal'
 import { EXERCISE_CATEGORIES } from '@/lib/exerciseCategories';
 import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
 import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
+import { ExercisePrimaryMuscles } from '@/components/exercises/ExercisePrimaryMuscles';
 import { ExerciseListThumbnails } from '@/components/exercises/ExerciseListThumbnails';
 import { ExerciseCard, ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
@@ -68,6 +69,7 @@ interface Exercise {
   video_male_url: string | null; video_female_url: string | null;
   image_male_thumbnail_url: string | null; image_female_thumbnail_url: string | null;
   effective_image_url?: string | null; effective_image_thumbnail_url?: string | null;
+  effective_image_male_thumbnail_url?: string | null; effective_image_female_thumbnail_url?: string | null;
   video_male_preview_url: string | null; video_male_preview_thumbnail_url: string | null;
   video_female_preview_url: string | null; video_female_preview_thumbnail_url: string | null;
   min_reps_default: number | null; max_reps_default: number | null;
@@ -598,7 +600,6 @@ export default function ExercisesPage() {
         exercise={ex}
         muscleLabel={muscleLabel}
         menuItems={exerciseMenuItems(ex)}
-        onViewDetails={() => setDetailFor(ex)}
         attributes={renderViewSection(ex)}
       />
     );
@@ -619,7 +620,6 @@ export default function ExercisesPage() {
     // one the gym wrote is "Custom". The ownership model is untouched: this
     // reads `gym_id` and `cloned_from_id`, it does not change them.
     const isSystemSourced = isBase || ex.cloned_from_id != null;
-    const principalMuscles = (ex.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ') || '—';
 
     const menuItems = exerciseMenuItems(ex);
 
@@ -635,8 +635,8 @@ export default function ExercisesPage() {
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {truncate(ex.description)}
           </div>
-          <div className={CELL_CLASS.primary_muscles} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {principalMuscles}
+          <div className={CELL_CLASS.primary_muscles} style={{ fontSize: 13, color: '#555', minWidth: 0 }}>
+            <ExercisePrimaryMuscles muscles={ex.muscles} muscleLabel={muscleLabel} />
           </div>
           <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
             {ex.created_at?.slice(0, 10) ?? '—'}

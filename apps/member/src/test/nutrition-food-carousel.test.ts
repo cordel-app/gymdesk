@@ -65,7 +65,7 @@ describe('NutritionFoodCard (#722 §2, §9, §10)', () => {
 
   it('keeps the image square and undistorted', () => {
     expect(src).toContain("aspectRatio: '1 / 1'");
-    expect(src).toContain("objectFit: 'contain'");
+    expect(src).toContain("objectFit: 'cover'");
   });
 
   it('lazy-loads every card but the first one of the carousel', () => {
@@ -105,7 +105,7 @@ describe('NutritionFoodCarousel (#722 §1, §7, §13, §14)', () => {
   });
 
   it('shows one card at a time with the next one peeking, on any screen width', () => {
-    expect(src).toContain("flex: '0 0 min(320px, 82%)'");
+    expect(src).toContain("flex: '0 0 min(300px, 82%)'");
   });
 
   it('implements no gesture system of its own, so page scrolling keeps working', () => {
@@ -150,7 +150,7 @@ describe('NutritionFoodCarousel (#722 §1, §7, §13, §14)', () => {
   });
 
   it('shows the controls only when the cards really overflow the track', () => {
-    // Two 320px cards fit side by side on a wide screen: with nothing to
+    // Two 300px cards fit side by side on a wide screen: with nothing to
     // scroll to, the arrows, dots and "1 of 2" would page through nothing.
     expect(src).toContain('track.scrollWidth - track.clientWidth > 1');
     expect(src).toContain('new ResizeObserver(measure)');

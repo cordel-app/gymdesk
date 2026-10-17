@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
-import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -70,15 +70,16 @@ export function NutritionFoodCard({ item, eager = false }: {
   );
 }
 
+/** #1741 — the same frame, image and text metrics as `NutritionItemRow` (Dietary Restrictions, Nutrition Goals). */
 const styles: Record<string, React.CSSProperties> = {
-  card:        { ...sectionCardStyle, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
-  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground },
-  image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
+  card:        { padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface, height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', minWidth: 0 },
+  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, overflow: 'hidden' },
+  image:       { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },
-  body:        { padding: '12px 14px 14px' },
-  name:        { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },
-  quantity:    { margin: '4px 0 0', fontSize: 13, color: memberTheme.textSecondary },
+  body:        { padding: '8px 12px 12px', minWidth: 0 },
+  name:        { margin: 0, fontSize: 15, fontWeight: 600, color: memberTheme.text },
+  quantity:    { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
   role:        { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
-  chips:       { display: 'flex', flexWrap: 'wrap', gap: 6, listStyle: 'none', margin: '10px 0 0', padding: 0 },
+  chips:       { display: 'flex', flexWrap: 'wrap', gap: 6, listStyle: 'none', margin: '8px 0 0', padding: 0 },
   chip:        { background: memberTheme.pageBackground, color: memberTheme.textSecondary, borderRadius: 999, padding: '3px 9px', fontSize: 11, fontWeight: 600 },
 };

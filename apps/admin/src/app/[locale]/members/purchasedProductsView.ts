@@ -116,6 +116,8 @@ export interface PurchasableProductOption {
   tax_rate_percent?: number | null;
   recurring: boolean;
   promotions: PurchasableProductPromotion[];
+  /** #1655 — hidden only by the new-members-only rule; explanatory, never applicable. */
+  unavailable_promotions?: { promotion_id: number; promotion_name: string; reason: 'new_members_only' }[];
 }
 
 export interface PurchasableProductPromotion {

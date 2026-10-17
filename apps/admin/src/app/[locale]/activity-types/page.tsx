@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
@@ -389,7 +390,7 @@ export default function ActivityTypesPage() {
   // ─── Edit ─────────────────────────────────────────────────────────────────
 
   async function openEdit(row: ActivityType) {
-    // Editing happens in the List view only; Cards are read-only (#1573).
+    // Editing happens in the List view only; Edit from a card switches to it (#1744).
     setView('list');
     setEditingId(row.id);
     resetScheduleEditing();
@@ -1038,7 +1039,7 @@ export default function ActivityTypesPage() {
 
     return (
       <div key={row.id} id={`activity-card-${row.id}`} style={isEditing && view === 'cards' ? { ...cardStyle, gridColumn: '1 / -1' } : cardStyle}>
-        {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems.filter((m) => m.label !== t('edit'))) : (
+        {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems) : (
         /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1357,6 +1358,7 @@ export default function ActivityTypesPage() {
 
   return (
     <div>
+      <CalendarSectionTabs active="activities" />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <div>

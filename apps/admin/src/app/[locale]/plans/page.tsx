@@ -409,6 +409,14 @@ export default function PlansPage() {
   // absent means collapsed, which is why the default needs no seeding, and
   // `toggleExpand` drops the id again so re-expanding a plan starts collapsed.
   const [priceHistoryOpen, setPriceHistoryOpen] = useState<Set<number>>(new Set());
+  // #1724: the Membership Fee Simulation starts collapsed on every plan.
+  const [feeSimOpen, setFeeSimOpen] = useState<Set<number>>(new Set());
+  const toggleFeeSim = (id: number) =>
+    setFeeSimOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
@@ -1060,6 +1068,8 @@ export default function PlansPage() {
                     periodText: plan.billing_policy
                       ? billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)
                       : null,
+                    imageUrl: plan.image_url ?? null,
+                    imageVersion: plan.modified_at ?? null,
                     benefits: rows.map((r) => ({
                       key: `${r.product_id}`,
                       label: r.quantity > 1 ? `${r.quantity} × ${r.product_name}` : r.product_name,
@@ -1601,7 +1611,11 @@ export default function PlansPage() {
                         and never persisted, and a Membership Plan is not
                         assigned to anybody, so the dates are an illustration
                         from a hypothetical enrollment today. */}
-                    <SectionHeader title={t('plans.section_fee_simulation')} />
+                    <CollapsibleCard
+                      title={t('plans.section_fee_simulation')}
+                      open={feeSimOpen.has(plan.id)}
+                      onToggle={() => toggleFeeSim(plan.id)}
+                    >
                     {plan.example_timeline?.available ? (
                       <>
                         {plan.example_timeline.anchorDate && (
@@ -1675,6 +1689,7 @@ export default function PlansPage() {
                       // viewer's language rather than relayed in English.
                       <p style={hintSt}>{t('plans.timeline_unavailable')}</p>
                     )}
+                    </CollapsibleCard>
 
                     {/* BILLING EVENT SIMULATION (#915) — the billing events a
                         member enrolling today would actually be charged, grouped
