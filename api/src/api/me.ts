@@ -1,4 +1,5 @@
 import { resolveRequestActor } from '../domain/auditActor';
+import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
@@ -2052,7 +2053,18 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       [gymId, memberId],
     );
     const active_products_count = Number(activeProductRows[0]?.n ?? 0);
-    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership, active_products_count });
+    // #1781: the card's session total — the staff Professional Services wallet's
+    // own balances (`resolveMemberProfessionalServices`) over the services the
+    // gym has switched on, so the two screens cannot disagree.
+    const { rows: activeServiceRows } = await db.query(
+      `SELECT professional_service_id FROM gym_professional_services WHERE gym_id = ? AND status = 'active'`,
+      [gymId],
+    );
+    const activeServiceIds = new Set(activeServiceRows.map((r: any) => Number(r.professional_service_id)));
+    const professional_service_sessions = (await resolveMemberProfessionalServices(gymId, memberId))
+      .filter((b) => activeServiceIds.has(b.professional_service_id))
+      .reduce((sum, b) => sum + b.sessions, 0);
+    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.
@@ -2130,6 +2142,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       past_memberships,
       pending_membership,
       active_products_count,
+      professional_service_sessions,
     });
   } catch (err) {
     next(err);
