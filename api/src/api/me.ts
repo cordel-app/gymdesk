@@ -61,6 +61,7 @@ import {
   PromotionRefused,
   PricingRefused,
 } from './me-products';
+import { memberServiceBalances } from './me-professional-services';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue';
@@ -2767,6 +2768,24 @@ meRouter.get(
       const filter = parseProfessionalServiceFilter(req.query.professional_service_ids);
       if (!filter.ok) return res.status(400).json({ error: filter.error });
       res.json({ items: await memberProductCatalogue(gymId, memberId, filter.ids) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// #1779 — the member's Professional Services balance, behind the section it
+// appears in (`member_web.my_membership`). The member is never named by the request.
+meRouter.get(
+  '/professional-services',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      res.json({ items: await memberServiceBalances(gymId, memberId) });
     } catch (err) {
       next(err);
     }

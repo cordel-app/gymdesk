@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1779 (Members App: a Professional Services tab on the My Products page lists, per service the gym has switched on, the member's total, used and remaining sessions from `GET /me/professional-services` — remaining is the booking gate's own derived balance, used is the unreturned consumption ledger, nothing is computed in the browser; the gate is `api/src/test/me-professional-services.test.ts`)
 - **Done**: #1782 (a day of a Nutrition Plan Template, a Base template or an Assigned Nutrition Plan can change weekday: `PUT …/days/:dayId` on the three routers, 409 for a weekday already used, meals untouched; `⋮ → Change Day` in the shared `NutritionPlanTree`. Tests were written but not run in the routine's environment — no dependencies or MySQL available.)
 
 - **Done**: #1788 (Nutrition Plans: the "OR" separators between food items of the same food type are removed from Plan Templates and Assigned Plans, which share `NutritionPlanTree`; items, order, quantities and data are unchanged, and the `tree_food_type_or` locale key is gone. Gate: `apps/admin/src/test/nutrition-no-or-separator.test.ts`. tsc/tests not run: no node_modules in this environment)
