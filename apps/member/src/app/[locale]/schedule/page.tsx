@@ -8,7 +8,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import {
-  destructiveButtonStyle,
+  secondaryButtonStyle,
   memberTheme,
   noticeStyle,
   primaryButtonStyle,
@@ -319,7 +319,7 @@ const styles: Record<string, React.CSSProperties> = {
   pillFull: statusPillStyle('error'),
   pillLocked: statusPillStyle('info'),
   btnBook: { ...primaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
-  btnCancel: { ...destructiveButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
+  btnCancel: { ...secondaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
   btnWait: { ...primaryButtonStyle, flex: 1, padding: '10px 0', background: memberTheme.statusWarning, fontSize: 15, fontWeight: 600 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
   errorHint: { color: memberTheme.statusError, fontSize: 14, textAlign: 'center', margin: '20px 0' },

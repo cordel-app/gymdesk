@@ -631,7 +631,7 @@ export default function MemberCalendarPage() {
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(secondaryButtonStyle)}>
                   {t('action_cancel_booking')}
                 </button>
               )}
