@@ -239,15 +239,6 @@ export function MemberPurchasedProducts({
 
   return (
     <div>
-      {adding && (
-        <AddProductPurchase
-          memberId={memberId}
-          isAdmin={isAdmin}
-          canPay={canPay}
-          onClose={() => setAdding(false)}
-          onChanged={onChanged}
-        />
-      )}
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
@@ -270,6 +261,25 @@ export function MemberPurchasedProducts({
           emptyText={t('purchased_products_none')}
           expandedRowKeys={expandedIds}
           onToggleExpand={toggleExpand}
+          draftRow={adding ? {
+            cells: columns.map((col, i) => {
+              if (i === 0) return <div style={{ fontWeight: 500 }}>{t('add_product_new_row')}</div>;
+              if (col.header === t('purchase_col_status')) {
+                return <StatusBadge status="draft" label={t('add_product_draft_badge')} />;
+              }
+              return null;
+            }),
+            form: (
+              <AddProductPurchase
+                embedded
+                memberId={memberId}
+                isAdmin={isAdmin}
+                canPay={canPay}
+                onClose={() => setAdding(false)}
+                onChanged={onChanged}
+              />
+            ),
+          } : undefined}
           renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
       />
       {/* #1640: the action sits below the list, at the bottom of the section. */}

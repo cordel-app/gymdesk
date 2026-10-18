@@ -40,14 +40,18 @@ interface DataTableProps<T> {
   renderExpanded?: (row: T) => React.ReactNode;
   expandedRowKeys?: Set<React.Key>;
   onToggleExpand?: (row: T) => void;
+  // #1807: an unsaved row shown first in the body, before the real rows. `cells`
+  // fills its columns (same order as `columns`); `form` is its always-open
+  // expanded editor. It is outside `rows`, so a row filter never hides it.
+  draftRow?: { cells: React.ReactNode[]; form: React.ReactNode };
 }
 
 export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
-  renderExpanded, expandedRowKeys, onToggleExpand,
+  renderExpanded, expandedRowKeys, onToggleExpand, draftRow,
 }: DataTableProps<T>) {
   if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
-  if (rows.length === 0) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
+  if (rows.length === 0 && !draftRow) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
 
   const expandable = !!renderExpanded;
   const totalCols = columns.length + (expandable ? 1 : 0);
@@ -74,6 +78,23 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
+          {draftRow && (
+            <React.Fragment>
+              <tr style={listRowDividerStyle} data-draft-row>
+                {expandable && <td style={td} />}
+                {columns.map((col, i) => (
+                  <td key={i} className={listCellClass(col.mobile)} style={td}>
+                    {col.mobile === 'name'
+                      ? <div className={LIST_NAME_VALUE_CLASS}>{draftRow.cells[i]}</div>
+                      : draftRow.cells[i]}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td colSpan={totalCols} style={expandedCell}>{draftRow.form}</td>
+              </tr>
+            </React.Fragment>
+          )}
           {rows.map((row) => {
             const key = rowKey(row);
             const isExpanded = expandable && !!expandedRowKeys?.has(key);

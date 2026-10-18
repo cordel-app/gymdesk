@@ -575,6 +575,7 @@
     "recurring_cancel": "Cancel·la l'esborrany",
     "recurring_cancel_confirm": "Vols descartar l'esborrany? La configuració actual es manté.",
     "add_product_draft_badge": "Esborrany",
+    "add_product_new_row": "Nou producte",
     "add_product_save_draft": "Desa",
     "recurring_add_to_draft": "Afegeix a l'esborrany",
     "recurring_error_in_flight": "Ja hi ha un pagament pendent per a aquest membre.",

@@ -574,6 +574,7 @@
     "recurring_cancel": "Cancelar borrador",
     "recurring_cancel_confirm": "¿Descartar el borrador? La configuración actual se mantiene.",
     "add_product_draft_badge": "Borrador",
+    "add_product_new_row": "Nuevo producto",
     "add_product_save_draft": "Guardar",
     "recurring_add_to_draft": "Añadir al borrador",
     "recurring_error_in_flight": "Ya hay un pago pendiente para este miembro.",
