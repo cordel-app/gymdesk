@@ -31,6 +31,10 @@ import {
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
 import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
+import {
+  MemberProfessionalServices,
+  type MemberServiceBalanceItem,
+} from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import {
@@ -254,6 +258,9 @@ export default function MembershipPage() {
   // #1184 stage 3b: optional Plan benefits the member unticked, per plan.
   const [declinedPlanBenefits, setDeclinedPlanBenefits] = useState<Record<number, string[]>>({});
   const [reloadKey, setReloadKey] = useState(0);
+  // #1779 — the Professional Services tab. `null` = the read failed.
+  const [serviceBalances, setServiceBalances] = useState<MemberServiceBalanceItem[] | null>([]);
+  const [tab, setTab] = useState<'products' | 'services'>('products');
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -271,7 +278,7 @@ export default function MembershipPage() {
     setServiceFilter(filter);
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes] = await Promise.all([
           apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
@@ -283,6 +290,7 @@ export default function MembershipPage() {
           // to offer must not show a control that opens onto "no plans". A failed
           // read leaves `null`, which keeps the control (and the read on open).
           apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans').catch(() => null),
+          apiFetch<{ items: MemberServiceBalanceItem[] }>('/me/professional-services').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -295,6 +303,7 @@ export default function MembershipPage() {
         setForecast(projection);
         setProducts(catalogue?.items ?? null);
         setPlanCatalogue(plansRes?.plans ?? null);
+        setServiceBalances(serviceRes?.items ?? null);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -454,6 +463,40 @@ export default function MembershipPage() {
         items={productCardItems(products)}
       />
       </>
+    );
+  }
+
+  // #1779 — two tabs over the page; the first is everything the page showed before.
+  function renderTabs() {
+    const tabStyle = (active: boolean) => ({
+      ...(active ? primaryButtonStyle : secondaryButtonStyle),
+      padding: '8px 14px',
+      fontSize: 14,
+    });
+    return (
+      <div role="tablist" style={{ display: 'flex', gap: 8, margin: '0 0 12px', overflowX: 'auto' }}>
+        <button type="button" role="tab" aria-selected={tab === 'products'} style={tabStyle(tab === 'products')} onClick={() => setTab('products')}>
+          {t('membership.tab_products')}
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'services'} style={tabStyle(tab === 'services')} onClick={() => setTab('services')}>
+          {t('membership.tab_services')}
+        </button>
+      </div>
+    );
+  }
+
+  function renderServicesTab() {
+    return (
+      <MemberProfessionalServices
+        items={serviceBalances}
+        labels={{
+          empty: t('membership.services_empty'),
+          error: t('membership.services_error'),
+          total: t('membership.services_total'),
+          used: t('membership.services_used'),
+          remaining: t('membership.services_remaining'),
+        }}
+      />
     );
   }
 
@@ -1043,6 +1086,8 @@ export default function MembershipPage() {
     // rather than the plan's — so the products still belong on this screen.
     return (
       <main style={styles.container}>
+        {renderTabs()}
+        {tab === 'services' ? renderServicesTab() : (<>
         {renderPlansHeader()}
         {renderPlanCatalogue()}
         {!pendingMembership && !catalogueOpen && (
@@ -1053,6 +1098,7 @@ export default function MembershipPage() {
           </div>
         )}
         {renderProducts()}
+        </>)}
         {renderDialogs()}
       </main>
     );
@@ -1060,6 +1106,8 @@ export default function MembershipPage() {
 
   return (
     <main style={styles.container}>
+      {renderTabs()}
+      {tab === 'services' ? renderServicesTab() : (<>
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -1254,6 +1302,7 @@ export default function MembershipPage() {
       {/* #1775 — Past Membership Plans close the page: secondary history,
           collapsed and muted, below everything the member acts on. */}
       {renderPastPlans()}
+      </>)}
 
       {renderDialogs()}
     </main>
