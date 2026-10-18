@@ -22,12 +22,14 @@ import { memberTheme } from '@/lib/memberChrome';
  * the follow-up work tracked on the issue. When that link lands, this row fills
  * itself with no change here.
  */
-export function NutritionItemRow({ name, imageUrl = null, detail = null, actions = null }: {
+export function NutritionItemRow({ name, imageUrl = null, detail = null, actions = null, crossed = false }: {
   name: string;
   imageUrl?: string | null;
   detail?: string | null;
   /** Rendered under the card's text (mark-done buttons). */
   actions?: React.ReactNode;
+  /** #1787 — draws a theme-coloured cross over the image (dietary restrictions). */
+  crossed?: boolean;
 }) {
   const t = useTranslations();
   const [imageBroken, setImageBroken] = useState(false);
@@ -48,6 +50,12 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
           />
         ) : (
           <span style={styles.placeholder}>{t('nutrition.no_image')}</span>
+        )}
+        {crossed && (
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false" style={styles.cross} data-testid="restriction-cross">
+            <path d="M12 12 L88 88 M88 12 L12 88" stroke={memberTheme.surface} strokeWidth={11} strokeLinecap="round" fill="none" vectorEffect="non-scaling-stroke" />
+            <path d="M12 12 L88 88 M88 12 L12 88" stroke={memberTheme.statusError} strokeWidth={7} strokeLinecap="round" fill="none" vectorEffect="non-scaling-stroke" />
+          </svg>
         )}
       </div>
       <div style={styles.body}>
@@ -75,7 +83,8 @@ export const nutritionItemGridStyle: React.CSSProperties = {
 /** #1700 — the My Training exercise card's frame, image, text and action metrics. */
 const styles: Record<string, React.CSSProperties> = {
   card:        { padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', minWidth: 0 },
-  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, overflow: 'hidden' },
+  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, overflow: 'hidden', position: 'relative' },
+  cross:       { position: 'absolute', inset: '12%', width: '76%', height: '76%', pointerEvents: 'none' },
   image:       { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },
   body:        { padding: '8px 12px 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },

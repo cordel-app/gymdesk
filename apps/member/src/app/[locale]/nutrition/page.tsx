@@ -284,7 +284,7 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
               ) : (
                 <div style={nutritionItemGridStyle}>{restrictions.map((r) => (
-                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url}
+                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} crossed
                     actions={requirementActions('restriction', r.id)} />
                 ))}</div>
               )}
