@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1784 (food items of a meal can be reordered by dragging in the shared `NutritionPlanTree` — Nutrition Plan Templates, Base templates and Assigned Nutrition Plans; `PUT …/meals/:mealId/items/reorder` on `nutrition-plan-templates`, `platform-nutrition-plan-templates` and `member-nutrition-plans` takes `{ order }` listing every item of the meal once. Tests were written but not run in the routine's environment — no dependencies or MySQL available.)
+
 - **Done**: #1283 (follow-up: the Cancel booking actions on My Bookings and in the Calendar booking sheet wear `secondaryButtonStyle` instead of the destructive red, so they follow the Theme's Secondary Button colours; the confirmation dialog's destructive confirm is unchanged)
 
 - **Done**: #1779 (Members App: a Professional Services tab on the My Products page lists, per service the gym has switched on, the member's total, used and remaining sessions from `GET /me/professional-services` — remaining is the booking gate's own derived balance, used is the unreturned consumption ledger, nothing is computed in the browser; the gate is `api/src/test/me-professional-services.test.ts`)

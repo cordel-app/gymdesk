@@ -757,6 +757,23 @@ function ItemsReadView({
 
 /* ---- MealItemsEditor ---- */
 
+const ItemDragContext = React.createContext<Record<string, any> | null>(null);
+
+/** Sortable wrapper for one food row; the handle inside it is `ItemDragHandle`. */
+function SortableItem({ id, enabled, children }: { id: number; enabled: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !enabled });
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1 }}>
+      <ItemDragContext.Provider value={{ ...attributes, ...listeners }}>{children}</ItemDragContext.Provider>
+    </div>
+  );
+}
+
+function ItemDragHandle() {
+  const handleProps = React.useContext(ItemDragContext);
+  return <span {...(handleProps ?? {})} style={{ cursor: 'grab', color: '#bbb', fontSize: 14, flexShrink: 0 }}>⠿</span>;
+}
+
 interface ItemEditState {
   id: number;
   foodType: string;
@@ -783,6 +800,32 @@ function MealItemsEditor({
   const { toast } = useToast();
 
   const foods = Array.isArray(libraryItems) ? libraryItems : [];
+
+  // #1784: items are reordered by dragging; the list is held locally so the row
+  // lands where it was dropped before the server answers.
+  const [ordered, setOrdered] = useState<MealItem[]>(items);
+  useEffect(() => { setOrdered(items); }, [items]);
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  async function onItemDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = ordered.findIndex((i) => i.id === active.id);
+    const newIndex = ordered.findIndex((i) => i.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(ordered, oldIndex, newIndex);
+    setOrdered(reordered);
+    try {
+      await apiFetch(`${base}/reorder`, { method: 'PUT', body: JSON.stringify({ order: reordered.map((i) => i.id) }) });
+      await onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+      await onChanged();
+    }
+  }
 
   /**
    * The Food Type options, in the order the API declares them (product order,
@@ -921,12 +964,14 @@ function MealItemsEditor({
       )}
 
       {/* Items list */}
-      {items.map((item, idx) => {
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onItemDragEnd}>
+      <SortableContext items={ordered.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+      {ordered.map((item, idx) => {
         const isEditing = editState?.id === item.id;
         const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
 
         return (
-          <React.Fragment key={item.id}>
+          <SortableItem key={item.id} id={item.id} enabled={canWrite && !isEditing}>
 
             {isEditing ? (
               /* Inline edit row */
@@ -994,6 +1039,7 @@ function MealItemsEditor({
             ) : (
               /* Read row */
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+                {canWrite && <ItemDragHandle />}
                 <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
                 {libItem && (libItem.quality_slugs ?? []).map((slug) => (
@@ -1019,9 +1065,11 @@ function MealItemsEditor({
                 )}
               </div>
             )}
-          </React.Fragment>
+          </SortableItem>
         );
       })}
+      </SortableContext>
+      </DndContext>
 
       {/* Add form */}
       {canWrite && (

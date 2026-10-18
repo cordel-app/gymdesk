@@ -647,6 +647,37 @@ memberNutritionPlansRouter.post('/:id/days/:dayId/meals/:mealId/items', requireM
   } catch (err) { next(err); }
 });
 
+memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/reorder', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const order = req.body.order;
+  if (!Array.isArray(order) || order.length === 0 || !order.every((v: unknown) => Number.isInteger(v))) {
+    return res.status(400).json({ error: 'order must be a non-empty array of item ids' });
+  }
+  try {
+    const plan = await loadActivePlan(res, id, gymId);
+    if (!plan) return;
+    if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
+    const { rows: current } = await db.query('SELECT id FROM member_nutrition_plan_meal_items WHERE meal_id = ? AND gym_id = ?', [mealId, gymId]);
+    const currentIds = current.map((r: any) => Number(r.id)).sort((a: number, b: number) => a - b);
+    const requested = [...order].sort((a: number, b: number) => a - b);
+    if (currentIds.length !== requested.length || currentIds.some((v: number, i: number) => v !== requested[i])) {
+      return res.status(400).json({ error: 'order must list every item of the meal exactly once' });
+    }
+    await db.transaction(async (tx) => reorder(tx, 'member_nutrition_plan_meal_items', 'meal_id', mealId, order));
+    const { rows } = await db.query(
+      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+              i.component_type, i.quantity, i.unit, i.position
+       FROM member_nutrition_plan_meal_items i
+       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       WHERE i.meal_id = ?
+       ORDER BY i.position ASC`,
+      [mealId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId, mealId, itemId } = req.params as { id: string; dayId: string; mealId: string; itemId: string };

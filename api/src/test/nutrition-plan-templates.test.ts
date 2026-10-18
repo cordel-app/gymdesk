@@ -545,6 +545,40 @@ describe('meal items', () => {
     expect(res.status).toBe(400);
   });
 
+  it('reorders the items of a meal and rejects an incomplete order (#1784)', async () => {
+    const mealRes = await request
+      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ meal_type: 'dinner' });
+    const base = `/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealRes.body.id}/items`;
+    const ids: number[] = [];
+    for (const component_type of ['main_dish', 'side', 'sauce']) {
+      const r = await request.post(base).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+        .send({ nutrition_library_item_id: libraryItemId, component_type });
+      expect(r.status).toBe(201);
+      ids.push(r.body.id);
+    }
+
+    const res = await request.put(`${base}/reorder`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ order: [ids[2], ids[0], ids[1]] });
+    expect(res.status).toBe(200);
+    expect(res.body.map((i: any) => i.id)).toEqual([ids[2], ids[0], ids[1]]);
+
+    const list = await request.get(base).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(list.body.map((i: any) => i.id)).toEqual([ids[2], ids[0], ids[1]]);
+
+    const partial = await request.put(`${base}/reorder`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ order: [ids[0], ids[1]] });
+    expect(partial.status).toBe(400);
+
+    const gymB = await createTestGym('Items Reorder Gym B');
+    await createTestMembership(gymB, 'admin');
+    const otherGym = await request.put(`${base}/reorder`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymB)
+      .send({ order: [ids[0], ids[1], ids[2]] });
+    expect(otherGym.status).toBe(404);
+  });
+
   it('returns 404 for item from a different meal', async () => {
     const otherMealRes = await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
