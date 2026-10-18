@@ -7,7 +7,7 @@
 // — the existing derived balance, never a second one) and a per-row ⋮ menu:
 // `Edit` opens an inline form where staff enter the desired final balance
 // (the API stores the signed delta with the balance before and after) and
-// `History` lists adjustments and spent / returned sessions.
+// expanding the card lists the history: adjustments and spent / returned sessions.
 //
 // Everything is decided by the API; this file formats. A read-only role sees
 // the balances and the history, with `Edit` disabled and explained.
@@ -17,7 +17,6 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
-import { ContextMenu } from '@/components/ContextMenu';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   cardMutedTextStyle,
@@ -135,26 +134,35 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
         return (
           <div key={id} style={innerCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 500, fontSize: 14 }}>{row.name}</div>
-                <div style={cardMutedTextStyle}>
-                  {t('prof_services_available')}: <strong>{row.available_items}</strong>
-                </div>
-              </div>
+              {/* #1780: the header is the expand/collapse control; the history
+                  is read from the card itself, no menu item needed. */}
+              <button
+                type="button"
+                aria-expanded={historyId === id}
+                aria-label={`${row.name} – ${t('prof_services_history')}`}
+                onClick={() => void openHistory(id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1,
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  textAlign: 'left', color: 'inherit', font: 'inherit',
+                }}
+              >
+                <span aria-hidden="true" style={{ width: 12 }}>{historyId === id ? '▾' : '▸'}</span>
+                <span style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>{row.name}</div>
+                  <div style={cardMutedTextStyle}>
+                    {t('prof_services_available')}: <strong>{row.available_items}</strong>
+                  </div>
+                </span>
+              </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {/* #1428: Edit is the card's own button (the existing editor,
-                    unchanged); the menu keeps History. */}
+                    unchanged). */}
                 {canWrite && editingId !== id && (
                   <button type="button" style={primaryBtnSmall()} onClick={() => startEdit(row)}>
                     {t('prof_services_edit')}
                   </button>
                 )}
-                <ContextMenu
-                  ariaLabel={row.name}
-                  items={[
-                    { label: t('prof_services_history'), onClick: () => void openHistory(id) },
-                  ]}
-                />
               </div>
             </div>
 
