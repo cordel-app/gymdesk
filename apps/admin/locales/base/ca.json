@@ -3658,6 +3658,8 @@
     "tree_add_day": "+ Afegir Dia",
     "tree_no_days": "Encara no s'han afegit dies.",
     "tree_remove_day": "Eliminar Dia",
+    "tree_change_day": "Canviar dia",
+    "tree_save_day": "Desar",
     "tree_confirm_remove_day": "Eliminar aquest dia i tots els seus àpats?",
     "tree_pick_weekday": "Selecciona un dia de la setmana.",
     "tree_add_meal": "+ Afegir Àpat",

@@ -1267,3 +1267,55 @@ describe('GET /nutrition-plan-templates/component-types', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Changing the weekday of an existing day (#1782)
+// ---------------------------------------------------------------------------
+
+describe('PUT /nutrition-plan-templates/:id/days/:dayId', () => {
+  const auth = () => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId });
+
+  async function templateWithDays() {
+    const tpl = await request.post('/nutrition-plan-templates').set(auth()).send({ name: 'Change Day Tpl' });
+    const id = tpl.body.id;
+    const monday = await request.post(`/nutrition-plan-templates/${id}/days`).set(auth()).send({ weekday: 0 });
+    const tuesday = await request.post(`/nutrition-plan-templates/${id}/days`).set(auth()).send({ weekday: 1 });
+    return { id, monday: monday.body, tuesday: tuesday.body };
+  }
+
+  it('changes the weekday and keeps the day\'s meals', async () => {
+    const { id, monday } = await templateWithDays();
+    const meal = await request
+      .post(`/nutrition-plan-templates/${id}/days/${monday.id}/meals`)
+      .set(auth())
+      .send({ meal_type: 'breakfast' });
+    expect(meal.status).toBe(201);
+
+    const res = await request.put(`/nutrition-plan-templates/${id}/days/${monday.id}`).set(auth()).send({ weekday: 4 });
+    expect(res.status).toBe(200);
+    expect(res.body.weekday).toBe(4);
+
+    const { rows } = await db.query(
+      'SELECT COUNT(*) AS n FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ?',
+      [monday.id],
+    );
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it('answers 409 when the weekday is already used and 400 when invalid', async () => {
+    const { id, monday, tuesday } = await templateWithDays();
+    const dup = await request.put(`/nutrition-plan-templates/${id}/days/${monday.id}`).set(auth()).send({ weekday: tuesday.weekday });
+    expect(dup.status).toBe(409);
+    const bad = await request.put(`/nutrition-plan-templates/${id}/days/${monday.id}`).set(auth()).send({ weekday: 9 });
+    expect(bad.status).toBe(400);
+  });
+
+  it('answers 404 for another template\'s day and 401 without auth', async () => {
+    const a = await templateWithDays();
+    const b = await templateWithDays();
+    const res = await request.put(`/nutrition-plan-templates/${a.id}/days/${b.monday.id}`).set(auth()).send({ weekday: 5 });
+    expect(res.status).toBe(404);
+    const noAuth = await request.put(`/nutrition-plan-templates/${a.id}/days/${a.monday.id}`).send({ weekday: 5 });
+    expect(noAuth.status).toBe(401);
+  });
+});

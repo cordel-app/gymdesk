@@ -617,6 +617,29 @@ nutritionPlanTemplatesRouter.put('/:id/days/reorder', requireModuleWrite('NUTRIT
   } catch (err) { next(err); }
 });
 
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId } = req.params as { id: string; dayId: string };
+  const weekday = Number(req.body.weekday);
+  if (!VALID_WEEKDAYS.includes(weekday)) {
+    return res.status(400).json({ error: 'weekday must be 0–6 (Mon–Sun) or 7 (All Days)' });
+  }
+  try {
+    if (!(await dayExists(id, dayId, gymId))) return res.status(404).json({ error: 'Day not found' });
+    await db.query(
+      'UPDATE nutrition_plan_template_days SET weekday = ? WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id = ?',
+      [weekday, dayId, id, gymId],
+    );
+    const { rows } = await db.query('SELECT * FROM nutrition_plan_template_days WHERE id = ?', [dayId]);
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+      return res.status(409).json({ error: 'This weekday has already been added to the template.' });
+    }
+    next(err);
+  }
+});
+
 nutritionPlanTemplatesRouter.delete('/:id/days/:dayId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };

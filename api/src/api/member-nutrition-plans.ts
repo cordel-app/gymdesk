@@ -459,6 +459,34 @@ memberNutritionPlansRouter.put('/:id/days/reorder', requireModuleWrite('NUTRITIO
   } catch (err) { next(err); }
 });
 
+memberNutritionPlansRouter.put('/:id/days/:dayId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId } = req.params as { id: string; dayId: string };
+  const weekday = Number(req.body.weekday);
+  if (!VALID_WEEKDAYS.includes(weekday)) {
+    return res.status(400).json({ error: 'weekday must be 0–6 (Mon–Sun) or 7 (All Days)' });
+  }
+  try {
+    const plan = await loadActivePlan(res, id, gymId);
+    if (!plan) return;
+    await db.query(
+      'UPDATE member_nutrition_plan_days SET weekday = ? WHERE id = ? AND member_nutrition_plan_id = ? AND gym_id = ?',
+      [weekday, dayId, id, gymId],
+    );
+    const { rows } = await db.query(
+      'SELECT * FROM member_nutrition_plan_days WHERE id = ? AND member_nutrition_plan_id = ? AND gym_id = ?',
+      [dayId, id, gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Day not found' });
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+      return res.status(409).json({ error: 'This weekday has already been added to the plan.' });
+    }
+    next(err);
+  }
+});
+
 memberNutritionPlansRouter.delete('/:id/days/:dayId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };
