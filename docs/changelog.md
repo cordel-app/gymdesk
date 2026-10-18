@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1367 (follow-up, visual refinement of Home: a branded welcome header carrying the Theme's motivational sentence when one is set, summary cards with a tinted icon per metric and a consistent height, task rows with count badges, class rows with start time / booked-of-capacity / waiting-list emphasis, member rows with the shared avatar fallback, hover and focus states, and a grid that reflows without horizontal overflow. Presentation only — `HomeParts.tsx` holds the chrome; data, permissions, task rules and locale keys are unchanged. Not verified in a browser in the routine's environment.)
+
 - **Done**: #1784 (food items of a meal can be reordered by dragging in the shared `NutritionPlanTree` — Nutrition Plan Templates, Base templates and Assigned Nutrition Plans; `PUT …/meals/:mealId/items/reorder` on `nutrition-plan-templates`, `platform-nutrition-plan-templates` and `member-nutrition-plans` takes `{ order }` listing every item of the meal once. Tests were written but not run in the routine's environment — no dependencies or MySQL available.)
 
 - **Done**: #1283 (follow-up: the Cancel booking actions on My Bookings and in the Calendar booking sheet wear `secondaryButtonStyle` instead of the destructive red, so they follow the Theme's Secondary Button colours; the confirmation dialog's destructive confirm is unchanged)

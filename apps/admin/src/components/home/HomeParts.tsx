@@ -1,0 +1,138 @@
+'use client';
+
+import Link from 'next/link';
+import type { CSSProperties, ReactNode } from 'react';
+import { cardSurfaceStyle, primaryActionColors } from '@/components/ui';
+import { cardMutedTextStyle } from '@/components/formChrome';
+import { CalendarIcon, CreditCardIcon, DumbbellIcon, UsersIcon } from '@/components/icons/NavIcons';
+
+// #1367 — presentation of the Home dashboard. Pure layout: every figure, label
+// and link is handed in already resolved by the page, so nothing here
+// decides a metric, a task's eligibility or a permission.
+
+export type HomeTone = 'members' | 'growth' | 'classes' | 'payments' | 'neutral';
+
+// Accent per metric category. Tints are mixed from the accent over the card
+// surface so they follow the Theme's own surface in light and dark.
+const TONE_COLOR: Record<HomeTone, string> = {
+  members: 'var(--gd-link, #2563eb)',
+  growth: 'var(--gd-success, #16a34a)',
+  classes: 'var(--gd-info, #7c3aed)',
+  payments: 'var(--gd-warning, #d97706)',
+  neutral: 'var(--gd-text-muted, #6b7280)',
+};
+
+export function toneTint(tone: HomeTone, percent = 14): string {
+  return `color-mix(in srgb, ${TONE_COLOR[tone]} ${percent}%, var(--gd-card-bg, #ffffff))`;
+}
+
+export function ToneIcon({ tone, size = 40, children }: { tone: HomeTone; size?: number; children: ReactNode }) {
+  return (
+    <span aria-hidden style={{
+      width: size, height: size, borderRadius: 10, flexShrink: 0,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      background: toneTint(tone), color: TONE_COLOR[tone],
+    }}>{children}</span>
+  );
+}
+
+export const METRIC_ICONS: Record<'active_members' | 'new_members' | 'classes' | 'payments' | 'trainers' | 'average', { tone: HomeTone; icon: ReactNode }> = {
+  active_members: { tone: 'members', icon: <UsersIcon size={20} /> },
+  new_members: { tone: 'growth', icon: <UsersIcon size={20} /> },
+  classes: { tone: 'classes', icon: <CalendarIcon size={20} /> },
+  payments: { tone: 'payments', icon: <CreditCardIcon size={20} /> },
+  trainers: { tone: 'classes', icon: <DumbbellIcon size={20} /> },
+  average: { tone: 'neutral', icon: <DumbbellIcon size={20} /> },
+};
+
+export const homeFocusCss = `
+.gd-home-card{transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease}
+a.gd-home-card:hover,a.gd-home-card:focus-visible{box-shadow:0 4px 14px rgba(0,0,0,.10);transform:translateY(-1px)}
+a.gd-home-card:focus-visible,.gd-home-link:focus-visible{outline:2px solid var(--gd-link,#2563eb);outline-offset:2px}
+.gd-home-row{transition:background .12s ease}
+.gd-home-row:hover{background:color-mix(in srgb, var(--gd-text-muted,#6b7280) 7%, transparent)}
+@media (prefers-reduced-motion: reduce){.gd-home-card{transition:none}a.gd-home-card:hover{transform:none}}
+`;
+
+export function HomeHeader({ greeting, intro, sentence }: { greeting: string; intro: string; sentence?: string }) {
+  const quote = sentence?.trim();
+  return (
+    <header data-testid="home-header" style={{
+      ...primaryActionColors,
+      borderRadius: 'var(--gd-card-radius, 12px)', padding: '26px 28px', marginBottom: 24,
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
+      <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.15 }}>{greeting}</h1>
+      <p style={{ margin: 0, fontSize: 14, opacity: 0.85 }}>{intro}</p>
+      {quote && (
+        <blockquote data-testid="home-motivation" style={{
+          margin: '14px 0 0', paddingLeft: 14, borderLeft: '3px solid currentColor',
+          fontSize: 15, fontStyle: 'italic', opacity: 0.95, maxWidth: 680,
+        }}>{quote}</blockquote>
+      )}
+    </header>
+  );
+}
+
+export function SummaryCard({ label, value, sub, href, hint, tone, icon }: {
+  label: string; value: string; sub: string; href?: string; hint?: string; tone: HomeTone; icon: ReactNode;
+}) {
+  const body = (
+    <div className="gd-home-card" title={hint} style={{
+      ...cardSurfaceStyle, padding: 18, height: '100%', boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', gap: 12,
+      borderTop: `3px solid ${TONE_COLOR[tone]}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <ToneIcon tone={tone}>{icon}</ToneIcon>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gd-text-muted, #6b7280)' }}>{label}</div>
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)', marginTop: 'auto' }}>{sub}</div>
+    </div>
+  );
+  return href
+    ? <Link href={href} className="gd-home-card" style={{ textDecoration: 'none', color: 'inherit', display: 'block', borderRadius: 'var(--gd-card-radius, 8px)' }}>{body}</Link>
+    : body;
+}
+
+export const cardsGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 24, gridAutoRows: '1fr' };
+export const panelsGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16, alignItems: 'stretch' };
+export const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 8px', margin: '0 -8px', borderTop: '1px solid var(--gd-card-border, #e5e7eb)', borderRadius: 6 };
+export const linkStyle: CSSProperties = { color: 'var(--gd-link, #2563eb)', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' };
+
+export function Panel({ title, aside, children, footer, testId, ariaLabel }: {
+  title: string; aside?: ReactNode; children: ReactNode; footer?: ReactNode; testId?: string; ariaLabel?: string;
+}) {
+  return (
+    <section aria-label={ariaLabel ?? title} data-testid={testId} style={{ ...cardSurfaceStyle, padding: 20, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{title}</h2>
+        {aside}
+      </div>
+      <div style={{ flex: 1 }}>{children}</div>
+      {footer && <div style={{ marginTop: 14 }}>{footer}</div>}
+    </section>
+  );
+}
+
+export function CountBadge({ count, tone = 'neutral' }: { count: number; tone?: HomeTone }) {
+  return (
+    <span style={{
+      minWidth: 28, padding: '3px 9px', borderRadius: 999, textAlign: 'center', fontSize: 13, fontWeight: 700,
+      background: toneTint(tone, 16), color: TONE_COLOR[tone],
+    }}>{count}</span>
+  );
+}
+
+export function Avatar({ name, src }: { name: string; src: string | null }) {
+  return src
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={src} alt="" width={40} height={40} style={{ borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+    : <span aria-hidden style={{
+        width: 40, height: 40, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 700, background: toneTint('members', 16), color: TONE_COLOR.members,
+      }}>{name.trim().charAt(0).toUpperCase()}</span>;
+}
+
+export { cardMutedTextStyle };
