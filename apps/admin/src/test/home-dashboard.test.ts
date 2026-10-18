@@ -83,3 +83,18 @@ describe('locales', () => {
     expect(LOCALES[2].nav.home).toBe('Inici');
   });
 });
+
+describe('Home visual refinement (#1367)', () => {
+  const page = readFileSync(join(__dirname, '..', 'app', '[locale]', 'home', 'page.tsx'), 'utf-8');
+  const parts = readFileSync(join(__dirname, '..', 'components', 'home', 'HomeParts.tsx'), 'utf-8');
+  it('shows the Theme motivational sentence in the header, and nothing when unset', () => {
+    expect(page).toContain('?.motivationalSentence');
+    expect(parts).toContain('data-testid="home-motivation"');
+    expect(parts).toMatch(/const quote = sentence\?\.trim\(\);\s*return[\s\S]*\{quote && \(/);
+  });
+  it('keeps every section and test hook of the functional dashboard', () => {
+    for (const id of ['home-pending-payments', 'home-quick-actions', 'home-all-clear', 'home-task-count', 'home-class-', 'home-pending-']) {
+      expect(page + parts).toContain(id);
+    }
+  });
+});

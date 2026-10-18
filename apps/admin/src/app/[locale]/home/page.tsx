@@ -13,12 +13,17 @@ import { ClassCommunicationModal } from '../calendar/ClassCommunicationModal';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { formatGymAmount, formatGymDate, formatGymNumber, formatGymTime } from '@/lib/gymFormat';
-import { cardSurfaceStyle, primaryActionColors, primaryBtnSmall } from '@/components/ui';
+import { primaryBtnSmall } from '@/components/ui';
+import {
+  Avatar, CountBadge, HomeHeader, HomeTone, METRIC_ICONS, Panel, SummaryCard, ToneIcon, cardsGrid, homeFocusCss, linkStyle, panelsGrid, rowStyle as row,
+} from '@/components/home/HomeParts';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineStyle } from '@/components/InlineStyle';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
+import { CheckIcon } from '@/components/home/HomeIcons';
 import {
   HomeData, TASK_ACTION_KEY, canStartClass, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
-  type QuickActionKey,
+  type HomeTaskKey, type QuickActionKey,
 } from '@/lib/homeDashboard';
 
 // #1367 / #1754 — Home. One request (`GET /dashboard/home`) feeds every section
@@ -26,23 +31,14 @@ import {
 // the caller's role may not read are absent from the response and therefore
 // from the page.
 
-const cardsGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 20 };
-const panelsGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' };
-const panel: React.CSSProperties = { ...cardSurfaceStyle, padding: 20 };
-const panelTitle: React.CSSProperties = { margin: '0 0 12px', fontSize: 16, fontWeight: 700 };
-const row: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--gd-border, #e5e7eb)' };
-const linkStyle: React.CSSProperties = { color: 'var(--gd-link, #2563eb)', fontSize: 13, textDecoration: 'none', whiteSpace: 'nowrap' };
-
-function SummaryCard({ label, value, sub, href, hint }: { label: string; value: string; sub: string; href?: string; hint?: string }) {
-  const body = (
-    <div style={{ ...cardSurfaceStyle, padding: 18, height: '100%' }} title={hint}>
-      <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)' }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 700, margin: '6px 0 4px' }}>{value}</div>
-      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{sub}</div>
-    </div>
-  );
-  return href ? <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>{body}</Link> : body;
-}
+const TASK_TONE: Record<HomeTaskKey, HomeTone> = {
+  events_without_space: 'classes',
+  events_without_trainer: 'classes',
+  welcome_new_members: 'growth',
+  services_not_scheduled: 'members',
+  events_with_waitlist: 'classes',
+  payments_with_issues: 'payments',
+};
 
 export default function HomePage() {
   const t = useTranslations('home');
@@ -99,200 +95,193 @@ export default function HomePage() {
     ...(data?.access.payments ? [{ key: 'review_payments' as const }] : []),
   ];
 
-  return (
-    <div style={{ padding: 24, maxWidth: 1200 }}>
-      <header style={{ marginBottom: 20 }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>{name ? t('greeting', { name }) : t('greeting_anonymous')}</h1>
-        <p style={{ ...mutedTextStyle, margin: '4px 0 0' }}>{t('intro')}</p>
-      </header>
+  const classMinutes = (k: { starts_at: string; ends_at: string }) =>
+    Math.max(1, Math.round((new Date(k.ends_at).getTime() - new Date(k.starts_at).getTime()) / 60000));
 
-      <section aria-label={t('banner_title')} data-testid="home-banner"
-        style={{ ...primaryActionColors, borderRadius: 'var(--gd-card-radius, 8px)', padding: '22px 24px', marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.85 }}>{t('banner_kicker')}</div>
-        <h2 style={{ margin: '6px 0 4px', fontSize: 20 }}>{t('banner_title')}</h2>
-        <p style={{ margin: 0, fontSize: 14, opacity: 0.9, maxWidth: 640 }}>{t('banner_text')}</p>
-        {sentence && (
-          <p data-testid="home-motivational-sentence"
-            style={{ margin: '12px 0 0', fontSize: 15, fontStyle: 'italic', maxWidth: 640, overflowWrap: 'anywhere' }}>{sentence}</p>
-        )}
-      </section>
+  return (
+    <div style={{ padding: 24, maxWidth: 1240 }}>
+      <InlineStyle css={homeFocusCss} />
+      <HomeHeader
+        greeting={name ? t('greeting', { name }) : t('greeting_anonymous')}
+        intro={t('intro')}
+        sentence={sentence}
+      />
 
       {error && <p style={mutedTextStyle}>{t('error')}</p>}
       {!data && loading && <p style={mutedTextStyle}>{t('loading')}</p>}
 
       {data && (
         <>
-          {data.pending_payment_members && (
-            <section style={{ ...panel, marginBottom: 20 }} aria-label={t('pending_title')} data-testid="home-pending-payments">
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-                <h2 style={{ ...panelTitle, margin: 0 }}>{t('pending_title')}</h2>
-                <strong style={{ fontSize: 26 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>
-                <span style={mutedTextStyle}>{t('pending_sub', { count: data.pending_payment_members.count })}</span>
-              </div>
-              {data.pending_payment_members.members.length === 0 ? (
-                <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('pending_empty')}</p>
-              ) : (
-                <div style={{ marginTop: 12 }}>
-                  {data.pending_payment_members.members.map((m) => (
-                    <div key={m.member_id} style={row} data-testid={`home-pending-${m.member_id}`}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Link href={memberHref(m.member_id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
-                        <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
-                      </div>
-                      <strong>{formatGymAmount(m.outstanding_amount, fmt)}</strong>
-                      <StatusBadge status={m.payment_status} label={tm(`payment_status_${m.payment_status}`)} />
-                    </div>
-                  ))}
-                </div>
-              )}
-              {data.pending_payment_members.count > data.pending_payment_members.members.length && (
-                <p style={{ margin: '12px 0 0' }}>
-                  <Link href={taskHref('payments_with_issues', locale)} style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
-                </p>
-              )}
-            </section>
-          )}
-
           <div style={cardsGrid}>
             {c?.active_members && (
-              <SummaryCard label={t('card_active_members')} value={String(c.active_members.count)}
+              <SummaryCard {...METRIC_ICONS.active_members} label={t('card_active_members')} value={String(c.active_members.count)}
                 sub={t('card_active_members_sub', { count: c.active_members.joined_this_week })}
                 href={`/${locale}/members?enrollment_status=active`} />
             )}
             {c?.new_members && (
-              <SummaryCard label={t('card_new_members')} value={String(c.new_members.count)}
+              <SummaryCard {...METRIC_ICONS.new_members} label={t('card_new_members')} value={String(c.new_members.count)}
                 sub={t('card_new_members_sub')} hint={t('card_new_members_hint')} href={`/${locale}/members`} />
             )}
             {c?.classes_today && (
-              <SummaryCard label={t('card_classes')} value={`${c.classes_today.count} / ${c.classes_today.total}`}
+              <SummaryCard {...METRIC_ICONS.classes} label={t('card_classes')} value={`${c.classes_today.count} / ${c.classes_today.total}`}
                 sub={t('card_classes_sub', { count: c.classes_today.waitlist_total })} href={`/${locale}/calendar`} />
             )}
             {c?.outstanding_payments && (
-              <SummaryCard label={t('card_payments')} value={formatGymAmount(c.outstanding_payments.amount, fmt)}
+              <SummaryCard {...METRIC_ICONS.payments} label={t('card_payments')} value={formatGymAmount(c.outstanding_payments.amount, fmt)}
                 sub={t('card_payments_sub', { count: c.outstanding_payments.count, paid: c.outstanding_payments.paid_count })}
                 href={taskHref('payments_with_issues', locale)} />
             )}
             {c?.attendance && (
               <>
-                <SummaryCard label={t('card_top_trainers')} value={String(c.attendance.top_trainers)}
+                <SummaryCard {...METRIC_ICONS.trainers} label={t('card_top_trainers')} value={String(c.attendance.top_trainers)}
                   sub={t('card_top_trainers_sub', { weeks: c.attendance.weeks })} hint={t('card_top_trainers_hint', { weeks: c.attendance.weeks })} />
-                <SummaryCard label={t('card_avg_classes')}
+                <SummaryCard {...METRIC_ICONS.average} label={t('card_avg_classes')}
                   value={formatGymNumber(c.attendance.average_classes_per_member_per_week, fmt)}
                   sub={t('card_avg_classes_sub', { weeks: c.attendance.weeks })} hint={t('card_avg_classes_hint', { weeks: c.attendance.weeks })} />
               </>
             )}
           </div>
 
-          <div style={{ ...panelsGrid, marginBottom: 20 }}>
-
-          <section style={panel} aria-label={t('tasks_title')}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-              <h2 style={panelTitle}>{t('tasks_title')}</h2>
-              <span style={mutedTextStyle} data-testid="home-task-count">{t('tasks_count', { count: tasks.length })}</span>
-            </div>
-            {tasks.length === 0 ? (
-              <p style={{ ...mutedTextStyle, margin: 0 }} data-testid="home-all-clear">{t('tasks_all_clear')}</p>
-            ) : tasks.map((task) => (
-              <div key={task.key} data-testid={`home-task-${task.key}`}>
-                {task.key === 'welcome_new_members' && canWelcomeHere && task.samples && task.samples.length > 0 ? (
-                  <>
-                    <div style={{ ...row, borderTop: '1px solid var(--gd-border, #e5e7eb)' }}>
-                      <div>{t(`task_${task.key}`, { count: task.count, people: 0 })}</div>
+          {data.pending_payment_members && (
+            <div style={{ marginBottom: 24 }}>
+              <Panel title={t('pending_title')} testId="home-pending-payments"
+                aside={<strong style={{ fontSize: 22 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>}
+                footer={data.pending_payment_members.count > data.pending_payment_members.members.length ? (
+                  <Link href={taskHref('payments_with_issues', locale)} className="gd-home-link" style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
+                ) : undefined}>
+                <p style={{ ...mutedTextStyle, margin: '0 0 8px' }}>{t('pending_sub', { count: data.pending_payment_members.count })}</p>
+                {data.pending_payment_members.members.length === 0 ? (
+                  <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('pending_empty')}</p>
+                ) : data.pending_payment_members.members.map((m) => (
+                  <div key={m.member_id} className="gd-home-row" style={row} data-testid={`home-pending-${m.member_id}`}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Link href={memberHref(m.member_id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
+                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
                     </div>
-                    {task.samples.map((s) => (
-                      <div key={s.id} style={{ ...row, borderTop: 0, paddingTop: 4 }} data-testid={`home-welcome-${s.id}`}>
-                        <Link href={memberHref(s.id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{s.name}</Link>
-                        <button type="button" style={primaryBtnSmall()} onClick={() => setWelcomeFor(s)}>{t(TASK_ACTION_KEY[task.key])}</button>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div style={row}>
-                    <div>
-                      <div>{t(`task_${task.key}`, { count: task.count, people: task.secondary ?? 0 })}</div>
-                      {task.samples && task.samples.length > 0 && (
-                        <div style={{ fontSize: 12, marginTop: 2 }}>
-                          {task.samples.map((s, i) => (
-                            <span key={s.id}>
-                              {i > 0 && ', '}
-                              <Link href={memberHref(s.id, locale)} style={{ color: 'inherit' }}>{s.name}{s.detail ? ` (${s.detail})` : ''}</Link>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <Link href={taskHref(task.key, locale)} style={linkStyle}>{t(TASK_ACTION_KEY[task.key])}</Link>
+                    <strong>{formatGymAmount(m.outstanding_amount, fmt)}</strong>
+                    <StatusBadge status={m.payment_status} label={tm(`payment_status_${m.payment_status}`)} />
                   </div>
-                )}
-              </div>
-            ))}
-          </section>
-
-          <section style={panel} aria-label={t('quick_title')} data-testid="home-quick-actions">
-            <h2 style={panelTitle}>{t('quick_title')}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-              {quickActions.map((qa) => (
-                <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
-                  style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box' }}>
-                  {t(`quick_${qa.key}`)}
-                </Link>
-              ))}
+                ))}
+              </Panel>
             </div>
-          </section>
+          )}
+
+          <div style={{ ...panelsGrid, marginBottom: 16 }}>
+            <Panel title={t('tasks_title')} ariaLabel={t('tasks_title')}
+              aside={<span data-testid="home-task-count"><CountBadge count={tasks.length} tone={tasks.length ? 'payments' : 'growth'} /><span style={{ ...mutedTextStyle, marginLeft: 8 }}>{t('tasks_count', { count: tasks.length })}</span></span>}>
+              {tasks.length === 0 ? (
+                <p style={{ ...mutedTextStyle, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }} data-testid="home-all-clear">
+                  <ToneIcon tone="growth" size={32}><CheckIcon size={18} /></ToneIcon>{t('tasks_all_clear')}
+                </p>
+              ) : tasks.map((task) => (
+                <div key={task.key} data-testid={`home-task-${task.key}`}>
+                  {task.key === 'welcome_new_members' && canWelcomeHere && task.samples && task.samples.length > 0 ? (
+                    <>
+                      <div className="gd-home-row" style={row}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <CountBadge count={task.count} tone={TASK_TONE[task.key]} />
+                          <div>{t(`task_${task.key}`, { count: task.count, people: 0 })}</div>
+                        </div>
+                      </div>
+                      {task.samples.map((s) => (
+                        <div key={s.id} className="gd-home-row" style={{ ...row, borderTop: 0, paddingTop: 4 }} data-testid={`home-welcome-${s.id}`}>
+                          <Link href={memberHref(s.id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{s.name}</Link>
+                          <button type="button" style={primaryBtnSmall()} onClick={() => setWelcomeFor(s)}>{t(TASK_ACTION_KEY[task.key])}</button>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="gd-home-row" style={row}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <CountBadge count={task.count} tone={TASK_TONE[task.key]} />
+                        <div>
+                          <div>{t(`task_${task.key}`, { count: task.count, people: task.secondary ?? 0 })}</div>
+                          {task.samples && task.samples.length > 0 && (
+                            <div style={{ fontSize: 12, marginTop: 2 }}>
+                              {task.samples.map((s, i) => (
+                                <span key={s.id}>
+                                  {i > 0 && ', '}
+                                  <Link href={memberHref(s.id, locale)} style={{ color: 'inherit' }}>{s.name}{s.detail ? ` (${s.detail})` : ''}</Link>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <Link href={taskHref(task.key, locale)} className="gd-home-link" style={linkStyle}>{t(TASK_ACTION_KEY[task.key])} →</Link>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </Panel>
+
+            <Panel title={t('quick_title')} testId="home-quick-actions">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                {quickActions.map((qa) => (
+                  <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
+                    style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box', padding: '10px 12px' }}>
+                    {t(`quick_${qa.key}`)}
+                  </Link>
+                ))}
+              </div>
+            </Panel>
           </div>
 
           <div style={panelsGrid}>
             {data.classes && (
-              <section style={panel} aria-label={t('classes_title')}>
-                <h2 style={panelTitle}>{t('classes_title')}</h2>
+              <Panel title={t('classes_title')}
+                footer={<Link href={`/${locale}/calendar`} className="gd-home-link" style={linkStyle}>{t('classes_view_all')}</Link>}>
                 {data.classes.length === 0 ? (
                   <p style={{ ...mutedTextStyle, margin: 0 }}>{t('classes_empty')}</p>
-                ) : data.classes.map((k) => (
-                  <div key={k.id} style={row} data-testid={`home-class-${k.id}`}>
-                    <div style={{ minWidth: 0 }}>
-                      <strong>{formatGymTime(k.starts_at, fmt)}</strong> {k.name}
-                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
-                        {t('class_duration', { minutes: Math.max(1, Math.round((new Date(k.ends_at).getTime() - new Date(k.starts_at).getTime()) / 60000)) })}
-                        {k.trainer_name ? ` · ${k.trainer_name}` : ''}{k.space_name ? ` · ${k.space_name}` : ''}
+                ) : data.classes.map((k) => {
+                  const full = k.capacity != null && k.booked_count >= k.capacity;
+                  return (
+                    <div key={k.id} className="gd-home-row" style={row} data-testid={`home-class-${k.id}`}>
+                      <div style={{ display: 'flex', gap: 12, minWidth: 0, flex: 1 }}>
+                        <strong style={{ minWidth: 54, fontVariantNumeric: 'tabular-nums' }}>{formatGymTime(k.starts_at, fmt)}</strong>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600 }}>{k.name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
+                            {t('class_duration', { minutes: classMinutes(k) })}
+                            {k.trainer_name ? ` · ${k.trainer_name}` : ''}{k.space_name ? ` · ${k.space_name}` : ''}
+                          </div>
+                          <div style={{ fontSize: 12, marginTop: 2 }}>
+                            <span style={{ fontWeight: 600, color: full ? 'var(--gd-warning, #d97706)' : 'inherit' }}>
+                              {k.booked_count}{k.capacity != null ? `/${k.capacity}` : ''} {t('class_booked')}
+                            </span>
+                            {k.waitlist_count > 0 && <span style={{ color: 'var(--gd-warning, #d97706)' }}>{` · ${t('class_waitlist', { count: k.waitlist_count })}`}</span>}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12 }}>
-                        {k.booked_count}{k.capacity != null ? `/${k.capacity}` : ''} {t('class_booked')}
-                        {k.waitlist_count > 0 && ` · ${t('class_waitlist', { count: k.waitlist_count })}`}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {canStartClass(k.status) && (
+                          <Link href={startClassHref(k.id, locale)} style={{ ...primaryBtnSmall(), textDecoration: 'none' }}>{t('class_start')}</Link>
+                        )}
+                        {classMessagingOn && canStartClass(k.status) && (
+                          <button type="button" style={secondaryBtnSmall} onClick={() => setMessageClass({ id: k.id, name: k.name })}>{tc('send_communication')}</button>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {canStartClass(k.status) && (
-                        <Link href={startClassHref(k.id, locale)} style={{ ...primaryBtnSmall(), textDecoration: 'none' }}>{t('class_start')}</Link>
-                      )}
-                      {classMessagingOn && canStartClass(k.status) && (
-                        <button type="button" style={secondaryBtnSmall} onClick={() => setMessageClass({ id: k.id, name: k.name })}>{tc('send_communication')}</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                <p style={{ margin: '12px 0 0' }}><Link href={`/${locale}/calendar`} style={linkStyle}>{t('classes_view_all')}</Link></p>
-              </section>
+                  );
+                })}
+              </Panel>
             )}
             {data.latest_members && (
-              <section style={panel} aria-label={t('members_title')}>
-                <h2 style={panelTitle}>{t('members_title')}</h2>
+              <Panel title={t('members_title')}
+                footer={<Link href={`/${locale}/members`} className="gd-home-link" style={linkStyle}>{t('members_view_all')}</Link>}>
                 {data.latest_members.length === 0 ? (
                   <p style={{ ...mutedTextStyle, margin: 0 }}>{t('members_empty')}</p>
                 ) : data.latest_members.map((m) => (
-                  <div key={m.id} style={{ ...row, justifyContent: 'flex-start' }}>
-                    {m.image_url
-                      // eslint-disable-next-line @next/next/no-img-element
-                      ? <img src={m.image_url} alt="" width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} />
-                      : <span aria-hidden style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--gd-border, #e5e7eb)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{m.name.trim().charAt(0).toUpperCase()}</span>}
-                    <div style={{ flex: 1 }}>
+                  <div key={m.id} className="gd-home-row" style={{ ...row, justifyContent: 'flex-start' }}>
+                    <Avatar name={m.name} src={m.image_url} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <Link href={memberHref(m.id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
                       <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
                     </div>
-                    <span style={{ fontSize: 12 }}>{formatGymDate(m.created_at, fmt)}</span>
+                    <span style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)', whiteSpace: 'nowrap' }}>{formatGymDate(m.created_at, fmt)}</span>
                   </div>
                 ))}
-                <p style={{ margin: '12px 0 0' }}><Link href={`/${locale}/members`} style={linkStyle}>{t('members_view_all')}</Link></p>
-              </section>
+              </Panel>
             )}
           </div>
         </>
