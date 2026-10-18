@@ -47,6 +47,8 @@ export default function HomePage() {
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin } = useGym();
   const { flags: featureFlags } = useFeatureFlags();
+  const motivationalSentence = ((activeGym?.theme?.tokens as { motivationalSentence?: unknown } | undefined)?.motivationalSentence);
+  const sentence = typeof motivationalSentence === 'string' ? motivationalSentence.trim() : '';
   const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
   const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
   const tc = useTranslations('calendar');
@@ -93,8 +95,6 @@ export default function HomePage() {
     ...(data?.access.payments ? [{ key: 'review_payments' as const }] : []),
   ];
 
-
-  const sentence = typeof activeGym?.theme?.tokens?.motivationalSentence === 'string' ? activeGym.theme.tokens.motivationalSentence : undefined;
   const classMinutes = (k: { starts_at: string; ends_at: string }) =>
     Math.max(1, Math.round((new Date(k.ends_at).getTime() - new Date(k.starts_at).getTime()) / 60000));
 

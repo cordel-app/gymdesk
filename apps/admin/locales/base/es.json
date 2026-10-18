@@ -657,7 +657,9 @@
     "purchase_validity_cancelled": "Cancelado (válido hasta la fecha de fin)",
     "purchase_validity_expired": "Caducado",
     "purchase_cancel_action": "Cancelar compra",
-    "purchase_cancel_confirm": "¿Cancelar {product}? El miembro lo conserva hasta su fecha de fin."
+    "purchase_cancel_confirm": "¿Cancelar {product}? El miembro lo conserva hasta su fecha de fin.",
+    "purchase_cancel_confirm_button": "Cancelar compra",
+    "purchase_cancel_keep": "Mantenerlo"
   },
   "member_payments": {
     "title": "Pagos del miembro",

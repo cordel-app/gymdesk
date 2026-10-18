@@ -96,6 +96,10 @@ export function MemberPurchasedProducts({
   const [statusFilter, setStatusFilter] = useState<string>(PURCHASE_STATUS_FILTER_DEFAULT);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const cancelRequest = usePurchaseCancel(memberId, onChanged);
+  // The Cancel action asks first, in the app's own dialog (#1806).
+  const [cancelling, setCancelling] = useState<PurchasedProduct | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   function toggleExpand(item: PurchasedProduct) {
@@ -108,9 +112,13 @@ export function MemberPurchasedProducts({
 
   // #1693 — records the cancellation day; the paid period (Valid until) is untouched.
   async function cancelPurchase(item: PurchasedProduct) {
-    if (!window.confirm(t('purchase_cancel_confirm', { product: item.product_name }))) return;
+    if (cancelBusy) return;
+    setCancelBusy(true);
+    setCancelError(null);
     const error = await cancelRequest(item.id);
-    if (error) window.alert(error);
+    setCancelBusy(false);
+    setCancelling(null);
+    if (error) setCancelError(error);
   }
 
   const dash = '—';
@@ -211,7 +219,7 @@ export function MemberPurchasedProducts({
                 ? [{
                     label: t('purchase_cancel_action'),
                     danger: true,
-                    onClick: () => { void cancelPurchase(item); },
+                    onClick: () => { setCancelError(null); setCancelling(item); },
                     disabled: !canWrite,
                     title: canWrite ? undefined : t('products_add_read_only'),
                   }]
@@ -241,6 +249,7 @@ export function MemberPurchasedProducts({
         />
       )}
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
+      {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
         <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
           <StatusFilter
@@ -284,6 +293,16 @@ export function MemberPurchasedProducts({
         busy={draftBusy}
         onConfirm={() => { if (discarding) void discardDraft(discarding); }}
         onCancel={() => setDiscarding(null)}
+      />
+
+      <ConfirmDialog
+        open={cancelling !== null}
+        message={cancelling ? t('purchase_cancel_confirm', { product: cancelling.product_name }) : ''}
+        confirmLabel={t('purchase_cancel_confirm_button')}
+        cancelLabel={t('purchase_cancel_keep')}
+        busy={cancelBusy}
+        onConfirm={() => { if (cancelling) void cancelPurchase(cancelling); }}
+        onCancel={() => { if (!cancelBusy) setCancelling(null); }}
       />
 
       <CrudModal
