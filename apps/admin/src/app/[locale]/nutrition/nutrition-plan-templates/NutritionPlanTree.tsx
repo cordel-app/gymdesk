@@ -715,6 +715,7 @@ function ItemsReadView({
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+              <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
               <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
               {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                 <QualityBadge key={slug} slug={slug} t={t} />
@@ -979,6 +980,7 @@ function MealItemsEditor({
             ) : (
               /* Read row */
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+                <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
                 {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                   <QualityBadge key={slug} slug={slug} t={t as any} />
