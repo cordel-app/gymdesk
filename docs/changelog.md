@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1815 (My Nutrition: previous/next week arrows around the weekly calendar, backwards without limit and forwards only up to the current week (`shiftWeekWithin()` / `canShowNextWeek()` in `lib/trainingWeek.ts`, the swipe uses the same rule). The Today / This Week / This Month cards are always read for the gym's today (a second `/me/nutrition-progress` call when another week is shown), while the calendar's dots and the day's meals follow the selected week. No API change. tsc not run: no node_modules in this environment; vitest for the week helpers and locales passes.)
+
 - **Done**: #1367 (follow-up, visual refinement of Home: a branded welcome header carrying the Theme's motivational sentence when one is set, summary cards with a tinted icon per metric and a consistent height, task rows with count badges, class rows with start time / booked-of-capacity / waiting-list emphasis, member rows with the shared avatar fallback, hover and focus states, and a grid that reflows without horizontal overflow. Presentation only — `HomeParts.tsx` holds the chrome; data, permissions, task rules and locale keys are unchanged. Not verified in a browser in the routine's environment.)
 
 - **Done**: #1806 (Members → Products: `⋮ → Cancel purchase` on an active one-time purchase now asks in the app's own `ConfirmDialog` (Cancel purchase / Keep it) instead of a browser prompt, blocks a double submit while the request runs and shows a failure inline. The cancellation itself is #1693's unchanged endpoint. Recurring lines are not cancellable from this menu: that is a ProductSet Draft edit committed by Save & Pay, so it is left to its own ticket.)
