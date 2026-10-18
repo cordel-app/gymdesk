@@ -18,6 +18,7 @@ import {
   Avatar, CountBadge, HomeHeader, HomeTone, METRIC_ICONS, Panel, SummaryCard, ToneIcon, cardsGrid, homeFocusCss, linkStyle, panelsGrid, rowStyle as row,
 } from '@/components/home/HomeParts';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineStyle } from '@/components/InlineStyle';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
 import { CheckIcon } from '@/components/home/HomeIcons';
 import {
@@ -99,7 +100,7 @@ export default function HomePage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1240 }}>
-      <style>{homeFocusCss}</style>
+      <InlineStyle css={homeFocusCss} />
       <HomeHeader
         greeting={name ? t('greeting', { name }) : t('greeting_anonymous')}
         intro={t('intro')}
