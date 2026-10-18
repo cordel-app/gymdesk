@@ -91,6 +91,7 @@ export default function HomePage() {
   const [sameDayMore, setSameDayMore] = useState(0);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
   const [activeProducts, setActiveProducts] = useState(0);
+  const [serviceSessions, setServiceSessions] = useState(0);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +114,7 @@ export default function HomePage() {
 
       const [sessions, mship, notifs, nutrition] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
-        apiFetch<{ membership: Membership | null; active_products_count?: number }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0 })),
+        apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0 })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
       ]);
@@ -129,6 +130,7 @@ export default function HomePage() {
       );
       setMembership(mship.membership);
       setActiveProducts(mship.active_products_count ?? 0);
+      setServiceSessions(mship.professional_service_sessions ?? 0);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
       setNutritionPlan(nutrition.plan);
     } catch {
@@ -368,6 +370,9 @@ export default function HomePage() {
               </p>
               {!loading && (
                 <p style={styles.bookingSub}>{t('home.additional_products', { count: activeProducts })}</p>
+              )}
+              {!loading && (
+                <p style={styles.bookingSub}>{t('home.professional_service_sessions', { count: serviceSessions })}</p>
               )}
             </div>
           </MembersSectionCard>

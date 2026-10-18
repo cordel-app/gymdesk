@@ -17,6 +17,7 @@
     "active_products": "{count, plural, one {# producto activo} other {# productos activos}}",
     "no_plan": "Sin plan",
     "additional_products": "{count, plural, one {# producto adicional} other {# productos adicionales}}",
+    "professional_service_sessions": "{count, plural, one {# sesión de servicio profesional} other {# sesiones de servicios profesionales}}",
     "expires_on": "Vence el {date}",
     "class_credits": "Créditos de clases",
     "credits_remaining": "sesiones disponibles",
