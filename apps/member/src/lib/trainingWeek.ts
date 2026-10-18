@@ -44,6 +44,25 @@ export function shiftWeek(date: string, weeks: number): string {
   return addDays(date, weeks * 7);
 }
 
+/**
+ * Week navigation that never leaves the current week for a later one. Landing in
+ * the current week from the past selects at most today, so the selected day is
+ * never a day that has not happened. A step that would pass it returns `date`.
+ */
+export function shiftWeekWithin(date: string, weeks: number, today: string): string {
+  const next = shiftWeek(date, weeks);
+  const currentWeek = weekStart(today);
+  const nextWeek = weekStart(next);
+  if (nextWeek > currentWeek) return date;
+  if (nextWeek === currentWeek && next > today) return today;
+  return next;
+}
+
+/** Whether a later week than the one containing `date` may be shown. */
+export function canShowNextWeek(date: string, today: string): boolean {
+  return weekStart(date) < weekStart(today);
+}
+
 export function isFutureDate(date: string, today: string): boolean {
   return date > today;
 }

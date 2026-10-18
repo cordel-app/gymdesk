@@ -598,6 +598,8 @@
     "progress_week": "Aquesta setmana",
     "progress_month": "Aquest mes",
     "week_nav_hint": "Llisca per canviar de setmana",
+    "week_prev": "Setmana anterior",
+    "week_next": "Setmana següent",
     "today_marker": "Avui",
     "status_completed": "Completat",
     "status_pending": "Pendent",

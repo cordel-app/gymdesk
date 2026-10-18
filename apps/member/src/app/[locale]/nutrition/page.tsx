@@ -13,7 +13,7 @@ import { NutritionItemRow, nutritionItemGridStyle } from '@/components/Nutrition
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
-import { ProgressCounts, deviceToday, mondayIndex, shiftWeek, swipeWeekDelta, weekDates } from '@/lib/trainingWeek';
+import { ProgressCounts, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates } from '@/lib/trainingWeek';
 import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
@@ -67,6 +67,8 @@ export default function NutritionPage() {
   const [today, setToday] = useState<string>(deviceToday());
   const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
   const [progress, setProgress] = useState<NutritionProgress>(EMPTY_PROGRESS);
+  // The summary cards are always today's day, week and month, whichever week the calendar shows.
+  const [summary, setSummary] = useState<NutritionProgress>(EMPTY_PROGRESS);
   const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
   // #1603: goal / dietary-restriction completions, keyed `goal|id|date` / `restriction|id|date` -> level.
   const [reqLevels, setReqLevels] = useState<Record<string, 'partial' | 'done'>>({});
@@ -107,10 +109,13 @@ export default function NutritionPage() {
     try {
       const p = await apiFetch<NutritionProgress>(`/me/nutrition-progress?date=${date}`);
       setProgress(p);
+      const anchor = p.today ?? today;
       if (p.today && p.today !== today) {
         if (selectedDate === today) setSelectedDate(p.today);
         setToday(p.today);
       }
+      if (date === anchor) setSummary(p);
+      else setSummary(await apiFetch<NutritionProgress>(`/me/nutrition-progress?date=${anchor}`));
     } catch { /* progress is decoration; the meals still render */ }
   }
 
@@ -124,7 +129,7 @@ export default function NutritionPage() {
     const t0 = e.changedTouches[0];
     const delta = swipeWeekDelta(t0.clientX - touchStart.x, t0.clientY - touchStart.y);
     setTouchStart(null);
-    if (delta !== 0) setSelectedDate((d) => shiftWeek(d, delta));
+    if (delta !== 0) setSelectedDate((d) => shiftWeekWithin(d, delta, today));
   }
 
   // The server enforces the future-date rule; the button is only hidden for it.
@@ -213,13 +218,16 @@ export default function NutritionPage() {
       ) : (
         <>
           <TrainingSummaryCards cards={[
-            { label: t('nutrition.progress_day'), percent: progress.day.percent, detail: `${progress.day.completed}/${progress.day.total}` },
-            { label: t('nutrition.progress_week'), percent: progress.week.percent, detail: `${progress.week.completed}/${progress.week.total}` },
-            { label: t('nutrition.progress_month'), percent: progress.month.percent, detail: `${progress.month.completed}/${progress.month.total}` },
+            { label: t('nutrition.progress_day'), percent: summary.day.percent, detail: `${summary.day.completed}/${summary.day.total}` },
+            { label: t('nutrition.progress_week'), percent: summary.week.percent, detail: `${summary.week.completed}/${summary.week.total}` },
+            { label: t('nutrition.progress_month'), percent: summary.month.percent, detail: `${summary.month.completed}/${summary.month.total}` },
           ]} />
 
           <div style={styles.weekCard}>
-            <div style={styles.weekdayBar} role="group" aria-label={t('nutrition.week_nav_hint')}>
+            <div style={styles.weekNav}>
+            <button type="button" onClick={() => setSelectedDate((d) => shiftWeekWithin(d, -1, today))}
+                    aria-label={t('nutrition.week_prev')} title={t('nutrition.week_prev')} style={styles.weekArrow}>‹</button>
+            <div style={{ ...styles.weekdayBar, flex: 1, minWidth: 0 }} role="group" aria-label={t('nutrition.week_nav_hint')}>
               {weekDates(selectedDate).map((date) => {
                 const selected = date === selectedDate;
                 const isTodayCell = date === today;
@@ -244,6 +252,11 @@ export default function NutritionPage() {
                   </div>
                 );
               })}
+            </div>
+            <button type="button" onClick={() => setSelectedDate((d) => shiftWeekWithin(d, 1, today))}
+                    disabled={!canShowNextWeek(selectedDate, today)}
+                    aria-label={t('nutrition.week_next')} title={t('nutrition.week_next')}
+                    style={{ ...styles.weekArrow, ...(!canShowNextWeek(selectedDate, today) ? { opacity: 0.35, cursor: 'default' } : {}) }}>›</button>
             </div>
           </div>
 
@@ -346,6 +359,8 @@ const styles: Record<string, React.CSSProperties> = {
   cardBtn:    { ...primaryButtonStyle, display: 'block', boxSizing: 'border-box', maxWidth: '100%', width: '100%', margin: 0, padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
+  weekNav:    { display: 'flex', alignItems: 'flex-start', gap: 4 },
+  weekArrow:  { background: 'none', border: 'none', color: memberTheme.text, fontSize: 24, lineHeight: 1, padding: '6px 8px', minWidth: 36, minHeight: 36, cursor: 'pointer' },
   weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },
   dayCell:    { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, position: 'relative' },
   dayBtn:     { width: '100%', maxWidth: 48, borderRadius: 10, padding: '6px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: memberTheme.surface, color: memberTheme.textMuted, border: `1px solid ${memberTheme.separator}`, fontSize: 14, fontWeight: 600, cursor: 'pointer' },

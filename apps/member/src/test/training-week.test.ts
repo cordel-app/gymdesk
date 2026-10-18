@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, mondayIndex, shiftWeek, swipeWeekDelta, weekDates, weekdayOf, weekStart } from '../lib/trainingWeek';
+import { addDays, canShowNextWeek, mondayIndex, shiftWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekdayOf, weekStart } from '../lib/trainingWeek';
 
 describe('trainingWeek (#1370 stage 2)', () => {
   it('builds Monday-first weeks and numbers weekdays 0=Sunday', () => {
@@ -19,5 +19,22 @@ describe('trainingWeek (#1370 stage 2)', () => {
     expect(swipeWeekDelta(80, -10)).toBe(-1);
     expect(swipeWeekDelta(-30, 0)).toBe(0);
     expect(swipeWeekDelta(-80, 120)).toBe(0); // a vertical scroll
+  });
+});
+
+describe('shiftWeekWithin / canShowNextWeek (#1815)', () => {
+  const today = '2026-10-14'; // Wednesday
+  it('goes back across month and year boundaries', () => {
+    expect(shiftWeekWithin('2027-01-02', -1, '2027-01-02')).toBe('2026-12-26');
+    expect(shiftWeekWithin('2026-10-14', -3, today)).toBe('2026-09-23');
+  });
+  it('never moves past the current week', () => {
+    expect(shiftWeekWithin(today, 1, today)).toBe(today);
+    expect(canShowNextWeek(today, today)).toBe(false);
+  });
+  it('lands on today, not a future day, when returning to the current week', () => {
+    expect(shiftWeekWithin('2026-10-07', 1, today)).toBe('2026-10-14');
+    expect(shiftWeekWithin('2026-10-09', 1, today)).toBe('2026-10-14');
+    expect(canShowNextWeek('2026-10-07', today)).toBe(true);
   });
 });
