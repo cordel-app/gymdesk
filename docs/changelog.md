@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1806 (Members → Products: `⋮ → Cancel purchase` on an active one-time purchase now asks in the app's own `ConfirmDialog` (Cancel purchase / Keep it) instead of a browser prompt, blocks a double submit while the request runs and shows a failure inline. The cancellation itself is #1693's unchanged endpoint. Recurring lines are not cancellable from this menu: that is a ProductSet Draft edit committed by Save & Pay, so it is left to its own ticket.)
+
 - **Done**: #1805 (**The Home banner shows the gym theme's Motivational Sentence.** Read from the active gym's theme tokens (`motivationalSentence`, #1755) under the banner text; trimmed, and nothing is rendered when it is unset or blank. Long text wraps inside the banner. Frontend only, no API or schema change; tsc/tests not run: no node_modules here.)
 
 - **Done**: #1747 (follow-up: the collapsed rows of the Base Exercises and Gym Exercises lists show the Short Description in the application's language, falling back to the long description; the expanded body is unchanged. Not type-checked in the routine's environment — no dependencies installed.)
