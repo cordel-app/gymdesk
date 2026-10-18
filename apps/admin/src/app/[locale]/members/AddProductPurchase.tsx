@@ -38,7 +38,7 @@ type Outcome =
   | { kind: 'draft_updated' };
 
 export function AddProductPurchase({
-  memberId, isAdmin, canPay, recurringOnly = false, onClose, onChanged,
+  memberId, isAdmin, recurringOnly = false, onClose, onChanged,
 }: {
   memberId: number;
   isAdmin: boolean;
@@ -74,7 +74,7 @@ export function AddProductPurchase({
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ items: PurchasableProductOption[] }>(`${base}/catalogue`)
-      .then((r) => { if (!cancelled) setCatalogue(r.items.filter((p) => (canPay || !p.recurring) && (!recurringOnly || p.recurring))); })
+      .then((r) => { if (!cancelled) setCatalogue(r.items.filter((p) => !recurringOnly || p.recurring)); })
       .catch((err) => { if (!cancelled) { setCatalogue([]); setError(describe(err)); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
