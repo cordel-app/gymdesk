@@ -1100,6 +1100,36 @@ export default function MembershipPage() {
             <dd style={styles.dd}>{day(membership.ends_at) ?? t('membership.ongoing')}</dd>
           </div>
         </dl>
+        {membership.benefits.length > 0 && (
+          <div style={styles.nestedBenefits}>
+            <h2 style={styles.nestedBenefitsHeading}>{t('membership.benefits_heading')}</h2>
+            {BENEFIT_GROUPS.map((group) => {
+              const rows = membership.benefits.filter((b) => b.category === group);
+              if (rows.length === 0) return null;
+              return (
+                <div key={group} style={styles.benefitGroup}>
+                  <h3 style={styles.h3}>{t(`membership.benefit_group.${group}`)}</h3>
+                  <ul style={styles.benefitList}>
+                    {rows.map((b) => (
+                      <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                        <span>{b.name}</span>
+                        <span style={styles.benefitMeta}>× {b.quantity}</span>
+                        {/* The frozen price, not the catalogue's: what this
+                            membership was agreed at (§17). */}
+                        <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
+                        {b.billing_frequency && (
+                          <span style={styles.benefitMeta}>
+                            · {t(`membership.frequency.${b.billing_frequency}`)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Payment banner */}
@@ -1133,37 +1163,6 @@ export default function MembershipPage() {
           follows them rather than splitting the membership from its own
           pending payment. */}
       {renderProducts()}
-
-      {membership.benefits.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.h2}>{t('membership.benefits_heading')}</h2>
-          {BENEFIT_GROUPS.map((group) => {
-            const rows = membership.benefits.filter((b) => b.category === group);
-            if (rows.length === 0) return null;
-            return (
-              <div key={group} style={styles.benefitGroup}>
-                <h3 style={styles.h3}>{t(`membership.benefit_group.${group}`)}</h3>
-                <ul style={styles.benefitList}>
-                  {rows.map((b) => (
-                    <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
-                      <span>{b.name}</span>
-                      <span style={styles.benefitMeta}>× {b.quantity}</span>
-                      {/* The frozen price, not the catalogue's: what this
-                          membership was agreed at (§17). */}
-                      <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
-                      {b.billing_frequency && (
-                        <span style={styles.benefitMeta}>
-                          · {t(`membership.frequency.${b.billing_frequency}`)}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </section>
-      )}
 
       {packages.length > 0 && (
         <section style={styles.section}>
@@ -1283,6 +1282,10 @@ const styles: Record<string, React.CSSProperties> = {
   section: { marginTop: 24 },
   h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
+  // #1776: the plan's benefits sit inside its card, indented and on a tinted
+  // inner surface, so they read as the plan's own rather than a sibling.
+  nestedBenefits: { marginTop: 16, marginLeft: 12, paddingLeft: 12, borderLeft: `2px solid ${memberTheme.separator}` },
+  nestedBenefitsHeading: { fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: memberTheme.textSecondary },
   benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
