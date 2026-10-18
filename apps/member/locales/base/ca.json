@@ -17,6 +17,7 @@
     "active_products": "{count, plural, one {# producte actiu} other {# productes actius}}",
     "no_plan": "Sense pla",
     "additional_products": "{count, plural, one {# producte addicional} other {# productes addicionals}}",
+    "professional_service_sessions": "{count, plural, one {# sessió de servei professional} other {# sessions de serveis professionals}}",
     "expires_on": "Venç el {date}",
     "class_credits": "Crèdits de classes",
     "credits_remaining": "sessions disponibles",

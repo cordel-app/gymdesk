@@ -521,13 +521,11 @@ function MealRow({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [mealTypeVal, setMealTypeVal] = useState(meal.meal_type ?? '');
-  const [displayNameVal, setDisplayNameVal] = useState(meal.display_name);
   const [notesVal, setNotesVal] = useState(meal.notes ?? '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setMealTypeVal(meal.meal_type ?? '');
-    setDisplayNameVal(meal.display_name);
     setNotesVal(meal.notes ?? '');
   }, [meal]);
 
@@ -535,7 +533,6 @@ function MealRow({
 
   function cancelEdit() {
     setMealTypeVal(meal.meal_type ?? '');
-    setDisplayNameVal(meal.display_name);
     setNotesVal(meal.notes ?? '');
     setEditing(false);
   }
@@ -547,7 +544,6 @@ function MealRow({
         method: 'PUT',
         body: JSON.stringify({
           meal_type: mealTypeVal || undefined,
-          display_name: displayNameVal.trim() || undefined,
           notes: notesVal.trim() || null,
         }),
       });
@@ -591,9 +587,9 @@ function MealRow({
         {/* #1625: a meal has no image of its own; its avatar is the first food that has one. */}
         <FoodThumbnail imageUrl={meal.items.find((i) => i.item_image_url)?.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
-          {/* A meal saved with no name stores its type's slug as display_name:
-              that is an identifier, so the translated type is shown instead. */}
-          {meal.meal_type && (!meal.display_name?.trim() || meal.display_name === meal.meal_type)
+          {/* #1785: the Meal Type identifies the section; display_name is only
+              the fallback for a legacy meal that has no type. */}
+          {meal.meal_type
             ? t(`nutrition_plan_templates.tree_meal_type_${meal.meal_type}`)
             : meal.display_name}
         </span>
@@ -636,7 +632,7 @@ function MealRow({
       {/* Edit mode */}
       {editing && (
         <div style={{ borderTop: '1px solid #ececf0', padding: '12px 12px 14px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_label_meal_type')}</span>
               <select
@@ -649,14 +645,6 @@ function MealRow({
                   <option key={mt} value={mt}>{t(`nutrition_plan_templates.tree_meal_type_${mt}`)}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <span style={microLabel}>{t('nutrition_plan_templates.tree_label_display_name')}</span>
-              <input
-                value={displayNameVal}
-                onChange={(e) => setDisplayNameVal(e.target.value)}
-                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
-              />
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
@@ -715,6 +703,7 @@ function ItemsReadView({
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+              <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
               <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
               {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                 <QualityBadge key={slug} slug={slug} t={t} />
@@ -979,6 +968,7 @@ function MealItemsEditor({
             ) : (
               /* Read row */
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+                <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
                 {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                   <QualityBadge key={slug} slug={slug} t={t as any} />
