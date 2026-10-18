@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1806 (Members → Products: `⋮ → Cancel purchase` on an active one-time purchase now asks in the app's own `ConfirmDialog` (Cancel purchase / Keep it) instead of a browser prompt, blocks a double submit while the request runs and shows a failure inline. The cancellation itself is #1693's unchanged endpoint. Recurring lines are not cancellable from this menu: that is a ProductSet Draft edit committed by Save & Pay, so it is left to its own ticket.)
+
 - **Done**: #1747 (follow-up: the collapsed rows of the Base Exercises and Gym Exercises lists show the Short Description in the application's language, falling back to the long description; the expanded body is unchanged. Not type-checked in the routine's environment — no dependencies installed.)
 
 - **Done**: #1784 (food items of a meal can be reordered by dragging in the shared `NutritionPlanTree` — Nutrition Plan Templates, Base templates and Assigned Nutrition Plans; `PUT …/meals/:mealId/items/reorder` on `nutrition-plan-templates`, `platform-nutrition-plan-templates` and `member-nutrition-plans` takes `{ order }` listing every item of the meal once. Tests were written but not run in the routine's environment — no dependencies or MySQL available.)

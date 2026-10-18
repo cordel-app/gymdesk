@@ -657,7 +657,9 @@
     "purchase_validity_cancelled": "Cancelled (valid until end date)",
     "purchase_validity_expired": "Expired",
     "purchase_cancel_action": "Cancel purchase",
-    "purchase_cancel_confirm": "Cancel {product}? The member keeps it until its end date."
+    "purchase_cancel_confirm": "Cancel {product}? The member keeps it until its end date.",
+    "purchase_cancel_confirm_button": "Cancel purchase",
+    "purchase_cancel_keep": "Keep it"
   },
   "member_payments": {
     "title": "Member Payments",

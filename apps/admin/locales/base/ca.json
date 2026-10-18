@@ -658,7 +658,9 @@
     "purchase_validity_cancelled": "Cancel·lat (vàlid fins a la data de fi)",
     "purchase_validity_expired": "Caducat",
     "purchase_cancel_action": "Cancel·lar compra",
-    "purchase_cancel_confirm": "Cancel·lar {product}? El membre el conserva fins a la data de fi."
+    "purchase_cancel_confirm": "Cancel·lar {product}? El membre el conserva fins a la data de fi.",
+    "purchase_cancel_confirm_button": "Cancel·lar compra",
+    "purchase_cancel_keep": "Mantenir-lo"
   },
   "member_payments": {
     "title": "Pagaments del membre",
