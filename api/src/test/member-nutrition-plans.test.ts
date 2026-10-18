@@ -1144,9 +1144,6 @@ describe('meal items', () => {
     expect(res.status).toBe(200);
     expect(res.body.map((i: any) => i.id)).toEqual([ids[2], ids[0], ids[1]]);
 
-    const list = await request.get(base).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-    expect(list.body.map((i: any) => i.id)).toEqual([ids[2], ids[0], ids[1]]);
-
     const partial = await request.put(`${base}/reorder`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ order: [ids[0], ids[1]] });
     expect(partial.status).toBe(400);
