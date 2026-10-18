@@ -57,6 +57,8 @@ interface Exercise {
   /** #967: the stored per-locale names — what the editor seeds its inputs from. */
   translations: Record<string, string>;
   description: string | null;
+  display_short_description?: string | null;
+  display_description?: string | null;
   status: 'active' | 'inactive';
   /** #1420: the four gender-specific references and the companions derived from them. */
   image_male_url: string | null;
@@ -384,10 +386,12 @@ export default function CordelExercisesPage() {
     {
       header: t('col_description'),
       mobile: 'secondary',
-      render: (row) => row.description
-        // #1383: at most two lines with an ellipsis; the whole text stays in the
-        // expanded body, and `title` carries it for a hover.
-        ? <span title={row.description} style={{ color: '#666', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{row.description}</span>
+      // #1747: the collapsed row shows the Short Description in the application's
+      // language, falling back to the long one; the whole text stays in the
+      // expanded body.
+      render: (row) => (row.display_short_description ?? row.display_description ?? row.description)
+        // #1383: at most two lines with an ellipsis; `title` carries it for a hover.
+        ? <span title={row.display_short_description ?? row.display_description ?? row.description ?? undefined} style={{ color: '#666', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{row.display_short_description ?? row.display_description ?? row.description}</span>
         : <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>,
     },
     {

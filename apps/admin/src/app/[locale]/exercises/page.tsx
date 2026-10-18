@@ -64,6 +64,8 @@ interface Exercise {
   /** #967: the stored per-locale names — what `⋮ → Edit` seeds its language inputs from. */
   translations: Record<string, string>;
   description: string | null;
+  display_short_description?: string | null;
+  display_description?: string | null;
   /** #1420: the four gender-specific references and the companions derived from them. */
   image_male_url: string | null; image_female_url: string | null;
   video_male_url: string | null; video_female_url: string | null;
@@ -633,7 +635,7 @@ export default function ExercisesPage() {
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.display_name ?? ex.name}</span>
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {truncate(ex.description)}
+            {truncate(ex.display_short_description ?? ex.display_description ?? ex.description)}
           </div>
           <div className={CELL_CLASS.primary_muscles} style={{ fontSize: 13, color: '#555', minWidth: 0 }}>
             <ExercisePrimaryMuscles muscles={ex.muscles} muscleLabel={muscleLabel} />
