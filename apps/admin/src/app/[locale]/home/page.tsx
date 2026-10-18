@@ -51,6 +51,8 @@ export default function HomePage() {
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin } = useGym();
   const { flags: featureFlags } = useFeatureFlags();
+  const motivationalSentence = ((activeGym?.theme?.tokens as { motivationalSentence?: unknown } | undefined)?.motivationalSentence);
+  const sentence = typeof motivationalSentence === 'string' ? motivationalSentence.trim() : '';
   const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
   const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
   const tc = useTranslations('calendar');
@@ -109,6 +111,10 @@ export default function HomePage() {
         <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.85 }}>{t('banner_kicker')}</div>
         <h2 style={{ margin: '6px 0 4px', fontSize: 20 }}>{t('banner_title')}</h2>
         <p style={{ margin: 0, fontSize: 14, opacity: 0.9, maxWidth: 640 }}>{t('banner_text')}</p>
+        {sentence && (
+          <p data-testid="home-motivational-sentence"
+            style={{ margin: '12px 0 0', fontSize: 15, fontStyle: 'italic', maxWidth: 640, overflowWrap: 'anywhere' }}>{sentence}</p>
+        )}
       </section>
 
       {error && <p style={mutedTextStyle}>{t('error')}</p>}
