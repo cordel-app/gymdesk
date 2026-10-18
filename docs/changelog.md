@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1788 (Nutrition Plans: the "OR" separators between food items of the same food type are removed from Plan Templates and Assigned Plans, which share `NutritionPlanTree`; items, order, quantities and data are unchanged, and the `tree_food_type_or` locale key is gone. Gate: `apps/admin/src/test/nutrition-no-or-separator.test.ts`. tsc/tests not run: no node_modules in this environment)
 - **Done**: #1785 (Nutrition Plans: the meal editor in Plan Templates and Assigned Plans no longer has a Display Name field; a meal is titled by its Meal Type, with the stored `display_name` only a fallback for a legacy meal with no type. UI only; no API or schema change. tsc/tests not run: no node_modules in this environment)
 - **Done**: #1787 (Members App: a dietary restriction's image carries a centred cross in the theme's error colour (`memberTheme.statusError`, with a surface-coloured halo for contrast), drawn by `NutritionItemRow`'s opt-in `crossed` prop that only the Dietary Restrictions section sets; Nutrition Goals and all data are unchanged. Gate: `api/src/test/member-restriction-cross.unit.test.ts`.)
 - **Done**: #1786 (Nutrition Plans: food items in Plan Templates and Assigned Plans lead with the food's circular thumbnail, from the `item_image_url` the API already returns, with the shared `FoodThumbnail` placeholder when there is none; no new storage, route or migration)
