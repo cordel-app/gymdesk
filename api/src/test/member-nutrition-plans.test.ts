@@ -1132,7 +1132,7 @@ describe('meal items', () => {
       .send({ meal_type: 'dinner' });
     const base = `/member-nutrition-plans/${plan.id}/days/${dayId}/meals/${mealRes.body.id}/items`;
     const ids: number[] = [];
-    for (const component_type of ['starter', 'side', 'sauce']) {
+    for (const component_type of ['main_dish', 'side', 'sauce']) {
       const r = await request.post(base).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
         .send({ nutrition_library_item_id: libraryItemId, component_type });
       expect(r.status).toBe(201);
