@@ -316,6 +316,32 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/reorder', requireSuperadmin,
   } catch (err) { next(err); }
 });
 
+platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId', requireSuperadmin, async (req, res, next) => {
+  const { id, dayId } = req.params as { id: string; dayId: string };
+  if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
+  const weekday = Number(req.body.weekday);
+  if (!VALID_WEEKDAYS.includes(weekday)) {
+    return res.status(400).json({ error: 'weekday must be 0–6 (Mon–Sun) or 7 (All Days)' });
+  }
+  try {
+    await db.query(
+      'UPDATE nutrition_plan_template_days SET weekday = ? WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
+      [weekday, dayId, id],
+    );
+    const { rows } = await db.query(
+      'SELECT * FROM nutrition_plan_template_days WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
+      [dayId, id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Day not found' });
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+      return res.status(409).json({ error: 'This weekday has already been added to the template.' });
+    }
+    next(err);
+  }
+});
+
 platformNutritionPlanTemplatesRouter.delete('/:id/days/:dayId', requireSuperadmin, async (req, res, next) => {
   const { id, dayId } = req.params as { id: string; dayId: string };
   try {

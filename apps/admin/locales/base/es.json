@@ -3631,6 +3631,8 @@
     "tree_add_day": "+ Añadir Día",
     "tree_no_days": "Aún no se han añadido días.",
     "tree_remove_day": "Eliminar Día",
+    "tree_change_day": "Cambiar día",
+    "tree_save_day": "Guardar",
     "tree_confirm_remove_day": "¿Eliminar este día y todas sus comidas?",
     "tree_pick_weekday": "Selecciona un día de la semana.",
     "tree_add_meal": "+ Añadir Comida",

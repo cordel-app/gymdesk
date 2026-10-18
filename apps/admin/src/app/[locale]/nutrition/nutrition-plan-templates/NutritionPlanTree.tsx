@@ -304,6 +304,7 @@ export function NutritionPlanTree({
                 libraryItems={libraryItems}
                 componentTypes={componentTypes}
                 onRemoveDay={() => setRemovingDay(day)}
+                usedWeekdays={usedWeekdays}
                 onChanged={onChanged}
               />
             ))}
@@ -344,7 +345,7 @@ export function NutritionPlanTree({
 /* ---- DayRow ---- */
 
 function DayRow({
-  day, templateId, apiBase, canWrite, libraryItems, componentTypes, onRemoveDay, onChanged,
+  day, templateId, apiBase, canWrite, libraryItems, componentTypes, onRemoveDay, usedWeekdays, onChanged,
 }: {
   day: HierDay;
   templateId: number;
@@ -353,6 +354,7 @@ function DayRow({
   libraryItems: LibraryItem[];
   componentTypes: string[];
   onRemoveDay: () => void;
+  usedWeekdays: Set<number>;
   onChanged: () => Promise<void> | void;
 }) {
   const t = useTranslations();
@@ -368,6 +370,23 @@ function DayRow({
   const [removingMeal, setRemovingMeal] = useState<HierMeal | null>(null);
 
   const base = `${apiBase}/${templateId}/days/${day.id}`;
+
+  const [changingDay, setChangingDay] = useState(false);
+  const [newWeekday, setNewWeekday] = useState(String(day.weekday));
+  const [savingDay, setSavingDay] = useState(false);
+
+  async function saveWeekday() {
+    const weekday = parseInt(newWeekday, 10);
+    if (weekday === day.weekday) { setChangingDay(false); return; }
+    setSavingDay(true);
+    try {
+      await apiFetch(base, { method: 'PUT', body: JSON.stringify({ weekday }) });
+      setChangingDay(false);
+      await onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+    } finally { setSavingDay(false); }
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -434,12 +453,31 @@ function DayRow({
         {canWrite && (
           <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', fontSize: 16, userSelect: 'none' }}>⠿</span>
         )}
-        <span style={{ fontWeight: 700, fontSize: 15 }}>{weekdayLabel}</span>
+        {changingDay ? (
+          <>
+            <select value={newWeekday} onChange={(e) => setNewWeekday(e.target.value)} style={selectStyle}>
+              {ALL_WEEKDAYS.filter((w) => w === day.weekday || !usedWeekdays.has(w)).map((w) => (
+                <option key={w} value={w}>{t(`workouts.weekday_${w}`)}</option>
+              ))}
+            </select>
+            <button onClick={saveWeekday} disabled={savingDay} style={btnSmall()}>
+              {savingDay ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.tree_save_day')}
+            </button>
+            <button onClick={() => { setChangingDay(false); setNewWeekday(String(day.weekday)); }} style={btnSmall()}>
+              {t('nutrition_plan_templates.cancel')}
+            </button>
+          </>
+        ) : (
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{weekdayLabel}</span>
+        )}
         <span style={{ flex: 1 }} />
         {canWrite && (
           <ContextMenu
             ariaLabel={t('nutrition_plan_templates.col_actions')}
-            items={[{ label: t('nutrition_plan_templates.tree_remove_day'), onClick: onRemoveDay, danger: true }]}
+            items={[
+              { label: t('nutrition_plan_templates.tree_change_day'), onClick: () => { setNewWeekday(String(day.weekday)); setChangingDay(true); } },
+              { label: t('nutrition_plan_templates.tree_remove_day'), onClick: onRemoveDay, danger: true },
+            ]}
           />
         )}
       </div>

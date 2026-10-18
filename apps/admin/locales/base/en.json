@@ -3645,6 +3645,8 @@
     "tree_add_day": "+ Add Day",
     "tree_no_days": "No days added yet.",
     "tree_remove_day": "Remove Day",
+    "tree_change_day": "Change Day",
+    "tree_save_day": "Save",
     "tree_confirm_remove_day": "Remove this day and all its meals?",
     "tree_pick_weekday": "Please select a weekday.",
     "tree_add_meal": "+ Add Meal",
