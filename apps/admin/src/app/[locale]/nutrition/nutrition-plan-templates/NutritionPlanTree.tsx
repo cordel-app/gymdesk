@@ -693,7 +693,7 @@ function MealRow({
   );
 }
 
-/* ---- ItemsReadView — read-only food items with OR grouping and quality badges ---- */
+/* ---- ItemsReadView — read-only food items with quality badges ---- */
 
 function ItemsReadView({
   items, libraryItems, t,
@@ -706,14 +706,8 @@ function ItemsReadView({
     <div>
       {items.map((item, idx) => {
         const libItem = (Array.isArray(libraryItems) ? libraryItems : []).find((l) => l.id === item.nutrition_library_item_id);
-        const showOr = idx > 0 && items[idx - 1].component_type === item.component_type;
         return (
           <React.Fragment key={item.id}>
-            {showOr && (
-              <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '1px 0', fontWeight: 700, letterSpacing: 0.5 }}>
-                {t('nutrition_plan_templates.tree_food_type_or')}
-              </div>
-            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
               <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
               <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
@@ -904,15 +898,9 @@ function MealItemsEditor({
       {items.map((item, idx) => {
         const isEditing = editState?.id === item.id;
         const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
-        const showOr = !isEditing && idx > 0 && items[idx - 1].component_type === item.component_type && editState?.id !== items[idx - 1].id;
 
         return (
           <React.Fragment key={item.id}>
-            {showOr && (
-              <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '1px 0', fontWeight: 700, letterSpacing: 0.5 }}>
-                {t('nutrition_plan_templates.tree_food_type_or')}
-              </div>
-            )}
 
             {isEditing ? (
               /* Inline edit row */
