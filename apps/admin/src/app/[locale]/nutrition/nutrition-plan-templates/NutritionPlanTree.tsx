@@ -326,7 +326,6 @@ export function NutritionPlanTree({
         apiBase={apiBase}
         goals={hierarchy.goals ?? []}
         canWrite={canWrite}
-        libraryItems={libraryItems}
         onChanged={onChanged}
       />
 
@@ -1241,18 +1240,16 @@ function RestrictionsSection({
 
 /* ---- GoalsSection ---- */
 
-const emptyGoalForm = { item_name: '', quantity: '', unit: '', frequency: 'daily', nutrition_library_item_id: '' };
+const emptyGoalForm = { item_name: '', quantity: '', unit: '', frequency: 'daily' };
 type GoalForm = typeof emptyGoalForm;
 
 function GoalsSection({
-  templateId, apiBase, goals, canWrite, libraryItems, onChanged,
+  templateId, apiBase, goals, canWrite, onChanged,
 }: {
   templateId: number;
   apiBase: string;
   goals: HierGoal[];
   canWrite: boolean;
-  /** #932: the foods a goal may be illustrated by — the same library the restrictions pick from. */
-  libraryItems: LibraryItem[];
   onChanged: () => Promise<void> | void;
 }) {
   const t = useTranslations();
@@ -1263,7 +1260,6 @@ function GoalsSection({
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
-  const [illustratingId, setIllustratingId] = useState<number | null>(null);
 
   const base = `${apiBase}/${templateId}/goals`;
 
@@ -1282,9 +1278,6 @@ function GoalsSection({
           unit: addForm.unit.trim(),
           frequency: addForm.frequency,
           applies_all_days: 1,
-          // #932: the food that illustrates the goal, or nothing (the member
-          // then sees the standard fallback rather than a guessed picture).
-          nutrition_library_item_id: addForm.nutrition_library_item_id ? parseInt(addForm.nutrition_library_item_id, 10) : null,
         }),
       });
       setAddForm(emptyGoalForm);
@@ -1293,19 +1286,6 @@ function GoalsSection({
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
     } finally { setAdding(false); }
-  }
-
-  async function changeIllustration(goalId: number, value: string) {
-    setIllustratingId(goalId);
-    try {
-      await apiFetch(`${base}/${goalId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ nutrition_library_item_id: value ? parseInt(value, 10) : null }),
-      });
-      await onChanged();
-    } catch (err: any) {
-      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
-    } finally { setIllustratingId(null); }
   }
 
   async function removeGoal() {
@@ -1333,32 +1313,6 @@ function GoalsSection({
             {t(`nutrition_plan_templates.tree_goal_name_${g.item_name}`, { defaultValue: g.item_name })}
           </span>
           <span style={{ fontSize: 12.5, color: '#6b7280', marginLeft: 8 }}>{g.quantity} {g.unit} · {g.frequency}</span>
-          {canWrite ? (
-            // A goal's illustration is editable after it was created: the same
-            // library foods and the same "none" option as the add form, saved
-            // as soon as it changes.
-            <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11.5, color: '#9ca3af' }}>{t('nutrition_plan_templates.tree_goal_illustration')}</span>
-              <select
-                aria-label={t('nutrition_plan_templates.tree_goal_illustration')}
-                value={g.nutrition_library_item_id != null ? String(g.nutrition_library_item_id) : ''}
-                disabled={illustratingId === g.id}
-                onChange={(e) => changeIllustration(g.id, e.target.value)}
-                style={microSelect}
-              >
-                <option value="">{t('nutrition_plan_templates.tree_goal_illustration_none')}</option>
-                {(Array.isArray(libraryItems) ? libraryItems : []).map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </span>
-          ) : (
-            g.illustration_name && (
-              <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 6 }}>
-                {t('nutrition_plan_templates.tree_goal_illustrated_by', { name: g.illustration_name })}
-              </span>
-            )
-          )}
           {canWrite && (
             <button onClick={() => setRemovingId(g.id)} style={removeBtnStyle}>×</button>
           )}
@@ -1408,19 +1362,6 @@ function GoalsSection({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div>
-              <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_illustration')}</span>
-              <select
-                value={addForm.nutrition_library_item_id}
-                onChange={(e) => setAddForm({ ...addForm, nutrition_library_item_id: e.target.value })}
-                style={microSelect}
-              >
-                <option value="">{t('nutrition_plan_templates.tree_goal_illustration_none')}</option>
-                {(Array.isArray(libraryItems) ? libraryItems : []).map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </div>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_frequency')}</span>
               <select
