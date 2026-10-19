@@ -3920,7 +3920,9 @@
     "translation_missing": "Falta",
     "error_translation_name": "Una descripción traducida necesita un nombre traducido.",
     "image_staged": "Se subirá cuando se guarde el objetivo.",
-    "image_retry": "Reintentar subida"
+    "image_retry": "Reintentar subida",
+    "show_all_attributes": "Mostrar todos los atributos",
+    "hide_all_attributes": "Ocultar todos los atributos"
   },
   "assigned_personal_goals": {
     "title": "Objetivos Personales Asignados",

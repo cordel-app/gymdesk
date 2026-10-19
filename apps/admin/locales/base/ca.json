@@ -3947,7 +3947,9 @@
     "translation_missing": "Falta",
     "error_translation_name": "Una descripció traduïda necessita un nom traduït.",
     "image_staged": "Es pujarà quan es desi l'objectiu.",
-    "image_retry": "Reintenta la pujada"
+    "image_retry": "Reintenta la pujada",
+    "show_all_attributes": "Mostra tots els atributs",
+    "hide_all_attributes": "Amaga tots els atributs"
   },
   "assigned_personal_goals": {
     "title": "Objectius Personals Assignats",

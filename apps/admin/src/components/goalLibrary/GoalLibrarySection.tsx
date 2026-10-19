@@ -17,6 +17,9 @@ import {
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import type { ContextMenuItem } from '@/components/ContextMenu';
 import { IMAGE_PREVIEW_THUMBNAIL_SIZE } from '@/components/imagePreviewFrame';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { localeLabel } from '@/lib/localeLabels';
@@ -98,6 +101,10 @@ export function GoalLibrarySection({
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+
+  // #1830: the Cards/List switch and its saved choice are Exercises' and
+  // Activities' own (#1386, #1531) — one hook, one stored preference.
+  const [view, setView] = useExerciseViewMode();
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [detailGoal, setDetailGoal] = useState<GoalRow | null>(null);
@@ -216,6 +223,9 @@ export function GoalLibrarySection({
   /* ── Inline edit ────────────────────────────────────────────────────────── */
 
   function openInlineEdit(goal: GoalRow) {
+    // Editing happens in the List view only; Edit from a card switches to it and
+    // opens that goal's row in edit mode (#1830, as Activities' #1744).
+    setView('list');
     setEditingId(goal.id);
     setEditForm(toGoalFormValues(goal));
     setEditError(null);
@@ -471,6 +481,50 @@ export function GoalLibrarySection({
     );
   }
 
+  /** The row's `⋮` items, one list for the List view's column and the Cards view's header. */
+  function menuItemsFor(goal: GoalRow): ContextMenuItem[] {
+    // A gym may not edit or delete a System row; Cordel administers those.
+    const writable = scope === 'platform' || !isSystemGoal(goal);
+    const available = goalAvailability(goal) === 'active';
+    return [
+            // #1181 — Duplicate first, for a System goal and the gym's own alike:
+            // the copy is always a new gym-owned goal. Immediate, no dialog.
+            ...(configurable ? [
+              { label: label('duplicate'), onClick: () => duplicate(goal), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #1181 — the gym's own availability state. Deactivate takes the
+            // shared danger styling (it removes the goal from what members and
+            // staff may pick), Activate the normal one — the Professional
+            // Services pattern.
+            ...(configurable ? [
+              available
+                ? { label: label('deactivate'), onClick: () => setAvailability(goal, 'deactivate'), disabled: !canWrite, title: readOnlyTitle, danger: true }
+                : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            ...(writable ? [
+              { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #1034 §4 — offered for a System goal as well as the gym's own: a
+            // gym may not *edit* a platform row but may certainly assign it,
+            // which is the catalogue's own gym-facing visibility rule (#947 §5)
+            // and exactly what `POST /member-personal-goals` already accepts.
+            // It is not destructive, so it carries no `danger` flag. Since
+            // #1181 an inactive goal is not assignable — the server refuses it
+            // — so the item is disabled, with the reason, rather than offered.
+            ...(onAssign ? [{
+              label: label('assign_to_member'),
+              onClick: () => onAssign(goal),
+              disabled: !canWrite || !available,
+              title: !available ? label('inactive_assign_hint') : readOnlyTitle,
+            }] : []),
+            ...(writable ? [
+              { label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },
+            ] : []),
+            // Details is always last (#802's rule for a page that fixes its order).
+            { label: label('details'), onClick: () => setDetailGoal(goal) },
+    ] as ContextMenuItem[];
+  }
+
   const columns: Column<GoalRow>[] = [
     // #1623 — the 256 × 256 thumbnail in lists; #1723 draws it as the app's one
     // circular thumbnail (`MemberAvatar`), a goal with none reads its initial in
@@ -555,51 +609,74 @@ export function GoalLibrarySection({
       width: 40,
       mobile: 'actions',
       render: (goal) => {
-        // A gym may not edit or delete a System row; Cordel administers those.
-        const writable = scope === 'platform' || !isSystemGoal(goal);
-        const available = goalAvailability(goal) === 'active';
-        return (
-          <ContextMenu items={[
-            // #1181 — Duplicate first, for a System goal and the gym's own alike:
-            // the copy is always a new gym-owned goal. Immediate, no dialog.
-            ...(configurable ? [
-              { label: label('duplicate'), onClick: () => duplicate(goal), disabled: !canWrite, title: readOnlyTitle },
-            ] : []),
-            // #1181 — the gym's own availability state. Deactivate takes the
-            // shared danger styling (it removes the goal from what members and
-            // staff may pick), Activate the normal one — the Professional
-            // Services pattern.
-            ...(configurable ? [
-              available
-                ? { label: label('deactivate'), onClick: () => setAvailability(goal, 'deactivate'), disabled: !canWrite, title: readOnlyTitle, danger: true }
-                : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
-            ] : []),
-            ...(writable ? [
-              { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
-            ] : []),
-            // #1034 §4 — offered for a System goal as well as the gym's own: a
-            // gym may not *edit* a platform row but may certainly assign it,
-            // which is the catalogue's own gym-facing visibility rule (#947 §5)
-            // and exactly what `POST /member-personal-goals` already accepts.
-            // It is not destructive, so it carries no `danger` flag. Since
-            // #1181 an inactive goal is not assignable — the server refuses it
-            // — so the item is disabled, with the reason, rather than offered.
-            ...(onAssign ? [{
-              label: label('assign_to_member'),
-              onClick: () => onAssign(goal),
-              disabled: !canWrite || !available,
-              title: !available ? label('inactive_assign_hint') : readOnlyTitle,
-            }] : []),
-            ...(writable ? [
-              { label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },
-            ] : []),
-            // Details is always last (#802's rule for a page that fixes its order).
-            { label: label('details'), onClick: () => setDetailGoal(goal) },
-          ]} />
-        );
+        return <ContextMenu items={menuItemsFor(goal)} />;
       },
     },
   ];
+
+  /**
+   * The Cards view (#1830): the same goals as the List, image first, with the
+   * Activities card's shape — name and `⋮`, a clamped description, the target and
+   * Status, then a Show / Hide all attributes control that opens the list row's
+   * own read-only body, so the two views cannot drift. Edit is never drawn here:
+   * it switches to the List and opens the row there.
+   */
+  function renderCard(goal: GoalRow) {
+    const isExpanded = expanded.has(goal.id);
+    const description = translated ? (goal.display_description ?? goal.description) : goal.description;
+    const status = configurable ? goalAvailability(goal) : goal.status;
+    return (
+      <div key={goal.id} id={`goal-card-${goal.id}`} style={{ ...cardSurfaceStyle, overflow: 'hidden' }}>
+        {hasWebpImage && goal.image_url && (
+          <CardSquareImage
+            src={goal.image_thumbnail_url ?? goal.image_url}
+            alt={nameOf(goal)}
+            version={goal.modified_at ?? goal.created_at}
+            placeholder={null}
+          />
+        )}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {hasWebpImage && !goal.image_url && (
+              <MemberAvatar name={nameOf(goal)} imageUrl={null} stamp={goal.modified_at ?? goal.created_at} size={40} />
+            )}
+            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>
+              {nameOf(goal)}
+              {isSystemGoal(goal) && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
+            </div>
+            <ContextMenu items={menuItemsFor(goal)} ariaLabel={`Actions for ${nameOf(goal)}`} />
+          </div>
+          <div
+            title={description ?? undefined}
+            style={{
+              fontSize: 13, color: '#888', display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}
+          >
+            {description || '—'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <StatusBadge status={status} label={label(`status_${status}`)} />
+            {measurable && <span style={{ fontSize: 13, color: '#888' }}>{formatGoalTarget(goal)}</span>}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => toggleExpand(goal.id)}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+            padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+            borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
+          }}
+        >
+          <span>{isExpanded ? label('hide_all_attributes') : label('show_all_attributes')}</span>
+          <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+        </button>
+        {isExpanded && renderReadOnly(goal)}
+      </div>
+    );
+  }
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, total);
@@ -616,6 +693,7 @@ export function GoalLibrarySection({
               style={{ ...filterControlStyle, minWidth: 220 }}
             />
           </FilterField>
+          <ExerciseViewToggle value={view} onChange={setView} />
         </FilterBar>
         <button
           type="button"
@@ -639,6 +717,15 @@ export function GoalLibrarySection({
         </div>
       )}
 
+      {view === 'cards' ? (
+        loading ? (
+          <p style={{ color: '#888' }}>{label('loading')}</p>
+        ) : goals.length === 0 ? (
+          <p style={{ color: '#888' }}>{kindLabel('empty')}</p>
+        ) : (
+          <CardGrid>{goals.map(renderCard)}</CardGrid>
+        )
+      ) : (
       <DataTable
         columns={columns}
         rows={goals}
@@ -658,6 +745,7 @@ export function GoalLibrarySection({
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(goal) => toggleExpand(goal.id)}
       />
+      )}
 
       {total > 0 && (
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>

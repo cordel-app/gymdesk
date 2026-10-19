@@ -3934,7 +3934,9 @@
     "translation_missing": "Missing",
     "error_translation_name": "A translated description needs a translated name.",
     "image_staged": "Will be uploaded once the goal is saved.",
-    "image_retry": "Retry upload"
+    "image_retry": "Retry upload",
+    "show_all_attributes": "Show all attributes",
+    "hide_all_attributes": "Hide all attributes"
   },
   "assigned_personal_goals": {
     "title": "Assigned Personal Goals",
