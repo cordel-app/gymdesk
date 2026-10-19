@@ -663,7 +663,9 @@
     "purchase_cancel_action": "Cancel·lar compra",
     "purchase_cancel_confirm": "Cancel·lar {product}? El membre el conserva fins a la data de fi.",
     "purchase_cancel_confirm_button": "Cancel·lar compra",
-    "purchase_cancel_keep": "Mantenir-lo"
+    "purchase_cancel_keep": "Mantenir-lo",
+    "purchase_cancel_confirm_recurring": "Cancel·lar {product}? Es treu dels canvis en esborrany del membre; revisa'ls i fes servir Desar i pagar per aplicar-los. Ara no es cobra ni es reemborsa res.",
+    "purchase_cancel_recurring_unavailable": "Aquest producte no es pot treure de l'esborrany aquí. Fes servir Productes recurrents."
   },
   "member_payments": {
     "title": "Pagaments del membre",

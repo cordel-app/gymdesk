@@ -662,7 +662,9 @@
     "purchase_cancel_action": "Cancel purchase",
     "purchase_cancel_confirm": "Cancel {product}? The member keeps it until its end date.",
     "purchase_cancel_confirm_button": "Cancel purchase",
-    "purchase_cancel_keep": "Keep it"
+    "purchase_cancel_keep": "Keep it",
+    "purchase_cancel_confirm_recurring": "Cancel {product}? It is removed from the member's draft changes; review and Save & Pay to apply them. Nothing is billed or refunded now.",
+    "purchase_cancel_recurring_unavailable": "This product can't be removed from the draft here. Use Recurring Products."
   },
   "member_payments": {
     "title": "Member Payments",
