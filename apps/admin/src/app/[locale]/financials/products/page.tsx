@@ -1186,6 +1186,7 @@ export default function ProductsPage() {
           )}
         </>
       ) : (
+      <>
       {/* Headers + rows share LIST_GRID_COLUMNS and scroll together (#637) */}
       <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
         <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
@@ -1215,6 +1216,7 @@ export default function ProductsPage() {
           )}
         </div>
       </div>
+      </>
       )}
 
       {/* Details modal */}
