@@ -23,16 +23,18 @@ import {
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
 export function BillingEventSimulationChart({
-  simulation, t, formatDate,
+  simulation, t, formatDate, showZero = false,
 }: {
   simulation: BillingEventSimulationData | null | undefined;
   t: Translate;
   formatDate: (date: string) => string;
+  /** #1810 — the host's "Show €0 billing events" choice. */
+  showZero?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const dates = useMemo(
-    () => visibleBillingDates(simulation?.dates ?? [], false),
-    [simulation],
+    () => visibleBillingDates(simulation?.dates ?? [], showZero),
+    [simulation, showZero],
   );
   const points = useMemo(
     () => billingEventChartPoints(dates, formatDate, fmtMoney),
