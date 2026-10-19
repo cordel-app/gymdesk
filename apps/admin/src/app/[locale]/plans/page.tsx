@@ -1712,6 +1712,13 @@ export default function PlansPage() {
                       const simDate = (date: string) => fmtTimelineDate(date, gymFmt);
                       return (
                         <>
+                          <SectionHeader title={t('plans.section_billing_event_chart')} />
+                          <BillingEventSimulationChart
+                            simulation={plan.billing_event_simulation}
+                            showZero={showZero}
+                            t={simT}
+                            formatDate={simDate}
+                          />
                           <div style={subSectionSt}>
                             <button
                               type="button"
@@ -1740,13 +1747,6 @@ export default function PlansPage() {
                               })()}
                             />
                           )}
-                          <SectionHeader title={t('plans.section_billing_event_chart')} />
-                          <BillingEventSimulationChart
-                            simulation={plan.billing_event_simulation}
-                            showZero={showZero}
-                            t={simT}
-                            formatDate={simDate}
-                          />
                         </>
                       );
                     })()}
