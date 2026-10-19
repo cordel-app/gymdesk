@@ -8,6 +8,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { MemberDialog } from '@/components/MemberDialog';
 import { MembersSectionCard, useSectionImageUrl } from '@/components/MembersSectionCard';
 import {
   memberTheme,
@@ -149,6 +150,8 @@ export default function HomePage() {
     load();
   }, [appLoading, isLinked]);
 
+  const [bookingDetailOpen, setBookingDetailOpen] = useState(false);
+  const [bookingImageFailed, setBookingImageFailed] = useState(false);
   function goToBookings() { router.push(`/${locale}/schedule`); }
 
   // Clerk's state is not known yet (always the case on the server and on the
@@ -250,14 +253,14 @@ export default function HomePage() {
           {loading ? (
             <MembersSectionCard slot="next_bookings" style={styles.nextBookingCard}><p style={styles.hint}>{t('home.loading')}</p></MembersSectionCard>
           ) : nextBooking ? (
-            <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
+            <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={() => setBookingDetailOpen(true)}>
               {/* #1764 — one structure with or without an image: the image is an
                   optional square column that stretches to the information's
                   height; with none there is no empty column. */}
               <div style={styles.bookingLayout}>
-                {nextBooking.class_type_image_url && (
+                {nextBooking.class_type_image_url?.trim() && !bookingImageFailed && (
                   <div style={styles.bookingImageBox}>
-                    <img src={nextBooking.class_type_image_url} alt="" style={styles.bookingImage} />
+                    <img src={nextBooking.class_type_image_url.trim()} alt="" style={styles.bookingImage} onError={() => setBookingImageFailed(true)} />
                   </div>
                 )}
                 <div style={styles.bookingInfo}>
@@ -275,7 +278,7 @@ export default function HomePage() {
                   </p>
                   {([
                     ['📍', nextBooking.center_name, t('home.booking_center')],
-                    ['🧑‍🏫', nextBooking.trainer_name, t('home.booking_trainer')],
+                    ['👤', nextBooking.trainer_name, t('home.booking_trainer')],
                     ['🚪', nextBooking.space_name, t('home.booking_space')],
                   ] as const).map(([icon, value, label]) => value?.trim() ? (
                     <p key={label} style={styles.bookingDetail} title={label}>
@@ -296,6 +299,31 @@ export default function HomePage() {
             </MembersSectionCard>
           )}
         </section>
+      )}
+
+
+      {bookingDetailOpen && nextBooking && (
+        <MemberDialog
+          title={nextBooking.class_type_name}
+          labelledBy="next-booking-detail-title"
+          onClose={() => setBookingDetailOpen(false)}
+          actions={
+            <>
+              <button type="button" style={secondaryButtonStyle} onClick={() => setBookingDetailOpen(false)}>{t('home.close')}</button>
+              <button type="button" style={primaryButtonStyle} onClick={goToBookings}>{t('home.go_to_bookings')}</button>
+            </>
+          }
+        >
+          {nextBooking.class_type_image_url?.trim() && !bookingImageFailed && (
+            <img src={nextBooking.class_type_image_url.trim()} alt="" style={{ width: '100%', borderRadius: 8, display: 'block', marginBottom: 12 }} />
+          )}
+          <p style={styles.bookingSub}>
+            {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
+          </p>
+          {nextBooking.class_type_description?.trim() && (
+            <p style={styles.bookingSub}>{nextBooking.class_type_description.trim()}</p>
+          )}
+        </MemberDialog>
       )}
 
       {/* Today's Nutrition Plan — omitted entirely when there's nothing to show */}

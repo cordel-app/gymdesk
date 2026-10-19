@@ -10,6 +10,7 @@
     "next_booking": "Les meves properes reserves",
     "no_upcoming_booking": "No tens reserves properes.",
     "more_bookings_that_day": "+{count} {count, plural, one {reserva més} other {reserves més}} aquell dia",
+    "close": "Tanca",
     "waitlisted": "En llista d'espera",
     "membership_status": "Quota",
     "no_membership": "Sense quota activa.",
