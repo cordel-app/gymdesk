@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1852 (Members App membership plan flow, copy only: the included-items list loses the Mandatory/Optional text (checkbox states and the mandatory rule are unchanged), *Included benefits* reads *Included elements*, the plan picker opened by Add plan is headed *My New Membership Plan* and the member's existing plan sits under a *My Membership Plans* heading (en/es/ca; the plan name stays the card title). tsc/tests not run: no node_modules in the routine's environment.)
 - **Done**: #1808 (follow-up: the Promotions Billing Event chart now sits above the collapsible Billing Event Simulation, so expanding it opens below the chart; a chart point lists each billing item with its final price and the date total, from the simulation already loaded.)
 - **Done**: #1828 (Calendar filter bar: Center, the All / Space / Activity / Trainer mode chips and the value selector now sit in one themed container, and the selector wears the shared `filterControlStyle`. Layout only: `filterMode`/`filterId`, the query parameters and the center context are untouched, and no popover, Apply/Clear or combined filtering was added. tsc/tests not run: no node_modules in the routine's environment.)
 - **Done**: #1367 (Home dashboard iconography follow-up: user-check / user-plus / calendar-clock / wallet icons on the KPI cards, an icon on every panel heading, per-task and quick-action icons, and a tinted branded welcome header replacing the solid block; presentation only)

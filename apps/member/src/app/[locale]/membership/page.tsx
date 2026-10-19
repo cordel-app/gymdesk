@@ -842,7 +842,6 @@ export default function MembershipPage() {
         benefits: (plan.benefits ?? []).map((b) => ({
           key: planBenefitKey(b),
           name: b.product_name,
-          tag: b.mandatory ? t('membership.plan_benefit_mandatory') : t('membership.plan_benefit_optional'),
           mandatory: b.mandatory,
           checked: !(declinedPlanBenefits[plan.id] ?? []).includes(planBenefitKey(b)),
           onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
@@ -1121,6 +1120,7 @@ export default function MembershipPage() {
       {renderPlansHeader()}
       {renderPlanCatalogue()}
 
+      <h2 style={styles.h2}>{t('membership.my_plans_heading')}</h2>
       <div style={styles.card}>
         <div style={styles.cardHead}>
           <div>
