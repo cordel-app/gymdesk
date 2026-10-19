@@ -90,8 +90,8 @@ describe('Member card tabs: the declaration (#961)', () => {
       'section_membership_plan',
       'section_additional_services',
       'section_billing_event_simulation',
-      'section_billing_events',
       'section_billing_simulation',
+      'section_billing_events',
     ]);
     // #1227: the Member's Professional Service balance is a tab of its own.
     expect(sectionsForTab('professional_services')).toEqual(['section_professional_services', 'section_pt_slots']);

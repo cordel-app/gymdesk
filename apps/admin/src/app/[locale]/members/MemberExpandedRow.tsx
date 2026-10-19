@@ -540,13 +540,34 @@ export function MemberExpandedRow({
           {/* #1613 — one billing section. While billing-affecting changes are
               pending (the server's review diff, a version awaiting payment or a
               pending one-off) it is the proposed configuration's simulation;
-              otherwise it is the persisted ledger. */}
+              the ledger is the separate Actual Billing Events section at the foot of the tab (#1867). */}
           {billingSectionMode === 'simulation' && (
             <Section label={t('members.section_billing_event_simulation')}>
               <ProposedSetForecast productSetId={inFlightSetId} />
             </Section>
           )}
-          {billingSectionMode === 'events' && (
+
+          {/* Billing Simulation (#629) — a section of its own, never nested inside
+              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
+          <Section label={t('members.section_billing_simulation')}>
+            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
+          </Section>
+
+          {/* #1660 — Summary: the pending draft's additions and removals, last on
+              the tab, with Save & Pay / Cancel directly beneath. */}
+          {(configuration.product_sets ?? []).some((p: any) => p.status === 'draft' || p.status === 'pending_payment') && (
+            <Section label={t('members.section_summary')}>
+              <ProductSetsInFlight
+                productSets={configuration.product_sets}
+                canWrite={canWriteMembers && canManagePackages}
+                changes={draftReview?.changes}
+                onChanged={reloadConfiguration}
+              />
+            </Section>
+          )}
+
+          {/* #1867 — Actual Billing Events: the real ledger, always shown and
+              last on the tab, strictly separate from the simulation above. */}
           <Section label={t('members.section_billing_events')}>
             {billingEvents.length === 0 ? (
               <p style={dim}>{t('members.no_billing_events')}</p>
@@ -611,28 +632,6 @@ export function MemberExpandedRow({
               </div>
             )}
           </Section>
-          )}
-
-          {/* Billing Simulation (#629) — a section of its own, never nested inside
-              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
-          <Section label={t('members.section_billing_simulation')}>
-            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
-          </Section>
-
-          {/* #1660 — Summary: the pending draft's additions and removals, last on
-              the tab, with Save & Pay / Cancel directly beneath. */}
-          {(configuration.product_sets ?? []).some((p: any) => p.status === 'draft' || p.status === 'pending_payment') && (
-            <Section label={t('members.section_summary')}>
-              <ProductSetsInFlight
-                productSets={configuration.product_sets}
-                canWrite={canWriteMembers && canManagePackages}
-                changes={draftReview?.changes}
-                onChanged={reloadConfiguration}
-              />
-            </Section>
-          )}
-
-
         </>
       )}
 
