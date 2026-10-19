@@ -1378,14 +1378,14 @@ describe('Products — Professional Services linkage (#546)', () => {
     expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
   });
 
-  it('creates a sessions item with multiple linked Professional Services', async () => {
+  it('rejects a sessions item with more than one Professional Service (#1827)', async () => {
     const res = await request
       .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Mixed Session Pack', type: 'sessions', units: 10, professional_service_ids: [psOne, psTwo] });
-    expect(res.status).toBe(201);
-    expect(res.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/at most one/);
   });
 
   it('creates a sessions item with no Professional Services selected (empty is allowed, not required)', async () => {
@@ -1481,14 +1481,38 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
     });
 
-    it('adds a second Professional Service via PUT', async () => {
+    it('rejects adding a second Professional Service via PUT (#1827)', async () => {
       const res = await request
         .put(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ professional_service_ids: [psOne, psTwo] });
-      expect(res.status).toBe(200);
-      expect(res.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+      expect(res.status).toBe(400);
+    });
+
+    it('keeps a legacy multi-service product editable while the stored set is sent back unchanged (#1827)', async () => {
+      const created = await request
+        .post('/products')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Legacy Multi Service', type: 'sessions', professional_service_ids: [psOne] });
+      await db.query(
+        'INSERT INTO product_professional_services (product_id, professional_service_id) VALUES (?, ?)',
+        [created.body.id, psTwo],
+      );
+      const same = await request
+        .put(`/products/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psOne, psTwo] });
+      expect(same.status).toBe(200);
+      const narrowed = await request
+        .put(`/products/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psTwo] });
+      expect(narrowed.status).toBe(200);
+      expect(narrowed.body.professional_services.map((s: any) => s.id)).toEqual([psTwo]);
     });
 
     it('removes a Professional Service via PUT (replace-all semantics)', async () => {
@@ -1535,8 +1559,8 @@ describe('Products — Professional Services linkage (#546)', () => {
         .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
-        .send({ name: 'Session To Fee', type: 'sessions', professional_service_ids: [psOne, psTwo] });
-      expect(created.body.professional_services).toHaveLength(2);
+        .send({ name: 'Session To Fee', type: 'sessions', professional_service_ids: [psOne] });
+      expect(created.body.professional_services).toHaveLength(1);
 
       const res = await request
         .put(`/products/${created.body.id}`)
@@ -1606,21 +1630,21 @@ describe('Products — Professional Services linkage (#546)', () => {
         .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
-        .send({ name: 'Duplicate Source Session', type: 'sessions', professional_service_ids: [psOne, psTwo] });
+        .send({ name: 'Duplicate Source Session', type: 'sessions', professional_service_ids: [psOne] });
 
       const dup = await request
         .post(`/products/${created.body.id}/duplicate`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(dup.status).toBe(201);
-      expect(dup.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+      expect(dup.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
 
       // Original is unaffected.
       const original = await request
         .get(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
-      expect(original.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+      expect(original.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
     });
 
     it('does not attach any Professional Services when duplicating a non-sessions item', async () => {
@@ -1728,8 +1752,8 @@ describe('Products — Professional Services linkage (#546)', () => {
         .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
-        .send({ name: 'Item Linked Then Orphaned', type: 'sessions', professional_service_ids: [psOne, toDelete] });
-      expect(created.body.professional_services).toHaveLength(2);
+        .send({ name: 'Item Linked Then Orphaned', type: 'sessions', professional_service_ids: [toDelete] });
+      expect(created.body.professional_services).toHaveLength(1);
 
       const del = await request
         .delete(`/professional-services/${toDelete}`)
@@ -1742,7 +1766,7 @@ describe('Products — Professional Services linkage (#546)', () => {
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(res.status).toBe(200);
-      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([]);
     });
   });
 
