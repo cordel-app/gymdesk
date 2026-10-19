@@ -68,12 +68,14 @@ describe('GET /me/professional-services', () => {
     expect(res.status).toBe(403);
   });
 
-  it('answers an empty list for a member with no sessions', async () => {
+  it('lists every active service with a zero balance for a member with no sessions', async () => {
     await memberIn(gymId, 'mps-empty');
-    await service(gymId, `Idle ${uniq()}`);
+    const idle = await service(gymId, `Idle ${uniq()}`);
     const res = await asMember(gymId, 'mps-empty');
     expect(res.status).toBe(200);
-    expect(res.body.items).toEqual([]);
+    expect(res.body.items).toContainEqual(
+      expect.objectContaining({ professional_service_id: idle, total: 0, used: 0, remaining: 0 }),
+    );
   });
 
   it('reports total, used and remaining for a service the member holds sessions for', async () => {
@@ -82,9 +84,9 @@ describe('GET /me/professional-services', () => {
     await grant(gymId, memberId, pt, 5);
     const res = await asMember(gymId, 'mps-holder');
     expect(res.status).toBe(200);
-    expect(res.body.items).toEqual([
+    expect(res.body.items).toContainEqual(
       expect.objectContaining({ professional_service_id: pt, total: 5, used: 0, remaining: 5 }),
-    ]);
+    );
   });
 
   it('leaves out a service the gym switched off and another member’s sessions', async () => {
@@ -95,6 +97,10 @@ describe('GET /me/professional-services', () => {
     await grant(gymId, memberId, off, 3);
     await grant(gymId, other, on, 4);
     const res = await asMember(gymId, 'mps-off');
-    expect(res.body.items).toEqual([]);
+    const ids = res.body.items.map((i: any) => i.professional_service_id);
+    expect(ids).not.toContain(off);
+    expect(ids).toContain(on);
+    // another member's sessions are not this member's balance
+    expect(res.body.items.find((i: any) => i.professional_service_id === on).remaining).toBe(0);
   });
 });
