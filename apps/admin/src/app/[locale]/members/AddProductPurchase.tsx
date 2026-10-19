@@ -38,7 +38,7 @@ type Outcome =
   | { kind: 'draft_updated' };
 
 export function AddProductPurchase({
-  memberId, isAdmin, recurringOnly = false, onClose, onChanged,
+  memberId, isAdmin, recurringOnly = false, embedded = false, onClose, onChanged,
 }: {
   memberId: number;
   isAdmin: boolean;
@@ -46,6 +46,8 @@ export function AddProductPurchase({
   canPay: boolean;
   /** The recurring section offers only recurring Products (they go to its Draft). */
   recurringOnly?: boolean;
+  /** #1807: rendered inside the products table's draft row, which supplies the card and the Draft badge. */
+  embedded?: boolean;
   onClose: () => void;
   /** A purchase or version changed server-side: re-read the lists. */
   onChanged: () => void;
@@ -122,6 +124,8 @@ export function AddProductPurchase({
       if (res.kind === 'one_time_draft') {
         setOutcome({ kind: 'one_time_draft' });
         onChanged();
+        // #1807: the saved row now shows in the list with its persisted status.
+        if (embedded) onClose();
       } else {
         // The Draft was created on first use or reused; the section reflects it.
         setOutcome({ kind: 'draft_updated' });
@@ -137,9 +141,9 @@ export function AddProductPurchase({
   const canCreate = !busy && !outcome && productId != null && quote != null && !Number.isNaN(discountValue);
 
   return (
-    <div style={{ ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
+    <div style={embedded ? { padding: '12px 16px' } : { ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
       {/* #1657 — a recurring Product being configured is a Draft line until the one global Save & Pay. */}
-      {(product != null || recurringOnly) && (
+      {!embedded && (product != null || recurringOnly) && (
         <div style={{ marginBottom: 8 }} data-add-product-draft-badge>
           <StatusBadge status="draft" label={t('add_product_draft_badge')} />
         </div>

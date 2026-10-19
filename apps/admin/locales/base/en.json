@@ -574,6 +574,7 @@
     "recurring_cancel": "Cancel draft",
     "recurring_cancel_confirm": "Discard the draft? The current configuration stays as it is.",
     "add_product_draft_badge": "Draft",
+    "add_product_new_row": "New product",
     "add_product_save_draft": "Save",
     "recurring_add_to_draft": "Add to draft",
     "recurring_error_in_flight": "A payment is already pending for this member.",
