@@ -35,41 +35,31 @@ function source(...parts: string[]): string {
 const pageSrc = source('app', '[locale]', 'goals', 'page.tsx');
 const cardSrc = source('components', 'MemberGoalCard.tsx');
 
-describe('#1115 a goal is created and edited in its own card, never in a modal', () => {
-  it('renders both forms inside the card component', () => {
+describe('#1826 a goal card has its own Add reading action and no menu or add button', () => {
+  it('renders each goal in the card component with its own action', () => {
     expect(pageSrc).toContain('<MemberGoalCard');
-    expect(pageSrc).toContain("goalForm('add')");
-    expect(pageSrc).toContain("goalForm('edit', goal)");
+    expect(pageSrc).toContain('actions={cardActions(goal)}');
+    expect(pageSrc).toContain("openReading(goal, 'reading')");
   });
 
-  /**
-   * The only overlays left on this screen are the two that are **not** forms
-   * over a goal's own fields: #1037's Add reading and the removal confirmation.
-   * A third one would be the modal §2/§3 rules out.
-   */
-  it('keeps exactly the two dialogs that are not a goal form', () => {
-    const dialogs = pageSrc.match(/<MemberDialog/g) ?? [];
-    expect(dialogs).toHaveLength(2);
+  /** The only overlay left is the Add reading dialog. */
+  it('keeps exactly one dialog, the reading one', () => {
+    expect(pageSrc.match(/<MemberDialog/g) ?? []).toHaveLength(1);
     expect(pageSrc).toContain('labelledBy="goal-reading-title"');
-    expect(pageSrc).toContain('labelledBy="goal-remove-title"');
   });
 
-  it('offers no add or edit affordance that opens an overlay', () => {
-    // The add CTA and the menu's Edit both set an inline editing state; neither
-    // reaches for a dialog.
-    expect(pageSrc).toContain("setEditing({ kind: 'add' })");
-    expect(pageSrc).toContain("setEditing({ kind: 'edit', goal })");
-    expect(pageSrc).not.toContain('goal-dialog-title');
+  it('has no global Add personal goal button and no contextual menu', () => {
+    expect(pageSrc).not.toContain("t('goals.add')");
+    expect(pageSrc).not.toContain('menu=');
+    expect(pageSrc).not.toContain('cardMenu');
   });
 });
 
 describe('#1115 the card has one chrome, and it decides nothing', () => {
-  it('owns the header, the caret and the contextual menu', () => {
+  it('owns the header, the caret and the goal action slot, with no menu', () => {
     expect(cardSrc).toContain('aria-expanded={expanded}');
-    expect(cardSrc).toContain('aria-haspopup="menu"');
-    expect(cardSrc).toContain('role="menuitem"');
-    // §4 — the menu is a sibling of the toggling header, not a child of it.
-    expect(cardSrc).toContain('{menu && <CardMenu');
+    expect(cardSrc).not.toContain('aria-haspopup');
+    expect(cardSrc).toContain('{actions && <div style={styles.actions}>{actions}</div>}');
   });
 
   it('resolves no locale key and spells no colour (#932, #983)', () => {
@@ -91,7 +81,6 @@ describe('#1115 what the inline form holds', () => {
   it('starts a draft on today, which stays editable (§2)', () => {
     const now = new Date('2026-09-22T12:00:00.000Z');
     expect(newGoalForm(now)).toEqual({ ...emptyGoalForm, start_date: '2026-09-22' });
-    expect(pageSrc).toContain('value={form.start_date}');
   });
 
   it('keeps what the member already typed when they pick the goal', () => {
@@ -102,15 +91,9 @@ describe('#1115 what the inline form holds', () => {
     )).toEqual({ ...draft, personal_goal_id: '4', target_value: '3', target_unit: 'kg' });
   });
 
-  /**
-   * §1 — the unit is the Gym Goal's, so it is shown rather than asked for. Which
-   * is also why a cleared target takes it with it: `chk_mpgoal_target_unit`
-   * refuses a unit qualifying nothing and the member has no field to fix.
-   */
-  it('shows the unit read-only and drops it with the value it qualified', () => {
-    const form = pageSrc.slice(pageSrc.indexOf('function goalForm('), pageSrc.indexOf('if (loading)'));
-    expect(form).toContain('goals.field_unit');
-    expect(form).not.toMatch(/value=\{form\.target_unit\}/);
+  // The unit is the Gym Goal's, so a cleared target takes it with it:
+  // `chk_mpgoal_target_unit` refuses a unit qualifying nothing.
+  it('drops the unit with the value it qualified', () => {
     expect(toGoalUpdatePayload({ ...emptyGoalForm, target_unit: 'kg' }).target_unit).toBeNull();
     expect(toGoalUpdatePayload({ ...emptyGoalForm, target_value: '0', target_unit: 'kg' }).target_unit).toBe('kg');
   });
@@ -126,7 +109,7 @@ describe('#1115 what the inline form holds', () => {
       const goals = JSON.parse(
         readFileSync(join(MEMBER_SRC, '..', 'locales', 'base', `${code}.json`), 'utf-8'),
       ).goals;
-      for (const key of ['summary_target', 'menu_label', 'add', 'edit', 'remove']) {
+      for (const key of ['summary_target', 'add_reading']) {
         expect(goals[key], `${code}.goals.${key}`).toBeTruthy();
       }
       expect(goals.summary_target, code).toContain('{value}');
