@@ -1,5 +1,5 @@
 import { db, Tx } from '../infra/db';
-import { classifyProduct, ProductBenefitCategory } from '../domain/productClassification';
+import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { touchDraft } from './product-sets';
 import { allocateItemSchedules } from './product-set-configuration';
@@ -278,7 +278,7 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
  * 400 and an outright deletion, since a Draft has charged nothing.
  */
 export async function addService(
-  tx: Tx, draft: LockedDraft, body: any, opts: { legacy?: boolean } = {},
+  tx: Tx, draft: LockedDraft, body: any, opts: { legacy?: boolean; recurringByFrequency?: boolean } = {},
 ): Promise<{ ok: true; id: number } | DraftRefusal> {
   const productId = Number(body?.product_id);
   if (!Number.isInteger(productId) || productId <= 0) return { kind: 'invalid', message: 'product_id must be a positive integer' };
@@ -306,7 +306,13 @@ export async function addService(
     [productId, draft.gym_id]);
   if (!rows[0]) return { kind: 'not_found' };
   if (rows[0].status !== 'active') return { kind: 'invalid', message: 'Product is not active' };
-  if (classifyProduct(rows[0]) !== 'periodical') {
+  // A staff purchase decides "recurring" by the Product's billing frequency
+  // (the route's own rule), so a `sessions` Product billed monthly (a Duo
+  // class) is a recurring line too; the plan-benefit screens keep the section
+  // classification.
+  const recurringLine = classifyProduct(rows[0]) === 'periodical'
+    || (opts.recurringByFrequency === true && isRecurringFrequency(rows[0].billing_frequency));
+  if (!recurringLine) {
     return { kind: 'invalid', message: 'Only recurring Products can be added as periodic services' };
   }
   // The same item may be attached again after an earlier stint ended, but not

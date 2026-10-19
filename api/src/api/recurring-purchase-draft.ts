@@ -28,6 +28,17 @@ import { discountedUnitPrice } from '../domain/productPurchasePricing';
 
 const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
+/**
+ * #1865 — thrown (so the transaction rolls back and the Draft stays exactly as
+ * it was) when the Product's billing frequency is not one the Draft's lines
+ * already carry and the caller has not confirmed.
+ */
+export class BillingFrequencyDiffers extends Error {
+  constructor(readonly existing: string[], readonly incoming: string) {
+    super('billing_frequency_differs');
+  }
+}
+
 export type RecurringDraftOutcome =
   | { kind: 'ok'; productSetId: number; lineId: number }
   | { kind: 'in_flight'; productSetId: number; status: string }
@@ -93,6 +104,7 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   productId: number;
   promotionIds: readonly number[];
   directDiscountPercent: number | null;
+  confirmFrequencyChange?: boolean;
   actor: Actor;
   today: string;
 }): Promise<RecurringDraftOutcome> {
@@ -102,6 +114,20 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
 
   const locked = await lockDraft(tx, input.gymId, draftId);
   if (isRefusal(locked)) return locked;
+
+  if (!input.confirmFrequencyChange) {
+    const { rows: freqs } = await tx.query<any>(
+      `SELECT DISTINCT item_billing_frequency AS f FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND product_set_id = ? AND ends_at IS NULL AND item_billing_frequency IS NOT NULL`,
+      [input.gymId, draftId]);
+    const existing = freqs.map((r: any) => String(r.f));
+    const { rows: prod } = await tx.query<any>(
+      'SELECT billing_frequency FROM products WHERE id = ? AND gym_id = ?', [input.productId, input.gymId]);
+    const incoming = prod[0]?.billing_frequency == null ? null : String(prod[0].billing_frequency);
+    if (incoming && existing.length > 0 && !existing.includes(incoming)) {
+      throw new BillingFrequencyDiffers(existing, incoming);
+    }
+  }
 
   // A line never starts before the version does, and a purchase made today
   // starts today.
@@ -139,7 +165,7 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
     return { kind: 'ok', productSetId: draftId, lineId: Number(line.id) };
   }
 
-  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt });
+  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt }, { recurringByFrequency: true });
   if ('kind' in added) return added;
 
   if (input.directDiscountPercent != null) {

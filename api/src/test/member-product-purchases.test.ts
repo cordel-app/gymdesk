@@ -317,6 +317,28 @@ describe('a one-time purchase (#1521)', () => {
 });
 
 describe('a recurring purchase is a Draft ProductSet, activated only by Save & Pay (decision 1)', () => {
+  // #1865: a `sessions` Product billed monthly (a Duo class) is recurring by frequency.
+  it('adds a recurring Product of type sessions and asks before mixing billing frequencies', async () => {
+    const m = await member();
+    const duo = await product({ name: 'Duo class', frequency: 'month', amount: '50.00', type: 'sessions' });
+    const first = await auth(request.post(base(m))).send({ product_id: duo });
+    expect(first.status).toBe(201);
+    expect(first.body.kind).toBe('recurring_draft');
+
+    const fourWeekly = await product({ name: 'Four weekly locker', frequency: 'four_weeks', amount: '10.00', type: 'service' });
+    const asked = await auth(request.post(base(m))).send({ product_id: fourWeekly });
+    expect(asked.status).toBe(409);
+    expect(asked.body).toMatchObject({ error: 'billing_frequency_differs', existing: ['month'], incoming: 'four_weeks' });
+    const lines = async () => (await db.query<any>(
+      'SELECT COUNT(*) AS n FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?',
+      [gymId, first.body.product_set_id])).rows[0].n;
+    expect(Number(await lines())).toBe(1);
+
+    const confirmed = await auth(request.post(base(m))).send({ product_id: fourWeekly, confirm_billing_frequency: true });
+    expect(confirmed.status).toBe(201);
+    expect(Number(await lines())).toBe(2);
+  });
+
   it('creates a Draft on top of the Active version without activating or charging anything', async () => {
     const m = await member();
     const planId = await plan(40);
