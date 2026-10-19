@@ -124,7 +124,11 @@ describe('the sidebar renders them, and nothing else moves (#884 §11, §15, §1
     // "ENTRENAMIENTO") fits beside the chevron and the icon at these values.
     expect(navGroupSrc).toContain("padding: '10px 16px'");
     expect(navGroupSrc).toContain("gap: '6px'");
+    // #1847: the header itself stays a single line of icon + label; the label
+    // span is what may wrap rather than be clipped.
     expect(navGroupSrc).toContain("whiteSpace: 'nowrap'");
+    expect(navGroupSrc).toContain('navGroupLabelStyle');
+    expect(navGroupSrc).toContain("overflowWrap: 'anywhere'");
     // Typography, colours and the item padding are untouched.
     expect(navGroupSrc).toContain('fontSize: 14');
     expect(navGroupSrc).toContain("letterSpacing: '0.08em'");
