@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
@@ -20,7 +20,8 @@ import {
 import { StatusBadge } from '@/components/StatusBadge';
 import { InlineStyle } from '@/components/InlineStyle';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
-import { CheckIcon } from '@/components/home/HomeIcons';
+import { CalendarClockIcon, CheckIcon, ClipboardCheckIcon, ContactsIcon, PlusIcon, UserPlusIcon, WalletIcon, ArrowRightIcon } from '@/components/home/HomeIcons';
+import { CalendarIcon, CreditCardIcon, UsersIcon } from '@/components/icons/NavIcons';
 import {
   HomeData, TASK_ACTION_KEY, canStartClass, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
   type HomeTaskKey, type QuickActionKey,
@@ -30,6 +31,22 @@ import {
 // and always describes today in the gym's zone (no date navigation). Sections
 // the caller's role may not read are absent from the response and therefore
 // from the page.
+
+const TASK_ICON: Record<HomeTaskKey, ReactNode> = {
+  events_without_space: <CalendarIcon size={16} />,
+  events_without_trainer: <UsersIcon size={16} />,
+  welcome_new_members: <UserPlusIcon size={16} />,
+  services_not_scheduled: <CalendarClockIcon size={16} />,
+  events_with_waitlist: <CalendarClockIcon size={16} />,
+  payments_with_issues: <CreditCardIcon size={16} />,
+};
+
+const QUICK_ICON: Record<QuickActionKey, ReactNode> = {
+  add_member: <UserPlusIcon size={16} />,
+  manage_member: <UsersIcon size={16} />,
+  new_class: <CalendarIcon size={16} />,
+  review_payments: <CreditCardIcon size={16} />,
+};
 
 const TASK_TONE: Record<HomeTaskKey, HomeTone> = {
   events_without_space: 'classes',
@@ -144,7 +161,7 @@ export default function HomePage() {
 
           {data.pending_payment_members && (
             <div style={{ marginBottom: 24 }}>
-              <Panel title={t('pending_title')} testId="home-pending-payments"
+              <Panel title={t('pending_title')} icon={<WalletIcon size={18} />} testId="home-pending-payments"
                 aside={<strong style={{ fontSize: 22 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>}
                 footer={data.pending_payment_members.count > data.pending_payment_members.members.length ? (
                   <Link href={taskHref('payments_with_issues', locale)} className="gd-home-link" style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
@@ -167,7 +184,7 @@ export default function HomePage() {
           )}
 
           <div style={{ ...panelsGrid, marginBottom: 16 }}>
-            <Panel title={t('tasks_title')} ariaLabel={t('tasks_title')}
+            <Panel title={t('tasks_title')} icon={<ClipboardCheckIcon size={18} />} ariaLabel={t('tasks_title')}
               aside={<span data-testid="home-task-count"><CountBadge count={tasks.length} tone={tasks.length ? 'payments' : 'growth'} /><span style={{ ...mutedTextStyle, marginLeft: 8 }}>{t('tasks_count', { count: tasks.length })}</span></span>}>
               {tasks.length === 0 ? (
                 <p style={{ ...mutedTextStyle, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }} data-testid="home-all-clear">
@@ -179,6 +196,7 @@ export default function HomePage() {
                     <>
                       <div className="gd-home-row" style={row}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <ToneIcon tone={TASK_TONE[task.key]} size={32}>{TASK_ICON[task.key]}</ToneIcon>
                           <CountBadge count={task.count} tone={TASK_TONE[task.key]} />
                           <div>{t(`task_${task.key}`, { count: task.count, people: 0 })}</div>
                         </div>
@@ -193,7 +211,8 @@ export default function HomePage() {
                   ) : (
                     <div className="gd-home-row" style={row}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                        <CountBadge count={task.count} tone={TASK_TONE[task.key]} />
+                        <ToneIcon tone={TASK_TONE[task.key]} size={32}>{TASK_ICON[task.key]}</ToneIcon>
+                          <CountBadge count={task.count} tone={TASK_TONE[task.key]} />
                         <div>
                           <div>{t(`task_${task.key}`, { count: task.count, people: task.secondary ?? 0 })}</div>
                           {task.samples && task.samples.length > 0 && (
@@ -208,19 +227,19 @@ export default function HomePage() {
                           )}
                         </div>
                       </div>
-                      <Link href={taskHref(task.key, locale)} className="gd-home-link" style={linkStyle}>{t(TASK_ACTION_KEY[task.key])} →</Link>
+                      <Link href={taskHref(task.key, locale)} className="gd-home-link" style={linkStyle}>{t(TASK_ACTION_KEY[task.key])} <ArrowRightIcon size={14} /></Link>
                     </div>
                   )}
                 </div>
               ))}
             </Panel>
 
-            <Panel title={t('quick_title')} testId="home-quick-actions">
+            <Panel title={t('quick_title')} icon={<PlusIcon size={18} />} testId="home-quick-actions">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
                 {quickActions.map((qa) => (
                   <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
                     style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box', padding: '10px 12px' }}>
-                    {t(`quick_${qa.key}`)}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>{QUICK_ICON[qa.key]}{t(`quick_${qa.key}`)}</span>
                   </Link>
                 ))}
               </div>
@@ -229,7 +248,7 @@ export default function HomePage() {
 
           <div style={panelsGrid}>
             {data.classes && (
-              <Panel title={t('classes_title')}
+              <Panel title={t('classes_title')} icon={<CalendarClockIcon size={18} />}
                 footer={<Link href={`/${locale}/calendar`} className="gd-home-link" style={linkStyle}>{t('classes_view_all')}</Link>}>
                 {data.classes.length === 0 ? (
                   <p style={{ ...mutedTextStyle, margin: 0 }}>{t('classes_empty')}</p>
@@ -267,7 +286,7 @@ export default function HomePage() {
               </Panel>
             )}
             {data.latest_members && (
-              <Panel title={t('members_title')}
+              <Panel title={t('members_title')} icon={<ContactsIcon size={18} />}
                 footer={<Link href={`/${locale}/members`} className="gd-home-link" style={linkStyle}>{t('members_view_all')}</Link>}>
                 {data.latest_members.length === 0 ? (
                   <p style={{ ...mutedTextStyle, margin: 0 }}>{t('members_empty')}</p>

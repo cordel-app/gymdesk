@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
-import { cardSurfaceStyle, primaryActionColors } from '@/components/ui';
+import { cardSurfaceStyle } from '@/components/ui';
 import { cardMutedTextStyle } from '@/components/formChrome';
-import { CalendarIcon, CreditCardIcon, DumbbellIcon, UsersIcon } from '@/components/icons/NavIcons';
+import { DumbbellIcon } from '@/components/icons/NavIcons';
+import { CalendarClockIcon, UserCheckIcon, UserPlusIcon, WalletIcon } from '@/components/home/HomeIcons';
 
 // #1367 — presentation of the Home dashboard. Pure layout: every figure, label
 // and link is handed in already resolved by the page, so nothing here
@@ -37,10 +38,10 @@ export function ToneIcon({ tone, size = 40, children }: { tone: HomeTone; size?:
 }
 
 export const METRIC_ICONS: Record<'active_members' | 'new_members' | 'classes' | 'payments' | 'trainers' | 'average', { tone: HomeTone; icon: ReactNode }> = {
-  active_members: { tone: 'members', icon: <UsersIcon size={20} /> },
-  new_members: { tone: 'growth', icon: <UsersIcon size={20} /> },
-  classes: { tone: 'classes', icon: <CalendarIcon size={20} /> },
-  payments: { tone: 'payments', icon: <CreditCardIcon size={20} /> },
+  active_members: { tone: 'members', icon: <UserCheckIcon size={20} /> },
+  new_members: { tone: 'growth', icon: <UserPlusIcon size={20} /> },
+  classes: { tone: 'classes', icon: <CalendarClockIcon size={20} /> },
+  payments: { tone: 'payments', icon: <WalletIcon size={20} /> },
   trainers: { tone: 'classes', icon: <DumbbellIcon size={20} /> },
   average: { tone: 'neutral', icon: <DumbbellIcon size={20} /> },
 };
@@ -56,18 +57,22 @@ a.gd-home-card:focus-visible,.gd-home-link:focus-visible{outline:2px solid var(-
 
 export function HomeHeader({ greeting, intro, sentence }: { greeting: string; intro: string; sentence?: string }) {
   const quote = sentence?.trim();
+  const accent = 'var(--gd-primary-btn, #2563eb)';
   return (
     <header data-testid="home-header" style={{
-      ...primaryActionColors,
-      borderRadius: 'var(--gd-card-radius, 12px)', padding: '26px 28px', marginBottom: 24,
+      ...cardSurfaceStyle,
+      position: 'relative', overflow: 'hidden', padding: '24px 28px 24px 32px', marginBottom: 24,
       display: 'flex', flexDirection: 'column', gap: 6,
+      background: `linear-gradient(100deg, color-mix(in srgb, ${accent} 14%, var(--gd-card-bg, #ffffff)) 0%, var(--gd-card-bg, #ffffff) 70%)`,
     }}>
+      <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: accent }} />
       <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.15 }}>{greeting}</h1>
-      <p style={{ margin: 0, fontSize: 14, opacity: 0.85 }}>{intro}</p>
+      <p style={{ margin: 0, fontSize: 14, color: 'var(--gd-text-muted, #6b7280)' }}>{intro}</p>
       {quote && (
         <blockquote data-testid="home-motivation" style={{
-          margin: '14px 0 0', paddingLeft: 14, borderLeft: '3px solid currentColor',
-          fontSize: 15, fontStyle: 'italic', opacity: 0.95, maxWidth: 680,
+          margin: '14px 0 0', padding: '8px 14px', borderLeft: `3px solid ${accent}`,
+          background: `color-mix(in srgb, ${accent} 8%, transparent)`, borderRadius: '0 8px 8px 0',
+          fontSize: 15, fontStyle: 'italic', maxWidth: 680,
         }}>{quote}</blockquote>
       )}
     </header>
@@ -99,15 +104,17 @@ export function SummaryCard({ label, value, sub, href, hint, tone, icon }: {
 export const cardsGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 24, gridAutoRows: '1fr' };
 export const panelsGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16, alignItems: 'stretch' };
 export const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 8px', margin: '0 -8px', borderTop: '1px solid var(--gd-card-border, #e5e7eb)', borderRadius: 6 };
-export const linkStyle: CSSProperties = { color: 'var(--gd-link, #2563eb)', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' };
+export const linkStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gd-link, #2563eb)', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' };
 
-export function Panel({ title, aside, children, footer, testId, ariaLabel }: {
-  title: string; aside?: ReactNode; children: ReactNode; footer?: ReactNode; testId?: string; ariaLabel?: string;
+export function Panel({ title, icon, aside, children, footer, testId, ariaLabel }: {
+  title: string; icon?: ReactNode; aside?: ReactNode; children: ReactNode; footer?: ReactNode; testId?: string; ariaLabel?: string;
 }) {
   return (
     <section aria-label={ariaLabel ?? title} data-testid={testId} style={{ ...cardSurfaceStyle, padding: 20, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{title}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {icon && <ToneIcon tone="neutral" size={32}>{icon}</ToneIcon>}{title}
+        </h2>
         {aside}
       </div>
       <div style={{ flex: 1 }}>{children}</div>
