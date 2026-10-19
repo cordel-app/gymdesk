@@ -4299,6 +4299,8 @@
     "duration_four_weeks": "{count} × 4 semanas"
   },
   "products": {
+    "show_all_attributes": "Mostrar todos los atributos",
+    "hide_all_attributes": "Ocultar todos los atributos",
     "title": "Productos",
     "loading": "Cargando…",
     "empty": "No hay productos configurados.",

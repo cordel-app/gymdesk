@@ -4313,6 +4313,8 @@
     "duration_four_weeks": "{count} × 4 weeks"
   },
   "products": {
+    "show_all_attributes": "Show all attributes",
+    "hide_all_attributes": "Hide all attributes",
     "title": "Products",
     "loading": "Loading…",
     "empty": "No products configured.",

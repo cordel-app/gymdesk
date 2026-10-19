@@ -4326,6 +4326,8 @@
     "duration_four_weeks": "{count} × 4 setmanes"
   },
   "products": {
+    "show_all_attributes": "Mostra tots els atributs",
+    "hide_all_attributes": "Amaga tots els atributs",
     "title": "Productes",
     "loading": "Carregant…",
     "empty": "No hi ha productes configurats.",
