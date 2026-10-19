@@ -1706,6 +1706,12 @@
     "class_package_credit": "Class package credit"
   },
   "promotions": {
+    "section_billing_event_chart": "Billing Event Chart",
+    "chart_empty": "There are no simulated billing events to chart.",
+    "chart_aria": "Simulated billing total by date",
+    "chart_selected": "{date} · Total {total}",
+    "chart_no_lines": "No billing lines for this date.",
+    "chart_select_hint": "Select a point to see the billing lines for that date.",
     "section_media": "Media",
     "image_none": "No image",
     "image_requirements": "Any JPEG, PNG, WebP or GIF image. The server crops it to a square and stores it as a 1080 × 1080 WebP with a 256 × 256 thumbnail.",

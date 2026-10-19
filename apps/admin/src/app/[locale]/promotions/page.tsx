@@ -24,6 +24,7 @@ import {
   BillingEventSimulation,
   BillingEventSimulationData,
 } from '@/components/BillingEventSimulation';
+import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
 import {
   BenefitQuantityColumn,
   ProductBenefitEditor,
@@ -314,6 +315,7 @@ type EditForm = ReturnType<typeof emptyEditForm>;
 export default function PromotionsPage() {
   const gymFmt = useGymFormatSettings();
   const t = useTranslations('promotions');
+  const [simulationOpen, setSimulationOpen] = useState<Record<number, boolean>>({});
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
@@ -1196,13 +1198,33 @@ export default function PromotionsPage() {
   // engine): nothing here is recomputed, and no tax arithmetic reaches the page
   // (#817).
   function renderBillingEventSimulation(promo: Promo) {
+    const translate = (key: string, values?: Record<string, string | number>) => t(key as any, values as any);
+    const formatDate = (date: string) => formatGymDateOnly(date, gymFmt);
+    // #1808 — collapsed by default; the chart sits right under the section.
+    const open = simulationOpen[promo.id] === true;
     return (
       <div style={subSectionSt}>
-        <CardSectionHeader title={t('section_billing_event_simulation')} />
-        <BillingEventSimulation
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setSimulationOpen((prev) => ({ ...prev, [promo.id]: !open }))}
+          style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <span aria-hidden="true" style={{ color: '#888', fontSize: 11, width: 10 }}>{open ? '▾' : '▸'}</span>
+          <CardSectionHeader title={t('section_billing_event_simulation')} />
+        </button>
+        {open && (
+          <BillingEventSimulation
+            simulation={cachedSimulation[promo.id]}
+            t={translate}
+            formatDate={formatDate}
+          />
+        )}
+        <CardSectionHeader title={t('section_billing_event_chart')} />
+        <BillingEventSimulationChart
           simulation={cachedSimulation[promo.id]}
-          t={(key, values) => t(key as any, values as any)}
-          formatDate={(date) => formatGymDateOnly(date, gymFmt)}
+          t={translate}
+          formatDate={formatDate}
         />
       </div>
     );

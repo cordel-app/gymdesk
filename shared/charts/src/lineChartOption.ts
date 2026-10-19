@@ -48,6 +48,8 @@ export interface LineChartInput {
   zoom?: boolean;
   /** Formats an axis tick. The page's, so the dates stay localized. */
   axisLabelFormatter?: (value: number) => string;
+  /** The x of the point a page has selected; it is drawn larger so the selection reads on the chart. */
+  selectedX?: number | null;
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
@@ -76,6 +78,7 @@ function escapeHtml(text: string): string {
 
 const LINE_WIDTH = 2;
 const SYMBOL_SIZE = 8;
+const SELECTED_SYMBOL_SIZE = 14;
 
 /** The option object, loose on purpose: ECharts' own types are the canvas's. */
 export type ChartOption = Record<string, unknown>;
@@ -106,7 +109,10 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
         valueLabel: point.valueLabel,
         // A bridge carries no symbol, so it cannot be hovered and cannot
         // report a measurement the member already read on the previous period.
-        symbolSize: pointIndex < bridges ? 0 : SYMBOL_SIZE,
+        symbolSize: pointIndex < bridges
+          ? 0
+          : (input.selectedX != null && point.x === input.selectedX ? SELECTED_SYMBOL_SIZE : SYMBOL_SIZE),
+        x: point.x,
       })),
       markLine: index === 0 && input.reference
         ? {
