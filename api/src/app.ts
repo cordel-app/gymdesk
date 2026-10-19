@@ -106,6 +106,7 @@ import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/plat
 import { platformMobileBuildsRouter } from './api/platform-mobile-builds';
 import { paymentProvidersRouter } from './api/payment-providers';
 import { platformBasePaymentMethodsRouter } from './api/platform-base-payment-methods';
+import { platformProfessionalServicesRouter } from './api/platform-professional-services';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
@@ -282,6 +283,7 @@ app.use('/gyms', requireAuth(), gymsRouter);
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
 app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/professional-services', requireAuth(), platformProfessionalServicesRouter);
 app.use('/platform/personal-goals', requireAuth(), platformPersonalGoalsRouter);
 app.use('/platform/nutrition-goals', requireAuth(), platformNutritionGoalsRouter);
 app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);

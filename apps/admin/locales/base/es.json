@@ -68,7 +68,8 @@
     "expand_sidebar": "Expandir menú lateral",
     "localization": "Hora y localización",
     "home": "Inicio",
-    "base_payment_methods": "Métodos de pago"
+    "base_payment_methods": "Métodos de pago",
+    "base_professional_services": "Servicios profesionales base"
   },
   "dashboard": {
     "title": "Panel",
@@ -5062,5 +5063,31 @@
     "modified_by": "Modificado por",
     "deleted_at": "Eliminado el",
     "deleted_by": "Eliminado por"
+  },
+  "base_professional_services": {
+    "title": "Servicios profesionales base",
+    "add": "+ Añadir servicio profesional",
+    "empty": "No hay servicios profesionales.",
+    "search": "Buscar…",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "details": "Detalles",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "max_capacity": "Capacidad máxima",
+    "max_capacity_help": "Número entero positivo. Déjalo vacío para no limitar.",
+    "name_in": "Nombre ({locale})",
+    "description_in": "Descripción ({locale})",
+    "delete_confirm": "¿Eliminar \"{name}\"? Ya no se podrá seleccionar. Los servicios en uso no se pueden eliminar.",
+    "error_load": "No se pudieron cargar los servicios profesionales.",
+    "error_generic": "Algo salió mal.",
+    "error_required": "Se requiere un nombre en cada idioma.",
+    "error_capacity": "La capacidad máxima debe ser un número entero positivo.",
+    "created_at": "Creado el",
+    "created_by": "Creado por",
+    "modified_at": "Modificado el",
+    "modified_by": "Modificado por",
+    "not_configured": "Sin configurar"
   }
 }

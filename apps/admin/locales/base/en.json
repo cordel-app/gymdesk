@@ -68,7 +68,8 @@
     "expand_sidebar": "Expand sidebar",
     "localization": "Time & Localization",
     "home": "Home",
-    "base_payment_methods": "Payment Methods"
+    "base_payment_methods": "Payment Methods",
+    "base_professional_services": "Base Professional Services"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5076,5 +5077,31 @@
     "modified_by": "Modified By",
     "deleted_at": "Deleted At",
     "deleted_by": "Deleted By"
+  },
+  "base_professional_services": {
+    "title": "Base Professional Services",
+    "add": "+ Add Professional Service",
+    "empty": "No professional services.",
+    "search": "Search…",
+    "edit": "Edit",
+    "delete": "Delete",
+    "details": "Details",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "max_capacity": "Max Capacity",
+    "max_capacity_help": "Positive whole number. Leave empty for no limit.",
+    "name_in": "Name ({locale})",
+    "description_in": "Description ({locale})",
+    "delete_confirm": "Delete \"{name}\"? It can no longer be selected. Services still in use cannot be deleted.",
+    "error_load": "Could not load professional services.",
+    "error_generic": "Something went wrong.",
+    "error_required": "A name in every language is required.",
+    "error_capacity": "Max Capacity must be a positive whole number.",
+    "created_at": "Created At",
+    "created_by": "Created By",
+    "modified_at": "Modified At",
+    "modified_by": "Modified By",
+    "not_configured": "Not configured"
   }
 }

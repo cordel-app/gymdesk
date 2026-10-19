@@ -69,7 +69,8 @@
     "expand_sidebar": "Desplegar menú lateral",
     "localization": "Hora i localització",
     "home": "Inici",
-    "base_payment_methods": "Mètodes de pagament"
+    "base_payment_methods": "Mètodes de pagament",
+    "base_professional_services": "Serveis professionals base"
   },
   "dashboard": {
     "title": "Tauler",
@@ -5089,5 +5090,31 @@
     "modified_by": "Modificat per",
     "deleted_at": "Eliminat el",
     "deleted_by": "Eliminat per"
+  },
+  "base_professional_services": {
+    "title": "Serveis professionals base",
+    "add": "+ Afegeix servei professional",
+    "empty": "No hi ha serveis professionals.",
+    "search": "Cerca…",
+    "edit": "Edita",
+    "delete": "Elimina",
+    "details": "Detalls",
+    "save": "Desa",
+    "cancel": "Cancel·la",
+    "close": "Tanca",
+    "max_capacity": "Capacitat màxima",
+    "max_capacity_help": "Nombre enter positiu. Deixa-ho buit per no limitar.",
+    "name_in": "Nom ({locale})",
+    "description_in": "Descripció ({locale})",
+    "delete_confirm": "Eliminar \"{name}\"? Ja no es podrà seleccionar. Els serveis en ús no es poden eliminar.",
+    "error_load": "No s'han pogut carregar els serveis professionals.",
+    "error_generic": "Alguna cosa ha anat malament.",
+    "error_required": "Cal un nom en cada idioma.",
+    "error_capacity": "La capacitat màxima ha de ser un nombre enter positiu.",
+    "created_at": "Creat el",
+    "created_by": "Creat per",
+    "modified_at": "Modificat el",
+    "modified_by": "Modificat per",
+    "not_configured": "Sense configurar"
   }
 }
