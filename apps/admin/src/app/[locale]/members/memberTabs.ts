@@ -85,8 +85,9 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       // #1613 — one billing section: BILLING EVENT SIMULATION while billing-
       // affecting changes are pending, else the persisted BILLING EVENTS.
       'section_billing_event_simulation',
-      'section_billing_events',
       'section_billing_simulation',
+      // #1867 — Actual Billing Events, last on the tab.
+      'section_billing_events',
     ],
   },
   {

@@ -151,7 +151,7 @@
     "section_training_plans": "Assigned Training Plans",
     "section_nutrition_plans": "Nutrition Plans",
     "section_personal_goals": "Personal Goals",
-    "section_billing_events": "Billing Events",
+    "section_billing_events": "Actual Billing Events",
     "section_billing_simulation": "Billing Simulation",
     "section_summary": "Summary",
     "billing_simulation_loading": "Loading billing simulation…",
