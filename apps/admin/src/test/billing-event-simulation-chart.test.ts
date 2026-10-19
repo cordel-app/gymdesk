@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingDateAtX, billingDateToX, billingEventChartPoints, selectedBillingGroup,
+  billingDateAtX, billingDateToX, billingEventChartPoints, selectedBillingGroup, visibleBillingDates,
 } from '@/lib/billingEventSimulation';
 
 const group = (date: string, total: number) => ({ date, total, lines: [] });
@@ -38,5 +38,13 @@ describe('billing event chart (#1808)', () => {
     expect(selectedBillingGroup(dates, '2030-01-01')).toBeNull();
     expect(selectedBillingGroup(dates, null)).toBeNull();
     expect(billingDateAtX(points, 1)).toBeNull();
+  });
+
+  it('follows the Show €0 option on the Membership Plans chart (#1810)', () => {
+    const dates = [group('2026-01-01', 0), group('2026-02-01', 4)];
+    const hidden = billingEventChartPoints(visibleBillingDates(dates, false), fmtD, fmtA);
+    const shown = billingEventChartPoints(visibleBillingDates(dates, true), fmtD, fmtA);
+    expect(hidden.map((p) => p.y)).toEqual([4]);
+    expect(shown.map((p) => p.y)).toEqual([0, 4]);
   });
 });

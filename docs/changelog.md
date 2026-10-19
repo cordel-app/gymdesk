@@ -2,7 +2,8 @@
 
 One entry per ticket, written by the ticket's own PR at merge time and never edited afterwards. Newest month first. The entries up to 2026-09-07 are the roadmap's original Status list (one item per ticket); everything after it was moved here from that section on 2026-10-09, when each heading was checked against the GitHub issue state — the entries that still read *In progress* are the ones whose issue is still open.
 
-What the product does today and what is still open is `docs/roadmap.md`; this file is the record of how it got there. A ticket's entry goes under the month its issue was closed in, as a `- **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
+What the product does today and what is still open is `docs/roadmap.md`; this file is the record of how it got there. A ticket's entry goes under the month its issue was closed in, as a `- **Done**: #1810 (Membership Plans: the Billing Event Simulation section is collapsible and collapsed by default, and the interactive *Billing Event Chart* of #1808 sits under it, fed by the plan's own simulation. The chart follows the section's *Show €0 billing events* option, which is now shared through optional `showZero`/`onShowZeroChange` props. Derived on read, no endpoint, nothing persisted; gate `billing-event-simulation-chart.test.ts`.)
+- **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
 

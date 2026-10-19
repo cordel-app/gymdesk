@@ -87,6 +87,9 @@ interface Props {
    * local to this instance). Omitted, the section lists every date as before.
    */
   zeroToggle?: boolean;
+  /** #1810 — lets a host share the toggle with the chart under the section. */
+  showZero?: boolean;
+  onShowZeroChange?: (next: boolean) => void;
 }
 
 export function fmtMoney(amount: number): string {
@@ -262,8 +265,15 @@ function BillingPeriodCard({
   );
 }
 
-export function BillingEventSimulation({ simulation, t, formatDate, cycleNote, zeroToggle }: Props) {
-  const [showZero, setShowZero] = useState(false);
+export function BillingEventSimulation({
+  simulation, t, formatDate, cycleNote, zeroToggle, showZero: controlledShowZero, onShowZeroChange,
+}: Props) {
+  const [localShowZero, setLocalShowZero] = useState(false);
+  const showZero = controlledShowZero ?? localShowZero;
+  const setShowZero = (next: boolean) => {
+    setLocalShowZero(next);
+    onShowZeroChange?.(next);
+  };
   const dates = visibleBillingDates(simulation?.dates ?? [], !zeroToggle || showZero);
   const signature = dates.map((group) => group.date).join('|');
 

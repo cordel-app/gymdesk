@@ -30,6 +30,7 @@ import { PlanViewToggle, usePlanViewMode } from './PlanViewToggle';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
+import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   ProductBenefitEditor,
@@ -342,6 +343,10 @@ export default function PlansPage() {
   };
 
   const [plans, setPlans] = useState<Plan[]>([]);
+  // #1810: the Billing Event Simulation is collapsed by default; the "Show €0"
+  // choice is shared with the chart under it.
+  const [simulationOpen, setSimulationOpen] = useState<Record<number, boolean>>({});
+  const [simulationShowZero, setSimulationShowZero] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   // Status filter (aligned with the Promotions list header — the list endpoint
@@ -1699,20 +1704,52 @@ export default function PlansPage() {
                         run prices a cycle with, so it cannot advertise a charge
                         the run does not make. Nothing is persisted and nothing
                         is charged. */}
-                    <SectionHeader title={t('plans.section_billing_event_simulation')} />
-                    <BillingEventSimulation
-                      simulation={plan.billing_event_simulation}
-                      zeroToggle
-                      t={(key, values) => t(`plans.${key}` as any, values as any)}
-                      formatDate={(date) => fmtTimelineDate(date, gymFmt)}
-                      cycleNote={(() => {
-                        // #1130 stage 3 — the same marker the Membership Fee
-                        // Simulation above carries, from the same rule and the
-                        // same key: the two sections tell one story (§3).
-                        const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
-                        return key ? t(`plans.${key}` as any) : null;
-                      })()}
-                    />
+                    {(() => {
+                      const simOpen = simulationOpen[plan.id] === true;
+                      const showZero = simulationShowZero[plan.id] === true;
+                      const simT = (key: string, values?: Record<string, string | number>) =>
+                        t(`plans.${key}` as any, values as any);
+                      const simDate = (date: string) => fmtTimelineDate(date, gymFmt);
+                      return (
+                        <>
+                          <div style={subSectionSt}>
+                            <button
+                              type="button"
+                              aria-expanded={simOpen}
+                              onClick={() => setSimulationOpen((prev) => ({ ...prev, [plan.id]: !simOpen }))}
+                              style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                              <span aria-hidden="true" style={{ color: '#888', fontSize: 11, width: 10 }}>{simOpen ? '▾' : '▸'}</span>
+                              <CardSectionHeader title={t('plans.section_billing_event_simulation')} />
+                            </button>
+                          </div>
+                          {simOpen && (
+                            <BillingEventSimulation
+                              simulation={plan.billing_event_simulation}
+                              zeroToggle
+                              showZero={showZero}
+                              onShowZeroChange={(next) => setSimulationShowZero((prev) => ({ ...prev, [plan.id]: next }))}
+                              t={simT}
+                              formatDate={simDate}
+                              cycleNote={(() => {
+                                // #1130 stage 3 — the same marker the Membership Fee
+                                // Simulation above carries, from the same rule and the
+                                // same key: the two sections tell one story (§3).
+                                const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
+                                return key ? t(`plans.${key}` as any) : null;
+                              })()}
+                            />
+                          )}
+                          <SectionHeader title={t('plans.section_billing_event_chart')} />
+                          <BillingEventSimulationChart
+                            simulation={plan.billing_event_simulation}
+                            showZero={showZero}
+                            t={simT}
+                            formatDate={simDate}
+                          />
+                        </>
+                      );
+                    })()}
 
                   </div>
                 )}
