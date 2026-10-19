@@ -355,6 +355,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.base_payment_methods',
       },
       {
+        // #1817: the platform's catalogue of Professional Services.
+        href: '/{{locale}}/cordel/base-professional-services',
+        labelKey: 'nav.base_professional_services',
+      },
+      {
         href: '/{{locale}}/cordel/feature-flags',
         labelKey: 'nav.feature_flags',
         separatorAbove: true,
