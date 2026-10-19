@@ -45,8 +45,39 @@ export interface NavGroup {
    * `items[0].href` — no chevron, no submenu — so it needs exactly one item.
    */
   directLink?: boolean;
+  /**
+   * #1819: the id of the `navigationParents` entry this group is listed under.
+   * Nesting is presentation only — the group keeps its own `module` and
+   * `featureKey`, so `filterNavGroups` and every permission/flag check read
+   * exactly what they read before the Organization entry existed.
+   */
+  parentId?: string;
+  /**
+   * #1819: a hairline above this group inside its parent (the Settings
+   * category is set apart at the bottom of Organization). Not
+   * `separatorAbove`, which is the heavier first-level rule only Cordel draws.
+   */
+  nestedSeparatorAbove?: boolean;
   items: NavItem[];
 }
+
+/**
+ * #1819: a first-level sidebar entry that only holds other groups. It is not a
+ * page, gates nothing and appears exactly when one of its children does.
+ * `featureKey` is **not** used to hide it: it names the existing `organization`
+ * flag for the Feature Flags page's labels (the flag that gates the General
+ * category), so the key and its identifier stay untouched.
+ */
+export interface NavParent {
+  id: string;
+  labelKey: string;
+  icon: NavIconName;
+  featureKey?: string;
+}
+
+export const navigationParents: NavParent[] = [
+  { id: 'organization', labelKey: 'nav.groups.organization', icon: 'building', featureKey: 'organization' },
+];
 
 export const navigationGroups: NavGroup[] = [
   // #1367: Home is the first entry of the sidebar. It belongs to no module — any
@@ -101,11 +132,12 @@ export const navigationGroups: NavGroup[] = [
     ],
   },
   {
-    id: 'organization',
-    labelKey: 'nav.groups.organization',
+    id: 'general',
+    labelKey: 'nav.groups.general',
     icon: 'building',
     featureKey: 'organization',
     module: 'ORGANIZATION',
+    parentId: 'organization',
     items: [
       {
         href: '/{{locale}}/organization',
@@ -139,6 +171,7 @@ export const navigationGroups: NavGroup[] = [
     icon: 'dumbbell',
     featureKey: 'training',
     module: 'TRAINING',
+    parentId: 'organization',
     items: [
       {
         href: '/{{locale}}/training',
@@ -178,6 +211,7 @@ export const navigationGroups: NavGroup[] = [
     icon: 'apple',
     featureKey: 'nutrition',
     module: 'NUTRITION',
+    parentId: 'organization',
     items: [
       {
         href: '/{{locale}}/nutrition',
@@ -226,6 +260,7 @@ export const navigationGroups: NavGroup[] = [
     icon: 'creditCard',
     featureKey: 'payments',
     module: 'PAYMENTS',
+    parentId: 'organization',
     items: [
       {
         href: '/{{locale}}/payments/dashboard',
@@ -250,6 +285,7 @@ export const navigationGroups: NavGroup[] = [
     icon: 'banknote',
     featureKey: 'financials',
     module: 'FINANCIALS',
+    parentId: 'organization',
     items: [
       {
         href: '/{{locale}}/financials',
@@ -291,6 +327,8 @@ export const navigationGroups: NavGroup[] = [
     icon: 'sliders',
     featureKey: 'system',
     module: 'SYSTEM',
+    parentId: 'organization',
+    nestedSeparatorAbove: true,
     items: [
       {
         href: '/{{locale}}/audit',

@@ -85,8 +85,10 @@ describe('which group holds the open page is decided once (#1003 §2)', () => {
   });
 
   it('is the one rule the sidebar asks, in both modes', () => {
-    // Twice: the auto-expand effect and the group header's isAnyChildActive.
-    expect(sidebarSrc.match(/navGroupContainsActivePath\(/g)).toHaveLength(2);
+    // The group header's isAnyChildActive asks it directly; the auto-expand
+    // effect asks it through expandedKeysForPath (#1819), which wraps it.
+    expect(sidebarSrc.match(/navGroupContainsActivePath\(/g)).toHaveLength(1);
+    expect(sidebarSrc).toContain('expandedKeysForPath(');
     // No page-local copy of the comparison it replaced.
     expect(sidebarSrc).not.toContain('pathname === item.href');
   });

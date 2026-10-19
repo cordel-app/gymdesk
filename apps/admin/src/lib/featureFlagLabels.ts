@@ -1,4 +1,4 @@
-import { navigationGroups } from '@/config/navigationGroups';
+import { navigationGroups, navigationParents } from '@/config/navigationGroups';
 
 /**
  * #1070 §1 — what a feature flag is **called** on the Feature Flags page.
@@ -24,6 +24,12 @@ import { navigationGroups } from '@/config/navigationGroups';
  */
 const LABEL_KEYS: Map<string, string> = (() => {
   const map = new Map<string, string>();
+  // #1819: a parent that names a flag (Organization → `organization`) labels it
+  // before the group it gates (General), so the flag keeps the name of the
+  // entry the sidebar lists it under rather than its first category.
+  for (const parent of navigationParents) {
+    if (parent.featureKey && !map.has(parent.featureKey)) map.set(parent.featureKey, parent.labelKey);
+  }
   for (const group of navigationGroups) {
     if (group.featureKey && !map.has(group.featureKey)) map.set(group.featureKey, group.labelKey);
     for (const item of group.items) {
@@ -42,4 +48,22 @@ export function featureFlagLabelKey(featureKey: string): string | null {
 export function featureKeyShortName(featureKey: string): string {
   const parts = featureKey.split('.');
   return parts[parts.length - 1];
+}
+
+/**
+ * #1819 — where a root flag sits in the sidebar's hierarchy, so the Feature
+ * Flags page lists the roots in navigation order and names the parent entry
+ * (Organization) that holds them. Flag identifiers and their values are
+ * untouched: this is ordering and a heading, never a stored grouping.
+ *
+ * A root the navigation does not gate (the `member_web.*` flags, anything new)
+ * has no position and sorts after the navigation's, alphabetically — the order
+ * the page used before the hierarchy.
+ */
+export function featureFlagNavPosition(root: string): { order: number; parentLabelKey: string | null } {
+  const parentLabel = new Map(navigationParents.map((p) => [p.id, p.labelKey]));
+  const index = navigationGroups.findIndex((g) => g.featureKey === root);
+  if (index < 0) return { order: Number.MAX_SAFE_INTEGER, parentLabelKey: null };
+  const parentId = navigationGroups[index].parentId;
+  return { order: index, parentLabelKey: parentId ? parentLabel.get(parentId) ?? null : null };
 }
