@@ -30,7 +30,7 @@ import { type EChartsInstance, loadECharts } from './echartsRuntime';
  *   animation frames; an instance left behind by an unmounted card is a leak
  *   that grows with every goal a member expands.
  */
-export function EChartCanvas({ build, height = 220, ariaLabel, style }: {
+export function EChartCanvas({ build, height = 220, ariaLabel, style, onPointClick }: {
   /**
    * The option, from the resolved theme. Memoize it (`useCallback`) — it is the
    * dependency that decides when the chart is re-drawn.
@@ -40,11 +40,15 @@ export function EChartCanvas({ build, height = 220, ariaLabel, style }: {
   /** The chart's accessible name: a canvas has none of its own. */
   ariaLabel?: string;
   style?: CSSProperties;
+  /** Called with a clicked point's `x` (a bridge point has no symbol and cannot be clicked). */
+  onPointClick?: (x: number) => void;
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsInstance | null>(null);
   const buildRef = useRef(build);
   buildRef.current = build;
+  const clickRef = useRef(onPointClick);
+  clickRef.current = onPointClick;
 
   const apply = useCallback(() => {
     const chart = chartRef.current;
@@ -64,6 +68,10 @@ export function EChartCanvas({ build, height = 220, ariaLabel, style }: {
     loadECharts().then((echarts) => {
       if (disposed || !boxRef.current) return;
       chartRef.current = echarts.init(boxRef.current, undefined, { renderer: 'canvas' });
+      chartRef.current.on('click', (params: unknown) => {
+        const data = (params as { data?: { x?: unknown } }).data;
+        if (typeof data?.x === 'number') clickRef.current?.(data.x);
+      });
       apply();
     }).catch(() => {
       // A chart that cannot be loaded leaves the card it sits in exactly as it

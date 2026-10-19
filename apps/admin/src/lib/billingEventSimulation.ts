@@ -232,3 +232,65 @@ export function visibleBillingDates<T extends { total: number }>(
 ): T[] {
   return showZero ? [...dates] : dates.filter((group) => !isZeroAmount(group.total));
 }
+
+
+/* ── Interactive chart (#1808) ─────────────────────────────────────────────── */
+//
+// The chart under a Promotion's Billing Event Simulation plots the simulation's
+// own per-date totals and selects a date for the detail below it. Nothing here
+// prices or aggregates anything: `BillingEventSimulationDate.total` is already
+// the server's sum of that date's lines (one group per date), so a chart point
+// can never disagree with the cards.
+
+export interface BillingEventChartPoint {
+  /** Midnight UTC of the billing date, in milliseconds — a date-only value is never zone-shifted. */
+  x: number;
+  y: number;
+  /** The billing date (`YYYY-MM-DD`), the key of the shared selection. */
+  date: string;
+  label: string;
+  valueLabel: string;
+}
+
+/** Midnight UTC of a `YYYY-MM-DD`, or `null` for anything that is not one. */
+export function billingDateToX(date: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  if (!match) return null;
+  const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Chronological chart points over the dates being listed; the formatters are the page's. */
+export function billingEventChartPoints(
+  dates: readonly BillingEventSimulationDate[],
+  formatDate: (date: string) => string,
+  formatAmount: (amount: number) => string,
+): BillingEventChartPoint[] {
+  const points: BillingEventChartPoint[] = [];
+  for (const group of dates) {
+    const x = billingDateToX(group.date);
+    if (x == null) continue;
+    points.push({
+      x, y: group.total, date: group.date,
+      label: formatDate(group.date), valueLabel: formatAmount(group.total),
+    });
+  }
+  return points.sort((a, b) => a.x - b.x);
+}
+
+/** The group a chart click selected, or `null` when the date is not (or no longer) listed. */
+export function selectedBillingGroup<T extends { date: string }>(
+  dates: readonly T[],
+  selectedDate: string | null,
+): T | null {
+  if (selectedDate == null) return null;
+  return dates.find((group) => group.date === selectedDate) ?? null;
+}
+
+/** The date a clicked `x` stands for. */
+export function billingDateAtX(
+  points: readonly BillingEventChartPoint[],
+  x: number,
+): string | null {
+  return points.find((point) => point.x === x)?.date ?? null;
+}

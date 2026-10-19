@@ -1692,6 +1692,12 @@
     "class_package_credit": "Crèdit de bo de classes"
   },
   "promotions": {
+    "section_billing_event_chart": "Gràfic d'esdeveniments de facturació",
+    "chart_empty": "No hi ha esdeveniments de facturació simulats per graficar.",
+    "chart_aria": "Total de facturació simulat per data",
+    "chart_selected": "{date} · Total {total}",
+    "chart_no_lines": "No hi ha línies de facturació per a aquesta data.",
+    "chart_select_hint": "Selecciona un punt per veure les línies de facturació d'aquesta data.",
     "section_media": "Multimèdia",
     "image_none": "Sense imatge",
     "image_requirements": "Qualsevol imatge JPEG, PNG, WebP o GIF. El servidor la retalla a un quadrat i la desa com a WebP de 1080 × 1080 amb una miniatura de 256 × 256.",

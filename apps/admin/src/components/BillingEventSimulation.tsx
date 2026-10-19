@@ -89,7 +89,7 @@ interface Props {
   zeroToggle?: boolean;
 }
 
-function fmtMoney(amount: number): string {
+export function fmtMoney(amount: number): string {
   return `€${amount.toFixed(2)}`;
 }
 
@@ -135,7 +135,7 @@ function statusCell(line: BillingEventSimulationLine, t: Translate): React.React
  * the same date, and repeating it four times is the noise the cards exist to
  * remove.
  */
-function BillingEventTable({
+export function BillingEventTable({
   group, t, formatDate,
 }: {
   group: BillingEventSimulationDate;
