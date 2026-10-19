@@ -115,10 +115,10 @@ export function MemberPurchasedProducts({
     if (cancelBusy) return;
     setCancelBusy(true);
     setCancelError(null);
-    const error = await cancelRequest(item.id);
+    const error = await cancelRequest(item.id, item.source === 'recurring' ? item.product_id : undefined);
     setCancelBusy(false);
     setCancelling(null);
-    if (error) setCancelError(error);
+    if (error) setCancelError(error === 'recurring_not_removable' ? t('purchase_cancel_recurring_unavailable') : error);
   }
 
   const dash = '—';
@@ -215,7 +215,7 @@ export function MemberPurchasedProducts({
                 },
               ] : []),
               { label: t('action_details'), onClick: () => setDetail(item) },
-              ...(item.source !== 'recurring' && item.status === 'active' && !item.cancelled_on
+              ...(item.status === 'active' && !item.cancelled_on
                 ? [{
                     label: t('purchase_cancel_action'),
                     danger: true,
@@ -307,7 +307,7 @@ export function MemberPurchasedProducts({
 
       <ConfirmDialog
         open={cancelling !== null}
-        message={cancelling ? t('purchase_cancel_confirm', { product: cancelling.product_name }) : ''}
+        message={cancelling ? t(cancelling.source === 'recurring' ? 'purchase_cancel_confirm_recurring' : 'purchase_cancel_confirm', { product: cancelling.product_name }) : ''}
         confirmLabel={t('purchase_cancel_confirm_button')}
         cancelLabel={t('purchase_cancel_keep')}
         busy={cancelBusy}

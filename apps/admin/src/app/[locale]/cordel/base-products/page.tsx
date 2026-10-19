@@ -17,6 +17,7 @@ import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
+import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -100,6 +101,7 @@ function payloadFor(f: Form) {
 
 export default function BaseProductsPage() {
   const t = useTranslations('base_products');
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const { apiFetch } = useApiClient();
   const fmt = useGymFormatSettings();
   const locale = useLocale();
@@ -197,7 +199,7 @@ export default function BaseProductsPage() {
       <input style={formControlStyle} type="number" min={0} step="0.01" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
       <label style={formFieldLabelStyle}>{t('billing_frequency')}</label>
       <select style={formControlStyle} value={form.billing_frequency} onChange={(e) => set('billing_frequency', e.target.value as Form['billing_frequency'])}>
-        {FREQUENCIES.map((v) => <option key={v} value={v}>{t(`frequency_${v}`)}</option>)}
+        {FREQUENCIES.map((v) => <option key={v} value={v}>{billingFrequencyLabel(v, tFreq) ?? v}</option>)}
       </select>
       <label style={formFieldLabelStyle}>{t('status')}</label>
       <select style={formControlStyle} value={form.status} onChange={(e) => set('status', e.target.value as Form['status'])}>
@@ -256,7 +258,7 @@ export default function BaseProductsPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{p.name}</div>
                 <div style={{ fontSize: 13, color: '#666' }}>
-                  {t(`type_${p.type}`)} · {price(p)} · {t(`frequency_${p.billing_frequency}`)}
+                  {t(`type_${p.type}`)} · {price(p)} · {billingFrequencyLabel(p.billing_frequency, tFreq) ?? '—'}
                   {p.charge_type_code ? ` · ${p.charge_type_code}` : ''}
                 </div>
               </div>
@@ -289,7 +291,7 @@ export default function BaseProductsPage() {
             <p><strong>{t('type')}:</strong> {t(`type_${details.type}`)}</p>
             <p><strong>{t('units')}:</strong> {details.units ?? dash}</p>
             <p><strong>{t('amount')}:</strong> {price(details)}</p>
-            <p><strong>{t('billing_frequency')}:</strong> {t(`frequency_${details.billing_frequency}`)}</p>
+            <p><strong>{t('billing_frequency')}:</strong> {billingFrequencyLabel(details.billing_frequency, tFreq) ?? '—'}</p>
             <p><strong>{t('status')}:</strong> {t(details.status)}</p>
             <p><strong>{t('enrollment_status')}:</strong> {t(details.enrollment_status === 'public' ? 'enrollment_public' : 'enrollment_staff_only')}</p>
             <p><strong>{t('validity_days')}:</strong> {details.validity_days ?? dash}</p>
