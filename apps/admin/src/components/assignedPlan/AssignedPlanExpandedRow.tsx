@@ -27,6 +27,7 @@ import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
+import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
 import { isZeroAmount } from '@/lib/billingEventSimulation';
 import {
   exampleTimelineCycleNote,
@@ -132,6 +133,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [loading, setLoading] = useState(true);
   // #1724: the Membership Fee Simulation starts collapsed.
   const [feeSimOpen, setFeeSimOpen] = useState(false);
+  // #1810 — the Billing Event Forecast is collapsed by default; the chart above it is not.
+  const [forecastOpen, setForecastOpen] = useState(false);
+  const [forecastShowZero, setForecastShowZero] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
@@ -596,20 +600,42 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           Benefit are all in the server's numbers. The page formats, it never
           prices (#817). Read-only: computed on every read, persisted nowhere,
           and it charges nothing. */}
-      <CardSection label={t('section_billing_forecast')}>
-        <BillingEventSimulation
+      <CardSection label={t('section_billing_event_chart')}>
+        <BillingEventSimulationChart
           simulation={detail.billing_event_simulation}
-          zeroToggle
+          showZero={forecastShowZero}
           t={(key, values) => t(key as any, values as any)}
           formatDate={(date) => fmtTimelineDate(date, gymFmt)}
-          cycleNote={(() => {
-            // #1130 stage 3 — the same marker the Membership Fee Simulation
-            // above carries: whether this contract's cycle starts again is the
-            // engine's answer, and the card only words it.
-            const note = exampleTimelineCycleNote(detail.billing_event_simulation?.cycle ?? null);
-            return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
-          })()}
         />
+      </CardSection>
+
+      <CardSection label={t('section_billing_forecast')}>
+        <button
+          type="button"
+          aria-expanded={forecastOpen}
+          onClick={() => setForecastOpen((open) => !open)}
+          style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 11, width: 10 }}>{forecastOpen ? '▾' : '▸'}</span>
+          {t('section_billing_event_simulation')}
+        </button>
+        {forecastOpen && (
+          <BillingEventSimulation
+            simulation={detail.billing_event_simulation}
+            zeroToggle
+            showZero={forecastShowZero}
+            onShowZeroChange={setForecastShowZero}
+            t={(key, values) => t(key as any, values as any)}
+            formatDate={(date) => fmtTimelineDate(date, gymFmt)}
+            cycleNote={(() => {
+              // #1130 stage 3 — the same marker the Membership Fee Simulation
+              // above carries: whether this contract's cycle starts again is the
+              // engine's answer, and the card only words it.
+              const note = exampleTimelineCycleNote(detail.billing_event_simulation?.cycle ?? null);
+              return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
+            })()}
+          />
+        )}
       </CardSection>
 
       {/* #631: Additional Products belong to the Assigned Plan itself — not to

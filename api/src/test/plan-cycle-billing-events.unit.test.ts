@@ -278,7 +278,7 @@ describe('#1130 stage 3: one component draws it, and decides none of it', () => 
 
   it('is rendered by both cards, which hand it the marker', () => {
     for (const [name, src] of [['the Plan card', plansSrc], ['the Assigned Plan card', assignedSrc]] as const) {
-      const section = src.split('<BillingEventSimulation')[1]?.split('/>')[0];
+      const section = src.split(/<BillingEventSimulation(?![A-Za-z])/)[1]?.split('/>')[0];
       expect(section, `${name} must render the section`).toBeTruthy();
       expect(section, `${name} must pass the marker`).toContain('cycleNote=');
     }
