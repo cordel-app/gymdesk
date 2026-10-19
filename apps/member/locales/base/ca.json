@@ -334,7 +334,7 @@
     "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
     "tab_products": "Plans i productes",
     "tab_services": "Serveis professionals",
-    "services_empty": "Encara no tens sessions de serveis professionals.",
+    "services_empty": "El teu gimnàs encara no té serveis professionals disponibles.",
     "services_error": "No s'han pogut carregar els teus serveis professionals.",
     "services_total": "Total",
     "services_used": "Usades",

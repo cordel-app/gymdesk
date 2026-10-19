@@ -12,6 +12,7 @@ import { resolveMemberProfessionalServices } from '../domain/memberProfessionalS
 export interface MemberServiceBalance {
   professional_service_id: number;
   name: string;
+  description: string | null;
   total: number;
   used: number;
   remaining: number;
@@ -19,7 +20,7 @@ export interface MemberServiceBalance {
 
 export async function memberServiceBalances(gymId: string, memberId: number): Promise<MemberServiceBalance[]> {
   const { rows: services } = await db.query(
-    `SELECT ps.id AS professional_service_id, ps.name
+    `SELECT ps.id AS professional_service_id, ps.name, ps.description
        FROM professional_services ps
        JOIN gym_professional_services gps
          ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
@@ -39,13 +40,13 @@ export async function memberServiceBalances(gymId: string, memberId: number): Pr
     (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b.sessions]),
   );
   const out: MemberServiceBalance[] = [];
-  for (const s of services as Array<{ professional_service_id: number; name: string }>) {
+  for (const s of services as Array<{ professional_service_id: number; name: string; description: string | null }>) {
     const id = Number(s.professional_service_id);
     const remaining = Math.max(0, balances.get(id) ?? 0);
     const spent = used.get(id) ?? 0;
-    // A service the member never held and never spent is not theirs to list.
-    if (remaining === 0 && spent === 0) continue;
-    out.push({ professional_service_id: id, name: s.name, total: remaining + spent, used: spent, remaining });
+    // #1824: the page is the gym's catalogue of active services; a balance of
+    // zero is information about a service, never a reason to leave it out.
+    out.push({ professional_service_id: id, name: s.name, description: s.description ?? null, total: remaining + spent, used: spent, remaining });
   }
   return out;
 }

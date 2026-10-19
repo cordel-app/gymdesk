@@ -334,7 +334,7 @@
     "products_empty": "Your gym does not offer any additional products or services yet.",
     "tab_products": "Plans & Products",
     "tab_services": "Professional Services",
-    "services_empty": "You have no professional service sessions yet.",
+    "services_empty": "Your gym has no professional services available yet.",
     "services_error": "Could not load your professional services.",
     "services_total": "Total",
     "services_used": "Used",

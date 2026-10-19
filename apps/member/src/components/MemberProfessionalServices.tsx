@@ -7,6 +7,7 @@ import { memberTheme, noticeStyle, rowDividerStyle, sectionCardStyle } from '@/l
 export interface MemberServiceBalanceItem {
   professional_service_id: number;
   name: string;
+  description?: string | null;
   total: number;
   used: number;
   remaining: number;
@@ -38,7 +39,10 @@ export function MemberProfessionalServices({ items, labels }: Props) {
             gap: 12,
           }}
         >
-          <strong style={{ color: memberTheme.text }}>{item.name}</strong>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 160px', minWidth: 0 }}>
+            <strong style={{ color: memberTheme.text }}>{item.name}</strong>
+            {item.description ? <span style={small}>{item.description}</span> : null}
+          </div>
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={cell}><span style={small}>{labels.total}</span><span>{item.total}</span></div>
             <div style={cell}><span style={small}>{labels.used}</span><span>{item.used}</span></div>
