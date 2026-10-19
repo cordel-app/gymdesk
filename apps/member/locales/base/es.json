@@ -207,6 +207,7 @@
     "full": "Completa",
     "plan_only": "Solo con cuota",
     "plan_required": "Esta clase requiere una cuota compatible.",
+    "buy_sessions_cta": "Compra sesiones para reservar esta clase",
     "booked": "Ya tienes la plaza.",
     "waitlisted_at": "En lista de espera — posición {pos}.",
     "cancelled": "Reserva cancelada.",
