@@ -393,6 +393,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.base_payment_methods',
       },
       {
+        // #1822: the templates for the Products a new gym starts with.
+        href: '/{{locale}}/cordel/base-products',
+        labelKey: 'nav.base_products',
+      },
+      {
         // #1817: the platform's catalogue of Professional Services.
         href: '/{{locale}}/cordel/base-professional-services',
         labelKey: 'nav.base_professional_services',
