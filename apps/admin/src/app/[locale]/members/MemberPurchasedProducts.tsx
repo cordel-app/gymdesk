@@ -152,6 +152,15 @@ export function MemberPurchasedProducts({
       ),
     },
     {
+      header: t('purchase_col_end_date'),
+      mobile: 'secondary',
+      render: (item) => {
+        // The last valid day; a cancelled purchase with no defined validity ends the day it was cancelled (#1693).
+        const end = item.valid_until ?? item.cancelled_on ?? null;
+        return <span style={{ whiteSpace: 'nowrap' }}>{end ? formatGymDateOnly(end, gymFmt) : t('purchase_open_ended')}</span>;
+      },
+    },
+    {
       header: t('purchase_col_price_incl_vat'),
       mobile: 'secondary',
       render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.regular_amount, item.currency)}</span>,
