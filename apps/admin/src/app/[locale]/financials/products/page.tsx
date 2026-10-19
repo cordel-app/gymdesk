@@ -331,7 +331,8 @@ export default function ProductsPage() {
   }
 
   function toggleServiceId(ids: number[], id: number): number[] {
-    return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+    // #1827: at most one Professional Service — picking another replaces the selection.
+    return ids.length === 1 && ids[0] === id ? [] : [id];
   }
 
   function renderProfessionalServiceCheckboxes(selected: number[], onChange: (ids: number[]) => void) {
@@ -349,7 +350,7 @@ export default function ProductsPage() {
             <input
               type="checkbox"
               checked={selected.includes(ps.id)}
-              onChange={() => onChange(toggleServiceId(selected, ps.id))}
+              onChange={() => onChange(toggleServiceId(selected.length > 1 ? [] : selected, ps.id))}
               style={{ marginRight: 6 }}
             />
             {ps.name}

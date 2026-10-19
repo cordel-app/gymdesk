@@ -43,10 +43,22 @@ export async function loadProfessionalServicesMap(
  * selection is allowed (#546 requirement 14 — no invented "at least one"
  * rule; a Session item may have zero linked services).
  */
-export async function validateProfessionalServiceIds(gymId: string, ids: unknown): Promise<{ error: string } | null> {
+export async function validateProfessionalServiceIds(
+  gymId: string,
+  ids: unknown,
+  currentIds: number[] = [],
+): Promise<{ error: string } | null> {
   if (ids === undefined || ids === null) return null;
   if (!Array.isArray(ids)) return { error: 'professional_service_ids must be an array' };
   if (ids.length === 0) return null;
+  // #1827: a Product has at most one Professional Service. A legacy Product that already
+  // holds several keeps them only while a request sends back exactly that stored set,
+  // so an unrelated edit never fails and no association is silently dropped or chosen.
+  const distinct = Array.from(new Set(ids));
+  const unchangedLegacy = distinct.length === currentIds.length && distinct.every((id) => currentIds.includes(id as number));
+  if (distinct.length > 1 && !unchangedLegacy) {
+    return { error: 'A product can have at most one professional service' };
+  }
   if (ids.some((id) => typeof id !== 'number' || !Number.isInteger(id) || id <= 0)) {
     return { error: 'professional_service_ids must be positive integers' };
   }
