@@ -37,7 +37,10 @@ export function BillingEventSimulationChart({
     [simulation, showZero],
   );
   const points = useMemo(
-    () => billingEventChartPoints(dates, formatDate, fmtMoney),
+    () => billingEventChartPoints(
+      dates, formatDate, fmtMoney, undefined,
+      (total) => t('chart_total', { total }),
+    ),
     // formatDate is a new closure per render; the dates decide the points.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dates],
@@ -51,7 +54,7 @@ export function BillingEventSimulationChart({
   return (
     <div>
       <LineChart
-        points={points.map((p) => ({ x: p.x, y: p.y, label: p.label, valueLabel: p.valueLabel }))}
+        points={points.map((p) => ({ x: p.x, y: p.y, label: p.label, valueLabel: p.valueLabel, detailLines: p.detailLines }))}
         height={240}
         ariaLabel={t('chart_aria')}
         xAxisType="time"
