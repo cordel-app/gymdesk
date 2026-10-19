@@ -20,6 +20,8 @@ import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
@@ -53,6 +55,7 @@ export function AddProductPurchase({
   onChanged: () => void;
 }) {
   const t = useTranslations('members');
+  const tFreq = useTranslations('billing_frequency');
   const { apiFetch } = useApiClient();
   const base = `/members/${memberId}/product-purchases`;
 
@@ -64,6 +67,8 @@ export function AddProductPurchase({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // #1865: the Draft already bills on other frequencies; Continue re-sends with the confirmation.
+  const [frequencyPrompt, setFrequencyPrompt] = useState<{ existing: string[]; incoming: string } | null>(null);
 
   const product = useMemo(() => catalogue?.find((p) => p.id === productId) ?? null, [catalogue, productId]);
   const discountValue = parseDiscountInput(discount);
@@ -109,8 +114,9 @@ export function AddProductPurchase({
     setPromotionIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
-  async function create() {
+  async function create(confirmBillingFrequency = false) {
     if (productId == null || !product) return;
+    setFrequencyPrompt(null);
     setBusy(true);
     setError(null);
     try {
@@ -119,6 +125,7 @@ export function AddProductPurchase({
         body: JSON.stringify({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
           ...(product.recurring ? {} : { draft: true }),
+          ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
         }),
       });
       if (res.kind === 'one_time_draft') {
@@ -132,7 +139,11 @@ export function AddProductPurchase({
         onChanged();
       }
     } catch (err: any) {
-      setError(describe(err));
+      if (err?.body?.error === 'billing_frequency_differs' && Array.isArray(err.body.existing)) {
+        setFrequencyPrompt({ existing: err.body.existing, incoming: String(err.body.incoming) });
+      } else {
+        setError(describe(err));
+      }
     } finally {
       setBusy(false);
     }
@@ -249,9 +260,22 @@ export function AddProductPurchase({
 
       {error && <p role="alert" style={formErrorStyle}>{error}</p>}
 
+      <ConfirmDialog
+        open={frequencyPrompt != null}
+        message={t('frequency_differs_message', {
+          existing: (frequencyPrompt?.existing ?? []).map((f) => billingFrequencyLabel(f, tFreq) ?? f).join(', '),
+          incoming: frequencyPrompt ? (billingFrequencyLabel(frequencyPrompt.incoming, tFreq) ?? frequencyPrompt.incoming) : '',
+        })}
+        confirmLabel={t('frequency_differs_continue')}
+        cancelLabel={t('add_product_cancel')}
+        onConfirm={() => create(true)}
+        onCancel={() => setFrequencyPrompt(null)}
+        busy={busy}
+      />
+
       <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         {!outcome && (
-          <button type="button" style={{ ...primaryBtnSmall(), opacity: canCreate ? 1 : 0.5 }} disabled={!canCreate} onClick={create}>
+          <button type="button" style={{ ...primaryBtnSmall(), opacity: canCreate ? 1 : 0.5 }} disabled={!canCreate} onClick={() => create()}>
             {t('add_product_save_draft')}
           </button>
         )}

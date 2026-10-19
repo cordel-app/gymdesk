@@ -42,7 +42,7 @@ import {
   vatPortion,
 } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
-import { startRecurringPurchaseDraft } from './recurring-purchase-draft';
+import { startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
 import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -286,6 +286,7 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
 
     const out = await db.transaction((tx) => startRecurringPurchaseDraft(tx, {
       gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
+      confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
       actor: { name: actorName }, today,
     }));
     if (out.kind === 'in_flight') {
@@ -311,6 +312,9 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     }
     if (err instanceof PromotionRefused) {
       return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
+    }
+    if (err instanceof BillingFrequencyDiffers) {
+      return res.status(409).json({ error: 'billing_frequency_differs', existing: err.existing, incoming: err.incoming });
     }
     if (err?.status === 404) return res.status(404).json({ error: err.message });
     next(err);
