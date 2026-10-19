@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1816 (My Training Plan: previous/next week arrows around the weekly calendar, unlimited in both directions (`stepWeek()` in `lib/trainingWeek.ts`: one week, landing on today in the current week and on the week's first day otherwise; the swipe uses the same rule). The Today / This Week / This Month cards are always read for the gym's today (a second `/me/training-progress` call when another week is shown). No API change.)
 - **Done**: #1813 (Assigned Plan body opens in Edit mode whenever its host asks for it via `startEditing`, even if it was already mounted when the request arrived; the Draft just assigned from Members → Products opens in Edit mode.)
 
 - **Done**: #1807 (Members → Products: `+ Add Product` now inserts a new, always-open `Draft` row at the top of the products table (`DataTable`'s `draftRow` slot, outside the filtered rows so a status filter never hides it) holding the existing `AddProductPurchase` form in an `embedded` mode, instead of a separate form above the list. Save/Cancel, validation errors (row and input kept), quote, VAT, discount and promotion logic are the unchanged #1521 endpoints; a saved one-time draft closes the row and appears in the list with its persisted status. No API change; tsc/tests not run: no node_modules here.)

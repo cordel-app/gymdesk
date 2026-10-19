@@ -106,6 +106,8 @@
     "progress_month": "Aquest mes",
     "today_marker": "Avui",
     "week_nav_hint": "Llisca per canviar de setmana",
+    "week_prev": "Setmana anterior",
+    "week_next": "Setmana següent",
     "status_completed": "Completat",
     "status_pending": "Pendent",
     "status_scheduled": "Programat",

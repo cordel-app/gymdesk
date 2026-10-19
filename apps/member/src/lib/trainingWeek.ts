@@ -45,6 +45,15 @@ export function shiftWeek(date: string, weeks: number): string {
 }
 
 /**
+ * My Training's week step (#1816): one week either way, landing on today when
+ * that week is the current one and on the week's first day otherwise.
+ */
+export function stepWeek(date: string, weeks: number, today: string): string {
+  const next = shiftWeek(date, weeks);
+  return weekStart(next) === weekStart(today) ? today : weekStart(next);
+}
+
+/**
  * Week navigation that never leaves the current week for a later one. Landing in
  * the current week from the past selects at most today, so the selected day is
  * never a day that has not happened. A step that would pass it returns `date`.
