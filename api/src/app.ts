@@ -106,6 +106,7 @@ import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/plat
 import { platformMobileBuildsRouter } from './api/platform-mobile-builds';
 import { paymentProvidersRouter } from './api/payment-providers';
 import { platformBasePaymentMethodsRouter } from './api/platform-base-payment-methods';
+import { platformBaseProductsRouter } from './api/platform-base-products';
 import { platformProfessionalServicesRouter } from './api/platform-professional-services';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
@@ -303,6 +304,7 @@ app.use('/platform/mobile-builds', requireAuth(), platformMobileBuildsRouter);
 app.use('/platform/payment-providers', requireAuth(), paymentProvidersRouter);
 // #1663: the Base Payment Methods catalogue, superadmin-only per route.
 app.use('/platform/base-payment-methods', requireAuth(), platformBasePaymentMethodsRouter);
+app.use('/platform/base-products', requireAuth(), platformBaseProductsRouter);
 
 // Feature flags public read — any authenticated user (used by frontend sidebar)
 app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);
