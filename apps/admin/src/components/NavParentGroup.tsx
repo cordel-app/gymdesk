@@ -3,7 +3,7 @@
 import { ReactNode, useState } from 'react';
 import type { NavParent } from '@/config/navigationGroups';
 import { NavIcon } from './icons/NavIcons';
-import { navGroupHeaderStyle } from './NavGroup';
+import { navGroupHeaderStyle, navGroupLabelStyle } from './NavGroup';
 
 interface NavParentGroupProps {
   parent: NavParent;
@@ -65,7 +65,7 @@ export function NavParentGroup({
             </span>
           )}
           <NavIcon name={parent.icon} />
-          {!collapsed && label}
+          {!collapsed && <span style={navGroupLabelStyle}>{label}</span>}
         </button>
       </div>
       {!collapsed && isExpanded && <div>{children}</div>}
