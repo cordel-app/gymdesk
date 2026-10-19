@@ -1554,6 +1554,27 @@ shape will raise it again; the answer is (2) or (3), not a rewrite.
 
 ---
 
+## Base catalogues: inventory and target pattern (#1849)
+
+Stage 1 of #1849 is this note only: no migration, route or screen changes. It records where platform-owned ("Base") rows live today and where each catalogue is going, so stages 2-5 move one catalogue at a time against one agreed mapping.
+
+**Target pattern.** A Base item lives in a dedicated `base_<catalogue>` table (no `gym_id`, soft delete, plain-text actors per #1182, administered only from Cordel through `/platform/*` with `requireSuperadmin`). A gym's copy lives in the operational table with `gym_id` set and records its source in a provenance column (`cloned_from_id` for exercises, the existing convention). Gym creation and the gym's import action read the Base table and INSERT gym-owned rows; a later Base edit never rewrites an imported copy. Imports are idempotent (unique provenance key per gym).
+
+| Catalogue | Base storage today | Target Base table | Gym-owned table | State |
+|---|---|---|---|---|
+| Payment methods | `base_payment_methods` (migration 284) | same | gym rows | done |
+| Products | `base_products` (migration 298) | same | `products` | done |
+| Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` | `personal_goals` | stage 2 |
+| Nutrition Goals | `nutrition_goals` with `gym_id IS NULL` | `base_nutrition_goals` | `nutrition_goals` | stage 4 |
+| Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` | `base_nutrition_library_items` | `nutrition_library_items` | stage 4 |
+| Exercises | `exercises` with `gym_id IS NULL`; gym copy records `cloned_from_id` (the reference import flow) | `base_exercises` | `exercises` | stage 4 |
+| Professional Services | `professional_services` with `gym_id IS NULL` (migration 296 only added translations) | `base_professional_services` | `professional_services` | later, owner to confirm |
+| Themes, Training Plan Templates, Workout Templates, Nutrition Plan Templates | same tables with `gym_id IS NULL` | not decided | same tables | out of scope until owner confirms: each carries child tables and a clone flow of its own |
+
+**References that must survive a move** (Personal Goals, the first catalogue): `member_personal_goals.personal_goal_id` and `gym_personal_goals.personal_goal_id` point at System rows by id, and `member_personal_goals` keeps its own name/target snapshot (#1034), so existing assignments stay valid. Stage 2 keeps the System goal ids in `base_personal_goals` (no remapping) and re-points or links those references in stage 3.
+
+**Order and deletion.** Personal Goals first, then the other catalogues one stage each. Migrations only copy; the old `gym_id IS NULL` rows are deleted in the final stage, so no reader or writer ever treats two copies as authoritative at once. The "Critical invariant" of #1849 holds only after that final stage.
+
 ## Audit metadata inventory (#1182)
 
 The plain-text actor snapshot (`created_by` / `modified_by` / `deleted_by`, `api/src/domain/auditActor.ts`) is rolled out in stages; this matrix is complete since stage 4 (#1182). Every base table is either in `AUDITED_TABLES` or classified in `api/src/domain/auditInventory.ts` (`parent`, `ledger`, `lookup`, `technical`, `legacy`), and `audit-inventory.test.ts` enforces it against the live schema.
