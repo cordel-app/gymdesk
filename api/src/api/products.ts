@@ -440,7 +440,13 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     if (effectiveType !== SESSION_TYPE) {
       professionalServiceIdsToPersist = [];
     } else if (Array.isArray(professional_service_ids)) {
-      const psErr = await validateProfessionalServiceIds(gymId, professional_service_ids);
+      const { rows: currentPs } = await db.query<{ professional_service_id: number }>(
+        'SELECT professional_service_id FROM product_professional_services WHERE product_id = ?',
+        [req.params.id],
+      );
+      const psErr = await validateProfessionalServiceIds(
+        gymId, professional_service_ids, currentPs.map((r) => Number(r.professional_service_id)),
+      );
       if (psErr) return res.status(400).json(psErr);
       professionalServiceIdsToPersist = professional_service_ids;
     } // else: type is/stays 'sessions' and the request didn't touch the field — leave existing links untouched.
