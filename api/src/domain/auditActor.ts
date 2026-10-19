@@ -148,6 +148,7 @@ export const AUDITED_TABLES: readonly string[] = [
   'gym_holiday_hours',
   'gym_operating_hours',
   'base_payment_methods',
+  'base_products',
   'gym_personal_goals',
   'gyms',
   'member_nutrition_plans',
