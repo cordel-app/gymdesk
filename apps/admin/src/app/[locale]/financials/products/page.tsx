@@ -17,6 +17,9 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn, listCellClasses,
@@ -263,6 +266,8 @@ export default function ProductsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQ, setSearchQ] = useState('');
 
+  // #1832: Cards / List, the same saved choice Exercises, Activities and Promotions use.
+  const [view, setView] = useExerciseViewMode();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -441,10 +446,18 @@ export default function ProductsPage() {
   // ─── Edit ────────────────────────────────────────────────────────────────────
 
   function openEdit(item: Product) {
+    // Editing happens in the List view only (#1832): Edit from a card switches
+    // to it, expands this product and opens its editor in place.
+    setView('list');
     setEditingId(item.id);
     setEditForm(toProductFormValues(item));
     setEditError(null);
     setExpanded((prev) => new Set([...prev, item.id]));
+    // The row exists in List view by now: bring it into view even when it was
+    // far down the list.
+    requestAnimationFrame(() => {
+      document.getElementById(`product-card-${item.id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
   }
 
   function cancelEdit() {
@@ -649,6 +662,48 @@ export default function ProductsPage() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // The closed card (#1832). The expanded body below it is the list row's own
+  // (ProductLayout), so the two views cannot drift.
+  function renderCardHeader(item: Product, isExpanded: boolean, menuItems: ContextMenuItem[]) {
+    const image = item.image_url;
+    const price = item.amount_incl_tax != null
+      ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
+      : fmtAmount(item.amount, item.currency);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {image && <CardSquareImage src={image} alt={item.name} version={item.modified_at} placeholder={null} />}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {!image && <MemberAvatar name={item.name} imageUrl={null} stamp={item.modified_at} size={40} />}
+            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{item.name}</div>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--gd-text-secondary, #666)' }}>
+            {t(`type_${item.type}`)} · {price} · {billingFrequencyLabel(item.billing_frequency, tFreq) ?? '—'}
+          </div>
+          <div>
+            <StatusBadge status={item.status} label={tStatus(item.status)} />
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => toggleExpand(item.id)}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+            padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+            borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
+          }}
+        >
+          <span>{isExpanded ? t('hide_all_attributes') : t('show_all_attributes')}</span>
+          <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+        </button>
       </div>
     );
   }
@@ -941,8 +996,9 @@ export default function ProductsPage() {
     ];
 
     return (
-      <div key={item.id} style={cardStyle}>
-        {/* Collapsed header — one cell per LIST_COLUMNS entry, same order */}
+      <div key={item.id} id={`product-card-${item.id}`} style={cardStyle}>
+        {view === 'cards' ? renderCardHeader(item, isExpanded, menuItems) : (
+        /* Collapsed header — one cell per LIST_COLUMNS entry, same order */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(item.id)}>
           <div className={CELL_CLASS.name} style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }} title={item.name}>
             {item.name}
@@ -1013,6 +1069,7 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* #974: one layout, two modes. Expanding the card reads and
             `⋮ → Edit` writes (#797), and because both halves render
@@ -1112,10 +1169,24 @@ export default function ProductsPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
+          <ExerciseViewToggle value={view} onChange={setView} />
           <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 
+      {view === 'cards' ? (
+        <>
+          {renderInlineNewRow()}
+          {loading ? (
+            <p style={{ color: '#888' }}>{t('loading')}</p>
+          ) : items.length === 0 && !inlineNew ? (
+            <p style={{ color: '#888' }}>{t('empty')}</p>
+          ) : (
+            <CardGrid>{items.map(renderRow)}</CardGrid>
+          )}
+        </>
+      ) : (
+      <>
       {/* Headers + rows share LIST_GRID_COLUMNS and scroll together (#637) */}
       <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
         <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
@@ -1145,6 +1216,8 @@ export default function ProductsPage() {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* Details modal */}
       <CrudModal
