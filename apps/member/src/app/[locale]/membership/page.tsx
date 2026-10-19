@@ -114,7 +114,14 @@ interface Benefit {
 }
 
 // The order the Plans, Promotions and Assigned Plans pages list the sections in.
-const BENEFIT_GROUPS: BenefitCategory[] = ['oneoff', 'session', 'periodical'];
+// #1823 — grouped by what the item is (one-time or recurring), never by its
+// old section: a period-benefit line or a recurring frequency is Recurring.
+type ItemGroup = 'onetime' | 'recurring';
+const ITEM_GROUPS: ItemGroup[] = ['onetime', 'recurring'];
+const RECURRING_ITEM_FREQUENCIES = ['week', 'four_weeks', 'month', 'year'];
+function itemGroupOf(b: Benefit): ItemGroup {
+  return RECURRING_ITEM_FREQUENCIES.includes(b.billing_frequency ?? '') ? 'recurring' : 'onetime';
+}
 
 interface Membership {
   id: number;
@@ -546,6 +553,7 @@ export default function MembershipPage() {
         key: String(product.id),
         name: product.name,
         description: product.description,
+        imageUrl: product.image_url ?? null,
         // §5: the Final price, which is the applied Promotion's own figure —
         // the server's, never recomputed here (#817).
         price: productFinalPriceText(product, applied, gymFmt),
@@ -1150,13 +1158,13 @@ export default function MembershipPage() {
         </dl>
         {membership.benefits.length > 0 && (
           <div style={styles.nestedBenefits}>
-            <h2 style={styles.nestedBenefitsHeading}>{t('membership.benefits_heading')}</h2>
-            {BENEFIT_GROUPS.map((group) => {
-              const rows = membership.benefits.filter((b) => b.category === group);
+            <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
+            {ITEM_GROUPS.map((group) => {
+              const rows = membership.benefits.filter((b) => itemGroupOf(b) === group);
               if (rows.length === 0) return null;
               return (
                 <div key={group} style={styles.benefitGroup}>
-                  <h3 style={styles.h3}>{t(`membership.benefit_group.${group}`)}</h3>
+                  <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
                   <ul style={styles.benefitList}>
                     {rows.map((b) => (
                       <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
@@ -1333,7 +1341,7 @@ const styles: Record<string, React.CSSProperties> = {
   h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
   // #1776: the plan's benefits sit inside its card, indented and on a tinted
   // inner surface, so they read as the plan's own rather than a sibling.
-  nestedBenefits: { marginTop: 16, marginLeft: 12, paddingLeft: 12, borderLeft: `2px solid ${memberTheme.separator}` },
+  nestedBenefits: { marginTop: 16 },
   nestedBenefitsHeading: { fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: memberTheme.textSecondary },
   benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },

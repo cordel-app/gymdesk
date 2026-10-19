@@ -329,8 +329,8 @@
       "cancelled": "Cancelled"
     },
     "expires": "expires {date}",
-    "benefits_heading": "Included benefits",
-    "products_heading": "Additional Products and Services",
+    "items_heading": "Items",
+    "products_heading": "Products & Services",
     "products_empty": "Your gym does not offer any additional products or services yet.",
     "tab_products": "Plans & Products",
     "tab_services": "Professional Services",
@@ -414,10 +414,9 @@
       "insurance_fee": "Insurance",
       "class_package": "Class package"
     },
-    "benefit_group": {
-      "oneoff": "One-off benefits",
-      "session": "Session benefits",
-      "periodical": "Period benefits"
+    "item_group": {
+      "onetime": "One-time Items",
+      "recurring": "Recurring Items"
     },
     "frequency": {
       "once": "Once",

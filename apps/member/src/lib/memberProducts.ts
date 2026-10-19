@@ -44,6 +44,8 @@ export interface MemberProduct {
   type: string;
   /** The sessions a Sessions package contains; `null` for every other type. */
   units: number | null;
+  /** #1823 — the Product's picture; `null` when it has none. */
+  image_url?: string | null;
   billing_frequency: string | null;
   price_incl_tax: number | null;
   currency: string;

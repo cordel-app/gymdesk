@@ -329,8 +329,8 @@
       "cancelled": "Cancelado"
     },
     "expires": "caduca el {date}",
-    "benefits_heading": "Beneficios incluidos",
-    "products_heading": "Productos y Servicios Adicionales",
+    "items_heading": "Elementos",
+    "products_heading": "Productos y Servicios",
     "products_empty": "Tu gimnasio todavía no ofrece productos ni servicios adicionales.",
     "tab_products": "Planes y productos",
     "tab_services": "Servicios profesionales",
@@ -414,10 +414,9 @@
       "insurance_fee": "Seguro",
       "class_package": "Bono de clases"
     },
-    "benefit_group": {
-      "oneoff": "Beneficios únicos",
-      "session": "Beneficios de sesiones",
-      "periodical": "Beneficios periódicos"
+    "item_group": {
+      "onetime": "Elementos únicos",
+      "recurring": "Elementos recurrentes"
     },
     "frequency": {
       "once": "Una vez",

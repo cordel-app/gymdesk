@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
@@ -57,6 +57,8 @@ export interface MemberProductCardItem {
   key: string;
   name: string;
   description?: string | null;
+  /** #1823 — the Product's picture, drawn on the left; none renders no container. */
+  imageUrl?: string | null;
   /** The price, formatted; `null` renders `—`. */
   price: string | null;
   /**
@@ -78,6 +80,16 @@ export interface MemberProductCardItem {
   action?: ReactNode;
 }
 
+/** The picture, or nothing: a failed load drops the box rather than showing a broken icon. */
+function ProductImage({ src }: { src?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt="" style={styles.image} onError={() => setBroken(true)} />
+  );
+}
+
 export function MemberProductsSection({ title, emptyLabel, items }: {
   title: string;
   emptyLabel: string;
@@ -94,6 +106,8 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
         <ul style={styles.list}>
           {items.map((item) => (
             <li key={item.key} style={styles.card}>
+              <ProductImage src={item.imageUrl} />
+              <div style={styles.body}>
               <div style={styles.head}>
                 <span style={styles.name}>{item.name}</span>
                 <span style={styles.priceGroup}>
@@ -124,6 +138,7 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
                 </div>
               ))}
               {item.action && <div style={styles.action}>{item.action}</div>}
+              </div>
             </li>
           ))}
         </ul>
@@ -136,7 +151,9 @@ const styles: Record<string, CSSProperties> = {
   section: { marginTop: 24 },
   heading: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-  card: { ...sectionCardStyle, padding: '12px 14px' },
+  card: { ...sectionCardStyle, padding: '12px 14px', display: 'flex', gap: 12, alignItems: 'flex-start' },
+  body: { flex: 1, minWidth: 0 },
+  image: { width: 64, height: 64, flexShrink: 0, objectFit: 'cover', borderRadius: 8 },
   head: {
     display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
     gap: 10, flexWrap: 'wrap',

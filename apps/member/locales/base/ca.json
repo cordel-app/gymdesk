@@ -329,8 +329,8 @@
       "cancelled": "Cancel·lat"
     },
     "expires": "caduca el {date}",
-    "benefits_heading": "Beneficis inclosos",
-    "products_heading": "Productes i Serveis Addicionals",
+    "items_heading": "Elements",
+    "products_heading": "Productes i Serveis",
     "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
     "tab_products": "Plans i productes",
     "tab_services": "Serveis professionals",
@@ -414,10 +414,9 @@
       "insurance_fee": "Assegurança",
       "class_package": "Bo de classes"
     },
-    "benefit_group": {
-      "oneoff": "Beneficis únics",
-      "session": "Beneficis de sessions",
-      "periodical": "Beneficis periòdics"
+    "item_group": {
+      "onetime": "Elements únics",
+      "recurring": "Elements recurrents"
     },
     "frequency": {
       "once": "Un cop",

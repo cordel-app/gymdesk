@@ -40,9 +40,9 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
     expect(page).not.toContain('benefit_code');
   });
 
-  it('groups the lines one-off → session → period, as every staff surface does', () => {
-    expect(page).toContain("const BENEFIT_GROUPS: BenefitCategory[] = ['oneoff', 'session', 'periodical']");
-    expect(page).toContain('membership.benefit_group.${group}');
+  it('groups the lines as One-time and Recurring Items by their frequency (#1823)', () => {
+    expect(page).toContain("const ITEM_GROUPS: ItemGroup[] = ['onetime', 'recurring']");
+    expect(page).toContain('membership.item_group.${group}');
   });
 
   it('shows the frozen unit price and the frozen billing frequency', () => {
@@ -60,12 +60,12 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
 });
 
 describe('locale parity for the new keys', () => {
-  const GROUPS = ['oneoff', 'session', 'periodical'];
+  const GROUPS = ['onetime', 'recurring'];
   const FREQUENCIES = ['once', 'per_session', 'week', 'four_weeks', 'month', 'year'];
 
   it.each(LOCALE_CODES)('%s carries every benefit group and frequency label', (code) => {
     const { membership } = locale(code);
-    for (const g of GROUPS) expect(membership.benefit_group[g]).toBeTruthy();
+    for (const g of GROUPS) expect(membership.item_group[g]).toBeTruthy();
     for (const f of FREQUENCIES) expect(membership.frequency[f]).toBeTruthy();
   });
 
