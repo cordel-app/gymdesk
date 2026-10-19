@@ -471,6 +471,7 @@ export function MemberExpandedRow({
             error={productSetDetail.error}
             workflow={workflow}
             canWrite={canWriteMembers && canManagePackages}
+            onDiscarded={reloadConfiguration}
             onSaveAndPay={() => {
               const target = saveAndPayTarget(workflow);
               if (target === 'review') setReviewOpen(true);
