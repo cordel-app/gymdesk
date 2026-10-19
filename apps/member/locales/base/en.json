@@ -207,6 +207,7 @@
     "full": "Full",
     "plan_only": "Members only",
     "plan_required": "This class needs a matching plan.",
+    "buy_sessions_cta": "Buy sessions to book this class",
     "booked": "You're booked.",
     "waitlisted_at": "Added to waitlist — position {pos}.",
     "cancelled": "Booking cancelled.",

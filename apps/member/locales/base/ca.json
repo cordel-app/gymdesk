@@ -207,6 +207,7 @@
     "full": "Plena",
     "plan_only": "Només amb quota",
     "plan_required": "Aquesta classe requereix una quota compatible.",
+    "buy_sessions_cta": "Compra sessions per reservar aquesta classe",
     "booked": "Ja tens la plaça.",
     "waitlisted_at": "A la llista d'espera — posició {pos}.",
     "cancelled": "Reserva cancel·lada.",

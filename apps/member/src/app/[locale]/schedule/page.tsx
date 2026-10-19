@@ -18,6 +18,7 @@ import {
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 
 interface Session {
@@ -77,6 +78,7 @@ export default function MemberSchedulePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingSession, setPendingSession] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [unlockServiceIds, setUnlockServiceIds] = useState<number[]>([]);
   const [expandedSession, setExpandedSession] = useState<number | null>(null);
 
   const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
@@ -116,7 +118,7 @@ export default function MemberSchedulePage() {
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   async function bookSession(sessionId: number) {
-    setPendingSession(sessionId); setMessage(null);
+    setPendingSession(sessionId); setMessage(null); setUnlockServiceIds([]);
     try {
       const result: any = await apiFetch('/me/bookings', {
         method: 'POST', body: JSON.stringify({ class_session_id: sessionId }),
@@ -126,6 +128,7 @@ export default function MemberSchedulePage() {
         : t('member_schedule.booked'));
       load();
     } catch (err: any) {
+      setUnlockServiceIds(requiredServiceIds(err));
       setMessage(err.message?.includes('plan_required') ? t('member_schedule.plan_required') : (err.message ?? t('common.error')));
     } finally { setPendingSession(null); }
   }
@@ -164,6 +167,14 @@ export default function MemberSchedulePage() {
     <main style={styles.container}>
 
       {message && <div style={styles.message}>{message}</div>}
+      {unlockServiceIds.length > 0 && (
+        <button
+          onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
+          style={{ ...primaryButtonStyle, padding: '10px 16px', marginBottom: 16 }}
+        >
+          {t('member_schedule.buy_sessions_cta')}
+        </button>
+      )}
 
       <h2 style={styles.sectionHead}>{t('member_schedule.upcoming_section')}</h2>
 
