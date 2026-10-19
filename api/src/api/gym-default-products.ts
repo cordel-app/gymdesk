@@ -23,11 +23,8 @@
 
 import { db } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import {
-  defaultProductForChargeType,
-  defaultProductsWithoutChargeType,
-  type DefaultGymProduct,
-} from '../domain/defaultGymProducts';
+import { type DefaultGymProduct } from '../domain/defaultGymProducts';
+import { toDefaultGymProduct, type BaseProductRow } from '../domain/baseProducts';
 
 
 /**
@@ -83,6 +80,14 @@ const UNDECLARED: ReturnType<typeof configurationValues> = [
  * un-rated.
  */
 export async function seedDefaultGymProducts(gymId: string, actor: string | null = SYSTEM_ACTOR): Promise<void> {
+  // #1822: the declarations are the live templates Cordel administers in
+  // `base_products` (seeded by migration 298 from `DEFAULT_GYM_PRODUCTS`). A
+  // template edited or deleted there changes only the gyms created from now on.
+  const { rows: templates } = await db.query<BaseProductRow>(
+    'SELECT * FROM base_products WHERE deleted_at IS NULL ORDER BY id',
+  );
+  const declaredProducts = templates.map(toDefaultGymProduct);
+
   // #543: a System Product's name and type come from `charge_types` rather
   // than from this module — the catalogue is where they are spelled.
   const { rows: chargeTypes } = await db.query<{ id: number; code: string }>(
@@ -90,7 +95,7 @@ export async function seedDefaultGymProducts(gymId: string, actor: string | null
   );
 
   for (const chargeType of chargeTypes) {
-    const declared = defaultProductForChargeType(chargeType.code);
+    const declared = declaredProducts.find((p) => p.chargeTypeCode === chargeType.code);
     await db.query(
       `INSERT IGNORE INTO products
 (gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
@@ -103,7 +108,7 @@ export async function seedDefaultGymProducts(gymId: string, actor: string | null
     );
   }
 
-  for (const product of defaultProductsWithoutChargeType()) {
+  for (const product of declaredProducts.filter((p) => p.chargeTypeCode === null)) {
     await db.query(
       `INSERT INTO products
 (gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
