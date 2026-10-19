@@ -7,7 +7,7 @@ import { useGym } from '@/context/GymContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { Tabs, type TabDescriptor } from '@/components/Tabs';
-import { featureFlagLabelKey, featureKeyShortName } from '@/lib/featureFlagLabels';
+import { featureFlagLabelKey, featureFlagNavPosition, featureKeyShortName } from '@/lib/featureFlagLabels';
 // #1070 §3: the app's one red, so an overridden permission is marked in the
 // colour a destructive menu item and a failed save already use rather than a
 // hue this page invents.
@@ -144,7 +144,12 @@ export default function FeatureFlagsPage() {
 
   if (gymLoading || !isSuperadmin) return null;
 
-  const tree = buildTree(flags.filter(f => isMemberWebFlag(f.feature_key) === (tab === 'member_web')));
+  // #1819: the roots follow the sidebar's order and the ones listed under
+  // Organization sit beneath its heading. Ordering and a heading only — no
+  // flag is renamed, moved or re-keyed.
+  const tree = buildTree(flags.filter(f => isMemberWebFlag(f.feature_key) === (tab === 'member_web')))
+    .map(node => ({ node, position: featureFlagNavPosition(node.key) }))
+    .sort((a, b) => a.position.order - b.position.order || a.node.key.localeCompare(b.node.key));
   const hasOverrides = Object.keys(roleAccess?.overrides ?? {}).length > 0;
 
   function renderNode(node: FlagNode, depth = 0) {
@@ -322,7 +327,20 @@ export default function FeatureFlagsPage() {
             {t('feature_flags.empty')}
           </div>
         ) : (
-          tree.map(node => renderNode(node))
+          tree.map(({ node, position }, i) => (
+            <div key={node.key}>
+              {position.parentLabelKey && tree[i - 1]?.position.parentLabelKey !== position.parentLabelKey && (
+                <div style={{
+                  padding: '8px 16px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.08em', color: 'var(--gd-text-muted, #6b7280)',
+                  borderBottom: '1px solid var(--gd-border, #e5e7eb)',
+                }}>
+                  {t(position.parentLabelKey as any)}
+                </div>
+              )}
+              {renderNode(node)}
+            </div>
+          ))
         )}
       </div>
     </div>

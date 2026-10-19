@@ -75,7 +75,7 @@ describe('which section carries it is navigation config (#1020)', () => {
   it('never draws one above the first visible section', () => {
     // The group declares the divider; the sidebar is the only place that knows
     // whether this group is the first one this role can see.
-    expect(sidebarSrc).toContain('separatorAbove={!!group.separatorAbove && index > 0}');
+    expect(sidebarSrc).toContain('renderGroup(entry.group, !!entry.group.separatorAbove && index > 0, false)');
   });
 
   it('changes nothing else about the Cordel item', () => {

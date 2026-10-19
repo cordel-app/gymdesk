@@ -41,6 +41,54 @@ function Badge({ badge, onNavigate }: { badge: NavBadge; onNavigate?: () => void
   );
 }
 
+/**
+ * #1819: the header look every first-level entry shares — a section header and
+ * the Organization entry that holds sections draw the same button, so the
+ * chevron, spacing, typography and active treatment cannot drift apart.
+ */
+export function navGroupHeaderStyle(
+  { collapsed, active, hovered }: { collapsed: boolean; active: boolean; hovered: boolean },
+): CSSProperties {
+  const showActiveParent = active;
+  const headerHovered = hovered;
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    width: '100%',
+    boxSizing: 'border-box',
+    // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
+    // section icon fits beside the chevron without the longest uppercase
+    // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
+    // in the sidebar (SIDEBAR_EXPANDED_WIDTH). Nothing else about the header's spacing moves.
+    padding: '10px 16px',
+    // #1003: collapsed, the icon is the whole button, so it centres in
+    // the strip rather than sitting at #884's label inset. The expanded
+    // spacing above is untouched — this only overrides it.
+    ...(collapsed ? { padding: '10px 0' } : null),
+    background: showActiveParent
+    ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
+    : collapsed && headerHovered
+      ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
+      : 'transparent',
+    border: 'none',
+    borderLeft: showActiveParent
+    ? '3px solid var(--brand, #6c63ff)'
+    : '3px solid transparent',
+    color: showActiveParent
+    ? 'var(--gd-sidebar-selected-text, #fff)'
+    : 'rgba(255,255,255,0.6)',
+    textDecoration: 'none',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    gap: '6px',
+    whiteSpace: 'nowrap',
+  };
+}
+
 interface NavGroupProps {
   group: NavGroupType;
   label: string;
@@ -65,6 +113,14 @@ interface NavGroupProps {
    * visible section, which has nothing above it to be separated from.
    */
   separatorAbove?: boolean;
+  /**
+   * #1819: this group is listed inside the Organization entry — its header and
+   * items are indented one level and its `nestedSeparatorAbove` hairline is
+   * drawn. Everything else (permissions, flags, active state) is unchanged.
+   */
+  nested?: boolean;
+  /** #1819: draw the hairline above this nested group (`NavGroup.nestedSeparatorAbove`). */
+  nestedSeparatorAbove?: boolean;
 }
 
 export function NavGroup({
@@ -77,6 +133,8 @@ export function NavGroup({
   badge,
   collapsed = false,
   separatorAbove = false,
+  nested = false,
+  nestedSeparatorAbove = false,
 }: NavGroupProps) {
   // A group flagged `directLink` is one page: its header navigates there.
   const direct = !!group.directLink && group.items.length > 0;
@@ -106,6 +164,7 @@ export function NavGroup({
             display: 'block',
             flex: 1,
             padding: '10px 20px',
+            ...(nested ? { paddingLeft: 48 } : null),
             color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
             background: active && !isParentOfActive
@@ -181,40 +240,8 @@ export function NavGroup({
   const showActiveParent = collapsed && isAnyChildActive;
 
   const headerStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: collapsed ? 'center' : 'flex-start',
-    width: '100%',
-    boxSizing: 'border-box',
-    // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
-    // section icon fits beside the chevron without the longest uppercase
-    // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
-    // in the sidebar (SIDEBAR_EXPANDED_WIDTH). Nothing else about the header's spacing moves.
-    padding: '10px 16px',
-    // #1003: collapsed, the icon is the whole button, so it centres in
-    // the strip rather than sitting at #884's label inset. The expanded
-    // spacing above is untouched — this only overrides it.
-    ...(collapsed ? { padding: '10px 0' } : null),
-    background: showActiveParent
-      ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
-      : collapsed && headerHovered
-        ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
-        : 'transparent',
-    border: 'none',
-    borderLeft: showActiveParent
-      ? '3px solid var(--brand, #6c63ff)'
-      : '3px solid transparent',
-    color: showActiveParent
-      ? 'var(--gd-sidebar-selected-text, #fff)'
-      : 'rgba(255,255,255,0.6)',
-    textDecoration: 'none',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    gap: '6px',
-    whiteSpace: 'nowrap',
+    ...navGroupHeaderStyle({ collapsed, active: showActiveParent, hovered: headerHovered }),
+    ...(nested ? { paddingLeft: 32, fontSize: 13 } : null),
   };
 
   return (
@@ -223,6 +250,7 @@ export function NavGroup({
           before it in both modes — the collapsed strip keeps the rule and only
           narrows its inset (navChrome). */}
       {separatorAbove && <div style={navGroupSeparatorStyle(collapsed)} />}
+      {nestedSeparatorAbove && !collapsed && <div style={navItemSeparatorStyle} />}
       <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px', position: 'relative' }}>
       {direct ? (
         <Link

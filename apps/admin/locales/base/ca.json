@@ -29,10 +29,11 @@
       "membership": "Membres",
       "calendar": "Calendari",
       "organization": "Organització",
+      "general": "General",
       "training": "Entrenament",
       "nutrition": "Nutrició i Objectius",
-      "payments": "Pagaments",
-      "financials": "Finances",
+      "payments": "Pagaments i facturació",
+      "financials": "Plans, productes i finances",
       "system": "Configuració",
       "cordel": "Cordel"
     },

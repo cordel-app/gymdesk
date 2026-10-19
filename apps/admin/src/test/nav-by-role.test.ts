@@ -20,8 +20,8 @@ describe('menu groups follow the permission matrix', () => {
 
   it('read-only roles now see the modules they can read (#611)', () => {
     const groups = (role: AppRole) => filterNavGroups(navigationGroups, role, {}).map((g) => g.labelKey);
-    expect(groups('trainer_performance')).toContain('nav.groups.organization');
-    expect(groups('nutritionist')).toEqual(expect.arrayContaining(['nav.groups.organization', 'nav.groups.training']));
+    expect(groups('trainer_performance')).toContain('nav.groups.general');
+    expect(groups('nutritionist')).toEqual(expect.arrayContaining(['nav.groups.general', 'nav.groups.training']));
     expect(groups('front_desk')).toContain('nav.groups.financials');
     expect(groups('accountant')).not.toContain('nav.groups.membership');
   });

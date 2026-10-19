@@ -6,8 +6,10 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
-import { navigationGroups, filterNavGroups, NavItem as NavItemType } from '@/config/navigationGroups';
+import { navigationGroups, navigationParents, filterNavGroups, NavItem as NavItemType } from '@/config/navigationGroups';
 import { NavGroup, NavBadge } from './NavGroup';
+import { NavParentGroup } from './NavParentGroup';
+import { buildNavEntries, expandedKeysForPath, parentContainsActivePath, parentExpandedKey } from '@/lib/navTree';
 import { failedPaymentsQueueHref, useFailedPaymentsAttention } from '@/lib/failedPaymentsAttention';
 import {
   SIDEBAR_DESKTOP_MEDIA_QUERY,
@@ -84,18 +86,23 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   useEffect(() => {
     const filteredGroups = filterNavGroups(navigationGroups, userRole, flags);
 
-    for (const group of filteredGroups) {
-      // #1003: one rule for "the open page is inside this group", shared with
-      // the group header and the collapsed icon, so the highlight cannot move
-      // when the sidebar is collapsed.
-      const hasActiveItem = navGroupContainsActivePath(
-        { items: group.items.map(translateItem) },
-        pathname,
-      );
-
-      if (hasActiveItem && !expandedGroups.has(group.id)) {
-        setExpandedGroups(prev => new Set(prev).add(group.id));
-      }
+    // #1819: the group holding the open page and, when it is nested, its parent
+    // (Organization) — one rule, shared with the unit test. It only adds keys,
+    // so a category the user opened stays open while they move within it.
+    const keys = expandedKeysForPath(
+      filteredGroups.map((group) => ({
+        id: group.id,
+        parentId: group.parentId,
+        // #1003: one rule for "the open page is inside this group", shared with
+        // the group header and the collapsed icon, so the highlight cannot move
+        // when the sidebar is collapsed.
+        items: group.items.map(translateItem),
+      })),
+      pathname,
+    );
+    const missing = keys.filter((key) => !expandedGroups.has(key));
+    if (missing.length > 0) {
+      setExpandedGroups(prev => new Set([...prev, ...missing]));
     }
   }, [pathname, userRole]);
 
@@ -151,6 +158,29 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       }
       return next;
     });
+  }
+
+  function renderGroup(group: (typeof translatedGroups)[number], separatorAbove: boolean, nested: boolean) {
+    const isAnyChildActive = navGroupContainsActivePath(group, pathname);
+    return (
+      <NavGroup
+        key={group.id}
+        group={group}
+        label={t(`nav.groups.${group.id}` as any)}
+        isExpanded={expandedGroups.has(group.id)}
+        onToggle={() => (collapsed ? expandIntoGroup(group.id) : toggleGroup(group.id))}
+        onNavigate={onNavigate}
+        isAnyChildActive={isAnyChildActive}
+        badge={group.id === 'payments' ? paymentsBadge : null}
+        collapsed={collapsed}
+        // #1020: the group declares the divider; the sidebar is the only
+        // thing that knows this group is the first one on screen for this
+        // role, and a leading rule separates a section from nothing.
+        separatorAbove={separatorAbove}
+        nested={nested}
+        nestedSeparatorAbove={nested && !!group.nestedSeparatorAbove}
+      />
+    );
   }
 
   return (
@@ -230,26 +260,26 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {translatedGroups.map((group, index) => {
-          const isAnyChildActive = navGroupContainsActivePath(group, pathname);
-
-          return (
-            <NavGroup
-              key={group.id}
-              group={group}
-              label={t(`nav.groups.${group.id}` as any)}
-              isExpanded={expandedGroups.has(group.id)}
-              onToggle={() => (collapsed ? expandIntoGroup(group.id) : toggleGroup(group.id))}
-              onNavigate={onNavigate}
-              isAnyChildActive={isAnyChildActive}
-              badge={group.id === 'payments' ? paymentsBadge : null}
-              collapsed={collapsed}
-              // #1020: the group declares the divider; the sidebar is the only
-              // thing that knows this group is the first one on screen for this
-              // role, and a leading rule separates a section from nothing.
-              separatorAbove={!!group.separatorAbove && index > 0}
-            />
-          );
+        {buildNavEntries(translatedGroups, navigationParents).map((entry, index) => {
+          if (entry.kind === 'parent') {
+            const { parent, children } = entry;
+            return (
+              <NavParentGroup
+                key={`parent:${parent.id}`}
+                parent={parent}
+                label={t(parent.labelKey as any)}
+                isExpanded={expandedGroups.has(parentExpandedKey(parent.id))}
+                onToggle={() => (collapsed
+                  ? expandIntoGroup(parentExpandedKey(parent.id))
+                  : toggleGroup(parentExpandedKey(parent.id)))}
+                isAnyChildActive={parentContainsActivePath(children, pathname)}
+                collapsed={collapsed}
+              >
+                {children.map((group) => renderGroup(group, false, true))}
+              </NavParentGroup>
+            );
+          }
+          return renderGroup(entry.group, !!entry.group.separatorAbove && index > 0, false);
         })}
       </nav>
     </aside>
