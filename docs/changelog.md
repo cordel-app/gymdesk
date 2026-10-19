@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1808 (follow-up: the Promotions Billing Event chart now sits above the collapsible Billing Event Simulation, so expanding it opens below the chart; a chart point lists each billing item with its final price and the date total, from the simulation already loaded.)
 - **Done**: #1828 (Calendar filter bar: Center, the All / Space / Activity / Trainer mode chips and the value selector now sit in one themed container, and the selector wears the shared `filterControlStyle`. Layout only: `filterMode`/`filterId`, the query parameters and the center context are untouched, and no popover, Apply/Clear or combined filtering was added. tsc/tests not run: no node_modules in the routine's environment.)
 - **Done**: #1367 (Home dashboard iconography follow-up: user-check / user-plus / calendar-clock / wallet icons on the KPI cards, an icon on every panel heading, per-task and quick-action icons, and a tinted branded welcome header replacing the solid block; presentation only)
 - **Done**: #1830 (Personal Goals and Base Personal Goals, which share `GoalLibrarySection`, get the Cards / List toggle and saved view choice of Exercises and Activities, a card per goal (image, name, `⋮`, description, target, Status) with Show / Hide all attributes, and `⋮ → Edit` on a card switches to the List and opens that goal's row in edit mode. The `⋮` items are one list for both views; no API change.)

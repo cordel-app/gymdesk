@@ -250,6 +250,8 @@ export interface BillingEventChartPoint {
   date: string;
   label: string;
   valueLabel: string;
+  /** One `Item — €x` line per billing line on the date, for the tooltip (#1808). */
+  detailLines: string[];
 }
 
 /** Midnight UTC of a `YYYY-MM-DD`, or `null` for anything that is not one. */
@@ -265,6 +267,8 @@ export function billingEventChartPoints(
   dates: readonly BillingEventSimulationDate[],
   formatDate: (date: string) => string,
   formatAmount: (amount: number) => string,
+  lineName: (line: BillingEventSimulationLine) => string = (line) => line.label,
+  totalLabel: (formattedTotal: string) => string = (formattedTotal) => formattedTotal,
 ): BillingEventChartPoint[] {
   const points: BillingEventChartPoint[] = [];
   for (const group of dates) {
@@ -272,7 +276,8 @@ export function billingEventChartPoints(
     if (x == null) continue;
     points.push({
       x, y: group.total, date: group.date,
-      label: formatDate(group.date), valueLabel: formatAmount(group.total),
+      label: formatDate(group.date), valueLabel: totalLabel(formatAmount(group.total)),
+      detailLines: group.lines.map((line) => `${lineName(line)} — ${formatAmount(line.actual_charge)}`),
     });
   }
   return points.sort((a, b) => a.x - b.x);

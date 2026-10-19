@@ -23,6 +23,8 @@ export interface ChartPoint {
   label?: string;
   /** The tooltip's second line — the value with its unit, say. */
   valueLabel?: string;
+  /** Extra tooltip lines between the first line and the value — already formatted (#1808: one per billing item). */
+  detailLines?: string[];
 }
 
 export interface ChartSeries {

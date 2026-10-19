@@ -1204,6 +1204,12 @@ export default function PromotionsPage() {
     const open = simulationOpen[promo.id] === true;
     return (
       <div style={subSectionSt}>
+        <CardSectionHeader title={t('section_billing_event_chart')} />
+        <BillingEventSimulationChart
+          simulation={cachedSimulation[promo.id]}
+          t={translate}
+          formatDate={formatDate}
+        />
         <button
           type="button"
           aria-expanded={open}
@@ -1220,12 +1226,6 @@ export default function PromotionsPage() {
             formatDate={formatDate}
           />
         )}
-        <CardSectionHeader title={t('section_billing_event_chart')} />
-        <BillingEventSimulationChart
-          simulation={cachedSimulation[promo.id]}
-          t={translate}
-          formatDate={formatDate}
-        />
       </div>
     );
   }

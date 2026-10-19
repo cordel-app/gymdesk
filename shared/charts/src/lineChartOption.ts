@@ -53,7 +53,13 @@ export interface LineChartInput {
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
-export function tooltipHtml(point: { label?: string; valueLabel?: string }): string {
+export function tooltipHtml(point: { label?: string; valueLabel?: string; detailLines?: string[] }): string {
+  const details = (point.detailLines ?? []).filter((line) => !!line);
+  if (details.length > 0) {
+    const head = point.label ? `<strong>${escapeHtml(point.label)}</strong><br/>` : '';
+    const total = point.valueLabel ? `<br/><strong>${escapeHtml(point.valueLabel)}</strong>` : '';
+    return `${head}${details.map(escapeHtml).join('<br/>')}${total}`;
+  }
   const lines = [point.label, point.valueLabel].filter((line): line is string => !!line);
   if (lines.length === 0) return '';
   const [first, ...rest] = lines;
@@ -107,6 +113,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
         value: [point.x, point.y],
         label: point.label,
         valueLabel: point.valueLabel,
+        detailLines: point.detailLines,
         // A bridge carries no symbol, so it cannot be hovered and cannot
         // report a measurement the member already read on the previous period.
         symbolSize: pointIndex < bridges
@@ -149,7 +156,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       borderColor: theme.surfaceBorder,
       textStyle: { color: theme.text, fontSize: 12 },
       formatter: (params: unknown) => {
-        const data = (params as { data?: { label?: string; valueLabel?: string } }).data;
+        const data = (params as { data?: { label?: string; valueLabel?: string; detailLines?: string[] } }).data;
         return data ? tooltipHtml(data) : '';
       },
     },
