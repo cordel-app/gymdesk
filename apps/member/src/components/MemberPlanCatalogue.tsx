@@ -28,8 +28,6 @@ export interface MemberPlanCardPromotion {
 export interface MemberPlanCardBenefit {
   key: string;
   name: string;
-  /** *Mandatory* / *Optional* — already translated. */
-  tag: string;
   mandatory: boolean;
   checked: boolean;
   onToggle: () => void;
@@ -92,7 +90,6 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
                         onChange={b.onToggle}
                       />
                       <span style={styles.benefitName}>{b.name}</span>
-                      <span style={styles.promotionBenefit}>{b.tag}</span>
                     </label>
                   ))}
                 </div>

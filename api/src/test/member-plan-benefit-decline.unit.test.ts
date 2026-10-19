@@ -24,7 +24,7 @@ describe('#1184 stage 3b — decline checkboxes', () => {
   it('locale keys exist in en/es/ca', () => {
     for (const l of ['en', 'es', 'ca']) {
       const m = JSON.parse(read(`apps/member/locales/base/${l}.json`)).membership;
-      for (const k of ['plan_benefits_heading', 'plan_benefit_mandatory', 'plan_benefit_optional']) {
+      for (const k of ['plan_benefits_heading', 'my_plans_heading']) {
         expect(m[k]).toBeTruthy();
       }
     }
