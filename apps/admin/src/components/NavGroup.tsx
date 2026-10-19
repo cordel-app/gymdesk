@@ -89,6 +89,22 @@ export function navGroupHeaderStyle(
   };
 }
 
+/**
+ * #1847: a section label is allowed to wrap inside the room beside the chevron
+ * and icon instead of being clipped by the sidebar's `overflow-x: hidden`
+ * ("PLANS, PRODUCTS & FEES"). `minWidth: 0` is what lets a flex child shrink
+ * below its text's natural width; `overflowWrap: 'anywhere'` breaks a single
+ * word that is still too long. Short labels render exactly as before.
+ */
+export const navGroupLabelStyle: CSSProperties = {
+  minWidth: 0,
+  flex: '1 1 auto',
+  textAlign: 'left',
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+  lineHeight: 1.25,
+};
+
 interface NavGroupProps {
   group: NavGroupType;
   label: string;
@@ -164,6 +180,8 @@ export function NavGroup({
             display: 'block',
             flex: 1,
             padding: '10px 20px',
+            minWidth: 0,
+            overflowWrap: 'anywhere',
             ...(nested ? { paddingLeft: 48 } : null),
             color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
@@ -305,7 +323,7 @@ export function NavGroup({
           occurrence, rendered at the one shared size in both modes.
         */}
         <NavIcon name={group.icon} />
-        {!collapsed && label}
+        {!collapsed && <span style={navGroupLabelStyle}>{label}</span>}
         </Link>
       ) : (
       <button
@@ -343,7 +361,7 @@ export function NavGroup({
           occurrence, rendered at the one shared size in both modes.
         */}
         <NavIcon name={group.icon} />
-        {!collapsed && label}
+        {!collapsed && <span style={navGroupLabelStyle}>{label}</span>}
       </button>
       )}
       {showBadge && (
