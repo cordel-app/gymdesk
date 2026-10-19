@@ -662,7 +662,9 @@
     "purchase_cancel_action": "Cancelar compra",
     "purchase_cancel_confirm": "¿Cancelar {product}? El miembro lo conserva hasta su fecha de fin.",
     "purchase_cancel_confirm_button": "Cancelar compra",
-    "purchase_cancel_keep": "Mantenerlo"
+    "purchase_cancel_keep": "Mantenerlo",
+    "purchase_cancel_confirm_recurring": "¿Cancelar {product}? Se quita de los cambios en borrador del miembro; revísalos y usa Guardar y pagar para aplicarlos. Ahora no se cobra ni se reembolsa nada.",
+    "purchase_cancel_recurring_unavailable": "Este producto no se puede quitar del borrador aquí. Usa Productos recurrentes."
   },
   "member_payments": {
     "title": "Pagos del miembro",
