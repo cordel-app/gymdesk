@@ -93,7 +93,8 @@ function professionalServiceFilterSql(ids: number[]): string {
 export const PRODUCT_COLUMNS = `
   p.id, p.name, p.description, p.type, p.units,
   p.billing_frequency, p.amount, p.currency, p.charge_type_id,
-  p.tax_behavior, p.validity_days, tr.rate_percent AS tax_rate_percent`;
+  p.tax_behavior, p.validity_days, p.image_url, p.image_thumbnail_url,
+  tr.rate_percent AS tax_rate_percent`;
 
 /**
  * Every Product of the gym a member may be shown, alphabetically, with the

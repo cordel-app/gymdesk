@@ -74,6 +74,8 @@ export interface MemberProduct {
   type: string;
   /** The sessions a Sessions package contains; `null` for every other type. */
   units: number | null;
+  /** #1823 — the Product's own picture (thumbnail first), `null` when it has none. */
+  image_url: string | null;
   billing_frequency: string | null;
   price_incl_tax: number | null;
   currency: string;
@@ -87,6 +89,8 @@ export interface MemberProductRow {
   description?: string | null;
   type: string;
   units?: number | string | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   billing_frequency?: string | null;
   currency?: string | null;
   tax_rate_percent?: number | string | null;
@@ -109,6 +113,7 @@ export function shapeMemberProduct(row: MemberProductRow, priceInclTax: number |
     description: row.description ?? null,
     type: row.type,
     units: units != null && Number.isFinite(units) ? units : null,
+    image_url: row.image_thumbnail_url ?? row.image_url ?? null,
     billing_frequency: row.billing_frequency ?? null,
     price_incl_tax: priceInclTax,
     currency: row.currency ?? 'EUR',

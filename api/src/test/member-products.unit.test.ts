@@ -146,6 +146,12 @@ describe('what a member is shown of one Product (#1121 §4)', () => {
     expect(shapeMemberProduct(row({ tax_rate_percent: null }), 15).tax_included).toBe(false);
   });
 
+  it('carries the Product’s picture, thumbnail first, and null when it has none (#1823)', () => {
+    expect(shapeMemberProduct(row({ image_url: 'm.webp', image_thumbnail_url: 't.webp' }), 5).image_url).toBe('t.webp');
+    expect(shapeMemberProduct(row({ image_url: 'm.webp' }), 5).image_url).toBe('m.webp');
+    expect(shapeMemberProduct(row({}), 5).image_url).toBeNull();
+  });
+
   it('carries a Sessions package’s units, as a number', () => {
     const shaped = shapeMemberProduct(row({ type: 'sessions', units: '10' }), 500);
     expect(shaped).toMatchObject({ type: 'sessions', units: 10 });
