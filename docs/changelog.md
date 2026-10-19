@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1820 (Show/Hide all attributes: the only control that moved was the Exercise card's, which sat below the attributes it opens; it now comes first so it keeps its place when they expand. The Activity Types card already kept it above its expanded body; no other screen has the control. No API change; tsc/tests not run: no node_modules here.)
 - **Done**: #1816 (My Training Plan: previous/next week arrows around the weekly calendar, unlimited in both directions (`stepWeek()` in `lib/trainingWeek.ts`: one week, landing on today in the current week and on the week's first day otherwise; the swipe uses the same rule). The Today / This Week / This Month cards are always read for the gym's today (a second `/me/training-progress` call when another week is shown). No API change.)
 - **Done**: #1813 (Assigned Plan body opens in Edit mode whenever its host asks for it via `startEditing`, even if it was already mounted when the request arrived; the Draft just assigned from Members → Products opens in Edit mode.)
 
