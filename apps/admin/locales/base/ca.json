@@ -656,6 +656,8 @@
     "pay_outcome_unknown": "El resultat del pagament és incert. No reintentis; es conciliarà.",
     "purchase_cancelled_on": "Cancel·lat el",
     "purchase_valid_until": "Vàlid fins a",
+    "purchase_col_end_date": "Data de fi",
+    "purchase_open_ended": "Sense data de fi",
     "purchase_validity": "Validesa",
     "purchase_validity_draft": "Esborrany",
     "purchase_validity_pending": "Pagament pendent",

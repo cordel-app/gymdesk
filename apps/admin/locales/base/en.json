@@ -655,6 +655,8 @@
     "pay_outcome_unknown": "The payment outcome is uncertain. Do not retry; it will be reconciled.",
     "purchase_cancelled_on": "Cancelled on",
     "purchase_valid_until": "Valid until",
+    "purchase_col_end_date": "End date",
+    "purchase_open_ended": "Open-ended",
     "purchase_validity": "Validity",
     "purchase_validity_draft": "Draft",
     "purchase_validity_pending": "Pending payment",
