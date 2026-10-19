@@ -1497,8 +1497,8 @@ describe('Products — Professional Services linkage (#546)', () => {
         .set('x-gym-id', gymId)
         .send({ name: 'Legacy Multi Service', type: 'sessions', professional_service_ids: [psOne] });
       await db.query(
-        'INSERT INTO product_professional_services (product_id, professional_service_id) VALUES (?, ?)',
-        [created.body.id, psTwo],
+        'INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)',
+        [gymId, created.body.id, psTwo],
       );
       const same = await request
         .put(`/products/${created.body.id}`)
