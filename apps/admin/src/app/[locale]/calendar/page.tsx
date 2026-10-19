@@ -24,6 +24,7 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
 import { calendarEventMeta, calendarEventMetaLines, joinMetaParts } from '@/lib/calendarEventMeta';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
+import { filterControlStyle } from '@/components/FilterBar';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymTime, type GymFormatSettings } from '@/lib/gymFormat';
 
@@ -498,8 +499,16 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Filter bar */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+      {/* Filter bar — Center and the Space / Activity / Trainer filters share
+          one container (#1828). No filtering logic or state is involved. */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', flexShrink: 0,
+          padding: '8px 12px', borderRadius: 8,
+          border: '1px solid var(--gd-input-border, #d1d5db)',
+          background: 'var(--gd-card-bg, #ffffff)',
+        }}
+      >
         <CalendarCenterFilter />
         {(['all', 'space', 'activity_type', 'trainer'] as FilterMode[]).map((mode) => (
           <button
@@ -519,7 +528,7 @@ export default function CalendarPage() {
           <select
             value={filterId}
             onChange={(e) => setFilterId(e.target.value)}
-            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
+            style={filterControlStyle}
           >
             <option value="">{t('filter_select_placeholder')}</option>
             {filterOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
