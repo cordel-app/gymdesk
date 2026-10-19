@@ -111,9 +111,8 @@ export function ExerciseCard({
         )}
 
         {attributes && (
-          // Pinned to the card's bottom-left: the content column is a flex box and this block takes the free space above it.
+          // The toggle comes first so it keeps its place when the attributes open beneath it (#1820); the block is pinned to the card's bottom.
           <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
-            {showAttributes && <div style={{ alignSelf: 'stretch' }}>{attributes}</div>}
             <button
               type="button"
               aria-expanded={showAttributes}
@@ -122,6 +121,7 @@ export function ExerciseCard({
             >
               {showAttributes ? t('card_hide_attributes') : t('card_show_attributes')}
             </button>
+            {showAttributes && <div style={{ alignSelf: 'stretch' }}>{attributes}</div>}
           </div>
         )}
 
