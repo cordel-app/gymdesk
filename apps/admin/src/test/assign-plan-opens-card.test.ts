@@ -23,4 +23,8 @@ describe('Assign plan opens the new card (#1692)', () => {
     expect(s).toMatch(/scrollIntoView/);
     expect(s).toMatch(/row\.id === openInEditId \? \(el\)/);
   });
+  it('an already-mounted body follows startEditing too (#1813)', () => {
+    const s = read('components', 'assignedPlan', 'AssignedPlanExpandedRow.tsx');
+    expect(s).toMatch(/if \(startEditing\) setIsEditing\(true\)/);
+  });
 });

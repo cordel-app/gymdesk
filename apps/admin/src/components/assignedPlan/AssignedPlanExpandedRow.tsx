@@ -139,6 +139,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   useEffect(() => {
     if (editToken > 0) setIsEditing(true);
   }, [editToken]);
+  // #1813: a body that was already mounted when its host asked for Edit mode
+  // (the row expanded before `openInEditId` named it) still opens in it.
+  useEffect(() => {
+    if (startEditing) setIsEditing(true);
+  }, [startEditing]);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
