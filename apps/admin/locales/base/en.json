@@ -1722,6 +1722,11 @@
     "class_package_credit": "Class package credit"
   },
   "promotions": {
+    "view_toggle_label": "View",
+    "view_list": "List",
+    "view_cards": "Cards",
+    "show_all_attributes": "Show all attributes",
+    "hide_all_attributes": "Hide all attributes",
     "section_billing_event_chart": "Billing Event Chart",
     "chart_empty": "There are no simulated billing events to chart.",
     "chart_aria": "Simulated billing total by date",

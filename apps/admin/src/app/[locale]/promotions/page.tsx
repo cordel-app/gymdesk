@@ -48,6 +48,8 @@ import {
   targetsMembershipPlan,
 } from '@/lib/promotionTargets';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 
 // ─── List columns ─────────────────────────────────────────────────────────────
 
@@ -346,6 +348,8 @@ export default function PromotionsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
+  // #1831: Cards / List, the same saved choice the Exercises and Activities use.
+  const [view, setView] = useExerciseViewMode();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   // #897: the card in Edit mode — `⋮ → Edit` is its only entry point, and
   // everything editable inside the expanded card is gated on it.
@@ -630,6 +634,9 @@ export default function PromotionsPage() {
   // own Edit buttons available; it expands the card too, so leaving Edit mode
   // reveals the read-only view rather than collapsing the row.
   async function enterEdit(promo: Promo) {
+    // Editing happens in the List view only (#1831): Edit from a card switches
+    // to it, expands this promotion and opens its editor in place.
+    setView('list');
     setExpandedId(promo.id);
     setEditingId(promo.id);
     setOpenSection(null);
@@ -642,6 +649,11 @@ export default function PromotionsPage() {
     const { ap } = await loadSubResources(promo.id);
     setPlansDraft(ap.map((p) => p.id));
     setTimeout(() => nameInputRef.current?.focus(), 60);
+    // The row exists in List view by now: bring it into view even when it was
+    // far down the list.
+    requestAnimationFrame(() => {
+      document.getElementById(`promotion-card-${promo.id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
   }
 
   // A Benefit section's own Edit button (#627) — seeds only that section's
@@ -1851,6 +1863,53 @@ export default function PromotionsPage() {
     );
   }
 
+  // ─── Card header (Cards view, #1831) ────────────────────────────────────────
+
+  // The closed card. The expanded body below it is the list row's own
+  // (renderExpandedSection), so the two views cannot drift.
+  function renderCardHeader(promo: Promo, isExpanded: boolean, menuItems: ContextMenuItem[]) {
+    const image = promo.image_url;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {image && <CardSquareImage src={image} alt={promo.name} version={promo.modified_at} placeholder={null} />}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {!image && <MemberAvatar name={promo.name} imageUrl={null} stamp={promo.modified_at} size={40} />}
+            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{promo.name}</div>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ContextMenu items={menuItems} ariaLabel={`Actions for ${promo.name}`} />
+            </div>
+          </div>
+          <div
+            title={promo.description ?? undefined}
+            style={{ fontSize: 13, color: '#888', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {promo.description || '—'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--gd-text-secondary, #666)' }}>
+            {iso(promo.starts_at)} → {iso(promo.ends_at)}
+          </div>
+          <div>
+            <StatusBadge status={promo.lifecycle_status} label={tStatus(promo.lifecycle_status)} />
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => toggleExpand(promo.id)}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+            padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+            borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
+          }}
+        >
+          <span>{isExpanded ? t('hide_all_attributes') : t('show_all_attributes')}</span>
+          <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+        </button>
+      </div>
+    );
+  }
+
   function renderRow(promo: Promo) {
     const isExpanded = editingId === promo.id || expandedId === promo.id;
 
@@ -1873,7 +1932,8 @@ export default function PromotionsPage() {
     ];
 
     return (
-      <div key={promo.id} style={cardSt}>
+      <div key={promo.id} id={`promotion-card-${promo.id}`} style={cardSt}>
+        {view === 'cards' ? renderCardHeader(promo, isExpanded, menuItems) : (
         <div className={LIST_GRID_ROW_CLASS} style={rowSt} onClick={() => toggleExpand(promo.id)}>
           <div className={CELL_CLASS.name} title={promo.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(promo.image_thumbnail_url || promo.image_url) && (
@@ -1900,6 +1960,7 @@ export default function PromotionsPage() {
             <ContextMenu items={menuItems} />
           </div>
         </div>
+        )}
         {isExpanded ? renderExpandedSection(promo) : null}
       </div>
     );
@@ -1951,6 +2012,7 @@ export default function PromotionsPage() {
             options={LIFECYCLE_FILTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
+          <ExerciseViewToggle value={view} onChange={setView} />
           <button onClick={handleNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || hasNewRow}>{t('add')}</button>
         </div>
       </div>
@@ -1960,7 +2022,13 @@ export default function PromotionsPage() {
       ) : (
         <>
           {rows.length === 0 && !hasNewRow && <p style={{ color: '#888' }}>{t('empty')}</p>}
-          {(rows.length > 0 || hasNewRow) && (
+          {(rows.length > 0 || hasNewRow) && view === 'cards' && (
+            <>
+              {hasNewRow && renderNewRow()}
+              <CardGrid>{rows.map(renderRow)}</CardGrid>
+            </>
+          )}
+          {(rows.length > 0 || hasNewRow) && view === 'list' && (
             /* The header band and the cards share LIST_GRID_COLUMNS and scroll
                together, so they cannot fall out of line, and a narrow viewport
                scrolls the list instead of the page (#1011). */

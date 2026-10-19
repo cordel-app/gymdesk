@@ -1708,6 +1708,11 @@
     "class_package_credit": "Crèdit de bo de classes"
   },
   "promotions": {
+    "view_toggle_label": "Vista",
+    "view_list": "Llista",
+    "view_cards": "Targetes",
+    "show_all_attributes": "Mostra tots els atributs",
+    "hide_all_attributes": "Amaga tots els atributs",
     "section_billing_event_chart": "Gràfic d'esdeveniments de facturació",
     "chart_empty": "No hi ha esdeveniments de facturació simulats per graficar.",
     "chart_aria": "Total de facturació simulat per data",

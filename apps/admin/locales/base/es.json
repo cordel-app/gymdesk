@@ -1708,6 +1708,11 @@
     "class_package_credit": "Crédito de bono de clases"
   },
   "promotions": {
+    "view_toggle_label": "Vista",
+    "view_list": "Lista",
+    "view_cards": "Tarjetas",
+    "show_all_attributes": "Mostrar todos los atributos",
+    "hide_all_attributes": "Ocultar todos los atributos",
     "section_billing_event_chart": "Gráfico de eventos de facturación",
     "chart_empty": "No hay eventos de facturación simulados para graficar.",
     "chart_aria": "Total de facturación simulado por fecha",
