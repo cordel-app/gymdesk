@@ -106,6 +106,8 @@
     "progress_month": "This Month",
     "today_marker": "Today",
     "week_nav_hint": "Swipe to change week",
+    "week_prev": "Previous week",
+    "week_next": "Next week",
     "status_completed": "Completed",
     "status_pending": "Pending",
     "status_scheduled": "Scheduled",
