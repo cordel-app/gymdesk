@@ -74,9 +74,9 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
-        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent)
+        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
-            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent
+            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref
        FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 

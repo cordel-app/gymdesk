@@ -272,13 +272,16 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
 
 /* ── Additional recurring services ───────────────────────────────────────── */
 
+/** #1865 — an identical purchase line younger than this is a double submission, not a repeat purchase. */
+const DUPLICATE_SUBMISSION_SECONDS = 10;
+
 /**
  * `legacy` is the contract of `/user-memberships/:id/services` (a duplicate is a
  * 409, a removal keeps what was already billed); the Draft router's own is a
  * 400 and an outright deletion, since a Draft has charged nothing.
  */
 export async function addService(
-  tx: Tx, draft: LockedDraft, body: any, opts: { legacy?: boolean; recurringByFrequency?: boolean } = {},
+  tx: Tx, draft: LockedDraft, body: any, opts: { legacy?: boolean; recurringByFrequency?: boolean; allowRepeat?: boolean } = {},
 ): Promise<{ ok: true; id: number } | DraftRefusal> {
   const productId = Number(body?.product_id);
   if (!Number.isInteger(productId) || productId <= 0) return { kind: 'invalid', message: 'product_id must be a positive integer' };
@@ -316,14 +319,32 @@ export async function addService(
     return { kind: 'invalid', message: 'Only recurring Products can be added as periodic services' };
   }
   // The same item may be attached again after an earlier stint ended, but not
-  // while one is still running or one still ends on/after the requested start.
-  const { rows: dup } = await tx.query(
-    `SELECT id FROM member_products_recurrent_snapshot
-      WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND (ends_at IS NULL OR ends_at >= ?)`,
-    [draft.gym_id, draft.id, productId, startsAt]);
-  if (dup.length > 0) {
-    const message = 'This service is already attached to the Assigned Plan for that period';
-    return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'invalid', message };
+  // while one is still running or one still ends on/after the requested start —
+  // except for a purchase (`allowRepeat`, #1865 stage 2): buying the same
+  // recurring Product again is a line of its own, with its own price, discount
+  // and lifecycle. What a repeat must not be is an accident, so a line of this
+  // Product written a moment ago (a clone carries another id than its `line_ref`, so only a
+  // line bought in this Draft counts) (a double-clicked button, a retried request) is
+  // still refused.
+  if (opts.allowRepeat) {
+    const { rows: recent } = await tx.query(
+      `SELECT id FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL
+          AND line_ref = id AND created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
+      [draft.gym_id, draft.id, productId]);
+    if (recent.length > 0) {
+      const message = 'This product was just added; wait a moment before adding it again';
+      return { kind: 'conflict', error: 'duplicate_submission', message };
+    }
+  } else {
+    const { rows: dup } = await tx.query(
+      `SELECT id FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND (ends_at IS NULL OR ends_at >= ?)`,
+      [draft.gym_id, draft.id, productId, startsAt]);
+    if (dup.length > 0) {
+      const message = 'This service is already attached to the Assigned Plan for that period';
+      return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'invalid', message };
+    }
   }
 
   const { insertId } = await tx.query(
@@ -333,6 +354,7 @@ export async function addService(
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
     [draft.gym_id, draft.id, quantity, startsAt, productId, draft.gym_id]);
+  await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true, id: Number(insertId) };

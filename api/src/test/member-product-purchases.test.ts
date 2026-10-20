@@ -400,14 +400,34 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     const first = await auth(request.post(base(m))).send({ product_id: weekly });
     expect(first.status).toBe(201);
     // #1537: a second add is an edit of the same Draft, never a second version.
+    // An immediate identical submission is a double click, not a second purchase…
+    const dupe = await auth(request.post(base(m))).send({ product_id: weekly });
+    expect(dupe.status).toBe(409);
+    expect(dupe.body.error).toBe('duplicate_submission');
+    // …while a deliberate repeat a moment later is.
+    await db.query(
+      'UPDATE member_products_recurrent_snapshot SET created_at = created_at - INTERVAL 1 MINUTE WHERE product_set_id = ?',
+      [first.body.product_set_id]);
     const second = await auth(request.post(base(m))).send({ product_id: weekly });
     expect(second.status).toBe(201);
     expect(second.body.product_set_id).toBe(first.body.product_set_id);
     const { rows: lines } = await db.query<any>(
-      'SELECT id, quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ?', [first.body.product_set_id]);
-    expect(lines.map((l: any) => Number(l.quantity))).toEqual([2]);
-    const qty = await auth(request.put(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`)).send({ quantity: 1 });
+      'SELECT id, line_ref, quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [first.body.product_set_id]);
+    // #1865: a repeat purchase is a line of its own, not a quantity on the first.
+    expect(lines.map((l: any) => Number(l.quantity))).toEqual([1, 1]);
+    expect(lines.map((l: any) => Number(l.line_ref))).toEqual(lines.map((l: any) => Number(l.id)));
+    // Editing one line leaves the other alone.
+    const qty = await auth(request.put(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`)).send({ quantity: 2 });
     expect(qty.status).toBe(200);
+    const { rows: afterQty } = await db.query<any>(
+      'SELECT quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [first.body.product_set_id]);
+    expect(afterQty.map((l: any) => Number(l.quantity))).toEqual([2, 1]);
+    // Removing one purchase leaves the other running.
+    const del = await auth(request.delete(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`));
+    expect(del.status).toBe(200);
+    const { rows: left } = await db.query<any>(
+      'SELECT id FROM member_products_recurrent_snapshot WHERE product_set_id = ? AND ends_at IS NULL', [first.body.product_set_id]);
+    expect(left.map((l: any) => Number(l.id))).toEqual([Number(lines[1].id)]);
 
     // Save & Pay + the webhook is the only way it becomes the member's…
     const sp = await auth(request.post(`/product-sets/${first.body.product_set_id}/save-and-pay`)).send({});
@@ -427,8 +447,9 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     const { rows } = await db.query<any>(
       'SELECT quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? AND product_id = ?',
       [again.body.product_set_id, weekly]);
-    // One open line of quantity 2: a second class per week.
-    expect(rows.map((r: any) => Number(r.quantity))).toEqual([2]);
+    // The remaining purchase is carried into the new version, and the new
+    // purchase is a line of its own beside it.
+    expect(rows.map((r: any) => Number(r.quantity))).toEqual([1, 1]);
   });
 
   it('applies a Product Promotion to the Draft and refuses a non-stackable pair', async () => {

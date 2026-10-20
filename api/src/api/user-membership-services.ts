@@ -288,14 +288,23 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
     // being edited carries its own copy of it (cloned with the configuration),
     // found by Product and start date, so the removal is addressed by that.
     mutate: async (tx, d) => {
-      const { rows } = await tx.query<{ product_id: number; starts_at: string }>(
-        'SELECT product_id, starts_at FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, d.gym_id]);
+      const { rows } = await tx.query<{ product_id: number; starts_at: string; line_ref: number | null }>(
+        'SELECT product_id, starts_at, line_ref FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, d.gym_id]);
       if (!rows[0]) return { kind: 'not_found' as const };
-      const { rows: own } = await tx.query<{ id: number }>(
-        `SELECT id FROM member_products_recurrent_snapshot
-          WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ?
-          ORDER BY id DESC LIMIT 1`,
-        [d.gym_id, d.id, rows[0].product_id, rows[0].starts_at]);
+      // #1865: a purchase is recognised across versions by its line_ref, so two
+      // lines of one Product are never confused; a line that predates it is the
+      // Product's one line, found by Product and start date as before.
+      const { rows: own } = rows[0].line_ref != null
+        ? await tx.query<{ id: number }>(
+          `SELECT id FROM member_products_recurrent_snapshot
+            WHERE gym_id = ? AND product_set_id = ? AND line_ref = ?
+            ORDER BY id DESC LIMIT 1`,
+          [d.gym_id, d.id, rows[0].line_ref])
+        : await tx.query<{ id: number }>(
+          `SELECT id FROM member_products_recurrent_snapshot
+            WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ?
+            ORDER BY id DESC LIMIT 1`,
+          [d.gym_id, d.id, rows[0].product_id, rows[0].starts_at]);
       if (!own[0]) return { kind: 'not_found' as const };
       const out = await psRemoveService(tx, d, Number(own[0].id), { legacy: true });
       if ('kind' in out) return out;

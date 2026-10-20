@@ -152,7 +152,7 @@ export interface PurchaseQuote {
 const PURCHASE_ERROR_CODES = [
   'promotions_not_stackable', 'promotion_not_applicable', 'invalid_direct_discount',
   'final_price_not_positive', 'already_owned', 'purchase_pending', 'edit_locked',
-  'recurring_line_conflict', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
+  'duplicate_submission', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
   'nothing_to_pay', 'draft_expired',
 ] as const;
 
