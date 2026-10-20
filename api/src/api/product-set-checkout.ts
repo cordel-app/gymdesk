@@ -11,6 +11,7 @@ import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
 import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
+import type { SimulationLine } from '../domain/billingSimulation';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -57,6 +58,8 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
 
 export interface InitialCharge {
   amount: number;
+  /** The same lines in the simulation's own shape (#1867), for the Draft forecast. */
+  simulationLines: SimulationLine[];
   lines: BillingEventLineRow[];
   scheduleKey: string | null;
 }
@@ -107,7 +110,7 @@ export async function initialCharge(
   if (first.length === 0) return null;
   const lines = first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l)));
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
-  return { amount: linesTotal(lines), lines, scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null };
+  return { amount: linesTotal(lines), lines, simulationLines: first.flatMap((e) => e.lines), scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null };
 }
 
 async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
@@ -217,3 +220,24 @@ export async function createProductSetCheckout(input: {
   });
   return { ...out, checkoutUrl };
 }
+
+/**
+ * What committing `set` asks for **today** — the one answer Save & Pay, the
+ * free activation and the "Review your changes" preview all use, so the figure a
+ * member is shown is the figure charged (#1537). A version that replaces a
+ * running one owes only what is new relative to it, dated today; a first
+ * version owes its first cycle from its own start date.
+ */
+const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+export async function commitCharge(gymId: string, set: any) {
+  const nextVersion = set.previous_product_set_id != null;
+  const startsAt = nextVersion
+    ? todayUtc()
+    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
+  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
+    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
+  });
+  return { startsAt, charge };
+}
+

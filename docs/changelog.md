@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1867 stage 2 (the Draft ProductSet's `GET /product-sets/:id/billing-event-simulation` is now the complete projected schedule: `domain/draftBillingSimulation.ts` marks/replaces the date of the initial payment with what `commitCharge()` asks for today, counted once, and adds the member's draft and pending one-off purchases to today's group; groups carry `kind`. Pure, nothing persisted or charged.)
+
 - **Done**: #1893 (Members App My Bookings: Upcoming and Past are two accessible tabs (Upcoming default, arrow-key navigation) over the two lists the API already splits, instead of one stacked page; empty states, cards and cancellation rules unchanged. `lib/bookingsTabs.ts`, gate `member-bookings-tabs.unit.test.ts`.)
 - **Done**: #1862 (Members App — My Products and Services lists the member's own purchased Products with status chip and end date; Active always shown, Pending Payment shown with Pay, Cancelled only while its end date is later than today; `GET /me/purchases`, `POST /me/purchases/:id/pay`, `domain/memberOwnPurchases.ts`)
 - **Done**: #1865 stage 2 (every purchase of a recurring Product is its own line: migration 300 drops `ums_one_open_per_set_item` and adds `member_products_recurrent_snapshot.line_ref`, the purchase's identity across versions (set to the line's id on insert, copied on clone); `startRecurringPurchaseDraft()` no longer merges a repeat into a quantity and `recurring_line_conflict` is gone; the legacy service removal and the review diff address a purchase by `line_ref`; an identical purchase within 10 seconds is refused as `duplicate_submission`)
