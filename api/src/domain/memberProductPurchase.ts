@@ -88,8 +88,6 @@ export type PurchaseBlock =
   | 'no_price'
   | 'recurring_not_supported'
   | 'purchase_pending'
-  // #1521: a one-time Product the member already holds is not sold again.
-  | 'already_owned'
   // #1657: staff already hold an unsaved-for-payment draft of this Product.
   | 'draft_exists';
 
@@ -115,13 +113,10 @@ export interface PurchasableProduct {
 export function productPurchaseBlock(
   product: PurchasableProduct,
   pendingPurchase = false,
-  alreadyOwned = false,
 ): PurchaseBlock | null {
   if (pendingPurchase) return 'purchase_pending';
-  // #1521 (Oscar, decision 3): a one-time Product — a Registration fee — is
-  // bought once. Recurring ones are never excluded for being held: a second
-  // weekly class is a second purchase.
-  if (alreadyOwned && !isRecurringFrequency(product.billing_frequency)) return 'already_owned';
+  // #1864: holding a Product is never a reason to refuse another purchase of it;
+  // only a checkout already in flight (duplicate submission) blocks.
   if (isRecurringFrequency(product.billing_frequency)) return 'recurring_not_supported';
   if (product.price_incl_tax == null || !(product.price_incl_tax > 0)) return 'no_price';
   return null;
@@ -129,9 +124,9 @@ export function productPurchaseBlock(
 
 /** Whether a member may start a purchase of this Product. */
 export function isPurchasable(
-  product: PurchasableProduct, pendingPurchase = false, alreadyOwned = false,
+  product: PurchasableProduct, pendingPurchase = false,
 ): boolean {
-  return productPurchaseBlock(product, pendingPurchase, alreadyOwned) === null;
+  return productPurchaseBlock(product, pendingPurchase) === null;
 }
 
 /**
@@ -174,9 +169,7 @@ export function describeProductPurchase(
   const purchase_state = purchaseStateFor(statuses);
   return {
     purchase_state,
-    purchasable: isPurchasable(
-      product, purchase_state === 'pending_payment', purchase_state === 'purchased',
-    ),
+    purchasable: isPurchasable(product, purchase_state === 'pending_payment'),
   };
 }
 
@@ -228,12 +221,6 @@ export function purchaseBlockResponse(block: PurchaseBlock): { status: number; e
         status: 409,
         error: block,
         message: 'This product already has a payment in progress',
-      };
-    case 'already_owned':
-      return {
-        status: 409,
-        error: block,
-        message: 'This one-time product has already been purchased',
       };
     case 'draft_exists':
       return {

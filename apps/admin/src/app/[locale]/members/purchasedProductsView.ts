@@ -151,7 +151,7 @@ export interface PurchaseQuote {
 /** The error codes the purchase routes answer with, each with a locale key suffix. */
 const PURCHASE_ERROR_CODES = [
   'promotions_not_stackable', 'promotion_not_applicable', 'invalid_direct_discount',
-  'final_price_not_positive', 'already_owned', 'purchase_pending', 'edit_locked',
+  'final_price_not_positive', 'purchase_pending', 'edit_locked',
   'duplicate_submission', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
   'nothing_to_pay', 'draft_expired',
 ] as const;

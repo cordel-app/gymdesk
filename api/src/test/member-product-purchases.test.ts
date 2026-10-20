@@ -287,7 +287,7 @@ describe('a one-time purchase (#1521)', () => {
     expect(read.body.items[0].promotions).toHaveLength(1);
   });
 
-  it('refuses the same one-time Product once it is held — in the backend, not only the UI', async () => {
+  it('sells the same one-time Product again once it is held, while a checkout in flight still blocks (#1864)', async () => {
     const m = await member();
     const p = await product({ name: 'Registration fee 2' });
     const first = await auth(request.post(base(m))).send({ product_id: p });
@@ -295,13 +295,15 @@ describe('a one-time purchase (#1521)', () => {
     // Pending blocks (the existing key)…
     const dup = await auth(request.post(base(m))).send({ product_id: p });
     expect(dup.status).toBe(409);
-    // …and once paid, a held one-time Product is refused too.
+    // …and once paid, the same Product can be bought again (#1864).
     const { rows } = await db.query<any>(
       'SELECT payment_request_id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ?', [gymId, m]);
     expect((await pay(Number(rows[0].payment_request_id))).status).toBe(200);
     const again = await auth(request.post(base(m))).send({ product_id: p });
-    expect(again.status).toBe(409);
-    expect(again.body.error).toBe('already_owned');
+    expect(again.status).toBe(201);
+    const { rows: both } = await db.query<any>(
+      'SELECT status FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ? ORDER BY id', [gymId, m, p]);
+    expect(both.map((r: any) => r.status)).toEqual(['active', 'pending_payment']);
   });
 
   it('needs Members write access and a Product of this gym', async () => {
