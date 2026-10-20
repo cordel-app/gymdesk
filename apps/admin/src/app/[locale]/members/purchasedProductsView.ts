@@ -56,6 +56,8 @@ export interface PurchasedProduct {
   billing_event_id?: number | null;
   /** #1661 — `recurring` for a line of the member's ProductSet (negative `id`). */
   source?: 'one_off' | 'recurring';
+  /** #1882 — removed in the open Draft, still Active until Save & Pay. */
+  pending_termination?: boolean;
 }
 
 /** The statuses `payment_requests.status` can hold (chk_payment_requests_status). */
@@ -207,4 +209,9 @@ export function filterPurchasesByStatus<T extends { status: string }>(items: T[]
     return items.filter((i) => i.status === 'draft' || i.status === 'active' || i.status === 'pending_payment');
   }
   return items.filter((i) => i.status === filter);
+}
+
+/** #1882 — the status a row shows: a line the Draft removes reads `pending_termination`. */
+export function displayPurchaseStatus(item: { status: string; pending_termination?: boolean }): string {
+  return item.status === 'active' && item.pending_termination ? 'pending_termination' : item.status;
 }

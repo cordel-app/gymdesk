@@ -60,6 +60,7 @@ import {
   purchaseDate,
   type PurchasedProduct,
   type PurchasedProductPromotion,
+  displayPurchaseStatus,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -194,7 +195,7 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_status'),
       mobile: 'keep',
       render: (item) => (
-        <StatusBadge status={item.status} label={t(`purchase_status_${item.status}` as any)} />
+        <StatusBadge status={displayPurchaseStatus(item)} label={t(`purchase_status_${displayPurchaseStatus(item)}` as any)} />
       ),
     },
     {
@@ -224,7 +225,7 @@ export function MemberPurchasedProducts({
                 },
               ] : []),
               { label: t('action_details'), onClick: () => setDetail(item) },
-              ...(item.status === 'active' && !item.cancelled_on
+              ...(item.status === 'active' && !item.cancelled_on && !item.pending_termination
                 ? [{
                     label: t('purchase_cancel_action'),
                     danger: true,
