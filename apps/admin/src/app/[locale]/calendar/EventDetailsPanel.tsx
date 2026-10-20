@@ -8,6 +8,7 @@ import { FormLabel, FormInput } from '@/components/CrudModal';
 import { primaryActionColors } from '@/components/ui';
 import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
 import { EventImageControl } from './EventImageControl';
+import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -149,27 +150,10 @@ export function EventDetailsPanel({
   const busy = saving || deleteState === 'deleting';
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      borderLeft: '1px solid var(--gd-card-border, #e5e7eb)',
-      background: 'var(--gd-card-bg, var(--gd-bg-secondary, #f9fafb))',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)',
-        flexShrink: 0,
-      }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
-          {isNew ? t('modal_create') : t('modal_edit')}
-        </h3>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: '#9ca3af', padding: '2px 4px' }}
-          aria-label="Close"
-        >
-          ✕
-        </button>
+    <div style={eventPanelSurfaceStyle}>
+      {/* Header — #1892 stage 4: the chrome shared with the Activity session panel. */}
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)', flexShrink: 0 }}>
+        <EventPanelHeader title={isNew ? t('modal_create') : t('modal_edit')} onClose={onClose} />
       </div>
 
       {/* Body — scrollable */}
