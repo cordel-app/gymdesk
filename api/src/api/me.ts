@@ -38,6 +38,7 @@ import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
+import { localizedDescriptionSql } from '../domain/nutritionDescriptionTranslations';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { parseMemberPreferredLocaleInput, toMemberPreferredLocale } from '../domain/memberPreferredLocale';
@@ -1329,7 +1330,8 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
         // when it is null.
         const { rows: items } = await db.query(
           `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
-                  i.component_type, i.quantity, i.unit, i.position, nli.image_url
+                  i.component_type, i.quantity, i.unit, i.position, nli.image_url,
+                  ${localizedDescriptionSql('nli', getRequestLocale(req))} AS description
            FROM member_nutrition_plan_meal_items i
            JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
            WHERE i.meal_id = ?

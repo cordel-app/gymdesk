@@ -33,8 +33,8 @@ beforeAll(async () => {
   memberId = mRows[0].id;
 
   const { insertId } = await db.query(
-    `INSERT INTO nutrition_library_items (gym_id, name, status)
-     VALUES (NULL, 'Grilled Chicken', 'active')`,
+    `INSERT INTO nutrition_library_items (gym_id, name, description, status)
+     VALUES (NULL, 'Grilled Chicken', 'Lean grilled chicken breast', 'active')`,
   );
   libraryItemId = insertId;
   const { rows: catRows } = await db.query<{ id: number }>(
@@ -155,6 +155,8 @@ describe('GET /me/nutrition-plan', () => {
     expect(day.meals.length).toBe(1);
     expect(day.meals[0].display_name).toBe('Lunch');
     expect(day.meals[0].items[0].item_name).toBe('Grilled Chicken');
+    // #1913 — the food's description rides with the item (base value when untranslated).
+    expect(day.meals[0].items[0].description).toBe('Lean grilled chicken breast');
 
     expect(Array.isArray(res.body.plan.goals)).toBe(true);
     expect(res.body.plan.goals[0].item_name).toBe('Protein');
