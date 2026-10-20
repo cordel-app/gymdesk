@@ -4313,6 +4313,18 @@
     "duration_four_weeks": "{count} × 4 weeks"
   },
   "products": {
+    "import_system": "Import System Products",
+    "import_modal_title": "Import System Products",
+    "import_select_all_matching": "Select all matching",
+    "import_clear_all_matching": "Clear all matching",
+    "import_available_count": "{n} products available",
+    "import_selected_count": "{n} selected",
+    "import_empty": "No system products match the search.",
+    "import_importing": "Importing…",
+    "import_confirm": "Import",
+    "import_already_imported": "Imported",
+    "import_done": "Imported {n} products.",
+    "import_skipped": "{n} were already in your catalog.",
     "show_all_attributes": "Show all attributes",
     "hide_all_attributes": "Hide all attributes",
     "title": "Products",

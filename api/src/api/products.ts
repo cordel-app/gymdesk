@@ -11,6 +11,7 @@ import {
 } from '../domain/productProfessionalServices';
 import { classifyProduct } from '../domain/productClassification';
 import { productFrequencyWriteError } from '../domain/productFrequency';
+import { importBaseProducts, listBaseProductsForGym } from './gym-default-products';
 import {
   gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
   parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
@@ -26,6 +27,7 @@ const SELECT = `
     gc.id,
     gc.gym_id,
     gc.charge_type_id,
+    gc.base_product_id,
     ct.code            AS charge_type_code,
     ct.name            AS charge_type_name,
     gc.name,
@@ -173,6 +175,59 @@ productsRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(sql, params);
     const psMap = await loadProfessionalServicesMap(rows.map((r: any) => r.id));
     res.json(rows.map((r: any) => attachBenefitCategory(attachProfessionalServices(attachPriceFields(r), psMap))));
+  } catch (err) { next(err); }
+});
+
+// ─── GET /base — System Products available to import (#1851) ──────────────────
+// Registered before `/:id`. A read of the global `base_products` templates with
+// the current gym's import state; it writes nothing.
+
+productsRouter.get('/base', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  try {
+    const rows = await listBaseProductsForGym(gymId, q || undefined);
+    res.json(rows.map((r) => ({
+      id: r.id,
+      charge_type_code: r.charge_type_code,
+      name: r.name,
+      type: r.type,
+      units: r.units,
+      amount: r.amount === null ? null : Number(r.amount),
+      billing_frequency: r.billing_frequency,
+      status: r.status,
+      enrollment_status: r.enrollment_status,
+      mandatory: Boolean(r.mandatory),
+      validity_days: r.validity_days,
+      one_time_purchase: Boolean(r.one_time_purchase),
+      imported: r.imported,
+      imported_product_id: r.imported_product_id,
+    })));
+  } catch (err) { next(err); }
+});
+
+// ─── POST /import — Import System Products (#1851) ─────────────────────────────
+// Creates gym-owned Products from the chosen templates. Never updates a Product
+// the gym already has; a template it already has is reported as skipped.
+
+productsRouter.post('/import', requireRole('admin'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const ids = req.body?.base_product_ids;
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 200
+    || !ids.every((v: unknown) => Number.isInteger(v) && (v as number) > 0)) {
+    return res.status(400).json({ error: 'base_product_ids must be a non-empty array of positive integers' });
+  }
+  try {
+    const result = await importBaseProducts(ctx.gymId, [...new Set<number>(ids)], resolveRequestActor(ctx));
+    for (const baseId of result.imported) {
+      recordAudit(req, {
+        action: 'create',
+        entityType: 'product',
+        entityName: 'Import System Product',
+        next: { base_product_id: baseId },
+      });
+    }
+    res.json(result);
   } catch (err) { next(err); }
 });
 

@@ -4326,6 +4326,18 @@
     "duration_four_weeks": "{count} × 4 setmanes"
   },
   "products": {
+    "import_system": "Importa productes del sistema",
+    "import_modal_title": "Importa productes del sistema",
+    "import_select_all_matching": "Selecciona tots els resultats",
+    "import_clear_all_matching": "Treu tots els resultats",
+    "import_available_count": "{n} productes disponibles",
+    "import_selected_count": "{n} seleccionats",
+    "import_empty": "Cap producte del sistema coincideix amb la cerca.",
+    "import_importing": "Important…",
+    "import_confirm": "Importa",
+    "import_already_imported": "Importat",
+    "import_done": "S'han importat {n} productes.",
+    "import_skipped": "{n} ja eren al teu catàleg.",
     "show_all_attributes": "Mostra tots els atributs",
     "hide_all_attributes": "Amaga tots els atributs",
     "title": "Productes",
