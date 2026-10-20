@@ -45,6 +45,8 @@ export interface MemberGoal extends GoalReadingSummaryFields {
   /** The **snapshot** taken when it was assigned (§8), not the catalogue's current name. */
   goal_name: string;
   goal_slug: string | null;
+  /** #1873 — the Gym Goal's description, shown under the enlarged picture. */
+  goal_description?: string | null;
   /** #1826 — the Gym Goal's own picture (#1722); both `null` for a goal with none. */
   goal_image_url?: string | null;
   goal_image_thumbnail_url?: string | null;
