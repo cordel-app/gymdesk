@@ -19,6 +19,7 @@ import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, ty
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
+import { BOOKINGS_TABS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 
 interface Session {
@@ -85,6 +86,8 @@ export default function MemberSchedulePage() {
   const [pastLoading, setPastLoading] = useState(true);
   const [pastError, setPastError] = useState<string | null>(null);
   const [expandedPast, setExpandedPast] = useState<number | null>(null);
+  // #1893: Upcoming and Past are two tabs of one page; Upcoming is the default.
+  const [tab, setTab] = useState<BookingsTab>('upcoming');
 
   async function load() {
     setLoading(true);
@@ -176,8 +179,33 @@ export default function MemberSchedulePage() {
         </button>
       )}
 
-      <h2 style={styles.sectionHead}>{t('member_schedule.upcoming_section')}</h2>
+      <div role="tablist" aria-label={t('member_schedule.title')} style={styles.tabs}>
+        {BOOKINGS_TABS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`bookings-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`bookings-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
+            onClick={() => setTab(id)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next = bookingsTabAfter(tab, e.key === 'ArrowRight' ? 1 : -1);
+              setTab(next);
+              document.getElementById(`bookings-tab-${next}`)?.focus();
+            }}
+            style={tab === id ? { ...styles.tab, ...styles.tabActive } : styles.tab}
+          >
+            {t(id === 'upcoming' ? 'member_schedule.upcoming_section' : 'member_schedule.past_section')}
+          </button>
+        ))}
+      </div>
 
+      {tab === 'upcoming' && (
+      <div role="tabpanel" id="bookings-panel-upcoming" aria-labelledby="bookings-tab-upcoming">
       {loading ? (
         <p style={styles.hint}>{t('member_schedule.loading')}</p>
       ) : loadError ? (
@@ -258,8 +286,11 @@ export default function MemberSchedulePage() {
         ))
       )}
 
-      <h2 style={{ ...styles.sectionHead, marginTop: 28 }}>{t('member_schedule.past_section')}</h2>
+      </div>
+      )}
 
+      {tab === 'past' && (
+      <div role="tabpanel" id="bookings-panel-past" aria-labelledby="bookings-tab-past">
       {pastLoading ? (
         <p style={styles.hint}>{t('member_schedule.loading')}</p>
       ) : pastError ? (
@@ -298,6 +329,8 @@ export default function MemberSchedulePage() {
           })}
         </section>
       )}
+      </div>
+      )}
       {confirmCancel && (
         <CancelBookingConfirmDialog
           busy={pendingSession === confirmCancel.sessionId}
@@ -317,6 +350,9 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   message: { ...noticeStyle('success'), marginBottom: 16 },
   cancelNotice: { ...noticeStyle('warning'), fontSize: 13, flex: 1 },
+  tabs: { display: 'flex', gap: 4, borderBottom: `1px solid ${memberTheme.separator}`, marginBottom: 12 },
+  tab: { flex: 1, minHeight: 44, padding: '8px 12px', background: 'transparent', border: 'none', borderBottom: '3px solid transparent', color: memberTheme.textMuted, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
+  tabActive: { color: memberTheme.text, borderBottomColor: memberTheme.primaryButton },
   sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, fontFamily: memberTheme.title3Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { ...sectionCardStyle, padding: 14, marginBottom: 10, cursor: 'pointer' },
