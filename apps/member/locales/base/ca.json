@@ -193,6 +193,14 @@
     "status_cancelled": "Cancel·lat"
   },
   "member_schedule": {
+    "filter_activity": "Activitat",
+    "filter_center": "Centre",
+    "filter_trainer": "Entrenador",
+    "filter_all_activities": "Totes les activitats",
+    "filter_all_centers": "Tots els centres",
+    "filter_all_trainers": "Tots els entrenadors",
+    "professional_service_required": "Requereix servei professional",
+    "image_alt": "Imatge de {name}",
     "cancel_confirm_title": "Cancel·lar aquesta reserva?",
     "cancel_confirm_body": "La teva plaça quedarà lliure i una altra persona podrà ocupar-la.",
     "cancel_confirm_yes": "Sí, cancel·la la reserva",

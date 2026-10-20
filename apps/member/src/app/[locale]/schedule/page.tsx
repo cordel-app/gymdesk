@@ -21,12 +21,16 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
+import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
+import { ImagePreviewButton } from '@/components/ImagePreview';
 
 interface Session {
   id: number;
   activity_type_id: number;
   class_type_name: string;
   class_type_description: string | null;
+  /** #1880 — the event's own image, else the Activity Type's (as the Calendar sheet shows). */
+  class_type_image_url?: string | null;
   starts_at: string;
   ends_at: string;
   space_name: string | null;
@@ -57,12 +61,14 @@ interface PastBooking {
   cancelled_at: string | null;
 }
 
+interface FilterOption { id: number; name: string }
+
 export default function MemberSchedulePage() {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading, isSuperadmin } = useApp();
+  const { isLinked, loading: appLoading, isSuperadmin, centers } = useApp();
   const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
   // The API sends UTC instants. Slicing the ISO string showed UTC wall-clock time
@@ -89,6 +95,15 @@ export default function MemberSchedulePage() {
   // #1893: Upcoming and Past are two tabs of one page; Upcoming is the default.
   const [tab, setTab] = useState<BookingsTab>('upcoming');
 
+  // #1880: the Calendar's own three filters, answered by the same `/me/schedule`
+  // query parameters (`center_id`, `trainer_membership_id`, `activity_type_id`),
+  // so filtering decides nothing on the client.
+  const [activityTypes, setActivityTypes] = useState<FilterOption[]>([]);
+  const [trainers, setTrainers] = useState<FilterOption[]>([]);
+  const [filterAtId, setFilterAtId] = useState('');
+  const [filterCenterId, setFilterCenterId] = useState('');
+  const [filterTrainerId, setFilterTrainerId] = useState('');
+
   async function load() {
     setLoading(true);
     setLoadError(null);
@@ -96,7 +111,11 @@ export default function MemberSchedulePage() {
     to.setDate(to.getDate() + 14);
     const toStr = to.toISOString();
     try {
-      const sessionData = await apiFetch<Session[]>(`/me/schedule?to=${toStr}`);
+      const params = new URLSearchParams({ to: toStr });
+      if (filterAtId) params.set('activity_type_id', filterAtId);
+      if (filterCenterId) params.set('center_id', filterCenterId);
+      if (filterTrainerId) params.set('trainer_membership_id', filterTrainerId);
+      const sessionData = await apiFetch<Session[]>(`/me/schedule?${params.toString()}`);
       setSessions(sessionData);
     } catch (err: any) { setLoadError(err.message ?? t('common.error')); }
     finally { setLoading(false); }
@@ -119,6 +138,19 @@ export default function MemberSchedulePage() {
     load();
     loadPast();
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
+
+  useEffect(() => {
+    if (appLoading || !isLinked) return;
+    apiFetch<FilterOption[]>('/me/activity-types').then(setActivityTypes).catch(() => {});
+    apiFetch<FilterOption[]>('/me/trainers').then(setTrainers).catch(() => {});
+  }, [appLoading, isLinked]);
+
+  // Re-read the list when a filter changes (not on first mount: the effect above did).
+  const [filtersTouched, setFiltersTouched] = useState(false);
+  useEffect(() => {
+    if (!filtersTouched) return;
+    load();
+  }, [filterAtId, filterCenterId, filterTrainerId]);
 
   async function bookSession(sessionId: number) {
     setPendingSession(sessionId); setMessage(null); setUnlockServiceIds([]);
@@ -206,6 +238,26 @@ export default function MemberSchedulePage() {
 
       {tab === 'upcoming' && (
       <div role="tabpanel" id="bookings-panel-upcoming" aria-labelledby="bookings-tab-upcoming">
+      <div style={styles.filters}>
+        {([
+          ['filter_activity', 'filter_all_activities', filterAtId, setFilterAtId, activityTypes],
+          ['filter_center', 'filter_all_centers', filterCenterId, setFilterCenterId, centers],
+          ['filter_trainer', 'filter_all_trainers', filterTrainerId, setFilterTrainerId, trainers],
+        ] as const).map(([label, all, value, setValue, options]) => (
+          <select
+            key={label}
+            aria-label={t(`member_schedule.${label}`)}
+            value={value}
+            onChange={(e) => { setFiltersTouched(true); setValue(e.target.value); }}
+            style={styles.filterSelect}
+          >
+            <option value="">{t(`member_schedule.${all}`)}</option>
+            {options.map((o) => (
+              <option key={o.id} value={String(o.id)}>{o.name}</option>
+            ))}
+          </select>
+        ))}
+      </div>
       {loading ? (
         <p style={styles.hint}>{t('member_schedule.loading')}</p>
       ) : loadError ? (
@@ -224,11 +276,28 @@ export default function MemberSchedulePage() {
               return (
                 <div
                   key={`s-${s.id}`}
-                  style={styles.card}
+                  style={styles.sessionCard}
                   onClick={() => setExpandedSession(isExpanded ? null : s.id)}
                   role="button"
                   tabIndex={0}
                 >
+                  {/* #1880 §4/§5 — the image fills the card's height on the left and
+                      opens the enlarged preview with the description; with no image
+                      the content takes the whole width. */}
+                  {s.class_type_image_url && s.class_type_image_url.trim() && (
+                    <div style={styles.imageCol}>
+                      <ImagePreviewButton
+                        src={s.class_type_image_url}
+                        alt={t('member_schedule.image_alt', { name: s.class_type_name })}
+                        title={s.class_type_name}
+                        description={s.class_type_description?.trim() || null}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.class_type_image_url} alt="" style={styles.cardImage} />
+                      </ImagePreviewButton>
+                    </div>
+                  )}
+                  <div style={styles.cardBody}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
                     {s.access_locked ? (
@@ -243,10 +312,29 @@ export default function MemberSchedulePage() {
                       <span style={styles.pillFull}>{t('member_schedule.full')}</span>
                     )}
                   </div>
-                  <div style={styles.name}>{s.class_type_name}</div>
-                  {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
-                  {s.center_name && <div style={styles.sub}>{s.center_name}</div>}
-                  {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
+                  <div style={{ ...styles.name, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>{s.class_type_name}</span>
+                    {s.professional_service && (
+                      <span
+                        title={t('member_schedule.professional_service_required')}
+                        aria-label={t('member_schedule.professional_service_required')}
+                        role="img"
+                        style={{ color: memberTheme.textMuted, display: 'inline-flex' }}
+                      >
+                        <ActivityMetaIcon name="service" size={15} />
+                      </span>
+                    )}
+                  </div>
+                  {([
+                    ['center', s.center_name],
+                    ['space', s.space_name],
+                    ['trainer', s.trainer_name],
+                  ] as const).map(([icon, value]) => (value && value.trim() ? (
+                    <div key={icon} style={{ ...styles.sub, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ActivityMetaIcon name={icon} />
+                      <span>{value.trim()}</span>
+                    </div>
+                  ) : null))}
                   {isExpanded && (
                     <div style={styles.details}>
                       {s.class_type_description && <div style={styles.sub}>{s.class_type_description}</div>}
@@ -278,6 +366,7 @@ export default function MemberSchedulePage() {
                         {isBusy ? '…' : t('member_schedule.join_waitlist')}
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
               );
@@ -356,6 +445,12 @@ const styles: Record<string, React.CSSProperties> = {
   sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, fontFamily: memberTheme.title3Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { ...sectionCardStyle, padding: 14, marginBottom: 10, cursor: 'pointer' },
+  filters: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  filterSelect: { flex: '1 1 140px', minWidth: 0, minHeight: 40, padding: '6px 10px', borderRadius: 8, border: `1px solid ${memberTheme.separator}`, background: memberTheme.inputBackground, color: memberTheme.text, fontSize: 14 },
+  sessionCard: { ...sectionCardStyle, padding: 0, marginBottom: 10, cursor: 'pointer', display: 'flex', overflow: 'hidden' },
+  imageCol: { flex: '0 0 112px', alignSelf: 'stretch', position: 'relative' },
+  cardImage: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  cardBody: { flex: 1, minWidth: 0, padding: 14 },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
   name: { fontSize: 16, fontWeight: 600, color: memberTheme.text },
