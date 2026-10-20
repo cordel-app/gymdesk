@@ -1564,7 +1564,7 @@ Stage 1 of #1849 is this note only: no migration, route or screen changes. It re
 |---|---|---|---|---|
 | Payment methods | `base_payment_methods` (migration 284) | same | gym rows | done |
 | Products | `base_products` (migration 298) | same | `products` (`base_product_id` provenance, migration 299; Import System Products, #1851) | done |
-| Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` | `personal_goals` | stage 2 |
+| Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` (migration 301 copies the System rows, ids kept; unread until 2b/2c) | `personal_goals` | stage 2a done, 2b-2c open |
 | Nutrition Goals | `nutrition_goals` with `gym_id IS NULL` | `base_nutrition_goals` | `nutrition_goals` | stage 4 |
 | Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` | `base_nutrition_library_items` | `nutrition_library_items` | stage 4 |
 | Exercises | `exercises` with `gym_id IS NULL`; gym copy records `cloned_from_id` (the reference import flow) | `base_exercises` | `exercises` | stage 4 |
