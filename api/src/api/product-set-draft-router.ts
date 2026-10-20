@@ -3,7 +3,9 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
-import { emptyBillingEventSimulation } from '../domain/billingEventSimulation';
+import { emptyBillingEventSimulation, BillingEventLine } from '../domain/billingEventSimulation';
+import { composeDraftSimulation, toBillingEventLine } from '../domain/draftBillingSimulation';
+import { commitCharge } from './product-set-checkout';
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
@@ -156,9 +158,40 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
 productSetDraftRouter.get('/billing-event-simulation', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
-    const assignment = await loadProductSetSimulationAssignment(gymId, Number((req.params as any).id));
+    const id = Number((req.params as any).id);
+    const assignment = await loadProductSetSimulationAssignment(gymId, id);
     if (!assignment) return res.status(404).json({ error: 'not_found' });
-    res.json(computeAssignmentBillingEventSimulation({ assignment }));
+    const base = computeAssignmentBillingEventSimulation({ assignment });
+
+    // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
+    // committing asks for today, the figure Save & Pay charges) and the member's
+    // one-offs still to be paid. Only an uncommitted version has either.
+    const { rows } = await db.query<any>(
+      `SELECT id, status, owner_member_id, previous_product_set_id, starts_at
+         FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
+    const set = rows[0];
+    if (!set || (set.status !== 'draft' && set.status !== 'pending_payment')) return res.json(base);
+
+    let initial: { date: string; lines: BillingEventLine[] } | null = null;
+    try {
+      const { startsAt, charge } = await commitCharge(gymId, set);
+      if (charge && charge.simulationLines.length > 0) {
+        initial = { date: startsAt, lines: charge.simulationLines.map(toBillingEventLine) };
+      }
+    } catch { initial = null; }
+
+    const { rows: oneOffRows } = await db.query<any>(
+      `SELECT product_id, product_name, amount, list_price FROM member_products_oneoff_snapshot
+        WHERE gym_id = ? AND member_id = ? AND status IN ('draft', 'pending_payment')
+        ORDER BY id`, [gymId, Number(set.owner_member_id)]);
+    const oneOffs = oneOffRows.map((r: any) => ({
+      product_id: r.product_id != null ? Number(r.product_id) : null,
+      name: String(r.product_name),
+      amount: Number(r.amount),
+      list_price: r.list_price != null ? Number(r.list_price) : null,
+    }));
+
+    res.json(composeDraftSimulation({ base, initial, oneOffs, today: new Date().toISOString().slice(0, 10) }));
   } catch (err) { next(err); }
 });
 

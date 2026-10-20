@@ -19,7 +19,7 @@ import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
 import {
-  createProductSetCheckout, ensureInitialEvent, initialCharge, loadEditLock,
+  createProductSetCheckout, ensureInitialEvent, commitCharge, loadEditLock,
 } from './product-set-checkout';
 import { methodAvailability, payFlowFor } from '../domain/productSetPayment';
 import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
@@ -88,24 +88,6 @@ function shape(row: any) {
   };
 }
 
-
-/**
- * What committing `set` asks for **today** — the one answer Save & Pay, the
- * free activation and the "Review your changes" preview all use, so the figure a
- * member is shown is the figure charged (#1537). A version that replaces a
- * running one owes only what is new relative to it, dated today; a first
- * version owes its first cycle from its own start date.
- */
-async function commitCharge(gymId: string, set: any) {
-  const nextVersion = set.previous_product_set_id != null;
-  const startsAt = nextVersion
-    ? todayUtc()
-    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
-    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
-  });
-  return { startsAt, charge };
-}
 
 export const productSetsRouter = Router({ mergeParams: true });
 
