@@ -290,6 +290,34 @@ export const CALENDAR_THEME_CSS = `
     font-size: 1.05em;
   }
 }
+
+/* Event cards (#1892 stage 2). Shape and rhythm only: the fill, border and
+   text colours stay the event's own colour or the Calendar Event settings, so
+   no business meaning is attached to a hue. One radius, a restrained shadow,
+   long text ellipsised, and a thin separating edge in the calendar surface
+   colour so events sharing a slot stay distinguishable. */
+.gd-calendar .fc .fc-event:not(.fc-bg-event) {
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+.gd-calendar .fc .fc-timegrid-event,
+.gd-calendar .fc .fc-v-event {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--gd-calendar-bg, #ffffff);
+}
+.gd-calendar .fc .fc-event-main {
+  padding: 2px 4px;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-event-title,
+.gd-calendar .fc .fc-event-time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+.gd-calendar .fc .fc-event-time {
+  font-weight: 600;
+}
 `;
 
 export function CalendarThemeStyles() {
