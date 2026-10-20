@@ -181,3 +181,13 @@ describe('nutrition carousel locales (#722)', () => {
       .toEqual(['carbohydrate', 'fat', 'fiber', 'protein']);
   });
 });
+
+// #1913 — the enlarged food image shows the library food's localized description
+// (no quantity or role, which the card already shows).
+describe('food image preview description (#1913)', () => {
+  it('passes the food description and not the quantity/role line', () => {
+    const src = read(CARD);
+    expect(src).toContain('description={item.description?.trim() || null}');
+    expect(src).not.toMatch(/description=\{\[quantity, role\]/);
+  });
+});
