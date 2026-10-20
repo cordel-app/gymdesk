@@ -35,7 +35,6 @@ import { loadAppliedPromotionLists, loadPromotionOffersDetailed } from './member
 import { shapeMemberProduct, staffProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { isRecurringFrequency } from '../domain/productClassification';
 import {
-  oneTimeProductAlreadyOwned,
   parseDirectDiscountPercent,
   priceProductPurchase,
   pricingRefusalResponse,
@@ -63,22 +62,6 @@ async function loadMember(gymId: string, memberId: number) {
     [memberId, gymId],
   );
   return rows[0] ?? null;
-}
-
-/** The Products this member already holds or is paying for, by id. */
-async function ownedOneTimeProductIds(gymId: string, memberId: number): Promise<Set<number>> {
-  const { rows } = await db.query<{ product_id: number; status: string }>(
-    `SELECT product_id, status FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND status IN ('active', 'pending_payment', 'draft')`,
-    [gymId, memberId],
-  );
-  const byProduct = new Map<number, string[]>();
-  for (const r of rows) byProduct.set(Number(r.product_id), [...(byProduct.get(Number(r.product_id)) ?? []), r.status]);
-  const owned = new Set<number>();
-  for (const [productId, statuses] of byProduct) {
-    if (oneTimeProductAlreadyOwned(statuses)) owned.add(productId);
-  }
-  return owned;
 }
 
 function directDiscountFrom(req: any, res: any): { percent: number | null } | null {
@@ -119,17 +102,13 @@ async function staffCatalogue(gymId: string, memberId: number) {
       ORDER BY p.name ASC`,
     [gymId],
   );
-  const owned = await ownedOneTimeProductIds(gymId, memberId);
   const items = rows
     .map((row: any) => ({
       ...shapeMemberProduct(row, grossPrice(row)),
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
     }))
     // A Product with no price has nothing to charge or to simulate.
-    .filter((item) => item.price_incl_tax != null && item.price_incl_tax > 0)
-    // #1521 (decision 3): a one-time Product already held is not offered again;
-    // a recurring one always is.
-    .filter((item) => isRecurringFrequency(item.billing_frequency) || !owned.has(item.id));
+    .filter((item) => item.price_incl_tax != null && item.price_incl_tax > 0);
   const { offers, skipped } = await loadPromotionOffersDetailed(gymId, memberId, items.map((item) => ({
     id: item.id, type: item.type, billing_frequency: item.billing_frequency, price_incl_tax: item.price_incl_tax,
   })));
