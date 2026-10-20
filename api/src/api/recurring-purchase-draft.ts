@@ -133,39 +133,10 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   // starts today.
   const startsAt = input.today > locked.starts_at ? input.today : locked.starts_at;
 
-  // Buying a recurring Product the member already has (a second class per
-  // week) raises the quantity of its one open line: the schema allows one open
-  // line per Product and version (`ums_one_open_per_set_item`), and two units
-  // of one line is what "twice" means. It is only a merge when both are the
-  // same agreement — the same list price and the same direct discount —
-  // because one line carries one price; otherwise it is refused and says why,
-  // never silently repriced.
-  const { rows: openLines } = await tx.query<any>(
-    `SELECT s.id, s.quantity, s.unit_price, s.list_unit_price, s.direct_discount_percent, p.amount AS catalogue_amount
-       FROM member_products_recurrent_snapshot s JOIN products p ON p.id = s.product_id AND p.gym_id = s.gym_id
-      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.product_id = ? AND s.ends_at IS NULL FOR UPDATE`,
-    [input.gymId, draftId, input.productId]);
-  if (openLines[0]) {
-    const line = openLines[0];
-    const linePct = line.direct_discount_percent == null ? null : Number(line.direct_discount_percent);
-    const listPrice = Number(line.list_unit_price ?? line.unit_price);
-    const sameAgreement = (linePct ?? null) === (input.directDiscountPercent ?? null)
-      && Math.abs(listPrice - Number(line.catalogue_amount ?? 0)) < 0.005;
-    if (!sameAgreement) {
-      return {
-        kind: 'conflict',
-        error: 'recurring_line_conflict',
-        message: 'The member already has this product at a different price or discount; it cannot be added to the same line',
-      };
-    }
-    await tx.query('UPDATE member_products_recurrent_snapshot SET quantity = quantity + 1 WHERE id = ? AND gym_id = ?',
-      [line.id, input.gymId]);
-    await allocateItemSchedules(tx, input.gymId, draftId);
-    await applyPromotions(tx, input, draftId);
-    return { kind: 'ok', productSetId: draftId, lineId: Number(line.id) };
-  }
-
-  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt }, { recurringByFrequency: true });
+  // Buying a recurring Product the member already has is a line of its own
+  // (#1865 stage 2): its own price, discount, schedule and lifecycle, so
+  // changing or removing one purchase never touches another.
+  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt }, { recurringByFrequency: true, allowRepeat: true });
   if ('kind' in added) return added;
 
   if (input.directDiscountPercent != null) {

@@ -175,6 +175,8 @@ export interface SimulationGrant {
  */
 export interface SimulationService {
   id: number;
+  /** #1865 — the purchase's identity across versions; `null` on a line written before it existed. */
+  lineRef?: number | null;
   productId: number;
   name: string;
   billingFrequency: ProductFrequency | null;
