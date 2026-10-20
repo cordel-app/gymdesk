@@ -369,6 +369,8 @@ export interface MemberPurchasedProduct {
    * collide with a purchase id in a list keyed on `id`.
    */
   source?: 'one_off' | 'recurring';
+  /** #1882 — removed in the member's open Draft; still Active until Save & Pay. */
+  pending_termination?: boolean;
 }
 
 /**
@@ -467,6 +469,7 @@ async function loadRecurringPurchases(
     `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
             s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
             s.currency, s.starts_at, s.created_at, ps.status AS set_status,
+            COALESCE(s.line_ref, s.id) AS line_ref,
             ps.created_by AS set_created_by,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id
        FROM product_sets ps
@@ -480,6 +483,23 @@ async function loadRecurringPurchases(
       ORDER BY s.created_at DESC, s.id DESC`,
     [gymId, memberId],
   );
+  // #1882 — a line of the Active version that the member's open Draft no longer
+  // carries (matched by `line_ref`, which a clone keeps) is pending termination:
+  // the Draft only registers the removal, the Active version is untouched.
+  const { rows: draftRows } = await db.query<any>(
+    `SELECT s.product_set_id, COALESCE(s.line_ref, s.id) AS line_ref
+       FROM product_sets ps
+       JOIN member_products_recurrent_snapshot s
+         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
+        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())`,
+    [gymId, memberId],
+  );
+  const hasDraft = draftRows.length > 0 || (await db.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' LIMIT 1`,
+    [gymId, memberId],
+  )).rows.length > 0;
+  const draftLineRefs = new Set(draftRows.map((r: any) => Number(r.line_ref)));
   return rows.map((row: any) => {
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
@@ -510,6 +530,7 @@ async function loadRecurringPurchases(
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
       source: 'recurring' as const,
+      pending_termination: row.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(row.line_ref)),
     };
   });
 }
