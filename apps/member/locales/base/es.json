@@ -103,6 +103,7 @@
     "register": "Registrar",
     "new_chip": "Nuevo",
     "progress_day": "Hoy",
+    "progress_week_of": "Semana {date}",
     "progress_week": "Esta semana",
     "progress_month": "Este mes",
     "today_marker": "Hoy",

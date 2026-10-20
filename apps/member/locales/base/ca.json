@@ -103,6 +103,7 @@
     "register": "Registra",
     "new_chip": "Nou",
     "progress_day": "Avui",
+    "progress_week_of": "Setmana {date}",
     "progress_week": "Aquesta setmana",
     "progress_month": "Aquest mes",
     "today_marker": "Avui",

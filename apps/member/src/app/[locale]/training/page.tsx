@@ -17,7 +17,7 @@ import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
 import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import {
-  EMPTY_PROGRESS, TrainingProgress, deviceToday, stepWeek, swipeWeekDelta, weekDates, weekdayOf,
+  EMPTY_PROGRESS, TrainingProgress, deviceToday, stepWeek, swipeWeekDelta, weekDates, weekStart, weekdayOf,
 } from '@/lib/trainingWeek';
 import { resultUnitKey, resultValueForPayload } from '@/lib/blockResult';
 import {
@@ -92,10 +92,15 @@ export default function TrainingPage() {
   const [today, setToday] = useState<string>(deviceToday());
   const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
   const [progress, setProgress] = useState<TrainingProgress>(EMPTY_PROGRESS);
-  // The summary cards are always today's day, week and month, whichever week the calendar shows.
+  // #1879: the day and week cards follow the selected date; only the month card stays today's.
   const [summary, setSummary] = useState<TrainingProgress>(EMPTY_PROGRESS);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const selectedWeekday = weekdayOf(selectedDate);
+  const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+  const dayLabel = selectedDate === today ? t('training.progress_day') : ddmm(selectedDate);
+  const weekLabel = weekStart(selectedDate) === weekStart(today)
+    ? t('training.progress_week')
+    : t('training.progress_week_of', { date: ddmm(weekStart(selectedDate)) });
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
   const [detailsExercise, setDetailsExercise] = useState<BlockExercise | null>(null);
   const [videoExercise, setVideoExercise] = useState<BlockExercise | null>(null);
@@ -252,8 +257,8 @@ export default function TrainingPage() {
       {message && <div style={styles.message}>{message}</div>}
 
       <TrainingSummaryCards cards={[
-        { label: t('training.progress_day'), percent: summary.day.percent, detail: `${summary.day.completed}/${summary.day.total}` },
-        { label: t('training.progress_week'), percent: summary.week.percent, detail: `${summary.week.completed}/${summary.week.total}` },
+        { label: dayLabel, percent: progress.day.percent, detail: `${progress.day.completed}/${progress.day.total}` },
+        { label: weekLabel, percent: progress.week.percent, detail: `${progress.week.completed}/${progress.week.total}` },
         { label: t('training.progress_month'), percent: summary.month.percent, detail: `${summary.month.completed}/${summary.month.total}` },
       ]} />
 
