@@ -83,7 +83,7 @@ describe('Save persists a draft without paying', () => {
     expect(list.body.items.find((i: any) => i.id === res.body.purchaseId)?.status).toBe('draft');
   });
 
-  it('keeps one draft per Product and stops offering it again', async () => {
+  it('keeps one draft per Product and still offers it', async () => {
     const m = await member();
     const p = await product('Locker once');
     expect((await auth(request.post(base(m))).send({ product_id: p, draft: true })).status).toBe(201);
@@ -91,7 +91,7 @@ describe('Save persists a draft without paying', () => {
     expect(again.status).toBe(409);
     expect(again.body.error).toBe('draft_exists');
     const cat = await auth(request.get(`${base(m)}/catalogue`));
-    expect(cat.body.items.map((i: any) => i.id)).not.toContain(p);
+    expect(cat.body.items.map((i: any) => i.id)).toContain(p);
   });
 
   it('is invisible to the member’s own catalogue state', async () => {
