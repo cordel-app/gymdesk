@@ -135,7 +135,7 @@ describe('who is offered what (#1521 decisions 1 and 3)', () => {
     expect(ids).not.toContain(off);
   });
 
-  it('stops offering a one-time Product the member holds, and always offers a recurring one', async () => {
+  it('keeps offering a one-time Product the member holds, and a recurring one', async () => {
     const m = await member();
     const once = await product({ name: 'Registration fee', frequency: 'once' });
     const weekly = await product({ name: 'One class per week', frequency: 'month' });
@@ -147,7 +147,7 @@ describe('who is offered what (#1521 decisions 1 and 3)', () => {
     }
     const res = await auth(request.get(`${base(m)}/catalogue`));
     const ids = res.body.items.map((i: any) => i.id);
-    expect(ids).not.toContain(once);
+    expect(ids).toContain(once);
     expect(ids).toContain(weekly);
   });
 

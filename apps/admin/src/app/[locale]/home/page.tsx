@@ -20,7 +20,8 @@ import {
 import { StatusBadge } from '@/components/StatusBadge';
 import { InlineStyle } from '@/components/InlineStyle';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
-import { CalendarClockIcon, CheckIcon, ClipboardCheckIcon, ContactsIcon, PlusIcon, UserPlusIcon, WalletIcon, ArrowRightIcon } from '@/components/home/HomeIcons';
+import { HomeClassAttendees, HomeClassCancel, type AttendeesMode } from '@/components/home/HomeClassAttendees';
+import { CalendarClockIcon, CheckIcon, ListIcon, PartyIcon, XCircleIcon, ClipboardCheckIcon, ContactsIcon, PlusIcon, UserPlusIcon, WalletIcon, ArrowRightIcon } from '@/components/home/HomeIcons';
 import { CalendarIcon, CreditCardIcon, UsersIcon } from '@/components/icons/NavIcons';
 import {
   HomeData, TASK_ACTION_KEY, canStartClass, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
@@ -69,6 +70,8 @@ export default function HomePage() {
   const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
   const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
   const tc = useTranslations('calendar');
+  const [attendeesFor, setAttendeesFor] = useState<{ id: number; name: string; mode: AttendeesMode } | null>(null);
+  const [cancelFor, setCancelFor] = useState<{ id: number; name: string; hasEnded: boolean } | null>(null);
   const { canWrite: canWriteCalendar } = useModuleAccess('CALENDAR');
   const { canWrite: canMessageClass } = useModuleAccess('CALENDAR', 'calendar.staff_communications');
   const canWriteMembers = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
@@ -159,29 +162,18 @@ export default function HomePage() {
             )}
           </div>
 
-          {data.pending_payment_members && (
-            <div style={{ marginBottom: 24 }}>
-              <Panel title={t('pending_title')} icon={<WalletIcon size={18} />} testId="home-pending-payments"
-                aside={<strong style={{ fontSize: 22 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>}
-                footer={data.pending_payment_members.count > data.pending_payment_members.members.length ? (
-                  <Link href={taskHref('payments_with_issues', locale)} className="gd-home-link" style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
-                ) : undefined}>
-                <p style={{ ...mutedTextStyle, margin: '0 0 8px' }}>{t('pending_sub', { count: data.pending_payment_members.count })}</p>
-                {data.pending_payment_members.members.length === 0 ? (
-                  <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('pending_empty')}</p>
-                ) : data.pending_payment_members.members.map((m) => (
-                  <div key={m.member_id} className="gd-home-row" style={row} data-testid={`home-pending-${m.member_id}`}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Link href={memberHref(m.member_id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
-                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
-                    </div>
-                    <strong>{formatGymAmount(m.outstanding_amount, fmt)}</strong>
-                    <StatusBadge status={m.payment_status} label={tm(`payment_status_${m.payment_status}`)} />
-                  </div>
+          <div style={{ marginBottom: 24 }}>
+            <Panel title={t('quick_title')} icon={<PlusIcon size={18} />} testId="home-quick-actions">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                {quickActions.map((qa) => (
+                  <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
+                    style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box', padding: '10px 12px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>{QUICK_ICON[qa.key]}{t(`quick_${qa.key}`)}</span>
+                  </Link>
                 ))}
-              </Panel>
-            </div>
-          )}
+              </div>
+            </Panel>
+          </div>
 
           <div style={{ ...panelsGrid, marginBottom: 16 }}>
             <Panel title={t('tasks_title')} icon={<ClipboardCheckIcon size={18} />} ariaLabel={t('tasks_title')}
@@ -234,16 +226,27 @@ export default function HomePage() {
               ))}
             </Panel>
 
-            <Panel title={t('quick_title')} icon={<PlusIcon size={18} />} testId="home-quick-actions">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                {quickActions.map((qa) => (
-                  <Link key={qa.key} href={quickActionHref(qa.key, locale)} data-testid={`home-quick-${qa.key}`}
-                    style={{ ...primaryBtnSmall(), textDecoration: 'none', textAlign: 'center', display: 'block', boxSizing: 'border-box', padding: '10px 12px' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>{QUICK_ICON[qa.key]}{t(`quick_${qa.key}`)}</span>
-                  </Link>
+            {data.pending_payment_members && (
+              <Panel title={t('pending_title')} icon={<WalletIcon size={18} />} testId="home-pending-payments"
+                aside={<strong style={{ fontSize: 22 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>}
+                footer={data.pending_payment_members.count > data.pending_payment_members.members.length ? (
+                  <Link href={taskHref('payments_with_issues', locale)} className="gd-home-link" style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
+                ) : undefined}>
+                <p style={{ ...mutedTextStyle, margin: '0 0 8px' }}>{t('pending_sub', { count: data.pending_payment_members.count })}</p>
+                {data.pending_payment_members.members.length === 0 ? (
+                  <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('pending_empty')}</p>
+                ) : data.pending_payment_members.members.map((m) => (
+                  <div key={m.member_id} className="gd-home-row" style={row} data-testid={`home-pending-${m.member_id}`}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Link href={memberHref(m.member_id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
+                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
+                    </div>
+                    <strong>{formatGymAmount(m.outstanding_amount, fmt)}</strong>
+                    <StatusBadge status={m.payment_status} label={tm(`payment_status_${m.payment_status}`)} />
+                  </div>
                 ))}
-              </div>
-            </Panel>
+              </Panel>
+            )}
           </div>
 
           <div style={panelsGrid}>
@@ -276,6 +279,16 @@ export default function HomePage() {
                         {canStartClass(k.status) && (
                           <Link href={startClassHref(k.id, locale)} style={{ ...primaryBtnSmall(), textDecoration: 'none' }}>{t('class_start')}</Link>
                         )}
+                        {canStartClass(k.status) && canWriteCalendar && (
+                          <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_celebrate')} aria-label={t('class_celebrate')}
+                            data-testid={`home-class-celebrate-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'celebrate' })}><PartyIcon size={16} /></button>
+                        )}
+                        <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_attendees')} aria-label={t('class_attendees')}
+                          data-testid={`home-class-attendees-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'view' })}><ListIcon size={16} /></button>
+                        {canStartClass(k.status) && canWriteCalendar && (
+                          <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_cancel')} aria-label={t('class_cancel')}
+                            data-testid={`home-class-cancel-${k.id}`} onClick={() => setCancelFor({ id: k.id, name: k.name, hasEnded: new Date(k.ends_at).getTime() < Date.now() })}><XCircleIcon size={16} /></button>
+                        )}
                         {classMessagingOn && canStartClass(k.status) && (
                           <button type="button" style={secondaryBtnSmall} onClick={() => setMessageClass({ id: k.id, name: k.name })}>{tc('send_communication')}</button>
                         )}
@@ -307,6 +320,14 @@ export default function HomePage() {
       )}
       {messageClass && (
         <ClassCommunicationModal sessionId={messageClass.id} sessionName={messageClass.name} onClose={() => setMessageClass(null)} />
+      )}
+      {attendeesFor && (
+        <HomeClassAttendees sessionId={attendeesFor.id} sessionName={attendeesFor.name} mode={attendeesFor.mode}
+          onClose={() => setAttendeesFor(null)} onCompleted={load} />
+      )}
+      {cancelFor && (
+        <HomeClassCancel sessionId={cancelFor.id} sessionName={cancelFor.name} hasEnded={cancelFor.hasEnded}
+          onClose={() => setCancelFor(null)} onCancelled={load} />
       )}
       {welcomeFor && (
         <MemberCommunicationModal
