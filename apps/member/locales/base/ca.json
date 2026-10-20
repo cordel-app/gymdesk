@@ -598,6 +598,7 @@
     },
     "progress_day": "Avui",
     "progress_week": "Aquesta setmana",
+    "progress_week_of": "Setmana {date}",
     "progress_month": "Aquest mes",
     "week_nav_hint": "Llisca per canviar de setmana",
     "week_prev": "Setmana anterior",
