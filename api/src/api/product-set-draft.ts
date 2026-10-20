@@ -349,8 +349,8 @@ export async function addService(
 
   const { insertId } = await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency)
-     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
+       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, origin)
+     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, 'admin'
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
     [draft.gym_id, draft.id, quantity, startsAt, productId, draft.gym_id]);

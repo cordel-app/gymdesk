@@ -1,3 +1,4 @@
+import type { ItemOrigin } from '../domain/itemOrigin';
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -83,6 +84,8 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   membershipFeePrice: number | null;
   startsAt: string;
   declinedBenefits?: Array<{ section: string; product_id: number }>;
+  /** #1883 — who added the plan; NULL (unknown) when the caller does not say. */
+  origin?: ItemOrigin | null;
 }): Promise<void> {
   const { gymId, productSetId, membershipPlanId } = input;
   const { rows: setRows } = await tx.query<{ root_product_set_id: number | null }>(
@@ -112,20 +115,22 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     `INSERT INTO product_set_plan_snapshots
        (gym_id, product_set_id, schedule_id, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, auto_renew,
-        recurring_billing_interval, recurring_billing_unit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        recurring_billing_interval, recurring_billing_unit, origin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id), membership_fee_price = VALUES(membership_fee_price),
        free_periods = VALUES(free_periods), paid_periods = VALUES(paid_periods),
        bonus_periods = VALUES(bonus_periods), pay_beforehand_periods = VALUES(pay_beforehand_periods),
        auto_renew = VALUES(auto_renew),
        recurring_billing_interval = VALUES(recurring_billing_interval),
-       recurring_billing_unit = VALUES(recurring_billing_unit)`,
+       recurring_billing_unit = VALUES(recurring_billing_unit),
+       origin = VALUES(origin)`,
     [
       gymId, productSetId, scheduleId, input.membershipFeePrice ?? null,
       plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
       plan.pay_beforehand_periods ?? null,
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
+      input.origin ?? null,
     ],
   );
 
@@ -213,17 +218,17 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
 /** Adds a recurring Additional Product to a version, on its own schedule. */
 export async function addProductSetService(tx: Tx, input: {
   gymId: string; productSetId: number; productId: number; quantity: number;
-  startsAt: string; scheduleId: number | null;
+  startsAt: string; scheduleId: number | null; origin?: ItemOrigin | null;
 }): Promise<number> {
   const { insertId } = await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at,
-        item_name, item_type, unit_price, item_billing_frequency, currency, schedule_id)
+        item_name, item_type, unit_price, item_billing_frequency, currency, schedule_id, origin)
      SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-            COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, ?
+            COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, ?, ?
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
-    [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.productId, input.gymId],
+    [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.origin ?? null, input.productId, input.gymId],
   );
   await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
   return insertId;

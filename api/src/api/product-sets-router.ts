@@ -188,7 +188,7 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
     if (planId !== null) {
       await snapshotProductSetFromPlan(tx, {
         gymId, productSetId: draft.productSet.id, membershipPlanId: planId,
-        membershipFeePrice: fee, startsAt: starts_at, declinedBenefits: declined,
+        membershipFeePrice: fee, startsAt: starts_at, declinedBenefits: declined, origin: 'admin',
       });
     }
     return draft;

@@ -1,3 +1,4 @@
+import { originOf } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -372,8 +373,8 @@ export async function saveProductPurchaseDraft(
           product_name, product_type, billing_frequency, units,
           amount, currency, tax_rate_percent,
           payment_request_id, created_by,
-          list_price, direct_discount_percent, direct_discount_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+          list_price, direct_discount_percent, direct_discount_amount, origin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
       [
         input.gymId, input.memberId, input.productId, DRAFT_PURCHASE_STATUS,
         snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -382,6 +383,7 @@ export async function saveProductPurchaseDraft(
         price.list_price.toFixed(2),
         price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
         price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
+        originOf(!!input.staff),
       ],
     );
     for (const step of price.promotions) {
@@ -552,8 +554,8 @@ export async function startProductPurchase(
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
             payment_request_id, created_by,
-            list_price, direct_discount_percent, direct_discount_amount, validity_days)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            list_price, direct_discount_percent, direct_discount_amount, validity_days, origin)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -564,6 +566,7 @@ export async function startProductPurchase(
           price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
           // #1693: the validity agreed at purchase time.
           row.validity_days == null ? null : Number(row.validity_days),
+          originOf(!!input.staff),
         ],
       );
 

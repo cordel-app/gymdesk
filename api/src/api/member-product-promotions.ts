@@ -1,3 +1,4 @@
+import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { purchaseValidityState } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -334,6 +335,8 @@ export interface MemberPurchasedProduct {
   created_at: string | null;
   /** The plain-text actor snapshot (#1182): the member, or `Staff (impersonating …)`. */
   created_by: string | null;
+  /** #1883 — where it came from; null reads as Unknown. */
+  origin: ItemOrigin | null;
   /** The Product's regular price: the application's own, else the charge itself. */
   regular_amount: number;
   /** The first Promotion applied (kept for readers written before stacking). */
@@ -393,7 +396,7 @@ export async function loadMemberPurchases(
   const { rows } = await db.query<any>(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
-            mp.purchased_at, mp.created_at, mp.created_by,
+            mp.purchased_at, mp.created_at, mp.created_by, mp.origin,
             DATE_FORMAT(mp.valid_until, '%Y-%m-%d') AS valid_until,
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
@@ -430,6 +433,7 @@ export async function loadMemberPurchases(
       validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
       created_by: row.created_by ?? null,
+      origin: toItemOrigin(row.origin),
       // With no Promotion the two figures are the same number: the purchase was
       // charged at the Product's own price, and §13's *Price* line still has
       // something honest to read.
@@ -468,7 +472,7 @@ async function loadRecurringPurchases(
   const { rows } = await db.query<any>(
     `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
             s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, ps.status AS set_status,
+            s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status,
             COALESCE(s.line_ref, s.id) AS line_ref,
             ps.created_by AS set_created_by,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id
@@ -520,6 +524,7 @@ async function loadRecurringPurchases(
       purchased_at: row.starts_at ?? null,
       created_at: row.created_at ?? null,
       created_by: row.set_created_by ?? null,
+      origin: toItemOrigin(row.origin),
       regular_amount: listPrice ?? amount,
       promotion: null,
       promotions: [],

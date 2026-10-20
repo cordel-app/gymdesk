@@ -43,6 +43,8 @@ export interface PurchasedProduct {
   validity_state?: string | null;
   created_at: string | null;
   created_by: string | null;
+  /** #1883 — `members_app` | `admin`; null/absent reads Unknown. */
+  origin?: string | null;
   /** The price before the Promotion, VAT included. */
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
