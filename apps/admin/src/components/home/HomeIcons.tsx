@@ -50,3 +50,15 @@ export function PlusIcon({ size = 20 }: P) {
 export function ArrowRightIcon({ size = 16 }: P) {
   return <Shell size={size}><path d="M5 12h14M13 6l6 6-6 6" /></Shell>;
 }
+
+export function PartyIcon({ size = 16 }: P) {
+  return <Shell size={size}><path d="m4 20 4.5-12 7.5 7.5Z" /><path d="M14 4v2M19 9h2M17 3l-1 1.5M20 13l-1.5-1" /></Shell>;
+}
+
+export function XCircleIcon({ size = 16 }: P) {
+  return <Shell size={size}><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6M15 9l-6 6" /></Shell>;
+}
+
+export function ListIcon({ size = 16 }: P) {
+  return <Shell size={size}><path d="M8 6h12M8 12h12M8 18h12" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></Shell>;
+}

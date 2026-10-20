@@ -98,3 +98,22 @@ describe('Home visual refinement (#1367)', () => {
     }
   });
 });
+
+// #1877 — Today's classes actions and the swapped Quick actions / pending payments.
+describe('Home class actions (#1877)', () => {
+  const KEYS = ['class_celebrate', 'class_cancel', 'class_attendees', 'celebrate_title', 'celebrate_complete', 'attendees_title', 'attendees_empty', 'cancel_confirm', 'cancel_reason'];
+  it('every locale carries the new copy', () => {
+    for (const l of LOCALES) for (const k of KEYS) expect(l.home[k], k).toBeTruthy();
+  });
+  it('Quick actions now precede the pending payments panel', () => {
+    const src = readFileSync(join(__dirname, '..', 'app', '[locale]', 'home', 'page.tsx'), 'utf-8');
+    expect(src.indexOf('home-quick-actions')).toBeGreaterThan(-1);
+    expect(src.indexOf('home-quick-actions')).toBeLessThan(src.indexOf('home-pending-payments'));
+    expect(src.indexOf('home-pending-payments')).toBeGreaterThan(src.indexOf('tasks_title'));
+  });
+  it('actions are icon buttons with accessible labels', () => {
+    const src = readFileSync(join(__dirname, '..', 'app', '[locale]', 'home', 'page.tsx'), 'utf-8');
+    for (const k of ['celebrate', 'attendees', 'cancel']) expect(src).toContain(`home-class-${k}-`);
+    expect(src).toContain("aria-label={t('class_celebrate')}");
+  });
+});
