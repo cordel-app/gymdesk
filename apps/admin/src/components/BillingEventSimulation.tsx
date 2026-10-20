@@ -251,6 +251,9 @@ function BillingPeriodCard({
       <button type="button" onClick={onToggle} aria-expanded={expanded} style={periodHeader}>
         <span aria-hidden="true" style={chevron}>{expanded ? '▾' : '▸'}</span>
         <span style={{ fontWeight: 600 }}>{formatDate(group.date)}</span>
+        {group.kind === 'initial_payment' && (
+          <span style={{ color: '#888' }}>{t('simulation_initial_payment')}</span>
+        )}
         <span style={periodSummary}>
           <span style={{ color: '#888' }}>
             {t('simulation_items_count', { count: group.lines.length })}
