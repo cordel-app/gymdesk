@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1813 (a Draft Assigned Plan's card is editable: the admin's `EDITABLE_STATUSES` / `ATTACHABLE_STATUSES` in `AssignedPlanConfiguration.tsx` and `AdditionalPeriodicServices.tsx` omitted `draft`, which the API's `SNAPSHOT_EDITABLE_STATUSES` allows, so `⋮ → Edit` opened a card with no controls and #1814's open-Billing-&-Duration-on-Edit never ran; gate `assign-plan-opens-card.test.ts`)
 - **Done**: #1867 stage 2 (the Draft ProductSet's `GET /product-sets/:id/billing-event-simulation` is now the complete projected schedule: `domain/draftBillingSimulation.ts` marks/replaces the date of the initial payment with what `commitCharge()` asks for today, counted once, and adds the member's draft and pending one-off purchases to today's group; groups carry `kind`. Pure, nothing persisted or charged.)
 
 - **Done**: #1893 (Members App My Bookings: Upcoming and Past are two accessible tabs (Upcoming default, arrow-key navigation) over the two lists the API already splits, instead of one stacked page; empty states, cards and cancellation rules unchanged. `lib/bookingsTabs.ts`, gate `member-bookings-tabs.unit.test.ts`.)
