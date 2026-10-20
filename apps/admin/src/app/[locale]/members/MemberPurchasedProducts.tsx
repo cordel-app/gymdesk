@@ -37,6 +37,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { usePurchaseCancel } from './usePurchaseCancel';
+import { ItemOriginChip } from '@/components/ItemOriginChip';
+import { itemOriginKey } from '@/lib/itemOrigin';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -375,6 +377,10 @@ function PurchaseFacts({
       />
       <CardDetailRow label={t('purchase_col_status')} value={t(`purchase_status_${item.status}` as any)} />
       <CardDetailRow label={t('purchase_created_by')} value={item.created_by ?? dash} />
+      <CardDetailRow
+        label={t('origin_label')}
+        value={<ItemOriginChip label={t(itemOriginKey(item.origin))} />}
+      />
     </div>
   );
 }

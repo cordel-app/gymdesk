@@ -6,6 +6,8 @@ import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/
 import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { ItemOriginChip } from '@/components/ItemOriginChip';
+import { itemOriginKey } from '@/lib/itemOrigin';
 import type { AssignedPlanDetail } from './types';
 
 function fmtDate(iso: string | null, s: GymFormatSettings) {
@@ -61,6 +63,10 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
             tFreq,
           ),
         )}
+        <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+          <span style={{ width: 170, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{t('origin_label')}</span>
+          <ItemOriginChip label={t(itemOriginKey(detail.origin))} />
+        </div>
         {detail.discount_reason && field(t('label_discount_reason'), detail.discount_reason)}
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>

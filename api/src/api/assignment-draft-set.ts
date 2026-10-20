@@ -81,7 +81,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   await snapshotProductSetFromPlan(tx, {
     gymId: input.gymId, productSetId: setId, membershipPlanId: input.membershipPlanId,
     membershipFeePrice: input.membershipFeePrice, startsAt: input.startsAt,
-    declinedBenefits: input.declinedBenefits,
+    declinedBenefits: input.declinedBenefits, origin: 'admin',
   });
   await tx.query(
     `UPDATE product_set_plan_snapshots
