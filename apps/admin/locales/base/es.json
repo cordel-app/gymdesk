@@ -511,6 +511,7 @@
     "ps_status_pending_payment": "Pendiente de pago",
     "ps_status_active": "Activo",
     "ps_status_superseded": "Sustituido",
+    "simulation_initial_payment": "Pago inicial",
     "simulation_hide_zero": "Ocultar eventos de importe cero",
     "section_billing_events_forecast": "Previsión de eventos de facturación",
     "section_past_product_sets": "Conjuntos de productos anteriores",

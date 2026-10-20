@@ -193,6 +193,14 @@
     "status_cancelled": "Cancelado"
   },
   "member_schedule": {
+    "filter_activity": "Actividad",
+    "filter_center": "Centro",
+    "filter_trainer": "Entrenador",
+    "filter_all_activities": "Todas las actividades",
+    "filter_all_centers": "Todos los centros",
+    "filter_all_trainers": "Todos los entrenadores",
+    "professional_service_required": "Requiere servicio profesional",
+    "image_alt": "Imagen de {name}",
     "cancel_confirm_title": "¿Cancelar esta reserva?",
     "cancel_confirm_body": "Tu plaza quedará libre y otra persona podrá ocuparla.",
     "cancel_confirm_yes": "Sí, cancelar reserva",

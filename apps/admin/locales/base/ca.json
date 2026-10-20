@@ -512,6 +512,7 @@
     "ps_status_pending_payment": "Pendent de pagament",
     "ps_status_active": "Actiu",
     "ps_status_superseded": "Substituït",
+    "simulation_initial_payment": "Pagament inicial",
     "simulation_hide_zero": "Amaga esdeveniments d'import zero",
     "section_billing_events_forecast": "Previsió d'esdeveniments de facturació",
     "section_past_product_sets": "Conjunts de productes anteriors",

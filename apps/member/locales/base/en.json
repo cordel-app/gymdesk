@@ -193,6 +193,14 @@
     "status_cancelled": "Cancelled"
   },
   "member_schedule": {
+    "filter_activity": "Activity",
+    "filter_center": "Center",
+    "filter_trainer": "Trainer",
+    "filter_all_activities": "All activities",
+    "filter_all_centers": "All centers",
+    "filter_all_trainers": "All trainers",
+    "professional_service_required": "Professional service required",
+    "image_alt": "Image of {name}",
     "cancel_confirm_title": "Cancel this booking?",
     "cancel_confirm_body": "Your place will be released and someone else may take it.",
     "cancel_confirm_yes": "Yes, cancel booking",
