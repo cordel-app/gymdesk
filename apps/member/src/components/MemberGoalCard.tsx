@@ -1,6 +1,7 @@
 'use client';
 
 import { type CSSProperties, type ReactNode, useState } from 'react';
+import { ImagePreviewButton } from './ImagePreview';
 import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
@@ -34,7 +35,7 @@ import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChro
  *   (#983).
  */
 export function MemberGoalCard({
-  title, summary, expanded, onToggle, actions, imageUrl, imageAlt, imageFallback, children, headingId,
+  title, summary, expanded, onToggle, actions, imageUrl, imageAlt, imageFallback, imageDescription, children, headingId,
 }: {
   title: string;
   /** `Target: 70 kg · 65%`, or `null` for a goal that has neither (§1). */
@@ -49,6 +50,8 @@ export function MemberGoalCard({
   imageAlt?: string;
   /** The text shown where there is no picture. */
   imageFallback?: string;
+  /** #1878 — shown under the enlarged picture. */
+  imageDescription?: string | null;
   children?: ReactNode;
   headingId?: string;
 }) {
@@ -56,48 +59,52 @@ export function MemberGoalCard({
   const showImage = imageFallback !== undefined;
   const imageSrc = imageBroken ? null : imageUrl;
 
-  const heading = (
-    <>
-      {showImage && (
-        <span style={styles.imageBox}>
-          {imageSrc ? (
-            <img
-              src={imageSrc}
-              alt={imageAlt ?? ''}
-              loading="lazy"
-              decoding="async"
-              style={styles.image}
-              onError={() => setImageBroken(true)}
-            />
-          ) : (
-            <span style={styles.placeholder}>{imageFallback}</span>
-          )}
-        </span>
+  const imageBlock = showImage && (
+    <span style={styles.imageBox}>
+      {imageSrc ? (
+        <ImagePreviewButton src={imageSrc} alt={imageAlt ?? ''} title={title} description={imageDescription ?? summary ?? null}>
+          <img
+            src={imageSrc}
+            alt={imageAlt ?? ''}
+            loading="lazy"
+            decoding="async"
+            style={styles.image}
+            onError={() => setImageBroken(true)}
+          />
+        </ImagePreviewButton>
+      ) : (
+        <span style={styles.placeholder}>{imageFallback}</span>
       )}
-      <span style={styles.headerText}>
-        <span id={headingId} style={styles.title}>{title}</span>
-        {summary && <span style={styles.summary}>{summary}</span>}
-      </span>
-    </>
+    </span>
+  );
+
+  const headingText = (
+    <span style={styles.headerText}>
+      <span id={headingId} style={styles.title}>{title}</span>
+      {summary && <span style={styles.summary}>{summary}</span>}
+    </span>
   );
 
   return (
     <article style={styles.card}>
-      {onToggle ? (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          style={styles.header}
-        >
-          {heading}
-          {/* The affordance only: the accessible name is the goal's own name,
-              and `aria-expanded` above is what says which way it points. */}
-          <span style={styles.caret} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        </button>
-      ) : (
-        <div style={{ ...styles.header, cursor: 'default' }}>{heading}</div>
-      )}
+      <div style={{ ...styles.header, padding: 0 }}>
+        {imageBlock && <span style={{ paddingLeft: 18 }}>{imageBlock}</span>}
+        {onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            style={{ ...styles.header, flex: 1, minWidth: 0 }}
+          >
+            {headingText}
+            {/* The affordance only: the accessible name is the goal's own name,
+                and `aria-expanded` above is what says which way it points. */}
+            <span style={styles.caret} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          </button>
+        ) : (
+          <div style={{ ...styles.header, flex: 1, minWidth: 0, cursor: 'default' }}>{headingText}</div>
+        )}
+      </div>
       {actions && <div style={styles.actions}>{actions}</div>}
 
       {expanded && children && <div style={styles.body}>{children}</div>}

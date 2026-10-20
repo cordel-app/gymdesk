@@ -552,6 +552,8 @@
     "restrictions_empty": "Sin restricciones alimentarias.",
     "food_image_alt": "Foto de {name}",
     "no_image": "Imagen no disponible",
+    "image_preview_open": "Ampliar imagen de {name}",
+    "image_preview_close": "Cerrar",
     "carousel_label": "Alimentos de {meal}",
     "carousel_position": "{current} de {total}",
     "previous_food": "Alimento anterior",

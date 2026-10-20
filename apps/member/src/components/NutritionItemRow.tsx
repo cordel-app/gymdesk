@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { memberTheme } from '@/lib/memberChrome';
+import { ImagePreviewButton } from './ImagePreview';
 
 /**
  * #932 §4 — one image-plus-name row of My Nutrition, shared by the plan's
@@ -40,14 +41,16 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
     <article style={styles.card}>
       <div style={styles.imageBox}>
         {imageSrc ? (
-          <img
-            src={imageSrc}
-            alt={t('nutrition.food_image_alt', { name })}
-            loading="lazy"
-            decoding="async"
-            style={styles.image}
-            onError={() => setImageBroken(true)}
-          />
+          <ImagePreviewButton src={imageSrc} alt={t('nutrition.food_image_alt', { name })} title={name} description={detail}>
+            <img
+              src={imageSrc}
+              alt={t('nutrition.food_image_alt', { name })}
+              loading="lazy"
+              decoding="async"
+              style={styles.image}
+              onError={() => setImageBroken(true)}
+            />
+          </ImagePreviewButton>
         ) : (
           <span style={styles.placeholder}>{t('nutrition.no_image')}</span>
         )}

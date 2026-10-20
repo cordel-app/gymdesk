@@ -552,6 +552,8 @@
     "restrictions_empty": "Sense restriccions alimentàries.",
     "food_image_alt": "Foto de {name}",
     "no_image": "Imatge no disponible",
+    "image_preview_open": "Amplia la imatge de {name}",
+    "image_preview_close": "Tanca",
     "carousel_label": "Aliments de {meal}",
     "carousel_position": "{current} de {total}",
     "previous_food": "Aliment anterior",
