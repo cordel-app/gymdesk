@@ -13,7 +13,7 @@ import { NutritionItemRow, nutritionItemGridStyle } from '@/components/Nutrition
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
-import { ProgressCounts, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates } from '@/lib/trainingWeek';
+import { ProgressCounts, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekStart } from '@/lib/trainingWeek';
 import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
@@ -200,6 +200,13 @@ export default function NutritionPage() {
   const restrictions = plan?.restrictions ?? [];
 
   // The plan's day numbering is Monday-based (0=Mon … 6=Sun), unlike training's.
+  // #1874: another week shows its own dates and results; the month card stays today's.
+  const otherWeek = weekStart(selectedDate) !== weekStart(today);
+  const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+  const dayLabel = otherWeek ? ddmm(selectedDate) : t('nutrition.progress_day');
+  const weekLabel = otherWeek ? t('nutrition.progress_week_of', { date: ddmm(weekStart(selectedDate)) }) : t('nutrition.progress_week');
+  const dayCounts = otherWeek ? progress.day : summary.day;
+  const weekCounts = otherWeek ? progress.week : summary.week;
   const selectedWeekday = mondayIndex(selectedDate);
   const mealsForDate: Meal[] = (plan?.days ?? [])
     .filter((d) => d.weekday === ALL_DAYS_WEEKDAY || d.weekday === selectedWeekday)
@@ -218,8 +225,8 @@ export default function NutritionPage() {
       ) : (
         <>
           <TrainingSummaryCards cards={[
-            { label: t('nutrition.progress_day'), percent: summary.day.percent, detail: `${summary.day.completed}/${summary.day.total}` },
-            { label: t('nutrition.progress_week'), percent: summary.week.percent, detail: `${summary.week.completed}/${summary.week.total}` },
+            { label: dayLabel, percent: dayCounts.percent, detail: `${dayCounts.completed}/${dayCounts.total}` },
+            { label: weekLabel, percent: weekCounts.percent, detail: `${weekCounts.completed}/${weekCounts.total}` },
             { label: t('nutrition.progress_month'), percent: summary.month.percent, detail: `${summary.month.completed}/${summary.month.total}` },
           ]} />
 
