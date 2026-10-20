@@ -455,7 +455,7 @@
     "add_product_error_already_owned": "Aquest producte de pagament únic ja s'ha comprat.",
     "add_product_error_purchase_pending": "Aquest producte ja té un pagament en curs.",
     "add_product_error_edit_locked": "Hi ha esdeveniments de facturació sense resoldre; resol-los abans d'afegir productes.",
-    "add_product_error_recurring_line_conflict": "El membre ja té aquest producte amb un altre preu o descompte.",
+    "add_product_error_duplicate_submission": "Aquest producte s'acaba d'afegir. Espera un moment abans d'afegir-lo de nou.",
     "add_product_error_in_flight": "Ja hi ha un esborrany en curs per a aquest membre. Acaba'l o descarta'l primer.",
     "frequency_differs_message": "Freqüències de facturació diferents. El producte seleccionat té una freqüència de facturació diferent de la dels elements que ja són en aquest esborrany. Elements de l'esborrany: {existing}. Producte que s'afegeix: {incoming}. Vols continuar?",
     "frequency_differs_continue": "Continuar",

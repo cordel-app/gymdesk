@@ -454,7 +454,7 @@
     "add_product_error_already_owned": "This one-time product has already been purchased.",
     "add_product_error_purchase_pending": "This product already has a payment in progress.",
     "add_product_error_edit_locked": "There are unresolved billing events; resolve them before adding products.",
-    "add_product_error_recurring_line_conflict": "The member already has this product at a different price or discount.",
+    "add_product_error_duplicate_submission": "This product was just added. Wait a moment before adding it again.",
     "add_product_error_in_flight": "A draft is already in progress for this member. Finish or discard it first.",
     "frequency_differs_message": "Different Billing Frequencies. The selected product has a different billing frequency from the items already in this Draft. Existing Draft items: {existing}. Product being added: {incoming}. Do you want to continue?",
     "frequency_differs_continue": "Continue",

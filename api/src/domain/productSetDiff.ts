@@ -28,9 +28,9 @@ export type ConfigurationChange =
 
 /**
  * The recurring lines of a version: its Additional Periodic Services still
- * running and the Period benefits of its Membership Plan, keyed by Product so
- * the same Product on both versions is one line (the schema allows one open
- * line per Product and version).
+ * running and the Period benefits of its Membership Plan, keyed by
+ * the purchase's `lineRef` (#1865: the same Product bought twice is two lines),
+ * falling back to the Product for a line that predates it.
  */
 export function recurringLinesOf(a: Pick<SimulationAssignment, 'services' | 'planBenefits'> | null): RecurringLine[] {
   if (!a) return [];
@@ -44,8 +44,11 @@ export function recurringLinesOf(a: Pick<SimulationAssignment, 'services' | 'pla
   }
   for (const s of a.services) {
     if (s.endsOn != null) continue;
-    lines.set(`service-${s.productId}`, {
-      key: `service-${s.productId}`, productId: s.productId, name: s.name, quantity: s.quantity,
+    // A purchase is recognised across versions by its `lineRef`; a line that
+    // predates it is the Product's one line.
+    const key = s.lineRef != null ? `service-ref-${s.lineRef}` : `service-${s.productId}`;
+    lines.set(key, {
+      key, productId: s.productId, name: s.name, quantity: s.quantity,
       unitPrice: s.unitPrice, billingFrequency: s.billingFrequency,
     });
   }
