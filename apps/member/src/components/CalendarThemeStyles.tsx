@@ -322,6 +322,51 @@ export const CALENDAR_THEME_CSS = `
 .gd-calendar .fc .fc-event-time {
   font-weight: 600;
 }
+/* Grid (#1892 stage 3). Readability only: lighter hairlines between slots
+   (hour lines keep the full border colour, half-hours are dashed and faint),
+   a quieter time axis, and sticky day headers so the dates stay visible while
+   a long Day/Week grid scrolls. Slot height, event placement and overlap
+   handling stay FullCalendar's. */
+.gd-calendar .fc .fc-timegrid-slot-minor {
+  border-top-style: dashed;
+  border-top-color: color-mix(in srgb, var(--gd-calendar-grid-border, #dddddd) 55%, transparent);
+}
+.gd-calendar .fc .fc-timegrid-slot-label-cushion {
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+}
+.gd-calendar .fc .fc-timegrid-axis-cushion {
+  font-size: 0.78em;
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  padding: 4px 2px;
+  font-weight: 600;
+}
+.gd-calendar .fc .fc-scrollgrid-section-sticky > * {
+  background: var(--gd-calendar-header-bg, #ffffff);
+}
+/* All-day / multi-day strip: a visible lower edge and a restrained minimum
+   height so the strip reads as its own row above the time slots. */
+.gd-calendar .fc .fc-timegrid-divider {
+  padding: 0;
+  border-top-width: 1px;
+}
+.gd-calendar .fc .fc-daygrid-body-natural .fc-daygrid-day-events {
+  margin-bottom: 2px;
+}
+.gd-calendar .fc .fc-daygrid-more-link {
+  font-weight: 600;
+}
+/* Narrow screens: the grid scrolls inside the calendar, never the page. */
+@media (max-width: 768px) {
+  .gd-calendar .fc .fc-scroller {
+    overscroll-behavior: contain;
+  }
+  .gd-calendar .fc .fc-col-header-cell-cushion {
+    font-size: 0.85em;
+  }
+}
 `;
 
 export function CalendarThemeStyles() {

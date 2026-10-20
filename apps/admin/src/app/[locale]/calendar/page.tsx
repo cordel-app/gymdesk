@@ -514,11 +514,14 @@ export default function CalendarPage() {
           <button
             key={mode}
             onClick={() => { setFilterMode(mode); setFilterId(''); }}
+            aria-pressed={filterMode === mode}
             style={{
               padding: '6px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer',
+              minHeight: 32,
               border: '1px solid #ccc',
-              background: filterMode === mode ? '#6c63ff' : '#f5f5f5',
-              color:      filterMode === mode ? '#fff'    : '#333',
+              background: filterMode === mode ? 'var(--gd-primary-btn, #6c63ff)' : '#f5f5f5',
+              color:      filterMode === mode ? 'var(--gd-primary-btn-text, #fff)' : '#333',
+              fontWeight: filterMode === mode ? 600 : 400,
             }}
           >
             {t(`filter_${mode}` as any)}
