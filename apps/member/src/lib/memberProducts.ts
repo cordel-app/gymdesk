@@ -327,3 +327,43 @@ export function showsRegularProductPrice(
     && product.price_incl_tax != null
     && applied.final_price_incl_tax !== product.price_incl_tax;
 }
+
+/* ── #1862 — the member's own purchased Products ─────────────────────────── */
+
+/** One item of `GET /me/purchases`; the server already applied the visibility rule. */
+export interface OwnPurchase {
+  id: number;
+  product_name: string;
+  amount: number;
+  currency: string;
+  billing_frequency: string | null;
+  own_state: 'active' | 'pending_payment' | 'cancelled';
+  /** 'YYYY-MM-DD', the last valid day; `null` when the purchase has none. */
+  end_date: string | null;
+  /** A ProductSet line (negative id): paid through Pay now, not `/me/purchases/:id/pay`. */
+  source?: 'recurring';
+}
+
+/** The status word `statusTone()` knows for a purchase state (#983: no tone of our own). */
+export function ownPurchaseStatusWord(state: OwnPurchase['own_state']): string {
+  return state === 'pending_payment' ? 'pending' : state;
+}
+
+/** The locale key naming a purchase state. */
+export function ownPurchaseStateKey(state: OwnPurchase['own_state']): string {
+  switch (state) {
+    case 'pending_payment': return 'membership.product_state_pending';
+    case 'cancelled': return 'membership.product_state_cancelled';
+    default: return 'membership.product_state_active';
+  }
+}
+
+/** Pay is offered on exactly the purchases awaiting payment — never hidden or disabled there. */
+export function ownPurchaseShowsPay(p: OwnPurchase): boolean {
+  return p.own_state === 'pending_payment';
+}
+
+/** Whether a purchase is paid through the one-off route or the plan's Pay now. */
+export function ownPurchasePayPath(p: OwnPurchase): string {
+  return p.source === 'recurring' || p.id < 0 ? '/me/payment-requests' : `/me/purchases/${p.id}/pay`;
+}

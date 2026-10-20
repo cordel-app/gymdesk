@@ -60,6 +60,8 @@ import {
   startProductPurchase,
   PromotionRefused,
   PricingRefused,
+  loadOwnPurchases,
+  reissuePurchaseCheckout,
 } from './me-products';
 import { memberServiceBalances } from './me-professional-services';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
@@ -2913,6 +2915,50 @@ meRouter.post(
 );
 
 // Member downloads their own receipt PDF
+// #1862 — the member's own purchased Products (My Products and Services), with the
+// visibility rule of `domain/memberOwnPurchases.ts`. The member is never named by the request.
+meRouter.get(
+  '/purchases',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      res.json({ items: await loadOwnPurchases(gymId, memberId) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// #1862 — Pay on a purchase awaiting payment: a fresh page token on its existing request.
+meRouter.post(
+  '/purchases/:id/pay',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  memberPurchaseRateLimit as any,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    const purchaseId = Number(req.params.id);
+    if (!Number.isInteger(purchaseId) || purchaseId <= 0) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      const result = await reissuePurchaseCheckout({
+        gymId, memberId, purchaseId, requestLocale: getRequestLocale(req),
+      });
+      if (!result) return res.status(404).json({ error: 'No purchase awaiting payment found' });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
