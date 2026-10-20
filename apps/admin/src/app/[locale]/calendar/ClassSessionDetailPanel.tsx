@@ -17,6 +17,7 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 import { EventImageControl } from './EventImageControl';
+import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
 
 interface ClassSession {
   id: number;
@@ -111,10 +112,8 @@ interface Props {
 }
 
 const panelStyle: React.CSSProperties = {
-  height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-  padding: 24, borderLeft: '1px solid #e5e7eb',
-  background: 'var(--gd-card-bg, #fff)',
-  display: 'flex', flexDirection: 'column', gap: 20,
+  ...eventPanelSurfaceStyle, overflowY: 'auto',
+  padding: 24, gap: 20,
 };
 
 const sectionLabel: React.CSSProperties = {
@@ -747,21 +746,15 @@ export function ClassSessionDetailPanel({
 
   return (
     <div style={panelStyle}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{session.class_type_name}</div>
-          <div style={{ fontSize: 13, color: '#374151' }}>{fmt(session.starts_at, gymFormat)}</div>
-          <div style={{ fontSize: 13, color: '#6b7280' }}>{fmtTime(session.starts_at, gymFormat)} – {fmtTime(session.ends_at, gymFormat)}</div>
-        </div>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#6b7280', padding: 4 }}
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
+      {/* Header — #1892 stage 4: the chrome shared with the standalone event panel. */}
+      <EventPanelHeader
+        title={session.class_type_name}
+        lines={[
+          fmt(session.starts_at, gymFormat),
+          `${fmtTime(session.starts_at, gymFormat)} – ${fmtTime(session.ends_at, gymFormat)}`,
+        ]}
+        onClose={onClose}
+      />
 
       {/* #1382 §3 — the image directly under the title: the event's own, else the Activity's. */}
       <EventImageControl
