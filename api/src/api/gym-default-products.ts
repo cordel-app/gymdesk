@@ -74,6 +74,58 @@ const UNDECLARED: ReturnType<typeof configurationValues> = [
 ];
 
 /**
+ * Creates one gym-owned Product from a `base_products` template and records
+ * the template in `products.base_product_id` (#1851). The one INSERT both gym
+ * creation and the Import System Products action go through, so the two map a
+ * template identically. Never an UPDATE, and idempotent at the database:
+ *
+ *   * a template with a charge type is `INSERT IGNORE` under
+ *     `products_gym_id_charge_type_unique` and `products_gym_base_product_unique`
+ *     — a gym that already has that Product (imported, seeded before #1851 or
+ *     since deleted) gets nothing, and the name still comes from `charge_types`;
+ *   * a template with no charge type is guarded by `WHERE NOT EXISTS` on the
+ *     gym's `is_system` Product of that name (the pre-#1851 rows carry no
+ *     `base_product_id`), and by the unique key for a concurrent twin.
+ *
+ * Returns whether a Product was created.
+ */
+export async function insertProductFromTemplate(
+  gymId: string,
+  template: BaseProductRow,
+  actor: string | null,
+): Promise<boolean> {
+  const declared = toDefaultGymProduct(template);
+  if (declared.chargeTypeCode !== null) {
+    const { rowCount } = await db.query(
+      `INSERT IGNORE INTO products
+(gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
+   status, availability, enrollment_status, is_system, mandatory, validity_days,
+   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
+       SELECT ?, ct.id, ?, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
+         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
+       FROM charge_types ct WHERE ct.code = ?`,
+      [gymId, template.id, declared.type, ...configurationValues(declared), gymId, actor, declared.chargeTypeCode],
+    );
+    return rowCount > 0;
+  }
+  const { rowCount } = await db.query(
+    `INSERT IGNORE INTO products
+(gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
+   status, availability, enrollment_status, is_system, mandatory, validity_days,
+   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
+     SELECT ?, NULL, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
+       'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
+     FROM DUAL
+     WHERE NOT EXISTS (
+       SELECT 1 FROM products p
+       WHERE p.gym_id = ? AND p.is_system = 1 AND p.charge_type_id IS NULL AND p.name = ?
+     )`,
+    [gymId, template.id, declared.name, declared.type, ...configurationValues(declared), gymId, actor, gymId, declared.name],
+  );
+  return rowCount > 0;
+}
+
+/**
  * Creates the Products a newly created gym starts with. Call it **after** the
  * gym's system tax rate has been inserted: the rate is what the seeded prices
  * are quoted inclusive of, and a seed that ran first would leave every row
@@ -86,7 +138,6 @@ export async function seedDefaultGymProducts(gymId: string, actor: string | null
   const { rows: templates } = await db.query<BaseProductRow>(
     'SELECT * FROM base_products WHERE deleted_at IS NULL ORDER BY id',
   );
-  const declaredProducts = templates.map(toDefaultGymProduct);
 
   // #543: a System Product's name and type come from `charge_types` rather
   // than from this module — the catalogue is where they are spelled.
@@ -94,8 +145,10 @@ export async function seedDefaultGymProducts(gymId: string, actor: string | null
     'SELECT id, code FROM charge_types WHERE is_product = 1 ORDER BY id',
   );
 
+  // A charge type no live template declares is still seeded, with the column
+  // defaults, because a gym must have a Product for every `is_product` row.
   for (const chargeType of chargeTypes) {
-    const declared = declaredProducts.find((p) => p.chargeTypeCode === chargeType.code);
+    if (templates.some((t) => t.charge_type_code === chargeType.code)) continue;
     await db.query(
       `INSERT IGNORE INTO products
 (gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
@@ -104,24 +157,78 @@ export async function seedDefaultGymProducts(gymId: string, actor: string | null
        SELECT ?, ct.id, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
          'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
        FROM charge_types ct WHERE ct.id = ?`,
-      [gymId, declared?.type ?? 'fee', ...(declared ? configurationValues(declared) : UNDECLARED), gymId, actor, chargeType.id],
+      [gymId, 'fee', ...UNDECLARED, gymId, actor, chargeType.id],
     );
   }
 
-  for (const product of declaredProducts.filter((p) => p.chargeTypeCode === null)) {
-    await db.query(
-      `INSERT INTO products
-(gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
-   status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
-       SELECT ?, NULL, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
-         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
-       FROM DUAL
-       WHERE NOT EXISTS (
-         SELECT 1 FROM products p
-         WHERE p.gym_id = ? AND p.is_system = 1 AND p.name = ?
-       )`,
-      [gymId, product.name, product.type, ...configurationValues(product), gymId, actor, gymId, product.name],
-    );
+  for (const template of templates) {
+    await insertProductFromTemplate(gymId, template, actor);
   }
+}
+
+export interface ImportableBaseProduct extends BaseProductRow {
+  imported: boolean;
+  imported_product_id: number | null;
+}
+
+/**
+ * The live templates and, for the given gym, which are already a Product of it
+ * (#1851). "Imported" is the Product that records the template in
+ * `base_product_id`, else — for a gym created before the column existed and not
+ * covered by its backfill — the System Product the template would create: same
+ * charge type, or same name for the template with none. A deleted Product still
+ * counts: the unique keys would refuse a second one, and a deleted Product stays
+ * deleted.
+ */
+export async function listBaseProductsForGym(gymId: string, q?: string): Promise<ImportableBaseProduct[]> {
+  const params: unknown[] = [gymId, gymId, gymId];
+  let where = 'b.deleted_at IS NULL';
+  if (q) {
+    where += ' AND (b.name LIKE ? OR b.charge_type_code LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`);
+  }
+  const { rows } = await db.query<any>(
+    `SELECT b.*,
+       COALESCE(
+         (SELECT p.id FROM products p WHERE p.gym_id = ? AND p.base_product_id = b.id LIMIT 1),
+         (SELECT p.id FROM products p JOIN charge_types ct ON ct.id = p.charge_type_id
+            WHERE p.gym_id = ? AND b.charge_type_code IS NOT NULL AND ct.code = b.charge_type_code LIMIT 1),
+         (SELECT p.id FROM products p
+            WHERE p.gym_id = ? AND b.charge_type_code IS NULL AND p.is_system = 1
+              AND p.charge_type_id IS NULL AND p.name = b.name LIMIT 1)
+       ) AS imported_product_id
+     FROM base_products b
+     WHERE ${where}
+     ORDER BY b.name, b.id`,
+    params,
+  );
+  return rows.map((r: any) => ({
+    ...r,
+    imported: r.imported_product_id !== null,
+    imported_product_id: r.imported_product_id === null ? null : Number(r.imported_product_id),
+  }));
+}
+
+/**
+ * Imports the chosen live templates into the gym (#1851). Skips what the gym
+ * already has and reports it; never updates an existing Product. Each template
+ * is one idempotent INSERT, so two concurrent requests create it once.
+ */
+export async function importBaseProducts(
+  gymId: string,
+  baseProductIds: number[],
+  actor: string | null,
+): Promise<{ imported: number[]; skipped: number[] }> {
+  const imported: number[] = [];
+  const skipped: number[] = [];
+  const available = await listBaseProductsForGym(gymId);
+  for (const id of baseProductIds) {
+    const template = available.find((t) => t.id === id);
+    if (!template || template.imported) {
+      skipped.push(id);
+      continue;
+    }
+    (await insertProductFromTemplate(gymId, template, actor)) ? imported.push(id) : skipped.push(id);
+  }
+  return { imported, skipped };
 }

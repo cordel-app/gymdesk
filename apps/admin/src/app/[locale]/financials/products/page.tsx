@@ -37,6 +37,7 @@ import {
   formHelpTextStyle,
   inlineActionsRowStyle,
   secondaryBtnSmall,
+  secondaryBtnStyle,
 } from '@/components/formChrome';
 import {
   ProductLayout,
@@ -58,6 +59,7 @@ import {
   visibleProductSections,
 } from './productProfile';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
+import { ImportSystemProductsModal } from './ImportSystemProductsModal';
 import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './productFrequency';
 import {
   SESSION_ITEM_TYPE,
@@ -253,6 +255,7 @@ export default function ProductsPage() {
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
+  const [importOpen, setImportOpen] = useState(false);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
@@ -1170,6 +1173,7 @@ export default function ProductsPage() {
             allLabel={tStatus('all')}
           />
           <ExerciseViewToggle value={view} onChange={setView} />
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(secondaryBtnStyle, !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
           <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
@@ -1310,6 +1314,17 @@ export default function ProductsPage() {
         cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
+      />
+
+      {/* #1851: Import System Products */}
+      <ImportSystemProductsModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={(result) => {
+          setImportOpen(false);
+          toast(t('import_done', { n: result.imported.length }) + (result.skipped.length > 0 ? ` ${t('import_skipped', { n: result.skipped.length })}` : ''));
+          load();
+        }}
       />
     </div>
   );

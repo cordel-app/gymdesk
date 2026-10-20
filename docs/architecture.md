@@ -1563,7 +1563,7 @@ Stage 1 of #1849 is this note only: no migration, route or screen changes. It re
 | Catalogue | Base storage today | Target Base table | Gym-owned table | State |
 |---|---|---|---|---|
 | Payment methods | `base_payment_methods` (migration 284) | same | gym rows | done |
-| Products | `base_products` (migration 298) | same | `products` | done |
+| Products | `base_products` (migration 298) | same | `products` (`base_product_id` provenance, migration 299; Import System Products, #1851) | done |
 | Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` | `personal_goals` | stage 2 |
 | Nutrition Goals | `nutrition_goals` with `gym_id IS NULL` | `base_nutrition_goals` | `nutrition_goals` | stage 4 |
 | Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` | `base_nutrition_library_items` | `nutrition_library_items` | stage 4 |
