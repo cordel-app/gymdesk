@@ -69,7 +69,7 @@ interface Product {
 // Mirrors ATTACHABLE_STATUSES in api/src/api/user-membership-services.ts: a
 // cancelled or expired plan bills nothing further, so there is nothing to
 // attach to — its services stay listed as history.
-const ATTACHABLE_STATUSES = ['active', 'paused'];
+const ATTACHABLE_STATUSES = ['draft', 'active', 'paused'];
 
 interface Props {
   assignedPlanId: number;

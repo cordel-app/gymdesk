@@ -58,10 +58,11 @@ import type {
   PersonalFeeBenefitAction,
 } from './types';
 
-// Mirrors SNAPSHOT_EDITABLE_STATUSES in api/src/api/user-memberships.ts: a
+// Mirrors SNAPSHOT_EDITABLE_STATUSES in api/src/api/user-memberships.ts (a Draft
+// is fully editable, #1108): a
 // cancelled or expired assignment is history — it bills nothing further, so its
 // configuration is read-only.
-const EDITABLE_STATUSES = ['active', 'paused'];
+const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
 
 // Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
 // the same four fields, in the same order, as the Plan's own section. #892:

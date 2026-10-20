@@ -27,4 +27,10 @@ describe('Assign plan opens the new card (#1692)', () => {
     const s = read('components', 'assignedPlan', 'AssignedPlanExpandedRow.tsx');
     expect(s).toMatch(/if \(startEditing\) setIsEditing\(true\)/);
   });
+  it('a Draft is editable in the configuration sections, as the API allows (#1813)', () => {
+    const cfg = read('components', 'assignedPlan', 'AssignedPlanConfiguration.tsx');
+    expect(cfg).toMatch(/const EDITABLE_STATUSES = \['draft', 'active', 'paused'\]/);
+    const svc = read('components', 'assignedPlan', 'AdditionalPeriodicServices.tsx');
+    expect(svc).toMatch(/const ATTACHABLE_STATUSES = \['draft', 'active', 'paused'\]/);
+  });
 });
