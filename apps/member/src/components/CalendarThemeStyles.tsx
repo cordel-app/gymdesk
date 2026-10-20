@@ -249,6 +249,51 @@ export const CALENDAR_THEME_CSS = `
   border-bottom-left-radius: 0;
   border-top-left-radius: 0;
 }
+
+/* Compact, responsive header (#1892 stage 1). Previous / Today / Next and the
+   view selector are FullCalendar button groups, so only their spacing, the
+   title's single-line behaviour and the narrow-screen row order are set here;
+   the buttons keep the colours of the Calendar Buttons settings. */
+.gd-calendar .fc .fc-header-toolbar {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 0.75em;
+}
+.gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-toolbar-title {
+  font-size: 1.15em;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-button {
+  min-height: 36px;
+  padding: 0.3em 0.75em;
+}
+@media (max-width: 768px) {
+  /* Title on its own row, then navigation and view selector side by side. */
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(1),
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(3) {
+    flex: 0 1 auto;
+  }
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(3) {
+    margin-left: auto;
+  }
+  .gd-calendar .fc .fc-toolbar-title {
+    font-size: 1.05em;
+  }
+}
 `;
 
 export function CalendarThemeStyles() {
