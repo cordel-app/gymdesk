@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
 import { memberTheme } from '@/lib/memberChrome';
+import { ImagePreviewButton } from './ImagePreview';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -39,14 +40,21 @@ export function NutritionFoodCard({ item, eager = false }: {
     <article style={styles.card}>
       <div style={styles.imageBox}>
         {imageSrc ? (
-          <img
+          <ImagePreviewButton
             src={imageSrc}
             alt={t('nutrition.food_image_alt', { name: item.item_name })}
-            loading={eager ? 'eager' : 'lazy'}
-            decoding="async"
-            style={styles.image}
-            onError={() => setImageBroken(true)}
-          />
+            title={item.item_name}
+            description={[quantity, role].filter(Boolean).join(' · ') || null}
+          >
+            <img
+              src={imageSrc}
+              alt={t('nutrition.food_image_alt', { name: item.item_name })}
+              loading={eager ? 'eager' : 'lazy'}
+              decoding="async"
+              style={styles.image}
+              onError={() => setImageBroken(true)}
+            />
+          </ImagePreviewButton>
         ) : (
           <span style={styles.placeholder}>{t('nutrition.no_image')}</span>
         )}
