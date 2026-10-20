@@ -2,6 +2,8 @@ import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { ownPurchaseEndDate, ownPurchaseState, type OwnPurchaseState } from '../domain/memberOwnPurchases';
+import { loadMemberPurchases } from './member-product-promotions';
 // #1121 stages 1 and 2 — the I/O half of the member's own Products: what
 // `GET /me/products` answers, and what `POST /me/products/:id/purchase` does.
 //
@@ -712,4 +714,55 @@ export async function cancelAbandonedPurchases(
     [SYSTEM_ACTOR, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
+}
+
+
+/**
+ * #1862 — the member's own purchased Products, as My Products and Services lists
+ * them: the purchases `loadMemberPurchases()` already reads (the staff list's
+ * source, so the two cannot disagree), narrowed by `ownPurchaseState()` to what
+ * a member is shown and tagged with the state and end date the card draws.
+ */
+export async function loadOwnPurchases(gymId: string, memberId: number) {
+  const { rows } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  const today = DateTime.now().setZone(resolveTimeZone(rows[0]?.time_zone)).toISODate()!;
+  const items: Array<Record<string, any> & { own_state: OwnPurchaseState; end_date: string | null }> = [];
+  for (const p of await loadMemberPurchases(gymId, memberId)) {
+    // A recurring line (a ProductSet's, negative id) is active or awaiting
+    // payment and has no cancellation of its own.
+    const row = { status: p.status, valid_until: p.valid_until ?? null, cancelled_on: p.cancelled_on ?? null };
+    const state = ownPurchaseState(row, today);
+    if (!state) continue;
+    items.push({ ...p, own_state: state, end_date: ownPurchaseEndDate(row) });
+  }
+  return items;
+}
+
+/**
+ * #1862 — *Pay* on a purchase awaiting payment. The pending `payment_requests`
+ * row already carries the provider payment, so this only issues a fresh page
+ * token for it (the old one is spent once the page was opened) — no second
+ * provider payment, so the member cannot be charged twice.
+ */
+export async function reissuePurchaseCheckout(input: {
+  gymId: string; memberId: number; purchaseId: number; requestLocale?: string;
+}): Promise<{ checkoutUrl: string } | null> {
+  const { rows } = await db.query<any>(
+    `SELECT pr.id FROM member_products_oneoff_snapshot mp
+       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
+      WHERE mp.id = ? AND mp.gym_id = ? AND mp.member_id = ?
+        AND mp.status = ? AND pr.status = 'pending'`,
+    [input.purchaseId, input.gymId, input.memberId, PENDING_PURCHASE_STATUS],
+  );
+  if (!rows[0]) return null;
+  const pageToken = crypto.randomUUID();
+  await db.query(
+    `UPDATE payment_requests SET page_token = ?, page_token_expires = ? WHERE id = ? AND gym_id = ? AND status = 'pending'`,
+    [pageToken, new Date(Date.now() + 10 * 60 * 1000), rows[0].id, input.gymId],
+  );
+  return {
+    checkoutUrl: await payerCheckoutUrl({
+      gymId: input.gymId, memberId: input.memberId, pageToken, requestLocale: input.requestLocale,
+    }),
+  };
 }
