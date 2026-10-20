@@ -35,7 +35,7 @@ import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChro
  *   (#983).
  */
 export function MemberGoalCard({
-  title, summary, expanded, onToggle, actions, imageUrl, imageAlt, imageFallback, imageDescription, children, headingId,
+  title, summary, expanded, onToggle, actions, imageUrl, previewImageUrl, imageAlt, imageFallback, imageDescription, children, headingId,
 }: {
   title: string;
   /** `Target: 70 kg · 65%`, or `null` for a goal that has neither (§1). */
@@ -47,6 +47,8 @@ export function MemberGoalCard({
   actions?: ReactNode;
   /** #1826 — the goal's picture; `undefined` hides the image slot entirely. */
   imageUrl?: string | null;
+  /** #1878: the full-size master the enlarged view opens; `imageUrl` may be the thumbnail. */
+  previewImageUrl?: string | null;
   imageAlt?: string;
   /** The text shown where there is no picture. */
   imageFallback?: string;
@@ -62,7 +64,7 @@ export function MemberGoalCard({
   const imageBlock = showImage && (
     <span style={styles.imageBox}>
       {imageSrc ? (
-        <ImagePreviewButton src={imageSrc} alt={imageAlt ?? ''} title={title} description={imageDescription ?? summary ?? null}>
+        <ImagePreviewButton src={imageSrc} previewSrc={previewImageUrl} alt={imageAlt ?? ''} title={title} description={imageDescription ?? summary ?? null}>
           <img
             src={imageSrc}
             alt={imageAlt ?? ''}

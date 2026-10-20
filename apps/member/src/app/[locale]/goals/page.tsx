@@ -293,6 +293,7 @@ export default function GoalsPage() {
                 onToggle={() => toggleCard(goal.id)}
                 actions={cardActions(goal)}
                 imageUrl={goal.goal_image_thumbnail_url ?? goal.goal_image_url ?? null}
+                previewImageUrl={goal.goal_image_url ?? null}
                 imageAlt={t('nutrition.food_image_alt', { name: nameOf(goal) })}
                 imageFallback={t('nutrition.no_image')}
                 imageDescription={goal.notes ?? cardSummary(goal)}

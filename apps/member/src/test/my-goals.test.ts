@@ -698,6 +698,11 @@ describe('#1115 the card header and its summary (§1)', () => {
     expect(pageSrc).toContain('goal.goal_image_thumbnail_url');
     expect(pageSrc).toContain("t('nutrition.no_image')");
   });
+
+  it('opens the 1080 master in the enlarged view, not the thumbnail (#1878)', () => {
+    expect(pageSrc).toContain('previewImageUrl={goal.goal_image_url ?? null}');
+    expect(cardSrc).toContain('previewSrc={previewImageUrl}');
+  });
 });
 
 describe('#1115 creating and editing are inline (§2, §3)', () => {
