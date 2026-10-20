@@ -1,5 +1,6 @@
 'use client';
 
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
@@ -77,6 +78,11 @@ import {
   purchaseStateStatusWord,
   showsBuyAction,
   showsRegularProductPrice,
+  type OwnPurchase,
+  ownPurchasePayPath,
+  ownPurchaseShowsPay,
+  ownPurchaseStateKey,
+  ownPurchaseStatusWord,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -250,6 +256,8 @@ export default function MembershipPage() {
   // the Promotion applied per plan is page state (its snapshot is written by
   // the assignment itself, §5/§6), and the plan awaiting its first payment is
   // what the server reports beside the current one (#1108 stage 2).
+  const [ownPurchases, setOwnPurchases] = useState<OwnPurchase[]>([]);
+  const [payingPurchase, setPayingPurchase] = useState<number | null>(null);
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
   const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
   // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
@@ -285,7 +293,7 @@ export default function MembershipPage() {
     setServiceFilter(filter);
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes] = await Promise.all([
           apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
@@ -298,6 +306,7 @@ export default function MembershipPage() {
           // read leaves `null`, which keeps the control (and the read on open).
           apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans').catch(() => null),
           apiFetch<{ items: MemberServiceBalanceItem[] }>('/me/professional-services').catch(() => null),
+          apiFetch<{ items: OwnPurchase[] }>('/me/purchases').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -311,6 +320,7 @@ export default function MembershipPage() {
         setProducts(catalogue?.items ?? null);
         setPlanCatalogue(plansRes?.plans ?? null);
         setServiceBalances(serviceRes?.items ?? null);
+        setOwnPurchases(ownRes?.items ?? []);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -436,6 +446,52 @@ export default function MembershipPage() {
         regularAmount: showsRegularPrice(line) ? money(line.regular_price) : null,
       };
     });
+  }
+
+  /* ── #1862 My purchased Products ────────────────────────────────────────── */
+
+  /** Pay on a purchase awaiting payment: the same hosted page the purchase used. */
+  async function payPurchase(purchase: OwnPurchase) {
+    setPayingPurchase(purchase.id);
+    try {
+      const result = await apiFetch<{ checkoutUrl: string }>(ownPurchasePayPath(purchase), { method: 'POST' });
+      window.location.href = result.checkoutUrl;
+    } catch (err: any) {
+      setError(err?.message ?? t('common.error'));
+      setPayingPurchase(null);
+    }
+  }
+
+  function renderOwnPurchases() {
+    if (ownPurchases.length === 0) return null;
+    const items: MemberProductCardItem[] = ownPurchases.map((p) => ({
+      key: `own-${p.id}`,
+      name: p.product_name,
+      price: formatPaymentAmount(p.amount, p.currency, gymFmt),
+      meta: p.end_date ? t('membership.product_end_date', { date: formatGymDateOnly(p.end_date, gymFmt) }) : null,
+      action: (
+        <>
+          <StatusPill status={ownPurchaseStatusWord(p.own_state)} label={t(ownPurchaseStateKey(p.own_state) as any)} />
+          {ownPurchaseShowsPay(p) && (
+            <button
+              type="button"
+              style={styles.buyBtn}
+              disabled={payingPurchase === p.id}
+              onClick={() => payPurchase(p)}
+            >
+              {t('membership.product_pay')}
+            </button>
+          )}
+        </>
+      ),
+    }));
+    return (
+      <MemberProductsSection
+        title={t('membership.own_products_heading')}
+        emptyLabel=""
+        items={items}
+      />
+    );
   }
 
   /* ── #1121 Additional Products and Services ─────────────────────────────── */
@@ -1104,6 +1160,7 @@ export default function MembershipPage() {
             <p style={styles.hint}>{t('membership.empty')}</p>
           </div>
         )}
+        {renderOwnPurchases()}
         {renderProducts()}
         </>)}
         {renderDialogs()}
@@ -1218,7 +1275,8 @@ export default function MembershipPage() {
           to that card (they are about the fee it charges), so the subsection
           follows them rather than splitting the membership from its own
           pending payment. */}
-      {renderProducts()}
+      {renderOwnPurchases()}
+        {renderProducts()}
 
       {packages.length > 0 && (
         <section style={styles.section}>
