@@ -32,4 +32,18 @@ describe('diffConfigurations (#1537)', () => {
   it('reports nothing for an unchanged configuration', () => {
     expect(diffConfigurations(asg([svc(1, 2)]), asg([svc(1, 2)]))).toEqual([]);
   });
+
+  it('keeps two purchases of one Product apart by their lineRef (#1865)', () => {
+    const line = (id: number, lineRef: number | null, quantity = 1) => ({ ...svc(7, quantity), id, lineRef });
+    const before = asg([line(10, 10), line(11, 11)]);
+    // The cloned version has new ids but the same lineRef: nothing changed.
+    expect(diffConfigurations(before, asg([line(20, 10), line(21, 11)]))).toEqual([]);
+    // Removing one purchase reports exactly that one.
+    const removed = diffConfigurations(before, asg([line(21, 11)]));
+    expect(removed).toEqual([expect.objectContaining({ kind: 'removed', line: expect.objectContaining({ key: 'service-ref-10' }) })]);
+    // A line that predates lineRef is still the Product's one line.
+    expect(diffConfigurations(asg([line(30, null)]), asg([line(31, null, 2)]))).toEqual([
+      expect.objectContaining({ kind: 'quantity_changed' }),
+    ]);
+  });
 });

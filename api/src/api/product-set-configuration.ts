@@ -225,6 +225,7 @@ export async function addProductSetService(tx: Tx, input: {
       WHERE gc.id = ? AND gc.gym_id = ?`,
     [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.productId, input.gymId],
   );
+  await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
   return insertId;
 }
 
@@ -284,13 +285,14 @@ export async function loadProductSetSimulationAssignment(
   }));
 
   const { rows: serviceRows } = await exec.query(
-    `SELECT id, product_id, quantity, starts_at, ends_at, item_name, item_billing_frequency, unit_price
+    `SELECT id, line_ref, product_id, quantity, starts_at, ends_at, item_name, item_billing_frequency, unit_price
        FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?
       ORDER BY starts_at ASC, id ASC`,
     [gymId, productSetId],
   );
   const services: SimulationService[] = (serviceRows as any[]).map((s) => ({
     id: s.id,
+    lineRef: s.line_ref != null ? Number(s.line_ref) : null,
     productId: s.product_id,
     name: s.item_name,
     billingFrequency: (s.item_billing_frequency ?? null) as ProductFrequency | null,
