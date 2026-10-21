@@ -1633,29 +1633,47 @@ async function gymTimeZone(gymId: string): Promise<string> {
 meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
-  const { workout_exercise_id, logged_date, notes, duration_seconds, skipped, sets } = req.body;
-  if (!workout_exercise_id || !logged_date) {
-    return res.status(400).json({ error: 'workout_exercise_id and logged_date are required' });
+  const { logged_date, notes, duration_seconds, skipped, sets } = req.body;
+  const standalone_exercise_id = req.body.standalone_exercise_id ?? null;
+  // #1916: a log is of a planned exercise or of a standalone one, never both.
+  const workout_exercise_id = standalone_exercise_id != null ? null : req.body.workout_exercise_id;
+  if ((standalone_exercise_id != null && req.body.workout_exercise_id) || (!workout_exercise_id && standalone_exercise_id == null) || !logged_date) {
+    return res.status(400).json({ error: 'logged_date and exactly one of workout_exercise_id or standalone_exercise_id are required' });
   }
   if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { rows: weRows } = await db.query(
-      `SELECT we.exercise_id FROM workout_exercises we
-       JOIN workout_blocks wb ON wb.id = we.workout_block_id
-       JOIN workouts w ON w.id = wb.workout_id
-       JOIN training_plans tp ON tp.id = w.training_plan_id
-       WHERE we.id = ? AND we.gym_id = ? AND tp.member_id = ? AND we.deleted_at IS NULL`,
-      [workout_exercise_id, gymId, memberId],
-    );
-    if (weRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
-    const exerciseId = weRows[0].exercise_id;
+    let exerciseId: number;
+    if (standalone_exercise_id != null) {
+      // The log is dated by the standalone exercise's own day.
+      const { rows: seRows } = await db.query(
+        `SELECT exercise_id, DATE_FORMAT(exercise_date, '%Y-%m-%d') AS exercise_date FROM member_standalone_exercises
+         WHERE id = ? AND gym_id = ? AND member_id = ?`,
+        [standalone_exercise_id, gymId, memberId],
+      );
+      if (seRows.length === 0) return res.status(403).json({ error: 'You can only log against your own exercises.' });
+      if (seRows[0].exercise_date !== String(logged_date).slice(0, 10)) {
+        return res.status(400).json({ error: 'logged_date must be the day the exercise was added to' });
+      }
+      exerciseId = seRows[0].exercise_id;
+    } else {
+      const { rows: weRows } = await db.query(
+        `SELECT we.exercise_id FROM workout_exercises we
+         JOIN workout_blocks wb ON wb.id = we.workout_block_id
+         JOIN workouts w ON w.id = wb.workout_id
+         JOIN training_plans tp ON tp.id = w.training_plan_id
+         WHERE we.id = ? AND we.gym_id = ? AND tp.member_id = ? AND we.deleted_at IS NULL`,
+        [workout_exercise_id, gymId, memberId],
+      );
+      if (weRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
+      exerciseId = weRows[0].exercise_id;
+    }
 
     const logId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, exercise_id, logged_date, notes, duration_seconds, skipped)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, memberId, workout_exercise_id, exerciseId, logged_date, notes ?? null,
+        `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, standalone_exercise_id, exercise_id, logged_date, notes, duration_seconds, skipped)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, memberId, workout_exercise_id ?? null, standalone_exercise_id, exerciseId, logged_date, notes ?? null,
          duration_seconds ?? null, Boolean(skipped)],
       );
       if (Array.isArray(sets)) {

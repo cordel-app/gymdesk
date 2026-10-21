@@ -12,6 +12,7 @@ import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
+import { StandaloneExercises } from '@/components/StandaloneExercises';
 import { ExerciseDetailsDialog } from '@/components/ExerciseDetailsDialog';
 import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
 import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
@@ -442,6 +443,7 @@ export default function TrainingPage() {
           </section>
         ))
       )}
+      <StandaloneExercises date={selectedDate} />
       {detailsExercise && (
         <ExerciseDetailsDialog exercise={detailsExercise} description={detailsExercise.exercise_description ?? null} onClose={() => setDetailsExercise(null)} />
       )}

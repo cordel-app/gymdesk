@@ -53,6 +53,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "member_nutrition_plan_restrictions": ["parent", "member_nutrition_plans"],
   "member_products_oneoff_promotion_snapshot": ["parent", "member_products_oneoff_snapshot"],
   "member_products_recurrent_snapshot": ["parent", "product_sets (version-owned rows, replaced per version)"],
+  "member_standalone_exercises": ["technical", "member-authored addition to a day of My Training; member_id is the author (#1916)"],
   "membership_plan_centers": ["parent", "membership_plans"],
   "membership_plan_oneoff": ["parent", "membership_plans"],
   "membership_plan_periodical": ["parent", "membership_plans"],
