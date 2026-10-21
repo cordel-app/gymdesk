@@ -43,14 +43,6 @@ export const ASSIGNED_PLAN_SECTION_ORDER = [
   // may grow into the other.
   'section_fee_simulation',
   'section_billing_forecast',
-  // §11 — kept, and last of the sections that describe the agreement. Renamed
-  // *Additional Products* in this stage, per the thread's answer to Q4.
-  'section_additional_services',
-  // The ledger of what has actually been charged. A Membership Plan cannot have
-  // one, and it trails everything because the two simulations above answer
-  // "what will happen" and this answers "what happened" (the thread's Q4
-  // answer: keep it).
-  'section_billing_events',
 ] as const;
 
 export type AssignedPlanSectionKey = (typeof ASSIGNED_PLAN_SECTION_ORDER)[number];
