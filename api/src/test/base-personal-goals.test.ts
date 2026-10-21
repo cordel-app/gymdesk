@@ -1,4 +1,4 @@
-// #1849 stage 2a: migration 301 copies the System Personal Goals into
+// #1849 stage 2a: migration 304 copies the System Personal Goals into
 // base_personal_goals, keeping ids, and leaves the legacy rows untouched.
 
 import { afterAll, describe, expect, it } from 'vitest';
