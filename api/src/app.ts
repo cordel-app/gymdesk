@@ -10,7 +10,6 @@ import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { productSetsRouter, meProductSetsRouter } from './api/product-sets-router';
 import { gymsRouter, platformRouter } from './api/gyms';
-import { storageRouter } from './api/storage';
 import { superadminsRouter } from './api/superadmins';
 import { orphanedAccountsRouter } from './api/orphaned-accounts';
 import { impersonationRouter } from './api/impersonation';
@@ -359,7 +358,6 @@ app.use('/members/:memberId/personal-training-slots', requireAuth(), tenantConte
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
-app.use('/storage',          requireAuth(), tenantContext, storageRouter);
 app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), musclesRouter);
 app.use('/exercises',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), exercisesRouter);
 app.use('/result-types',     requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), resultTypesRouter);

@@ -1676,7 +1676,8 @@
     "view_list": "Llista",
     "view_cards": "Targetes",
     "card_no_benefits": "Sense beneficis inclosos",
-    "card_more_benefits": "+{n} més"
+    "card_more_benefits": "+{n} més",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "prices": {
     "title": "Preus",
@@ -1921,7 +1922,8 @@
     "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada client. No es mostra la quota de membresia: depèn del pla de membresia al qual s'apliqui aquesta promoció.",
     "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "tax_included_suffix": "IVA inclòs",
-    "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual."
+    "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual.",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "audit": {
     "title": "Registre d'auditoria",
@@ -4618,6 +4620,9 @@
     "promo_item_action_fixed_price": "Preu fix",
     "label_pay_beforehand_months": "Durada Prepagada (mesos)",
     "section_membership_fee_benefit": "Benefici de la Quota de Membresia",
+    "label_direct_discount": "Descompte directe (%)",
+    "label_effective_fee": "Quota efectiva",
+    "direct_discount_invalid": "El descompte directe ha de estar entre 0 i 100.",
     "label_personal_fee_benefit": "Benefici Personal de la Quota de Membresia",
     "label_personal_fee_benefit_percentage": "Descompte (%)",
     "personal_fee_benefit_no_benefit": "Sense benefici",
@@ -4691,7 +4696,8 @@
     "simulation_truncated": "La projecció s’ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "col_relationship": "Relació",
     "relationship_primary": "Principal",
-    "relationship_linked": "Vinculat"
+    "relationship_linked": "Vinculat",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "taxes": {
     "title": "Impostos",

@@ -1676,7 +1676,8 @@
     "view_list": "Lista",
     "view_cards": "Tarjetas",
     "card_no_benefits": "Sin beneficios incluidos",
-    "card_more_benefits": "+{n} más"
+    "card_more_benefits": "+{n} más",
+    "simulation_initial_payment": "Pago inicial"
   },
   "prices": {
     "title": "Precios",
@@ -1921,7 +1922,8 @@
     "simulation_disclaimer": "Solo es un ejemplo. Las fechas y los importes son ilustrativos y se recalcularán a partir de la fecha real de inscripción de cada cliente. No se muestra la cuota de membresía: depende del plan de membresía al que se aplique esta promoción.",
     "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
     "tax_included_suffix": "IVA incluido",
-    "item_duration_hint": "La duración es el número de periodos de facturación del propio Producto a los que se aplica la promoción. Cuando termina, el Producto continúa a su precio habitual."
+    "item_duration_hint": "La duración es el número de periodos de facturación del propio Producto a los que se aplica la promoción. Cuando termina, el Producto continúa a su precio habitual.",
+    "simulation_initial_payment": "Pago inicial"
   },
   "audit": {
     "title": "Registro de auditoría",
@@ -4591,6 +4593,9 @@
     "promo_item_action_fixed_price": "Precio fijo",
     "label_pay_beforehand_months": "Duración Prepagada (meses)",
     "section_membership_fee_benefit": "Beneficio de la Cuota de Membresía",
+    "label_direct_discount": "Descuento directo (%)",
+    "label_effective_fee": "Cuota efectiva",
+    "direct_discount_invalid": "El descuento directo debe estar entre 0 y 100.",
     "label_personal_fee_benefit": "Beneficio Personal de la Cuota de Membresía",
     "label_personal_fee_benefit_percentage": "Descuento (%)",
     "personal_fee_benefit_no_benefit": "Sin beneficio",
@@ -4664,7 +4669,8 @@
     "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
     "col_relationship": "Relación",
     "relationship_primary": "Principal",
-    "relationship_linked": "Vinculado"
+    "relationship_linked": "Vinculado",
+    "simulation_initial_payment": "Pago inicial"
   },
   "taxes": {
     "title": "Impuestos",

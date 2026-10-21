@@ -10,7 +10,7 @@ import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { memberTheme, noticeStyle } from '@/lib/memberChrome';
 import {
   type ProgressDetail, type ProgressSummary,
-  cardBackgroundStyle, daysNewestFirst, formatBestResult, formatMaxWeight, formatSetValue,
+  daysNewestFirst, formatBestResult, formatMaxWeight, formatSetValue,
   progressChartPoints, resultUnitKey,
 } from '@/lib/memberProgress';
 
@@ -18,8 +18,8 @@ import {
  * #1224 — the **My Progress** tab: one collapsible card per exercise the member
  * has logged. Every figure is the API's (`/me/progress`); this file draws.
  * The summary is on the collapsed card, the chart and the daily readings open
- * with it (fetched when the card opens), and the exercise's image sits behind
- * the header under a scrim made of the card's own surface colour.
+ * with it (fetched when the card opens). #1917: the card is fully opaque (no
+ * image behind the text) and the daily readings are collapsed by default.
  */
 export function MemberProgress() {
   const t = useTranslations();
@@ -51,7 +51,7 @@ export function MemberProgress() {
             key={item.exercise_id}
             title={item.exercise_name}
             summary={t('progress.summary', { days: item.days_exercised })}
-            cardStyle={cardBackgroundStyle(item.image_url, memberTheme.surface)}
+            cardStyle={styles.solidCard}
           >
             <div style={styles.stats}>
               <Stat label={t('progress.days_exercised')} value={String(item.days_exercised)} />
@@ -80,6 +80,7 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
   const { apiFetch } = useApiClient();
   const gym = useGymFormatSettings();
   const [detail, setDetail] = useState<ProgressDetail | null>(null);
+  const [readingsOpen, setReadingsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +106,11 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
           axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
         />
       )}
-      <span style={styles.statLabel}>{t('progress.history')}</span>
+      <button type="button" onClick={() => setReadingsOpen((v) => !v)} aria-expanded={readingsOpen} style={styles.readingsToggle}>
+        <span style={styles.statLabel}>{t('progress.history')}</span>
+        <span aria-hidden="true" style={styles.caret}>{readingsOpen ? '▾' : '▸'}</span>
+      </button>
+      {readingsOpen && (detail.days.length === 0 ? <span style={styles.hintInline}>{t('progress.history_empty')}</span> : (
       <table style={styles.table}>
         <thead>
           <tr>
@@ -128,11 +133,19 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
           )}
         </tbody>
       </table>
+      ))}
     </div>
   );
 }
 
 const styles: Record<string, CSSProperties> = {
+  solidCard: { background: memberTheme.surface },
+  readingsToggle: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+    background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', font: 'inherit', textAlign: 'left',
+  },
+  caret: { fontSize: 12, color: memberTheme.textMuted },
+  hintInline: { color: memberTheme.textMuted, fontSize: 13 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
   stats: { display: 'flex', gap: 16, flexWrap: 'wrap', padding: '0 16px 12px' },
   stat: { display: 'flex', flexDirection: 'column', gap: 2 },

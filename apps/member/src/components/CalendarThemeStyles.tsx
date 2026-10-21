@@ -367,6 +367,58 @@ export const CALENDAR_THEME_CSS = `
     font-size: 0.85em;
   }
 }
+
+/* Weekday header and event cards (#1892 stage 5). Visual only. The header is
+   its own band: a little air under it separates the day names from the grid,
+   labels are small and spaced, and today's column is marked with the
+   Calendar Buttons colour. An event keeps its configured colour as a narrow
+   left accent (the inline border colour, widened here) over a soft surface:
+   the inline fill is covered by a high-coverage layer of the calendar surface
+   colour, clipped to the padding box so the strip stays the pure event colour.
+   The text takes the calendar's own foreground, which already reads on that
+   surface. Events with no colour configured keep the theme's event tokens. */
+.gd-calendar .fc .fc-scrollgrid-section-header > td {
+  padding-bottom: 6px;
+  border-bottom-width: 0;
+}
+.gd-calendar .fc .fc-col-header-cell {
+  border-bottom: 2px solid var(--gd-calendar-grid-border, #dddddd);
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  padding: 8px 4px 6px;
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today {
+  border-bottom-color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+}
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) {
+  border-width: 0 0 0 4px;
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--gd-calendar-surface-bg, #ffffff) 88%, transparent),
+    color-mix(in srgb, var(--gd-calendar-surface-bg, #ffffff) 88%, transparent)
+  );
+  background-origin: padding-box;
+  background-clip: padding-box;
+  color: var(--gd-calendar-day-text, #111827) !important;
+}
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-main,
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-title,
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-time {
+  color: inherit;
+}
+@media (max-width: 768px) {
+  .gd-calendar .fc .fc-col-header-cell-cushion {
+    padding: 6px 2px 4px;
+    letter-spacing: 0.02em;
+  }
+}
 `;
 
 export function CalendarThemeStyles() {

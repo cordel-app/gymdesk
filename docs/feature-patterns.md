@@ -1279,6 +1279,8 @@ A plain many-to-many link between two already-existing gym-scoped catalog entiti
 
 ## Image Upload Field (per-gym R2 storage, #417)
 
+> **Superseded (#1714 stage 2).** The generic `storageRouter` / `handleImageUpload()` described below is gone: it stored the uploaded bytes unprocessed. A new image field follows the per-row, server-processed pipeline instead (`processMemberImage()` + a `<entity>-image-storage.ts`, e.g. `plan-image-storage.ts`, with `POST`/`DELETE /<entity>/:id/image` behind `memberImageUploadRateLimit`). The section is kept as history of the UI half (`ImageUploadField` takes a per-row `uploadPath`).
+
 A domain field that stores an image URL (`exercises.image_url`, `nutrition_library_items.image_url`) is populated by uploading a file, not by pasting a URL. No schema change needed beyond adding the nullable `VARCHAR` column itself — it stays a plain URL; only how it gets populated changes.
 
 1. **Upload route** — add one route per target on `storageRouter` (`api/src/api/storage.ts`), each gated by the module/feature that owns that image (not a single shared gate):

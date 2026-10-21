@@ -510,7 +510,10 @@
   },
   "payment_error": {
     "title": "El pagament no s'ha completat",
-    "retry": "Tornar-ho a intentar"
+    "retry": "Tornar-ho a intentar",
+    "failed": "El pagament amb targeta s'ha rebutjat o no s'ha pogut verificar. No s'ha fet cap càrrec. Torna-ho a provar amb la teva targeta.",
+    "card_failed": "No s'ha pogut verificar la targeta, així que no s'ha desat. Torna-ho a provar amb la teva targeta.",
+    "not_completed": "El pagament s'ha cancel·lat abans d'acabar. No s'ha fet cap càrrec."
   },
   "link": {
     "open_in_app_title": "Obre a l'app",
@@ -758,6 +761,7 @@
     "chart_title": "Progrés",
     "chart_aria": "Gràfic de progrés de {name}",
     "history": "Registres diaris",
+    "history_empty": "Encara no hi ha registres.",
     "set": "Sèrie",
     "reps": "Reps",
     "weight": "Pes",

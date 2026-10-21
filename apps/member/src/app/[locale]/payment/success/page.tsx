@@ -7,6 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 import { InlineStyle } from '@/components/InlineStyle';
+import { isFailedPaymentReturn, paymentErrorPath } from '@/lib/paymentReturn';
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 30000;
@@ -20,7 +21,13 @@ export default function PaymentSuccessPage() {
   // #788: both a paid fee and a replaced card come back here. A card update
   // writes no payment at all, so the poll below has to look somewhere else —
   // PAYMENT_OK_URL carries `purpose=card_update` for exactly that.
-  const isCardUpdate = useSearchParams().get('purpose') === 'card_update';
+  const searchParams = useSearchParams();
+  const purpose = searchParams.get('purpose');
+  const isCardUpdate = purpose === 'card_update';
+  // Monei returns here on a failure too, with its status in the query: a
+  // declined card or a failed 3D Secure check never becomes a completed
+  // request, so polling for one would only end in the timeout.
+  const failed = isFailedPaymentReturn(searchParams.get('status'));
   const [status, setStatus] = useState<'processing' | 'done' | 'timeout'>('processing');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -28,6 +35,7 @@ export default function PaymentSuccessPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
+    if (failed) { router.replace(paymentErrorPath(locale, purpose)); return; }
 
     const settled = () => {
       setStatus('done');
@@ -58,7 +66,7 @@ export default function PaymentSuccessPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [appLoading, isLinked, locale, isCardUpdate]);
+  }, [appLoading, isLinked, locale, isCardUpdate, failed, purpose]);
 
   return (
     <main style={styles.container}>
