@@ -17,6 +17,12 @@ describe('ownPurchaseState', () => {
     expect(ownPurchaseState(row({ status: 'pending_payment' }), TODAY)).toBe('pending_payment');
   });
 
+  it('never offers payment on a cancelled purchase, even one cancelled while still pending (#1919)', () => {
+    const pending = { status: 'pending_payment', cancelled_on: '2026-10-10', valid_until: '2026-10-25' };
+    expect(ownPurchaseState(row(pending), TODAY)).toBe('cancelled');
+    expect(ownPurchaseState(row({ ...pending, valid_until: '2026-10-11' }), TODAY)).toBeNull();
+  });
+
   it('shows a Cancelled purchase only while its end date is strictly later than today', () => {
     expect(ownPurchaseState(row({ cancelled_on: '2026-10-10', valid_until: '2026-10-21' }), TODAY)).toBe('cancelled');
     expect(ownPurchaseState(row({ cancelled_on: '2026-10-10', valid_until: TODAY }), TODAY)).toBeNull();
