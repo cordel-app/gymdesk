@@ -20,6 +20,7 @@ interface ActivityType {
 interface Space { id: number; name: string }
 interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
+interface ProfessionalService { id: number; name: string; status: 'active' | 'inactive' }
 
 export interface EventMeta {
   created_by: string | null;
@@ -45,6 +46,7 @@ interface Props {
   spaces: Space[];
   centers: Center[];
   trainers: Trainer[];
+  professionalServices: ProfessionalService[];
   onSave: (form: CalendarEventForm, image: Blob | null) => Promise<void>;
   /** The event's image changed on the server (edit mode). */
   onImageChanged: () => void;
@@ -80,7 +82,7 @@ function formatDateTime(iso: string | null, s: GymFormatSettings): string | null
 }
 
 export function EventDetailsPanel({
-  open, editing, initialForm, activityTypes, spaces, centers, trainers,
+  open, editing, initialForm, activityTypes, spaces, centers, trainers, professionalServices,
   onSave, onImageChanged, onDelete, onClose, canWrite,
 }: Props) {
   const t = useTranslations('calendar');
@@ -238,6 +240,16 @@ export function EventDetailsPanel({
         <select value={form.trainer_membership_id} onChange={(e) => field('trainer_membership_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
           <option value="">—</option>
           {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+        </select>
+
+        <div style={{ marginTop: 12 }}><FormLabel>{t('event_professional_service')}</FormLabel></div>
+        <select value={form.professional_service_id} onChange={(e) => field('professional_service_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
+          <option value="">—</option>
+          {professionalServices
+            .filter((ps) => ps.status === 'active' || String(ps.id) === form.professional_service_id)
+            .map((ps) => (
+              <option key={ps.id} value={ps.id} disabled={ps.status !== 'active'}>{ps.name}</option>
+            ))}
         </select>
 
         <div style={{ marginTop: 12 }}><FormLabel>{t('event_status')}</FormLabel></div>
