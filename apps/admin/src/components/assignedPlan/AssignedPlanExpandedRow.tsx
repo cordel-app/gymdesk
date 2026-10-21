@@ -22,13 +22,11 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
-import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
-import { isZeroAmount } from '@/lib/billingEventSimulation';
 import {
   exampleTimelineCycleNote,
   exampleTimelineRowCycle,
@@ -157,7 +155,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
   // #1240: Cancel on a Draft is a hard delete, confirmed first.
   const [discardOpen, setDiscardOpen] = useState(false);
-  const [showZeroEvents, setShowZeroEvents] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
@@ -343,8 +340,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // it has not been committed, so it keeps the full body, `⋮` and Edit mode.
   const hostEmbedded = embedded && detail.status !== 'draft';
   const editing = !hostEmbedded && isEditing;
-  // #1191: a Linked context has no Billing Events section at all.
-  const isLinked = detail?.assignment_relationship === 'linked';
 
   // #1108: a Draft is committed through Save & Pay (stage 2), the one action it
   // offers beyond editing and discarding it; a Pending Payment row offers the
@@ -639,48 +634,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         )}
       </CardSection>
 
-      {/* #631: Additional Products belong to the Assigned Plan itself — not to
-          the Membership Plan and not to the Promotions above it. #924 §11 keeps
-          the section and the thread's Q4 answer renames it. */}
-      <CardSection label={t('section_additional_services')}>
-        <AdditionalPeriodicServices
-          assignedPlanId={assignedPlanId}
-          planStartsAt={detail.starts_at}
-          planStatus={detail.status}
-          services={detail.additional_services ?? []}
-          editing={editing}
-          canWrite={canWritePayments}
-          readOnlyTitle={readOnlyTitle}
-          onChanged={() => { loadDetail(); onChanged(); }}
-        />
-      </CardSection>
-
-      {!isLinked && <CardSection label={t('section_billing_events')}>
-        {!detail.billing_events.available ? (
-          <p style={dim}>{detail.billing_events.reason}</p>
-        ) : detail.billing_events.events.length === 0 ? (
-          <p style={dim}>{t('no_billing_events')}</p>
-        ) : (
-          <div>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={showZeroEvents} onChange={(e) => setShowZeroEvents(e.target.checked)} />
-              {t('simulation_show_zero')}
-            </label>
-            {detail.billing_events.events.filter((ev) => showZeroEvents || !isZeroAmount(Number(ev.amount))).map((ev, i) => (
-              <div key={i} style={ledgerRowStyle}>
-                <span>
-                  {fmtDay(ev.date, gymFmt)}
-                  {ev.promotion_affected && (
-                    <span style={ledgerPromotionTagStyle}>({t('billing_event_promotion_affected')})</span>
-                  )}
-                </span>
-                <span>{fmtMoney(ev.amount)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardSection>}
-
       {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in
           place of Done Editing. */}
       {editing && detail.status === 'draft' && (
@@ -774,15 +727,3 @@ const panel: React.CSSProperties = { padding: '16px 24px' };
 // #929/#924 stage 5: the card's chrome comes from `components/formChrome.ts`,
 // so nothing here restates a muted sentence, a text link or an error line.
 const dim = cardMutedTextStyle;
-
-// The ledger's own structure — a date on the left, the amount on the right —
-// which stays with the section (#929: what is shared is the chrome, not a
-// section's layout).
-const ledgerRowStyle: React.CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0',
-  borderBottom: '1px solid var(--gd-card-border, #f4f4f6)',
-};
-
-const ledgerPromotionTagStyle: React.CSSProperties = {
-  marginLeft: 8, color: 'var(--gd-link, #6c63ff)', fontSize: 11,
-};
