@@ -18,9 +18,11 @@ interface TemplateOption { id: number; name: string }
 interface MemberOption { id: number; name: string }
 export interface CreatedPlan { id: number; member_id: number; name: string }
 
-export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated }: {
+export function NewTrainingPlanDialog({ open, presetTemplate, presetMember, onClose, onCreated }: {
   open: boolean;
   presetTemplate?: TemplateOption | null;
+  /** #1962: launched from a Member's card — the member is fixed, not chosen. */
+  presetMember?: MemberOption | null;
   onClose: () => void;
   onCreated: (plan: CreatedPlan) => void;
 }) {
@@ -44,16 +46,16 @@ export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated
     if (!open) return;
     setMode(presetTemplate ? 'template' : null);
     setTemplateId(presetTemplate ? String(presetTemplate.id) : '');
-    setMemberId('');
+    setMemberId(presetMember ? String(presetMember.id) : '');
     setName(presetTemplate?.name ?? '');
     setNameTouched(false);
     setStartDate(new Date().toISOString().slice(0, 10));
     setError(null);
     setConflict(null);
-  }, [open, presetTemplate]);
+  }, [open, presetTemplate, presetMember?.id]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || presetMember) return;
     apiFetch<MemberOption[]>('/members').then(setMembers).catch(() => {});
   }, [open]);
 
@@ -158,10 +160,14 @@ export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated
             )}
 
             <FieldLabel>{t('training_plans.label_member')} *</FieldLabel>
-            <select value={memberId} onChange={(e) => setMemberId(e.target.value)} style={inputStyle} autoFocus={mode === 'scratch'}>
-              <option value="">—</option>
-              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            {presetMember ? (
+              <input value={presetMember.name} disabled style={{ ...inputStyle, background: '#f5f5f5', color: '#666' }} />
+            ) : (
+              <select value={memberId} onChange={(e) => setMemberId(e.target.value)} style={inputStyle} autoFocus={mode === 'scratch'}>
+                <option value="">—</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            )}
 
             <FieldLabel>{t('training_plans.label_name')}{mode === 'scratch' ? ' *' : ''}</FieldLabel>
             <input
