@@ -510,6 +510,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM calendar_event_bookings WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM member_notifications WHERE gym_id IN (${marks})`, ids);
+  // #1916: standalone exercises (logs of them reference the row, RESTRICT).
+  await db.query(`DELETE FROM exercise_log_sets WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM exercise_logs WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM member_standalone_exercises WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_restrictions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_meal_items WHERE gym_id IN (${marks})`, ids);

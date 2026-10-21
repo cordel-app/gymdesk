@@ -94,6 +94,7 @@ import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { memberPersonalGoalsRouter } from './api/member-personal-goals';
 import { mePersonalGoalsRouter } from './api/me-personal-goals';
 import { meProgressRouter } from './api/me-progress';
+import { meStandaloneExercisesRouter } from './api/me-standalone-exercises';
 import { memberProgressRouter } from './api/member-progress';
 import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
@@ -323,6 +324,7 @@ app.use('/me/gyms', requireAuth(), meGymsRouter);
 app.use('/me/personal-goals', requireAuth(), tenantContext, centerContext, mePersonalGoalsRouter);
 // #1224 — My Progress. Mounted BEFORE /me for the same reason.
 app.use('/me/progress', requireAuth(), tenantContext, centerContext, meProgressRouter);
+app.use('/me/standalone-exercises', requireAuth(), tenantContext, centerContext, meStandaloneExercisesRouter);
 // #1375: the member's own profile image. Mounted BEFORE /me for the same reason.
 app.use('/me/profile/image', requireAuth(), tenantContext, centerContext, meProfileImageRouter);
 // #1122: the Members App's Add Plan — the member's own Draft, Promotions and Save & Pay.
