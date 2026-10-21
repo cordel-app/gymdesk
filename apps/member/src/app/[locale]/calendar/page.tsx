@@ -209,6 +209,7 @@ export default function MemberCalendarPage() {
                       backgroundColor: background,
                       borderColor: background,
                       textColor: readableEventTextColor(background),
+                      classNames: ['gd-event-colored'],
                     }
                   : {}),
                 extendedProps: s,
