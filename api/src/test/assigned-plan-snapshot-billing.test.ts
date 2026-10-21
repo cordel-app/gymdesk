@@ -233,9 +233,11 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     lockerId = await createProduct(gymId, { amount: 20, billingFrequency: 'month', name: lockerName });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, lockerId, 1);
 
-    const res = await assign(gymId, {
-      member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0),
-    });
+    // #1863: a Plan Promotion goes on a plan added in the Draft, so this one is
+    // applied before the assignment is committed, then activated.
+    const res = await request.post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0) });
     expect(res.status).toBe(201);
     umId = res.body.id;
 
@@ -264,6 +266,7 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    await activateAssignment(gymId, umId);
   });
 
   it('merges the grant into the Plan item rather than billing it twice', async () => {

@@ -23,7 +23,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -91,13 +91,8 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
       'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
       [gymId, 'APGP Member', `apgp-${uniq()}@test.com`],
     );
-    const { insertId } = await legacyAssignmentQuery(
-      `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, 'active', CURDATE(), 100)`,
-      [gymId, memberId, planId],
-    );
-    return insertId;
+    // #1863: a Plan Promotion goes on a plan added in a Draft.
+    return createTestDraftAssignment(gymId, Number(memberId), planId, { config: { base_price: 100 } });
   }
 
   const applyPromotion = (umId: number, promotionId: number) =>

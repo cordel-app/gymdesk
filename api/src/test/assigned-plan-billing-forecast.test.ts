@@ -105,15 +105,19 @@ async function createMember(gymId: string): Promise<number> {
   return insertId;
 }
 
-async function assignPlan(gymId: string, planId: number, startsAt = TODAY()): Promise<number> {
+async function assignPlan(
+  gymId: string, planId: number, startsAt = TODAY(), opts: { activate?: boolean } = {},
+): Promise<number> {
   const res = await request.post('/user-memberships')
     .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
     .send({ member_id: await createMember(gymId), membership_plan_id: planId, starts_at: startsAt });
   expect(res.status).toBe(201);
   // #1108 stage 1: assignment creates a Draft, and this file is about an active
   // assignment's forecast. (A Draft is projected too — that is Q3's answer —
-  // which is `draft-membership-assignment.test.ts`'s own case.)
-  await activateAssignment(gymId, res.body.id);
+  // which is `draft-membership-assignment.test.ts`'s own case.) A caller that
+  // applies a Promotion first activates afterwards (#1863: a Plan Promotion goes
+  // on a plan added in the Draft, never on an inherited one).
+  if (opts.activate !== false) await activateAssignment(gymId, res.body.id);
   return res.body.id as number;
 }
 
@@ -227,7 +231,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
       name: lockerName, type: 'fee', amount: 20, billingFrequency: 'month',
     });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, lockerId, 1);
-    const umId = await assignPlan(gymId, planId);
+    const umId = await assignPlan(gymId, planId, TODAY(), { activate: false });
 
     const { insertId: promotionId } = await db.query(
       `INSERT INTO promotions
@@ -249,6 +253,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    await activateAssignment(gymId, umId);
 
     const forecast = await forecastOf(gymId, umId);
     const locker = linesOn(forecast, TODAY())[lockerName];

@@ -74,6 +74,12 @@ export interface PromotionReapplicability {
   /** The Promotion's *live* window, which is what a new application would be agreed inside. */
   promotionStartsAt: string | Date | null;
   promotionEndsAt: string | Date | null;
+  /**
+   * #1863 — whether the assignment's plan can take a Promotion at all: only a
+   * plan added in a Draft can, never one a Draft inherited (so an Active plan
+   * cannot). Absent means not known here and changes nothing.
+   */
+  planTakesPromotions?: boolean;
 }
 
 function asDate(value: string | Date | null): Date | null {
@@ -90,6 +96,7 @@ export function canReapplyPromotion(
   // 'applied'`): it is deselected by revoking it, not re-applied.
   if (application.displayStatus !== 'inactive') return false;
   if (application.hasStandingApplication) return false;
+  if (application.planTakesPromotions === false) return false;
   if (application.promotionLifecycleStatus !== 'active') return false;
   const startsAt = asDate(application.promotionStartsAt);
   const endsAt = asDate(application.promotionEndsAt);

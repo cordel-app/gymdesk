@@ -19,7 +19,7 @@ describe('item origin (#1883)', () => {
 
   it('is copied when a version is cloned', () => {
     const src = readFileSync(join(__dirname, '../api/product-set-bridge.ts'), 'utf8');
-    expect(src).toMatch(/recurring_billing_unit, origin\)/);
-    expect(src).toMatch(/line_ref, origin\)/);
+    expect(src).toMatch(/recurring_billing_unit, origin[,)]/);
+    expect(src).toMatch(/line_ref, origin[,)]/);
   });
 });

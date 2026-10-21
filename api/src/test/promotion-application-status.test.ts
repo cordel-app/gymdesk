@@ -73,6 +73,12 @@ describe('canReapplyPromotion', () => {
     expect(canReapplyPromotion({ ...REAPPLICABLE, hasStandingApplication: true }, NOW)).toBe(false);
   });
 
+  it('does not offer a plan that cannot take a Promotion (#1863)', () => {
+    // An Active plan, or one a Draft inherited: the apply would answer 409.
+    expect(canReapplyPromotion({ ...REAPPLICABLE, planTakesPromotions: false }, NOW)).toBe(false);
+    expect(canReapplyPromotion({ ...REAPPLICABLE, planTakesPromotions: true }, NOW)).toBe(true);
+  });
+
   it('does not offer a Promotion that is no longer active', () => {
     for (const lifecycle of ['inactive', 'draft', 'deleted', null]) {
       expect(canReapplyPromotion({ ...REAPPLICABLE, promotionLifecycleStatus: lifecycle }, NOW), lifecycle ?? 'null')

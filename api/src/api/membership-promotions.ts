@@ -673,6 +673,19 @@ export async function applyPromotionToProductSet(
       throw Object.assign(new Error('Promotion is not about a Product'), { status: 400 });
     }
   } else {
+    // #1863 — the plan a Draft inherited from the previous Active version is not
+    // eligible; only one added in this Draft is. Enforced here, so no route can
+    // bypass what the Admin hides.
+    const { rows: inheritedRows } = await tx.query(
+      'SELECT is_inherited FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      [productSetId, gymId],
+    );
+    if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
+      throw Object.assign(
+        new Error('A Promotion cannot be applied to a Membership Plan inherited from the previous version'),
+        { status: 409 },
+      );
+    }
     const { rows: matchRows } = await tx.query(
       'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
       [promotionId, set.membership_plan_id, gymId],
@@ -916,6 +929,19 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
     [umId, gymId],
   );
   const merged = await Promise.all(rows.map(withSnapshot));
+  // #1863 — the apply path refuses a plan that is not a Draft's own (an Active
+  // plan is applied to through a clone, which inherits it), so a spent
+  // application is offered for re-applying only where the apply would succeed.
+  const { rows: versionRows } = await db.query<any>(
+    `SELECT ps.status, snap.is_inherited
+       FROM product_sets ps
+       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id AND snap.gym_id = ps.gym_id
+      WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
+    [umId, gymId],
+  );
+  const planTakesPromotions = versionRows.length > 0
+    && versionRows[0].status === 'draft'
+    && Number(versionRows[0].is_inherited ?? 0) === 0;
   const grants = await loadAppliedPromotionGrants(
     gymId, merged.map((r: any) => ({ id: r.id, promotion_id: r.promotion_id })),
   );
@@ -947,6 +973,7 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
         promotionLifecycleStatus: row.promotion_lifecycle_status ?? null,
         promotionStartsAt: row.promotion_live_starts_at ?? null,
         promotionEndsAt: row.promotion_live_ends_at ?? null,
+        planTakesPromotions,
       }, now),
       ...(grants.get(row.id) ?? emptyGrants()),
     };
