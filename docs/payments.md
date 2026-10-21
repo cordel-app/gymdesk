@@ -211,6 +211,15 @@ creeping back in.
 `express.json()` with `express.raw({ type: '*/*' })` so the HMAC can be verified against the
 exact bytes Monei signed. 60 req/min per IP.
 
+**What arrives, and what signs it.** Every payment we create names this route as its
+`callbackUrl`, and MONEI posts that callback as the **bare Payment object** (`id`, `orderId`,
+`status`, `paymentToken`, …) signed with the **API key** (`MONEI-Signature: t=…,v1=…` over
+`timestamp.body`). An account webhook configured in the dashboard is a different shape — an
+envelope `{ id, type, objectType, object }` — signed with `MONEI_WEBHOOK_SECRET`.
+`verifyAndParseWebhook()` (`payments/providers/monei/webhook.ts`) accepts both and checks the
+signature against both keys; until it did, a payment callback was refused or matched no
+request, so every payment stayed `pending` whatever its outcome.
+
 **Since #1083 Monei does not call this route directly.** It posts to the isolated payment
 app — `PAYMENT_NOTIFICATION_URL` is `https://pay.vdicube.com/webhooks/payment` on dev and
 `https://pay.cordel.tech/webhooks/payment` on pro — and that app's nginx relays the request

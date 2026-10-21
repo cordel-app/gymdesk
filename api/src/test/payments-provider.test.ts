@@ -148,3 +148,65 @@ describe('verifyAndParseWebhook()', () => {
     expect(payload.orderId).toBe('');
   });
 });
+
+// A payment's own callbackUrl receives the bare Payment object, signed with the
+// API key (docs.monei.com/guides/webhooks). The parser read only the account
+// webhook's envelope and verified only with MONEI_WEBHOOK_SECRET, so on dev a
+// Monei test payment — approved or failed — left its request `pending`.
+describe('verifyAndParseWebhook() — the payment callback', () => {
+  const apiKey = 'pk_test_api_key';
+  const webhookSecret = 'whsec_other';
+
+  function sign(body: Buffer, key: string, timestamp = '1700000000'): Record<string, string> {
+    const sig = crypto.createHmac('sha256', key).update(`${timestamp}.${body.toString('utf8')}`).digest('hex');
+    return { 'monei-signature': `t=${timestamp},v1=${sig}` };
+  }
+
+  const barePayment = {
+    id: 'pay_cb_1',
+    orderId: 'ord-cb-1',
+    status: 'SUCCEEDED',
+    amount: 100,
+    currency: 'EUR',
+    paymentToken: 'tok_cb',
+    sequenceId: 'seq_cb',
+    paymentMethod: { card: { last4: '4406', brand: 'visa' } },
+  };
+
+  it('settles a bare Payment signed with the API key', () => {
+    const raw = Buffer.from(JSON.stringify(barePayment));
+    const payload = verifyAndParseWebhook(sign(raw, apiKey), raw, [apiKey, webhookSecret]);
+    expect(payload.orderId).toBe('ord-cb-1');
+    expect(payload.status).toBe('completed');
+    expect(payload.providerRef).toBe('pay_cb_1');
+    expect(payload.paymentToken).toBe('tok_cb');
+    expect(payload.providerStatus).toBe('SUCCEEDED');
+  });
+
+  it('reads a failed 3D Secure callback as failed', () => {
+    const raw = Buffer.from(JSON.stringify({ ...barePayment, status: 'FAILED', paymentToken: undefined }));
+    const payload = verifyAndParseWebhook(sign(raw, apiKey), raw, [apiKey, webhookSecret]);
+    expect(payload.orderId).toBe('ord-cb-1');
+    expect(payload.status).toBe('failed');
+  });
+
+  it('still accepts an account webhook signed with the webhook secret', () => {
+    const envelope = { id: 'evt_1', type: 'charge.succeeded', objectType: 'charge', object: barePayment };
+    const raw = Buffer.from(JSON.stringify(envelope));
+    const payload = verifyAndParseWebhook(sign(raw, webhookSecret), raw, [apiKey, webhookSecret]);
+    expect(payload.orderId).toBe('ord-cb-1');
+    expect(payload.status).toBe('completed');
+  });
+
+  it('refuses a callback signed with any other key', () => {
+    const raw = Buffer.from(JSON.stringify(barePayment));
+    expect(() => verifyAndParseWebhook(sign(raw, 'someone-else'), raw, [apiKey, webhookSecret])).toThrow(
+      'Invalid webhook signature',
+    );
+  });
+
+  it('refuses everything when no key is configured', () => {
+    const raw = Buffer.from(JSON.stringify(barePayment));
+    expect(() => verifyAndParseWebhook(sign(raw, ''), raw, ['', ''])).toThrow('Invalid webhook signature');
+  });
+});
