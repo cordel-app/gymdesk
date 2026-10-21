@@ -17,6 +17,7 @@ import { ExerciseDetailsDialog } from '@/components/ExerciseDetailsDialog';
 import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
 import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
+import { plansOnDate } from '@/lib/trainingPlanDates';
 import {
   EMPTY_PROGRESS, TrainingProgress, deviceToday, stepWeek, swipeWeekDelta, weekDates, weekStart, weekdayOf,
 } from '@/lib/trainingWeek';
@@ -66,6 +67,7 @@ interface Workout {
 
 interface TrainingPlan {
   id: number; name: string; description: string | null;
+  start_date?: string | null; end_date?: string | null;
   workouts: Workout[] | null;
 }
 
@@ -219,18 +221,18 @@ export default function TrainingPage() {
     finally { setPending(false); }
   }
 
-  const allWorkouts = useMemo(() => plans.flatMap((p) => p.workouts ?? []), [plans]);
+  const workoutsOn = (date: string) => plansOnDate(plans, date).flatMap((p) => p.workouts ?? []);
 
   // Flatten (plan, workout) pairs across all active plans, grouped by weekday like the old page.
   const workoutsForWeekday = useMemo(() => {
     const entries: { plan: TrainingPlan; workout: Workout }[] = [];
-    for (const plan of plans) {
+    for (const plan of plansOnDate(plans, selectedDate)) {
       for (const workout of plan.workouts ?? []) entries.push({ plan, workout });
     }
     const scheduled = entries.filter((e) => e.workout.scheduled_weekday === selectedWeekday);
     const unscheduled = entries.filter((e) => e.workout.scheduled_weekday === null);
     return [...scheduled, ...unscheduled];
-  }, [plans, selectedWeekday]);
+  }, [plans, selectedWeekday, selectedDate]);
 
   if (loading) {
     return <main style={styles.container}><p style={styles.hint}>{t('training.loading')}</p></main>;
@@ -271,7 +273,7 @@ export default function TrainingPage() {
           {weekDates(selectedDate).map((date) => {
             const selected = date === selectedDate;
             const isTodayCell = date === today;
-            const status = dayStatus(date, weekdayOf(date), today, allWorkouts, allBlockLogs);
+            const status = dayStatus(date, weekdayOf(date), today, workoutsOn(date), allBlockLogs);
             const longDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
             return (
               <div key={date} style={styles.dayCell}>
