@@ -673,6 +673,19 @@ export async function applyPromotionToProductSet(
       throw Object.assign(new Error('Promotion is not about a Product'), { status: 400 });
     }
   } else {
+    // #1863 — the plan a Draft inherited from the previous Active version is not
+    // eligible; only one added in this Draft is. Enforced here, so no route can
+    // bypass what the Admin hides.
+    const { rows: inheritedRows } = await tx.query(
+      'SELECT is_inherited FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      [productSetId, gymId],
+    );
+    if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
+      throw Object.assign(
+        new Error('A Promotion cannot be applied to a Membership Plan inherited from the previous version'),
+        { status: 409 },
+      );
+    }
     const { rows: matchRows } = await tx.query(
       'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
       [promotionId, set.membership_plan_id, gymId],
