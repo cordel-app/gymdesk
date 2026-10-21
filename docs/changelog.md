@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1924 (Assign Plan to Member: the member search field is hidden once the plan's capacity is reached, so a single-person plan never takes a second member and a capacity-N plan takes at most N; removing a member brings it back. `addMember` also refuses past capacity. UI only; not run: `tsc`/tests (no `node_modules` in the routine environment), CI is the first run.)
 - **Done**: #1918 (Members → Products: a committed Save & Pay closes the inline Add Product form, so the product no longer lingers in the editor until a reload; the configuration re-read was already in place)
 - **Done**: #1920 (Assigned Plan card: clicking anywhere on the Membership Fee Simulation header, title included, expands or collapses it; the arrow still works and does not double-toggle. `CardSection` gained an optional `onHeaderClick`. Not run: `tsc`/tests (no `node_modules` in the routine environment); CI is the first run.)
 - **Done**: #1919 (Members App: a purchase cancelled while its payment was still pending no longer shows the Pay button. `ownPurchaseState()` lets a cancellation outrank `pending_payment`, so it reads Cancelled (or is hidden once its end date passes). Other states unchanged. Regression unit test added; not run: no `node_modules` in the routine environment, CI is the first run.)

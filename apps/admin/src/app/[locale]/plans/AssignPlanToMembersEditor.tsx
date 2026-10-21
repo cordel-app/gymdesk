@@ -76,9 +76,11 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
 
   const limitCount = !plan || plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
+  const atCapacity = limitCount != null && members.length >= limitCount;
 
   function addMember(m: MemberResult) {
     if (members.some((x) => x.id === m.id)) return;
+    if (atCapacity) return;
     setMembers((prev) => [...prev, m]);
     if (ownerId === null) setOwnerId(m.id);
   }
@@ -157,9 +159,11 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
           {t('plans.assign_capacity_label', { limit: plan.member_limit === 'family' ? t('plans.assign_family') : plan.member_limit })}
         </label>
       )}
-      <div style={{ margin: '6px 0 12px' }}>
-        <MemberSearchInput placeholder={t('plans.assign_search_placeholder')} onSelect={addMember} disabled={saving} />
-      </div>
+      {!atCapacity && (
+        <div style={{ margin: '6px 0 12px' }}>
+          <MemberSearchInput placeholder={t('plans.assign_search_placeholder')} onSelect={addMember} disabled={saving} />
+        </div>
+      )}
 
       {overCapacity && (
         <p style={{ margin: '0 0 10px', fontSize: 12, color: '#b45309', background: '#fffbeb', padding: '6px 10px', borderRadius: 6 }}>
