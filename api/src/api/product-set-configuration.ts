@@ -319,6 +319,7 @@ export async function loadProductSetSimulationAssignment(
     recurringUnit: (row.cadence_unit ?? null) as BillingUnit | null,
     promotions: applications.map((a) => ({
       name: a.name,
+      productTarget: a.productTarget,
       appliedAt: a.appliedAt,
       revokedAt: a.revokedAt,
       freeMonths: a.freeMonths,
