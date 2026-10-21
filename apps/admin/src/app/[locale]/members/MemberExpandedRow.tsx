@@ -90,6 +90,10 @@ interface BillingEvent {
   source: string;
   created_at: string;
   receipt_number: string | null;
+  /** The date the event is due (a ProductSet event's own billing date). A
+   * Scheduled obligation is created today for a later cycle, so its creation
+   * date would list next month's charge beside today's payment. */
+  billing_date?: string | null;
 }
 
 export function MemberExpandedRow({
@@ -593,7 +597,7 @@ export function MemberExpandedRow({
                           style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
                           onClick={() => toggleEvent(ev.id)}
                         >
-                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{formatGymDate(ev.created_at, gymFmt)}</span>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{ev.billing_date ? formatGymDateOnly(ev.billing_date, gymFmt) : formatGymDate(ev.created_at, gymFmt)}</span>
                           <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
                           {ev.amount && (
                             <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>

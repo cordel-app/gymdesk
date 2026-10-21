@@ -264,3 +264,28 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     expect(v2.body.version).toBe(2);
   });
 });
+
+// The Admin's Draft assignment is a cache of its version (#1325 PR 3e-1): the
+// version's Save & Pay must move the assignment too, or the Member card reads
+// a Draft plan beside a PS status of Pending Payment.
+describe('Save & Pay on an assignment’s version moves the assignment to Pending Payment', () => {
+  it('flips the linked Draft assignment and audits the transition', async () => {
+    const m = await member();
+    const created = await auth(request.post('/user-memberships'))
+      .send({ member_id: m, membership_plan_id: await plan(12), starts_at: TODAY });
+    expect(created.status).toBe(201);
+    const { rows: sets } = await db.query<any>(
+      'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, created.body.id]);
+
+    const pay = await auth(request.post(`/product-sets/${sets[0].id}/save-and-pay`)).send({});
+    expect(pay.status).toBe(201);
+
+    const { rows: um } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [created.body.id]);
+    expect(um[0].status).toBe('pending_payment');
+    const { rows: audit } = await db.query<any>(
+      `SELECT new_values FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'
+        ORDER BY id DESC LIMIT 1`, [gymId, String(created.body.id)]);
+    const next = typeof audit[0].new_values === 'string' ? JSON.parse(audit[0].new_values) : audit[0].new_values;
+    expect(next.status).toBe('pending_payment');
+  });
+});
