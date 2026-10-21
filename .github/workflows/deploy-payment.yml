@@ -106,7 +106,10 @@ jobs:
             # A key the unit carries that this job does not write would be lost on
             # the first deploy. Refuse instead, naming the keys (never the values),
             # so it is added to GitHub and to this list rather than dropped silently.
-            KNOWN=" CORDEL_FITNESS_API_PUBLIC_URL CORDEL_FITNESS_API_INTERNAL_URL "
+            # CORDEL_FITNESS_API_URL is retired: the unit carried it, but the payment
+            # app reads only the two addresses above (its nginx template), so it is
+            # dropped on purpose rather than refused.
+            KNOWN=" CORDEL_FITNESS_API_PUBLIC_URL CORDEL_FITNESS_API_INTERNAL_URL CORDEL_FITNESS_API_URL "
             UNKNOWN=""
             for k in $(sed -n 's/^Environment=//p' "$UNIT" | sed 's/^"//; s/=.*//'); do
               case "$KNOWN" in *" $k "*) ;; *) UNKNOWN="$UNKNOWN $k" ;; esac
