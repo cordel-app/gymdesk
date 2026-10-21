@@ -879,15 +879,24 @@ runbook is how.
       redirect; (c) a signed-out return being sent to sign-in and brought back to the right
       localized page. Both pages are deliberately not public — each polls an authenticated
       route.
+- [ ] **corfront env from GitHub — the variables each corfront deploy now requires, per
+      environment.** `deploy-admin.yml` / `deploy-member.yml` need the variable
+      `CORDEL_FITNESS_API_URL` (the API's address as corfront reaches it) and the secret
+      `CLERK_SECRET_KEY`; optional variables `INTERNAL_RUN_RELAY_TIMEOUT_MS`, `TENANT`, `TZ`
+      (admin) and `MOBILE_APP_ASSOCIATIONS`, `TZ` (members). The first deploy prints the API
+      address the unit held, and stops, naming the keys, if the unit carries an `Environment=`
+      the workflow does not manage — add that key to GitHub and to the workflow, never back
+      to the unit. Tell Oscar the `Environment=` lines of `fitness-admin`, `fitness-members`
+      and `fitness-pay` are written by CI from now on.
 - [ ] **#1083 — the webhook relay's own two settings, on each environment.** Neither is a
       repo change; both are wrong by default on pro.
-  - [ ] In Oscar's `fitness-pay` quadlet (reference: `infra/payment-app/fitness-pay.container`),
-        set `CORDEL_FITNESS_API_PUBLIC_URL` and `CORDEL_FITNESS_API_INTERNAL_URL` to that
-        environment's API — the second being the address the payment container reaches the
-        API at, with **no trailing slash**. The image's defaults are the dev API, so a pro
-        container left unset would relay pro's payments to the dev API. `deploy-payment.yml`
-        probes the relay after each deploy (the same `GET` Monei's dashboard preflights with),
-        so a wrong address fails the deploy rather than losing confirmations quietly.
+  - [ ] Set the GitHub **variables** `CORDEL_FITNESS_API_PUBLIC_URL` and
+        `CORDEL_FITNESS_API_INTERNAL_URL` in each environment to the API's address as corfront
+        reaches it (**no trailing slash**), then run `deploy-payment.yml`: it writes them into
+        the `fitness-pay` unit and refuses to deploy while either is empty. Never edit the
+        unit by hand — the next deploy rewrites its `Environment=` lines. The deploy probes the
+        relay afterwards (the same `GET` Monei's dashboard preflights with), so a wrong address
+        fails it rather than losing confirmations quietly.
   - [ ] Set the GitHub variable **`PAYMENT_WEBHOOK_RELAY_HOPS=1`** (then redeploy the API;
         `deploy.yml` forwards it since #1177 — a value set by hand on the `fitness-api` unit
         is wiped by the next deploy) once
