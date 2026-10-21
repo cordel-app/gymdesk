@@ -758,6 +758,7 @@
     "chart_title": "Progreso",
     "chart_aria": "Gráfico de progreso de {name}",
     "history": "Registros diarios",
+    "history_empty": "Aún no hay registros.",
     "set": "Serie",
     "reps": "Reps",
     "weight": "Peso",

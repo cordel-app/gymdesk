@@ -75,19 +75,3 @@ export function daysNewestFirst(days: ProgressDay[]): ProgressDay[] {
 export function formatSetValue(value: number | null, gym: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
   return value === null ? '—' : formatGymNumber(value, gym);
 }
-
-/**
- * The card's background: the exercise's image under a scrim made of the card's
- * own surface colour (no literal, #983), so the text stays readable on any
- * photograph. `cover` keeps the image's aspect ratio.
- */
-export function cardBackgroundStyle(imageUrl: string | null, surface: string): Record<string, string> {
-  if (!imageUrl) return {};
-  const safe = imageUrl.replace(/["\\\n\r]/g, '');
-  const scrim = `color-mix(in srgb, ${surface} 82%, transparent)`;
-  return {
-    backgroundImage: `linear-gradient(${scrim}, ${scrim}), url("${safe}")`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-  };
-}
