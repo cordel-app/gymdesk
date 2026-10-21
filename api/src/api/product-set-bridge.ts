@@ -49,11 +49,11 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
        (gym_id, product_set_id, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
         membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
         personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
-        recurring_billing_interval, recurring_billing_unit, origin)
+        recurring_billing_interval, recurring_billing_unit, origin, is_inherited)
      SELECT gym_id, ?, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
             membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
             personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
-            recurring_billing_interval, recurring_billing_unit, origin
+            recurring_billing_interval, recurring_billing_unit, origin, 1
        FROM product_set_plan_snapshots WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 
@@ -74,9 +74,9 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
-        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin)
+        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, is_inherited)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
-            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin
+            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, 1
        FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 

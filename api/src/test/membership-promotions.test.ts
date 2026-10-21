@@ -14,7 +14,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -44,13 +44,10 @@ async function createMember(gymId: string, name: string): Promise<number> {
   return insertId;
 }
 
+// #1863: a Plan Promotion applies only to a plan added in a Draft, so the
+// assignment the Promotion goes on is a Draft with its own plan snapshot.
 async function createUserMembership(gymId: string, memberId: number, planId: number, basePrice: number): Promise<number> {
-  const { insertId } = await legacyAssignmentQuery(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-     VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
-    [gymId, memberId, planId, basePrice],
-  );
-  return insertId;
+  return createTestDraftAssignment(gymId, memberId, planId, { config: { base_price: basePrice } });
 }
 
 // `only_applicable_for_new_members` is explicit (and off by default here)
@@ -499,9 +496,13 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     return insertId;
   }
 
+  /** #1863: the plan a Promotion goes on is one added in a Draft. */
+  const createDraft = (memberId: number) =>
+    createTestDraftAssignment(gymId, memberId, planId, { config: { base_price: 100 } });
+
   it("applies to a Member's first Membership Plan", async () => {
     const memberId = await createMember(gymId, 'NM First');
-    const umId = await createAssignment(memberId, planId);
+    const umId = await createDraft(memberId);
 
     const res = await apply(umId);
     expect(res.status).toBe(201);
@@ -520,7 +521,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       "UPDATE user_memberships SET ends_at = CURDATE() WHERE member_id = ? AND status = 'cancelled'",
       [memberId],
     );
-    const umId = await createAssignment(memberId, planId);
+    const umId = await createDraft(memberId);
 
     const res = await apply(umId);
     expect(res.status).toBe(400);
@@ -539,7 +540,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       "UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH WHERE member_id = ? AND status = 'expired'",
       [memberId],
     );
-    const umId = await createAssignment(memberId, planId);
+    const umId = await createDraft(memberId);
 
     const res = await apply(umId);
     expect(res.status).toBe(400);
@@ -556,7 +557,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 18 MONTH WHERE id = ?',
       [lapsedId],
     );
-    const umId = await createAssignment(memberId, planId);
+    const umId = await createDraft(memberId);
 
     const res = await apply(umId);
     expect(res.status).toBe(201);
@@ -569,7 +570,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     await createAssignment(memberId, otherPlanId, {
       status: 'cancelled', startsAt: 'CURDATE() - INTERVAL 2 MONTH', endsAt: null,
     });
-    const umId = await createAssignment(memberId, planId);
+    const umId = await createDraft(memberId);
 
     const res = await request
       .post(`/user-memberships/${umId}/promotions`)

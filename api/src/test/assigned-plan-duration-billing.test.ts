@@ -244,7 +244,11 @@ describe('Billing Simulation — a Promotion outranks the Plan\'s own Billing & 
     await createTestMembership(gymId, 'admin');
     memberId = await createMember(gymId);
     planId = await createPlan(gymId, { free: 3, paid: 0, bonus: 0 });
-    const res = await assign(gymId, { member_id: memberId, membership_plan_id: planId, starts_at: START });
+    // #1863: a Plan Promotion goes on a plan added in the Draft, so this one is
+    // applied before the assignment is committed, then activated.
+    const res = await request.post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: START });
     expect(res.status).toBe(201);
     umId = res.body.id;
 
@@ -273,6 +277,7 @@ describe('Billing Simulation — a Promotion outranks the Plan\'s own Billing & 
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    await activateAssignment(gymId, umId);
     // The Promotion's own timeline is anchored on the date it was applied, so
     // the application is backdated to the assignment's start date — otherwise
     // the promotional window would begin in whatever month the suite runs in
