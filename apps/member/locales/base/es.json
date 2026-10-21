@@ -510,7 +510,10 @@
   },
   "payment_error": {
     "title": "El pago no se ha completado",
-    "retry": "Intentar de nuevo"
+    "retry": "Intentar de nuevo",
+    "failed": "El pago con tarjeta se ha rechazado o no se ha podido verificar. No se ha hecho ningún cargo. Vuelve a intentarlo con tu tarjeta.",
+    "card_failed": "No se ha podido verificar la tarjeta, así que no se ha guardado. Vuelve a intentarlo con tu tarjeta.",
+    "not_completed": "El pago se ha cancelado antes de terminar. No se ha hecho ningún cargo."
   },
   "link": {
     "open_in_app_title": "Abrir en la app",
