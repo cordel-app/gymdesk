@@ -29,7 +29,7 @@
 // `benefitTreatmentLabel()` (#896 stage 4), so this surface adds no second
 // vocabulary.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -68,7 +68,7 @@ import {
 export type { PurchasedProduct, PurchasedProductPromotion };
 
 export function MemberPurchasedProducts({
-  items, memberId, canWrite, canPay, isAdmin, onChanged,
+  items, memberId, canWrite, canPay, isAdmin, onChanged, committedKey,
 }: {
   items: PurchasedProduct[];
   memberId: number;
@@ -79,6 +79,8 @@ export function MemberPurchasedProducts({
   /** The direct discount is the Admin's alone (the server enforces it too). */
   isAdmin: boolean;
   onChanged: () => void;
+  /** Bumped when Save & Pay committed a version: the inline Add form closes (#1918). */
+  committedKey?: number;
 }) {
   const t = useTranslations('members');
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
@@ -89,6 +91,7 @@ export function MemberPurchasedProducts({
   const gymFmt = useGymFormatSettings();
 
   const [adding, setAdding] = useState(false);
+  useEffect(() => { if (committedKey) setAdding(false); }, [committedKey]);
   // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
   const [discarding, setDiscarding] = useState<PurchasedProduct | null>(null);
   const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'));
