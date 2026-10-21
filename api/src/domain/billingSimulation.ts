@@ -136,6 +136,12 @@ const MAX_OCCURRENCE_SCAN = 2000;
  */
 export interface SimulationPromotion extends AppliedPromotionForBilling {
   name: string | null;
+  /**
+   * #1923 — the Promotion is about a Product. Only such a Promotion prices an
+   * Additional Periodic Service of the same Product; a Plan Promotion's grant
+   * never does (#631 §7).
+   */
+  productTarget?: boolean;
   /** Products granted by this Promotion (`promotion_session` / `_oneoff` / `_periodical`). */
   grants: SimulationGrant[];
 }
@@ -991,8 +997,15 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
     });
   }
 
+  // #1923 — a periodical grant for a Product the member already holds as an
+  // Additional Periodic Service prices that service's own stream
+  // (`buildServiceStream`); giving it a stream of its own as well billed the
+  // Product twice, on alternating dates once the two cadences drifted.
+  const serviceProducts = new Set(a.services.map((x) => x.productId));
   for (const promo of a.promotions) {
     for (const grant of promo.grants) {
+      if (promo.productTarget && grant.category === 'periodical' && grant.productId > 0 && serviceProducts.has(grant.productId)
+          && !byCharge.has(`item:${grant.productId}`)) continue;
       const existing = grant.productId > 0 ? byCharge.get(`item:${grant.productId}`) : undefined;
       if (existing) {
         existing.coverage.push({ promo, grant });
@@ -1019,6 +1032,43 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   }
 
   return [...byCharge.values()];
+}
+
+/**
+ * A recurring line's charge on one occurrence: the grants whose periods cover
+ * it fold over `base`, in order, and a grant whose first covered period is
+ * still ahead leaves the occurrence `pending`. Shared by an item (a Plan
+ * benefit or a Promotion-only grant) and by an Additional Periodic Service a
+ * Product Promotion covers (#1923), so both price a covered period one way.
+ */
+function resolveCoveredCharge(
+  coverage: Array<GrantCoverage & { firstCovered: number }>,
+  base: number,
+  baseBenefits: SimulationBenefit[],
+  date: string,
+  occurrence: number,
+): { amount: number; benefits: SimulationBenefit[]; promotional: boolean; pending: boolean } {
+  const covering = coverage.filter((c) => occurrence >= c.firstCovered
+    && occurrence < c.firstCovered + c.grant.quantity
+    && promotionCoversDate(c.promo, date));
+  let amount = base;
+  const benefits = [...baseBenefits];
+  let promotional = false;
+  for (const c of covering) {
+    const { action, value } = c.grant.benefit;
+    // A grant covering the period with no treatment configured charges the
+    // normal price and explains nothing — and, deliberately, does not make
+    // the occurrence promotional: the projection's horizon asks whether a
+    // charge differs from the regular one, and this one does not.
+    if (action === 'no_benefit') continue;
+    amount = applyPeriodBenefit(amount, action, value);
+    benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
+    promotional = true;
+  }
+  if (promotional) return { amount, benefits, promotional, pending: false };
+  const pending = coverage.some((c) => occurrence < c.firstCovered
+    && (c.promo.revokedAt == null || date <= c.promo.revokedAt));
+  return { amount, benefits, promotional: false, pending };
 }
 
 /**
@@ -1068,29 +1118,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date, occurrence) => {
-      const covering = coverage.filter((c) => occurrence >= c.firstCovered
-        && occurrence < c.firstCovered + c.grant.quantity
-        && promotionCoversDate(c.promo, date));
-      let amount = base;
-      const benefits = [...planBenefitLines];
-      let promotional = false;
-      for (const c of covering) {
-        const { action, value } = c.grant.benefit;
-        // A grant covering the period with no treatment configured charges the
-        // normal price and explains nothing — and, deliberately, does not make
-        // the occurrence promotional: the projection's horizon asks whether a
-        // charge differs from the regular one, and this one does not.
-        if (action === 'no_benefit') continue;
-        amount = applyPeriodBenefit(amount, action, value);
-        benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
-        promotional = true;
-      }
-      if (promotional) return { amount, benefits, promotional, pending: false };
-      const pending = coverage.some((c) => occurrence < c.firstCovered
-        && (c.promo.revokedAt == null || date <= c.promo.revokedAt));
-      return { amount, benefits, promotional: false, pending };
-    },
+    resolve: (date, occurrence) => resolveCoveredCharge(coverage, base, planBenefitLines, date, occurrence),
     line: (date, resolved) => ({
       kind: 'product',
       label: item.name,
@@ -1135,13 +1163,19 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   const quantity = Math.max(1, Math.trunc(service.quantity) || 1);
   const unit = round2(service.unitPrice);
   const regular = round2(unit * quantity);
+  // #1923 — a Product Promotion's periodical grant for this Product covers the
+  // service's own periods, counted from the first one on or after the day the
+  // Promotion was applied.
+  const coverage = a.promotions.filter((promo) => promo.productTarget).flatMap((promo) => promo.grants
+    .filter((grant) => grant.category === 'periodical' && grant.productId === service.productId)
+    .map((grant) => ({ promo, grant, firstCovered: occurrenceIndexOf(start, promo.appliedAt, cadence) })));
   return {
     cadence,
     section: cadence.section,
     start,
     end,
-    resolve: () => ({ amount: regular, benefits: [], promotional: false, pending: false }),
-    line: (date) => ({
+    resolve: (date, occurrence) => resolveCoveredCharge(coverage, regular, [], date, occurrence),
+    line: (date, resolved) => ({
       kind: 'product',
       label: service.name,
       user_membership_id: a.userMembershipId,
@@ -1150,8 +1184,8 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
       quantity,
       unit_price: unit,
       regular_price: regular,
-      benefits: [],
-      actual_charge: regular,
+      benefits: resolved.benefits,
+      actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(start, 1, 'year'),
       prepaid_periods: null,
     }),

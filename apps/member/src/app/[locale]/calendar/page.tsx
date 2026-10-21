@@ -128,6 +128,7 @@ export default function MemberCalendarPage() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [pendingCenterId, setPendingCenterId] = useState('');
   const [pendingTrainerId, setPendingTrainerId] = useState('');
+  const [pendingAtId, setPendingAtId] = useState('');
 
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   // #1637 — the activity image opens uncropped in place on click.
@@ -181,7 +182,7 @@ export default function MemberCalendarPage() {
   }, [activeCenterId, centerDefaultApplied]);
 
   const businessHours = weeklyToBusinessHours(weeklyHours);
-  const filtersActive = !!filterCenterId || !!filterTrainerId;
+  const filtersActive = !!filterCenterId || !!filterTrainerId || !!filterAtId;
 
   const fetchEvents = useCallback(
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
@@ -209,6 +210,7 @@ export default function MemberCalendarPage() {
                       backgroundColor: background,
                       borderColor: background,
                       textColor: readableEventTextColor(background),
+                      classNames: ['gd-event-colored'],
                     }
                   : {}),
                 extendedProps: s,
@@ -229,20 +231,24 @@ export default function MemberCalendarPage() {
   function openFilterPanel() {
     setPendingCenterId(filterCenterId);
     setPendingTrainerId(filterTrainerId);
+    setPendingAtId(filterAtId);
     setShowFilterPanel(true);
   }
 
   function applyFilters() {
     setFilterCenterId(pendingCenterId);
     setFilterTrainerId(pendingTrainerId);
+    setFilterAtId(pendingAtId);
     setShowFilterPanel(false);
   }
 
   function clearFilters() {
     setPendingCenterId('');
     setPendingTrainerId('');
+    setPendingAtId('');
     setFilterCenterId('');
     setFilterTrainerId('');
+    setFilterAtId('');
     setShowFilterPanel(false);
   }
 
@@ -406,6 +412,24 @@ export default function MemberCalendarPage() {
                 </select>
               </div>
 
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: memberTheme.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>
+                  {t('filter_activity_label')}
+                </div>
+                {/* #1740 — one compact dropdown; the API list (`/me/activity-types`)
+                    already holds active activities only. */}
+                <select
+                  value={pendingAtId}
+                  onChange={(e) => setPendingAtId(e.target.value)}
+                  style={{ ...modalInputStyle }}
+                >
+                  <option value="">{t('filter_all')}</option>
+                  {activityTypes.map((at) => (
+                    <option key={at.id} value={String(at.id)}>{at.name}</option>
+                  ))}
+                </select>
+              </div>
+
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button
                   onClick={applyFilters}
@@ -423,20 +447,6 @@ export default function MemberCalendarPage() {
             </div>
           )}
         </div>
-
-        {/* #1740 — one compact dropdown instead of a chip per activity; the API
-            list (`/me/activity-types`) already holds active activities only. */}
-        <select
-          aria-label={t('filter_activity_label')}
-          value={filterAtId}
-          onChange={(e) => setFilterAtId(e.target.value)}
-          style={{ ...modalInputStyle, flex: 1, minWidth: 0, width: 'auto' }}
-        >
-          <option value="">{t('filter_all')}</option>
-          {activityTypes.map((at) => (
-            <option key={at.id} value={String(at.id)}>{at.name}</option>
-          ))}
-        </select>
       </div>
 
       {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to

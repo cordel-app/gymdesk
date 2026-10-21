@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   discountedUnitPrice,
-  oneTimeProductAlreadyOwned,
   parseDirectDiscountPercent,
   priceProductPurchase,
   type PricedPromotion,
@@ -97,14 +96,6 @@ describe('discountedUnitPrice', () => {
   });
 });
 
-describe('oneTimeProductAlreadyOwned', () => {
-  it('is true for an active or pending purchase and never for a cancelled one', () => {
-    expect(oneTimeProductAlreadyOwned(['active'])).toBe(true);
-    expect(oneTimeProductAlreadyOwned(['cancelled', 'pending_payment'])).toBe(true);
-    expect(oneTimeProductAlreadyOwned(['cancelled'])).toBe(false);
-    expect(oneTimeProductAlreadyOwned([])).toBe(false);
-  });
-});
 
 describe('vatPortion (#1656)', () => {
   it('splits the VAT out of a VAT-inclusive amount, to the cent', async () => {

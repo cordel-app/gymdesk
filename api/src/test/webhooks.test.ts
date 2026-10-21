@@ -659,3 +659,74 @@ describe('POST /webhooks/payment — card update (#788)', () => {
     expect(request_row[0].status).toBe('completed');
   });
 });
+
+// ─── A paid event closes its other attempts ──────────────────────────────────
+//
+// Each Pay now raises a new attempt on the same initial Billing Event. On dev,
+// after one of them was paid the abandoned ones stayed `pending`, so My
+// Products kept offering a Pay now for a cycle that was already settled.
+describe('POST /webhooks/payment — a completed attempt closes the event’s other pending attempts', () => {
+  let gymId: string;
+  let memberId: number;
+  let userMembershipId: number;
+  let chargeTypeId: number;
+  let setId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Webhook Sibling Attempts Gym');
+    memberId = await createMember(gymId);
+    const planId = await createMembershipPlan(gymId);
+    userMembershipId = await createUserMembership(gymId, memberId, planId);
+    chargeTypeId = await getChargeTypeId();
+    setId = Number(await ensureTestProductSet(gymId, memberId, userMembershipId));
+  });
+
+  async function insertEvent(): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO billing_events (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source)
+       VALUES (?, ?, ?, 'payment_recorded', '5.00', ?, 'provider')`,
+      [gymId, setId, memberId, chargeTypeId],
+    );
+    return insertId;
+  }
+
+  async function attemptOn(eventId: number): Promise<{ id: number; orderId: string }> {
+    const orderId = crypto.randomUUID();
+    const id = await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, orderId);
+    await db.query('UPDATE payment_requests SET billing_event_id = ? WHERE id = ?', [eventId, id]);
+    return { id, orderId };
+  }
+
+  it('expires the abandoned attempts on the paid event and leaves other events alone', async () => {
+    const eventId = await insertEvent();
+    const first = await attemptOn(eventId);
+    const second = await attemptOn(eventId);
+    const paid = await attemptOn(eventId);
+    const otherEvent = await insertEvent();
+    const unrelated = await attemptOn(otherEvent);
+
+    const res = await postWebhook(buildMoneiEnvelope(paid.orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex')));
+    expect(res.status).toBe(200);
+
+    expect((await readRequest(paid.id)).status).toBe('completed');
+    for (const sibling of [first, second]) {
+      const row = await readRequest(sibling.id);
+      expect(row.status).toBe('expired');
+      expect(row.page_token).toBeNull();
+    }
+    expect((await readRequest(unrelated.id)).status).toBe('pending');
+  });
+
+  it('still records a closed attempt that the provider later reports as paid (#789)', async () => {
+    const eventId = await insertEvent();
+    const abandoned = await attemptOn(eventId);
+    const paid = await attemptOn(eventId);
+
+    await postWebhook(buildMoneiEnvelope(paid.orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex')));
+    expect((await readRequest(abandoned.id)).status).toBe('expired');
+
+    // Money that moved is never refused: the closed attempt is reopened.
+    await postWebhook(buildMoneiEnvelope(abandoned.orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex')));
+    expect((await readRequest(abandoned.id)).status).toBe('completed');
+  });
+});

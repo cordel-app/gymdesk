@@ -103,12 +103,14 @@ const assign = (gymId: string, planId: number, memberId: number, startsAt = TODA
     .set('x-gym-id', gymId)
     .send({ member_id: memberId, membership_plan_id: planId, starts_at: startsAt });
 
-async function assignPlan(gymId: string, planId: number): Promise<number> {
+async function assignPlan(gymId: string, planId: number, opts: { activate?: boolean } = {}): Promise<number> {
   const res = await assign(gymId, planId, await createMember(gymId));
   expect(res.status).toBe(201);
   // #1108 stage 1: assignment creates a Draft; this file is about an active
-  // assignment's Membership Fee Simulation.
-  await activateAssignment(gymId, res.body.id);
+  // assignment's Membership Fee Simulation. A caller applying a Promotion
+  // activates afterwards (#1863: a Plan Promotion goes on a plan added in the
+  // Draft, never on one a later version inherited).
+  if (opts.activate !== false) await activateAssignment(gymId, res.body.id);
   return res.body.id as number;
 }
 
@@ -220,7 +222,7 @@ describe('Assigned Plan — Membership Fee Simulation (#924 stage 3)', () => {
 
   it('lets an applied Promotion decide the period, and names it in the status', async () => {
     const planId = await createPlan(gymId, { price: 70, free: 1, paid: 6 });
-    const umId = await assignPlan(gymId, planId);
+    const umId = await assignPlan(gymId, planId, { activate: false });
 
     const { insertId: promotionId } = await db.query(
       `INSERT INTO promotions
@@ -238,6 +240,7 @@ describe('Assigned Plan — Membership Fee Simulation (#924 stage 3)', () => {
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    await activateAssignment(gymId, umId);
 
     const timeline = await timelineOf(gymId, umId);
     // The Plan's own Free Period would waive period 1 too, but where a

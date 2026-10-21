@@ -281,6 +281,8 @@ export interface AssignedPlanDetail {
   purchased_at?: string | null;
   next_billing_date: string | null;
   created_at: string;
+  /** #1883 — `members_app` | `admin` from the version's plan snapshot; null/absent reads Unknown. */
+  origin?: string | null;
   /** #1182: the plain-text actor snapshots — a person, or `System` for a run / the payment webhook. */
   created_by: string | null;
   modified_by: string | null;

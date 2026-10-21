@@ -29,8 +29,10 @@ import {
   cardSectionStyle,
 } from './formChrome';
 
-export function CardSection({ label, action, first = false, children }: {
+export function CardSection({ label, action, first = false, onHeaderClick, children }: {
   label: string;
+  /** Makes the whole header row a toggle (#1920); an `action` button inside it must stop propagation. */
+  onHeaderClick?: () => void;
   action?: React.ReactNode;
   /** True for the card's first section, which carries no hairline above it. */
   first?: boolean;
@@ -42,7 +44,9 @@ export function CardSection({ label, action, first = false, children }: {
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: 8, ...(action ? { minHeight: 26 } : null),
+          ...(onHeaderClick ? { cursor: 'pointer' } : null),
         }}
+        onClick={onHeaderClick}
       >
         <div style={cardSectionLabelStyle}>{label}</div>
         {action}

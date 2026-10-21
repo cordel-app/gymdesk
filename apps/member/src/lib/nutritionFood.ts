@@ -23,6 +23,8 @@ export interface NutritionFoodItem {
   quantity: number | string | null;
   unit: string | null;
   image_url?: string | null;
+  /** #1913 — the library food's description in the request locale (base value as fallback). */
+  description?: string | null;
   qualities?: NutritionFoodQuality[];
 }
 

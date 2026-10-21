@@ -44,7 +44,7 @@ export function NutritionFoodCard({ item, eager = false }: {
             src={imageSrc}
             alt={t('nutrition.food_image_alt', { name: item.item_name })}
             title={item.item_name}
-            description={[quantity, role].filter(Boolean).join(' · ') || null}
+            description={item.description?.trim() || null}
           >
             <img
               src={imageSrc}

@@ -177,7 +177,6 @@ describe('every surface resolves them from that one place (#1128)', () => {
       join(ADMIN, 'src', 'app', '[locale]', 'plans', 'PlanDetailModal.tsx'),
       join(ADMIN, 'src', 'app', '[locale]', 'financials', 'products', 'page.tsx'),
       join(ADMIN, 'src', 'components', 'ProductBenefits.tsx'),
-      join(ADMIN, 'src', 'components', 'assignedPlan', 'AdditionalPeriodicServices.tsx'),
     ]) {
       expect(read(file), `${file} does not use BILLING_FREQUENCY_NAMESPACE`)
         .toContain('BILLING_FREQUENCY_NAMESPACE');

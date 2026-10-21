@@ -121,7 +121,16 @@ interface DurationForm {
   bonus_periods: string;
   recurring_billing_interval: string;
   recurring_billing_unit: string;
-  membership_fee_price: string;
+  /** #1925 — the fee is never typed: a percentage off the plan's fee (the Personal Membership Fee Benefit). */
+  direct_discount_percent: string;
+}
+
+/** The regular fee less the typed percentage; null when there is no fee or the input is out of range. */
+function effectiveFee(fee: number | string | null, percent: string): number | null {
+  if (fee == null || fee === '') return null;
+  const pct = percent === '' ? 0 : Number(percent);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+  return Math.round(Number(fee) * (100 - pct)) / 100;
 }
 
 interface Props {
@@ -140,8 +149,8 @@ interface Props {
   onChanged: () => void;
 }
 
-function fmtMoney(v: number | null) {
-  return v != null ? `€${v.toFixed(2)}` : '—';
+function fmtMoney(v: number | string | null) {
+  return v != null ? `€${Number(v).toFixed(2)}` : '—';
 }
 
 const numField = (v: number | null) => (v != null ? String(v) : '');
@@ -250,7 +259,8 @@ export function AssignedPlanConfiguration({
       bonus_periods: numField(snapshot.bonus_periods),
       recurring_billing_interval: numField(snapshot.recurring_billing_interval),
       recurring_billing_unit: snapshot.recurring_billing_unit ?? '',
-      membership_fee_price: numField(snapshot.membership_fee_price),
+      direct_discount_percent: snapshot.personal_fee_benefit.action === 'percentage_discount'
+        && snapshot.personal_fee_benefit.value != null ? String(snapshot.personal_fee_benefit.value) : '',
     });
     setEditing('billing');
   }
@@ -293,9 +303,20 @@ export function AssignedPlanConfiguration({
           recurring_billing_interval: durationForm.recurring_billing_interval === ''
             ? null : Number(durationForm.recurring_billing_interval),
           recurring_billing_unit: durationForm.recurring_billing_unit || null,
-          membership_fee_price: durationForm.membership_fee_price === ''
-            ? null : Number(durationForm.membership_fee_price),
         }),
+      });
+      // #1925 — the fee is adjusted by a direct discount (%), stored as the
+      // assignment's Personal Membership Fee Benefit; 0 or blank is no benefit.
+      const pct = durationForm.direct_discount_percent === '' ? 0 : Number(durationForm.direct_discount_percent);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        toast(t('direct_discount_invalid'));
+        return;
+      }
+      await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
+        method: 'PUT',
+        body: JSON.stringify(pct > 0
+          ? { action: 'percentage_discount', value: pct }
+          : { action: 'no_benefit', value: null }),
       });
       cancelEdit();
       onChanged();
@@ -422,12 +443,25 @@ export function AssignedPlanConfiguration({
             </div>
             <div>
               <label style={labelSt}>{t('label_membership_fee')}</label>
+              <div style={{ ...inputSt, background: 'transparent', border: '1px solid transparent' }}>
+                {fmtMoney(snapshot.membership_fee_price)}
+              </div>
+            </div>
+            <div>
+              <label style={labelSt} htmlFor="assigned-plan-direct-discount">{t('label_direct_discount')}</label>
               <input
-                type="number" min="0" step="0.01"
-                value={durationForm.membership_fee_price}
-                onChange={(e) => setDurationForm({ ...durationForm, membership_fee_price: e.target.value })}
+                id="assigned-plan-direct-discount"
+                type="number" min="0" max="100" step="0.01"
+                value={durationForm.direct_discount_percent}
+                onChange={(e) => setDurationForm({ ...durationForm, direct_discount_percent: e.target.value })}
                 style={inputSt}
               />
+            </div>
+            <div>
+              <label style={labelSt}>{t('label_effective_fee')}</label>
+              <div style={{ ...inputSt, background: 'transparent', border: '1px solid transparent' }}>
+                {fmtMoney(effectiveFee(snapshot.membership_fee_price, durationForm.direct_discount_percent))}
+              </div>
             </div>
           </div>
           {/* #892 — the four numbers above are billing periods, and the

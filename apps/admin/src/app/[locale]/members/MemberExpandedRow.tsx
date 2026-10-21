@@ -91,6 +91,10 @@ interface BillingEvent {
   source: string;
   created_at: string;
   receipt_number: string | null;
+  /** The date the event is due (a ProductSet event's own billing date). A
+   * Scheduled obligation is created today for a later cycle, so its creation
+   * date would list next month's charge beside today's payment. */
+  billing_date?: string | null;
 }
 
 export function MemberExpandedRow({
@@ -180,6 +184,9 @@ export function MemberExpandedRow({
   const [clerkStatus, setClerkStatus] = useState<({ status: string } & ClerkAccountFields) | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
+  // #1963 — the inactive plan groups start collapsed.
+  const [trainingInactiveOpen, setTrainingInactiveOpen] = useState(false);
+  const [nutritionInactiveOpen, setNutritionInactiveOpen] = useState(false);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   // #1118 §12 — the Products this Member bought from the Members App, each with
@@ -190,6 +197,7 @@ export function MemberExpandedRow({
   const inFlightSetId = ['draft', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
     ? configuration.current_product_set!.id : null;
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [committedKey, setCommittedKey] = useState(0);
   const draftReview = useDraftReview(configuration.current_product_set, configuration);
   const workflow = {
     current: configuration.current_product_set,
@@ -518,7 +526,7 @@ export function MemberExpandedRow({
               productSetId={inFlightSetId}
               open={reviewOpen}
               onClose={() => setReviewOpen(false)}
-              onCommitted={() => { setReviewOpen(false); reloadProducts(); }}
+              onCommitted={() => { setReviewOpen(false); setCommittedKey((k) => k + 1); reloadProducts(); }}
             />
           )}
           <Section label={t('members.section_additional_services')}>
@@ -538,6 +546,7 @@ export function MemberExpandedRow({
               canPay={canManagePackages}
               isAdmin={isAdmin}
               onChanged={reloadProducts}
+              committedKey={committedKey}
             />
           </Section>
 
@@ -594,7 +603,7 @@ export function MemberExpandedRow({
                           style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
                           onClick={() => toggleEvent(ev.id)}
                         >
-                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{formatGymDate(ev.created_at, gymFmt)}</span>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{ev.billing_date ? formatGymDateOnly(ev.billing_date, gymFmt) : formatGymDate(ev.created_at, gymFmt)}</span>
                           <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
                           {ev.amount && (
                             <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -664,7 +673,10 @@ export function MemberExpandedRow({
               <p style={dim}>{t('members.no_nutrition_plans')}</p>
             ) : (
               <div>
-                {nutritionPlans.map((p) => (
+                {(() => {
+                  const renderNutrition = (plans: NutritionPlan[]) => (
+                    <>
+                {plans.map((p) => (
                   <div key={p.id} style={card}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <div style={{ minWidth: 0 }}>
@@ -687,6 +699,26 @@ export function MemberExpandedRow({
                     </div>
                   </div>
                 ))}
+                    </>
+                  );
+                  const activeN = nutritionPlans.filter((p) => p.status === 'active');
+                  const inactiveN = nutritionPlans.filter((p) => p.status !== 'active');
+                  return (
+                    <>
+                      {renderNutrition(activeN)}
+                      {inactiveN.length > 0 && (
+                        <div>
+                          <InactiveToggle
+                            label={t('members.plans_inactive')}
+                            open={nutritionInactiveOpen}
+                            onToggle={() => setNutritionInactiveOpen((o) => !o)}
+                          />
+                          {nutritionInactiveOpen && renderNutrition(inactiveN)}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </Section>
@@ -738,8 +770,12 @@ export function MemberExpandedRow({
                 )}
                 {inactivePlans.length > 0 && (
                   <div>
-                    <div style={subLabelStyle}>{t('members.plans_inactive')}</div>
-                    {inactivePlans.map((p) => (
+                    <InactiveToggle
+                      label={t('members.plans_inactive')}
+                      open={trainingInactiveOpen}
+                      onToggle={() => setTrainingInactiveOpen((o) => !o)}
+                    />
+                    {trainingInactiveOpen && inactivePlans.map((p) => (
                       <PlanCard
                         key={p.id}
                         name={p.training_plan_name}
@@ -880,6 +916,21 @@ const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim = cardMutedTextStyle;
 const card = innerCardStyle;
 const subLabelStyle = cardSubLabelStyle;
+
+/** Clickable header of a collapsed "Inactive" plan group (#1963). */
+function InactiveToggle({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      style={{ ...subLabelStyle, display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+    >
+      <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+      {label}
+    </button>
+  );
+}
 const fieldLabelStyle = formFieldLabelStyle;
 const retryBtn = cardTextLinkStyle;
 const eventRow: React.CSSProperties = {

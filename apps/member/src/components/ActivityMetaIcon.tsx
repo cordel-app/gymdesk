@@ -5,7 +5,7 @@ import React from 'react';
  * (#1556), duplicated here because the two apps share no frontend module
  * (#1637). `currentColor` only, so the caller's text colour is the one colour.
  */
-export type ActivityMetaIconName = 'center' | 'trainer' | 'space';
+export type ActivityMetaIconName = 'center' | 'trainer' | 'space' | 'service';
 
 const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
   center: (
@@ -18,6 +18,13 @@ const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="8" r="3.5" />
       <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  // #1880 — a briefcase: the activity needs a professional service.
+  service: (
+    <>
+      <rect x="3" y="8" width="18" height="12" rx="2" />
+      <path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18" />
     </>
   ),
   space: (

@@ -293,6 +293,7 @@ export default function CalendarPage() {
       space_id:              e.space_id ? String(e.space_id) : '',
       center_id:             e.center_id ? String(e.center_id) : '',
       trainer_membership_id: e.trainer_membership_id ? String(e.trainer_membership_id) : '',
+      professional_service_id: e.professional_service_id ? String(e.professional_service_id) : '',
       color:                 e.color ?? '',
       starts_at:             allDay ? toDateLocal(new Date(e.starts_at)) : toDateTimeLocal(new Date(e.starts_at)),
       ends_at:               allDay ? toDateLocal(new Date(e.ends_at))   : toDateTimeLocal(new Date(e.ends_at)),
@@ -320,6 +321,7 @@ export default function CalendarPage() {
       space_id:              form.space_id ? Number(form.space_id) : null,
       center_id:             form.center_id ? Number(form.center_id) : null,
       trainer_membership_id: form.trainer_membership_id ? Number(form.trainer_membership_id) : null,
+      professional_service_id: form.professional_service_id ? Number(form.professional_service_id) : null,
       color:                 form.color || null,
       starts_at:             form.all_day ? `${form.starts_at}T00:00:00` : form.starts_at,
       ends_at:               form.all_day ? `${form.ends_at}T23:59:59`   : form.ends_at,
@@ -697,6 +699,7 @@ export default function CalendarPage() {
                 spaces={spaces}
                 centers={centers}
                 trainers={trainers}
+                professionalServices={professionalServices}
                 onSave={handleSave}
                 onImageChanged={handleImageChanged}
                 onDelete={handleDelete}

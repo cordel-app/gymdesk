@@ -23,7 +23,7 @@ export type AssignmentConfigColumn =
   | 'discount_reason' | 'discount_expires_at'
   | 'free_periods' | 'paid_periods' | 'bonus_periods' | 'pay_beforehand_periods'
   | 'auto_renew' | 'personal_fee_benefit_action' | 'personal_fee_benefit_value'
-  | 'recurring_billing_interval' | 'recurring_billing_unit';
+  | 'recurring_billing_interval' | 'recurring_billing_unit' | 'origin';
 
 /**
  * #1325 PR 3e-4a — SQL for the id of the latest version linked to the assignment
@@ -51,7 +51,7 @@ const OVERLAID: AssignmentConfigColumn[] = [
   'membership_fee_price', 'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at',
   'free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods', 'auto_renew',
   'personal_fee_benefit_action', 'personal_fee_benefit_value',
-  'recurring_billing_interval', 'recurring_billing_unit',
+  'recurring_billing_interval', 'recurring_billing_unit', 'origin',
 ];
 
 /**

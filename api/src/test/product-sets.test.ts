@@ -115,6 +115,21 @@ describe('ProductSet versioning (#1325)', () => {
     expect(rows.map((r) => r.status)).toEqual(['superseded', 'active']);
   });
 
+  it('cancelling a Draft also discards the Draft assignment linked to it (#1922)', async () => {
+    const owner = await member(`ps-c-${Date.now()}@example.com`);
+    const draft = await db.transaction((tx) => createDraft(tx, {
+      gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor }));
+    if (draft.kind !== 'created') throw new Error('expected created');
+    const { insertId: umId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'draft', ?)`,
+      [gymId, owner, today()]);
+    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, draft.productSet.id]);
+    const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));
+    expect(out.kind).toBe('cancelled');
+    const { rows } = await db.query('SELECT id FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows).toHaveLength(0);
+  });
+
   it('is tenant scoped: another gym cannot move a set', async () => {
     const otherGym = await createTestGym('Other Gym');
     const { rows } = await db.query<{ id: number }>(

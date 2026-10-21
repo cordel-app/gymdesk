@@ -29,7 +29,7 @@
 // `benefitTreatmentLabel()` (#896 stage 4), so this surface adds no second
 // vocabulary.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -37,6 +37,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { usePurchaseCancel } from './usePurchaseCancel';
+import { ItemOriginChip } from '@/components/ItemOriginChip';
+import { itemOriginKey } from '@/lib/itemOrigin';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -60,12 +62,13 @@ import {
   purchaseDate,
   type PurchasedProduct,
   type PurchasedProductPromotion,
+  displayPurchaseStatus,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
 
 export function MemberPurchasedProducts({
-  items, memberId, canWrite, canPay, isAdmin, onChanged,
+  items, memberId, canWrite, canPay, isAdmin, onChanged, committedKey,
 }: {
   items: PurchasedProduct[];
   memberId: number;
@@ -76,6 +79,8 @@ export function MemberPurchasedProducts({
   /** The direct discount is the Admin's alone (the server enforces it too). */
   isAdmin: boolean;
   onChanged: () => void;
+  /** Bumped when Save & Pay committed a version: the inline Add form closes (#1918). */
+  committedKey?: number;
 }) {
   const t = useTranslations('members');
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
@@ -86,6 +91,7 @@ export function MemberPurchasedProducts({
   const gymFmt = useGymFormatSettings();
 
   const [adding, setAdding] = useState(false);
+  useEffect(() => { if (committedKey) setAdding(false); }, [committedKey]);
   // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
   const [discarding, setDiscarding] = useState<PurchasedProduct | null>(null);
   const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'));
@@ -194,7 +200,7 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_status'),
       mobile: 'keep',
       render: (item) => (
-        <StatusBadge status={item.status} label={t(`purchase_status_${item.status}` as any)} />
+        <StatusBadge status={displayPurchaseStatus(item)} label={t(`purchase_status_${displayPurchaseStatus(item)}` as any)} />
       ),
     },
     {
@@ -224,7 +230,7 @@ export function MemberPurchasedProducts({
                 },
               ] : []),
               { label: t('action_details'), onClick: () => setDetail(item) },
-              ...(item.status === 'active' && !item.cancelled_on
+              ...(item.status === 'active' && !item.cancelled_on && !item.pending_termination
                 ? [{
                     label: t('purchase_cancel_action'),
                     danger: true,
@@ -374,6 +380,10 @@ function PurchaseFacts({
       />
       <CardDetailRow label={t('purchase_col_status')} value={t(`purchase_status_${item.status}` as any)} />
       <CardDetailRow label={t('purchase_created_by')} value={item.created_by ?? dash} />
+      <CardDetailRow
+        label={t('origin_label')}
+        value={<ItemOriginChip label={t(itemOriginKey(item.origin))} />}
+      />
     </div>
   );
 }

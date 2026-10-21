@@ -157,13 +157,12 @@ describe('what state a purchase is in (#1121 §6)', () => {
   // says an item may be bought once (`Q1` is explicit that the catalogue is the
   // gym's two existing columns and no new flag), so a second session package
   // months later is a real purchase.
-  it('a pending purchase takes the Buy action away, and so does a held one-time Product (#1521)', () => {
+  it('a pending purchase takes the Buy action away; a held Product can be bought again (#1864)', () => {
     expect(describeProductPurchase(item(), ['pending_payment']))
       .toEqual({ purchase_state: 'pending_payment', purchasable: false });
-    // #1521 decision 3 reverses #1121's "a second package is a real purchase":
-    // a one-time Product is bought once.
+    // #1864 restores #1121's "a second package is a real purchase".
     expect(describeProductPurchase(item(), ['active']))
-      .toEqual({ purchase_state: 'purchased', purchasable: false });
+      .toEqual({ purchase_state: 'purchased', purchasable: true });
     expect(describeProductPurchase(item(), []))
       .toEqual({ purchase_state: 'available', purchasable: true });
   });
