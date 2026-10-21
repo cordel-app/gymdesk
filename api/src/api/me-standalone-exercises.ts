@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
-import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
+import { localizedExerciseNameExpr, exerciseNameSearchSql } from '../domain/exerciseTranslations';
 import { effectiveImageThumbnailUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import { MUSCLE_SLUG_SQL } from './exercise-muscles';
 import { resolveMemberId } from './me';
@@ -54,7 +54,7 @@ meStandaloneExercisesRouter.get('/catalogue', async (req: Request, res: Response
     const params: any[] = [gymId];
     let where = "e.gym_id = ? AND e.status = 'active' AND e.deleted_at IS NULL";
     if (q) {
-      where += ` AND (e.name LIKE ? OR EXISTS (SELECT 1 FROM exercise_translations et WHERE et.exercise_id = e.id AND et.name LIKE ?))`;
+      where += ` AND ${exerciseNameSearchSql('e')}`;
       const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
       params.push(like, like);
     }
