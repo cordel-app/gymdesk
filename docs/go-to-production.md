@@ -1267,13 +1267,7 @@ runbook is how.
       thumbnail/poster reference (when the master or video URL is repointed) without
       deleting the object, and a hard-deleted gym leaves its whole folder behind. Write
       a sweep, or accept the orphans and budget the storage.
-- [ ] **`POST /storage/uploads/exercise-image` is now unused by the admin app**
-      (#719 part 1): the Exercises page uploads through `POST /exercises/:id/image`
-      instead. The route still exists and still works (nutrition images share the same
-      handler), so nothing has to happen at deploy time — but it writes a master with no
-      thumbnail and applies none of #719's ownership rules, so it should not be given a
-      new caller. Retire it once #719 part 3 has landed.
-
+- [x] **`POST /storage/uploads/exercise-image` retired** (#1714 stage 2): removed with its router; nothing to do at deploy time.
 - [ ] **Migration 201 must run *before* the API build that reads `*_periods`** (#892):
       the rename of `free_months` / `paid_months` / `pay_beforehand_months` /
       `bonus_months` to `*_periods` on `membership_plans` and `user_memberships` is a
