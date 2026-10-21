@@ -54,10 +54,14 @@ jobs:
 
       - name: Deploy to corfront
         uses: appleboy/ssh-action@v1
+        env:
+          CORDEL_FITNESS_API_PUBLIC_URL: ${{ vars.CORDEL_FITNESS_API_PUBLIC_URL }}
+          CORDEL_FITNESS_API_INTERNAL_URL: ${{ vars.CORDEL_FITNESS_API_INTERNAL_URL }}
         with:
           host: ${{ secrets.CORFRONT_SSH_HOST }}
           username: podman
           key: ${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}
+          envs: CORDEL_FITNESS_API_PUBLIC_URL,CORDEL_FITNESS_API_INTERNAL_URL
           script: |
             set -euo pipefail
 
@@ -79,8 +83,61 @@ jobs:
               exit 1
             fi
 
-            # Oscar owns the systemd unit (ports, restart policy);
-            # we just refresh the image and restart it.
+            # --- Runtime env: sync from GitHub (source of truth) ---------------
+            # Like deploy.yml (#1177): this job is the only writer of the unit's
+            # Environment= lines. Every deploy deletes them and writes the block
+            # below from the GitHub environment, so a value is changed in GitHub and
+            # redeployed, never hand-edited on corfront. The rest of the unit (ports,
+            # network, restart policy) stays Oscar's and is not touched.
+            if ! grep -q '^\[Container\]$' "$UNIT"; then
+              echo "ERROR: [Container] section not found in $UNIT"; exit 1
+            fi
+            # The API address the unit carries now, printed so a change is visible in
+            # the run log. Addresses only; a secret's value is never printed.
+            for k in CORDEL_FITNESS_API_PUBLIC_URL CORDEL_FITNESS_API_INTERNAL_URL; do
+              cur=$(sed -n "s/^Environment=\"\{0,1\}$k=//p" "$UNIT" | sed 's/^"//; s/"$//')
+              echo "Unit $k (before): ${cur:-<unset>} -> GitHub: ${!k:-<unset>}"
+            done
+            # Required values must be present: fail before the unit is touched, so a
+            # missing GitHub variable leaves the running app exactly as it was.
+            for v in CORDEL_FITNESS_API_PUBLIC_URL CORDEL_FITNESS_API_INTERNAL_URL; do
+              if [ -z "${!v:-}" ]; then echo "ERROR: $v is empty in GitHub env '${{ inputs.environment || 'dev' }}'"; exit 1; fi
+            done
+            # A key the unit carries that this job does not write would be lost on
+            # the first deploy. Refuse instead, naming the keys (never the values),
+            # so it is added to GitHub and to this list rather than dropped silently.
+            KNOWN=" CORDEL_FITNESS_API_PUBLIC_URL CORDEL_FITNESS_API_INTERNAL_URL "
+            UNKNOWN=""
+            for k in $(sed -n 's/^Environment=//p' "$UNIT" | sed 's/^"//; s/=.*//'); do
+              case "$KNOWN" in *" $k "*) ;; *) UNKNOWN="$UNKNOWN $k" ;; esac
+            done
+            if [ -n "$UNKNOWN" ]; then
+              echo "ERROR: $UNIT sets variables this workflow does not manage:$UNKNOWN"
+              echo "Add them to GitHub and to this workflow first; nothing was changed."
+              exit 1
+            fi
+
+            umask 077
+            cp "$UNIT" "$UNIT.bak.$(date +%s)"
+            ls -t "$UNIT".bak.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+            # One KEY=value per line; `%` is a systemd specifier, so it is doubled.
+            ENV_TMP="$(mktemp)"
+            cat > "$ENV_TMP" <<ENVEOF
+            CORDEL_FITNESS_API_PUBLIC_URL=${CORDEL_FITNESS_API_PUBLIC_URL}
+            CORDEL_FITNESS_API_INTERNAL_URL=${CORDEL_FITNESS_API_INTERNAL_URL}
+            ENVEOF
+            # An optional variable left unset is not written at all, so the app
+            # reads its own default rather than an empty string.
+            sed -i '/^[A-Z_0-9]*=$/d' "$ENV_TMP"
+            UNIT_ENV="$(mktemp)"
+            sed 's/%/%%/g; s/^/Environment=/' "$ENV_TMP" > "$UNIT_ENV"
+            rm -f "$ENV_TMP"
+            sed -i '/^Environment=/d' "$UNIT"
+            sed -i "/^\[Container\]$/r $UNIT_ENV" "$UNIT"
+            rm -f "$UNIT_ENV"
+            systemctl --user daemon-reload
+
+            # The image and the environment are refreshed; restart picks up both.
             if ! systemctl --user restart fitness-pay.service; then
               echo "ERROR: systemctl restart failed"
               systemctl --user status fitness-pay.service --no-pager --lines=40 || true
