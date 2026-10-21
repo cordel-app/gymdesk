@@ -746,6 +746,7 @@
     "chart_title": "Progress",
     "chart_aria": "Progress chart for {name}",
     "history": "Daily readings",
+    "history_empty": "No readings recorded yet.",
     "set": "Set",
     "reps": "Reps",
     "weight": "Weight",

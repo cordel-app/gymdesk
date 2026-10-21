@@ -746,6 +746,7 @@
     "chart_title": "Progrés",
     "chart_aria": "Gràfic de progrés de {name}",
     "history": "Registres diaris",
+    "history_empty": "Encara no hi ha registres.",
     "set": "Sèrie",
     "reps": "Reps",
     "weight": "Pes",
