@@ -32,7 +32,7 @@ import {
   createTestGym,
   createTestMembership,
   ensureTestProductSet,
-  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, legacyChildQuery, createTestDraftAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -56,11 +56,9 @@ async function createAssignment(gymId: string, planId: number, basePrice = 100):
     'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
     [gymId, 'PRA Member', `pra-${uniq()}@test.com`],
   );
-  const { insertId } = await legacyAssignmentQuery(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-     VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
-    [gymId, memberId, planId, basePrice],
-  );
+  // #1863: a Plan Promotion applies (and re-applies) only to a plan added in a
+  // Draft, so the assignment is a Draft with its own plan snapshot.
+  const insertId = await createTestDraftAssignment(gymId, Number(memberId), planId, { config: { base_price: basePrice } });
   // #1325 PR 3b: an adjustment belongs to the member's ProductSet. Not linked
   // to the assignment: these cases exercise the assignment-keyed apply path.
   await ensureTestProductSet(gymId, memberId);
@@ -287,7 +285,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     expect(current.description).toBe('Repriced');
   });
 
-  it('moves the price through the new version, writing no ledger adjustment (#1325)', async () => {
+  it('moves the price through the Draft version, writing no ledger adjustment (#1325, #1863)', async () => {
     const umId = await createAssignment(gymId, planId, 100);
     const promotionId = await createPromotion(gymId, `Ledger-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);

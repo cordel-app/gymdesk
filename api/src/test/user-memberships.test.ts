@@ -9,7 +9,8 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery, legacyChildQuery,
+  createTestDraftAssignment, activateTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -2418,9 +2419,12 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     await setBillingPolicy(gymId, planId, 1, 'month');
     const promoId = await createPromotion(gymId, planId, `Submitted-Promo-${Date.now()}`);
     await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, null);
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
+    // #1863: a Plan Promotion goes on a plan added in a Draft; the plan is then committed.
+    const umId = await createTestDraftAssignment(gymId, memberId, planId,
+      { startsAt: '2026-01-01', config: { base_price: 40 } });
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);
+    await activateTestAssignment(gymId, umId);
     // Still-applied (no revoked_at) -> an open-ended window from applied_at.
     await legacyChildQuery(
       'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
@@ -2456,9 +2460,12 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     await setBillingPolicy(gymId, planId, 1, 'month');
     const promoId = await createPromotion(gymId, planId, `Revoked-Promo-${Date.now()}`);
     await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, null);
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
+    // #1863: a Plan Promotion goes on a plan added in a Draft; the plan is then committed.
+    const umId = await createTestDraftAssignment(gymId, memberId, planId,
+      { startsAt: '2026-01-01', config: { base_price: 40 } });
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);
+    await activateTestAssignment(gymId, umId);
     const revokeRes = await request
       .delete(`/user-memberships/${umId}/promotions/${promoId}`)
       .set('Authorization', TEST_AUTH_HEADER)

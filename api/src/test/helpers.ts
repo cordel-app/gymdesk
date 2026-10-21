@@ -647,3 +647,55 @@ export async function eventually<T>(fn: () => Promise<T>, done: (v: T) => boolea
   }
   return last;
 }
+
+/**
+ * #1863 — a Promotion is applied only to a Membership Plan added in a Draft
+ * ProductSet, never to one a Draft inherited from the previous Active version
+ * (`is_inherited`, migration 305). A test that applies a Plan Promotion therefore
+ * creates its assignment the way `POST /user-memberships` does — a `draft` row
+ * plus its first Draft version through `createDraftSetForAssignment()` — so the
+ * plan snapshot is the Draft's own. `config` is written onto that version's
+ * snapshot, exactly as `legacyAssignmentQuery()` does for a running one. The plan
+ * need not be public or priced: those are the route's checks, not the version's.
+ */
+export async function createTestDraftAssignment(
+  gymId: string,
+  memberId: number,
+  planId: number,
+  opts: { startsAt?: string; endsAt?: string | null; config?: AssignmentConfigPatch } = {},
+): Promise<number> {
+  const { createDraftSetForAssignment } = await import('../api/assignment-draft-set');
+  const startsAt = opts.startsAt ?? new Date().toISOString().slice(0, 10);
+  const umId = await db.transaction(async (tx) => {
+    const { insertId } = await tx.query(
+      `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
+       VALUES (?, ?, ?, ?, ?, 'draft', ?)`,
+      [memberId, gymId, planId, startsAt, opts.endsAt ?? null, 'Test fixture'],
+    );
+    await createDraftSetForAssignment(tx, {
+      gymId, userMembershipId: Number(insertId), ownerMemberId: memberId, membershipPlanId: planId,
+      startsAt, endsAt: opts.endsAt ?? null,
+      membershipFeePrice: null, basePrice: null, planPriceId: null,
+      discountReason: null, discountExpiresAt: null, actor: { name: 'Test fixture' },
+    });
+    return Number(insertId);
+  });
+  if (opts.config) await setAssignmentConfig(umId, opts.config);
+  return umId;
+}
+
+/**
+ * Commits a Draft assignment through the real route (`POST /:id/activate`,
+ * `confirm: true` so a plan it replaces is superseded), for a test that needs a
+ * running plan carrying a Promotion applied while it was a Draft (#1863).
+ */
+export async function activateTestAssignment(gymId: string, umId: number): Promise<void> {
+  const res = await request
+    .post(`/user-memberships/${umId}/activate`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ confirm: true });
+  if (res.status >= 300) {
+    throw new Error(`activateTestAssignment: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+}
