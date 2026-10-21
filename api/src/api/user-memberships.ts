@@ -353,6 +353,8 @@ export interface PromotionApplication extends AppliedPromotionForBilling {
   paidMonths: number;
   bonusMonths: number;
   payBeforehandMonths: number;
+  /** #1923 — the Promotion is about a Product (`applies_to = 'product'`), not a Membership Plan. */
+  productTarget: boolean;
 }
 
 export async function loadPromotionApplications(
@@ -402,7 +404,8 @@ async function loadApplicationsKeyedBy(
   const { rows } = await exec.query(
     `SELECT ump.id, ${ownerKey} AS owner_key, ump.promotion_id, ump.status,
             ump.applied_at, ump.revoked_at, ump.snapshot,
-            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
+            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+            p.applies_to
      ${owner}
      LEFT JOIN promotions p ON p.id = ump.promotion_id
      WHERE ${filter} IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
@@ -437,6 +440,7 @@ async function loadApplicationsKeyedBy(
         paidMonths: num(snap?.paid_months ?? row.paid_months),
         bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
         payBeforehandMonths: num(row.pay_beforehand_months),
+        productTarget: row.applies_to === 'product',
         appliedAt: toDateOnly(row.applied_at),
         revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
         membershipFeeBenefits,
