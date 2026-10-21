@@ -21,6 +21,8 @@ export interface CalendarEventForm {
   space_id: string;
   center_id: string;
   trainer_membership_id: string;
+  /** #1891: the Professional Service a custom event delivers (empty = none). */
+  professional_service_id: string;
   color: string;
   starts_at: string;
   ends_at: string;
@@ -203,6 +205,6 @@ export function toDateLocal(d: Date): string {
 }
 
 export const EMPTY_FORM: CalendarEventForm = {
-  title: '', activity_type_id: '', space_id: '', center_id: '', trainer_membership_id: '',
+  title: '', activity_type_id: '', space_id: '', center_id: '', trainer_membership_id: '', professional_service_id: '',
   color: '', starts_at: '', ends_at: '', all_day: false, description: '', status: 'scheduled',
 };
