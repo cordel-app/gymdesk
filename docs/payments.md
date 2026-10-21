@@ -318,6 +318,14 @@ is never charged the cycles that went by before it paid — which is what #790 p
 > completed webhook as "already processed" and the charge was lost. Cleanup now keeps an
 > opened request `pending` for hours — §B8.
 
+**A paid event closes its other attempts.** Each Pay now raises a new attempt on the same
+initial Billing Event, so when one completes, the webhook's `completed` branches (the fee and
+the product purchase) mark every other `pending` attempt on that event `expired` and clear its
+`page_token` (`closeSiblingAttempts()`, in the transaction that completes the paid one).
+Otherwise the abandoned attempts kept My Products showing *You have a pending payment* with a
+Pay now for a settled cycle. An expired attempt still accepts a later `completed` webhook
+(#789), so this can never lose money that was in fact taken.
+
 ### A6. What is visible afterwards
 
 | Surface | Route |
