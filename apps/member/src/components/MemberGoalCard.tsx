@@ -1,6 +1,7 @@
 'use client';
 
 import { type CSSProperties, type ReactNode, useState } from 'react';
+import { ImagePreviewButton } from './ImagePreview';
 import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
@@ -8,7 +9,7 @@ import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChro
  *
  * ```text
  * ┌──────────────────────────────────────────────┐
- * │ [img]  Weight Loss                         ▸ │   ← header: tap to expand
+ * │ [img]  Weight Loss                           │   ← header: tap to expand
  * │        Target: 70 kg · 65%                   │
  * │        [ Add reading ]                       │   ← the goal's own action
  * ├──────────────────────────────────────────────┤
@@ -34,7 +35,7 @@ import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChro
  *   (#983).
  */
 export function MemberGoalCard({
-  title, summary, expanded, onToggle, actions, imageUrl, imageAlt, imageFallback, children, headingId,
+  title, summary, expanded, onToggle, actions, imageUrl, previewUrl, imageAlt, imageFallback, imageDescription, children, headingId,
 }: {
   title: string;
   /** `Target: 70 kg · 65%`, or `null` for a goal that has neither (§1). */
@@ -46,9 +47,13 @@ export function MemberGoalCard({
   actions?: ReactNode;
   /** #1826 — the goal's picture; `undefined` hides the image slot entirely. */
   imageUrl?: string | null;
+  /** #1873 — the larger picture shown in the enlarged view; defaults to `imageUrl`. */
+  previewUrl?: string | null;
   imageAlt?: string;
   /** The text shown where there is no picture. */
   imageFallback?: string;
+  /** #1873 — the goal's description, shown under the enlarged picture. */
+  imageDescription?: string | null;
   children?: ReactNode;
   headingId?: string;
 }) {
@@ -56,49 +61,52 @@ export function MemberGoalCard({
   const showImage = imageFallback !== undefined;
   const imageSrc = imageBroken ? null : imageUrl;
 
-  const heading = (
-    <>
-      {showImage && (
-        <span style={styles.imageBox}>
-          {imageSrc ? (
-            <img
-              src={imageSrc}
-              alt={imageAlt ?? ''}
-              loading="lazy"
-              decoding="async"
-              style={styles.image}
-              onError={() => setImageBroken(true)}
-            />
-          ) : (
-            <span style={styles.placeholder}>{imageFallback}</span>
-          )}
-        </span>
+  const imageBlock = showImage && (
+    <span style={styles.imageBox}>
+      {imageSrc ? (
+        <ImagePreviewButton src={previewUrl ?? imageSrc} alt={imageAlt ?? ''} title={title} description={imageDescription ?? null}>
+          <img
+            src={imageSrc}
+            alt={imageAlt ?? ''}
+            loading="lazy"
+            decoding="async"
+            style={styles.image}
+            onError={() => setImageBroken(true)}
+          />
+        </ImagePreviewButton>
+      ) : (
+        <span style={styles.placeholder}>{imageFallback}</span>
       )}
-      <span style={styles.headerText}>
-        <span id={headingId} style={styles.title}>{title}</span>
-        {summary && <span style={styles.summary}>{summary}</span>}
-      </span>
-    </>
+    </span>
+  );
+
+  const headingText = (
+    <span style={styles.headerText}>
+      <span id={headingId} style={styles.title}>{title}</span>
+      {summary && <span style={styles.summary}>{summary}</span>}
+    </span>
   );
 
   return (
     <article style={styles.card}>
-      {onToggle ? (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          style={styles.header}
-        >
-          {heading}
-          {/* The affordance only: the accessible name is the goal's own name,
-              and `aria-expanded` above is what says which way it points. */}
-          <span style={styles.caret} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        </button>
-      ) : (
-        <div style={{ ...styles.header, cursor: 'default' }}>{heading}</div>
-      )}
-      {actions && <div style={styles.actions}>{actions}</div>}
+      <div style={styles.row}>
+        {imageBlock}
+        <div style={styles.content}>
+          {onToggle ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              style={styles.header}
+            >
+              {headingText}
+            </button>
+          ) : (
+            <div style={{ ...styles.header, cursor: 'default' }}>{headingText}</div>
+          )}
+          {actions && <div style={styles.actions}>{actions}</div>}
+        </div>
+      </div>
 
       {expanded && children && <div style={styles.body}>{children}</div>}
     </article>
@@ -106,26 +114,27 @@ export function MemberGoalCard({
 }
 
 const styles: Record<string, CSSProperties> = {
-  card:        { ...sectionCardStyle },
+  card:        { ...sectionCardStyle, overflow: 'hidden' },
+  // #1873 — the picture fills the card's height on the left; the text column
+  // and the action sit to its right.
+  row:         { display: 'flex', alignItems: 'stretch', gap: 12 },
+  content:     { display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 },
   header:      {
     display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    // §5 — a compact layout with a comfortable target: the whole header is
-    // tappable rather than the caret alone.
-    padding: '14px 18px', minHeight: 44,
+    padding: '14px 18px 8px 0', minHeight: 44,
     background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', font: 'inherit',
     color: 'inherit',
   },
   imageBox:    {
-    width: 72, height: 72, flexShrink: 0, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 112, minHeight: 112, flexShrink: 0, alignSelf: 'stretch', overflow: 'hidden',
+    display: 'flex', alignItems: 'stretch', justifyContent: 'center',
     background: memberTheme.separator,
   },
-  image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
-  placeholder: { fontSize: 10, lineHeight: 1.2, textAlign: 'center', padding: 4, color: memberTheme.textMuted },
+  image:       { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  placeholder: { fontSize: 10, lineHeight: 1.2, textAlign: 'center', padding: 4, color: memberTheme.textMuted, alignSelf: 'center' },
   headerText:  { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 },
   title:       { fontSize: 16, fontWeight: 700, color: memberTheme.text, overflowWrap: 'anywhere' },
   summary:     { fontSize: 13, color: memberTheme.textSecondary, overflowWrap: 'anywhere' },
-  caret:       { fontSize: 12, color: memberTheme.textMuted, flexShrink: 0 },
-  actions:     { display: 'flex', flexWrap: 'wrap', gap: 8, padding: '0 18px 14px' },
+  actions:     { display: 'flex', flexWrap: 'wrap', gap: 8, padding: '0 18px 14px 0' },
   body:        { padding: '0 18px 16px', marginTop: 2, paddingTop: 12, ...rowDividerStyle },
 };

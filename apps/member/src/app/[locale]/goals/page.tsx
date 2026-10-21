@@ -295,6 +295,8 @@ export default function GoalsPage() {
                 imageUrl={goal.goal_image_thumbnail_url ?? goal.goal_image_url ?? null}
                 imageAlt={t('nutrition.food_image_alt', { name: nameOf(goal) })}
                 imageFallback={t('nutrition.no_image')}
+                previewUrl={goal.goal_image_url ?? null}
+                imageDescription={goal.goal_description ?? null}
               >
                 {/* §5 — the five structured fields, not a pipe-separated line.
                     The goal's name is one of them rather than a heading above

@@ -370,6 +370,7 @@
     "purchase_status_active": "Active",
     "purchase_status_cancelled": "Cancelled",
     "purchase_status_draft": "Draft",
+    "purchase_status_pending_termination": "Pending termination",
     "purchase_filter_draft": "Draft",
     "purchase_action_pay_draft": "Pay",
     "purchase_action_discard_draft": "Cancel draft",
@@ -388,6 +389,10 @@
     "purchase_col_payment_status": "Payment status",
     "purchase_col_status": "Status",
     "purchase_created_by": "Created by",
+    "origin_label": "Source",
+    "origin_members_app": "Members App",
+    "origin_admin": "Admin",
+    "origin_unknown": "Unknown",
     "purchase_payment_status_pending": "Pending",
     "purchase_payment_status_completed": "Paid",
     "purchase_payment_status_failed": "Failed",
@@ -510,6 +515,7 @@
     "ps_status_pending_payment": "Pending Payment",
     "ps_status_active": "Active",
     "ps_status_superseded": "Superseded",
+    "simulation_initial_payment": "Initial payment",
     "simulation_hide_zero": "Hide zero-amount events",
     "section_billing_events_forecast": "Billing Events Forecast",
     "section_past_product_sets": "Past Product Sets",
@@ -670,9 +676,9 @@
     "purchase_validity_active": "Active",
     "purchase_validity_cancelled": "Cancelled (valid until end date)",
     "purchase_validity_expired": "Expired",
-    "purchase_cancel_action": "Cancel purchase",
+    "purchase_cancel_action": "Terminate Product",
     "purchase_cancel_confirm": "Cancel {product}? The member keeps it until its end date.",
-    "purchase_cancel_confirm_button": "Cancel purchase",
+    "purchase_cancel_confirm_button": "Terminate Product",
     "purchase_cancel_keep": "Keep it",
     "purchase_cancel_confirm_recurring": "Cancel {product}? It is removed from the member's draft changes; review and Save & Pay to apply them. Nothing is billed or refunded now.",
     "purchase_cancel_recurring_unavailable": "This product can't be removed from the draft here. Use Recurring Products."
@@ -1684,7 +1690,8 @@
     "view_list": "List",
     "view_cards": "Cards",
     "card_no_benefits": "No benefits included",
-    "card_more_benefits": "+{n} more"
+    "card_more_benefits": "+{n} more",
+    "simulation_initial_payment": "Initial payment"
   },
   "prices": {
     "title": "Prices",
@@ -1929,7 +1936,8 @@
     "simulation_disclaimer": "Example only. Dates and amounts are illustrative and will be recalculated from each customer's actual enrollment date. The Membership Fee is not shown: it belongs to the Membership Plan this Promotion is applied to.",
     "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
     "tax_included_suffix": "VAT included",
-    "item_duration_hint": "Duration is the number of the promoted Product's own billing periods the promotion applies to. When it ends the Product continues at its regular price."
+    "item_duration_hint": "Duration is the number of the promoted Product's own billing periods the promotion applies to. When it ends the Product continues at its regular price.",
+    "simulation_initial_payment": "Initial payment"
   },
   "audit": {
     "title": "Audit log",
@@ -4507,6 +4515,10 @@
     "detail_members": "Members",
     "detail_status": "Status",
     "detail_created_by": "Created by",
+    "origin_label": "Source",
+    "origin_members_app": "Members App",
+    "origin_admin": "Admin",
+    "origin_unknown": "Unknown",
     "detail_created_at": "Created at",
     "detail_modified_by": "Modified by",
     "detail_modified_at": "Modified at",
@@ -4595,6 +4607,9 @@
     "promo_item_action_fixed_price": "Fixed Price",
     "label_pay_beforehand_months": "Pre-paid Duration (months)",
     "section_membership_fee_benefit": "Membership Fee Benefit",
+    "label_direct_discount": "Direct discount (%)",
+    "label_effective_fee": "Effective fee",
+    "direct_discount_invalid": "Direct discount must be between 0 and 100.",
     "label_personal_fee_benefit": "Personal Membership Fee Benefit",
     "label_personal_fee_benefit_percentage": "Discount (%)",
     "personal_fee_benefit_no_benefit": "No benefit",
@@ -4668,7 +4683,8 @@
     "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
     "col_relationship": "Relationship",
     "relationship_primary": "Primary",
-    "relationship_linked": "Linked"
+    "relationship_linked": "Linked",
+    "simulation_initial_payment": "Initial payment"
   },
   "taxes": {
     "title": "Taxes",
@@ -5082,7 +5098,25 @@
     "quick_review_payments": "Review Pending Payments",
     "class_duration": "{minutes} min",
     "class_booked": "booked",
-    "class_start": "Start"
+    "class_start": "Start",
+    "celebrate_title": "Celebrate {name}",
+    "attendees_title": "Attendees — {name}",
+    "celebrate_hint": "Mark who attended, then complete the class.",
+    "celebrate_pending": "{count, plural, one {# attendee is} other {# attendees are}} still unconfirmed.",
+    "celebrate_complete": "Complete class",
+    "celebrate_completing": "Completing…",
+    "attendees_empty": "Nobody is booked on this class.",
+    "attendees_error": "Attendees could not be loaded.",
+    "retry": "Retry",
+    "close": "Close",
+    "class_error": "Something went wrong.",
+    "cancel_confirm": "Cancel {name}? This cannot be undone from Home.",
+    "cancel_reason": "Reason",
+    "cancel_keep": "Keep class",
+    "cancel_class": "Cancel class",
+    "class_celebrate": "Celebrate",
+    "class_cancel": "Cancel",
+    "class_attendees": "View attendees"
   },
   "base_products": {
     "title": "Base Products",

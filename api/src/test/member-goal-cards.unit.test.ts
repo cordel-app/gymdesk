@@ -56,7 +56,9 @@ describe('#1826 a goal card has its own Add reading action and no menu or add bu
 });
 
 describe('#1115 the card has one chrome, and it decides nothing', () => {
-  it('owns the header, the caret and the goal action slot, with no menu', () => {
+  it('owns the header and the goal action slot, with no menu and no caret (#1873)', () => {
+    expect(cardSrc).not.toContain('styles.caret');
+    expect(cardSrc).toContain('previewUrl');
     expect(cardSrc).toContain('aria-expanded={expanded}');
     expect(cardSrc).not.toContain('aria-haspopup');
     expect(cardSrc).toContain('{actions && <div style={styles.actions}>{actions}</div>}');

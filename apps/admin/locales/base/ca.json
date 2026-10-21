@@ -371,6 +371,7 @@
     "purchase_status_active": "Actiu",
     "purchase_status_cancelled": "Cancel·lat",
     "purchase_status_draft": "Esborrany",
+    "purchase_status_pending_termination": "Finalització pendent",
     "purchase_filter_draft": "Esborrany",
     "purchase_action_pay_draft": "Paga",
     "purchase_action_discard_draft": "Cancel·la l'esborrany",
@@ -389,6 +390,10 @@
     "purchase_col_payment_status": "Estat del pagament",
     "purchase_col_status": "Estat",
     "purchase_created_by": "Creat per",
+    "origin_label": "Origen",
+    "origin_members_app": "App de membres",
+    "origin_admin": "Admin",
+    "origin_unknown": "Desconegut",
     "purchase_payment_status_pending": "Pendent",
     "purchase_payment_status_completed": "Pagat",
     "purchase_payment_status_failed": "Fallit",
@@ -511,6 +516,7 @@
     "ps_status_pending_payment": "Pendent de pagament",
     "ps_status_active": "Actiu",
     "ps_status_superseded": "Substituït",
+    "simulation_initial_payment": "Pagament inicial",
     "simulation_hide_zero": "Amaga esdeveniments d'import zero",
     "section_billing_events_forecast": "Previsió d'esdeveniments de facturació",
     "section_past_product_sets": "Conjunts de productes anteriors",
@@ -671,9 +677,9 @@
     "purchase_validity_active": "Actiu",
     "purchase_validity_cancelled": "Cancel·lat (vàlid fins a la data de fi)",
     "purchase_validity_expired": "Caducat",
-    "purchase_cancel_action": "Cancel·lar compra",
+    "purchase_cancel_action": "Finalitzar producte",
     "purchase_cancel_confirm": "Cancel·lar {product}? El membre el conserva fins a la data de fi.",
-    "purchase_cancel_confirm_button": "Cancel·lar compra",
+    "purchase_cancel_confirm_button": "Finalitzar producte",
     "purchase_cancel_keep": "Mantenir-lo",
     "purchase_cancel_confirm_recurring": "Cancel·lar {product}? Es treu dels canvis en esborrany del membre; revisa'ls i fes servir Desar i pagar per aplicar-los. Ara no es cobra ni es reemborsa res.",
     "purchase_cancel_recurring_unavailable": "Aquest producte no es pot treure de l'esborrany aquí. Fes servir Productes recurrents."
@@ -1670,7 +1676,8 @@
     "view_list": "Llista",
     "view_cards": "Targetes",
     "card_no_benefits": "Sense beneficis inclosos",
-    "card_more_benefits": "+{n} més"
+    "card_more_benefits": "+{n} més",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "prices": {
     "title": "Preus",
@@ -1915,7 +1922,8 @@
     "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada client. No es mostra la quota de membresia: depèn del pla de membresia al qual s'apliqui aquesta promoció.",
     "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "tax_included_suffix": "IVA inclòs",
-    "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual."
+    "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual.",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "audit": {
     "title": "Registre d'auditoria",
@@ -4520,6 +4528,10 @@
     "detail_members": "Membres",
     "detail_status": "Estat",
     "detail_created_by": "Creat per",
+    "origin_label": "Origen",
+    "origin_members_app": "App de membres",
+    "origin_admin": "Admin",
+    "origin_unknown": "Desconegut",
     "detail_created_at": "Creat el",
     "detail_modified_by": "Modificat per",
     "detail_modified_at": "Modificat el",
@@ -4608,6 +4620,9 @@
     "promo_item_action_fixed_price": "Preu fix",
     "label_pay_beforehand_months": "Durada Prepagada (mesos)",
     "section_membership_fee_benefit": "Benefici de la Quota de Membresia",
+    "label_direct_discount": "Descompte directe (%)",
+    "label_effective_fee": "Quota efectiva",
+    "direct_discount_invalid": "El descompte directe ha de estar entre 0 i 100.",
     "label_personal_fee_benefit": "Benefici Personal de la Quota de Membresia",
     "label_personal_fee_benefit_percentage": "Descompte (%)",
     "personal_fee_benefit_no_benefit": "Sense benefici",
@@ -4681,7 +4696,8 @@
     "simulation_truncated": "La projecció s’ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "col_relationship": "Relació",
     "relationship_primary": "Principal",
-    "relationship_linked": "Vinculat"
+    "relationship_linked": "Vinculat",
+    "simulation_initial_payment": "Pagament inicial"
   },
   "taxes": {
     "title": "Impostos",
@@ -5095,7 +5111,25 @@
     "quick_review_payments": "Revisar pagaments pendents",
     "class_duration": "{minutes} min",
     "class_booked": "reservades",
-    "class_start": "Començar"
+    "class_start": "Començar",
+    "celebrate_title": "Celebrar {name}",
+    "attendees_title": "Assistents — {name}",
+    "celebrate_hint": "Marca qui ha assistit i completa la classe.",
+    "celebrate_pending": "{count, plural, one {# assistent continua} other {# assistents continuen}} sense confirmar.",
+    "celebrate_complete": "Completar classe",
+    "celebrate_completing": "Completant…",
+    "attendees_empty": "Ningú està reservat en aquesta classe.",
+    "attendees_error": "No s'han pogut carregar els assistents.",
+    "retry": "Reintenta",
+    "close": "Tanca",
+    "class_error": "Alguna cosa ha anat malament.",
+    "cancel_confirm": "Cancel·lar {name}? No es pot desfer des d'Inici.",
+    "cancel_reason": "Motiu",
+    "cancel_keep": "Mantén la classe",
+    "cancel_class": "Cancel·la la classe",
+    "class_celebrate": "Celebrar",
+    "class_cancel": "Cancel·lar",
+    "class_attendees": "Veure assistents"
   },
   "base_products": {
     "title": "Productes base",

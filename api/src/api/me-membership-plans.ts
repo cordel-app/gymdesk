@@ -255,7 +255,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       await snapshotProductSetFromPlan(tx, {
         gymId, productSetId: draft.productSet.id, membershipPlanId: planId,
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
-        startsAt, declinedBenefits: declinedResult.declined,
+        startsAt, declinedBenefits: declinedResult.declined, origin: 'members_app',
       });
       await addCoverage(tx, {
         gymId, rootProductSetId: Number(draft.productSet.root_product_set_id), memberId, isOwner: true,

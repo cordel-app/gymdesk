@@ -1,6 +1,8 @@
 # Reference Quadlet — Oscar's live unit on corfront.
 # Path: /home/podman/.config/containers/systemd/fitness-pay.container
-# CI never writes this file. Workflows only podman pull + systemctl restart.
+# deploy-payment.yml rewrites this unit's Environment= lines on every deploy
+# from the GitHub environment (vars CORDEL_FITNESS_API_PUBLIC_URL and
+# CORDEL_FITNESS_API_INTERNAL_URL); the rest of the unit is Oscar's.
 # Traefik: pay.vdicube.com → localhost:8083.
 # PCI: do not log query strings on this host (page_token lives in ?token=).
 #      The container's own access log drops them since #1083 (log_format
@@ -21,12 +23,12 @@ PublishPort=8083:80
 #   PUBLIC:   what the browser-facing proxies (/payment-page/, /themes/) call.
 #   INTERNAL: what POST /webhooks/payment is handed to, so the provider no
 #             longer posts to the API's host itself.
-# Both may be the API's public hostname (#1087): the host stays public by name
-# and corback allows only corfront's address through, so this container reaches
-# it as an allowed caller. No trailing slash on either. On pro these are the pro
-# API's addresses.
-Environment=CORDEL_FITNESS_API_PUBLIC_URL="https://api.vdicube.com"
-Environment=CORDEL_FITNESS_API_INTERNAL_URL="https://api.vdicube.com"
+# Both are the API's address as corfront reaches it (the API's public
+# hostname has no Traefik route any more). Written by the deploy from GitHub;
+# never edit them here or on the VPS. No trailing slash. On pro these are the
+# pro API's addresses.
+Environment=CORDEL_FITNESS_API_PUBLIC_URL=<from GitHub vars>
+Environment=CORDEL_FITNESS_API_INTERNAL_URL=<from GitHub vars>
 
 [Service]
 Restart=always

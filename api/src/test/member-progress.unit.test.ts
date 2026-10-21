@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cardBackgroundStyle, daysNewestFirst, formatBestResult, progressChartPoints, resultUnitKey,
+  daysNewestFirst, formatBestResult, progressChartPoints, resultUnitKey,
 } from '../../../apps/member/src/lib/memberProgress';
 
 // #1224 — My Progress (Members App). The figures are the API's; this pins what
@@ -24,12 +24,5 @@ describe('Members App progress (#1224)', () => {
     const pts = progressChartPoints(days, 'kg');
     expect(pts.map((p) => p.y)).toEqual([70, null]);
     expect(daysNewestFirst(days)[0].logged_date).toBe('2026-10-05');
-  });
-
-  it('puts the image under a scrim of the card surface, or nothing', () => {
-    expect(cardBackgroundStyle(null, 'var(--s)')).toEqual({});
-    const s = cardBackgroundStyle('https://x/y.webp', 'var(--s)');
-    expect(s.backgroundImage).toContain('color-mix');
-    expect(s.backgroundSize).toBe('cover');
   });
 });

@@ -90,6 +90,10 @@ interface BillingEvent {
   source: string;
   created_at: string;
   receipt_number: string | null;
+  /** The date the event is due (a ProductSet event's own billing date). A
+   * Scheduled obligation is created today for a later cycle, so its creation
+   * date would list next month's charge beside today's payment. */
+  billing_date?: string | null;
 }
 
 export function MemberExpandedRow({
@@ -187,6 +191,7 @@ export function MemberExpandedRow({
   const inFlightSetId = ['draft', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
     ? configuration.current_product_set!.id : null;
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [committedKey, setCommittedKey] = useState(0);
   const draftReview = useDraftReview(configuration.current_product_set, configuration);
   const workflow = {
     current: configuration.current_product_set,
@@ -515,7 +520,7 @@ export function MemberExpandedRow({
               productSetId={inFlightSetId}
               open={reviewOpen}
               onClose={() => setReviewOpen(false)}
-              onCommitted={() => { setReviewOpen(false); reloadProducts(); }}
+              onCommitted={() => { setReviewOpen(false); setCommittedKey((k) => k + 1); reloadProducts(); }}
             />
           )}
           <Section label={t('members.section_additional_services')}>
@@ -535,6 +540,7 @@ export function MemberExpandedRow({
               canPay={canManagePackages}
               isAdmin={isAdmin}
               onChanged={reloadProducts}
+              committedKey={committedKey}
             />
           </Section>
 
@@ -591,7 +597,7 @@ export function MemberExpandedRow({
                           style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
                           onClick={() => toggleEvent(ev.id)}
                         >
-                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{formatGymDate(ev.created_at, gymFmt)}</span>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{ev.billing_date ? formatGymDateOnly(ev.billing_date, gymFmt) : formatGymDate(ev.created_at, gymFmt)}</span>
                           <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
                           {ev.amount && (
                             <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>

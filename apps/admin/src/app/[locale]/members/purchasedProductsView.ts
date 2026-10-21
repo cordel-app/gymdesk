@@ -43,6 +43,8 @@ export interface PurchasedProduct {
   validity_state?: string | null;
   created_at: string | null;
   created_by: string | null;
+  /** #1883 — `members_app` | `admin`; null/absent reads Unknown. */
+  origin?: string | null;
   /** The price before the Promotion, VAT included. */
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
@@ -56,6 +58,8 @@ export interface PurchasedProduct {
   billing_event_id?: number | null;
   /** #1661 — `recurring` for a line of the member's ProductSet (negative `id`). */
   source?: 'one_off' | 'recurring';
+  /** #1882 — removed in the open Draft, still Active until Save & Pay. */
+  pending_termination?: boolean;
 }
 
 /** The statuses `payment_requests.status` can hold (chk_payment_requests_status). */
@@ -151,7 +155,7 @@ export interface PurchaseQuote {
 /** The error codes the purchase routes answer with, each with a locale key suffix. */
 const PURCHASE_ERROR_CODES = [
   'promotions_not_stackable', 'promotion_not_applicable', 'invalid_direct_discount',
-  'final_price_not_positive', 'already_owned', 'purchase_pending', 'edit_locked',
+  'final_price_not_positive', 'purchase_pending', 'edit_locked',
   'duplicate_submission', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
   'nothing_to_pay', 'draft_expired',
 ] as const;
@@ -207,4 +211,9 @@ export function filterPurchasesByStatus<T extends { status: string }>(items: T[]
     return items.filter((i) => i.status === 'draft' || i.status === 'active' || i.status === 'pending_payment');
   }
   return items.filter((i) => i.status === filter);
+}
+
+/** #1882 — the status a row shows: a line the Draft removes reads `pending_termination`. */
+export function displayPurchaseStatus(item: { status: string; pending_termination?: boolean }): string {
+  return item.status === 'active' && item.pending_termination ? 'pending_termination' : item.status;
 }

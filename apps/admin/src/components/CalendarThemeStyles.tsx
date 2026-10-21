@@ -245,6 +245,176 @@ export const CALENDAR_THEME_CSS = `
   border-bottom-left-radius: 0;
   border-top-left-radius: 0;
 }
+
+/* Compact, responsive header (#1892 stage 1). Previous / Today / Next and the
+   view selector are FullCalendar button groups, so only their spacing, the
+   title's single-line behaviour and the narrow-screen row order are set here;
+   the buttons keep the colours of the Calendar Buttons settings. */
+.gd-calendar .fc .fc-header-toolbar {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 0.75em;
+}
+.gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-toolbar-title {
+  font-size: 1.15em;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-button {
+  min-height: 36px;
+  padding: 0.3em 0.75em;
+}
+@media (max-width: 768px) {
+  /* Title on its own row, then navigation and view selector side by side. */
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(1),
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(3) {
+    flex: 0 1 auto;
+  }
+  .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(3) {
+    margin-left: auto;
+  }
+  .gd-calendar .fc .fc-toolbar-title {
+    font-size: 1.05em;
+  }
+}
+
+/* Event cards (#1892 stage 2). Shape and rhythm only: the fill, border and
+   text colours stay the event's own colour or the Calendar Event settings, so
+   no business meaning is attached to a hue. One radius, a restrained shadow,
+   long text ellipsised, and a thin separating edge in the calendar surface
+   colour so events sharing a slot stay distinguishable. */
+.gd-calendar .fc .fc-event:not(.fc-bg-event) {
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+.gd-calendar .fc .fc-timegrid-event,
+.gd-calendar .fc .fc-v-event {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--gd-calendar-bg, #ffffff);
+}
+.gd-calendar .fc .fc-event-main {
+  padding: 2px 4px;
+  min-width: 0;
+}
+.gd-calendar .fc .fc-event-title,
+.gd-calendar .fc .fc-event-time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+.gd-calendar .fc .fc-event-time {
+  font-weight: 600;
+}
+/* Grid (#1892 stage 3). Readability only: lighter hairlines between slots
+   (hour lines keep the full border colour, half-hours are dashed and faint),
+   a quieter time axis, and sticky day headers so the dates stay visible while
+   a long Day/Week grid scrolls. Slot height, event placement and overlap
+   handling stay FullCalendar's. */
+.gd-calendar .fc .fc-timegrid-slot-minor {
+  border-top-style: dashed;
+  border-top-color: color-mix(in srgb, var(--gd-calendar-grid-border, #dddddd) 55%, transparent);
+}
+.gd-calendar .fc .fc-timegrid-slot-label-cushion {
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+}
+.gd-calendar .fc .fc-timegrid-axis-cushion {
+  font-size: 0.78em;
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  padding: 4px 2px;
+  font-weight: 600;
+}
+.gd-calendar .fc .fc-scrollgrid-section-sticky > * {
+  background: var(--gd-calendar-header-bg, #ffffff);
+}
+/* All-day / multi-day strip: a visible lower edge and a restrained minimum
+   height so the strip reads as its own row above the time slots. */
+.gd-calendar .fc .fc-timegrid-divider {
+  padding: 0;
+  border-top-width: 1px;
+}
+.gd-calendar .fc .fc-daygrid-body-natural .fc-daygrid-day-events {
+  margin-bottom: 2px;
+}
+.gd-calendar .fc .fc-daygrid-more-link {
+  font-weight: 600;
+}
+/* Narrow screens: the grid scrolls inside the calendar, never the page. */
+@media (max-width: 768px) {
+  .gd-calendar .fc .fc-scroller {
+    overscroll-behavior: contain;
+  }
+  .gd-calendar .fc .fc-col-header-cell-cushion {
+    font-size: 0.85em;
+  }
+}
+
+/* Weekday header and event cards (#1892 stage 5). Visual only. The header is
+   its own band: a little air under it separates the day names from the grid,
+   labels are small and spaced, and today's column is marked with the
+   Calendar Buttons colour. An event keeps its configured colour as a narrow
+   left accent (the inline border colour, widened here) over a soft surface:
+   the inline fill is covered by a high-coverage layer of the calendar surface
+   colour, clipped to the padding box so the strip stays the pure event colour.
+   The text takes the calendar's own foreground, which already reads on that
+   surface. Events with no colour configured keep the theme's event tokens. */
+.gd-calendar .fc .fc-scrollgrid-section-header > td {
+  padding-bottom: 6px;
+  border-bottom-width: 0;
+}
+.gd-calendar .fc .fc-col-header-cell {
+  border-bottom: 2px solid var(--gd-calendar-grid-border, #dddddd);
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  padding: 8px 4px 6px;
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today {
+  border-bottom-color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+}
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) {
+  border-width: 0 0 0 4px;
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--gd-calendar-surface-bg, #ffffff) 88%, transparent),
+    color-mix(in srgb, var(--gd-calendar-surface-bg, #ffffff) 88%, transparent)
+  );
+  background-origin: padding-box;
+  background-clip: padding-box;
+  color: var(--gd-calendar-day-text, #111827) !important;
+}
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-main,
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-title,
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event) .fc-event-time {
+  color: inherit;
+}
+@media (max-width: 768px) {
+  .gd-calendar .fc .fc-col-header-cell-cushion {
+    padding: 6px 2px 4px;
+    letter-spacing: 0.02em;
+  }
+}
 `;
 
 export function CalendarThemeStyles() {

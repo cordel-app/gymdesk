@@ -130,3 +130,15 @@ describe('the shared Billing cell and row tone', () => {
     expect(exampleTimelineRowTone({ status: 'pay_regular', waived: false })).toBe('regular');
   });
 });
+
+// #1920 — the whole header row of the Membership Fee Simulation toggles it, and
+// the arrow must not toggle twice.
+describe('Membership Fee Simulation header toggle (#1920)', () => {
+  it('wires the header click and stops the arrow from double-toggling', () => {
+    const row = readFileSync(join(SRC, 'components/assignedPlan/AssignedPlanExpandedRow.tsx'), 'utf8');
+    expect(row).toMatch(/onHeaderClick=\{\(\) => setFeeSimOpen/);
+    expect(row).toMatch(/e\.stopPropagation\(\); setFeeSimOpen/);
+    const section = readFileSync(join(SRC, 'components/CardSection.tsx'), 'utf8');
+    expect(section).toContain('onClick={onHeaderClick}');
+  });
+});

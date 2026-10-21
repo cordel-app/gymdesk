@@ -87,7 +87,7 @@ const COLUMNS = `
   mpg.start_date, mpg.target_date, mpg.end_date,
   mpg.status, mpg.notes, mpg.created_at, mpg.deleted_at,
   COALESCE(mpg.goal_name, pg.name) AS goal_name,
-  pg.slug AS goal_slug,
+  pg.slug AS goal_slug, pg.description AS goal_description,
   pg.image_url AS goal_image_url, pg.image_thumbnail_url AS goal_image_thumbnail_url
 `;
 

@@ -191,7 +191,14 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   const row = await lockSet(tx, gymId, id);
   if (!row) return { kind: 'not_found' };
   if (row.status === 'draft') {
+    const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
+      `SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
     await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [id]);
+    // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
+    // this version; left behind it would keep showing as a Draft plan on a
+    // restored Active set. Only a row still `draft` goes — nothing billed.
+    const um = linked[0]?.user_membership_id;
+    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`, [um, gymId]);
     return { kind: 'cancelled' };
   }
   if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };

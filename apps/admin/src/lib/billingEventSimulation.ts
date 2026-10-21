@@ -56,6 +56,8 @@ export interface BillingEventSimulationDate {
    * page keeps for itself.
    */
   cycle?: number | null;
+  /** #1867 stage 3 — a Draft's forecast marks today's charge (what Save & Pay asks for); absent elsewhere. */
+  kind?: 'initial_payment' | 'scheduled';
 }
 
 export interface BillingEventSimulationData {

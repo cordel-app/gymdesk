@@ -1,3 +1,4 @@
+import { originOf } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -303,9 +304,8 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
   if (input.staff && (await hasDraftPurchase(input.gymId, input.memberId, input.productId, ignoreDraftId))) {
     throw new PurchaseRefused('draft_exists');
   }
-  // #1521: a one-time Product already bought (`active`) is not sold again.
-  const owned = await hasActivePurchase(input.gymId, input.memberId, input.productId);
-  const block = productPurchaseBlock(item, pending, owned);
+  // #1864: holding the Product already is no reason to refuse; each purchase is its own row.
+  const block = productPurchaseBlock(item, pending);
   if (block) throw new PurchaseRefused(block);
 
   // #1118 §5 / #1521 — what was applied, re-read and re-priced now. Every
@@ -373,8 +373,8 @@ export async function saveProductPurchaseDraft(
           product_name, product_type, billing_frequency, units,
           amount, currency, tax_rate_percent,
           payment_request_id, created_by,
-          list_price, direct_discount_percent, direct_discount_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+          list_price, direct_discount_percent, direct_discount_amount, origin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
       [
         input.gymId, input.memberId, input.productId, DRAFT_PURCHASE_STATUS,
         snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -383,6 +383,7 @@ export async function saveProductPurchaseDraft(
         price.list_price.toFixed(2),
         price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
         price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
+        originOf(!!input.staff),
       ],
     );
     for (const step of price.promotions) {
@@ -553,8 +554,8 @@ export async function startProductPurchase(
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
             payment_request_id, created_by,
-            list_price, direct_discount_percent, direct_discount_amount, validity_days)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            list_price, direct_discount_percent, direct_discount_amount, validity_days, origin)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -565,6 +566,7 @@ export async function startProductPurchase(
           price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
           // #1693: the validity agreed at purchase time.
           row.validity_days == null ? null : Number(row.validity_days),
+          originOf(!!input.staff),
         ],
       );
 
@@ -591,21 +593,6 @@ export async function startProductPurchase(
     if (err?.errno === ER_DUP_ENTRY) throw new PurchaseRefused('purchase_pending');
     throw err;
   }
-}
-
-/** #1521: whether this member already holds a completed purchase of this Product. */
-async function hasActivePurchase(
-  gymId: string,
-  memberId: number,
-  productId: number,
-): Promise<boolean> {
-  const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = 'active'
-      LIMIT 1`,
-    [gymId, memberId, productId],
-  );
-  return rows.length > 0;
 }
 
 /** Whether this member already has a checkout in flight for this Product. */

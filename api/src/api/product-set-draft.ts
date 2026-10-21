@@ -1,6 +1,7 @@
 import { db, Tx } from '../infra/db';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
+import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { allocateItemSchedules } from './product-set-configuration';
 
@@ -212,6 +213,38 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
 }
 
 /**
+ * #1949 — the Billing frequency of a **first** Draft version. Its plan schedule
+ * was created with the Draft and has no events or other version behind it, so the
+ * cadence can still move with the snapshot. A later version of a chain keeps the
+ * chain's schedule (never re-anchored), so there the cadence stays fixed.
+ */
+export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
+  if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
+  if (draft.version !== 1 || draft.root_product_set_id !== draft.id) {
+    return { kind: 'invalid', message: 'recurring_billing_interval cannot be changed on a plan billed from a ProductSet; assign a new plan' };
+  }
+  const interval = Number(body?.recurring_billing_interval);
+  const unit = body?.recurring_billing_unit;
+  if (!isAcceptedPlanCadence(interval, unit)) {
+    return { kind: 'invalid', message: `Billing frequency must be one of: ${describeAcceptedPlanCadences()}` };
+  }
+  const { rows } = await tx.query<any>(
+    'SELECT schedule_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ? FOR UPDATE',
+    [draft.id, draft.gym_id]);
+  if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
+  await tx.query(
+    'UPDATE product_set_plan_snapshots SET recurring_billing_interval = ?, recurring_billing_unit = ? WHERE product_set_id = ? AND gym_id = ?',
+    [interval, unit, draft.id, draft.gym_id]);
+  if (rows[0].schedule_id != null) {
+    await tx.query(
+      'UPDATE product_set_schedules SET cadence_interval = ?, cadence_unit = ? WHERE id = ? AND gym_id = ? AND root_product_set_id = ?',
+      [interval, unit, rows[0].schedule_id, draft.gym_id, draft.id]);
+  }
+  await touch(tx, draft);
+  return { ok: true };
+}
+
+/**
  * The agreed Membership Fee of the version (what the Admin's Billing & Duration
  * editor writes as `membership_fee_price`): the price alone, the stored reason
  * left as it is — a negotiated fee with its reason is `setNegotiatedFee()`.
@@ -349,8 +382,8 @@ export async function addService(
 
   const { insertId } = await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency)
-     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
+       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, origin)
+     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, 'admin'
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
     [draft.gym_id, draft.id, quantity, startsAt, productId, draft.gym_id]);

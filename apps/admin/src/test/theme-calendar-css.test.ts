@@ -128,7 +128,8 @@ describe('Calendar theme stylesheet (#559 stages 2 & 3)', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .split('}')
       .map((block) => block.split('{')[0].trim())
-      .filter(Boolean)
+      .map((sel) => sel.replace(/^@media[^{]*\{\s*/, '')) // a media query only wraps scoped rules
+      .filter((sel) => sel && !sel.startsWith('@media'))
       .flatMap((s) => s.split(',').map((x) => x.trim()));
     for (const selector of selectors) {
       expect(selector, `"${selector}" is not scoped to .gd-calendar`).toMatch(/^\.gd-calendar\b/);

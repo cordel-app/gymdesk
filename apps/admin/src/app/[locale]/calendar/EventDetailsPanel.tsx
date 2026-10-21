@@ -8,6 +8,7 @@ import { FormLabel, FormInput } from '@/components/CrudModal';
 import { primaryActionColors } from '@/components/ui';
 import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
 import { EventImageControl } from './EventImageControl';
+import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -19,6 +20,7 @@ interface ActivityType {
 interface Space { id: number; name: string }
 interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
+interface ProfessionalService { id: number; name: string; status: 'active' | 'inactive' }
 
 export interface EventMeta {
   created_by: string | null;
@@ -44,6 +46,7 @@ interface Props {
   spaces: Space[];
   centers: Center[];
   trainers: Trainer[];
+  professionalServices: ProfessionalService[];
   onSave: (form: CalendarEventForm, image: Blob | null) => Promise<void>;
   /** The event's image changed on the server (edit mode). */
   onImageChanged: () => void;
@@ -79,7 +82,7 @@ function formatDateTime(iso: string | null, s: GymFormatSettings): string | null
 }
 
 export function EventDetailsPanel({
-  open, editing, initialForm, activityTypes, spaces, centers, trainers,
+  open, editing, initialForm, activityTypes, spaces, centers, trainers, professionalServices,
   onSave, onImageChanged, onDelete, onClose, canWrite,
 }: Props) {
   const t = useTranslations('calendar');
@@ -149,27 +152,10 @@ export function EventDetailsPanel({
   const busy = saving || deleteState === 'deleting';
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      borderLeft: '1px solid var(--gd-card-border, #e5e7eb)',
-      background: 'var(--gd-card-bg, var(--gd-bg-secondary, #f9fafb))',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)',
-        flexShrink: 0,
-      }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
-          {isNew ? t('modal_create') : t('modal_edit')}
-        </h3>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: '#9ca3af', padding: '2px 4px' }}
-          aria-label="Close"
-        >
-          ✕
-        </button>
+    <div style={eventPanelSurfaceStyle}>
+      {/* Header — #1892 stage 4: the chrome shared with the Activity session panel. */}
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)', flexShrink: 0 }}>
+        <EventPanelHeader title={isNew ? t('modal_create') : t('modal_edit')} onClose={onClose} />
       </div>
 
       {/* Body — scrollable */}
@@ -254,6 +240,16 @@ export function EventDetailsPanel({
         <select value={form.trainer_membership_id} onChange={(e) => field('trainer_membership_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
           <option value="">—</option>
           {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+        </select>
+
+        <div style={{ marginTop: 12 }}><FormLabel>{t('event_professional_service')}</FormLabel></div>
+        <select value={form.professional_service_id} onChange={(e) => field('professional_service_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
+          <option value="">—</option>
+          {professionalServices
+            .filter((ps) => ps.status === 'active' || String(ps.id) === form.professional_service_id)
+            .map((ps) => (
+              <option key={ps.id} value={ps.id} disabled={ps.status !== 'active'}>{ps.name}</option>
+            ))}
         </select>
 
         <div style={{ marginTop: 12 }}><FormLabel>{t('event_status')}</FormLabel></div>

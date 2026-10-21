@@ -211,6 +211,15 @@ creeping back in.
 `express.json()` with `express.raw({ type: '*/*' })` so the HMAC can be verified against the
 exact bytes Monei signed. 60 req/min per IP.
 
+**What arrives, and what signs it.** Every payment we create names this route as its
+`callbackUrl`, and MONEI posts that callback as the **bare Payment object** (`id`, `orderId`,
+`status`, `paymentToken`, …) signed with the **API key** (`MONEI-Signature: t=…,v1=…` over
+`timestamp.body`). An account webhook configured in the dashboard is a different shape — an
+envelope `{ id, type, objectType, object }` — signed with `MONEI_WEBHOOK_SECRET`.
+`verifyAndParseWebhook()` (`payments/providers/monei/webhook.ts`) accepts both and checks the
+signature against both keys; until it did, a payment callback was refused or matched no
+request, so every payment stayed `pending` whatever its outcome.
+
 **Since #1083 Monei does not call this route directly.** It posts to the isolated payment
 app — `PAYMENT_NOTIFICATION_URL` is `https://pay.vdicube.com/webhooks/payment` on dev and
 `https://pay.cordel.tech/webhooks/payment` on pro — and that app's nginx relays the request
@@ -308,6 +317,14 @@ is never charged the cycles that went by before it paid — which is what #790 p
 > a request the member was still paying through, after which the guard above skipped the
 > completed webhook as "already processed" and the charge was lost. Cleanup now keeps an
 > opened request `pending` for hours — §B8.
+
+**A paid event closes its other attempts.** Each Pay now raises a new attempt on the same
+initial Billing Event, so when one completes, the webhook's `completed` branches (the fee and
+the product purchase) mark every other `pending` attempt on that event `expired` and clear its
+`page_token` (`closeSiblingAttempts()`, in the transaction that completes the paid one).
+Otherwise the abandoned attempts kept My Products showing *You have a pending payment* with a
+Pay now for a settled cycle. An expired attempt still accepts a later `completed` webhook
+(#789), so this can never lose money that was in fact taken.
 
 ### A6. What is visible afterwards
 

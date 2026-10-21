@@ -86,7 +86,16 @@ export function ProductsWorkflowBar({
       ) : (
         <StatusBadge status="none" label={t('ps_status_none')} />
       )}
-      <span style={{ flex: 1 }} />
+      {/* #1915 — Save & Pay (primary) left, Cancel right, as in the Summary's bottom bar. */}
+      <button
+        type="button"
+        data-global-save-and-pay
+        style={{ ...primaryBtnSmall(), opacity: enabled && !busy ? 1 : 0.5, cursor: enabled && !busy ? 'pointer' : 'not-allowed' }}
+        disabled={!enabled || busy}
+        onClick={onSaveAndPay}
+      >
+        {t('add_product_save_and_pay')}
+      </button>
       {canDiscard && (
         <button
           type="button"
@@ -98,15 +107,6 @@ export function ProductsWorkflowBar({
           {t('ps_cancel')}
         </button>
       )}
-      <button
-        type="button"
-        data-global-save-and-pay
-        style={{ ...primaryBtnSmall(), opacity: enabled && !busy ? 1 : 0.5, cursor: enabled && !busy ? 'pointer' : 'not-allowed' }}
-        disabled={!enabled || busy}
-        onClick={onSaveAndPay}
-      >
-        {t('add_product_save_and_pay')}
-      </button>
       {discardError && <p role="alert" style={{ ...formErrorStyle, flexBasis: '100%', margin: 0 }}>{discardError}</p>}
       <ConfirmDialog
         open={confirming}

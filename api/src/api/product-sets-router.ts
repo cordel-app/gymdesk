@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { db } from '../infra/db';
+import { db, type Tx } from '../infra/db';
+import { recordStatusChange } from './billing-events';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -19,7 +20,7 @@ import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
 import {
-  createProductSetCheckout, ensureInitialEvent, initialCharge, loadEditLock,
+  createProductSetCheckout, ensureInitialEvent, commitCharge, loadEditLock,
 } from './product-set-checkout';
 import { methodAvailability, payFlowFor } from '../domain/productSetPayment';
 import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
@@ -88,24 +89,6 @@ function shape(row: any) {
   };
 }
 
-
-/**
- * What committing `set` asks for **today** — the one answer Save & Pay, the
- * free activation and the "Review your changes" preview all use, so the figure a
- * member is shown is the figure charged (#1537). A version that replaces a
- * running one owes only what is new relative to it, dated today; a first
- * version owes its first cycle from its own start date.
- */
-async function commitCharge(gymId: string, set: any) {
-  const nextVersion = set.previous_product_set_id != null;
-  const startsAt = nextVersion
-    ? todayUtc()
-    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
-    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
-  });
-  return { startsAt, charge };
-}
 
 export const productSetsRouter = Router({ mergeParams: true });
 
@@ -206,7 +189,7 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
     if (planId !== null) {
       await snapshotProductSetFromPlan(tx, {
         gymId, productSetId: draft.productSet.id, membershipPlanId: planId,
-        membershipFeePrice: fee, startsAt: starts_at, declinedBenefits: declined,
+        membershipFeePrice: fee, startsAt: starts_at, declinedBenefits: declined, origin: 'admin',
       });
     }
     return draft;
@@ -218,6 +201,26 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
   const row = await loadSet(gymId, out.productSet.id);
   res.status(201).json(shape(row));
 });
+
+/** `draft → pending_payment` for the assignment a version projects, audited as
+ * every assignment status transition is. A row in any other status is left
+ * alone (the assignment-side Save & Pay moves its own row first). */
+async function syncLinkedAssignmentToPendingPayment(tx: Tx, gymId: string, userMembershipId: number, actor: string | null) {
+  const { rows } = await tx.query<{ member_id: number }>(
+    `SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft' FOR UPDATE`,
+    [userMembershipId, gymId],
+  );
+  if (!rows[0]) return;
+  await tx.query(
+    `UPDATE user_memberships SET status = 'pending_payment', modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE id = ? AND gym_id = ? AND status = 'draft'`,
+    [actor, userMembershipId, gymId],
+  );
+  await recordStatusChange(tx, {
+    gymId, userMembershipId, memberId: Number(rows[0].member_id),
+    previousStatus: 'draft', newStatus: 'pending_payment', source: 'admin', actorUserId: null,
+  });
+}
 
 async function saveAndPayHandler(req: any, res: any) {
   const { gymId } = getTenantContext(req);
@@ -238,7 +241,16 @@ async function saveAndPayHandler(req: any, res: any) {
   }
 
   if (set.status === 'draft') {
-    const moved = await db.transaction((tx) => submitForPayment(tx, gymId, Number(set.id)));
+    const moved = await db.transaction(async (tx) => {
+      const out = await submitForPayment(tx, gymId, Number(set.id));
+      // The Admin's Draft assignment is a cache of this version (#1325 PR
+      // 3e-1), so it moves with it: left `draft`, the Member card's plan row
+      // read Draft beside a PS status of Pending Payment.
+      if (out.kind === 'ok' && set.user_membership_id != null) {
+        await syncLinkedAssignmentToPendingPayment(tx, gymId, Number(set.user_membership_id), actorOf(req).name);
+      }
+      return out;
+    });
     if (moved.kind !== 'ok') return res.status(409).json({ error: moved.kind });
   }
   const { rows: m } = await db.query<{ email: string | null }>('SELECT email FROM members WHERE id = ? AND gym_id = ?', [set.owner_member_id, gymId]);

@@ -6,7 +6,7 @@ import { verifyWebhook } from '@clerk/backend/webhooks';
 import { linkGymInvite } from '../infra/staff-access';
 import { unlinkClerkAccount } from '../infra/clerk-account-links';
 import { recordPlatformAudit } from '../infra/audit';
-import { db } from '../infra/db';
+import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
@@ -113,6 +113,32 @@ export const paymentWebhookRouter = Router();
 // would put every gym's payment confirmations in one 60/min bucket — see
 // domain/forwardedClient.ts for why the extra hop is declared per route and
 // defaults to none (where this is `req.ip`, exactly as before).
+
+/**
+ * A Billing Event is paid once, so when one attempt on it completes, every other
+ * attempt still `pending` on that event is closed as `expired`. Each Pay now
+ * raises a new attempt on the same initial event, and until this the ones a
+ * member opened and abandoned stayed `pending` after the event was paid: My
+ * Products kept showing "You have a pending payment" with a Pay now that would
+ * have charged a paid cycle again. An expired attempt still accepts a
+ * `completed` webhook (#789 — the provider is the source of truth about money),
+ * so closing one can never lose a payment that was in fact made.
+ */
+async function closeSiblingAttempts(
+  tx: Tx,
+  gymId: string,
+  billingEventId: number | null,
+  completedRequestId: number,
+): Promise<void> {
+  if (billingEventId == null) return;
+  await tx.query(
+    `UPDATE payment_requests
+     SET status = 'expired', page_token = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE gym_id = ? AND billing_event_id = ? AND id <> ? AND status = 'pending'`,
+    [SYSTEM_ACTOR, gymId, billingEventId, completedRequestId],
+  );
+}
+
 const paymentWebhookRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
@@ -296,6 +322,7 @@ paymentWebhookRouter.post(
             );
           }
 
+          await closeSiblingAttempts(tx, pr.gym_id, pr.billing_event_id, pr.id);
           const completed = await completeProductPurchase(tx, pr.gym_id, pr.id);
           if (completed === 0) {
             // The payment is real either way, so the Billing Event above
@@ -327,6 +354,7 @@ paymentWebhookRouter.post(
              WHERE id = ?`,
             [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', SYSTEM_ACTOR, pr.id],
           );
+          await closeSiblingAttempts(tx, pr.gym_id, pr.billing_event_id, pr.id);
 
           // db.query()'s wrapper puts insertId at the top level for an
           // INSERT (rows is [] — there's nothing to select), not nested

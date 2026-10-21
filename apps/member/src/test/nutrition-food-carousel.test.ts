@@ -95,67 +95,26 @@ describe('NutritionFoodCard (#722 §2, §9, §10)', () => {
   });
 });
 
-describe('NutritionFoodCarousel (#722 §1, §7, §13, §14)', () => {
+describe('NutritionFoodCarousel (#722, #1875)', () => {
   const src = read(CAROUSEL);
 
-  it('scrolls horizontally with CSS scroll snapping — the browser\'s own swipe', () => {
-    expect(src).toContain("overflowX: 'auto'");
-    expect(src).toContain("scrollSnapType: 'x mandatory'");
-    expect(src).toContain("scrollSnapAlign: 'center'");
-  });
-
-  it('shows one card at a time with the next one peeking, on any screen width', () => {
-    expect(src).toContain("flex: '0 0 min(300px, 82%)'");
-  });
-
-  it('implements no gesture system of its own, so page scrolling keeps working', () => {
+  it('reuses My Training\'s carousel instead of implementing its own slider', () => {
+    expect(src).toContain("import { BlockExerciseCarousel } from './BlockExerciseCarousel';");
+    expect(src).toContain('<BlockExerciseCarousel');
+    expect(src).not.toContain('scrollSnapType');
     expect(src).not.toMatch(/onTouch(Start|Move|End)/);
-    expect(src).not.toMatch(/touchAction/);
-    expect(src).toContain("overflowY: 'hidden'");
-    // The only `preventDefault` calls are the two arrow-key ones: a touch
-    // handler that cancelled the browser's default is exactly what would stop
-    // the page scrolling vertically mid-swipe (§13).
-    expect(src.match(/preventDefault\(\)/g)).toHaveLength(2);
-    expect(src).toMatch(/Arrow(Right|Left)'\) \{ event\.preventDefault\(\);/);
   });
 
-  it('derives the current card from the real scroll position, not from the buttons alone', () => {
-    expect(src).toContain('onScroll={handleScroll}');
-    expect(src).toContain('track.scrollLeft');
-  });
-
-  it('is keyboard navigable and exposes labelled previous/next controls', () => {
-    expect(src).toContain('tabIndex={0}');
-    expect(src).toContain("event.key === 'ArrowRight'");
-    expect(src).toContain("event.key === 'ArrowLeft'");
-    expect(src).toContain("aria-label={t('nutrition.previous_food')}");
-    expect(src).toContain("aria-label={t('nutrition.next_food')}");
-  });
-
-  it('announces the position to assistive technology and does not rely on colour alone', () => {
-    expect(src).toContain('aria-roledescription="carousel"');
-    expect(src).toContain('aria-roledescription="slide"');
-    expect(src).toContain('aria-live="polite"');
+  it('passes labelled previous/next controls and the position line', () => {
+    expect(src).toContain("t('nutrition.previous_food')");
+    expect(src).toContain("t('nutrition.next_food')");
     expect(src).toContain("t('nutrition.carousel_position'");
+    expect(src).toContain("t('nutrition.carousel_label'");
   });
 
-  it('replaces the dots with the counter once there are many foods', () => {
-    expect(src).toContain('const MAX_DOTS = 8;');
-    expect(src).toContain('items.length <= MAX_DOTS &&');
-  });
-
-  it('renders nothing for an empty meal and no controls for a single food', () => {
+  it('renders nothing for an empty meal and keeps the first card eager', () => {
     expect(src).toContain('if (items.length === 0) return null;');
-    expect(src).toContain('{items.length > 1 && overflows && (');
-  });
-
-  it('shows the controls only when the cards really overflow the track', () => {
-    // Two 300px cards fit side by side on a wide screen: with nothing to
-    // scroll to, the arrows, dots and "1 of 2" would page through nothing.
-    expect(src).toContain('track.scrollWidth - track.clientWidth > 1');
-    expect(src).toContain('new ResizeObserver(measure)');
-    // false until measured, so the server and the first client render agree.
-    expect(src).toContain('useState(false)');
+    expect(src).toContain('eager={index === 0}');
   });
 });
 
@@ -164,7 +123,7 @@ describe('My Nutrition page (#722 §15, §16)', () => {
 
   it('renders the meal\'s foods through the shared carousel', () => {
     expect(src).toContain("import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';");
-    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={mealTitleOf(meal).title} />');
+    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={title.title} />');
   });
 
   it('keeps the existing plan structure (goals, days, meals, notes) around it', () => {
@@ -220,5 +179,15 @@ describe('nutrition carousel locales (#722)', () => {
     // fat/fiber (migration 142).
     expect(Object.keys(messages.nutrition.quality).sort())
       .toEqual(['carbohydrate', 'fat', 'fiber', 'protein']);
+  });
+});
+
+// #1913 — the enlarged food image shows the library food's localized description
+// (no quantity or role, which the card already shows).
+describe('food image preview description (#1913)', () => {
+  it('passes the food description and not the quantity/role line', () => {
+    const src = read(CARD);
+    expect(src).toContain('description={item.description?.trim() || null}');
+    expect(src).not.toMatch(/description=\{\[quantity, role\]/);
   });
 });
