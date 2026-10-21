@@ -181,6 +181,9 @@ export function MemberExpandedRow({
   const [clerkStatus, setClerkStatus] = useState<({ status: string } & ClerkAccountFields) | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
+  // #1963 — the inactive plan groups start collapsed.
+  const [trainingInactiveOpen, setTrainingInactiveOpen] = useState(false);
+  const [nutritionInactiveOpen, setNutritionInactiveOpen] = useState(false);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   // #1118 §12 — the Products this Member bought from the Members App, each with
@@ -667,7 +670,10 @@ export function MemberExpandedRow({
               <p style={dim}>{t('members.no_nutrition_plans')}</p>
             ) : (
               <div>
-                {nutritionPlans.map((p) => (
+                {(() => {
+                  const renderNutrition = (plans: NutritionPlan[]) => (
+                    <>
+                {plans.map((p) => (
                   <div key={p.id} style={card}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <div style={{ minWidth: 0 }}>
@@ -690,6 +696,26 @@ export function MemberExpandedRow({
                     </div>
                   </div>
                 ))}
+                    </>
+                  );
+                  const activeN = nutritionPlans.filter((p) => p.status === 'active');
+                  const inactiveN = nutritionPlans.filter((p) => p.status !== 'active');
+                  return (
+                    <>
+                      {renderNutrition(activeN)}
+                      {inactiveN.length > 0 && (
+                        <div>
+                          <InactiveToggle
+                            label={t('members.plans_inactive')}
+                            open={nutritionInactiveOpen}
+                            onToggle={() => setNutritionInactiveOpen((o) => !o)}
+                          />
+                          {nutritionInactiveOpen && renderNutrition(inactiveN)}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </Section>
@@ -734,8 +760,12 @@ export function MemberExpandedRow({
                 )}
                 {inactivePlans.length > 0 && (
                   <div>
-                    <div style={subLabelStyle}>{t('members.plans_inactive')}</div>
-                    {inactivePlans.map((p) => (
+                    <InactiveToggle
+                      label={t('members.plans_inactive')}
+                      open={trainingInactiveOpen}
+                      onToggle={() => setTrainingInactiveOpen((o) => !o)}
+                    />
+                    {trainingInactiveOpen && inactivePlans.map((p) => (
                       <PlanCard
                         key={p.id}
                         name={p.training_plan_name}
@@ -870,6 +900,21 @@ const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim = cardMutedTextStyle;
 const card = innerCardStyle;
 const subLabelStyle = cardSubLabelStyle;
+
+/** Clickable header of a collapsed "Inactive" plan group (#1963). */
+function InactiveToggle({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      style={{ ...subLabelStyle, display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+    >
+      <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+      {label}
+    </button>
+  );
+}
 const fieldLabelStyle = formFieldLabelStyle;
 const retryBtn = cardTextLinkStyle;
 const eventRow: React.CSSProperties = {
