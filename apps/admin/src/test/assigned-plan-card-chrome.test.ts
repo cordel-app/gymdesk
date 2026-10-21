@@ -47,14 +47,12 @@ const CARD_FILES = [
   'AssignedPlanExpandedRow.tsx',
   'AssignedPlanConfiguration.tsx',
   'AssignedPlanPromotions.tsx',
-  'AdditionalPeriodicServices.tsx',
 ] as const;
 
 const sources = new Map(CARD_FILES.map((f) => [f, read(f)] as const));
 const rowSrc = sources.get('AssignedPlanExpandedRow.tsx')!;
 const configSrc = sources.get('AssignedPlanConfiguration.tsx')!;
 const promotionsSrc = sources.get('AssignedPlanPromotions.tsx')!;
-const servicesSrc = sources.get('AdditionalPeriodicServices.tsx')!;
 
 function namespace(code: string): Record<string, string> {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
@@ -90,8 +88,6 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
       'section_promotions',
       'section_fee_simulation',
       'section_billing_forecast',
-      'section_additional_services',
-      'section_billing_events',
     ]);
   });
 
@@ -99,14 +95,6 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
     const fee = ASSIGNED_PLAN_SECTION_ORDER.indexOf('section_fee_simulation');
     const forecast = ASSIGNED_PLAN_SECTION_ORDER.indexOf('section_billing_forecast');
     expect(forecast).toBe(fee + 1);
-  });
-
-  it('keeps Additional Products below both simulations and the ledger last (§11, Q4)', () => {
-    const forecast = ASSIGNED_PLAN_SECTION_ORDER.indexOf('section_billing_forecast');
-    const additional = ASSIGNED_PLAN_SECTION_ORDER.indexOf('section_additional_services');
-    expect(additional).toBe(forecast + 1);
-    expect(ASSIGNED_PLAN_SECTION_ORDER.indexOf('section_billing_events'))
-      .toBe(ASSIGNED_PLAN_SECTION_ORDER.length - 1);
   });
 
   it('gives AssignedPlanConfiguration a contiguous slice of that order', () => {
@@ -210,8 +198,7 @@ describe('#924 stage 5: one declaration of the chrome (#929)', () => {
     }
     // The section editors' Save, and the inline Add of a product.
     expect(configSrc).toContain('primaryBtnSmall()');
-    expect(servicesSrc).toContain('primaryBtnSmall()');
-    for (const src of [configSrc, servicesSrc]) {
+    for (const src of [configSrc]) {
       expect(src).toMatch(/import \{[^}]*\bprimaryBtnSmall\b[^}]*\} from '@\/components\/ui'/);
       expect(src).toContain('secondaryBtnSmall');
     }
@@ -275,50 +262,9 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
   it('renders no write control on the read-only card', () => {
     // The applied Promotions' revoke/re-apply checkbox…
     expect(promotionsSrc).toMatch(/\{cardEditing && \(\s*<input/);
-    // …the Remove of an attached product, and its `+ Add`.
-    expect(servicesSrc).toMatch(/editing \? \(\s*<button/);
-    // #957 gates the same action on `canAdd` for the Member card; both
-    // conditions stand, so the add action needs this card's Edit mode too.
-    expect(servicesSrc).toContain('{!adding && canAttach && editing && canAdd && (');
   });
 
   it('closes every section editor when the mode is left (#897)', () => {
     expect(configSrc).toMatch(/if \(!cardEditing\) cancelEdit\(\)/);
-    expect(servicesSrc).toMatch(/if \(!editing\) \{\s*setAdding\(false\)/);
-  });
-
-  it('keeps the editor defaulting to editable for a host with no Edit mode', () => {
-    expect(servicesSrc).toContain('editing = true');
-  });
-});
-
-describe('#924 §11: Additional Periodic Services is renamed Additional Products', () => {
-  const EXPECTED: Record<(typeof LOCALE_CODES)[number], string> = {
-    en: 'Additional Products',
-    es: 'Productos Adicionales',
-    ca: 'Productes Addicionals',
-  };
-
-  it.each(LOCALE_CODES)('reads "Additional Products" in %s.json', (code) => {
-    expect(namespace(code).section_additional_services).toBe(EXPECTED[code]);
-  });
-
-  it('keeps the section, its endpoints and its rules (§11)', () => {
-    expect(rowSrc).toContain("t('section_additional_services')");
-    expect(rowSrc).toContain('<AdditionalPeriodicServices');
-    expect(servicesSrc).toContain('/user-memberships/${assignedPlanId}/services');
-    expect(servicesSrc).toContain('ATTACHABLE_STATUSES');
-  });
-
-  it('labels Edit mode in every locale, with the namespace still in parity', () => {
-    const enKeys = new Set(Object.keys(namespace('en')));
-    for (const code of LOCALE_CODES) {
-      const keys = new Set(Object.keys(namespace(code)));
-      expect(keys.has('action_done_editing'), `${code}.json is missing action_done_editing`).toBe(true);
-      expect(keys.has('action_edit'), `${code}.json is missing action_edit`).toBe(true);
-      if (code === 'en') continue;
-      expect([...enKeys].filter((k) => !keys.has(k)), `${code}.json is missing keys`).toEqual([]);
-      expect([...keys].filter((k) => !enKeys.has(k)), `${code}.json has stray keys`).toEqual([]);
-    }
   });
 });

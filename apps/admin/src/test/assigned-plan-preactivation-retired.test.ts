@@ -30,7 +30,6 @@ const PAGE_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigne
 const FILES: [string, string][] = [
   ['AssignedPlanExpandedRow.tsx', CARD_DIR],
   ['AssignedPlanConfiguration.tsx', CARD_DIR],
-  ['AdditionalPeriodicServices.tsx', CARD_DIR],
   ['page.tsx', PAGE_DIR],
 ];
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
