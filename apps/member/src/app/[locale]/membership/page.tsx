@@ -32,6 +32,7 @@ import {
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
 import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
+import { RETRY_PAYMENT_PARAM, wantsPaymentRetry } from '@/lib/paymentReturn';
 import {
   MemberProfessionalServices,
   type MemberServiceBalanceItem,
@@ -394,6 +395,18 @@ export default function MembershipPage() {
     setSubmitError(null);
     setConsentOpen(true);
   }
+
+  // "Try again" on the payment error page lands here with `?pay=1`: reopen the
+  // payment dialog for whatever is payable, so the member enters a card again
+  // on a new checkout (a checkout link is single use). The flag is removed from
+  // the address bar so a reload does not reopen it.
+  useEffect(() => {
+    if (loading || !wantsPaymentRetry(window.location.search)) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete(RETRY_PAYMENT_PARAM);
+    window.history.replaceState(null, '', url.toString());
+    if (pendingMembership || pendingRequest || showStartPayment) openConsent();
+  }, [loading]);
 
   /* ── #1123 Payments ─────────────────────────────────────────────────────── */
   //

@@ -510,7 +510,10 @@
   },
   "payment_error": {
     "title": "Payment was not completed",
-    "retry": "Try again"
+    "retry": "Try again",
+    "failed": "Your card payment was declined or could not be verified. No charge was made. Try again with your card.",
+    "card_failed": "Your card could not be verified, so it was not saved. Try again with your card.",
+    "not_completed": "The payment was cancelled before it finished. No charge was made."
   },
   "link": {
     "open_in_app_title": "Open in the app",
