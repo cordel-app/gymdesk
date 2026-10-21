@@ -511,10 +511,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           nowhere, and it charges nothing. */}
       <CardSection
         label={t('section_fee_simulation')}
+        onHeaderClick={() => setFeeSimOpen((o) => !o)}
         action={
           <button
             type="button"
-            onClick={() => setFeeSimOpen((o) => !o)}
+            onClick={(e) => { e.stopPropagation(); setFeeSimOpen((o) => !o); }}
             aria-expanded={feeSimOpen}
             aria-label={t('section_fee_simulation')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 13 }}
