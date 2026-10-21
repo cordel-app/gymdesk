@@ -22,8 +22,10 @@ export type OwnPurchaseState = 'active' | 'pending_payment' | 'cancelled';
 
 /** The member-facing state of a purchase, or `null` when the member is not shown it. */
 export function ownPurchaseState(row: OwnPurchaseRow, today: string): OwnPurchaseState | null {
-  if (row.status === 'pending_payment') return 'pending_payment';
-  if (row.status !== 'active') return null;
+  // A cancelled purchase is never payable, even one cancelled while its payment
+  // was still outstanding (#1919): the cancellation outranks the pending status.
+  if (row.status === 'pending_payment' && !row.cancelled_on) return 'pending_payment';
+  if (row.status !== 'active' && row.status !== 'pending_payment') return null;
   if (!row.cancelled_on) return 'active';
   return endDateOnCancel(row.valid_until, row.cancelled_on) > today ? 'cancelled' : null;
 }
