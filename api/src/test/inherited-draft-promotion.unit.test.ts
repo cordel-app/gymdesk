@@ -20,7 +20,7 @@ describe('Promotions only on lines added in the Draft (#1863)', () => {
   });
 
   it('adds the column with a safe default so existing rows stay eligible', () => {
-    const mig = read('../infra/migrations/304_inherited_draft_lines.js');
+    const mig = read('../infra/migrations/305_inherited_draft_lines.js');
     expect(mig).toMatch(/is_inherited TINYINT\(1\) NOT NULL DEFAULT 0/);
   });
 });
