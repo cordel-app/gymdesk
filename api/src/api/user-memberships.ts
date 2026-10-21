@@ -5,7 +5,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { createDraftSetForAssignment, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
-import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
+import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computePriceFields } from './products';
@@ -1689,11 +1689,11 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
     userMembershipId: Number(req.params.id), action: 'update', detail: { billing_duration: req.body },
     mutate: async (tx, d) => {
       // The cadence is the schedule's: it is anchored once per chain and never
-      // re-anchored by a version, so it cannot be edited here.
-      for (const f of ['recurring_billing_interval', 'recurring_billing_unit']) {
-        if (f in (req.body ?? {})) {
-          return { kind: 'invalid' as const, message: `${f} cannot be changed on a plan billed from a ProductSet; assign a new plan` };
-        }
+      // re-anchored by a version, so it only moves on a first Draft (#1949).
+      const hasCadence = ['recurring_billing_interval', 'recurring_billing_unit'].some((f) => f in (req.body ?? {}));
+      if (hasCadence) {
+        const r = await psSetBillingCadence(tx, d, req.body);
+        if ('kind' in r) return r;
       }
       const hasFee = 'membership_fee_price' in (req.body ?? {});
       if (hasFee) {
@@ -1702,7 +1702,9 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       }
       const rest = { ...(req.body ?? {}) };
       delete rest.membership_fee_price;
-      if (hasFee && Object.keys(rest).length === 0) return { ok: true as const };
+      delete rest.recurring_billing_interval;
+      delete rest.recurring_billing_unit;
+      if ((hasFee || hasCadence) && Object.keys(rest).length === 0) return { ok: true as const };
       return psSetBillingDuration(tx, d, rest);
     },
     respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
