@@ -187,6 +187,7 @@ export function MemberExpandedRow({
   const inFlightSetId = ['draft', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
     ? configuration.current_product_set!.id : null;
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [committedKey, setCommittedKey] = useState(0);
   const draftReview = useDraftReview(configuration.current_product_set, configuration);
   const workflow = {
     current: configuration.current_product_set,
@@ -515,7 +516,7 @@ export function MemberExpandedRow({
               productSetId={inFlightSetId}
               open={reviewOpen}
               onClose={() => setReviewOpen(false)}
-              onCommitted={() => { setReviewOpen(false); reloadProducts(); }}
+              onCommitted={() => { setReviewOpen(false); setCommittedKey((k) => k + 1); reloadProducts(); }}
             />
           )}
           <Section label={t('members.section_additional_services')}>
@@ -535,6 +536,7 @@ export function MemberExpandedRow({
               canPay={canManagePackages}
               isAdmin={isAdmin}
               onChanged={reloadProducts}
+              committedKey={committedKey}
             />
           </Section>
 
