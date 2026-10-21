@@ -12,11 +12,13 @@ import { verifyAndParseWebhook } from './webhook';
 
 export class MoneiProvider implements PaymentProvider {
   private readonly client: MoneiClient;
-  private readonly webhookSecret: string;
+  /** The keys a notification may be signed with: the API key signs a
+   * payment's own callback, the webhook secret an account webhook. */
+  private readonly signingKeys: string[];
 
   constructor(apiKey: string, webhookSecret: string, accountId?: string) {
     this.client = new MoneiClient(apiKey, accountId);
-    this.webhookSecret = webhookSecret;
+    this.signingKeys = [apiKey, webhookSecret];
   }
 
   async createPaymentRequest(params: CreatePaymentRequestParams): Promise<CreatePaymentRequestResult> {
@@ -86,7 +88,7 @@ export class MoneiProvider implements PaymentProvider {
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer
   ): Promise<WebhookPayload> {
-    return verifyAndParseWebhook(headers, rawBody, this.webhookSecret);
+    return verifyAndParseWebhook(headers, rawBody, this.signingKeys);
   }
 
   async executeRecurring(params: ExecuteRecurringParams): Promise<ExecuteRecurringResult> {
