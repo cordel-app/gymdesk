@@ -150,7 +150,7 @@ interface Props {
 }
 
 function fmtMoney(v: number | string | null) {
-  return v != null ? `€${v.toFixed(2)}` : '—';
+  return v != null ? `€${Number(v).toFixed(2)}` : '—';
 }
 
 const numField = (v: number | null) => (v != null ? String(v) : '');
