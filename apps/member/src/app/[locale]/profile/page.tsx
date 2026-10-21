@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { clerkStatusLine, clerkInvitationLine } from '@/lib/clerkAccountLines';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -31,15 +31,12 @@ interface Profile {
   image_url?: string | null;
   image_thumbnail_url?: string | null;
   modified_at?: string | null;
-  /** #1234: Clerk account history, stored dates. */
-  clerk_user_id?: string | null;
-  invitation_id?: string | null;
-  invited_at?: string | null;
-  enrolled_at?: string | null;
-}
-
-interface Membership {
-  status: 'active' | 'paused' | 'cancelled' | 'expired';
+  /** #1948: the rest of the member's personal information, shown read-only. */
+  date_of_birth?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  emergency_contact?: string | null;
+  nif_nie_passport?: string | null;
 }
 
 interface PaymentRequest {
@@ -65,14 +62,8 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [membership, setMembership] = useState<Membership | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'ok' | 'pending' | 'failed' | null>(null);
 
-  // edit state
-  const [editing, setEditing] = useState(false);
-  const [phone, setPhone] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // #1039: the Language selector persists on change rather than behind the
@@ -88,15 +79,12 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [data, mship, prs] = await Promise.all([
+        const [data, prs] = await Promise.all([
           apiFetch<Profile>('/me/profile'),
-          apiFetch<{ membership: Membership | null }>('/me/membership').catch(() => ({ membership: null })),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
         ]);
         if (cancelled) return;
         setProfile(data);
-        setPhone(data.phone ?? '');
-        setMembership(mship.membership);
         if (prs.some((p) => p.status === 'failed')) setPaymentStatus('failed');
         else if (prs.some((p) => p.status === 'pending')) setPaymentStatus('pending');
         else setPaymentStatus('ok');
@@ -108,36 +96,6 @@ export default function ProfilePage() {
     })();
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
-
-  function startEdit() {
-    setPhone(profile?.phone ?? '');
-    setSaveError(null);
-    setEditing(true);
-  }
-
-  function cancelEdit() {
-    setEditing(false);
-    setSaveError(null);
-  }
-
-  async function save() {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const updated = await apiFetch<Profile>('/me/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ phone: phone.trim() || null }),
-      });
-      setProfile(updated);
-      setEditing(false);
-      setToast(t('profile.saved'));
-      setTimeout(() => setToast(null), 3000);
-    } catch (err: any) {
-      setSaveError(err.message ?? t('common.error'));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function changeLanguage(next: string) {
     setSavingLocale(true);
@@ -202,39 +160,18 @@ export default function ProfilePage() {
         <Field label={t('profile.name')} value={profile.name} />
         <Field label={t('profile.email')} value={profile.email} note={t('profile.email_readonly')} />
 
-        {editing ? (
-          <div style={styles.editRow}>
-            <label style={styles.label}>{t('profile.phone')}</label>
-            <input
-              style={styles.input}
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder={t('profile.phone_placeholder')}
-              autoFocus
-            />
-            {saveError && <p style={styles.fieldError}>{saveError}</p>}
-            <div style={styles.editActions}>
-              <button style={styles.btnSave} disabled={saving} onClick={save}>
-                {saving ? '…' : t('profile.save')}
-              </button>
-              <button style={styles.btnCancel} disabled={saving} onClick={cancelEdit}>
-                {t('profile.cancel')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={styles.fieldRow}>
-            <div>
-              <p style={styles.label}>{t('profile.phone')}</p>
-              <p style={styles.value}>{profile.phone ?? <span style={styles.empty}>{t('profile.not_set')}</span>}</p>
-            </div>
-            <button style={styles.editBtn} onClick={startEdit}>{t('profile.edit')}</button>
-          </div>
-        )}
+        {/* #1948: every personal field is read-only; only the preferences
+            below (gym, center, language) can be changed here. Empty optional
+            fields are omitted rather than shown as placeholders. */}
+        <Field label={t('profile.phone')} value={profile.phone || t('profile.not_set')} />
+        {profile.date_of_birth && <Field label={t('profile.date_of_birth')} value={formatGymDateOnly(profile.date_of_birth, gymFmt)} />}
+        {profile.gender && <Field label={t('profile.gender')} value={profile.gender} />}
+        {profile.address && <Field label={t('profile.address')} value={profile.address} />}
+        {profile.emergency_contact && <Field label={t('profile.emergency_contact')} value={profile.emergency_contact} />}
+        {profile.nif_nie_passport && <Field label={t('profile.document_id')} value={profile.nif_nie_passport} />}
       </div>
 
-      {/* #361: default gym / center + enrollment / payment status summary */}
+      {/* #361: default gym / center + payment status summary */}
       <div style={{ ...styles.card, marginTop: 16 }}>
         {gyms.length > 1 && (
           <div style={styles.editRow}>
@@ -289,28 +226,6 @@ export default function ProfilePage() {
           </select>
           {localeError && <p style={styles.fieldError}>{localeError}</p>}
         </div>
-
-        <div style={styles.fieldRow}>
-          <div>
-            <p style={styles.label}>{t('profile.enrollment')}</p>
-            <p style={styles.value}>
-              {membership ? t(`membership.status.${membership.status}`) : <span style={styles.empty}>{t('home.no_membership')}</span>}
-            </p>
-          </div>
-        </div>
-
-        {/* #1234: Clerk Status and Clerk Invitation, from stored dates. */}
-        {(() => {
-          const fields = { clerk_user_id: profile.clerk_user_id, has_pending_invitation: !!profile.invitation_id, invited_at: profile.invited_at, enrolled_at: profile.enrolled_at };
-          const status = clerkStatusLine(fields, locale, gymFmt);
-          const invitation = clerkInvitationLine(fields, locale, gymFmt);
-          return (
-            <>
-              <Field label={t('profile.label_clerk_status')} value={t(`profile.${status.key}`, { date: status.date ?? '' })} />
-              <Field label={t('profile.label_clerk_invitation')} value={t(`profile.${invitation.key}`, { date: invitation.date ?? '' })} />
-            </>
-          );
-        })()}
 
         <div style={{ padding: '12px 0' }}>
           <p style={styles.label}>{t('profile.payment_status')}</p>
