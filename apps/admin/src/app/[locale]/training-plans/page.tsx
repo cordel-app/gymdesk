@@ -297,7 +297,7 @@ export default function TrainingPlansPage() {
     setEditForm({
       name: row.name,
       description: row.description ?? '',
-      status: row.status,
+      status: row.status === 'draft' ? 'active' : row.status, // #1958: saving a Draft activates it
       start_date: (row.start_date ?? '').slice(0, 10),
       end_date: row.end_date ? row.end_date.slice(0, 10) : '',
     });
