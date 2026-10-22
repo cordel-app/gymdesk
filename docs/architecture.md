@@ -346,6 +346,19 @@ Migration 111 added `next_billing_date` and `last_billed_at`, migration 194 `fai
 
 Both are **run state, not editable fields**: they are written by the rejection branch of `POST /billing/run` and cleared by every path where money arrives or the assignment resumes — the run's own success and waived branches, the payment webhook's `completed` branch, `clearDunningState()` behind the two staff payment actions, and a transition to `active` (`/reactivate` or a direct `PUT` status flip, so a resumed assignment gets the full two attempts again). No route accepts them as input. They are not part of the Assigned Plan snapshot (`has_billing_snapshot`) for migration 192's reason, and because the Assigned Plan reads select `um.*` they do appear in list/detail responses and in `recordAudit` snapshots — a diff of two audit entries around a rejection can therefore differ by a field no human touched.
 
+### Scheduled jobs (GitHub Actions)
+
+The API runs no scheduler of its own: every recurring job is a scheduled GitHub Actions workflow in `.github/workflows/` that POSTs to an internal API endpoint. Each call goes to `$API_BASE_URL/<path>`, where `API_BASE_URL` is the environment's GitHub variable — since #1086 the admin app's relay prefix (`https://admin.<host>/api/internal`), which forwards the request to the API with its `X-Internal-Secret` header.
+
+| Workflow | Schedule (UTC) | POST, in order |
+|---|---|---|
+| `billing-run.yml` | Daily at 06:00, second attempt at 10:00 | 1. `/billing/run` — charges the due Billing Events<br>2. `/billing/cleanup` — expires stale, abandoned payment requests<br>3. `/promotion-lifecycle/run` — moves Promotions past their End Date to `expired`<br>4. `/plan-allowance-renewals/run` — renews plan-included sessions |
+| `recurring-booking-run.yml` | Daily at 03:00 | `/recurring-bookings/run` — advances the rolling 2-month recurring-booking window |
+| `booking-reminder-run.yml` | Every 15 minutes | `/booking-reminders/run` — sends the 2-hour training reminder |
+| `codeql.yml` | Mondays at 08:00 | None — CodeQL security analysis of the code |
+
+The 10:00 billing attempt is a safety net: once today's run has completed, `/billing/run` answers `200` with `skipped_reason: 'already_completed_today'` (#780) and charges nothing again. Workflows triggered only by hand (`workflow_dispatch`, such as `exercises-import.yml` or `billing-reset-dev.yml`) have no schedule and are not listed here.
+
 ### `billing_run_log` (migration 111, reshaped by migration 193)
 
 Not a per-tenant table — intentional exception to the `gym_id` convention, because it tracks a platform-wide job rather than tenant data.
