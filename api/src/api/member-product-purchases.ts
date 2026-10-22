@@ -263,11 +263,24 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     const blocking = await loadEditLock(gymId, memberId, today);
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
-    const out = await db.transaction((tx) => startRecurringPurchaseDraft(tx, {
-      gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
-      confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
-      actor: { name: actorName }, today,
-    }));
+    // A refusal is a returned value, which `db.transaction` would commit: the
+    // line added before a refused Promotion would stay in the Draft while the
+    // request reports failure. Any outcome but `ok` rolls the whole add back.
+    class DraftRefusal extends Error { constructor(public out: any) { super('draft refused'); } }
+    let out: any;
+    try {
+      out = await db.transaction(async (tx) => {
+        const r = await startRecurringPurchaseDraft(tx, {
+          gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
+          confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
+          actor: { name: actorName }, today,
+        });
+        if (r.kind !== 'ok') throw new DraftRefusal(r);
+        return r;
+      });
+    } catch (e: any) {
+      if (e instanceof DraftRefusal) out = e.out; else throw e;
+    }
     if (out.kind === 'in_flight') {
       return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
     }
