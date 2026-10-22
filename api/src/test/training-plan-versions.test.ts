@@ -22,8 +22,15 @@ describe('assigned training plan versions (#1969)', () => {
     await createTestMembership(otherGymId, 'admin');
     const m = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'V Member', ?)`, [gymId, `v-${Date.now()}@test.com`]);
     memberId = m.insertId;
-    const res = await auth(request.post('/training-plans')).send({ member_id: memberId, name: 'Strength' });
-    planId = res.body.id;
+    const ins = await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Strength', 'active', CURRENT_DATE)`,
+      [gymId, memberId],
+    );
+    planId = ins.insertId;
+    await db.query(
+      `INSERT INTO member_training_plans (gym_id, member_id, training_plan_id, name, status, valid_from) VALUES (?, ?, ?, 'Strength', 'active', CURRENT_DATE)`,
+      [gymId, memberId, planId],
+    );
     const w = await auth(request.post(`${base()}/${planId}/workouts`)).send({ name: 'Day 1' });
     expect(w.status).toBe(201);
   });
