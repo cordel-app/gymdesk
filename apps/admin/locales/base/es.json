@@ -4828,7 +4828,6 @@
     "label_name": "Nombre del plan de nutrición",
     "label_start_date": "Fecha de inicio",
     "assign": "Asignar",
-    "assign_from_template": "Asignar desde plantilla",
     "create": "Crear",
     "cancel": "Cancelar",
     "saving": "Guardando…",
