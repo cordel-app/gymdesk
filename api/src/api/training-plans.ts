@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { gymToday } from '../domain/workoutProgress';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
@@ -785,7 +786,9 @@ trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), as
     );
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     if (planRows[0].status === 'completed') return res.status(400).json({ error: 'Training plan is already completed' });
-    const resolvedEndDate = endDate ?? new Date().toISOString().slice(0, 10);
+    // #1967: the completion day is the gym's local day, not the UTC one.
+    const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const resolvedEndDate = endDate ?? gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
     await db.query(
       `UPDATE training_plans SET status = 'completed', end_date = ?,
               modified_at = UTC_TIMESTAMP(), modified_by = ?

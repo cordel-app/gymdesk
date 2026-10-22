@@ -64,3 +64,20 @@ describe('GET /me/training-plans eligibility (#1631)', () => {
     expect(names).toEqual(['Current', 'Doubled']);
   });
 });
+
+describe('GET /me/training-plans date range (#1967)', () => {
+  it('hides a plan before its start_date and after its end_date', async () => {
+    const mk = async (name: string, start: string | null, end: string | null) => {
+      const id = await createPlan(name, 'active', ['active']);
+      await db.query('UPDATE training_plans SET start_date = ?, end_date = ? WHERE id = ?', [start, end, id]);
+    };
+    await mk('Future range', '2099-01-01', null);
+    await mk('Past range', '2000-01-01', '2000-12-31');
+    await mk('Open range', '2000-01-01', '2099-12-31');
+    const res = await asMember(request.get('/me/training-plans')).expect(200);
+    const names = res.body.map((p: any) => p.name);
+    expect(names).toContain('Open range');
+    expect(names).not.toContain('Future range');
+    expect(names).not.toContain('Past range');
+  });
+});

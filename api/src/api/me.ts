@@ -1234,12 +1234,16 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json([]); }
     // #1540: the member's profile gender picks which exercise image is shown.
     const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
+    // #1967: a plan applies only from its start_date through its end_date, in the gym's zone.
+    const today = gymToday(new Date(), await gymTimeZone(gymId));
     const { rows } = await db.query(
       `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
        WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.status = 'active'
+         AND (tp.start_date IS NULL OR tp.start_date <= ?)
+         AND (tp.end_date IS NULL OR tp.end_date >= ?)
          AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id AND mtp.status = 'active')
        ORDER BY tp.created_at DESC, tp.id DESC`,
-      [gymId, memberId],
+      [gymId, memberId, today, today],
     );
     res.json(rows);
   } catch (err) { next(err); }

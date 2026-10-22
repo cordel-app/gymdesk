@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1967 stage 1 (My Training respects an Assigned Training Plan's `start_date`/`end_date` in the gym's time zone, and Complete stamps the gym-local day as `end_date`; versioning of edits stays with #1969)
+
 - **Done**: #1983 (**My Bookings → Upcoming is the next 7 days.** The Members App tab reads `/me/schedule` with `to = now + UPCOMING_WINDOW_DAYS` (7, `lib/bookingsTabs.ts`, was 14) as an absolute instant, so no date boundary or time zone is involved, and is labelled *Upcoming (7 days)* / *Próximas (7 días)* / *Properes (7 dies)*. Filters, cards, actions and the Past tab are untouched; no API or data change.)
 
 - **Done**: #1957 stage 1 (**Assigned Nutrition Plans carry an inclusive `end_date`.** Migration 306 adds `member_nutrition_plans.end_date` (NULL = ongoing, no backfill); `POST /member-nutrition-plans/:id/complete` stamps it with the completion day; `GET /me/nutrition-plan` takes an optional `?date=` and resolves the plan through `planEffectiveOnSql()` (`domain/nutritionPlanDates.ts`) so `start_date` and `end_date` are both respected. Not in this stage: preserving past meal configurations on edit (versioning, shared with #1970), the Members App date picker and the meal-completion/goal readers, which still read the active plan.)
