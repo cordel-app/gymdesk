@@ -2616,6 +2616,8 @@
     "status_active": "Actiu",
     "status_completed": "Completat",
     "status_cancelled": "Cancel·lat",
+    "status_expired": "Caducat",
+    "status_draft": "Esborrany",
     "assign_heading": "Assigna un pla d'entrenament",
     "from_template": "Des de plantilla",
     "from_scratch": "Des de zero",
