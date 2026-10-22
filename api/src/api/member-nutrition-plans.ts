@@ -8,6 +8,8 @@ import { handleDupEntry } from '../infra/db-helpers';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
+import { gymToday } from '../domain/workoutProgress';
+import { baseNutritionPlanName, nextDay, versionedNutritionPlanName } from '../domain/nutritionPlanVersioning';
 import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const memberNutritionPlansRouter = Router();
@@ -46,7 +48,7 @@ async function loadActivePlan(res: any, id: string, gymId: string) {
     [id, gymId],
   );
   if (rows.length === 0) { res.status(404).json({ error: 'Member nutrition plan not found' }); return null; }
-  if (rows[0].status !== 'active') {
+  if (rows[0].status !== 'active' && rows[0].status !== 'draft') {
     res.status(403).json({ error: 'This nutrition plan is read-only and cannot be modified.' });
     return null;
   }
@@ -240,6 +242,7 @@ memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION')
   try {
     const plan = await loadActivePlan(res, id, gymId);
     if (!plan) return;
+    if (plan.status !== 'active') return res.status(409).json({ error: 'Only an active nutrition plan can be completed' });
     await db.query(
       "UPDATE member_nutrition_plans SET status = 'completed', end_date = CURRENT_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
       [actor, id, gymId],
@@ -249,6 +252,62 @@ memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION')
     res.json(rows[0]);
   } catch (err) { next(err); }
 });
+
+/** Copies days, meals, items, restrictions and goals of one plan into another (Duplicate and #1970 drafts). */
+async function copyNutritionPlanContentsTx(tx: Tx, gymId: string, fromId: string | number, toId: string | number) {
+  const { rows: days } = await tx.query(
+    'SELECT * FROM member_nutrition_plan_days WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
+    [fromId],
+  );
+  for (const day of days) {
+    const { insertId: newDayId } = await tx.query(
+      'INSERT INTO member_nutrition_plan_days (gym_id, member_nutrition_plan_id, weekday, position) VALUES (?, ?, ?, ?)',
+      [gymId, toId, day.weekday, day.position],
+    );
+    const { rows: meals } = await tx.query(
+      'SELECT * FROM member_nutrition_plan_meals WHERE member_nutrition_plan_day_id = ? ORDER BY position ASC',
+      [day.id],
+    );
+    for (const meal of meals) {
+      const { insertId: newMealId } = await tx.query(
+        'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
+        [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
+      );
+      const { rows: items } = await tx.query(
+        'SELECT * FROM member_nutrition_plan_meal_items WHERE meal_id = ? ORDER BY position ASC',
+        [meal.id],
+      );
+      for (const item of items) {
+        await tx.query(
+          'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+        );
+      }
+    }
+  }
+
+  const { rows: restrictions } = await tx.query(
+    'SELECT * FROM member_nutrition_plan_restrictions WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
+    [fromId],
+  );
+  for (const r of restrictions) {
+    await tx.query(
+      'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
+      [gymId, toId, r.nutrition_library_item_id, r.applies_all_days, r.position],
+    );
+  }
+
+  const { rows: goals } = await tx.query(
+    'SELECT * FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
+    [fromId],
+  );
+  for (const g of goals) {
+    await tx.query(
+      'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [gymId, toId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
+    );
+  }
+}
 
 /* ── Duplicate ────────────────────────────────────────────────────────────── */
 
@@ -278,58 +337,7 @@ memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'
         [gymId, src.member_id, src.template_id, copyName, src.description ?? null, 'active', actor, actor],
       );
 
-      const { rows: days } = await tx.query(
-        'SELECT * FROM member_nutrition_plan_days WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const day of days) {
-        const { insertId: newDayId } = await tx.query(
-          'INSERT INTO member_nutrition_plan_days (gym_id, member_nutrition_plan_id, weekday, position) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, day.weekday, day.position],
-        );
-        const { rows: meals } = await tx.query(
-          'SELECT * FROM member_nutrition_plan_meals WHERE member_nutrition_plan_day_id = ? ORDER BY position ASC',
-          [day.id],
-        );
-        for (const meal of meals) {
-          const { insertId: newMealId } = await tx.query(
-            'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
-            [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
-          );
-          const { rows: items } = await tx.query(
-            'SELECT * FROM member_nutrition_plan_meal_items WHERE meal_id = ? ORDER BY position ASC',
-            [meal.id],
-          );
-          for (const item of items) {
-            await tx.query(
-              'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
-            );
-          }
-        }
-      }
-
-      const { rows: restrictions } = await tx.query(
-        'SELECT * FROM member_nutrition_plan_restrictions WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const r of restrictions) {
-        await tx.query(
-          'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, r.nutrition_library_item_id, r.applies_all_days, r.position],
-        );
-      }
-
-      const { rows: goals } = await tx.query(
-        'SELECT * FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const g of goals) {
-        await tx.query(
-          'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
-        );
-      }
+      await copyNutritionPlanContentsTx(tx, gymId, id, insertId);
 
       return insertId;
     });
@@ -339,6 +347,106 @@ memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'
     res.status(201).json(newRows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A plan with this name already exists for this member.');
+  }
+});
+
+/* ── Versioning (#1970) ───────────────────────────────────────────────────── */
+
+const dateOnly = (v: any): string => (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
+
+// Edit on an active assigned plan works on a Draft copy; the original is untouched until the
+// draft is published. Idempotent: an open draft of the plan is returned as is.
+memberNutritionPlansRouter.post('/:id/edit-draft', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: srcRows } = await db.query(
+      "SELECT * FROM member_nutrition_plans WHERE id = ? AND gym_id = ? AND status != 'deleted'", [id, gymId]);
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Member nutrition plan not found' });
+    const src = srcRows[0];
+    if (src.status !== 'active') return res.status(409).json({ error: 'Only an active nutrition plan can be edited as a new version' });
+
+    let created = false;
+    const draftId: number = await db.transaction(async (tx) => {
+      const { rows: lock } = await tx.query(
+        'SELECT status FROM member_nutrition_plans WHERE id = ? AND gym_id = ? FOR UPDATE', [id, gymId]);
+      if (lock[0]?.status !== 'active') throw Object.assign(new Error('Only an active nutrition plan can be edited as a new version'), { status: 409 });
+      const { rows: again } = await tx.query(
+        "SELECT id FROM member_nutrition_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'", [id, gymId]);
+      if (again[0]) return again[0].id as number;
+      created = true;
+      const { insertId } = await tx.query(
+        `INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, draft_of_plan_id, created_by)
+         VALUES (?, ?, ?, ?, ?, CURRENT_DATE(), 'draft', ?, ?)`,
+        [gymId, src.member_id, src.template_id, baseNutritionPlanName(src.name), src.description ?? null, id, actor],
+      );
+      await copyNutritionPlanContentsTx(tx, gymId, id, insertId);
+      return insertId;
+    });
+    const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ?`, [draftId]);
+    if (created) recordAudit(req, { action: 'create', entityType: 'member_nutrition_plan', entityId: draftId, next: { draft_of: id, member_id: src.member_id } });
+    res.status(created ? 201 : 200).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// Save on the draft. One transaction ends the current version today (completed, renamed with
+// its date range) and activates the draft from tomorrow with no end date.
+memberNutritionPlansRouter.post('/:id/publish-version', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
+    const tomorrow = nextDay(today);
+
+    const result = await db.transaction(async (tx) => {
+      const { rows: draftRows } = await tx.query(
+        'SELECT id, member_id, name, status, draft_of_plan_id FROM member_nutrition_plans WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [id, gymId],
+      );
+      const draft = draftRows[0];
+      if (!draft || draft.status === 'deleted') throw Object.assign(new Error('Member nutrition plan not found'), { status: 404 });
+      if (draft.status !== 'draft' || !draft.draft_of_plan_id) {
+        throw Object.assign(new Error('Only a draft created by editing a plan can be published'), { status: 409 });
+      }
+      const { rows: origRows } = await tx.query(
+        'SELECT id, name, status, start_date FROM member_nutrition_plans WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [draft.draft_of_plan_id, gymId],
+      );
+      const orig = origRows[0];
+      if (!orig || orig.status !== 'active') {
+        throw Object.assign(new Error('The plan this draft was created from is no longer active'), { status: 409 });
+      }
+      const origStart = orig.start_date ? dateOnly(orig.start_date) : today;
+      const previousName = versionedNutritionPlanName(orig.name, origStart, today);
+      await tx.query(
+        `UPDATE member_nutrition_plans SET status = 'completed', end_date = ?, name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ?`,
+        [today, previousName, actor, orig.id, gymId],
+      );
+      await tx.query(
+        `UPDATE member_nutrition_plans SET status = 'active', start_date = ?, end_date = NULL, draft_of_plan_id = NULL, name = ?,
+                modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ?`,
+        [tomorrow, versionedNutritionPlanName(draft.name, tomorrow, null), actor, draft.id, gymId],
+      );
+      return { previousId: orig.id as number, previousName };
+    });
+
+    const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ?`, [id]);
+    recordAudit(req, { action: 'status_change', entityType: 'member_nutrition_plan', entityId: id,
+      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: tomorrow } });
+    res.json({ ...rows[0], previous_plan_id: result.previousId, previous_plan_name: result.previousName });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
   }
 });
 
