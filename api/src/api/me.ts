@@ -1,3 +1,4 @@
+import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
@@ -1304,13 +1305,17 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     let memberId: number;
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json({ plan: null }); }
 
+    const parsedDate = parseNutritionPlanDate(req.query.date);
+    if (parsedDate === null) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const onDate = parsedDate ?? new Date().toISOString().slice(0, 10);
+
     const { rows: planRows } = await db.query(
-      `SELECT id, name, description, start_date
-       FROM member_nutrition_plans
-       WHERE gym_id = ? AND member_id = ? AND status = 'active'
+      `SELECT id, name, description, start_date, end_date
+       FROM member_nutrition_plans mnp
+       WHERE gym_id = ? AND member_id = ? AND ${planEffectiveOnSql('mnp')}
        ORDER BY created_at DESC
        LIMIT 1`,
-      [gymId, memberId],
+      [gymId, memberId, onDate, onDate],
     );
     if (planRows.length === 0) return res.json({ plan: null });
     const plan = planRows[0];
