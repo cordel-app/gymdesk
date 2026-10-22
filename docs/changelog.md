@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1969 stage 1 (API: Edit on an active assigned Training Plan creates a Draft copy, `POST /members/:id/training-plans/:planId/edit-draft`; Save is one transaction, `POST …/:planId/publish-version`, that completes the old version today, renames both with `[start - end]` / `[start - Open End]` and activates the draft from tomorrow; migration 307 `draft_of_plan_id`)
 - **Done**: #1982 (Saving the Billing & Duration section of a Draft ProductSet that replaces an Active version no longer fails with *recurring_billing_interval cannot be changed* when the billing frequency is unchanged; `setBillingCadence()` treats an unchanged pair as a no-op, while an actual change on a later version is still refused because it shares the chain's schedule. Only the direct discount % is editable there, per the owner's answer.)
 - **Done**: #1964 (The member's Nutrition Plans list now labels its Active group *Active*, as the Training Plans list does; the Active/Inactive grouping and the collapsed Inactive group already shipped with #1963. Presentation only.)
 
