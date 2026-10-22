@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1964 (The member's Nutrition Plans list now labels its Active group *Active*, as the Training Plans list does; the Active/Inactive grouping and the collapsed Inactive group already shipped with #1963. Presentation only.)
+
 - **Done**: #1967 stage 1 (My Training respects an Assigned Training Plan's `start_date`/`end_date` in the gym's time zone, and Complete stamps the gym-local day as `end_date`; versioning of edits stays with #1969)
 
 - **Done**: #1983 (**My Bookings → Upcoming is the next 7 days.** The Members App tab reads `/me/schedule` with `to = now + UPCOMING_WINDOW_DAYS` (7, `lib/bookingsTabs.ts`, was 14) as an absolute instant, so no date boundary or time zone is involved, and is labelled *Upcoming (7 days)* / *Próximas (7 días)* / *Properes (7 dies)*. Filters, cards, actions and the Past tab are untouched; no API or data change.)

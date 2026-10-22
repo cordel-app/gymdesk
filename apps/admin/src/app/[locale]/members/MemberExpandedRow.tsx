@@ -705,7 +705,12 @@ export function MemberExpandedRow({
                   const inactiveN = nutritionPlans.filter((p) => p.status !== 'active');
                   return (
                     <>
-                      {renderNutrition(activeN)}
+                      {activeN.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={subLabelStyle}>{t('members.plans_active')}</div>
+                          {renderNutrition(activeN)}
+                        </div>
+                      )}
                       {inactiveN.length > 0 && (
                         <div>
                           <InactiveToggle
