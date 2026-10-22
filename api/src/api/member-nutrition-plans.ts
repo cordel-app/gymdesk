@@ -241,7 +241,7 @@ memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION')
     const plan = await loadActivePlan(res, id, gymId);
     if (!plan) return;
     await db.query(
-      "UPDATE member_nutrition_plans SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
+      "UPDATE member_nutrition_plans SET status = 'completed', end_date = CURRENT_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
       [actor, id, gymId],
     );
     const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ? AND mnp.gym_id = ?`, [id, gymId]);
