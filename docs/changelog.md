@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1951 (**Billing chart above the Members → Products Billing Event Simulation.** `ProductSetForecast` renders the existing `BillingEventSimulationChart` (the Membership Plans chart) over the Draft ProductSet's own simulation; the chart is fed the unfiltered simulation with `showZero`, so *Hide zero-amount events* narrows only the list, never the chart. No endpoint, calculation or list behaviour changed.)
 - **Done**: #1960 (Assigned Nutrition Plans: a single **+ New Nutrition Plan** button. The page's separate *Assign from template* button is gone; the existing creation dialog already offered *From a Nutrition Plan Template* and *From Scratch*, so both flows are unchanged. The unused `assign_from_template` locale key was removed in en/es/ca.)
 - **Done**: #1958 (**Saving a Draft Assigned Training Plan activates it.** `PUT /members/:memberId/training-plans/:planId` turns a `draft` plan `active` when the request names no status or names `draft`; an explicit `expired` keeps its End Date rule, completed plans stay read-only, and the Admin edit form seeds a Draft as Active. Duplicate still creates a Draft and no Activate button was added.)
 - **Done**: #1923 stage 2 (a refused Promotion no longer leaves a half-added recurring line: `POST /members/:id/product-purchases` rolls the whole Draft add back on any refusal instead of committing the line and reporting failure; not verified against a database in this session, symptom 2 still needs reproducing).
