@@ -213,7 +213,10 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     if (planRows[0].status === 'completed') return res.status(403).json({ error: 'Completed training plans are read-only' });
 
-    if (status === 'expired') {
+    // #1958: saving a Draft plan activates it (an explicit expired status still wins).
+    const nextStatus = planRows[0].status === 'draft' && (!status || status === 'draft') ? 'active' : status;
+
+    if (nextStatus === 'expired') {
       const effectiveEndDate = ('end_date' in req.body) ? end_date : planRows[0].end_date;
       if (!effectiveEndDate) {
         return res.status(400).json({ error: 'End Date is required when status is Expired.' });
@@ -226,7 +229,7 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
         start_date = COALESCE(?, start_date), end_date = IF(?, ?, end_date),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, nextStatus ?? null,
        start_date ?? null, 'end_date' in req.body ? 1 : 0, end_date ?? null, actor,
        planId, memberId, gymId],
     );

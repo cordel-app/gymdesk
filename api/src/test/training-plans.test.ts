@@ -108,3 +108,57 @@ describe('POST /training-plans (gym-level)', () => {
     expect(activeRows.length).toBe(1);
   });
 });
+
+describe('PUT /members/:memberId/training-plans/:planId — saving a Draft (#1958)', () => {
+  let gymId: string;
+  let memberId: number;
+
+  async function insertPlan(name: string, status: string): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date, created_by) VALUES (?, ?, ?, ?, CURRENT_DATE(), 'test')`,
+      [gymId, memberId, name, status],
+    );
+    return insertId;
+  }
+  const put = (id: number, body: object) =>
+    request
+      .put(`/members/${memberId}/training-plans/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(body);
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Draft Save Gym');
+    await createTestMembership(gymId, 'admin');
+    memberId = await createMember(gymId);
+  });
+
+  it('activates a draft when it is saved', async () => {
+    const id = await insertPlan('Dup draft', 'draft');
+    const res = await put(id, { name: 'Dup draft edited' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+  });
+
+  it('activates a draft even when the client sends status draft', async () => {
+    const id = await insertPlan('Dup draft 2', 'draft');
+    const res = await put(id, { name: 'Dup draft 2', status: 'draft' });
+    expect(res.body.status).toBe('active');
+  });
+
+  it('leaves the original plan untouched and keeps an expired status explicit', async () => {
+    const original = await insertPlan('Original', 'expired');
+    const draft = await insertPlan('Copy', 'draft');
+    await put(draft, { name: 'Copy edited' });
+    const { rows } = await db.query('SELECT status FROM training_plans WHERE id = ?', [original]);
+    expect(rows[0].status).toBe('expired');
+    const res = await put(await insertPlan('Draft to expire', 'draft'), { status: 'expired' });
+    expect(res.status).toBe(400); // end date required, rule unchanged
+  });
+
+  it('does not change an active plan\'s status on save', async () => {
+    const id = await insertPlan('Already active', 'active');
+    const res = await put(id, { name: 'Already active 2' });
+    expect(res.body.status).toBe('active');
+  });
+});
