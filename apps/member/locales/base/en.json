@@ -240,7 +240,7 @@
     "cancelled": "Booking cancelled.",
     "status_waitlisted": "Waitlisted",
     "leave_waitlist": "Leave waiting list",
-    "upcoming_section": "Upcoming",
+    "upcoming_section": "Upcoming (7 days)",
     "past_section": "Past bookings",
     "past_empty": "No past bookings yet.",
     "past_status_present": "Attended",
