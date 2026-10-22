@@ -4,7 +4,7 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
 import { localizedExerciseNameExpr, exerciseNameSearchSql } from '../domain/exerciseTranslations';
-import { effectiveImageThumbnailUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
+import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import { MUSCLE_SLUG_SQL } from './exercise-muscles';
 import { resolveMemberId } from './me';
 
@@ -83,6 +83,7 @@ meStandaloneExercisesRouter.get('/', async (req: Request, res: Response, next: N
     const { rows } = await db.query(
       `SELECT s.id, s.exercise_id, s.exercise_date, ${localizedExerciseNameExpr('e', getRequestLocale(req), 'exercise_name')},
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
+              ${effectiveImageUrlSql('e', sex)} AS image_url,
               (SELECT ${MUSCLE_SLUG_SQL} FROM exercise_muscles em WHERE em.exercise_id = e.id AND em.role = 'principal' ORDER BY em.id LIMIT 1) AS primary_muscle,
               (SELECT JSON_ARRAYAGG(item) FROM (
                  SELECT JSON_OBJECT('id', l.id, 'sets', (
