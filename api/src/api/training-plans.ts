@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
+import { baseTrainingPlanName, nextDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
@@ -172,6 +173,38 @@ export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') 
     ) t1) AS workouts
   FROM training_plans tp
 `;
+
+/** Copies a plan tree's workouts, blocks and exercises into `newPlanId`: fully independent rows. */
+async function copyPlanContentsTx(tx: Tx, gymId: string, gymMembershipId: number | null, newId: number, src: any): Promise<void> {
+  for (const w of src.workouts ?? []) {
+    const { insertId: wId } = await tx.query(
+      'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
+      [gymId, newId, w.name, w.description, w.position, w.scheduled_weekday],
+    );
+    for (const b of w.blocks ?? []) {
+      const { insertId: bId } = await tx.query(
+        `INSERT INTO workout_blocks
+          (gym_id, workout_id, position, name, description, type,
+           rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit, modified_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, wId, b.position, b.name, b.description, b.type,
+         b.rounds, b.duration_seconds, b.work_seconds, b.rest_seconds, b.is_optional, b.notes, b.result_unit ?? null, gymMembershipId],
+      );
+      for (const ex of b.exercises ?? []) {
+        await tx.query(
+          `INSERT INTO workout_exercises
+            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+             result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, bId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
+           ex.rest_seconds, ex.tempo, ex.notes,
+           ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
+           gymMembershipId],
+        );
+      }
+    }
+  }
+}
 
 /* ---- TrainingPlan ---- */
 
@@ -824,34 +857,7 @@ trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), a
          VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_DATE(), ?)`,
         [gymId, memberId, src.template_id, `${src.name} (copy)`, src.description, actor],
       );
-      for (const w of src.workouts ?? []) {
-        const { insertId: wId } = await tx.query(
-          'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
-          [gymId, newId, w.name, w.description, w.position, w.scheduled_weekday],
-        );
-        for (const b of w.blocks ?? []) {
-          const { insertId: bId } = await tx.query(
-            `INSERT INTO workout_blocks
-              (gym_id, workout_id, position, name, description, type,
-               rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit, modified_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, wId, b.position, b.name, b.description, b.type,
-             b.rounds, b.duration_seconds, b.work_seconds, b.rest_seconds, b.is_optional, b.notes, b.result_unit ?? null, gymMembershipId],
-          );
-          for (const ex of b.exercises ?? []) {
-            await tx.query(
-              `INSERT INTO workout_exercises
-                (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
-                 result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [gymId, bId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
-               ex.rest_seconds, ex.tempo, ex.notes,
-               ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
-               gymMembershipId],
-            );
-          }
-        }
-      }
+      await copyPlanContentsTx(tx, gymId, gymMembershipId, newId, src);
       return newId;
     });
     const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [newPlanId]);
@@ -889,6 +895,123 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err) {
+    next(err);
+  }
+});
+
+// #1969: Edit on an active assigned plan works on a Draft copy; the original is untouched
+// until the draft is published. Idempotent: an open draft of the plan is returned as is.
+trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const { memberId, planId } = req.params as { memberId: string; planId: string };
+  try {
+    const { rows: planRows } = await db.query(
+      `${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
+      [planId, memberId, gymId],
+    );
+    if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
+    const src = planRows[0];
+    if (src.status !== 'active') return res.status(409).json({ error: 'Only an active training plan can be edited as a new version' });
+
+    const { rows: existing } = await db.query(
+      "SELECT id FROM training_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'",
+      [planId, gymId],
+    );
+    let draftId: number = existing[0]?.id;
+    let created = false;
+    if (!draftId) {
+      draftId = await db.transaction(async (tx) => {
+        const { rows: lock } = await tx.query(
+          "SELECT status FROM training_plans WHERE id = ? AND gym_id = ? FOR UPDATE", [planId, gymId]);
+        if (lock[0]?.status !== 'active') throw Object.assign(new Error('Only an active training plan can be edited as a new version'), { status: 409 });
+        const { rows: again } = await tx.query(
+          "SELECT id FROM training_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'", [planId, gymId]);
+        if (again[0]) return again[0].id as number;
+        created = true;
+        const { insertId } = await tx.query(
+          `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, start_date, draft_of_plan_id, created_by)
+           VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_DATE(), ?, ?)`,
+          [gymId, memberId, src.template_id, baseTrainingPlanName(src.name), src.description, planId, actor],
+        );
+        await copyPlanContentsTx(tx, gymId, gymMembershipId, insertId, src);
+        return insertId;
+      });
+    }
+    const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [draftId]);
+    if (created) recordAudit(req, { action: 'create', entityType: 'training_plan', entityId: draftId, next: { draft_of: planId, member_id: memberId } });
+    res.status(created ? 201 : 200).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// #1969: Save on the draft. One transaction ends the current version today (completed, renamed
+// with its date range) and activates the draft from tomorrow with no end date.
+trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const { memberId, planId } = req.params as { memberId: string; planId: string };
+  try {
+    const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
+    const tomorrow = nextDay(today);
+
+    const result = await db.transaction(async (tx) => {
+      const { rows: draftRows } = await tx.query(
+        "SELECT id, name, description, status, draft_of_plan_id, template_id FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? FOR UPDATE",
+        [planId, memberId, gymId],
+      );
+      const draft = draftRows[0];
+      if (!draft || draft.status === 'deleted') throw Object.assign(new Error('Training plan not found'), { status: 404 });
+      if (draft.status !== 'draft' || !draft.draft_of_plan_id) {
+        throw Object.assign(new Error('Only a draft created by editing a plan can be published'), { status: 409 });
+      }
+      const { rows: origRows } = await tx.query(
+        "SELECT id, name, status, start_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? FOR UPDATE",
+        [draft.draft_of_plan_id, memberId, gymId],
+      );
+      const orig = origRows[0];
+      if (!orig || orig.status !== 'active') {
+        throw Object.assign(new Error('The plan this draft was created from is no longer active'), { status: 409 });
+      }
+      const origStart = typeof orig.start_date === 'string' ? orig.start_date.slice(0, 10) : new Date(orig.start_date).toISOString().slice(0, 10);
+
+      await tx.query(
+        `UPDATE training_plans SET status = 'completed', end_date = ?, name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ?`,
+        [today, versionedTrainingPlanName(orig.name, origStart, today), actor, orig.id, gymId],
+      );
+      await tx.query(
+        "UPDATE member_training_plans SET status = 'completed', valid_to = ? WHERE training_plan_id = ? AND gym_id = ? AND status = 'active'",
+        [today, orig.id, gymId],
+      );
+      const newName = versionedTrainingPlanName(draft.name, tomorrow, null);
+      await tx.query(
+        `UPDATE training_plans SET status = 'active', start_date = ?, end_date = NULL, draft_of_plan_id = NULL, name = ?,
+                modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ?`,
+        [tomorrow, newName, actor, draft.id, gymId],
+      );
+      const { insertId: mtpId } = await tx.query(
+        `INSERT INTO member_training_plans
+          (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        [gymId, memberId, draft.id, draft.template_id ?? null, newName, draft.description, tomorrow, actor],
+      );
+      await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);
+      return { previousId: orig.id as number, previousName: versionedTrainingPlanName(orig.name, origStart, today) };
+    });
+
+    const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
+    recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
+      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: tomorrow } });
+    res.json({ ...rows[0], previous_plan_id: result.previousId, previous_plan_name: result.previousName });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
