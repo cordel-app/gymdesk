@@ -74,7 +74,7 @@ describe('GET /me/training-plans date range (#1967)', () => {
     await mk('Future range', '2099-01-01', null);
     await mk('Past range', '2000-01-01', '2000-12-31');
     await mk('Open range', '2000-01-01', '2099-12-31');
-    const res = await asMember(request().get('/me/training-plans'));
+    const res = await asMember(request.get('/me/training-plans')).expect(200);
     const names = res.body.map((p: any) => p.name);
     expect(names).toContain('Open range');
     expect(names).not.toContain('Future range');
