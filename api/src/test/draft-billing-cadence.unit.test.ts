@@ -15,6 +15,10 @@ describe('Draft ProductSet billing cadence (#1949)', () => {
     expect(draft).toContain('draft.version !== 1 || draft.root_product_set_id !== draft.id');
   });
 
+  it('a later version accepts an unchanged pair and refuses a change (#1982)', () => {
+    expect(draft).toContain('if (sameInterval && sameUnit) return { ok: true };');
+  });
+
   it('validates the pair against the accepted Plan cadences', () => {
     expect(draft).toContain('isAcceptedPlanCadence(interval, unit)');
   });
