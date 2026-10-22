@@ -240,7 +240,7 @@
     "cancelled": "Reserva cancelada.",
     "status_waitlisted": "En lista de espera",
     "leave_waitlist": "Salir de la lista de espera",
-    "upcoming_section": "Próximas",
+    "upcoming_section": "Próximas (7 días)",
     "past_section": "Reservas pasadas",
     "past_empty": "Todavía no hay reservas pasadas.",
     "past_status_present": "Asististe",

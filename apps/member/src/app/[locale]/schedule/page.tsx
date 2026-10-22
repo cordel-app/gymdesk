@@ -19,7 +19,7 @@ import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, ty
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
-import { BOOKINGS_TABS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
+import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { ImagePreviewButton } from '@/components/ImagePreview';
@@ -107,9 +107,8 @@ export default function MemberSchedulePage() {
   async function load() {
     setLoading(true);
     setLoadError(null);
-    const to = new Date();
-    to.setDate(to.getDate() + 14);
-    const toStr = to.toISOString();
+    // #1983: the Upcoming tab is the next 7 days, as an absolute instant window.
+    const toStr = new Date(Date.now() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
     try {
       const params = new URLSearchParams({ to: toStr });
       if (filterAtId) params.set('activity_type_id', filterAtId);
