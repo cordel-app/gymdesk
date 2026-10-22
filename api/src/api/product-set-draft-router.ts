@@ -161,7 +161,7 @@ productSetDraftRouter.get('/billing-event-simulation', async (req, res, next) =>
     const id = Number((req.params as any).id);
     const assignment = await loadProductSetSimulationAssignment(gymId, id);
     if (!assignment) return res.status(404).json({ error: 'not_found' });
-    const base = computeAssignmentBillingEventSimulation({ assignment });
+    const base = computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true });
 
     // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
     // committing asks for today, the figure Save & Pay charges) and the member's

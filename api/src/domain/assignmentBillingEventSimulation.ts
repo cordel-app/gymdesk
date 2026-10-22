@@ -79,6 +79,17 @@ export interface AssignmentBillingEventSimulationInput {
   from?: string;
   /** Passed through to the engine's safety cap — tests only. */
   maxMonths?: number;
+  /**
+   * #1950 — a ProductSet's simulation runs only as far as its configuration
+   * needs: each promotion's span plus the first regular-price cycle after it
+   * (the engine's own pass 1) and at least `SIMULATED_CYCLES` cycles of every
+   * recurring stream. The Plan's repeating Billing & Duration cycle is then not
+   * the horizon (`horizonUntil` is left out), which is what stretched a
+   * three-month promotion over two full iterations of a long cycle. Nothing is
+   * priced differently. Default false: the Assigned Plan card keeps #1130's
+   * cycle-bounded projection.
+   */
+  dynamicHorizon?: boolean;
 }
 
 const NOTHING_TO_BILL_REASON =
@@ -111,7 +122,7 @@ export function computeAssignmentBillingEventSimulation(
     assignments: [input.assignment],
     minimumCycles: SIMULATED_CYCLES,
     horizonFrom: from,
-    horizonUntil: timelineCycleHorizon(startOn, duration.cadence, cycle) ?? undefined,
+    horizonUntil: input.dynamicHorizon ? undefined : (timelineCycleHorizon(startOn, duration.cadence, cycle) ?? undefined),
     maxMonths: input.maxMonths,
   });
   if (!simulation.available) return emptyBillingEventSimulation(NOTHING_TO_BILL_REASON);
