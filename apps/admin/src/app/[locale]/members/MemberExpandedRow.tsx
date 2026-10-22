@@ -51,6 +51,7 @@ import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './Member
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
+import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
 interface Plan {
   id: number;
@@ -164,6 +165,8 @@ export function MemberExpandedRow({
   const loadedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
+  // #1962: the existing New Training Plan dialog, launched from the empty state.
+  const [assignTrainingOpen, setAssignTrainingOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // #634 — the Member's Membership configuration: the Member's plans and their
@@ -739,7 +742,14 @@ export function MemberExpandedRow({
           {/* Training Plans */}
           <Section label={t('members.section_training_plans')} divider={false}>
             {trainingPlans.length === 0 ? (
-              <p style={dim}>{t('members.no_training_plans')}</p>
+              <div>
+                <p style={dim}>{t('members.no_training_plans')}</p>
+                {canManageTraining && (
+                  <button type="button" style={primaryBtnSmall()} onClick={() => setAssignTrainingOpen(true)}>
+                    {t('members.assign_training_plan')}
+                  </button>
+                )}
+              </div>
             ) : (
               <>
                 {activePlans.length > 0 && (
@@ -782,6 +792,12 @@ export function MemberExpandedRow({
               </>
             )}
           </Section>
+          <NewTrainingPlanDialog
+            open={assignTrainingOpen}
+            presetMember={{ id: memberId, name: member.name }}
+            onClose={() => setAssignTrainingOpen(false)}
+            onCreated={() => { setAssignTrainingOpen(false); loadAll(); }}
+          />
         </>
       )}
 
