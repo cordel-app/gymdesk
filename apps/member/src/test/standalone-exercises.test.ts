@@ -19,6 +19,11 @@ describe('My Training — Add Exercise (#1916)', () => {
     expect(section).toContain('standalone_exercise_id');
     expect(section).toContain('/me/exercise-logs');
   });
+  it('draws the same card as a plan exercise (#1955): shared ExerciseMedia, full-width Register', () => {
+    expect(section).toContain('<ExerciseMedia fill');
+    expect(section).toContain('exercise_image_url');
+    expect(section).toContain("calc(100% - 24px)");
+  });
   it('has its locale keys in every language', () => {
     for (const code of ['en', 'es', 'ca']) {
       const training = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', `${code}.json`), 'utf8')).training;
