@@ -105,6 +105,20 @@ describe('computeAssignmentBillingEventSimulation', () => {
     expect(dates(result)).toContain('2026-11-25');
   });
 
+  it('#1950: a ProductSet forecast is not stretched to a repeating cycle’s two iterations', () => {
+    // A renewing 12-period contract: the Assigned Plan card shows both
+    // iterations (#1130), but a ProductSet's horizon is what its configuration
+    // needs — the two-cycle floor of the recurring stream — not 24 months.
+    const over = { planDuration: toPlanDuration(0, 12, 0, 0, MONTHLY, true) };
+    const cycle = computeAssignmentBillingEventSimulation({ assignment: assignment(over), from: TODAY });
+    const dynamic = computeAssignmentBillingEventSimulation({
+      assignment: assignment(over), from: TODAY, dynamicHorizon: true,
+    });
+    expect(cycle.dates.length).toBeGreaterThan(12);
+    expect(dynamic.dates.length).toBe(SIMULATED_CYCLES + 1);
+    expect(dates(dynamic)).toEqual(['2026-10-15', '2026-11-15', '2026-12-15']);
+  });
+
   it('drops the dates the assignment has already been charged on', () => {
     // A one-off Registration Fee is charged once, on the start date. For a
     // contract that started in 2023 that date is history — the card's Billing
