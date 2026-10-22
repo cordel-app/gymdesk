@@ -2630,6 +2630,8 @@
     "status_active": "Active",
     "status_completed": "Completed",
     "status_cancelled": "Cancelled",
+    "status_expired": "Expired",
+    "status_draft": "Draft",
     "assign_heading": "Assign a training plan",
     "from_template": "From template",
     "from_scratch": "From scratch",

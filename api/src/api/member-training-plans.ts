@@ -31,8 +31,13 @@ memberTrainingPlansRouter.get('/', requireModuleWrite('TRAINING'), async (req, r
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   try {
+    // #1965: the plan's own status (the one Assigned Training Plans shows) outranks the
+    // assignment row's, which Complete / expiry on the plan never updated. The raw value
+    // stays available as assignment_status.
     const { rows } = await db.query(
-      `SELECT mtp.*, tp.name AS training_plan_name, tp.status AS training_plan_status
+      `SELECT mtp.*, mtp.status AS assignment_status,
+              CASE WHEN tp.status IN ('draft', 'completed', 'expired') THEN tp.status ELSE mtp.status END AS status,
+              tp.name AS training_plan_name, tp.status AS training_plan_status
        FROM member_training_plans mtp JOIN training_plans tp ON tp.id = mtp.training_plan_id
        WHERE mtp.member_id = ? AND mtp.gym_id = ? ORDER BY mtp.created_at DESC`,
       [memberId, gymId],

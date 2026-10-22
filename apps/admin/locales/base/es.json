@@ -2616,6 +2616,8 @@
     "status_active": "Activo",
     "status_completed": "Completado",
     "status_cancelled": "Cancelado",
+    "status_expired": "Caducado",
+    "status_draft": "Borrador",
     "assign_heading": "Asignar un plan de entrenamiento",
     "from_template": "Desde plantilla",
     "from_scratch": "Desde cero",

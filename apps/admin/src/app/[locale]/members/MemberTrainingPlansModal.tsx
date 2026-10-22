@@ -10,7 +10,7 @@ import { TrainingPlanEditorModal } from './TrainingPlanEditorModal';
 
 interface TemplateOption { id: number; name: string; status: string }
 interface Assignment {
-  id: number; training_plan_id: number; training_plan_name: string; status: 'active' | 'completed' | 'cancelled';
+  id: number; training_plan_id: number; training_plan_name: string; status: 'active' | 'completed' | 'cancelled' | 'expired' | 'draft';
   valid_from: string | null; valid_to: string | null; created_at: string;
 }
 

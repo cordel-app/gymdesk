@@ -62,7 +62,7 @@ interface TrainingPlanAssignment {
   id: number;
   training_plan_id: number;
   training_plan_name: string;
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'active' | 'completed' | 'cancelled' | 'expired' | 'draft';
   valid_from: string | null;
   valid_to: string | null;
 }
