@@ -281,9 +281,6 @@ export default function NutritionPlansPage() {
             <option value="">{t('nutrition_plans.filter_all_members')}</option>
             {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button onClick={() => guardUnsaved(() => router.push(`/${locale}/nutrition/nutrition-plan-templates`))} style={btnStyle()}>
-            {t('nutrition_plans.assign_from_template')}
-          </button>
           <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
             {t('nutrition_plans.new_plan')}
           </button>

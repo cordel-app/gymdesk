@@ -4842,7 +4842,6 @@
     "label_name": "Nutrition Plan name",
     "label_start_date": "Start Date",
     "assign": "Assign",
-    "assign_from_template": "Assign from template",
     "create": "Create",
     "cancel": "Cancel",
     "saving": "Saving…",
