@@ -14,7 +14,7 @@ describe('planEffectiveOnSql (#1957)', () => {
   it('binds the date twice and keeps both bounds inclusive', () => {
     const sql = planEffectiveOnSql('p');
     expect(sql.match(/\?/g)).toHaveLength(2);
-    expect(sql).toContain('p.start_date <= ?');
+    expect(sql).toContain('p.start_date IS NULL OR p.start_date <= ?');
     expect(sql).toContain('p.end_date >= ?');
   });
 });

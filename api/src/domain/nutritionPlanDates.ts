@@ -1,7 +1,7 @@
 /**
  * #1957 — which assigned Nutrition Plan applies on a date.
  *
- * Both bounds are inclusive; a NULL `end_date` is an ongoing assignment. The one
+ * Both bounds are inclusive; a NULL `end_date` is an ongoing assignment and a NULL `start_date` has already started. The one
  * SQL fragment every reader of "the member's plan on day D" shares, so the Members
  * App cannot show a plan before it starts or after it was completed.
  */
@@ -22,7 +22,7 @@ export function parseNutritionPlanDate(value: unknown): string | undefined | nul
  */
 export function planEffectiveOnSql(alias = 'mnp'): string {
   return `(${alias}.status IN ('active', 'completed')
-    AND ${alias}.start_date <= ?
+    AND (${alias}.start_date IS NULL OR ${alias}.start_date <= ?)
     AND (${alias}.end_date IS NULL OR ${alias}.end_date >= ?)
     AND (${alias}.status = 'active' OR ${alias}.end_date IS NOT NULL))`;
 }
