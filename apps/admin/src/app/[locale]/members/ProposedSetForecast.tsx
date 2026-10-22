@@ -47,7 +47,7 @@ export function ProposedSetForecast({ productSetId }: { productSetId: number | n
         <input type="checkbox" data-hide-zero-toggle checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
         {t('simulation_hide_zero')}
       </label>
-      <ProductSetForecast forecast={withoutZeroRows(state.forecast, hideZero)} loading={state.loading} error={state.error} />
+      <ProductSetForecast forecast={withoutZeroRows(state.forecast, hideZero)} chartSimulation={state.forecast} loading={state.loading} error={state.error} />
     </div>
   );
 }
