@@ -140,7 +140,30 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId,
 
   // Booking spends nothing (#973 `Q2`): a session is spent on attendance, a
   // late cancellation or a no-show, by the consumption ledger (#1189 stage 3).
-  if (decision.eligible) return;
+  if (decision.eligible) {
+    // #1985: several qualifying services → the member picks one; exactly one →
+    // it is used without asking. A staff booking (overrideAccess) never asks.
+    const choice = opts?.serviceChoice;
+    if (choice && decision.required.length > 0) {
+      const options = decision.matched.map((m) => ({ id: m.professional_service_id, name: m.name }));
+      const requested = choice.requested ?? null;
+      if (requested != null) {
+        if (!options.some((o) => o.id === requested)) {
+          throw Object.assign(new Error('The selected Professional Service cannot be used for this booking.'), {
+            status: 400, code: 'professional_service_invalid', professional_services: options,
+          });
+        }
+        choice.resolved = requested;
+      } else if (options.length > 1) {
+        throw Object.assign(new Error('Select the Professional Service to use for this booking.'), {
+          status: 400, code: 'professional_service_selection_required', professional_services: options,
+        });
+      } else if (options.length === 1) {
+        choice.resolved = options[0].id;
+      }
+    }
+    return;
+  }
 
   throw Object.assign(
     new Error('This member has no sessions available for the Professional Services this activity requires.'),
