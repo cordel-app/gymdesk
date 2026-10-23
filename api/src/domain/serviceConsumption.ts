@@ -69,17 +69,21 @@ export function applyConsumption(
 ): ProfessionalServiceGrantRow[] {
   const spent = new Map<string, number>();
   const add = (key: string, n: number) => spent.set(key, (spent.get(key) ?? 0) + n);
+  const unscoped = new Map<string, number>();
   for (const c of consumed) {
     add(`${c.source_kind}:${c.source_reference_id}`, Number(c.consumed));
     if (c.professional_service_id != null) {
       add(`${c.source_kind}:${c.source_reference_id}:${c.professional_service_id}`, Number(c.consumed));
+    } else {
+      const k = `${c.source_kind}:${c.source_reference_id}`;
+      unscoped.set(k, (unscoped.get(k) ?? 0) + Number(c.consumed));
     }
   }
   return rows.map((row) => {
     if (row.kind === 'class_package') return row;
     const used = row.kind === 'manual_adjustment'
       ? (spent.get(`${row.kind}:${row.reference_id}:${row.professional_service_id}`)
-        ?? spent.get(`${row.kind}:${row.reference_id}`) ?? 0)
+        ?? unscoped.get(`${row.kind}:${row.reference_id}`) ?? 0)
       : (spent.get(`${row.kind}:${row.reference_id}`) ?? 0);
     return used > 0 ? { ...row, sessions: Number(row.sessions) - used } : row;
   });
