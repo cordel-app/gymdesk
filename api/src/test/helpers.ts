@@ -482,6 +482,7 @@ export async function cleanupTestGyms() {
   // answer `already_completed_today` for every test in every later file.
   await db.query('DELETE FROM billing_run_log');
   await db.query('DELETE FROM recurring_booking_run_log');
+  await db.query('DELETE FROM job_run_log');
 
   const ids = _createdGymIds.splice(0);
   if (ids.length === 0) return;
