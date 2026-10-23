@@ -26,6 +26,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "billing_event_lines": ["parent", "billing_events (priced components of one event)"],
   "billing_policies": ["parent", "membership_plans (Billing & Duration section)"],
   "billing_run_log": ["ledger", "system run log"],
+  "job_run_log": ["ledger", "system job run log (#1996), no gym_id"],
   "bookings": ["legacy", "legacy table, no writer left (replaced by calendar_event_bookings)"],
   "calendar_event_eligible_professional_services": ["parent", "calendar_events"],
   "calendar_event_shared_training_requests": ["parent", "calendar_events; the review is its own domain fact (reviewed_by_membership_id)"],

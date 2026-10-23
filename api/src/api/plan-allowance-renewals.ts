@@ -4,6 +4,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { dueRenewals, type RenewalLine } from '../domain/planAllowanceRenewals';
 import { toSessionBenefitFrequency } from '../domain/sessionBenefitFrequency';
+import { finishJobRun, startJobRun } from '../infra/job-run-log';
 
 /**
  * #1227 stage 2: the nightly renewal of Membership Plan Session Benefit
@@ -80,12 +81,15 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
  */
 planAllowanceRenewalsRouter.post('/run', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
+  const jobRunId = await startJobRun('plan_allowance_renewals');
   try {
     const { rows } = await db.query<{ today: string }>("SELECT DATE_FORMAT(UTC_DATE(), '%Y-%m-%d') AS today");
     const result = await runPlanAllowanceRenewals(rows[0].today);
     req.log.info(result, 'plan allowance renewals');
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: result });
     res.json(result);
   } catch (err) {
+    await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
     req.log.error({ err: (err as Error).message }, 'plan allowance renewals failed');
     res.status(500).json({ error: 'Internal server error' });
   }
