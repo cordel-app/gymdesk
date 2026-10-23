@@ -124,6 +124,7 @@ describe('gate: audited tables', () => {
     { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'user_membership_id pointer relink between the version and the assignment projection' },
     { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'user_membership_id link written by the projection' },
+    { file: 'api/product-set-projection.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: re-keys a successor version\'s applications to the assignment it projects (#1995); the application itself is not edited' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
     { file: 'api/product-set-draft-router.ts', table: 'product_sets', why: 'last_activity_at refresh of a Draft (its edits are recorded on the assignment projection)' },

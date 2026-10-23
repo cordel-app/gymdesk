@@ -100,7 +100,7 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
   await tx.query(
     `UPDATE user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
-        SET ump.user_membership_id = ?
+        SET user_membership_id = ?
       WHERE ump.gym_id = ? AND ump.product_set_id = ?`,
     [umId, gymId, productSetId]);
 }
