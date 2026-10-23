@@ -106,6 +106,12 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
       );
       if (rows.length === 0) return res.status(404).json({ error: `Base professional service ${baseId} not found` });
       const base = rows[0];
+      // No UNIQUE (gym_id, name) exists on this table, so the name check is explicit.
+      const { rows: taken } = await db.query(
+        'SELECT id FROM professional_services WHERE gym_id = ? AND deleted_at IS NULL AND name = ? LIMIT 1',
+        [gymId, base.name],
+      );
+      if (taken.length > 0) { skipped.push(base.id); continue; }
       try {
         const { insertId } = await db.transaction(async (tx) => {
           const { insertId: serviceId } = await tx.query(
