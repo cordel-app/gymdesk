@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1985 (Members App booking with several Professional Services: `POST /me/bookings` takes an optional `professional_service_id`; when more than one eligible service has a balance and none is sent it answers `400 professional_service_selection_required` listing them, with exactly one it is used silently, and the choice is stored on `calendar_event_bookings.professional_service_id` (migration 309) so the later spend is taken from that service first. The Calendar sheet shows the choice inline (no modal) and a refusal names the required services with the existing My Products action. Event visibility was already independent of balances; no read filters on eligibility.)
+
 - **Done**: #1961 (Members → Nutrition tab is now **Nutrition Plan**; a member with no plan sees an empty state with **+ Assign Nutrition Plan**, which opens the existing `NewNutritionPlanDialog` with the Member preselected and fixed, and the section refreshes on success. No API change.)
 
 - **Done**: #1970 stage 1 (Assigned Nutrition Plan versioning API, mirroring #1969: `POST /member-nutrition-plans/:id/edit-draft` creates an independent `draft` copy linked by `draft_of_plan_id` (migration 308, `chk_mnp_status` gains `draft`) and leaves the original untouched; `POST …/:id/publish-version` ends the original today as `completed` renamed `Name [start - today]` and activates the draft from tomorrow as `Name [tomorrow - Open End]`, in one transaction; Cancel is the existing `DELETE`. The Admin Edit/Save/Cancel UI is stage 2.)

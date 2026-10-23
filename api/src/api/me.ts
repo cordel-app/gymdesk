@@ -1034,7 +1034,13 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx));
+    // #1985: the service the member picked when several qualify; null = none picked.
+    const rawService = req.body.professional_service_id;
+    const chosenService = rawService == null || rawService === '' ? null : Number(rawService);
+    if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
+      return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
+    }
+    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx), chosenService);
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is

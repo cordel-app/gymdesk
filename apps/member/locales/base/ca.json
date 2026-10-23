@@ -275,6 +275,8 @@
     "state_full": "Complet",
     "action_book": "Reservar",
     "buy_sessions_cta": "Compra sessions per reservar aquesta classe",
+    "select_service_prompt": "Tria quin servei utilitzar per a aquesta reserva.",
+    "service_required_message": "No tens cap dels serveis professionals necessaris per a aquesta reserva: {services}. Visita Els meus productes per comprar-ne un.",
     "action_join_waitlist": "Afegir-se a la llista d'espera",
     "action_cancel_booking": "Cancel·lar reserva",
     "action_leave_waitlist": "Sortir de la llista d'espera",

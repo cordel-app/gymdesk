@@ -35,7 +35,7 @@ export async function spendSessionForBooking(
   if (existing.length > 0) return { spent: false, skipped: 'already_spent' };
 
   const { rows: bRows } = await tx.query(
-    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id
+    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
       WHERE ceb.id = ? AND ceb.gym_id = ?`,
@@ -48,7 +48,12 @@ export async function spendSessionForBooking(
   if (required.length === 0) return { spent: false, skipped: 'not_applicable' };
 
   const grants = await loadMemberProfessionalServiceGrants(gymId, memberId);
-  const grant = chooseSpendGrant(grants, required.map((s) => s.id));
+  // #1985: the service the member chose at booking goes first; if its balance
+  // has since run out the default order applies rather than losing the spend.
+  const chosenId = bRows[0].chosen_service_id == null ? null : Number(bRows[0].chosen_service_id);
+  const grant =
+    (chosenId != null && required.some((s) => s.id === chosenId) ? chooseSpendGrant(grants, [chosenId]) : null) ??
+    chooseSpendGrant(grants, required.map((s) => s.id));
   if (!grant) return { spent: false, skipped: 'no_balance' };
 
   await tx.query(

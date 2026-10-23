@@ -275,6 +275,8 @@
     "state_full": "Full",
     "action_book": "Book",
     "buy_sessions_cta": "Buy sessions to book this class",
+    "select_service_prompt": "Choose which service to use for this booking.",
+    "service_required_message": "You don't have any of the professional services required for this booking: {services}. Visit My Products to purchase one of these services.",
     "action_join_waitlist": "Join waitlist",
     "action_cancel_booking": "Cancel booking",
     "action_leave_waitlist": "Leave waitlist",

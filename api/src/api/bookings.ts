@@ -54,7 +54,12 @@ export interface AccessHook {
     tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null,
     // #980 stage 3: the occurrence being booked, so a gate that is answered
     // per occurrence (its own Eligible Professional Services) can read it.
-    opts?: { overrideAccess?: boolean; calendarEventId?: number },
+    opts?: {
+      overrideAccess?: boolean;
+      calendarEventId?: number;
+      /** #1985: the service the member picked (in) and the one the gate settled on (out). */
+      serviceChoice?: { requested?: number | null; resolved?: number | null };
+    },
   ): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
@@ -106,6 +111,8 @@ export async function bookMemberOnSession(
   overrideAccess = false,
   /** #1182 stage 3: who booked — `created_by`. Plain text from `resolveRequestActor()`, `SYSTEM_ACTOR` for a run. */
   actor: string | null = null,
+  /** #1985: the Professional Service the member chose to consume, when several qualify. */
+  professionalServiceId?: number | null,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -120,9 +127,13 @@ export async function bookMemberOnSession(
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
+    // Only a caller that passes the argument (the member's own booking) is asked to choose.
+    const serviceChoice: { requested?: number | null; resolved?: number | null } | undefined =
+      professionalServiceId === undefined ? undefined : { requested: professionalServiceId };
     for (const hook of accessHooks) {
-      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess, calendarEventId: Number(session[0].id) });
+      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess, calendarEventId: Number(session[0].id), serviceChoice });
     }
+    const chosenServiceId = serviceChoice?.resolved ?? null;
 
     const { rows: nextRows } = await tx.query(
       `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next
@@ -157,9 +168,9 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by)
-         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?)`,
-        [gymId, session[0].center_id, memberId, sessionId, actor],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by, professional_service_id)
+         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId],
       );
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
