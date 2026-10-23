@@ -16,8 +16,10 @@ interface TemplateOption { id: number; name: string }
 interface MemberOption { id: number; name: string }
 export interface CreatedNutritionPlan { id: number; member_id: number; name: string }
 
-export function NewNutritionPlanDialog({ open, onClose, onCreated }: {
+export function NewNutritionPlanDialog({ open, onClose, onCreated, initialMemberId }: {
   open: boolean;
+  /** #1961: launched from a Member's card — the Member is preselected and fixed. */
+  initialMemberId?: number;
   onClose: () => void;
   onCreated: (plan: CreatedNutritionPlan) => void;
 }) {
@@ -39,7 +41,7 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated }: {
     if (!open) return;
     setMode(null);
     setTemplateId('');
-    setMemberId('');
+    setMemberId(initialMemberId != null ? String(initialMemberId) : '');
     setName('');
     setNameTouched(false);
     setStartDate(new Date().toISOString().slice(0, 10));
@@ -127,7 +129,7 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated }: {
             )}
 
             <FieldLabel>{t('nutrition_plans.label_member')} *</FieldLabel>
-            <select value={memberId} onChange={(e) => setMemberId(e.target.value)} style={inputStyle} autoFocus={mode === 'scratch'}>
+            <select value={memberId} onChange={(e) => setMemberId(e.target.value)} style={inputStyle} autoFocus={mode === 'scratch'} disabled={initialMemberId != null}>
               <option value="">—</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
