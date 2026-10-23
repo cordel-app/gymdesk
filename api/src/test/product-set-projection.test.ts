@@ -77,14 +77,15 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     expect(cover.length).toBe(1);
   });
 
-  it('a new version of the same plan updates the assignment in place', async () => {
+  it('a new version of the same plan opens a new assignment and closes the previous one (#1995 stage 2)', async () => {
     const owner = await member();
     const p = await plan(30);
     await commit(owner, p, 30);
     await commit(owner, p, 35);
     const rows = await assignments(owner);
-    expect(rows.length).toBe(1);
-    expect(Number(rows[0].membership_fee_price)).toBe(35);
+    expect(rows.map((r: any) => r.status)).toEqual(['cancelled', 'active']);
+    expect(Number(rows[0].membership_fee_price)).toBe(30);
+    expect(Number(rows[1].membership_fee_price)).toBe(35);
   });
 
   it('a different plan closes the previous assignment and opens a new one', async () => {

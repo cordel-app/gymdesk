@@ -15,9 +15,9 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
  *  - `next_billing_date` is left NULL, so the assignment-driven nightly pass
  *    (which selects `next_billing_date IS NOT NULL`) never charges a projected
  *    assignment; the persisted events of the ProductSet are what bill;
- *  - a new version of the **same plan** updates the row in place; a **different
- *    plan** closes the previous assignment and opens a new one (#956's rule, and
- *    what keeps Past Membership Plans meaning "plans the member had");
+ *  - every new version opens its own assignment and closes the previous one
+ *    (#1995 stage 2; before it a same-plan version updated the row in place), so
+ *    the predecessor and its Promotion applications stay as history;
  *  - a **plan-less** version has no assignment at all, and a previous one is
  *    closed;
  *  - family coverage is copied from `product_set_members`.
@@ -95,6 +95,16 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
   return rows[0] ?? null;
 }
 
+/** Points a version's Membership Plan Promotion applications at its assignment. */
+async function attachApplications(tx: Tx, gymId: string, productSetId: number, umId: number) {
+  await tx.query(
+    `UPDATE user_membership_promotions ump
+       JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
+        SET ump.user_membership_id = ?
+      WHERE ump.gym_id = ? AND ump.product_set_id = ?`,
+    [umId, gymId, productSetId]);
+}
+
 /** Projects the (just activated) version onto its operational assignment. */
 export async function projectActiveProductSet(
   tx: Tx, gymId: string, productSetId: number, actorArg?: string | null,
@@ -127,11 +137,10 @@ export async function projectActiveProductSet(
     return null;
   }
 
-  let umId: number;
-  if (previousUmId != null && previousPlanId === Number(set.membership_plan_id)) {
-    // Same plan, new version: the row is updated in place. The commercial
-    // configuration is the version's — the row carries none (migration 258).
-    umId = previousUmId;
+  // The version's own Draft assignment (the Admin creates it set-first, PR 3e)
+  // is activated in place: it is this version's row, not a predecessor's.
+  if (set.user_membership_id != null) {
+    const umId = Number(set.user_membership_id);
     await tx.query(
       `UPDATE user_memberships
           SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active'),
@@ -140,19 +149,42 @@ export async function projectActiveProductSet(
         WHERE id = ? AND gym_id = ?`,
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
-  } else {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
-    const { insertId } = await tx.query(
-      `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-          purchased_at, created_by)
-       VALUES (?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(), ?)`,
-      [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
-        set.created_by],
-    );
-    umId = Number(insertId);
+    await attachApplications(tx, gymId, productSetId, umId);
+    return umId;
   }
 
+  // #1995 stage 2: every successor opens its own assignment — a same-plan one
+  // included — and the predecessor stays behind as history with its own
+  // Promotion applications. The predecessor is closed first, so the one-active
+  // index is never held by two rows; this runs at activation (payment settled),
+  // so a failed or abandoned payment never reaches it.
+  if (previousUmId != null) {
+    const { rows: prev } = await tx.query<{ starts_at: Date | string }>(
+      'SELECT starts_at FROM user_memberships WHERE id = ? AND gym_id = ?', [previousUmId, gymId]);
+    let endsAt = startsAt;
+    if (previousPlanId === Number(set.membership_plan_id) && prev[0]) {
+      // Same plan: both rows must not count as entitled on the same day.
+      const day = new Date(`${startsAt}T00:00:00Z`);
+      day.setUTCDate(day.getUTCDate() - 1);
+      const dayBefore = day.toISOString().slice(0, 10);
+      const prevStart = dateOnly(prev[0].starts_at) as string;
+      endsAt = dayBefore < prevStart ? prevStart : dayBefore;
+    }
+    await closeAssignment(tx, gymId, previousUmId, endsAt, actor);
+  }
+  const { insertId } = await tx.query(
+    `INSERT INTO user_memberships
+       (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
+        purchased_at, created_by)
+     VALUES (?, ?, ?, ?, ?, 'active', COALESCE((SELECT um0.purchased_at FROM user_memberships um0 WHERE um0.id = ? AND um0.gym_id = ?), UTC_TIMESTAMP()), ?)`,
+    [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
+      previousUmId, gymId, set.created_by],
+  );
+  const umId = Number(insertId);
+
+  // The version's Membership Plan Promotion applications (and, through their
+  // ids, the grant snapshots) belong to the assignment it projects.
+  await attachApplications(tx, gymId, productSetId, umId);
 
   await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
   return umId;
