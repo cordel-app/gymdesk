@@ -48,6 +48,14 @@ export interface ConsumedTotal {
   source_kind: ProfessionalServiceGrantKind;
   source_reference_id: number;
   consumed: number;
+  /**
+   * #1986: set when the total is per Professional Service. A staff correction
+   * (`manual_adjustment`, reference 0) is one grant per service, so its spend
+   * must be matched to the service; every other grant is shared across the
+   * services it covers and is reduced by the total over all of them.
+   */
+  professional_service_id?: number;
+  name?: string;
 }
 
 /**
@@ -60,12 +68,19 @@ export function applyConsumption(
   consumed: ConsumedTotal[],
 ): ProfessionalServiceGrantRow[] {
   const spent = new Map<string, number>();
+  const add = (key: string, n: number) => spent.set(key, (spent.get(key) ?? 0) + n);
   for (const c of consumed) {
-    spent.set(`${c.source_kind}:${c.source_reference_id}`, Number(c.consumed));
+    add(`${c.source_kind}:${c.source_reference_id}`, Number(c.consumed));
+    if (c.professional_service_id != null) {
+      add(`${c.source_kind}:${c.source_reference_id}:${c.professional_service_id}`, Number(c.consumed));
+    }
   }
   return rows.map((row) => {
     if (row.kind === 'class_package') return row;
-    const used = spent.get(`${row.kind}:${row.reference_id}`) ?? 0;
+    const used = row.kind === 'manual_adjustment'
+      ? (spent.get(`${row.kind}:${row.reference_id}:${row.professional_service_id}`)
+        ?? spent.get(`${row.kind}:${row.reference_id}`) ?? 0)
+      : (spent.get(`${row.kind}:${row.reference_id}`) ?? 0);
     return used > 0 ? { ...row, sessions: Number(row.sessions) - used } : row;
   });
 }

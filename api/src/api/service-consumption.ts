@@ -35,7 +35,7 @@ export async function spendSessionForBooking(
   if (existing.length > 0) return { spent: false, skipped: 'already_spent' };
 
   const { rows: bRows } = await tx.query(
-    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id
+    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id, ceb.negative_balance_ok
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
       WHERE ceb.id = ? AND ceb.gym_id = ?`,
@@ -54,7 +54,23 @@ export async function spendSessionForBooking(
   const grant =
     (chosenId != null && required.some((s) => s.id === chosenId) ? chooseSpendGrant(grants, [chosenId]) : null) ??
     chooseSpendGrant(grants, required.map((s) => s.id));
-  if (!grant) return { spent: false, skipped: 'no_balance' };
+  if (!grant) {
+    // #1986: staff booked this Member knowing there was no balance and accepted
+    // that it goes negative. The session is spent from the chosen service as a
+    // debt on the manual-adjustment grant (reference 0), which the wallet reads
+    // as a negative balance until a purchase or correction pays it off.
+    const debtServiceId = Number(bRows[0].negative_balance_ok) === 1 && chosenId != null
+      && required.some((s) => s.id === chosenId) ? chosenId : null;
+    if (debtServiceId == null) return { spent: false, skipped: 'no_balance' };
+    await tx.query(
+      `INSERT INTO professional_service_consumptions
+         (gym_id, member_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
+          source_kind, source_reference_id, product_id, reason, created_by)
+       VALUES (?, ?, ?, ?, ?, 'manual_adjustment', 0, 0, ?, ?)`,
+      [gymId, memberId, bookingId, eventId, debtServiceId, reason, actor],
+    );
+    return { spent: true };
+  }
 
   await tx.query(
     `INSERT INTO professional_service_consumptions
