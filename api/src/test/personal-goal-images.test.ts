@@ -160,6 +160,8 @@ beforeAll(async () => {
   noBucketGoalId = await createGoal(noBucketGymId, 'Test Goal Image No Bucket');
   frontDeskGoalId = await createGoal(frontDeskGymId, 'Test Goal Image Front Desk');
   systemGoalId = await createGoal(null, 'Test Goal Image System Owned');
+  // #1849 stage 2b: Cordel's router owns `base_personal_goals`; the legacy row is its mirror.
+  await db.query("INSERT INTO base_personal_goals (id, name, created_by) VALUES (?, 'Test Goal Image System Owned', 'System')", [systemGoalId]);
 
   const { rows } = await db.query<{ id: number }>(
     "SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'protein'",
@@ -168,6 +170,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.query("DELETE FROM base_personal_goals WHERE name LIKE 'Test Goal Image %'");
   await db.query("DELETE FROM personal_goals WHERE name LIKE 'Test Goal Image %'");
   await cleanupTestGyms();
   for (const key of R2_ENV_KEYS) {
@@ -189,6 +192,10 @@ beforeEach(async () => {
   await db.query(
     "UPDATE personal_goals SET image_url = NULL, image_thumbnail_url = NULL, status = 'active' WHERE id IN (?, ?, ?, ?)",
     [otherGymGoalId, noBucketGoalId, frontDeskGoalId, systemGoalId],
+  );
+  await db.query(
+    "UPDATE base_personal_goals SET image_url = NULL, image_thumbnail_url = NULL, deleted_at = NULL WHERE id = ?",
+    [systemGoalId],
   );
 });
 
