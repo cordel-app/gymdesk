@@ -54,7 +54,7 @@ const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '234_pending_payment
 const USER_MEMBERSHIPS = code(API_SRC, 'api', 'user-memberships.ts');
 
 describe('the status CHECK and the API\'s status list agree', () => {
-  it('migration 234 widens the CHECK to exactly the six statuses the router accepts', () => {
+  it('migrations 234 and 328 widen the CHECK to exactly the statuses the router accepts', () => {
     // The widened list in the migration…
     const wide = MIGRATION.match(/const WIDE = \[([^\]]*)\]/);
     const narrow = MIGRATION.match(/const NARROW = \[([^\]]*)\]/);
@@ -62,7 +62,8 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(narrow).toBeTruthy();
     const values = (m: RegExpMatchArray) =>
       [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
-    const wideValues = [...values(wide!), ...values(narrow!)];
+    // #1991 stage 2: migration 328 adds `superseded` on top of 234's set.
+    const wideValues = [...values(wide!), ...values(narrow!), 'superseded'];
 
     // …and the router's own list.
     const statuses = USER_MEMBERSHIPS.match(/const STATUSES = \[([^\]]*)\] as const;/);
@@ -189,7 +190,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
 
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired')");
+      .toContain("um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired', 'superseded')");
   });
 });
 
@@ -215,7 +216,7 @@ describe('a Draft bills nothing and books nothing', () => {
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
-    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status = 'cancelled' AND um.ends_at >= UTC_DATE()))\"");
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status IN ('cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))\"");
     const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\}/g) ?? [];
     expect(assignmentReads).toHaveLength(3);
   });

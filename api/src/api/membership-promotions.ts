@@ -346,7 +346,7 @@ async function loadStandingApplicationsForPricing(
             p.pay_beforehand_months
      FROM user_membership_promotions ump
      LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.product_set_id = ${assignmentVersionId('?')} AND ump.gym_id = ? AND ump.status = 'applied'
+     WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
      ORDER BY ump.applied_at ASC, ump.id ASC`,
     [userMembershipId, gymId],
   );
@@ -714,12 +714,18 @@ export async function applyPromotionToProductSet(
     throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
   }
 
+  // The owner is the assignment the version is itself linked to (a set-first
+  // Draft); a clone Draft is linked at projection, never to its predecessor's.
+  const { rows: own } = await tx.query<any>(
+    'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+  const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
+    ? Number(own[0].user_membership_id) : null;
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
-       (gym_id, product_set_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, ?, ?, 'applied', ?)`,
-    [gymId, productSetId, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
+       (gym_id, product_set_id, user_membership_id, promotion_id, created_by, status, snapshot)
+     VALUES (?, ?, ?, ?, ?, 'applied', ?)`,
+    [gymId, productSetId, ownUm, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
   );
   await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
   return { application_id: Number(insertId) };
@@ -925,7 +931,7 @@ async function loadAppliedPromotionGrants(
 // by `canReapplyPromotion()` so the card states it rather than deriving it.
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
-    `${SELECT} WHERE ump.product_set_id = ${assignmentVersionId('?')} AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
+    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
     [umId, gymId],
   );
   const merged = await Promise.all(rows.map(withSnapshot));

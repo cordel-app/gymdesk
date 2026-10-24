@@ -94,10 +94,10 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
   if (mealRows.length === 0) return null;
   const meal = mealRows[0];
   const { rows: items } = await db.query(
-    `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
+    `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
             i.component_type, i.quantity, i.unit, i.position
      FROM member_nutrition_plan_meal_items i
-     JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+     JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
      WHERE i.meal_id = ?
      ORDER BY i.position ASC`,
     [mealId],
@@ -279,8 +279,8 @@ async function copyNutritionPlanContentsTx(tx: Tx, gymId: string, fromId: string
       );
       for (const item of items) {
         await tx.query(
-          'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+          'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
+          [gymId, newMealId, (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
         );
       }
     }
@@ -292,8 +292,8 @@ async function copyNutritionPlanContentsTx(tx: Tx, gymId: string, fromId: string
   );
   for (const r of restrictions) {
     await tx.query(
-      'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
-      [gymId, toId, r.nutrition_library_item_id, r.applies_all_days, r.position],
+      'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
+      [gymId, toId, (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), r.applies_all_days, r.position],
     );
   }
 
@@ -303,8 +303,8 @@ async function copyNutritionPlanContentsTx(tx: Tx, gymId: string, fromId: string
   );
   for (const g of goals) {
     await tx.query(
-      'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, toId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
+      'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
+      [gymId, toId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null), (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null)],
     );
   }
 }
@@ -473,10 +473,10 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
         const { rows: items } = await db.query(
-          `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+          `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position, nli.image_url AS item_image_url
            FROM member_nutrition_plan_meal_items i
-           JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+           JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
            WHERE i.meal_id = ?
            ORDER BY i.position ASC`,
           [meal.id],
@@ -487,9 +487,9 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category, nli.image_url AS item_image_url
+      `SELECT r.*, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category, nli.image_url AS item_image_url
        FROM member_nutrition_plan_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
        ORDER BY r.position ASC`,
       [id, gymId],
@@ -653,10 +653,10 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/reorder', requireModuleWr
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
       const { rows: items } = await db.query(
-        `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+        `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM member_nutrition_plan_meal_items i
-         JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+         JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
          WHERE i.meal_id = ?
          ORDER BY i.position ASC`,
         [meal.id],
@@ -740,14 +740,14 @@ memberNutritionPlansRouter.post('/:id/days/:dayId/meals/:mealId/items', requireM
       [mealId],
     );
     const { insertId } = await db.query(
-      'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [gymId, mealId, Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
+      'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
+      [gymId, mealId, Number(nutrition_library_item_id), Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM member_nutrition_plan_meal_items i
-       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
        WHERE i.id = ?`,
       [insertId],
     );
@@ -774,10 +774,10 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/reorder', r
     }
     await db.transaction(async (tx) => reorder(tx, 'member_nutrition_plan_meal_items', 'meal_id', mealId, order));
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM member_nutrition_plan_meal_items i
-       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
        WHERE i.meal_id = ?
        ORDER BY i.position ASC`,
       [mealId],
@@ -798,6 +798,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', r
       return res.status(400).json({ error: 'nutrition_library_item_id is not a valid nutrition library item' });
     }
     updates.push('nutrition_library_item_id = ?'); params.push(Number(nutrition_library_item_id));
+    updates.push('base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?)'); params.push(Number(nutrition_library_item_id));
   }
   if (component_type !== undefined) {
     if (!isComponentType(COMPONENT_TYPES, component_type)) {
@@ -824,10 +825,10 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', r
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Meal item not found' });
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM member_nutrition_plan_meal_items i
-       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
        WHERE i.id = ?`,
       [itemId],
     );
@@ -869,13 +870,13 @@ memberNutritionPlansRouter.post('/:id/restrictions', requireModuleWrite('NUTRITI
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
-      [gymId, id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
+      'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
+      [gymId, id, Number(nutrition_library_item_id), Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM member_nutrition_plan_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.id = ?`,
       [insertId],
     );
@@ -922,8 +923,8 @@ memberNutritionPlansRouter.post('/:id/goals', requireModuleWrite('NUTRITION'), a
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id],
+      'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
+      [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id, illustration.id],
     );
     const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?'), [insertId]);
     res.status(201).json(rows[0]);
@@ -953,8 +954,8 @@ memberNutritionPlansRouter.put('/:id/goals/:gid', requireModuleWrite('NUTRITION'
     );
     if (found.length === 0) return res.status(404).json({ error: 'Goal not found' });
     await db.query(
-      'UPDATE member_nutrition_plan_goals SET nutrition_library_item_id = ? WHERE id = ? AND member_nutrition_plan_id = ? AND gym_id = ?',
-      [illustration.id, gid, id, gymId],
+      'UPDATE member_nutrition_plan_goals SET nutrition_library_item_id = ?, base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?) WHERE id = ? AND member_nutrition_plan_id = ? AND gym_id = ?',
+      [illustration.id, illustration.id, gid, id, gymId],
     );
     const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?'), [gid]);
     res.json(rows[0]);

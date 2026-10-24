@@ -201,7 +201,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const fresh = rows.find((r: any) => r.id === draftId);
     // Q3: cancelled, closed now, ending where the new plan starts — the two
     // plans meet at one date and never overlap as live rows.
-    expect(old.status).toBe('cancelled');
+    expect(old.status).toBe('superseded');
     expect(old.ends_at).toBe('2026-10-01');
     expect(old.closed_at).not.toBeNull();
     expect(fresh.status).toBe('active');
@@ -218,7 +218,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     expect((await commit(draftId, { confirm: true })).status).toBe(200);
 
     const rows = await statusChangeRows(gymId, liveId);
-    expect(rows[rows.length - 1]).toMatchObject({ previous_status: 'active', new_status: 'cancelled' });
+    expect(rows[rows.length - 1]).toMatchObject({ previous_status: 'active', new_status: 'superseded' });
   });
 
   it('counts a paused plan as the one plan (#956 Q2)', async () => {
@@ -235,7 +235,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
 
     expect((await commit(draftId, { confirm: true })).status).toBe(200);
     const rows = await assignmentsOf(memberId);
-    expect(rows.find((r: any) => r.id === liveId).status).toBe('cancelled');
+    expect(rows.find((r: any) => r.id === liveId).status).toBe('superseded');
   });
 
   it('a future-dated assignment counts too — it is stored active', async () => {
@@ -353,7 +353,7 @@ describe('POST /user-memberships/:id/assign-new-plan — supersede shape', () =>
     expect((await commit(res.body.id, { confirm: true })).status).toBe(200);
     const rows = await assignmentsOf(memberId);
     const old = rows.find((r: any) => r.id === liveId);
-    expect(old.status).toBe('cancelled');
+    expect(old.status).toBe('superseded');
     expect(old.ends_at).toBe('2026-10-01');
     expect(old.closed_at).not.toBeNull();
     expect(rows.filter((r: any) => r.status === 'active')).toHaveLength(1);
@@ -439,7 +439,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect((await commit(assigned.body.id, { confirm: true })).status).toBe(200);
     for (const id of [aPlan, bPlan]) {
       const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [id]);
-      expect(rows[0].status).toBe('cancelled');
+      expect(rows[0].status).toBe('superseded');
     }
   });
 

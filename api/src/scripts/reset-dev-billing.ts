@@ -10,9 +10,8 @@
  * Everything runs in ONE transaction: a failure leaves the database exactly as
  * it was. Prints per-table counts before and after.
  *
- * The deployed database is VCN-private, so the real run is the
- * `billing-reset-dev.yml` workflow (environment `dev` only), which executes the
- * compiled script from the VPS.
+ * The deployed database is VCN-private, so against it the compiled script runs
+ * from the VPS (`node dist/scripts/reset-dev-billing.js`); no workflow does it.
  */
 import 'dotenv/config';
 import { db, type Tx } from '../infra/db';

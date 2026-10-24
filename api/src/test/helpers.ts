@@ -287,8 +287,15 @@ export async function legacyChildQuery(sql: string, params: unknown[] = []): Pro
     let placeholders = 0;
     for (let i = 0; i < at; i++) placeholders += (tokens[i].match(/\?/g) ?? []).length;
     if (tokens[at].trim() !== '?') throw new Error('legacy child fixture: user_membership_id must be a placeholder');
-    queue[placeholders] = await versionOfAssignment(Number(queue[placeholders]));
+    const assignmentId = Number(queue[placeholders]);
+    queue[placeholders] = await versionOfAssignment(assignmentId);
     columns[at] = 'product_set_id';
+    // A Membership Plan application is the assignment's too (#1995 stage 3).
+    if (/^\s*INSERT INTO user_membership_promotions\b/i.test(insert[1])) {
+      columns.push('user_membership_id');
+      tokens.push('?');
+      queue.push(assignmentId);
+    }
     return db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
   }
   // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version.
@@ -762,6 +769,10 @@ export async function deleteTestBaseFoods(where: string, params: unknown[] = [])
  * Base tables, under the same ids. Idempotent; call it after the fixture's inserts.
  */
 export async function syncLegacySystemFoodsToBase(): Promise<void> {
+  // A fixture that dropped its legacy System food in an earlier run left the Base copy
+  // behind; its live name would make the INSERT IGNORE below skip the new row silently.
+  await db.query(`DELETE IGNORE b FROM base_nutrition_library_items b
+    LEFT JOIN nutrition_library_items i ON i.id = b.id AND i.gym_id IS NULL WHERE i.id IS NULL`);
   await db.query(`
     INSERT IGNORE INTO base_nutrition_library_items
       (id, name, description, image_url, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by)

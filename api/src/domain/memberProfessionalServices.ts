@@ -59,7 +59,7 @@ import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUA
  * inclusive). Wallet kinds that belong to no assignment (a purchased package, a
  * staff correction) are untouched and stay open indefinitely.
  */
-const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status = 'cancelled' AND um.ends_at >= UTC_DATE()))";
+const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status IN ('cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))";
 
 export type ProfessionalServiceGrantKind =
   | 'class_package'
@@ -211,7 +211,7 @@ export async function loadMemberProfessionalServiceGrants(
             psn.quantity        AS sessions
      FROM user_memberships um
      JOIN user_membership_promotions ump
-       ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id AND ump.status = 'applied'
+       ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id AND ump.status IN ('applied', 'superseded')
      JOIN promotion_session psn
        ON psn.promotion_id = ump.promotion_id AND psn.gym_id = um.gym_id
      JOIN products gc ON gc.id = psn.product_id

@@ -357,7 +357,7 @@ The API runs no scheduler of its own: every recurring job is a scheduled GitHub 
 | `booking-reminder-run.yml` | Every 15 minutes | `/booking-reminders/run` — sends the 2-hour training reminder |
 | `codeql.yml` | Mondays at 08:00 | None — CodeQL security analysis of the code |
 
-The 10:00 billing attempt is a safety net: once today's run has completed, `/billing/run` answers `200` with `skipped_reason: 'already_completed_today'` (#780) and charges nothing again. Workflows triggered only by hand (`workflow_dispatch`, such as `exercises-import.yml` or `billing-reset-dev.yml`) have no schedule and are not listed here.
+The 10:00 billing attempt is a safety net: once today's run has completed, `/billing/run` answers `200` with `skipped_reason: 'already_completed_today'` (#780) and charges nothing again. Workflows triggered only by hand (`workflow_dispatch`) have no schedule and are not listed here.
 
 ### `billing_run_log` (migration 111, reshaped by migration 193)
 
@@ -1441,7 +1441,7 @@ Notes:
 
 ## CI/CD Configuration (GitHub Actions)
 
-Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `pro`, default `dev`) (#784). The production environment is named **`pro`** (created 2026-10-04) — the choice offered `production` until a dispatch on it was found to target an environment that does not exist; `api/src/test/workflow-environments.unit.test.ts` holds the set. When PRO carries live gyms, flip the scheduled workflows' fallback to `'pro'` — the owner steps are in `docs/go-to-production.md` §1.
+Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `pro`, default `dev`) (#784). The production environment is named **`pro`** (created 2026-10-04) — the choice offered `production` until a dispatch on it was found to target an environment that does not exist; `api/src/test/workflow-environments.unit.test.ts` holds the set. When PRO carries live gyms, flip the scheduled workflows' fallback to `'pro'` — the owner steps are in `docs/go-to-production.md` §1.
 
 ### Environment-scoped (per env: `dev` today, `production` later)
 
@@ -1489,8 +1489,6 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
-| `exercises-import.yml` | **(#964)** `workflow_dispatch` only — runs the Free Exercise DB importer from the VPS against the selected environment's database. Same reason `deploy.yml` runs migrations there: the database is VCN-private and a GitHub runner cannot reach it. Defaults to `--dry-run`, so a dispatch nobody thought about reports rather than writes, and it runs the image that is *deployed* (no `podman pull`) so the catalogue is written by the code serving the API |
-| `exercises-backfill-descriptions.yml` | **(#1608)** `workflow_dispatch` only — runs `exercises:backfill-descriptions` from the VPS with the content bundled in the image (`api/src/data/base-exercise-descriptions.json`), dry run by default; fills empty values only and reports completeness |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
 
 ### Operator scripts (`api/src/scripts/`)
@@ -1498,7 +1496,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 One-off and repeatable data jobs — `exercises:import-free-db`, `nutrition:base-images`, `storage:rewrite-urls`, `memberships:multi-active` — run through `npm run` in `api/`. Two rules, both learned the hard way in #964:
 
 - **`import 'dotenv/config';` goes first, before any `../` import.** `infra/db.ts` builds its pool at module scope and throws `CORDEL_FITNESS_DB_HOST, _USER, _PASSWORD and _NAME environment variables are required` when they are missing, and imports run before a module body — so the `import { config } from 'dotenv'` + `config()` form every script carried until #964 was reached only *after* the pool had already failed. `npm run exercises:import-free-db` with a correct `api/.env` therefore died before reading a row, which is why #964's catalogue had not been imported despite the importer being merged. `src/app.ts` and `src/infra/seed.ts` had the bare side-effect import all along; `api/src/test/script-env-loading.unit.test.ts` is the gate.
-- **Running one against a deployed database means running it from the VPS**, as a workflow, invoking the **compiled** file (`node dist/scripts/<name>.js`): `tsx` is a devDependency and `src/` is not copied into the runner image, so the `npm run` entry point does not exist there. `exercises-import.yml` is the pattern; the same test asserts its path still names a script that exists.
+- **Running one against a deployed database means running it from the VPS**, invoking the **compiled** file (`node dist/scripts/<name>.js`): `tsx` is a devDependency and `src/` is not copied into the runner image, so the `npm run` entry point does not exist there. No workflow does it any more (the `exercises-*` and `billing-reset-dev` workflows were removed), so it is a manual step on the host.
 
 ### Code scanning (CodeQL) — how an alert is cleared (#767)
 
@@ -1580,7 +1578,7 @@ Stage 1 of #1849 is this note only: no migration, route or screen changes. It re
 | Products | `base_products` (migration 298) | same | `products` (`base_product_id` provenance, migration 299; Import System Products, #1851) | done |
 | Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` (migration 304 copies the System rows, ids kept; Cordel CRUD writes it since 2b, mirrored onto the legacy row of the same id until 2c/5) | `personal_goals` | stage 2a-2c done (gym reads via the `personal_goal_catalogue` view; FKs still on legacy rows), 2d done (`base_personal_goal_id` on the assignment and activation tables, additive); 2e done (readers/writers on `base_personal_goal_id`, translations via `personal_goal_translation_catalogue`); 2f FK cut-over + legacy removal open; #1850 gym import: `personal_goals.base_personal_goal_id` (migration 318) records the template of a gym-owned copy, created by gym creation and `POST /personal-goals/import` |
 | Nutrition Goals | `nutrition_goals` with `gym_id IS NULL` | `base_nutrition_goals` (migration 321 copies the System rows, ids kept; unread until the CRUD and gym-read stages) | `nutrition_goals` | stage N1-N3 done (gym reads via `nutrition_goal_catalogue`); N4 (migration 323, delete of the legacy rows, no mirror) prepared in a draft PR pending the owner's go |
-| Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` (+ categories, qualities, translations junctions) | `base_nutrition_library_items` + four `base_nutrition_library_item_*` junctions (migration 324 copies the System rows, ids kept; unread until F2) | `nutrition_library_items` | stage F1-F2b done (Cordel CRUD on the Base tables mirrored onto the legacy row; gym reads via the `nutrition_library_item_*_catalogue` views); F3 done (`base_nutrition_library_item_id` on the five plan tables, additive, with `foods:audit-base-links`); F4 switches writers/readers, F5 the cut-over and the destructive delete |
+| Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` (+ categories, qualities, translations junctions) | `base_nutrition_library_items` + four `base_nutrition_library_item_*` junctions (migration 324 copies the System rows, ids kept; unread until F2) | `nutrition_library_items` | stage F1-F2b done (Cordel CRUD on the Base tables mirrored onto the legacy row; gym reads via the `nutrition_library_item_*_catalogue` views); F3-F4 done (`base_nutrition_library_item_id` on the five plan tables, written and read by every plan route, `foods:audit-base-links`); F5 the cut-over and the destructive delete (owner's go + dump) |
 | Exercises | `exercises` with `gym_id IS NULL`; gym copy records `cloned_from_id` (the reference import flow) | `base_exercises` | `exercises` | stage 4 |
 | Professional Services | `professional_services` with `gym_id IS NULL` (migration 296 only added translations) | `base_professional_services` | `professional_services` | later, owner to confirm |
 | Themes, Training Plan Templates, Workout Templates, Nutrition Plan Templates | same tables with `gym_id IS NULL` | not decided | same tables | out of scope until owner confirms: each carries child tables and a clone flow of its own |
@@ -1635,7 +1633,7 @@ corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness
 
 **Config files**: `infra/alloy/config-corback.alloy`, `infra/alloy/config-corfront.alloy`, `infra/alloy/alloy.service`.
 
-**Deployment**: Handled by `.github/workflows/deploy-alloy.yml` on push to `main`. The workflow SSHs into each VPS, downloads the Alloy arm64 binary, writes the config and unit file, and restarts the service. The API key is read from `~/.config/alloy/secrets` (not in git) as `GRAFANA_CLOUD_API_KEY`.
+**Deployment**: none. `deploy-alloy.yml` was removed and Alloy is being taken off both VPSs by hand (it ran as a user systemd service, not a container). The files in `infra/alloy/` are kept as reference only. The API key was read from `~/.config/alloy/secrets` (not in git) as `GRAFANA_CLOUD_API_KEY`.
 
 **Querying**: `{container="fitness-api"} |= "ord-001"` traces a single payment order across all log lines.
 

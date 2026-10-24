@@ -1432,6 +1432,7 @@
     "inactive": "Inactive",
     "paused": "Paused",
     "cancelled": "Cancelled",
+    "superseded": "Superseded",
     "expired": "Expired",
     "pending": "Pending",
     "draft": "Draft",

@@ -1,10 +1,10 @@
-// #1849 stage F3 (Foods): migration 326 adds base_nutrition_library_item_id to the five
+// #1849 stages F3-F4 (Foods): migration 326 adds base_nutrition_library_item_id to the five
 // tables that reference a Food by id, backfills it for System foods and changes nothing else.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { FOOD_REFERENCE_TABLES, baseFoodLinkChecks } from '../domain/baseFoodLinkAudit';
-import { cleanupTestGyms, createTestBaseFood, createTestGym, deleteTestBaseFoods } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestBaseFood, createTestGym, createTestMembership, deleteTestBaseFoods, request } from './helpers';
 
 let gymId: string;
 let templateId: number;
@@ -23,6 +23,7 @@ async function auditCounts() {
 
 beforeAll(async () => {
   gymId = await createTestGym();
+  await createTestMembership(gymId, 'admin');
   systemFoodId = await createTestBaseFood('Test Food Links System');
   const own = await db.query("INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, 'Test Food Links Own', 'active')", [gymId]);
   ownFoodId = own.insertId as number;
@@ -88,5 +89,47 @@ describe('base_nutrition_library_item_id (#1849 stage F3)', () => {
           AND TABLE_NAME IN (${FOOD_REFERENCE_TABLES.map((t) => `'${t}'`).join(',')})`,
     );
     expect(Number(rows[0].n)).toBe(5);
+  });
+});
+
+describe('writers and readers use base_nutrition_library_item_id (#1849 stage F4)', () => {
+  const asGym = () => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId });
+
+  it('a goal illustrated by a System food stores both references; a gym-owned food stores only the old one', async () => {
+    await db.query('DELETE FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ?', [templateId]);
+    const sys = await request.post(`/nutrition-plan-templates/${templateId}/goals`).set(asGym())
+      .send({ item_name: 'protein', quantity: 1, unit: 'g', nutrition_library_item_id: systemFoodId });
+    expect(sys.status).toBe(201);
+    expect(sys.body.nutrition_library_item_id).toBe(systemFoodId);
+    const own = await request.post(`/nutrition-plan-templates/${templateId}/goals`).set(asGym())
+      .send({ item_name: 'water', quantity: 1, unit: 'l', nutrition_library_item_id: ownFoodId });
+    expect(own.status).toBe(201);
+    const { rows } = await db.query<any>(
+      'SELECT nutrition_library_item_id AS old, base_nutrition_library_item_id AS base FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY id', [templateId]);
+    expect(rows).toEqual([{ old: systemFoodId, base: systemFoodId }, { old: ownFoodId, base: null }]);
+  });
+
+  it('editing the illustration moves both references, and clearing it clears both', async () => {
+    const { rows } = await db.query<any>('SELECT id FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY id', [templateId]);
+    const gid = rows[1].id; // currently the gym-owned one
+    const put = await request.put(`/nutrition-plan-templates/${templateId}/goals/${gid}`).set(asGym())
+      .send({ nutrition_library_item_id: systemFoodId });
+    expect(put.status).toBe(200);
+    const after = await db.query<any>('SELECT nutrition_library_item_id AS old, base_nutrition_library_item_id AS base FROM nutrition_plan_template_goals WHERE id = ?', [gid]);
+    expect(after.rows[0]).toEqual({ old: systemFoodId, base: systemFoodId });
+    const clear = await request.put(`/nutrition-plan-templates/${templateId}/goals/${gid}`).set(asGym()).send({ nutrition_library_item_id: null });
+    expect(clear.status).toBe(200);
+    const cleared = await db.query<any>('SELECT nutrition_library_item_id AS old, base_nutrition_library_item_id AS base FROM nutrition_plan_template_goals WHERE id = ?', [gid]);
+    expect(cleared.rows[0]).toEqual({ old: null, base: null });
+  });
+
+  it('readers resolve the food through the Base column alone (the state the cut-over leaves behind)', async () => {
+    const { rows } = await db.query<any>('SELECT id FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY id', [templateId]);
+    await db.query('UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = NULL, base_nutrition_library_item_id = ? WHERE id = ?', [systemFoodId, rows[0].id]);
+    const res = await request.get(`/nutrition-plan-templates/${templateId}/goals`).set(asGym());
+    expect(res.status).toBe(200);
+    const goal = res.body.find((g: any) => g.id === rows[0].id);
+    expect(goal.nutrition_library_item_id).toBe(systemFoodId);
+    expect(goal.illustration_name).toBe('Test Food Links System');
   });
 });

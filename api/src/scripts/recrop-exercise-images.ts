@@ -18,8 +18,7 @@
  * finds nothing. It keeps going after a failure; the exit code is non-zero if any
  * object could not be re-cropped.
  *
- * Against a deployed bucket it runs from the VPS through
- * `.github/workflows/exercises-recrop-images.yml` as
+ * Against a deployed bucket it runs from the VPS as
  * `node dist/scripts/recrop-exercise-images.js`; `import 'dotenv/config'` comes
  * first for the reason `import-free-exercise-db.ts` documents.
  */

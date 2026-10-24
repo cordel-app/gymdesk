@@ -1408,6 +1408,7 @@
     "inactive": "Inactivo",
     "paused": "Pausado",
     "cancelled": "Cancelado",
+    "superseded": "Reemplazado",
     "expired": "Caducado",
     "pending": "Pendiente",
     "draft": "Borrador",

@@ -153,6 +153,17 @@ export async function findLiveAssignmentsForMembers(
  * (#635 §16), and a `cancelled` row is outside the nightly run's
  * `WHERE status = 'active'`, so no further charge can come from it.
  */
+/** The standing Plan Promotion applications of a superseded assignment's version move with it (#1991). */
+export async function supersedeApplications(
+  tx: Tx, gymId: string, umId: number, actor: string | null,
+): Promise<void> {
+  await tx.query(
+    `UPDATE user_membership_promotions
+        SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE gym_id = ? AND status = 'applied' AND user_membership_id = ?`,
+    [actor, gymId, umId]);
+}
+
 export async function supersedeLiveAssignments(
   tx: Tx,
   args: {
@@ -168,17 +179,18 @@ export async function supersedeLiveAssignments(
   for (const conflict of args.conflicts) {
     await tx.query(
       `UPDATE user_memberships
-       SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()), ends_at = ?,
+       SET status = 'superseded', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()), ends_at = ?,
            modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ?`,
       [args.newStartsAt, args.actor, conflict.id, args.gymId],
     );
+    await supersedeApplications(tx, args.gymId, conflict.id, args.actor);
     await recordStatusChange(tx, {
       gymId: args.gymId,
       userMembershipId: conflict.id,
       memberId: conflict.owner_member_id,
       previousStatus: conflict.status,
-      newStatus: 'cancelled',
+      newStatus: 'superseded',
       source: args.source,
       actorUserId: args.actorUserId,
     });
