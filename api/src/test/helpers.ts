@@ -716,3 +716,18 @@ export async function deleteTestSystemPersonalGoals(where: string, params: unkno
     await db.query('DELETE FROM personal_goals WHERE id = ? AND gym_id IS NULL', [id]);
   }
 }
+
+/**
+ * #1849 2f: a new Base Personal Goal id must come from the gym-owned goals' sequence
+ * (`personal_goals`), so the two id spaces stay disjoint — the same throw-away row
+ * `allocateGoalId()` uses in the Cordel router. A fixture that lets
+ * `base_personal_goals` pick its own AUTO_INCREMENT can collide with a gym-owned goal
+ * on a fresh database, which makes the catalogue view answer for the wrong goal.
+ */
+export async function allocateTestBaseGoalId(): Promise<number> {
+  const { insertId } = await db.query(
+    "INSERT INTO personal_goals (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')",
+  );
+  await db.query('DELETE FROM personal_goals WHERE id = ?', [insertId]);
+  return insertId as number;
+}

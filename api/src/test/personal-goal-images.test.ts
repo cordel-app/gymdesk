@@ -13,7 +13,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, deleteTestSystemPersonalGoals, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, allocateTestBaseGoalId, deleteTestSystemPersonalGoals, request } from './helpers';
 import sharp from 'sharp';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -160,7 +160,8 @@ beforeAll(async () => {
   noBucketGoalId = await createGoal(noBucketGymId, 'Test Goal Image No Bucket');
   frontDeskGoalId = await createGoal(frontDeskGymId, 'Test Goal Image Front Desk');
   // #1849 2f: a System goal is a Base row alone.
-  systemGoalId = (await db.query("INSERT INTO base_personal_goals (name, created_by) VALUES ('Test Goal Image System Owned', 'System')")).insertId as number;
+  systemGoalId = await allocateTestBaseGoalId();
+  await db.query("INSERT INTO base_personal_goals (id, name, created_by) VALUES (?, 'Test Goal Image System Owned', 'System')", [systemGoalId]);
 
   const { rows } = await db.query<{ id: number }>(
     "SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'protein'",
