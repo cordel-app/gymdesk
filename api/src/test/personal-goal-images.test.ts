@@ -164,7 +164,7 @@ beforeAll(async () => {
   await db.query("INSERT INTO base_personal_goals (id, name, created_by) VALUES (?, 'Test Goal Image System Owned', 'System')", [systemGoalId]);
 
   const { rows } = await db.query<{ id: number }>(
-    "SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'protein'",
+    "SELECT id FROM base_nutrition_goals WHERE slug = 'protein'",
   );
   nutritionGoalId = rows[0].id;
 });

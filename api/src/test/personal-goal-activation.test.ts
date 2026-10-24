@@ -162,7 +162,7 @@ describe('per-gym availability (#1181 §2)', () => {
     // front-desk membership, which this file's superadmin mock cannot (a
     // superadmin is what lets it impersonate the member below).
     expect((await request.post(`${ROOT}/${ownGoalId}/deactivate`).set(asGym(gymB))).status).toBe(404);
-    const { rows } = await db.query<{ id: number }>("SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'protein'");
+    const { rows } = await db.query<{ id: number }>("SELECT id FROM base_nutrition_goals WHERE slug = 'protein'");
     expect((await request.post(`/nutrition-goals/${rows[0].id}/deactivate`).set(asGym(gymA))).status).toBe(404);
     expect((await request.post(`/nutrition-goals/${rows[0].id}/duplicate`).set(asGym(gymA))).status).toBe(404);
   });
