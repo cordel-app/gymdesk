@@ -13,7 +13,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import sharp from 'sharp';
 import { encodePngRgba } from '../domain/pngImage';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, syncLegacySystemFoodsToBase } from './helpers';
 
 const sendMock = vi.hoisted(() => vi.fn());
 
@@ -97,6 +97,7 @@ beforeAll(async () => {
     [SYSTEM_FOOD_NAME],
   );
   systemFoodId = system.insertId as number;
+  await syncLegacySystemFoodsToBase();
 });
 
 afterAll(async () => {

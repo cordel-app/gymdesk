@@ -63,6 +63,20 @@ export const LEGACY_FOOD_TABLES: FoodTables = {
   descriptions: 'nutrition_library_item_description_translations',
 };
 
+/**
+ * What a **read** goes through (#1849 F2b): the catalogue views (migration 325) —
+ * System foods from the Base tables, a gym's own from the legacy ones. The read
+ * helpers default to it; the writers (`replace*`) keep defaulting to the legacy
+ * tables, which are where a gym's own foods are written.
+ */
+export const CATALOGUE_FOOD_TABLES: FoodTables = {
+  items: 'nutrition_library_item_catalogue',
+  categories: 'nutrition_library_item_category_catalogue',
+  qualities: 'nutrition_library_item_quality_catalogue',
+  translations: 'nutrition_library_item_translation_catalogue',
+  descriptions: 'nutrition_library_item_description_translation_catalogue',
+};
+
 export const BASE_FOOD_TABLES: FoodTables = {
   items: 'base_nutrition_library_items',
   categories: 'base_nutrition_library_item_categories',
@@ -72,7 +86,7 @@ export const BASE_FOOD_TABLES: FoodTables = {
 };
 
 function nameConfig(tables: FoodTables): TranslatedNameConfig {
-  return tables === LEGACY_FOOD_TABLES ? ITEM_TRANSLATIONS : { ...ITEM_TRANSLATIONS, table: tables.translations };
+  return { ...ITEM_TRANSLATIONS, table: tables.translations };
 }
 
 /**
@@ -81,17 +95,17 @@ function nameConfig(tables: FoodTables): TranslatedNameConfig {
  *
  * @param alias table alias of `nutrition_library_items` in the enclosing query
  */
-export function localizedNameSql(alias: string, locale: SupportedLocale, tables: FoodTables = LEGACY_FOOD_TABLES): string {
+export function localizedNameSql(alias: string, locale: SupportedLocale, tables: FoodTables = CATALOGUE_FOOD_TABLES): string {
   return translatedNameSql(nameConfig(tables), alias, locale);
 }
 
 /** {@link localizedNameSql} with an output alias, for SELECT lists. */
 export function localizedNameExpr(alias: string, locale: SupportedLocale, as = 'item_name'): string {
-  return translatedNameExpr(ITEM_TRANSLATIONS, alias, locale, as);
+  return translatedNameExpr(nameConfig(CATALOGUE_FOOD_TABLES), alias, locale, as);
 }
 
 /** Return translations for a set of item IDs as a map: item_id → { locale: name } */
-export function loadTranslationsMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, Record<string, string>>> {
+export function loadTranslationsMap(itemIds: number[], tables: FoodTables = CATALOGUE_FOOD_TABLES): Promise<Record<number, Record<string, string>>> {
   return loadTranslationsMapFor(nameConfig(tables), db, itemIds);
 }
 
@@ -122,7 +136,7 @@ export function validateTranslations(value: unknown): { error: string } | null {
 }
 
 /** Return categories assigned to a set of item IDs as a map: item_id → [{id, slug}] */
-export async function loadCategoriesMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
+export async function loadCategoriesMap(itemIds: number[], tables: FoodTables = CATALOGUE_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
   if (itemIds.length === 0) return {};
   const marks = itemIds.map(() => '?').join(',');
   const { rows } = await db.query<{ item_id: number; category_id: number; slug: string }>(
@@ -175,7 +189,7 @@ export async function validateCategoryIds(ids: unknown): Promise<{ error: string
 }
 
 /** Return qualities assigned to a set of item IDs as a map: item_id → [{id, slug}] */
-export async function loadQualitiesMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
+export async function loadQualitiesMap(itemIds: number[], tables: FoodTables = CATALOGUE_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
   if (itemIds.length === 0) return {};
   const marks = itemIds.map(() => '?').join(',');
   const { rows } = await db.query<{ item_id: number; quality_id: number; slug: string }>(
@@ -266,7 +280,7 @@ export function buildListWhere(
   base: string[],
   baseParams: any[] = [],
   locale: SupportedLocale = BASE_LOCALE,
-  tables: FoodTables = LEGACY_FOOD_TABLES,
+  tables: FoodTables = CATALOGUE_FOOD_TABLES,
 ): { where: string; params: any[] } | { error: string } {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const categoryIds = toQueryArray(req.query.category_id).map((v) => parseInt(v, 10));

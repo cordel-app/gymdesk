@@ -8,6 +8,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  syncLegacySystemFoodsToBase,
 } from './helpers';
 
 let gymId: string;
@@ -48,6 +49,7 @@ beforeAll(async () => {
   );
   libraryItemId = insertId;
   await db.query('INSERT INTO nutrition_library_item_categories (item_id, category_id) VALUES (?, ?)', [libraryItemId, mainDishId]);
+  await syncLegacySystemFoodsToBase();
 });
 
 afterAll(async () => {
@@ -367,6 +369,7 @@ describe('translated names', () => {
        ON DUPLICATE KEY UPDATE name = VALUES(name)`,
       [libraryItemId, libraryItemId],
     );
+    await syncLegacySystemFoodsToBase();
 
     const res = await request
       .post('/nutrition-library')

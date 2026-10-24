@@ -17,6 +17,7 @@ import {
   createTestMembership,
   request,
   TEST_AUTH_HEADER,
+  syncLegacySystemFoodsToBase,
 } from './helpers';
 
 let gymId: string;
@@ -34,6 +35,7 @@ async function createFood(gid: string | null, opts: { status?: string; imageUrl?
     `INSERT INTO nutrition_library_items (gym_id, name, status, image_url) VALUES (?, ?, ?, ?)`,
     [gid, `NGI Food ${uniq()}`, opts.status ?? 'active', opts.imageUrl ?? null],
   );
+  if (gid === null) await syncLegacySystemFoodsToBase();
   return insertId;
 }
 

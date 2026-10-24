@@ -52,7 +52,7 @@ async function baseMealExists(dayId: string, mealId: string): Promise<boolean> {
 
 async function libraryItemExists(id: number): Promise<boolean> {
   const { rows } = await db.query(
-    "SELECT 1 FROM nutrition_library_items WHERE id = ? AND status != 'deleted'",
+    "SELECT 1 FROM nutrition_library_item_catalogue WHERE id = ? AND status != 'deleted'",
     [id],
   );
   return rows.length > 0;
@@ -79,7 +79,7 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
     `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
             i.component_type, i.quantity, i.unit, i.position
      FROM nutrition_plan_template_meal_items i
-     JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+     JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
      WHERE i.meal_id = ?
      ORDER BY i.position ASC`,
     [mealId],
@@ -157,7 +157,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
           `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position
            FROM nutrition_plan_template_meal_items i
-           JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+           JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
            WHERE i.meal_id = ?
            ORDER BY i.position ASC`,
           [meal.id],
@@ -168,9 +168,9 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
        ORDER BY r.position ASC`,
       [id],
@@ -369,7 +369,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', requireSupera
         `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM nutrition_plan_template_meal_items i
-         JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+         JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
          WHERE i.meal_id = ? ORDER BY i.position ASC`,
         [meal.id],
       );
@@ -418,7 +418,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requi
         `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM nutrition_plan_template_meal_items i
-         JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+         JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
          WHERE i.meal_id = ? ORDER BY i.position ASC`,
         [meal.id],
       );
@@ -494,7 +494,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items'
       `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM nutrition_plan_template_meal_items i
-       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
        WHERE i.id = ?`,
       [insertId],
     );
@@ -521,7 +521,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/r
       `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM nutrition_plan_template_meal_items i
-       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
        WHERE i.meal_id = ?
        ORDER BY i.position ASC`,
       [mealId],
@@ -549,9 +549,9 @@ platformNutritionPlanTemplatesRouter.get('/:id/restrictions', requireSuperadmin,
   try {
     if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
     const { rows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
        ORDER BY r.position ASC`,
       [id],
@@ -578,9 +578,9 @@ platformNutritionPlanTemplatesRouter.post('/:id/restrictions', requireSuperadmin
       [id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,
       [insertId],
     );
