@@ -152,18 +152,18 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
         discountedUnitPrice(list, input.directDiscountPercent).toFixed(2), added.id, input.gymId]);
   }
 
-  const refused = await applyPromotions(tx, input, draftId);
+  const refused = await applyPromotions(tx, input, draftId, added.id);
   if (refused) return refused;
   return { kind: 'ok', productSetId: draftId, lineId: added.id };
 }
 
 /** Applies the chosen Product Promotions to the Draft; a refusal is returned, not thrown. */
 async function applyPromotions(
-  tx: Tx, input: { gymId: string; promotionIds: readonly number[]; actor: Actor }, draftId: number,
+  tx: Tx, input: { gymId: string; promotionIds: readonly number[]; actor: Actor }, draftId: number, lineId: number,
 ): Promise<DraftRefusal | null> {
   for (const promotionId of input.promotionIds) {
     try {
-      await applyPromotionToProductSet(tx, input.gymId, input.actor.name, draftId, promotionId, { productTarget: true });
+      await applyPromotionToProductSet(tx, input.gymId, input.actor.name, draftId, promotionId, { productTarget: true, lineId });
     } catch (err: any) {
       if (err?.status === 409) return { kind: 'conflict', error: err.message, message: err.message };
       if (err?.status) return { kind: 'invalid', message: err.message };
