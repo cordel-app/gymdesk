@@ -29,18 +29,15 @@ import {
   storeNutritionImagePair,
   sweepReplacedNutritionImage,
 } from './nutrition-image-storage';
-import { mirrorFoodToLegacy } from './base-food-mirror';
 import { getRequestLocale, SUPPORTED_LOCALES, BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 
 /**
  * #1849 stage F2 — Cordel's Base Foods, on `base_nutrition_library_items` and its
  * four junctions. Personal Goals' 2b / Nutrition Goals' N2 one catalogue over.
  *
- * Until the gym side moves onto the Base tables every write here is **mirrored onto
- * the legacy System row of the same id** (`mirrorFoodToLegacy()`): the gym-facing
- * router and the plan tables still reference the legacy row by id. A new food takes
- * its id from `nutrition_library_items` first (gyms still create their own foods
- * there), then the Base row is inserted under that id, so the two cannot collide.
+ * Nothing is mirrored onto the legacy table any more (F5): the legacy System rows are
+ * gone. A new food takes its id from `nutrition_library_items`' sequence (reserved and
+ * released, gyms create their own foods there), so Base and gym-owned ids stay disjoint.
  * Response shapes are the ones this router always served (`status` active|deleted,
  * derived here from `deleted_at`).
  */
@@ -173,12 +170,14 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
 
     const actor = platformActor(req);
-    const { insertId } = await db.query(
-      `INSERT INTO nutrition_library_items
-         (gym_id, name, description, status, created_by)
-       VALUES (NULL, ?, ?, 'active', ?)`,
-      [name.trim(), description.value ?? null, actor],
+    // The id comes from the legacy table's sequence (reserved and released) so a Base id never
+    // collides with a gym-owned food, which the catalogue views and the plan tables address by bare id.
+    const { insertId: reserved } = await db.query(
+      `INSERT INTO nutrition_library_items (gym_id, name, status, created_by)
+       VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')`,
     );
+    await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [reserved]);
+    const insertId = reserved as number;
     await db.query(
       `INSERT INTO base_nutrition_library_items (id, name, description, created_by) VALUES (?, ?, ?, ?)`,
       [insertId, name.trim(), description.value ?? null, actor],
@@ -194,7 +193,6 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
     if (descTr.value !== undefined) {
       await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!, BASE_FOOD_TABLES));
     }
-    await mirrorFoodToLegacy(insertId);
 
     const { rows } = await db.query(
       `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
@@ -278,7 +276,6 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
     if (descTr.value !== undefined) {
       await db.transaction((conn) => replaceDescriptionTranslations(conn, Number(id), descTr.value!, BASE_FOOD_TABLES));
     }
-    await mirrorFoodToLegacy(String(id));
 
     const { rows } = await db.query(
       `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
@@ -318,7 +315,6 @@ platformNutritionLibraryRouter.put('/:id/qualities', requireSuperadmin, async (r
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
     await replaceQualities(Number(id), quality_ids, BASE_FOOD_TABLES);
-    await mirrorFoodToLegacy(String(id));
 
     const qualitiesMap = await loadQualitiesMap([Number(id)], BASE_FOOD_TABLES);
     res.json({ item_id: Number(id), qualities: qualitiesMap[Number(id)] ?? [] });
@@ -343,7 +339,6 @@ platformNutritionLibraryRouter.put('/:id/categories', requireSuperadmin, async (
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
     await replaceCategories(Number(id), category_ids, BASE_FOOD_TABLES);
-    await mirrorFoodToLegacy(String(id));
 
     const categoriesMap = await loadCategoriesMap([Number(id)], BASE_FOOD_TABLES);
     res.json({ item_id: Number(id), categories: categoriesMap[Number(id)] ?? [] });
@@ -370,7 +365,6 @@ platformNutritionLibraryRouter.put('/:id/translations', requireSuperadmin, async
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
     await replaceTranslations(Number(id), translations, BASE_FOOD_TABLES);
-    await mirrorFoodToLegacy(String(id));
 
     const translationsMap = await loadTranslationsMap([Number(id)], BASE_FOOD_TABLES);
     recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, next: { translations: translationsMap[Number(id)] ?? {} } });
@@ -439,7 +433,6 @@ platformNutritionLibraryRouter.post(
          WHERE id = ?`,
         [url, actor, food.id],
       );
-      await mirrorFoodToLegacy(food.id);
       await sweepReplacedNutritionImage(
         staleUrl, key, (k) => k.toLowerCase().startsWith(`${PLATFORM_NUTRITION_PREFIX}/`), { itemId: food.id },
       );
@@ -493,7 +486,6 @@ platformNutritionLibraryRouter.delete('/:id', requireSuperadmin, async (req, res
        WHERE id = ?`,
       [actor, id],
     );
-    await mirrorFoodToLegacy(String(id));
     recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
     res.status(204).send();
   } catch (err) { next(err); }

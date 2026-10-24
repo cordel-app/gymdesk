@@ -28,7 +28,7 @@ beforeAll(async () => {
 
   // Pick the first seeded global library item (migration 078 seeds 32 items).
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM nutrition_library_items LIMIT 1',
+    'SELECT id FROM base_nutrition_library_items LIMIT 1',
     [],
   );
   libraryItemId = rows[0].id;

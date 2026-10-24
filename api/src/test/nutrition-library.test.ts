@@ -439,10 +439,10 @@ describe('nutritional qualities of the system library (#644)', () => {
   async function qualitiesOf(name: string): Promise<string[]> {
     const { rows } = await db.query<{ slug: string }>(
       `SELECT nq.slug
-       FROM nutrition_library_items nli
-       JOIN nutrition_library_item_qualities nliq ON nliq.item_id = nli.id
+       FROM base_nutrition_library_items nli
+       JOIN base_nutrition_library_item_qualities nliq ON nliq.item_id = nli.id
        JOIN nutritional_qualities nq ON nq.id = nliq.quality_id
-       WHERE nli.gym_id IS NULL AND nli.name = ?
+       WHERE nli.deleted_at IS NULL AND nli.name = ?
        ORDER BY nq.slug`,
       [name],
     );

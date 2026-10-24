@@ -3,10 +3,10 @@
  *
  *   npm run foods:audit-base-links
  *
- * Prints, per check, how many rows would block moving the five tables' references from
- * the legacy System foods to `base_nutrition_library_items`, plus row counts. Writes
- * nothing; exit code 1 when any check is non-zero. Run it before and after migration
- * 326 and before the next stages.
+ * Prints, per check, how many rows break the Food-reference rules of the five tables
+ * (see baseFoodLinkAudit.ts), plus row counts. Writes
+ * nothing; exit code 1 when any check is non-zero. Run it before and after migrations
+ * 332 and 333.
  */
 import 'dotenv/config';
 import { db } from '../infra/db';

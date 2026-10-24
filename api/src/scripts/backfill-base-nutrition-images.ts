@@ -43,7 +43,6 @@ import {
   nutritionThumbnailKeyFor,
   sanitizeNutritionImageName,
 } from '../domain/baseNutritionImages';
-import { mirrorFoodToLegacy } from '../api/base-food-mirror';
 import { renderNutritionImage } from '../domain/nutritionImageArt';
 import {
   buildStorageObjectUrl,
@@ -246,7 +245,6 @@ export async function backfillBaseNutritionImages(
         'UPDATE base_nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
         [buildStorageObjectUrl(key), SYSTEM_ACTOR, food.id],
       );
-      await mirrorFoodToLegacy(food.id);
       counters.uploaded += 1;
       log(`uploaded ${food.id} ${food.name} → ${key}`);
       // Every run writes a fresh key, so under --force the object the row

@@ -1,59 +1,36 @@
-// #1849 stage F1 (Foods): migration 324 copies the System Foods and their junction
-// rows into the base_nutrition_library_* tables, keeping ids, and leaves the legacy
-// rows untouched.
+// #1849 stages F1 + F5 (Foods): the System Foods live in the base_nutrition_library_* tables
+// (copied under their original ids by migration 324); since migration 333 the legacy
+// System rows are gone, and nothing references one.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { FOOD_REFERENCE_TABLES } from '../domain/baseFoodLinkAudit';
 
 afterAll(async () => {
   await db.end();
 });
 
-
-describe('base_nutrition_library_items copy (#1849 stage F1)', () => {
-  // Name only: other test files edit a System food's description or image while this runs.
-  it('holds every System food that was copied under its original id and name', async () => {
-    const { rows: legacy } = await db.query<any>(
-      `SELECT id, name FROM nutrition_library_items
-        WHERE gym_id IS NULL AND id IN (SELECT id FROM base_nutrition_library_items) ORDER BY id`,
-    );
-    expect(legacy.length).toBeGreaterThan(0);
-    const { rows: base } = await db.query<any>(
-      `SELECT id, name FROM base_nutrition_library_items
-        WHERE id IN (SELECT id FROM nutrition_library_items WHERE gym_id IS NULL) ORDER BY id`,
-    );
-    expect(base).toEqual(legacy);
-  });
-
-  it('copies the categories, qualities and translations of every copied food', async () => {
-    const checks: Array<[string, string, string]> = [
-      ['nutrition_library_item_categories', 'base_nutrition_library_item_categories', 'category_id'],
-      ['nutrition_library_item_qualities', 'base_nutrition_library_item_qualities', 'quality_id'],
-      ['nutrition_library_item_translations', 'base_nutrition_library_item_translations', 'locale'],
-      ['nutrition_library_item_description_translations', 'base_nutrition_library_item_description_translations', 'locale'],
-    ];
-    for (const [legacyTable, baseTable, col] of checks) {
-      const { rows } = await db.query<any>(
-        `SELECT COUNT(*) AS missing FROM ${legacyTable} l
-           JOIN base_nutrition_library_items b ON b.id = l.item_id
-           LEFT JOIN ${baseTable} t ON t.item_id = l.item_id AND t.${col} = l.${col}
-          WHERE t.item_id IS NULL`,
+describe('base_nutrition_library_items (#1849 stages F1, F5)', () => {
+  it('has no legacy System row left in nutrition_library_items, nor in its junctions', async () => {
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM nutrition_library_items WHERE gym_id IS NULL AND name NOT LIKE \'Test%\' AND name NOT LIKE \'NL Test%\'');
+    expect(Number(rows[0].n)).toBe(0);
+    for (const t of ['nutrition_library_item_categories', 'nutrition_library_item_qualities', 'nutrition_library_item_translations', 'nutrition_library_item_description_translations']) {
+      const { rows: orphans } = await db.query<any>(
+        `SELECT COUNT(*) AS n FROM ${t} j JOIN nutrition_library_items i ON i.id = j.item_id AND i.gym_id IS NULL
+          WHERE i.name NOT LIKE 'Test%' AND i.name NOT LIKE 'NL Test%'`,
       );
-      expect(Number(rows[0].missing), `${baseTable} is missing rows`).toBe(0);
+      expect(Number(orphans[0].n), t).toBe(0);
     }
   });
 
-  it('leaves the legacy System rows in place and the plan foreign keys on them', async () => {
-    const { rows } = await db.query<any>(
-      'SELECT COUNT(*) AS n FROM nutrition_library_items WHERE gym_id IS NULL AND id IN (SELECT id FROM base_nutrition_library_items)',
-    );
-    expect(Number(rows[0].n)).toBeGreaterThan(0);
+  it('keeps the plan tables\' foreign keys on both food tables (the old one for gym-owned foods)', async () => {
     const { rows: fks } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM information_schema.KEY_COLUMN_USAGE
-        WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'nutrition_library_items'
-          AND TABLE_NAME IN ('member_nutrition_plan_meal_items','member_nutrition_plan_restrictions','nutrition_plan_template_meal_items')`,
+      `SELECT REFERENCED_TABLE_NAME AS ref, COUNT(*) AS n FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IN ('nutrition_library_items', 'base_nutrition_library_items')
+          AND TABLE_NAME IN (${FOOD_REFERENCE_TABLES.map((t) => `'${t}'`).join(',')})
+        GROUP BY REFERENCED_TABLE_NAME`,
     );
-    expect(Number(fks[0].n)).toBe(3);
+    expect(Object.fromEntries(fks.map((r: any) => [r.ref, Number(r.n)]))).toEqual({ nutrition_library_items: 6, base_nutrition_library_items: 6 });
   });
 
   it('references the shared lookups and cascades from the Base item', async () => {
