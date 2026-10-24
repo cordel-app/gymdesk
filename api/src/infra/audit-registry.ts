@@ -76,8 +76,8 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   nutrition_library_item:         { kind: 'simple',   label: 'Nutrition Library',        table: 'nutrition_library_items', nameColumn: 'name' },
   // #947: the Nutrition Library's two goal catalogues. Each has a Details view
   // with a View Audit Log link, which filters on these two types.
-  personal_goal:                  { kind: 'simple',   label: 'Personal Goals',           table: 'personal_goals',          nameColumn: 'name' },
-  nutrition_goal:                 { kind: 'simple',   label: 'Nutrition Goals',          table: 'nutrition_goals',         nameColumn: 'name' },
+  personal_goal:                  { kind: 'simple',   label: 'Personal Goals',           table: 'personal_goal_catalogue',          nameColumn: 'name' },
+  nutrition_goal:                 { kind: 'simple',   label: 'Nutrition Goals',          table: 'nutrition_goal_catalogue',         nameColumn: 'name' },
 
   // #948 §4: an assignment has no name of its own — it is a member and the goal
   // they hold, so the entry resolves the pair the way `user_membership` does.

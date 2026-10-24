@@ -98,3 +98,32 @@ describe('platform nutrition goals on base_nutrition_goals (#1849 N2)', () => {
     expect((await request.delete(`/platform/nutrition-goals/${createdId}`).set(H)).status).toBe(409);
   });
 });
+
+describe('gym-side reads come from base_nutrition_goals (#1849 N3)', () => {
+  it('a gym lists a System goal from the Base table (and its Base translation), not the legacy copy', async () => {
+    const created = await request.post('/platform/nutrition-goals').set(H)
+      .send({ name: 'Test Base NGoal N2 read', translations: { es: { name: 'Legacy copy' } } });
+    const id = created.body.id;
+    // Diverge on purpose: the gym must see the Base values.
+    await db.query("UPDATE base_nutrition_goals SET name = 'Test Base NGoal N2 read base' WHERE id = ?", [id]);
+    await db.query("UPDATE base_nutrition_goal_translations SET name = 'Solo Base N3' WHERE base_nutrition_goal_id = ? AND locale = 'es'", [id]);
+    const gymId = await createTestGym();
+    const asGym = { Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId };
+    const list = await request.get('/nutrition-goals').query({ search: 'NGoal N2 read' }).set(asGym).set('x-locale', 'es');
+    const goal = list.body.items.find((g: any) => g.id === id);
+    expect(goal.name).toBe('Test Base NGoal N2 read base');
+    expect(goal.display_name).toBe('Solo Base N3');
+    expect((await request.put(`/nutrition-goals/${id}`).set(asGym).send({ name: 'x' })).status).toBe(403);
+    await request.delete(`/platform/nutrition-goals/${id}`).set(H);
+    const after = await request.get('/nutrition-goals').query({ search: 'NGoal N2 read' }).set(asGym);
+    expect(after.body.items.map((g: any) => g.id)).not.toContain(id);
+  });
+
+  it('the audit entity name of a Base-only goal resolves (personal and nutrition)', async () => {
+    const { resolveEntityName } = await import('../infra/audit-registry');
+    const { rows: n } = await db.query<any>("SELECT id FROM base_nutrition_goals WHERE slug = 'protein'");
+    const { rows: p } = await db.query<any>("SELECT id FROM base_personal_goals WHERE slug = 'weight_loss'");
+    expect(await resolveEntityName('nutrition_goal', String(n[0].id), 'x')).toBe('Protein');
+    expect(await resolveEntityName('personal_goal', String(p[0].id), 'x')).toBe('Weight Loss');
+  });
+});

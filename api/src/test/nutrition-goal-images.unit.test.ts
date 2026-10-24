@@ -109,7 +109,7 @@ describe('goal translations payload', () => {
 describe('translated search', () => {
   it('matches the translated names only for a translated kind', () => {
     expect(buildGoalListWhere('agua', ['1=1'], [], { searchTranslations: true }).params).toHaveLength(3);
-    expect(buildGoalListWhere('agua', ['1=1'], [], { searchTranslations: true }).where).toContain('nutrition_goal_translations');
+    expect(buildGoalListWhere('agua', ['1=1'], [], { searchTranslations: true }).where).toContain('nutrition_goal_translation_catalogue');
     expect(buildGoalListWhere('agua', ['1=1']).params).toHaveLength(2);
   });
 });
@@ -121,10 +121,10 @@ describe('Personal Goal translations (#1719)', () => {
     expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_translation_catalogue');
     expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_id');
     expect(localizedGoalExprs('g', 'es', 'personal')).toContain('personal_goal_translation_catalogue');
-    expect(localizedGoalExprs('g', 'es')).toContain('nutrition_goal_translations');
+    expect(localizedGoalExprs('g', 'es')).toContain('nutrition_goal_translation_catalogue');
     const where = buildGoalListWhere('peso', ['1=1'], [], { searchTranslations: true, translationKind: 'personal' }).where;
     expect(where).toContain('personal_goal_translation_catalogue');
-    expect(where).not.toContain('nutrition_goal_translations');
+    expect(where).not.toContain('nutrition_goal_translation_catalogue');
   });
 
   it("seeds the seven System goals in step with the migration", () => {

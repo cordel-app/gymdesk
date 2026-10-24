@@ -17,7 +17,8 @@ describe('plan goal image resolution', () => {
 
   it('joins only System goals by slug and never copies an image onto the plan', () => {
     expect(NUTRITION_GOAL_IMAGE_JOIN_SQL).toContain('ng.slug = g.item_name');
-    expect(NUTRITION_GOAL_IMAGE_JOIN_SQL).toContain('ng.gym_id IS NULL');
-    expect(NUTRITION_GOAL_IMAGE_JOIN_SQL).toContain("ng.status <> 'deleted'");
+    // #1849 N3: the System goals are the Base table's rows (live = not soft-deleted).
+    expect(NUTRITION_GOAL_IMAGE_JOIN_SQL).toContain('base_nutrition_goals ng');
+    expect(NUTRITION_GOAL_IMAGE_JOIN_SQL).toContain('ng.deleted_at IS NULL');
   });
 });
