@@ -74,7 +74,7 @@ import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment,
 // Pay transaction that produces it rather than as a second value nothing can
 // write. The ticket's "Closed" action still maps onto the existing 'cancelled'
 // value rather than introducing a new terminal status.
-const STATUSES = ['draft', 'pending_payment', 'active', 'paused', 'cancelled', 'expired'] as const;
+const STATUSES = ['draft', 'pending_payment', 'active', 'paused', 'cancelled', 'expired', 'superseded'] as const;
 type Status = (typeof STATUSES)[number];
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
@@ -100,6 +100,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
   cancelled: [],
+  superseded: [],
   expired: [],
 };
 
@@ -114,7 +115,7 @@ export const ASSIGNMENT_CREATION_STATUS = 'draft';
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled', 'superseded'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -184,7 +185,7 @@ userMembershipsRouter.use('/:id', async (req, res, next) => {
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired') THEN um.status
+    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -1009,7 +1010,7 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   // Ledger row (P1.6): cancellation emits status_changed in the same transaction.
   const found = await db.transaction(async (tx) => {
     const { rows: current } = await tx.query(
-      "SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? AND status <> 'cancelled' FOR UPDATE",
+      "SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? AND status NOT IN ('cancelled', 'superseded') FOR UPDATE",
       [req.params.id, gymId],
     );
     if (current.length === 0) return false;

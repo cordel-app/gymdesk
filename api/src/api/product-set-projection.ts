@@ -1,5 +1,6 @@
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { supersedeApplications } from './one-active-plan';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -54,7 +55,11 @@ interface SetRow {
 const dateOnly = (v: unknown): string | null =>
   v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
-async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string, actor: string | null) {
+async function closeAssignment(
+  tx: Tx, gymId: string, id: number, endsAt: string, actor: string | null,
+  /** `superseded` when a successor takes the plan over, `cancelled` when the member is left with none (#1991). */
+  closedAs: 'cancelled' | 'superseded' = 'cancelled',
+) {
   const { rows: before } = await tx.query<{ status: string; member_id: number }>(
     `SELECT status, member_id FROM user_memberships
       WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
@@ -62,17 +67,18 @@ async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string
   if (!before[0]) return;
   await tx.query(
     `UPDATE user_memberships
-        SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
+        SET status = ?, closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
             ends_at = LEAST(COALESCE(ends_at, ?), ?),
             modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ?`,
-    [endsAt, endsAt, actor, id, gymId],
+    [closedAs, endsAt, endsAt, actor, id, gymId],
   );
+  if (closedAs === 'superseded') await supersedeApplications(tx, gymId, id, actor);
   // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
   const { recordStatusChange } = await import('./billing-events');
   await recordStatusChange(tx, {
     gymId, userMembershipId: id, memberId: Number(before[0].member_id),
-    previousStatus: before[0].status, newStatus: 'cancelled', source: 'system', actorUserId: null,
+    previousStatus: before[0].status, newStatus: closedAs, source: 'system', actorUserId: null,
   });
 }
 
@@ -143,8 +149,8 @@ export async function projectActiveProductSet(
     const umId = Number(set.user_membership_id);
     await tx.query(
       `UPDATE user_memberships
-          SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active'),
-              purchased_at = IF(status IN ('cancelled','expired'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
+          SET ends_at = ?, status = IF(status IN ('cancelled','expired','superseded'), status, 'active'),
+              purchased_at = IF(status IN ('cancelled','expired','superseded'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [dateOnly(set.ends_at), actor, umId, gymId],
@@ -170,7 +176,7 @@ export async function projectActiveProductSet(
       const prevStart = dateOnly(prev[0].starts_at) as string;
       endsAt = dayBefore < prevStart ? prevStart : dayBefore;
     }
-    await closeAssignment(tx, gymId, previousUmId, endsAt, actor);
+    await closeAssignment(tx, gymId, previousUmId, endsAt, actor, 'superseded');
   }
   const { insertId } = await tx.query(
     `INSERT INTO user_memberships
