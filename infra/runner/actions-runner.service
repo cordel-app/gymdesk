@@ -1,0 +1,24 @@
+# Reference unit — written by infra/runner/install-runner.sh (#2042/#2043).
+# Path: /home/podman/.config/systemd/user/actions-runner.service
+# A *user* unit (no sudo): `loginctl enable-linger podman` starts it at boot
+# without a login. The runner only makes outbound connections to GitHub, which
+# is what lets port 22 be closed. Never add `self-hosted` to a workflow that a
+# pull request can trigger (api/src/test/self-hosted-runner-guard.unit.test.ts).
+
+[Unit]
+Description=GitHub Actions runner (<host>-<env>)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=%h/actions-runner/run.sh
+WorkingDirectory=%h/actions-runner
+Restart=always
+RestartSec=5
+# Let a running job finish when the unit is stopped.
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=default.target
