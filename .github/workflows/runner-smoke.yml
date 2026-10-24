@@ -36,10 +36,19 @@ jobs:
       - name: Database reachable
         if: inputs.host == 'corback'
         env:
-          DB_HOST: ${{ secrets.CORDEL_FITNESS_DB_HOST }}
+          DATABASE_URL_MIGRATIONS: ${{ secrets.DATABASE_URL_MIGRATIONS }}
         run: |
-          # HeatWave is VCN-private; migrations run from this host, so the TCP
-          # port must be open from here.
-          timeout 10 bash -c 'exec 3<>"/dev/tcp/$DB_HOST/3306"' \
-            && echo "DB port 3306 reachable" \
-            || { echo "ERROR: cannot reach the database from this host"; exit 1; }
+          # HeatWave is VCN-private; migrations run from this host with
+          # DATABASE_URL_MIGRATIONS, so check the very host:port it names.
+          # Nothing from the URL is printed.
+          rest="${DATABASE_URL_MIGRATIONS#*://}"
+          rest="${rest##*@}"
+          hostport="${rest%%/*}"
+          hostport="${hostport%%\?*}"
+          DB_HOST="${hostport%%:*}"
+          DB_PORT="3306"
+          case "$hostport" in *:*) DB_PORT="${hostport##*:}";; esac
+          export DB_HOST DB_PORT
+          timeout 10 bash -c 'exec 3<>"/dev/tcp/$DB_HOST/$DB_PORT"' \
+            && echo "Database reachable from this host" \
+            || { echo "ERROR: cannot reach the database named by DATABASE_URL_MIGRATIONS"; exit 1; }
