@@ -55,6 +55,7 @@ interface TrainingPlanRow {
   end_date: string | null;
   member_id: number;
   member_name: string;
+  draft_of_plan_id?: number | null;
   template_id: number | null;
   template_name: string | null;
   created_by: string | null;
@@ -177,6 +178,8 @@ export default function TrainingPlansPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  // #1969: Save on a version draft asks for confirmation before ending the current version.
+  const [versionConfirmOpen, setVersionConfirmOpen] = useState(false);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
@@ -237,7 +240,7 @@ export default function TrainingPlansPage() {
     if (!row) return;
     autoExpandRef.current = id;
     if (row.status !== 'completed') {
-      startEdit(row);
+      beginEdit(row);
     } else if (!expanded.has(row.id)) {
       setExpanded((prev) => { const next = new Set(prev); next.add(row.id); return next; });
       loadHierarchy(row.id);
@@ -308,7 +311,26 @@ export default function TrainingPlansPage() {
     }
   }
 
+  // #1969: Edit on an active plan works on a Draft copy; the original is untouched until Save.
+  async function beginEdit(row: TrainingPlanRow) {
+    if (row.status !== 'active') { startEdit(row); return; }
+    try {
+      const draft = await apiFetch<TrainingPlanRow>(`/members/${row.member_id}/training-plans/${row.id}/edit-draft`, { method: 'POST' });
+      await load();
+      startEdit({ ...draft, member_name: row.member_name, template_name: row.template_name });
+    } catch (err: any) {
+      toast(err.message ?? t('training_plans.error_generic'));
+    }
+  }
+
   function cancelEdit() {
+    // #1969: Cancel on a version draft discards it; the original stays as it was.
+    const draftRow = rows.find((r) => r.id === editingId);
+    if (draftRow?.draft_of_plan_id) {
+      apiFetch(`/members/${draftRow.member_id}/training-plans/${draftRow.id}`, { method: 'DELETE' })
+        .then(() => { load(); })
+        .catch((err: any) => toast(err.message ?? t('training_plans.error_generic')));
+    }
     setEditingId(null);
     setEditForm({ name: '', description: '', status: 'active', start_date: '', end_date: '' });
     setEditError(null);
@@ -316,19 +338,30 @@ export default function TrainingPlansPage() {
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
-    setEditSaving(true); setEditError(null);
     const row = rows.find((r) => r.id === editingId)!;
+    if (row.draft_of_plan_id && !versionConfirmOpen) { setVersionConfirmOpen(true); return; }
+    setVersionConfirmOpen(false);
+    setEditSaving(true); setEditError(null);
     try {
-      await apiFetch(`/members/${row.member_id}/training-plans/${editingId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          description: editForm.description.trim() || null,
-          status: editForm.status,
-          start_date: editForm.start_date || null,
-          end_date: editForm.end_date || null,
-        }),
-      });
+      if (row.draft_of_plan_id) {
+        // #1969: name/description first, then one transaction ends the old version and activates this one.
+        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null }),
+        });
+        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}/publish-version`, { method: 'POST' });
+      } else {
+        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: editForm.name.trim(),
+            description: editForm.description.trim() || null,
+            status: editForm.status,
+            start_date: editForm.start_date || null,
+            end_date: editForm.end_date || null,
+          }),
+        });
+      }
       setEditingId(null);
       load();
       refetchHierarchy(editingId!);
@@ -474,7 +507,7 @@ export default function TrainingPlansPage() {
                   locale={locale}
                   t={t}
                   onToggleExpand={() => guardUnsaved(() => toggleExpand(row))}
-                  onEdit={() => guardUnsaved(() => startEdit(row))}
+                  onEdit={() => guardUnsaved(() => beginEdit(row))}
                   onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
                   onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
                   onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
@@ -509,6 +542,15 @@ export default function TrainingPlansPage() {
       <ConfirmDialog open={deleting !== null} message={t('training_plans.confirm_delete')}
         confirmLabel={t('training_plans.delete')} cancelLabel={t('training_plans.cancel')}
         onConfirm={handleDelete} onCancel={() => setDeleting(null)} />
+
+      <ConfirmDialog
+        open={versionConfirmOpen}
+        message={t('training_plans.version_confirm')}
+        confirmLabel={t('training_plans.version_confirm_btn')}
+        cancelLabel={t('training_plans.cancel')}
+        onConfirm={saveEdit}
+        onCancel={() => setVersionConfirmOpen(false)}
+      />
 
       <ConfirmDialog
         open={pendingAction !== null}
@@ -616,6 +658,7 @@ function PlanCard({
               <textarea value={editForm.description} onChange={(e) => onEditFormChange({ ...editForm, description: e.target.value })}
                 rows={2} style={{ ...formControlStyle, resize: 'vertical' }} />
             </div>
+            {!row.draft_of_plan_id && (<>
             <div>
               <label style={formFieldLabelStyle}>{t('training_plans.label_status')}</label>
               <select value={editForm.status} onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value })}
@@ -633,6 +676,7 @@ function PlanCard({
               <input type="date" value={editForm.end_date} onChange={(e) => onEditFormChange({ ...editForm, end_date: e.target.value })}
                 style={formControlStyle} />
             </div>
+            </>)}
           </div>
         </div>
       ) : (

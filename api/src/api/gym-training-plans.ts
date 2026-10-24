@@ -99,7 +99,7 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
     const { rows: countRows } = await db.query(`SELECT COUNT(*) AS total ${fromSql} WHERE ${whereSql}`, params);
     const { rows } = await db.query(
       `SELECT tp.id, tp.name, tp.description, tp.status, tp.start_date, tp.end_date,
-              tp.member_id, m.name AS member_name,
+              tp.member_id, m.name AS member_name, tp.draft_of_plan_id,
               tp.template_id, tpt.name AS template_name,
               tp.created_by, tp.created_at, tp.modified_at, tp.modified_by
        ${fromSql}
