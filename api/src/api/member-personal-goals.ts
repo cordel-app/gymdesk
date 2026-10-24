@@ -112,7 +112,7 @@ const COLUMNS = `
 const FROM = `
   FROM member_personal_goals mpg
   JOIN members m ON m.id = mpg.member_id AND m.gym_id = mpg.gym_id
-  JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+  JOIN personal_goal_catalogue pg ON pg.id = mpg.personal_goal_id
                         AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
 `;
 
@@ -288,7 +288,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     // comes to name something the catalogue no longer offers.
     const { rows: goalRows } = await db.query(
       `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, pg.target_type, ${gymGoalStatusSql('pg')} AS gym_status
-       FROM personal_goals pg
+       FROM personal_goal_catalogue pg
        WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
       [gymId, goalId, gymId],
     );

@@ -1,4 +1,4 @@
-// #1849 stage 2b: Cordel's Base Personal Goals CRUD writes base_personal_goals
+// #1849 stages 2b-2c: Cordel's Base Personal Goals CRUD writes base_personal_goals
 // and mirrors every write onto the legacy System row of the same id.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -101,5 +101,25 @@ describe('platform personal goals on base_personal_goals', () => {
     expect(rows[0].deleted_at).not.toBeNull();
     expect((await legacy(createdId)).status).toBe('deleted');
     expect((await request.delete(`/platform/personal-goals/${createdId}`).set('Authorization', TEST_AUTH_HEADER)).status).toBe(409);
+  });
+});
+
+describe('gym-side reads come from base_personal_goals (#1849 stage 2c)', () => {
+  it('a gym lists a System goal from the Base table, not the legacy copy', async () => {
+    const created = await request.post('/platform/personal-goals').set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Goal 2b read' });
+    const id = created.body.id;
+    // Diverge the two copies on purpose: the gym must see the Base one.
+    await db.query("UPDATE base_personal_goals SET name = 'Test Base Goal 2b read base' WHERE id = ?", [id]);
+    const gymId = await createTestGym();
+    const asGym = { Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId };
+    const list = await request.get('/personal-goals').query({ search: '2b read' }).set(asGym);
+    expect(list.body.items.map((g: any) => g.name)).toContain('Test Base Goal 2b read base');
+    // A gym may not write a System goal.
+    expect((await request.put(`/personal-goals/${id}`).set(asGym).send({ name: 'x' })).status).toBe(403);
+    // A Base goal deleted by Cordel disappears from the gym catalogue.
+    await request.delete(`/platform/personal-goals/${id}`).set('Authorization', TEST_AUTH_HEADER);
+    const after = await request.get('/personal-goals').query({ search: '2b read' }).set(asGym);
+    expect(after.body.items.map((g: any) => g.id)).not.toContain(id);
   });
 });
