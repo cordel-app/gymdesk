@@ -88,7 +88,7 @@ The original phase plan, derived from the target ER model, is complete. One line
 | M — MySQL migration | #45–#49 | 2026-07-04 | Neon PostgreSQL → Oracle HeatWave MySQL; Knex migrations, mysql2 data layer, cutover deploy |
 | 0 — Foundation | #2–#4 | 2026-07-04 | Shared DataTable, CrudModal, ConfirmDialog, StatusBadge; member app shell |
 | 0a — Structured logging | #177 | 2026-07-22 | pino in the API |
-| 0b — Log shipping | #178 | 2026-07-22 | Grafana Alloy → Grafana Cloud Loki; config in `infra/alloy/`, deployed by `deploy-alloy.yml` |
+| 0b — Log shipping | #178 | 2026-07-22 | Grafana Alloy → Grafana Cloud Loki; config kept in `infra/alloy/`; its deploy workflow was removed and Alloy is being taken off the VPSs |
 | 1 — Membership plans & billing core | #5–#12 | 2026-07-12 | `fares` → `membership_plans`, `subscriptions` → `user_memberships`, `billing_events` ledger, member app My Membership |
 | 2 — Classes v2 | #13, #15–#20 | 2026-07-12 | Rooms, class types, `class_sessions`, bookings with waitlist and attendance, member app schedule (#14 Specialities removed in #219) |
 | 3 — Class packages | #21–#24 | 2026-07-12 | Package catalogue, credits, consume/refund on the booking lifecycle |
