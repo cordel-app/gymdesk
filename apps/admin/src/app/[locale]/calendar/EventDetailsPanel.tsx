@@ -9,6 +9,8 @@ import { primaryActionColors } from '@/components/ui';
 import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
 import { EventImageControl } from './EventImageControl';
 import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
+import { CalendarEventHeader, CalendarEventInfoCard } from './CalendarEventDetails';
+import { customEventView } from './calendarEventView';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -92,6 +94,8 @@ export function EventDetailsPanel({
   const [deleteState, setDeleteState] = useState<DeleteState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [stagedImage, setStagedImage] = useState<Blob | null>(null);
+  // #1891: an existing event opens read-only, in the layout the Activity panel uses; Edit opens the form.
+  const [editMode, setEditMode] = useState(!editing);
 
   useEffect(() => {
     if (open) {
@@ -100,6 +104,7 @@ export function EventDetailsPanel({
       setError(null);
       setSaving(false);
       setDeleteState('idle');
+      setEditMode(!editing);
     }
   }, [open, initialForm]);
 
@@ -150,6 +155,63 @@ export function EventDetailsPanel({
   const isNew = !editing;
   const meta = editing?.meta ?? null;
   const busy = saving || deleteState === 'deleting';
+
+  if (!isNew && !editMode) {
+    const view = customEventView(initialForm, { activityTypes, spaces, centers, trainers: trainers, professionalServices });
+    const btn: React.CSSProperties = { width: '100%', padding: '9px 0', borderRadius: 6, fontSize: 14, cursor: 'pointer' };
+    return (
+      <div style={eventPanelSurfaceStyle}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)', flexShrink: 0 }}>
+          <CalendarEventHeader view={view} onClose={onClose} />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <EventImageControl
+            sessionId={editing!.id}
+            basePath="/calendar-events"
+            helpKey="event_image_help_standalone"
+            effectiveUrl={editing!.image.effective_image_url}
+            ownUrl={editing!.image.image_url}
+            stamp={editing!.image.modified_at}
+            canEdit={false}
+            onChanged={onImageChanged}
+            label={(key) => t(key as any)}
+          />
+          <CalendarEventInfoCard view={view} />
+          {initialForm.description?.trim() && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                {t('event_description')}
+              </div>
+              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{initialForm.description}</div>
+            </div>
+          )}
+          {meta && (
+            <div style={{ paddingTop: 16, borderTop: '1px solid var(--gd-card-border, #e5e7eb)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>
+                {t('metadata_section')}
+              </div>
+              <MetaRow label={t('metadata_created_by')} value={meta.created_by} />
+              <MetaRow label={t('metadata_created_at')} value={formatDateTime(meta.created_at, gymFormat)} />
+              <MetaRow label={t('metadata_updated_by')} value={meta.modified_by} />
+              <MetaRow label={t('metadata_updated_at')} value={formatDateTime(meta.modified_at, gymFormat)} />
+              <MetaRow label={t('metadata_deleted_by')} value={meta.deleted_by} />
+              <MetaRow label={t('metadata_deleted_at')} value={formatDateTime(meta.deleted_at, gymFormat)} />
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--gd-card-border, #e5e7eb)', flexShrink: 0 }}>
+          {canWrite && (
+            <button onClick={() => setEditMode(true)} style={{ ...btn, border: 'none', ...primaryActionColors, fontWeight: 600 }}>
+              {t('edit_event')}
+            </button>
+          )}
+          <button onClick={onClose} style={{ ...btn, border: '1px solid #d1d5db', background: 'transparent' }}>
+            {t('cancel')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={eventPanelSurfaceStyle}>
@@ -334,7 +396,7 @@ export function EventDetailsPanel({
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={() => { if (isNew) onClose(); else { setForm(initialForm); setError(null); setEditMode(false); } }}
             disabled={busy}
             style={{ width: '100%', padding: '9px 0', borderRadius: 6, border: '1px solid #d1d5db', background: 'transparent', fontSize: 14, cursor: busy ? 'not-allowed' : 'pointer' }}
           >

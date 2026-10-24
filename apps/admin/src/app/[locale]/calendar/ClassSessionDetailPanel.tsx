@@ -17,7 +17,9 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 import { EventImageControl } from './EventImageControl';
-import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
+import { eventPanelSurfaceStyle } from './EventPanelChrome';
+import { CalendarEventHeader, CalendarEventInfoCard, DetailRow } from './CalendarEventDetails';
+import { sessionEventView } from './calendarEventView';
 
 interface ClassSession {
   id: number;
@@ -805,17 +807,12 @@ export function ClassSessionDetailPanel({
       : []),
   ];
 
+  const view = sessionEventView(session, enrolled.length);
+
   return (
     <div style={panelStyle}>
-      {/* Header — #1892 stage 4: the chrome shared with the standalone event panel. */}
-      <EventPanelHeader
-        title={session.class_type_name}
-        lines={[
-          fmt(session.starts_at, gymFormat),
-          `${fmtTime(session.starts_at, gymFormat)} – ${fmtTime(session.ends_at, gymFormat)}`,
-        ]}
-        onClose={onClose}
-      />
+      {/* Header — #1891: the shared header of both calendar panels. */}
+      <CalendarEventHeader view={view} onClose={onClose} />
 
       {/* #1382 §3 — the image directly under the title: the event's own, else the Activity's. */}
       <EventImageControl
@@ -828,24 +825,13 @@ export function ClassSessionDetailPanel({
         label={(key) => t(key as any)}
       />
 
-      {/* Info */}
-      <div style={cardStyle}>
-        {/* #980 §8 — read-only mode: the occurrence's current configuration,
-            as values. A row is kept with a `—` rather than hidden when the
-            field is unset, so the card does not change shape when `Edit`
-            opens and so "no trainer yet" is visible rather than absent. (The
-            no-placeholder rule in #981 is the *event box*'s, where a dangling
-            `·` is the whole problem; a detail card is the app's `—`.) */}
-        {!editingDetails && (
+      {/* Info — #1891: the rows, capacity and status are the shared card; the
+          waitlist / eligibility rows and the Edit controls are this kind's own. */}
+      <CalendarEventInfoCard
+        view={view}
+        showRows={!editingDetails}
+        extraRows={(
           <>
-            <DetailRow label={t('event_professional_service')} value={session.professional_service_name} />
-            <DetailRow label={t('event_trainer')} value={session.trainer_name} />
-            {/* #193: who is covering it, when that is somebody else. Not part
-                of this form — it is confirmed through its own route. */}
-            {session.effective_trainer_name && session.effective_trainer_name !== session.trainer_name && (
-              <DetailRow label={t('event_covering_trainer')} value={session.effective_trainer_name} />
-            )}
-            <DetailRow label={t('event_space')} value={session.space_name} />
             {/* §3 — the Waitlist state, visible in the read-only card rather
                 than only inside the form. `(inherited)` is a note on the
                 value, not a fourth state: the occurrence's own column is NULL
@@ -861,11 +847,41 @@ export function ClassSessionDetailPanel({
             <DetailRow label={t('event_eligible_services')} value={eligibleServicesLabel(session)} />
           </>
         )}
-
-        {/* Edit mode: the same two fields as controls, in the card they were
-            values in. The Professional Service stays a value — `Q1 multi`
-            makes it a multi-valued relation in a later stage, and a control
-            the `PUT` cannot carry does not belong in a form (#974). */}
+        footer={editingDetails ? (
+          <>
+            {/* §3 — the confirmation, carrying the live waiting count. It
+                appears above the form's own Save/Cancel rather than replacing
+                them, so `Cancel` still means "leave the form" and the admin's
+                draft is untouched either way. */}
+            {confirmDisableWaitlist && (
+              <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('waitlist_disable_confirm_title')}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{t('waitlist_disable_confirm_message')}</div>
+                {waitlist.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#b45309', fontWeight: 600 }}>
+                    {t('waitlist_disable_confirm_count', { count: waitlist.length })}
+                  </div>
+                )}
+              </div>
+            )}
+            {detailsError && <p style={formErrorStyle}>{detailsError}</p>}
+            <div style={inlineActionsRowStyle}>
+              <button
+                onClick={handleSaveDetails}
+                disabled={savingDetails}
+                style={{ ...primaryBtnSmall(), opacity: savingDetails ? 0.6 : 1 }}
+              >
+                {savingDetails ? t('saving')
+                  : confirmDisableWaitlist ? t('waitlist_disable_confirm_action')
+                  : t('save_changes')}
+              </button>
+              <button onClick={cancelEditDetails} disabled={savingDetails} style={secondaryBtnSmall}>
+                {t('cancel')}
+              </button>
+            </div>
+          </>
+        ) : null}
+      >
         {editingDetails && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
             <DetailRow label={t('event_professional_service')} value={session.professional_service_name} />
@@ -954,59 +970,7 @@ export function ClassSessionDetailPanel({
             </div>
           </div>
         )}
-
-        <div style={{ fontSize: 13 }}>
-          <span style={{ color: '#6b7280' }}>Capacity: </span>
-          <span style={{ fontWeight: 600, color: enrolled.length >= session.effective_capacity ? '#ef4444' : '#059669' }}>
-            {enrolled.length} / {session.effective_capacity}
-          </span>
-        </div>
-        {/* #977 §7 — the execution status, in the calendar's own badge rather
-            than a red CANCELLED line of this panel's own: one status
-            vocabulary, one look, and `Not used` and `Completed` are as worth
-            saying here as `Cancelled` ever was. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 13, color: '#6b7280' }}>{t('event_status')}:</span>
-          <CalendarStatusBadge status={executionStatus} label={statusLabel} />
-        </div>
-
-        {/* §8/§9 — Cancel / Save Changes, in the card whose fields they
-            commit (#929), with the form's one error line above them. */}
-        {editingDetails && (
-          <>
-            {/* §3 — the confirmation, carrying the live waiting count. It
-                appears above the form's own Save/Cancel rather than replacing
-                them, so `Cancel` still means "leave the form" and the admin's
-                draft is untouched either way. */}
-            {confirmDisableWaitlist && (
-              <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('waitlist_disable_confirm_title')}</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{t('waitlist_disable_confirm_message')}</div>
-                {waitlist.length > 0 && (
-                  <div style={{ fontSize: 12, color: '#b45309', fontWeight: 600 }}>
-                    {t('waitlist_disable_confirm_count', { count: waitlist.length })}
-                  </div>
-                )}
-              </div>
-            )}
-            {detailsError && <p style={formErrorStyle}>{detailsError}</p>}
-            <div style={inlineActionsRowStyle}>
-              <button
-                onClick={handleSaveDetails}
-                disabled={savingDetails}
-                style={{ ...primaryBtnSmall(), opacity: savingDetails ? 0.6 : 1 }}
-              >
-                {savingDetails ? t('saving')
-                  : confirmDisableWaitlist ? t('waitlist_disable_confirm_action')
-                  : t('save_changes')}
-              </button>
-              <button onClick={cancelEditDetails} disabled={savingDetails} style={secondaryBtnSmall}>
-                {t('cancel')}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      </CalendarEventInfoCard>
 
       {/* Enrolled members */}
       <div>
@@ -1569,21 +1533,4 @@ export function ClassSessionDetailPanel({
 function toDateTimeLocal(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/**
- * One `Label: value` row of the info card, in the card's own compact voice.
- *
- * It is deliberately not `CardDetailRow` (#929): that is the Membership Plan
- * card's 200px-label layout, and this panel is 380px wide by default. An unset
- * value reads `—` rather than disappearing, so the card keeps its shape when
- * Edit opens.
- */
-function DetailRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div style={{ fontSize: 13, marginBottom: 4 }}>
-      <span style={{ color: '#6b7280' }}>{label}: </span>
-      {value?.trim() ? value : '—'}
-    </div>
-  );
 }
