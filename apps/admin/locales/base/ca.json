@@ -4238,7 +4238,8 @@
     "communication_none": "Ningú té reserva en aquest esdeveniment, així que no s'ha notificat ningú.",
     "communication_error": "No s'ha pogut enviar la comunicació.",
     "communication_required": "El títol i el missatge són obligatoris.",
-    "cancel_reason_note": "El motiu que escriguis s'envia als membres amb reserva a l'alerta de cancel·lació."
+    "cancel_reason_note": "El motiu que escriguis s'envia als membres amb reserva a l'alerta de cancel·lació.",
+    "edit_event": "Editar esdeveniment"
   },
   "gym_charges": {
     "title": "Càrrecs del Gimnàs",

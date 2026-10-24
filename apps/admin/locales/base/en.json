@@ -4225,7 +4225,8 @@
     "communication_none": "Nobody is booked on this event, so nobody was notified.",
     "communication_error": "Could not send the communication.",
     "communication_required": "Title and message are required.",
-    "cancel_reason_note": "The reason you enter is sent to the booked members in the cancellation alert."
+    "cancel_reason_note": "The reason you enter is sent to the booked members in the cancellation alert.",
+    "edit_event": "Edit event"
   },
   "gym_charges": {
     "title": "Gym Charges",
