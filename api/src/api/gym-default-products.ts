@@ -69,6 +69,30 @@ function configurationValues(product: DefaultGymProduct) {
  * `POST /gyms` did before #1149 and a gym must have a Product for every
  * `is_product` charge type the catalogue holds.
  */
+/**
+ * #2009 stage 2: the template fields beyond #1149's declaration, copied 1:1.
+ * The image pair is copied **by reference** (the two URLs, no object copy, no
+ * processing), exactly as `POST /products/:id/duplicate` does (#1715), so the
+ * Product's image sweeps already skip an object another row still references.
+ * Order matches the INSERT: description, notes, package_information, image_url,
+ * image_thumbnail_url. Gym-specific data (tax rate id, actors, provenance) is
+ * never on a template; the gym's system rate is applied by the INSERT.
+ */
+function templateExtras(template: BaseProductRow) {
+  return [
+    template.description ?? null,
+    template.notes ?? null,
+    template.package_information ?? null,
+    template.image_url ?? null,
+    template.image_thumbnail_url ?? null,
+  ];
+}
+
+/** A template's tax behaviour; the column's own default when absent. */
+function taxBehaviorOf(template: BaseProductRow): 'inclusive' | 'exclusive' {
+  return template.tax_behavior === 'exclusive' ? 'exclusive' : 'inclusive';
+}
+
 const UNDECLARED: ReturnType<typeof configurationValues> = [
   null, null, null, 'active', 'available', 'public', 0, null, 0,
 ];
@@ -100,11 +124,12 @@ export async function insertProductFromTemplate(
       `INSERT IGNORE INTO products
 (gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
    status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
-       SELECT ?, ct.id, ?, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
-         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
+   one_time_purchase, description, notes, package_information, image_url, image_thumbnail_url,
+   tax_rate_id, tax_behavior, created_at, modified_at, created_by)
+       SELECT ?, ct.id, ?, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
+         ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
        FROM charge_types ct WHERE ct.code = ?`,
-      [gymId, template.id, declared.type, ...configurationValues(declared), gymId, actor, declared.chargeTypeCode],
+      [gymId, template.id, declared.type, ...configurationValues(declared), ...templateExtras(template), gymId, taxBehaviorOf(template), actor, declared.chargeTypeCode],
     );
     return rowCount > 0;
   }
@@ -112,15 +137,16 @@ export async function insertProductFromTemplate(
     `INSERT IGNORE INTO products
 (gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
    status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
-     SELECT ?, NULL, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
-       'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
+   one_time_purchase, description, notes, package_information, image_url, image_thumbnail_url,
+   tax_rate_id, tax_behavior, created_at, modified_at, created_by)
+     SELECT ?, NULL, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
+       ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
      FROM DUAL
      WHERE NOT EXISTS (
        SELECT 1 FROM products p
        WHERE p.gym_id = ? AND p.is_system = 1 AND p.charge_type_id IS NULL AND p.name = ?
      )`,
-    [gymId, template.id, declared.name, declared.type, ...configurationValues(declared), gymId, actor, gymId, declared.name],
+    [gymId, template.id, declared.name, declared.type, ...configurationValues(declared), ...templateExtras(template), gymId, taxBehaviorOf(template), actor, gymId, declared.name],
   );
   return rowCount > 0;
 }
