@@ -18,8 +18,8 @@ async function main() {
   for (const [i, check] of checks.entries()) {
     const { rows } = await db.query<{ n: number }>(check.sql, params[i]);
     const n = Number(rows[0]?.n ?? 0);
-    if (n > 0) failed += 1;
-    console.log(`${n === 0 ? 'OK  ' : 'FAIL'} ${check.key}: ${n} — ${check.description}`);
+    if (n > 0 && !check.informational) failed += 1;
+    console.log(`${n === 0 ? 'OK  ' : check.informational ? 'INFO' : 'FAIL'} ${check.key}: ${n} — ${check.description}`);
   }
   for (const table of ['personal_goals', 'base_personal_goals', 'member_personal_goals', 'gym_personal_goals']) {
     const { rows } = await db.query<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`);

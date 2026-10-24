@@ -631,6 +631,15 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 
 ## 4. API surface
 
+- [ ] **Personal Goals cut-over (#1849 2f).** Before migrations 319 (exclusive goal
+      references) and 320 (delete the legacy System rows of `personal_goals`) run on a
+      database that holds real data: take a `mysqldump` of `personal_goals`,
+      `personal_goal_translations`, `base_personal_goals`, `base_personal_goal_translations`,
+      `member_personal_goals` and `gym_personal_goals`, run
+      `npm run goals:audit-base-links` (every check OK; `legacy_system_rows_remaining` is
+      informational) and keep the dump until the deploy is verified. 319 refuses to run on an
+      inconsistent row; 320 refuses while anything references a legacy System goal.
+
 - [ ] Every route mounted in `api/src/app.ts` goes through `requireAuth()` unless it is
       deliberately public: `/health`, `/docs`, `/public`, `/payment-page`, `/billing`,
       `/promotion-lifecycle` and `/recurring-bookings` (`X-Internal-Secret` + the per-route

@@ -336,7 +336,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
         `INSERT INTO member_personal_goals
            (gym_id, member_id, personal_goal_id, base_personal_goal_id, goal_name, target_value, target_unit, target_type,
             start_date, target_date, status, notes, created_by)
-         VALUES (?, ?, ?, (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?)`,
+         VALUES (?, ?, (SELECT id FROM personal_goals WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?)`,
         [
           gymId, memberId, goalId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,

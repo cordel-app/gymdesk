@@ -29,24 +29,21 @@ import { clampLimit, clampOffset, normalizeDescription } from '../domain/nutriti
 import { resolvePlatformActor } from '../domain/auditActor';
 
 /**
- * #1849 stage 2b — Cordel's Base Personal Goals, on `base_personal_goals`.
+ * #1849 — Cordel's Base Personal Goals, on `base_personal_goals`.
  *
- * `base_personal_goals` (migration 304) is now the table this router reads and
- * writes. Until the gym side moves onto it (stage 2c) the gym-facing router, the
- * assignments and the Members App still read the System rows of `personal_goals`
- * (`gym_id IS NULL`), and `member_personal_goals` / `gym_personal_goals` point at
- * those rows by id. So every write here is **mirrored onto the legacy row of the
- * same id in the same transaction**: the ids are the owner's "keep the System
- * ids" answer, and the mirror is what stops a Cordel edit from being invisible to
- * gyms for the length of the transition. Stage 5 deletes the mirror together with
- * the legacy rows.
+ * Stage 2b moved this router onto the Base table and mirrored every write onto
+ * the legacy System row of the same id, because the gym side still read it. Since
+ * 2c-2e nothing reads the legacy System rows and since 2f-1 nothing references
+ * them, so the mirror is gone: this router writes the Base table (and its own
+ * translations) alone.
  *
- * A new goal takes its id from `personal_goals` first (the legacy table is still
- * the id source, because gyms keep creating their own goals there) and the Base
- * row is inserted under that id, so the two can never collide.
+ * Ids of Base goals and of gym-owned goals (`personal_goals`) must stay disjoint,
+ * because `personal_goal_catalogue` and the readers address a goal by its bare
+ * id. `allocateGoalId()` therefore draws a new Base id from the `personal_goals`
+ * sequence, the one the gym-owned goals use.
  *
- * Response shape is the one `platform-goal-library.ts` served before (`gym_id`
- * null, `status` active|deleted), so the Admin is untouched.
+ * Response shape is the one the Admin has always read (`gym_id` null,
+ * `status` active|deleted).
  */
 const entityType = GOAL_LIBRARY_AUDIT_ENTITIES.personal;
 const TABLE = 'base_personal_goals';
@@ -81,30 +78,17 @@ function readTarget(body: any) {
   return { value: { value: value.value, unit: unit.value, type: type.value } };
 }
 
-/** Copies the Base row's mutable columns onto the legacy row of the same id (the transitional mirror). */
-async function mirrorToLegacy(tx: Tx, id: number | string) {
-  await tx.query(
-    `UPDATE personal_goals p JOIN ${TABLE} b ON b.id = p.id
-        SET p.name = b.name, p.description = b.description,
-            p.target_value = b.target_value, p.target_unit = b.target_unit, p.target_type = b.target_type,
-            p.image_url = b.image_url, p.image_thumbnail_url = b.image_thumbnail_url,
-            p.status = IF(b.deleted_at IS NULL, 'active', 'deleted'),
-            p.modified_at = b.modified_at, p.modified_by = b.modified_by,
-            p.deleted_at = b.deleted_at, p.deleted_by = b.deleted_by
-      WHERE p.id = ? AND p.gym_id IS NULL`,
-    [id],
+/**
+ * A new Base id from the gym-owned goals' sequence: a throw-away row takes the
+ * next AUTO_INCREMENT value and is deleted in the same transaction. InnoDB never
+ * hands a consumed value out again, so no gym-owned goal can ever get this id.
+ */
+async function allocateGoalId(tx: Tx): Promise<number> {
+  const { insertId } = await tx.query(
+    "INSERT INTO personal_goals (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')",
   );
-}
-
-/** The Base row's translations replicated onto the legacy junction (same ids). */
-async function mirrorTranslations(tx: Tx, id: number | string) {
-  await tx.query('DELETE FROM personal_goal_translations WHERE personal_goal_id = ?', [id]);
-  await tx.query(
-    `INSERT INTO personal_goal_translations (personal_goal_id, locale, name, description)
-       SELECT base_personal_goal_id, locale, name, description
-         FROM base_personal_goal_translations WHERE base_personal_goal_id = ?`,
-    [id],
-  );
+  await tx.query('DELETE FROM personal_goals WHERE id = ?', [insertId]);
+  return insertId as number;
 }
 
 export function createPlatformBasePersonalGoalsRouter(): Router {
@@ -176,12 +160,7 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
           name.value, description.value ?? null,
           target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute',
         ];
-        // The legacy table is the id source (gyms still create goals there); the Base row takes the same id.
-        const { insertId: goalId } = await tx.query(
-          `INSERT INTO personal_goals (gym_id, name, description, target_value, target_unit, target_type, status, created_by)
-           VALUES (NULL, ?, ?, ?, ?, ?, 'active', ?)`,
-          [...values, actor],
-        );
+        const goalId = await allocateGoalId(tx);
         await tx.query(
           `INSERT INTO ${TABLE} (id, name, description, target_value, target_unit, target_type, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -189,7 +168,6 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
         );
         if (goalTranslations.translations) {
           await replaceGoalTranslations(tx, goalId, goalTranslations.translations, KIND);
-          await mirrorTranslations(tx, goalId);
         }
         return goalId as number;
       });
@@ -244,18 +222,15 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
         await tx.query(`UPDATE ${TABLE} SET ${updates.join(', ')} WHERE id = ?`, params);
         if (goalTranslations.translations) {
           await replaceGoalTranslations(tx, String(id), goalTranslations.translations, KIND);
-          await mirrorTranslations(tx, id);
         }
-        await mirrorToLegacy(tx, id);
       });
 
-      // The image key carries the goal's name, so a rename moves it (and the mirror follows).
+      // The image key carries the goal's name, so a rename moves it.
       if (name.value !== undefined && name.value !== existing[0].name && existing[0].image_url) {
-        const moved = await migrateNutritionGoalImageOnRename(
+        await migrateNutritionGoalImageOnRename(
           { gymId: null, prefix: PLATFORM_STORAGE_ROOT, kind: 'personal', table: TABLE },
           { id: existing[0].id, name: name.value, image_url: existing[0].image_url, image_thumbnail_url: existing[0].image_thumbnail_url ?? null },
         );
-        if (moved) await db.transaction((tx) => mirrorToLegacy(tx, id));
       }
 
       const goal = await loadGoal(id, getRequestLocale(req));
@@ -288,7 +263,6 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
         scope: scope as typeof scope & { prefix: string }, goal, images: parsed, modifiedBy: platformActor(req),
       });
       if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
-      await db.transaction((tx) => mirrorToLegacy(tx, goal.id));
       recordAudit(req, {
         action: 'update', entityType, entityId: goal.id,
         previous: { image_url: goal.image_url }, next: { image_url: stored.image_url },
@@ -302,7 +276,6 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
       const goal = await loadForImage(req, res);
       if (!goal) return;
       await clearNutritionGoalImage({ scope, goal, modifiedBy: platformActor(req) });
-      await db.transaction((tx) => mirrorToLegacy(tx, goal.id));
       recordAudit(req, {
         action: 'update', entityType, entityId: goal.id,
         previous: { image_url: goal.image_url }, next: { image_url: null },
@@ -325,7 +298,6 @@ export function createPlatformBasePersonalGoalsRouter(): Router {
           `UPDATE ${TABLE} SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP() WHERE id = ?`,
           [actor, id],
         );
-        await mirrorToLegacy(tx, id);
       });
       recordAudit(req, { action: 'delete', entityType, entityId: id, previous: existing[0] });
       res.status(204).send();
