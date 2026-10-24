@@ -30,7 +30,7 @@ describe('an assignment has no rows of its own (#1325 PR 3e-4b)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no child row is keyed by user_membership_id (applied Promotions are the assignment's again, #1995)', () => {
+  it('no child row is keyed by user_membership_id (applied Promotions are owned by the assignment again, #1995)', () => {
     const tables = '(user_membership_(session|oneoff|periodical)|member_products_recurrent_snapshot)';
     const offenders = files.filter((f) => {
       const text = code(f);
