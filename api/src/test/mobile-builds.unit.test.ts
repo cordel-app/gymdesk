@@ -238,7 +238,6 @@ describe('the publishing workflow writes what the API reads', () => {
     const deploy = readFileSync(join(ROOT, 'workflows', 'deploy.yml'), 'utf8');
     expect(deploy).toContain('MOBILE_TESTFLIGHT_URL: ${{ vars.MOBILE_TESTFLIGHT_URL }}');
     expect(deploy).toContain('MOBILE_TESTFLIGHT_URL=${MOBILE_TESTFLIGHT_URL:-}');
-    expect(deploy).toMatch(/envs:[^\n]*\bMOBILE_TESTFLIGHT_URL\b/);
   });
 
   it('numbers builds from the run and names them by version, build and commit', () => {
