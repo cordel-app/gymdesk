@@ -629,7 +629,7 @@ export function GoalLibrarySection({
       <div key={goal.id} id={`goal-card-${goal.id}`} style={{ ...cardSurfaceStyle, overflow: 'hidden' }}>
         {hasWebpImage && goal.image_url && (
           <CardSquareImage
-            src={goal.image_thumbnail_url ?? goal.image_url}
+            src={goal.image_url}
             alt={nameOf(goal)}
             version={goal.modified_at ?? goal.created_at}
             placeholder={null}
@@ -693,7 +693,9 @@ export function GoalLibrarySection({
               style={{ ...filterControlStyle, minWidth: 220 }}
             />
           </FilterField>
-          <ExerciseViewToggle value={view} onChange={setView} />
+          <div style={{ marginLeft: 'auto' }}>
+            <ExerciseViewToggle value={view} onChange={setView} />
+          </div>
         </FilterBar>
         <button
           type="button"
