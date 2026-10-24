@@ -731,3 +731,26 @@ export async function allocateTestBaseGoalId(): Promise<number> {
   await db.query('DELETE FROM personal_goals WHERE id = ?', [insertId]);
   return insertId as number;
 }
+
+/**
+ * #1849 F2: a System Food as Cordel's router sees it — a Base row plus the legacy
+ * System row of the same id that mirrors it (the id comes from the legacy sequence,
+ * as the router does it).
+ */
+export async function createTestBaseFood(name: string): Promise<number> {
+  const { insertId } = await db.query(
+    "INSERT INTO nutrition_library_items (gym_id, name, status, created_by) VALUES (NULL, ?, 'active', 'System')",
+    [name],
+  );
+  await db.query('INSERT INTO base_nutrition_library_items (id, name, created_by) VALUES (?, ?, ?)', [insertId, name, 'System']);
+  return insertId as number;
+}
+
+/** Removes System Foods a test created, plugs included: the plan tables' RESTRICT FKs go first. */
+export async function deleteTestBaseFoods(where: string, params: unknown[] = []): Promise<void> {
+  const { rows } = await db.query<{ id: number }>(`SELECT id FROM nutrition_library_items WHERE gym_id IS NULL AND ${where}`, params);
+  for (const { id } of rows) {
+    await db.query('DELETE FROM base_nutrition_library_items WHERE id = ?', [id]);
+    await db.query('DELETE FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL', [id]);
+  }
+}

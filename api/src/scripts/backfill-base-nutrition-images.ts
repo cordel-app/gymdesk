@@ -5,7 +5,7 @@
  *   npm run nutrition:base-images -- [--dry-run] [--from <dir>] [--force]
  *                                     [--limit N] [--only <id,id,…>]
  *
- * It discovers the foods from the database (`nutrition_library_items WHERE
+ * It discovers the foods from the database (`base_nutrition_library_items WHERE
  * gym_id IS NULL`) — there is no seed list in the repo and none is wanted — then
  * for each one that has no image yet:
  *
@@ -13,7 +13,7 @@
  *   2. takes the artwork from `--from <dir>` when a matching file is there, and
  *      otherwise renders it with `domain/nutritionImageArt.ts`,
  *   3. uploads it, and
- *   4. stores the resulting Cloudflare URL in `nutrition_library_items.image_url`.
+ *   4. stores the resulting Cloudflare URL in `base_nutrition_library_items.image_url`.
  *
  * **Idempotent** (§4): a food whose `image_url` is already set is counted as
  * *already present* and skipped, so re-running costs a single SELECT per food
@@ -43,6 +43,7 @@ import {
   nutritionThumbnailKeyFor,
   sanitizeNutritionImageName,
 } from '../domain/baseNutritionImages';
+import { mirrorFoodToLegacy } from '../api/base-food-mirror';
 import { renderNutritionImage } from '../domain/nutritionImageArt';
 import {
   buildStorageObjectUrl,
@@ -117,8 +118,8 @@ export async function loadBaseFoods(limit: number | null, onlyIds: number[] | nu
   const only = onlyIds && onlyIds.length > 0 ? `AND id IN (${onlyIds.join(', ')})` : '';
   const { rows } = await db.query<{ id: number; name: string; image_url: string | null }>(
     `SELECT id, name, image_url
-       FROM nutrition_library_items
-      WHERE gym_id IS NULL AND status != 'deleted' ${only}
+       FROM base_nutrition_library_items
+      WHERE deleted_at IS NULL ${only}
       ORDER BY id ASC
       ${limit !== null ? `LIMIT ${limit}` : ''}`,
   );
@@ -242,9 +243,10 @@ export async function backfillBaseNutritionImages(
       await uploadStorageObject(key, EXERCISE_GENDER_IMAGE_MIME, processed.image);
       await uploadStorageObject(nutritionThumbnailKeyFor(key), EXERCISE_GENDER_IMAGE_MIME, processed.thumbnail);
       await db.query(
-        'UPDATE nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+        'UPDATE base_nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
         [buildStorageObjectUrl(key), SYSTEM_ACTOR, food.id],
       );
+      await mirrorFoodToLegacy(food.id);
       counters.uploaded += 1;
       log(`uploaded ${food.id} ${food.name} → ${key}`);
       // Every run writes a fresh key, so under --force the object the row

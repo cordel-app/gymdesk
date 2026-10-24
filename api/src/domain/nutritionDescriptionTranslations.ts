@@ -14,22 +14,24 @@ import { DESCRIPTION_MAX_LENGTH } from './nutritionLibrary';
  * an explicit `{}` clears them.
  */
 const TABLE = 'nutrition_library_item_description_translations';
+const tableOf = (tables?: { descriptions: string }) => tables?.descriptions ?? TABLE;
 
 /** The description resolved for `locale`, falling back to the base column. */
-export function localizedDescriptionSql(alias: string, locale: SupportedLocale): string {
+export function localizedDescriptionSql(alias: string, locale: SupportedLocale, tables?: { descriptions: string }): string {
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.description`;
-  return `COALESCE((SELECT NULLIF(nlidt.description, '') FROM ${TABLE} nlidt
+  return `COALESCE((SELECT NULLIF(nlidt.description, '') FROM ${tableOf(tables)} nlidt
             WHERE nlidt.item_id = ${alias}.id AND nlidt.locale = ${literal}), ${alias}.description)`;
 }
 
 /** item_id → { locale: description } */
 export async function loadDescriptionTranslationsMap(
   itemIds: number[],
+  tables?: { descriptions: string },
 ): Promise<Record<number, Record<string, string>>> {
   if (itemIds.length === 0) return {};
   const { rows } = await db.query<{ item_id: number; locale: string; description: string }>(
-    `SELECT item_id, locale, description FROM ${TABLE} WHERE item_id IN (${itemIds.map(() => '?').join(',')})`,
+    `SELECT item_id, locale, description FROM ${tableOf(tables)} WHERE item_id IN (${itemIds.map(() => '?').join(',')})`,
     itemIds,
   );
   const map: Record<number, Record<string, string>> = {};
@@ -75,19 +77,21 @@ export async function replaceDescriptionTranslations(
   tx: Tx,
   itemId: number | string,
   translations: Record<string, string>,
+  tables?: { descriptions: string },
 ): Promise<void> {
+  const table = tableOf(tables);
   const kept = TRANSLATABLE_LOCALES.filter((l) => (translations?.[l] ?? '').trim() !== '');
   if (kept.length === 0) {
-    await tx.query(`DELETE FROM ${TABLE} WHERE item_id = ?`, [itemId]);
+    await tx.query(`DELETE FROM ${table} WHERE item_id = ?`, [itemId]);
     return;
   }
   await tx.query(
-    `DELETE FROM ${TABLE} WHERE item_id = ? AND locale NOT IN (${kept.map(() => '?').join(',')})`,
+    `DELETE FROM ${table} WHERE item_id = ? AND locale NOT IN (${kept.map(() => '?').join(',')})`,
     [itemId, ...kept],
   );
   for (const locale of kept) {
     await tx.query(
-      `INSERT INTO ${TABLE} (item_id, locale, description) VALUES (?, ?, ?)
+      `INSERT INTO ${table} (item_id, locale, description) VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
       [itemId, locale, translations[locale].trim()],
     );

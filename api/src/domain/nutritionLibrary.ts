@@ -41,13 +41,48 @@ const ITEM_TRANSLATIONS: TranslatedNameConfig = {
 };
 
 /**
+ * The tables one Foods catalogue is made of (#1849 stage F2): the legacy
+ * `nutrition_library_items` family, and the `base_nutrition_library_items` family
+ * the platform's System foods are being moved to. Every helper below takes the set
+ * as a trailing argument that **defaults to the legacy one**, so the gym-facing
+ * callers are untouched; Cordel's router passes `BASE_FOOD_TABLES`.
+ */
+export interface FoodTables {
+  items: string;
+  categories: string;
+  qualities: string;
+  translations: string;
+  descriptions: string;
+}
+
+export const LEGACY_FOOD_TABLES: FoodTables = {
+  items: 'nutrition_library_items',
+  categories: 'nutrition_library_item_categories',
+  qualities: 'nutrition_library_item_qualities',
+  translations: 'nutrition_library_item_translations',
+  descriptions: 'nutrition_library_item_description_translations',
+};
+
+export const BASE_FOOD_TABLES: FoodTables = {
+  items: 'base_nutrition_library_items',
+  categories: 'base_nutrition_library_item_categories',
+  qualities: 'base_nutrition_library_item_qualities',
+  translations: 'base_nutrition_library_item_translations',
+  descriptions: 'base_nutrition_library_item_description_translations',
+};
+
+function nameConfig(tables: FoodTables): TranslatedNameConfig {
+  return tables === LEGACY_FOOD_TABLES ? ITEM_TRANSLATIONS : { ...ITEM_TRANSLATIONS, table: tables.translations };
+}
+
+/**
  * SQL expression resolving an item's name in `locale`, falling back to the base
  * `name` column when that locale has no row.
  *
  * @param alias table alias of `nutrition_library_items` in the enclosing query
  */
-export function localizedNameSql(alias: string, locale: SupportedLocale): string {
-  return translatedNameSql(ITEM_TRANSLATIONS, alias, locale);
+export function localizedNameSql(alias: string, locale: SupportedLocale, tables: FoodTables = LEGACY_FOOD_TABLES): string {
+  return translatedNameSql(nameConfig(tables), alias, locale);
 }
 
 /** {@link localizedNameSql} with an output alias, for SELECT lists. */
@@ -56,8 +91,8 @@ export function localizedNameExpr(alias: string, locale: SupportedLocale, as = '
 }
 
 /** Return translations for a set of item IDs as a map: item_id → { locale: name } */
-export function loadTranslationsMap(itemIds: number[]): Promise<Record<number, Record<string, string>>> {
-  return loadTranslationsMapFor(ITEM_TRANSLATIONS, db, itemIds);
+export function loadTranslationsMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, Record<string, string>>> {
+  return loadTranslationsMapFor(nameConfig(tables), db, itemIds);
 }
 
 /**
@@ -69,9 +104,10 @@ export function loadTranslationsMap(itemIds: number[]): Promise<Record<number, R
 export async function replaceTranslations(
   itemId: number,
   translations: Record<string, string>,
+  tables: FoodTables = LEGACY_FOOD_TABLES,
 ): Promise<void> {
   await db.transaction(async (conn) => {
-    await replaceTranslationsFor(ITEM_TRANSLATIONS, conn, itemId, translations);
+    await replaceTranslationsFor(nameConfig(tables), conn, itemId, translations);
   });
 }
 
@@ -86,12 +122,12 @@ export function validateTranslations(value: unknown): { error: string } | null {
 }
 
 /** Return categories assigned to a set of item IDs as a map: item_id → [{id, slug}] */
-export async function loadCategoriesMap(itemIds: number[]): Promise<Record<number, { id: number; slug: string }[]>> {
+export async function loadCategoriesMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
   if (itemIds.length === 0) return {};
   const marks = itemIds.map(() => '?').join(',');
   const { rows } = await db.query<{ item_id: number; category_id: number; slug: string }>(
     `SELECT nlic.item_id, nlc.id AS category_id, nlc.slug
-     FROM nutrition_library_item_categories nlic
+     FROM ${tables.categories} nlic
      JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id
      WHERE nlic.item_id IN (${marks})
      ORDER BY nlc.id`,
@@ -106,12 +142,12 @@ export async function loadCategoriesMap(itemIds: number[]): Promise<Record<numbe
 }
 
 /** Replace all category assignments for an item inside a transaction. */
-export async function replaceCategories(itemId: number, categoryIds: number[]): Promise<void> {
+export async function replaceCategories(itemId: number, categoryIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<void> {
   await db.transaction(async (conn) => {
-    await conn.query('DELETE FROM nutrition_library_item_categories WHERE item_id = ?', [itemId]);
+    await conn.query(`DELETE FROM ${tables.categories} WHERE item_id = ?`, [itemId]);
     for (const cid of categoryIds) {
       await conn.query(
-        'INSERT INTO nutrition_library_item_categories (item_id, category_id) VALUES (?, ?)',
+        `INSERT INTO ${tables.categories} (item_id, category_id) VALUES (?, ?)`,
         [itemId, cid],
       );
     }
@@ -139,12 +175,12 @@ export async function validateCategoryIds(ids: unknown): Promise<{ error: string
 }
 
 /** Return qualities assigned to a set of item IDs as a map: item_id → [{id, slug}] */
-export async function loadQualitiesMap(itemIds: number[]): Promise<Record<number, { id: number; slug: string }[]>> {
+export async function loadQualitiesMap(itemIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<Record<number, { id: number; slug: string }[]>> {
   if (itemIds.length === 0) return {};
   const marks = itemIds.map(() => '?').join(',');
   const { rows } = await db.query<{ item_id: number; quality_id: number; slug: string }>(
     `SELECT nliq.item_id, nq.id AS quality_id, nq.slug
-     FROM nutrition_library_item_qualities nliq
+     FROM ${tables.qualities} nliq
      JOIN nutritional_qualities nq ON nq.id = nliq.quality_id
      WHERE nliq.item_id IN (${marks})
      ORDER BY nq.id`,
@@ -159,12 +195,12 @@ export async function loadQualitiesMap(itemIds: number[]): Promise<Record<number
 }
 
 /** Replace all quality assignments for an item inside a transaction. */
-export async function replaceQualities(itemId: number, qualityIds: number[]): Promise<void> {
+export async function replaceQualities(itemId: number, qualityIds: number[], tables: FoodTables = LEGACY_FOOD_TABLES): Promise<void> {
   await db.transaction(async (conn) => {
-    await conn.query('DELETE FROM nutrition_library_item_qualities WHERE item_id = ?', [itemId]);
+    await conn.query(`DELETE FROM ${tables.qualities} WHERE item_id = ?`, [itemId]);
     for (const qid of qualityIds) {
       await conn.query(
-        'INSERT INTO nutrition_library_item_qualities (item_id, quality_id) VALUES (?, ?)',
+        `INSERT INTO ${tables.qualities} (item_id, quality_id) VALUES (?, ?)`,
         [itemId, qid],
       );
     }
@@ -230,6 +266,7 @@ export function buildListWhere(
   base: string[],
   baseParams: any[] = [],
   locale: SupportedLocale = BASE_LOCALE,
+  tables: FoodTables = LEGACY_FOOD_TABLES,
 ): { where: string; params: any[] } | { error: string } {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const categoryIds = toQueryArray(req.query.category_id).map((v) => parseInt(v, 10));
@@ -247,21 +284,21 @@ export function buildListWhere(
 
   if (search) {
     where.push(`(name LIKE ? OR id IN (
-      SELECT nlit.item_id FROM ${ITEM_TRANSLATIONS.table} nlit
+      SELECT nlit.item_id FROM ${nameConfig(tables).table} nlit
       WHERE nlit.name LIKE ?
     ))`);
     params.push(`%${search}%`, `%${search}%`);
   }
   if (categoryIds.length) {
     where.push(`id IN (
-      SELECT nlic.item_id FROM nutrition_library_item_categories nlic
+      SELECT nlic.item_id FROM ${tables.categories} nlic
       WHERE nlic.category_id IN (${categoryIds.map(() => '?').join(',')})
     )`);
     params.push(...categoryIds);
   }
   if (qualityIds.length) {
     where.push(`id IN (
-      SELECT nliq.item_id FROM nutrition_library_item_qualities nliq
+      SELECT nliq.item_id FROM ${tables.qualities} nliq
       WHERE nliq.quality_id IN (${qualityIds.map(() => '?').join(',')})
       GROUP BY nliq.item_id
       HAVING COUNT(DISTINCT nliq.quality_id) = ?
