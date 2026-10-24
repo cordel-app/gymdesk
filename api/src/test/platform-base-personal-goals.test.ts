@@ -3,7 +3,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, deleteTestSystemPersonalGoals, request } from './helpers';
 
 // Override the default @clerk/backend mock: make test-user-id a superadmin.
 const mockGetUser = vi.hoisted(() =>
@@ -41,8 +41,7 @@ const NAME = 'Test Base Goal 2b';
 let createdId: number;
 
 afterAll(async () => {
-  await db.query("DELETE FROM base_personal_goals WHERE name LIKE 'Test Base Goal 2b%'");
-  await db.query("DELETE FROM personal_goals WHERE gym_id IS NULL AND name LIKE 'Test Base Goal 2b%'");
+  await deleteTestSystemPersonalGoals("name LIKE 'Test Base Goal 2b%'");
   await cleanupTestGyms();
   await db.end();
 });

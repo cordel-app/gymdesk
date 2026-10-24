@@ -295,8 +295,8 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // explicit `active` row per goal, `gym_professional_services`' pattern. A
     // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
     await db.query(
-      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
-       SELECT ?, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
+      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+       SELECT ?, id, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
       [id, actorName],
     );
     // #1149: the gym's default Products — one writer for both creation paths,
@@ -469,8 +469,8 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     [newId, actorName],
   );
   await db.query(
-    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
-     SELECT ?, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
+    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+     SELECT ?, id, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
     [newId, actorName],
   );
   await seedDefaultGymProducts(newId);

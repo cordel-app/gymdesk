@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { handleDupEntry } from '../infra/db-helpers';
-import { GOAL_LIBRARY_FEATURE_KEYS, gymGoalStatusSql } from '../domain/goalLibrary';
+import { GOAL_LIBRARY_FEATURE_KEYS, assignedGoalIdSql, gymGoalStatusSql } from '../domain/goalLibrary';
 import { resolveMemberId } from './me';
 import { resolveRequestActor } from '../domain/auditActor';
 import { readingActor } from '../domain/personalGoalAssignment';
@@ -82,7 +82,7 @@ mePersonalGoalsRouter.use(
  * administrative fact, and the member's own screen shows the goal.
  */
 const COLUMNS = `
-  mpg.id, mpg.personal_goal_id,
+  mpg.id, ${assignedGoalIdSql('mpg')} AS personal_goal_id,
   mpg.target_value, mpg.target_unit, mpg.target_type,
   mpg.start_date, mpg.target_date, mpg.end_date,
   mpg.status, mpg.notes, mpg.created_at, mpg.deleted_at,
@@ -93,7 +93,7 @@ const COLUMNS = `
 
 const FROM = `
   FROM member_personal_goals mpg
-  JOIN personal_goal_catalogue pg ON pg.id = mpg.personal_goal_id
+  JOIN personal_goal_catalogue pg ON pg.id = ${assignedGoalIdSql('mpg')}
                         AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
 `;
 
@@ -185,7 +185,7 @@ mePersonalGoalsRouter.get('/available', async (req, res, next) => {
          AND ${gymGoalStatusSql('pg')} = 'active'
          AND NOT EXISTS (
            SELECT 1 FROM member_personal_goals mpg
-           WHERE mpg.personal_goal_id = pg.id AND mpg.member_id = ? AND mpg.gym_id = ?
+           WHERE ${assignedGoalIdSql('mpg')} = pg.id AND mpg.member_id = ? AND mpg.gym_id = ?
              AND mpg.deleted_at IS NULL AND mpg.status = 'in_progress'
          )
        ORDER BY pg.name ASC, pg.id ASC`,
@@ -283,11 +283,11 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
-           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
+           (gym_id, member_id, personal_goal_id, base_personal_goal_id, goal_name, target_value, target_unit, target_type,
             start_date, target_date, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          gymId, memberId, goalId, catalogue.name,
+          gymId, memberId, goalId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
           notes.value ?? null, actor,

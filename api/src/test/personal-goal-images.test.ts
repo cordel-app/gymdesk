@@ -13,7 +13,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, deleteTestSystemPersonalGoals, request } from './helpers';
 import sharp from 'sharp';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -170,7 +170,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query("DELETE FROM base_personal_goals WHERE name LIKE 'Test Goal Image %'");
+  await deleteTestSystemPersonalGoals("name LIKE 'Test Goal Image %'");
   await db.query("DELETE FROM personal_goals WHERE name LIKE 'Test Goal Image %'");
   await cleanupTestGyms();
   for (const key of R2_ENV_KEYS) {
