@@ -3951,7 +3951,20 @@
     "image_staged": "Se subirá cuando se guarde el objetivo.",
     "image_retry": "Reintentar subida",
     "show_all_attributes": "Mostrar todos los atributos",
-    "hide_all_attributes": "Ocultar todos los atributos"
+    "hide_all_attributes": "Ocultar todos los atributos",
+    "import_system": "Importar objetivos personales del sistema",
+    "import_modal_title": "Importar objetivos personales del sistema",
+    "import_select_all_matching": "Seleccionar todos los resultados",
+    "import_clear_all_matching": "Quitar todos los resultados",
+    "import_available_count": "{n} objetivos disponibles",
+    "import_selected_count": "{n} seleccionados",
+    "import_empty": "Ningún objetivo personal del sistema coincide con la búsqueda.",
+    "import_importing": "Importando…",
+    "import_confirm": "Importar",
+    "import_already_imported": "Importado",
+    "import_done": "Se importaron {n} objetivos personales.",
+    "import_skipped": "{n} ya estaban en tu biblioteca.",
+    "import_note": "Los objetivos importados pasan a ser copias propias de tu gimnasio; los cambios en los objetivos del sistema nunca las sobrescriben."
   },
   "assigned_personal_goals": {
     "title": "Objetivos Personales Asignados",

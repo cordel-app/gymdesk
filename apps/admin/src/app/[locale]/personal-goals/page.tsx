@@ -7,6 +7,9 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { ImportSystemPersonalGoalsModal } from '@/components/personalGoals/ImportSystemPersonalGoalsModal';
+import { readOnlyStyle } from '@/components/ui';
+import { secondaryBtnStyle } from '@/components/formChrome';
 import { AssignGoalToMemberModal } from '@/components/personalGoals/AssignGoalToMemberModal';
 
 /**
@@ -37,7 +40,7 @@ export default function PersonalGoalsPage() {
   // The same `goal_library` namespace both goal catalogues already used, so the
   // section cannot read one way here and another on Cordel's page (#806).
   const tGoals = useTranslations('goal_library');
-  const { activeGymId, loading: gymLoading } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
 
   // #613: impersonation-aware (superadmins included); read-only roles see the
   // section's controls disabled rather than hidden.
@@ -47,6 +50,11 @@ export default function PersonalGoalsPage() {
   // from a role whose writes the route accepts.
   const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION', 'nutrition.personal_goals');
   const { toast } = useToast();
+
+  // #1850: Import System Personal Goals; the section remounts (`reloadKey`) to show the imported goals.
+  const [importOpen, setImportOpen] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   /** The goal `⋮ → Assign goal to member` was launched from, or none (§5). */
   const [assigning, setAssigning] = useState<GoalRow | null>(null);
@@ -59,9 +67,20 @@ export default function PersonalGoalsPage() {
           carries the title alone. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{tGoals('title_personal_goals')}</h1>
+        {isAdmin && (
+          <button
+            onClick={() => setImportOpen(true)}
+            title={readOnlyTitle}
+            style={readOnlyStyle(secondaryBtnStyle, !canWrite)}
+            disabled={!canWrite}
+          >
+            {tGoals('import_system')}
+          </button>
+        )}
       </div>
 
       <GoalLibrarySection
+        key={reloadKey}
         kind="personal"
         scope="gym"
         canWrite={canWrite}
@@ -69,6 +88,16 @@ export default function PersonalGoalsPage() {
         label={(key) => tGoals(key as any)}
         ready={!!activeGymId}
         onAssign={setAssigning}
+      />
+
+      <ImportSystemPersonalGoalsModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={(result) => {
+          setImportOpen(false);
+          toast(tGoals('import_done', { n: result.imported.length }) + (result.skipped.length > 0 ? ` ${tGoals('import_skipped', { n: result.skipped.length })}` : ''));
+          setReloadKey((k) => k + 1);
+        }}
       />
 
       {assigning && (

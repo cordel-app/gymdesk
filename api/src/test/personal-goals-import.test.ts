@@ -124,8 +124,8 @@ describe('Import System Personal Goals', () => {
     expect(a.imported).toBe(true);
     expect(a.imported_personal_goal_id).toBeTypeOf('number');
 
-    const goals = await request.get('/personal-goals').set(auth(gymId));
-    const imported = goals.body.find((g: any) => g.name === NAME_A);
+    const goals = await request.get('/personal-goals?limit=200').set(auth(gymId));
+    const imported = goals.body.items.find((g: any) => g.name === NAME_A && g.gym_id === gymId);
     expect(imported).toMatchObject({ gym_id: gymId, is_system: true, base_personal_goal_id: baseA });
   });
 
