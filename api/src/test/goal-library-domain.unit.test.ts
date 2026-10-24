@@ -4,6 +4,7 @@ import { join } from 'path';
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
   GOAL_LIBRARY_KINDS,
+  GOAL_LIBRARY_READ_SOURCES,
   GOAL_LIBRARY_TABLES,
   GOAL_NAME_MAX_LENGTH,
   GOAL_STATUSES,
@@ -61,7 +62,8 @@ describe('goal library declarations', () => {
       const entry = AUDIT_ENTITY_REGISTRY[entityType];
       expect(entry, `${entityType} is missing from AUDIT_ENTITY_REGISTRY`).toBeDefined();
       expect(entry.kind).toBe('simple');
-      expect((entry as { table: string }).table).toBe(GOAL_LIBRARY_TABLES[kind]);
+      // #1849: the Audit Log's entity name is a read, so it goes through the catalogue view.
+      expect((entry as { table: string }).table).toBe(GOAL_LIBRARY_READ_SOURCES[kind]);
     }
   });
 

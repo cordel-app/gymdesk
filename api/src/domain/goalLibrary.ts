@@ -64,12 +64,13 @@ export const GOAL_LIBRARY_FEATURE_KEYS: Record<GoalLibraryKind, string> = {
 /**
  * #1849 stage 2c — what a gym-facing **read** selects from. Personal Goals read
  * the `personal_goal_catalogue` view (System goals from `base_personal_goals`, a
- * gym's own from `personal_goals`); Nutrition Goals are unchanged. Writes always
+ * gym's own from `personal_goals`) and Nutrition Goals the `nutrition_goal_catalogue` view
+ * (#1849 N3, the same shape over `base_nutrition_goals` / `nutrition_goals`). Writes always
  * target `GOAL_LIBRARY_TABLES`.
  */
 export const GOAL_LIBRARY_READ_SOURCES: Record<GoalLibraryKind, string> = {
   personal: 'personal_goal_catalogue',
-  nutrition: 'nutrition_goals',
+  nutrition: 'nutrition_goal_catalogue',
 };
 
 /** What `status` may hold. Mirrored by `chk_<prefix>_status` (migration 206). */
@@ -299,7 +300,7 @@ export function buildGoalListWhere(
         ? { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' }
         : translationKind === 'personal'
         ? { table: 'personal_goal_translation_catalogue', fk: 'personal_goal_id' }
-        : { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' };
+        : { table: 'nutrition_goal_translation_catalogue', fk: 'nutrition_goal_id' };
       where.push(`(g.name LIKE ? OR g.slug LIKE ? OR EXISTS (
         SELECT 1 FROM ${t.table} ngts
          WHERE ngts.${t.fk} = g.id AND ngts.name LIKE ?))`);

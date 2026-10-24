@@ -26,8 +26,8 @@ import { db } from '../infra/db';
  * row with no image reads `NULL`, and the food illustration (#932), then the
  * standard fallback, apply. Alias `g` is the plan-goal table.
  */
-export const NUTRITION_GOAL_IMAGE_JOIN_SQL = `LEFT JOIN nutrition_goals ng
-            ON ng.slug = g.item_name AND ng.gym_id IS NULL AND ng.status <> 'deleted'`;
+export const NUTRITION_GOAL_IMAGE_JOIN_SQL = `LEFT JOIN base_nutrition_goals ng
+            ON ng.slug = g.item_name AND ng.deleted_at IS NULL`;
 export const NUTRITION_GOAL_IMAGE_COLUMNS_SQL = `ng.image_url AS goal_image_url, ng.image_thumbnail_url AS goal_image_thumbnail_url`;
 
 export function parseGoalIllustrationInput(value: unknown): { id: number | null } | { error: string } {

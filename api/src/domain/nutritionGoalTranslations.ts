@@ -33,7 +33,7 @@ export type TranslatedGoalKind = 'nutrition' | 'personal' | 'base_personal' | 'b
 // `read` is what a SELECT goes through: for Personal Goals the translation catalogue
 // view (#1849 stage 2e: System goals' from the Base table), otherwise the table itself.
 const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string; read?: string }> = {
-  nutrition: { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' },
+  nutrition: { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id', read: 'nutrition_goal_translation_catalogue' },
   personal: { table: 'personal_goal_translations', fk: 'personal_goal_id', read: 'personal_goal_translation_catalogue' },
   // #1849 stage 2b: the Base Personal Goals' own junction (migration 304).
   base_personal: { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' },
