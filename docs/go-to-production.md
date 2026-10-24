@@ -631,6 +631,11 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 
 ## 4. API surface
 
+- [ ] **Nutrition Goals cut-over (#1849 N4).** Before migration 323 (delete the legacy System
+      rows of `nutrition_goals`) runs on a database that holds real data: take a `mysqldump` of
+      `nutrition_goals`, `nutrition_goal_translations`, `base_nutrition_goals` and
+      `base_nutrition_goal_translations` and keep it until the deploy is verified. 323 refuses
+      to run if a legacy row has no Base twin or differs from it.
 - [ ] **Personal Goals cut-over (#1849 2f).** Before migrations 319 (exclusive goal
       references) and 320 (delete the legacy System rows of `personal_goals`) run on a
       database that holds real data: take a `mysqldump` of `personal_goals`,

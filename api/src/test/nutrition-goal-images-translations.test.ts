@@ -133,7 +133,7 @@ describe('System Nutrition Goals (migration 282 seeds)', () => {
   });
 
   it('are read-only to a gym for the image too (403)', async () => {
-    const { rows } = await db.query<{ id: number }>("SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'water'");
+    const { rows } = await db.query<{ id: number }>("SELECT id FROM base_nutrition_goals WHERE slug = 'water'");
     const res = await upload(rows[0].id, gymId, await photo());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);

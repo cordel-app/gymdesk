@@ -1,5 +1,5 @@
-// #1849 stage N1: migration 321 copies the System Nutrition Goals into
-// base_nutrition_goals, keeping ids, and leaves the legacy rows untouched.
+// #1849 stage N4: migration 323 deletes the legacy System rows of nutrition_goals;
+// base_nutrition_goals (copied by 321, ids kept) is the only copy of a System goal.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -8,36 +8,27 @@ afterAll(async () => {
   await db.end();
 });
 
-describe('base_nutrition_goals copy (#1849 stage N1)', () => {
-  it('holds every seeded System goal under its original id with the same definition', async () => {
-    // Only the seeded (slugged) rows: other test files add System goals after the migration ran.
-    const { rows: legacy } = await db.query<any>(
-      `SELECT id, slug, name, description FROM nutrition_goals
-        WHERE gym_id IS NULL AND slug IS NOT NULL ORDER BY id`,
+describe('base_nutrition_goals after the legacy delete (#1849 stage N4)', () => {
+  it('holds the seven seeded System goals', async () => {
+    const { rows } = await db.query<any>(
+      `SELECT slug, name FROM base_nutrition_goals
+        WHERE slug IN ('calories','protein','carbohydrates','fats','fiber','water','fasting') ORDER BY slug`,
     );
-    expect(legacy.length).toBeGreaterThanOrEqual(7);
-    const { rows: base } = await db.query<any>(
-      `SELECT id, slug, name, description FROM base_nutrition_goals
-        WHERE id IN (SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug IS NOT NULL) ORDER BY id`,
-    );
-    expect(base).toEqual(legacy);
+    expect(rows.map((r: any) => r.slug)).toEqual(
+      ['calories', 'carbohydrates', 'fasting', 'fats', 'fiber', 'protein', 'water']);
+    expect(rows.find((r: any) => r.slug === 'protein').name).toBe('Protein');
   });
 
-  it('copies the translations of the seeded System goals', async () => {
+  it('keeps the seeded translations in the Base junction', async () => {
     const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS missing FROM nutrition_goal_translations t
-         JOIN nutrition_goals g ON g.id = t.nutrition_goal_id AND g.gym_id IS NULL AND g.slug IS NOT NULL
-         LEFT JOIN base_nutrition_goal_translations b
-           ON b.base_nutrition_goal_id = t.nutrition_goal_id AND b.locale = t.locale
-        WHERE b.locale IS NULL`,
+      `SELECT COUNT(*) AS n FROM base_nutrition_goal_translations t
+         JOIN base_nutrition_goals b ON b.id = t.base_nutrition_goal_id AND b.slug = 'protein'`,
     );
-    expect(Number(rows[0].missing)).toBe(0);
+    expect(Number(rows[0].n)).toBeGreaterThan(0);
   });
 
-  it('leaves the legacy System rows in place', async () => {
-    const { rows } = await db.query<any>(
-      'SELECT COUNT(*) AS n FROM nutrition_goals WHERE gym_id IS NULL AND slug IS NOT NULL',
-    );
-    expect(Number(rows[0].n)).toBeGreaterThanOrEqual(7);
+  it('leaves no System row in nutrition_goals', async () => {
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM nutrition_goals WHERE gym_id IS NULL');
+    expect(Number(rows[0].n)).toBe(0);
   });
 });
