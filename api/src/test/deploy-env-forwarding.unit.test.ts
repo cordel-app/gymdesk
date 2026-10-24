@@ -48,8 +48,8 @@ const INTERNAL_SECRETS = [
 function expectForwarded(name: string, source: 'vars' | 'secrets') {
   // 1. Mapped from the GitHub environment into the step.
   expect(DEPLOY, `${name} mapped from ${source}`).toContain(`${name}: \${{ ${source}.${name} }}`);
-  // 2. Passed over SSH.
-  expect(DEPLOY, `${name} in envs:`).toMatch(new RegExp(`envs: [^\\n]*\\b${name}\\b`));
+  // 2. (Passed over SSH until #2045 — the deploy step now runs on the runner
+  //    itself, so the step's env: is the only place it is declared.)
   // 3. Written into the API's env file (#1192 — never an inline
   //    `Environment=` line, whose value lands on podman's command line).
   expect(ENV_FILE_BLOCK, `${name} written into the env file`).toMatch(
@@ -104,5 +104,17 @@ describe('the settings the API reads are the settings deploy.yml writes', () => 
     // If this ever stops being true, a hand-set value would survive and the
     // gate's premise should be revisited rather than silently kept.
     expect(DEPLOY).toContain("sed -i '/^Environment=/d; /^EnvironmentFile=/d' \"$CF\"");
+  });
+});
+
+describe('the API deploys from the self-hosted runner (#2045)', () => {
+  it('has no SSH step and no secret interpolated into the script body', () => {
+    expect(DEPLOY).not.toContain('appleboy/ssh-action');
+    expect(DEPLOY).not.toMatch(/^\s*envs:/m);
+    expect(DEPLOY).not.toMatch(/SSH_/);
+    expect(DEPLOY).toMatch(/runs-on: \[self-hosted, corback, /);
+    const script = DEPLOY.slice(DEPLOY.indexOf('        run: |\n            set -euo pipefail'));
+    expect(script.length).toBeGreaterThan(0);
+    expect(script, 'secrets interpolated into the script body').not.toContain('secrets.');
   });
 });
