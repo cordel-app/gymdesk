@@ -6,8 +6,7 @@
  *
  * With no `--file` the bundled catalogue content (`src/data/base-exercise-descriptions.json`,
  * #1608: EN/ES/CA short and full description for every Free Exercise DB Base Exercise)
- * is used, so the compiled script runs from the deployed image
- * (`.github/workflows/exercises-backfill-descriptions.yml`). Every run ends with a
+ * is used, so the compiled script runs from the deployed image. Every run ends with a
  * completeness report of the six values per Base Exercise; the process exits
  * non-zero on an `--execute` run that leaves any of them empty.
  *
