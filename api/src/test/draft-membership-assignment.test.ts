@@ -261,7 +261,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
       .send({ confirm: true });
     expect(confirmed.status).toBe(200);
     expect(await readStatus(draft.id)).toBe('active');
-    expect(await readStatus(live.id)).toBe('cancelled');
+    expect(await readStatus(live.id)).toBe('superseded');
 
     // #956 Q3: the two plans meet at one date — the new one's `starts_at`.
     const { rows } = await db.query<{ ends_at: string; closed_at: string | null }>(

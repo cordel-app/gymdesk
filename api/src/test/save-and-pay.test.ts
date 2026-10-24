@@ -195,7 +195,7 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
 
     await api('post', `/user-memberships/${second}/record-payment`).send({});
     expect(await status(second)).toBe('active');
-    expect(await status(first)).toBe('cancelled');
+    expect(await status(first)).toBe('superseded');
   });
 });
 

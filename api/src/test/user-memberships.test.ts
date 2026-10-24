@@ -1157,7 +1157,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
 
     // #956 Q3: a superseded row is cancelled with its dates stamped, not expired.
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
-    expect(oldRows[0].status).toBe('cancelled');
+    expect(oldRows[0].status).toBe('superseded');
 
     // The new membership gets its own owner row in user_membership_members,
     // just like POST / does.
@@ -1179,7 +1179,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(list.body[0].id).toBe(res.body.id);
     expect(list.body[0].status).toBe('active');
     expect(list.body[1].id).toBe(oldUmId);
-    expect(list.body[1].status).toBe('cancelled');
+    expect(list.body[1].status).toBe('superseded');
   });
 
   it('supersedes a paused membership the same way, on the commit (old row -> cancelled)', async () => {
@@ -1199,7 +1199,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     await activateAssignment(gymId, res.body.id, { confirm: true });
 
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
-    expect(oldRows[0].status).toBe('cancelled');
+    expect(oldRows[0].status).toBe('superseded');
   });
 
   it('leaves an already-terminal (cancelled) membership untouched while still creating a new Draft', async () => {

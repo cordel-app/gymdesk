@@ -83,7 +83,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     await commit(owner, p, 30);
     await commit(owner, p, 35);
     const rows = await assignments(owner);
-    expect(rows.map((r: any) => r.status)).toEqual(['cancelled', 'active']);
+    expect(rows.map((r: any) => r.status)).toEqual(['superseded', 'active']);
     expect(Number(rows[0].membership_fee_price)).toBe(30);
     expect(Number(rows[1].membership_fee_price)).toBe(35);
   });
@@ -94,7 +94,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     const second = await plan(50);
     await commit(owner, second, 50);
     const rows = await assignments(owner);
-    expect(rows.map((r: any) => r.status)).toEqual(['cancelled', 'active']);
+    expect(rows.map((r: any) => r.status)).toEqual(['superseded', 'active']);
     expect(Number(rows[1].membership_plan_id)).toBe(second);
   });
 
