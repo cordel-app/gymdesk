@@ -4211,7 +4211,8 @@
     "communication_none": "Nadie tiene reserva en este evento, así que no se notificó a nadie.",
     "communication_error": "No se pudo enviar la comunicación.",
     "communication_required": "El título y el mensaje son obligatorios.",
-    "cancel_reason_note": "El motivo que escribas se envía a los miembros con reserva en la alerta de cancelación."
+    "cancel_reason_note": "El motivo que escribas se envía a los miembros con reserva en la alerta de cancelación.",
+    "edit_event": "Editar evento"
   },
   "gym_charges": {
     "title": "Cargos del Gimnasio",
