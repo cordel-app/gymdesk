@@ -438,13 +438,14 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     actor: string | null,
   ): Promise<void> {
     await q.query(
-      `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
-       VALUES (?, ?, ?, ?) AS incoming
+      `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+       VALUES (?, ?, (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?) AS incoming
        ON DUPLICATE KEY UPDATE
+         base_personal_goal_id = incoming.base_personal_goal_id,
          status = incoming.status,
          modified_at = UTC_TIMESTAMP(),
          modified_by = incoming.created_by`,
-      [gymId, goalId, status, actor],
+      [gymId, goalId, goalId, status, actor],
     );
   }
 

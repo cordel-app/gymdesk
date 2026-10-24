@@ -700,3 +700,19 @@ export async function activateTestAssignment(gymId: string, umId: number): Promi
     throw new Error(`activateTestAssignment: ${res.status} ${JSON.stringify(res.body)}`);
   }
 }
+
+/**
+ * #1849 stage 2e: removes System Personal Goals a test created. A Base goal is
+ * referenced `ON DELETE RESTRICT` by `gym_personal_goals` / `member_personal_goals`
+ * (a gym created in parallel seeds an activation row for every Base goal), so those
+ * references go first, then the Base row, then its legacy mirror.
+ */
+export async function deleteTestSystemPersonalGoals(where: string, params: unknown[] = []): Promise<void> {
+  const { rows } = await db.query<{ id: number }>(`SELECT id FROM base_personal_goals WHERE ${where}`, params);
+  for (const { id } of rows) {
+    await db.query('DELETE FROM gym_personal_goals WHERE personal_goal_id = ? OR base_personal_goal_id = ?', [id, id]);
+    await db.query('DELETE FROM member_personal_goals WHERE personal_goal_id = ? OR base_personal_goal_id = ?', [id, id]);
+    await db.query('DELETE FROM base_personal_goals WHERE id = ?', [id]);
+    await db.query('DELETE FROM personal_goals WHERE id = ? AND gym_id IS NULL', [id]);
+  }
+}
