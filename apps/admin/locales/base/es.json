@@ -71,7 +71,8 @@
     "home": "Inicio",
     "base_payment_methods": "Métodos de pago",
     "base_products": "Productos base",
-    "base_professional_services": "Servicios profesionales base"
+    "base_professional_services": "Servicios profesionales base",
+    "jobs": "Tareas"
   },
   "dashboard": {
     "title": "Panel",
@@ -5247,5 +5248,41 @@
     "modified_at": "Modificado el",
     "modified_by": "Modificado por",
     "not_configured": "Sin configurar"
+  },
+  "job_runs": {
+    "title": "Tareas",
+    "intro": "Historial de ejecución de las tareas del sistema de la plataforma (facturación nocturna, reservas recurrentes, limpieza, ciclo de vida de Promociones, renovación de bolsas del plan y recordatorios de reserva), de más reciente a más antigua.",
+    "filter_job": "Tarea",
+    "filter_status": "Estado",
+    "filter_from": "Desde",
+    "filter_to": "Hasta",
+    "all_jobs": "Todas las tareas",
+    "all_statuses": "Todos los estados",
+    "apply": "Aplicar",
+    "clear": "Borrar filtros",
+    "utc_hint": "Las fechas son días UTC; el rango por defecto son los últimos 7 días, hoy incluido.",
+    "range_invalid": "\"Desde\" no puede ser posterior a \"Hasta\".",
+    "load_failed": "No se pudieron cargar las ejecuciones.",
+    "loading": "Cargando…",
+    "empty": "No hay ejecuciones en este rango.",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "page_of": "Página {page} de {pages} · {total} ejecuciones",
+    "field_started": "Inicio",
+    "field_duration": "Duración",
+    "field_http_status": "Estado HTTP",
+    "field_error": "Error",
+    "job_billing_run": "Facturación",
+    "job_recurring_bookings": "Reservas recurrentes",
+    "job_billing_cleanup": "Limpieza de facturación",
+    "job_promotion_lifecycle": "Ciclo de vida de Promociones",
+    "job_plan_allowance_renewals": "Renovación de bolsas del plan",
+    "job_booking_reminders": "Recordatorios de reserva",
+    "job_unknown": "Tarea desconocida",
+    "status_in_progress": "En curso",
+    "status_completed": "Completada",
+    "status_failed": "Fallida",
+    "status_skipped": "Omitida",
+    "status_unknown": "Desconocido"
   }
 }
