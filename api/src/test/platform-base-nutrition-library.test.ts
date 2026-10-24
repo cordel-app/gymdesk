@@ -1,4 +1,4 @@
-// #1849 stage F2: Cordel's Base Foods CRUD writes the base_nutrition_library_* tables
+// #1849 stages F2-F2b: Cordel's Base Foods CRUD writes the base_nutrition_library_* tables
 // and mirrors every write onto the legacy System food of the same id.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -107,5 +107,30 @@ describe('platform foods on base_nutrition_library_items (#1849 F2)', () => {
     expect(rows[0].deleted_at).not.toBeNull();
     expect((await legacy(createdId)).status).toBe('deleted');
     expect((await request.delete(`/platform/nutrition-library/${createdId}`).set(H)).status).toBe(409);
+  });
+});
+
+describe('gym-side reads come from the Base tables (#1849 F2b)', () => {
+  it('a gym lists a System food (name, translation, categories) from the Base table, not the legacy copy; a Cordel delete hides it', async () => {
+    const { rows: cats } = await db.query<any>("SELECT id FROM nutrition_library_categories WHERE slug = 'main_dish'");
+    const created = await request.post('/platform/nutrition-library').set(H).send({
+      name: 'Test Base Food F2 read', category_ids: [cats[0].id], translations: { es: 'Legacy copy' },
+    });
+    const id = created.body.id;
+    // Diverge on purpose: the gym must see the Base values, not the mirrored legacy ones.
+    await db.query("UPDATE base_nutrition_library_items SET name = 'Test Base Food F2 read base' WHERE id = ?", [id]);
+    await db.query("UPDATE base_nutrition_library_item_translations SET name = 'Solo Base F2b' WHERE item_id = ? AND locale = 'es'", [id]);
+    const gymId = await createTestGym();
+    const asGym = { Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId };
+    const list = await request.get('/nutrition-library').query({ search: 'F2 read' }).set(asGym).set('x-locale', 'es');
+    expect(list.status).toBe(200);
+    const food = list.body.items.find((i: any) => i.id === id);
+    expect(food.name).toBe('Test Base Food F2 read base');
+    expect(food.display_name).toBe('Solo Base F2b');
+    expect(food.categories.map((c: any) => c.id)).toEqual([cats[0].id]);
+    expect((await request.put(`/nutrition-library/${id}`).set(asGym).send({ name: 'x' })).status).toBe(403);
+    await request.delete(`/platform/nutrition-library/${id}`).set(H);
+    const after = await request.get('/nutrition-library').query({ search: 'F2 read' }).set(asGym);
+    expect(after.body.items.map((i: any) => i.id)).not.toContain(id);
   });
 });

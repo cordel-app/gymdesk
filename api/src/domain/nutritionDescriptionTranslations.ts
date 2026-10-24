@@ -14,13 +14,16 @@ import { DESCRIPTION_MAX_LENGTH } from './nutritionLibrary';
  * an explicit `{}` clears them.
  */
 const TABLE = 'nutrition_library_item_description_translations';
+// Reads default to the catalogue view (#1849 F2b); the writer below keeps the legacy table.
+const READ_TABLE = 'nutrition_library_item_description_translation_catalogue';
 const tableOf = (tables?: { descriptions: string }) => tables?.descriptions ?? TABLE;
+const readTableOf = (tables?: { descriptions: string }) => tables?.descriptions ?? READ_TABLE;
 
 /** The description resolved for `locale`, falling back to the base column. */
 export function localizedDescriptionSql(alias: string, locale: SupportedLocale, tables?: { descriptions: string }): string {
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.description`;
-  return `COALESCE((SELECT NULLIF(nlidt.description, '') FROM ${tableOf(tables)} nlidt
+  return `COALESCE((SELECT NULLIF(nlidt.description, '') FROM ${readTableOf(tables)} nlidt
             WHERE nlidt.item_id = ${alias}.id AND nlidt.locale = ${literal}), ${alias}.description)`;
 }
 
@@ -31,7 +34,7 @@ export async function loadDescriptionTranslationsMap(
 ): Promise<Record<number, Record<string, string>>> {
   if (itemIds.length === 0) return {};
   const { rows } = await db.query<{ item_id: number; locale: string; description: string }>(
-    `SELECT item_id, locale, description FROM ${tableOf(tables)} WHERE item_id IN (${itemIds.map(() => '?').join(',')})`,
+    `SELECT item_id, locale, description FROM ${readTableOf(tables)} WHERE item_id IN (${itemIds.map(() => '?').join(',')})`,
     itemIds,
   );
   const map: Record<number, Record<string, string>> = {};

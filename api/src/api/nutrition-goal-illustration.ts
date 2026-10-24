@@ -44,11 +44,11 @@ export async function validateGoalIllustration(gymId: string | null, id: number 
   if (id === null) return null;
   const { rows } = gymId === null
     ? await db.query<{ id: number }>(
-      `SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL AND status <> 'deleted'`,
+      `SELECT id FROM nutrition_library_item_catalogue WHERE id = ? AND gym_id IS NULL AND status <> 'deleted'`,
       [id],
     )
     : await db.query<{ id: number }>(
-      `SELECT id FROM nutrition_library_items
+      `SELECT id FROM nutrition_library_item_catalogue
         WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND status <> 'deleted'`,
       [id, gymId],
     );
@@ -65,7 +65,7 @@ export function goalRowsSql(table: 'nutrition_plan_template_goals' | 'member_nut
   return `SELECT g.*, nli.name AS illustration_name, nli.image_url AS illustration_image_url,
                  ${NUTRITION_GOAL_IMAGE_COLUMNS_SQL}
           FROM ${table} g
-          LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+          LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = g.nutrition_library_item_id
           ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
           WHERE ${where}
           ORDER BY g.position ASC`;

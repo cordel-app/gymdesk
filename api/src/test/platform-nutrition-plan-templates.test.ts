@@ -3,7 +3,7 @@
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, request, syncLegacySystemFoodsToBase } from './helpers';
 
 // Override the default @clerk/backend mock: make test-user-id a superadmin.
 const mockGetUser = vi.hoisted(() =>
@@ -115,6 +115,7 @@ describe('PUT /platform/nutrition-plan-templates/:id/goals/:gid', () => {
       [`PGI System ${uniq}`],
     );
     systemFoodId = sys.insertId;
+    await syncLegacySystemFoodsToBase();
     const gymFood = await db.query(
       "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')",
       [gymId, `PGI Gym Food ${uniq}`],

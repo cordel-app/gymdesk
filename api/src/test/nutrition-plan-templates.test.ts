@@ -650,6 +650,8 @@ describe('hierarchy', () => {
       .send({ item_name: 'protein', quantity: 150, unit: 'g', frequency: 'daily' });
 
     await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', ['https://img.test/food.webp', libraryItemId]);
+    // #1849 F2b: a System food's image is read from its Base row.
+    await db.query('UPDATE base_nutrition_library_items SET image_url = ? WHERE id = ?', ['https://img.test/food.webp', libraryItemId]);
 
     const hierRes = await request
       .get(`/nutrition-plan-templates/${tplId}/hierarchy`)

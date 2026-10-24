@@ -92,7 +92,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
 
   try {
     const { rows: countRows } = await db.query<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM nutrition_library_items WHERE ${where}`,
+      `SELECT COUNT(*) AS total FROM nutrition_library_item_catalogue WHERE ${where}`,
       params,
     );
     const total = countRows[0]?.total ?? 0;
@@ -105,7 +105,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     // caller's locale, and is what every UI renders (#643).
     const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; display_name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
       `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale)} AS display_name, ${localizedDescriptionSql('nli', locale)} AS display_description
-       FROM nutrition_library_items nli
+       FROM nutrition_library_item_catalogue nli
        WHERE ${where}
        ORDER BY display_name ASC
        ${pagingSql}`,
@@ -151,7 +151,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
-      "SELECT id FROM nutrition_library_items WHERE gym_id = ? AND name = ? AND status != 'deleted'",
+      "SELECT id FROM nutrition_library_item_catalogue WHERE gym_id = ? AND name = ? AND status != 'deleted'",
       [gymId, name.trim()],
     );
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
@@ -173,7 +173,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 
     const { rows } = await db.query(
       `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-       FROM nutrition_library_items nli WHERE nli.id = ?`,
+       FROM nutrition_library_item_catalogue nli WHERE nli.id = ?`,
       [insertId],
     );
     const [categoriesMap, qualitiesMap, descMap] = await Promise.all([
@@ -222,7 +222,7 @@ nutritionLibraryRouter.post(
     const { id } = req.params;
     try {
       const { rows: existing } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null }>(
-        'SELECT id, gym_id, name, status, image_url FROM nutrition_library_items WHERE id = ?',
+        'SELECT id, gym_id, name, status, image_url FROM nutrition_library_item_catalogue WHERE id = ?',
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -271,7 +271,7 @@ nutritionLibraryRouter.post(
 
       const { rows } = await db.query(
         `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-         FROM nutrition_library_items nli WHERE nli.id = ?`,
+         FROM nutrition_library_item_catalogue nli WHERE nli.id = ?`,
         [food.id],
       );
       const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
@@ -319,7 +319,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, gym_id, name, description, status FROM nutrition_library_items WHERE id = ?',
+      'SELECT id, gym_id, name, description, status FROM nutrition_library_item_catalogue WHERE id = ?',
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -329,7 +329,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
 
     if (name?.trim()) {
       const { rows: conflict } = await db.query(
-        "SELECT id FROM nutrition_library_items WHERE gym_id = ? AND name = ? AND id != ? AND status != 'deleted'",
+        "SELECT id FROM nutrition_library_item_catalogue WHERE gym_id = ? AND name = ? AND id != ? AND status != 'deleted'",
         [gymId, name.trim(), id],
       );
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
@@ -359,7 +359,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
 
     const { rows } = await db.query(
       `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-       FROM nutrition_library_items nli WHERE nli.id = ?`,
+       FROM nutrition_library_item_catalogue nli WHERE nli.id = ?`,
       [id],
     );
     const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
@@ -387,7 +387,7 @@ nutritionLibraryRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (re
   const { id } = req.params;
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, gym_id, status FROM nutrition_library_items WHERE id = ?',
+      'SELECT id, gym_id, status FROM nutrition_library_item_catalogue WHERE id = ?',
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
