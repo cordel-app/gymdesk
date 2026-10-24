@@ -13,8 +13,21 @@ import { PaidPeriod, ScheduleCadence, paidThroughDate } from '../domain/cancella
  */
 export async function loadPaidThrough(tx: Tx, gymId: string, rootProductSetId: number): Promise<string | null> {
   const { rows: sch } = await tx.query<any>(
-    `SELECT id, cadence_interval, cadence_unit FROM product_set_schedules
+    `SELECT id FROM product_set_schedules
       WHERE root_product_set_id = ? AND schedule_key = ?`, [rootProductSetId, PLAN_SCHEDULE_KEY]);
+  if (!sch[0]) return null;
+  return loadPaidThroughForSchedule(tx, gymId, Number(sch[0].id));
+}
+
+/**
+ * #1914 — the same rule for one schedule, which is how a recurring Product
+ * line's own entitlement is read: its `schedule_id` names the schedule its
+ * charges fall on, and only that schedule's settled periods count.
+ */
+export async function loadPaidThroughForSchedule(tx: Tx, gymId: string, scheduleId: number): Promise<string | null> {
+  const { rows: sch } = await tx.query<any>(
+    `SELECT id, cadence_interval, cadence_unit FROM product_set_schedules WHERE id = ? AND gym_id = ?`,
+    [scheduleId, gymId]);
   if (!sch[0]) return null;
   const cadence: ScheduleCadence | null = sch[0].cadence_interval && sch[0].cadence_unit
     ? { interval: Number(sch[0].cadence_interval), unit: String(sch[0].cadence_unit) as BillingDateUnit }

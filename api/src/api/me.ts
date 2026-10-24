@@ -1348,7 +1348,7 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
                   i.component_type, i.quantity, i.unit, i.position, nli.image_url,
                   ${localizedDescriptionSql('nli', getRequestLocale(req))} AS description
            FROM member_nutrition_plan_meal_items i
-           JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+           JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
            WHERE i.meal_id = ?
            ORDER BY i.position ASC`,
           [meal.id],
@@ -1378,7 +1378,7 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
       `SELECT r.id, r.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               nli.image_url, r.applies_all_days
        FROM member_nutrition_plan_restrictions r
-       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
        WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
        ORDER BY r.position ASC`,
       [plan.id, gymId],
@@ -1394,7 +1394,7 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
               g.nutrition_library_item_id,
               COALESCE(ng.image_thumbnail_url, ng.image_url, nli.image_url) AS image_url
        FROM member_nutrition_plan_goals g
-       LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+       LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = g.nutrition_library_item_id
        ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
        WHERE g.member_nutrition_plan_id = ? AND g.gym_id = ?
        ORDER BY g.position ASC`,

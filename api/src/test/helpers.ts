@@ -754,3 +754,28 @@ export async function deleteTestBaseFoods(where: string, params: unknown[] = [])
     await db.query('DELETE FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL', [id]);
   }
 }
+
+/**
+ * #1849 F2b: a fixture that created a System Food the old way (legacy row plus legacy
+ * junction rows) makes it visible to the gym-side reads — which go through the
+ * catalogue views — by copying the legacy System foods and their junctions into the
+ * Base tables, under the same ids. Idempotent; call it after the fixture's inserts.
+ */
+export async function syncLegacySystemFoodsToBase(): Promise<void> {
+  await db.query(`
+    INSERT IGNORE INTO base_nutrition_library_items
+      (id, name, description, image_url, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by)
+    SELECT id, name, description, image_url, created_at, COALESCE(created_by, 'System'), modified_at, modified_by,
+           CASE WHEN status = 'deleted' THEN COALESCE(deleted_at, UTC_TIMESTAMP()) ELSE NULL END, deleted_by
+      FROM nutrition_library_items WHERE gym_id IS NULL`);
+  const copies: Array<[string, string, string]> = [
+    ['nutrition_library_item_categories', 'base_nutrition_library_item_categories', 'item_id, category_id, created_at'],
+    ['nutrition_library_item_qualities', 'base_nutrition_library_item_qualities', 'item_id, quality_id, created_at'],
+    ['nutrition_library_item_translations', 'base_nutrition_library_item_translations', 'item_id, locale, name, created_at, modified_at'],
+    ['nutrition_library_item_description_translations', 'base_nutrition_library_item_description_translations', 'item_id, locale, description, created_at, modified_at'],
+  ];
+  for (const [legacy, base, cols] of copies) {
+    await db.query(`INSERT IGNORE INTO ${base} (${cols}) SELECT ${cols.split(', ').map((c) => `t.${c}`).join(', ')}
+      FROM ${legacy} t JOIN nutrition_library_items i ON i.id = t.item_id AND i.gym_id IS NULL`);
+  }
+}

@@ -4,6 +4,7 @@ import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../dom
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { allocateItemSchedules } from './product-set-configuration';
+import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 
 /**
  * #1325 PR 4 — editing a Draft ProductSet's configuration.
@@ -412,7 +413,7 @@ export async function removeService(
   tx: Tx, draft: LockedDraft, serviceId: number, opts: { legacy?: boolean } = {},
 ): Promise<{ ok: true; deleted: boolean; ends_at: string | null } | DraftRefusal> {
   const { rows } = await tx.query<any>(
-    `SELECT id, starts_at, ends_at FROM member_products_recurrent_snapshot
+    `SELECT id, starts_at, ends_at, schedule_id FROM member_products_recurrent_snapshot
       WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
@@ -422,13 +423,19 @@ export async function removeService(
   }
   const today = new Date().toISOString().slice(0, 10);
   const deleted = !opts.legacy || dateOnly(rows[0].starts_at) > today;
+  let endsAt = today;
   if (deleted) {
     await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [serviceId]);
   } else {
-    await tx.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [today, serviceId]);
+    // #1914 — a removed line keeps what was paid for: it ends on the last day
+    // of its last paid period when that is still ahead, else today.
+    const paidThrough = rows[0].schedule_id != null
+      ? await loadPaidThroughForSchedule(tx, draft.gym_id, Number(rows[0].schedule_id)) : null;
+    endsAt = paidThrough && paidThrough > today ? paidThrough : today;
+    await tx.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [endsAt, serviceId]);
   }
   await touch(tx, draft);
-  return { ok: true, deleted, ends_at: deleted ? null : today };
+  return { ok: true, deleted, ends_at: deleted ? null : endsAt };
 }
 
 /**

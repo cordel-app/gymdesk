@@ -9,6 +9,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  syncLegacySystemFoodsToBase,
 } from './helpers';
 
 let gymId: string;
@@ -61,6 +62,8 @@ afterAll(async () => {
 
 /** Insert an active member_nutrition_plan with one day/meal/item and one goal. */
 async function insertActivePlan(gid: string, mid: number, weekday: number) {
+  // #1849 F2b: the gym-side reads see System foods through the Base tables.
+  await syncLegacySystemFoodsToBase();
   const { insertId: planId } = await db.query(
     `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status)
      VALUES (?, ?, 'Test Plan', 'active')`,
