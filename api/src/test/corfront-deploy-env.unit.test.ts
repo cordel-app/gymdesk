@@ -66,12 +66,20 @@ describe.each(DEPLOYS)('$file writes its app’s environment from GitHub', ({ fi
     expect(block).not.toBe('');
   });
 
-  it('forwards every setting the app reads, through all three steps', () => {
+  it('forwards every setting the app reads, through both steps', () => {
     for (const name of [...reads(), ...extra]) {
       expect(text, `${name} mapped from GitHub`).toMatch(new RegExp(`\\n\\s+${name}: \\$\\{\\{ (vars|secrets)\\.${name} \\}\\}`));
-      expect(text, `${name} in envs:`).toMatch(new RegExp(`envs: [^\\n]*\\b${name}\\b`));
       expect(block, `${name} written into the unit`).toMatch(new RegExp(`^\\s*${name}=\\$\\{${name}(:-)?\\}$`, 'm'));
     }
+  });
+
+  it('deploys from the self-hosted runner, with no SSH and no secret inside the script', () => {
+    expect(text).not.toContain('appleboy/ssh-action');
+    expect(text).not.toMatch(/^\s*envs:/m);
+    expect(text).not.toMatch(/SSH_/);
+    expect(text).toMatch(/runs-on: \[self-hosted, corfront, /);
+    const script = text.slice(text.indexOf('        run: |'));
+    expect(script, 'secrets interpolated into the script body').not.toContain('secrets.');
   });
 
   it('rewrites the unit’s Environment= lines and reloads before the restart', () => {

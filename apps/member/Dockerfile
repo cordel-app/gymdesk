@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -50,7 +50,7 @@ ENV NEXT_PUBLIC_APP_ENV_LABEL=$NEXT_PUBLIC_APP_ENV_LABEL \
 
 RUN npm run build --workspace=apps/member
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 # Runtime env (set at podman run): CLERK_SECRET_KEY, BACKEND_URL
 ENV NODE_ENV=production PORT=8082 HOSTNAME=0.0.0.0

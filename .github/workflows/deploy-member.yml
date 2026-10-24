@@ -21,8 +21,8 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/fitness-members
 
 jobs:
-  build-and-deploy:
-    name: Build & Deploy
+  build:
+    name: Build
     runs-on: ubuntu-24.04-arm
     environment: ${{ inputs.environment || 'dev' }}
     permissions:
@@ -65,22 +65,29 @@ jobs:
             NEXT_PUBLIC_APP_ENV_LABEL=${{ vars.APP_ENV_LABEL }}
             NEXT_PUBLIC_APP_BRAND_NAME=${{ vars.APP_BRAND_NAME }}
 
+  # The deploy runs on the self-hosted runner on corfront (outbound-only agent;
+  # no SSH, #2044). Only a workflow that no pull request can trigger may use it
+  # (api/src/test/self-hosted-runner-guard.unit.test.ts).
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: [self-hosted, corfront, "${{ inputs.environment || 'dev' }}"]
+    environment: ${{ inputs.environment || 'dev' }}
+    permissions: {}
+
+    steps:
       - name: Deploy to corfront
-        uses: appleboy/ssh-action@v1
         env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ github.repository_owner }}
           CORDEL_FITNESS_API_URL: ${{ vars.CORDEL_FITNESS_API_URL }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           MOBILE_APP_ASSOCIATIONS: ${{ vars.MOBILE_APP_ASSOCIATIONS }}
           TZ: ${{ vars.TZ }}
-        with:
-          host: ${{ secrets.CORFRONT_SSH_HOST }}
-          username: podman
-          key: ${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}
-          envs: CORDEL_FITNESS_API_URL,CLERK_SECRET_KEY,MOBILE_APP_ASSOCIATIONS,TZ
-          script: |
+        run: |
             set -euo pipefail
 
-            echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+            echo "$GHCR_PAT" | podman login ghcr.io -u "$GHCR_USER" --password-stdin
 
             # Each deploy pulls a new :latest and the previous image loses its
             # tag; those dangling images fill the disk and stop deploys at the

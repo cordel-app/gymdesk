@@ -21,7 +21,9 @@ describe('workflows name only GitHub environments that exist', () => {
   it('offers only existing environments in every environment choice', () => {
     let checked = 0;
     for (const { file, text } of sources) {
-      for (const match of text.matchAll(/options:\s*\[([^\]]*)\]/g)) {
+      // Only an input named `environment`: other choices (the runner smoke
+      // test's `host`) are not environment names.
+      for (const match of text.matchAll(/^\s*environment:\s*\n(?:\s+(?!options:).*\n)*?\s+options:\s*\[([^\]]*)\]/gm)) {
         const options = match[1].split(',').map((o) => o.trim().replace(/^['"]|['"]$/g, ''));
         for (const option of options) {
           expect(GITHUB_ENVIRONMENTS, `${file}: option '${option}'`).toContain(option);
