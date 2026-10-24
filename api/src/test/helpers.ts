@@ -762,6 +762,10 @@ export async function deleteTestBaseFoods(where: string, params: unknown[] = [])
  * Base tables, under the same ids. Idempotent; call it after the fixture's inserts.
  */
 export async function syncLegacySystemFoodsToBase(): Promise<void> {
+  // A fixture that dropped its legacy System food in an earlier run left the Base copy
+  // behind; its live name would make the INSERT IGNORE below skip the new row silently.
+  await db.query(`DELETE IGNORE b FROM base_nutrition_library_items b
+    LEFT JOIN nutrition_library_items i ON i.id = b.id AND i.gym_id IS NULL WHERE i.id IS NULL`);
   await db.query(`
     INSERT IGNORE INTO base_nutrition_library_items
       (id, name, description, image_url, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by)

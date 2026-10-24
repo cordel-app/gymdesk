@@ -62,10 +62,12 @@ export async function validateGoalIllustration(gymId: string | null, id: number 
  * table alias `g`.
  */
 export function goalRowsSql(table: 'nutrition_plan_template_goals' | 'member_nutrition_plan_goals', where: string): string {
-  return `SELECT g.*, nli.name AS illustration_name, nli.image_url AS illustration_image_url,
+  // The effective id is reported under the column's own name, after `g.*` so it wins (#1849 F4).
+  return `SELECT g.*, COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id) AS nutrition_library_item_id,
+                 nli.name AS illustration_name, nli.image_url AS illustration_image_url,
                  ${NUTRITION_GOAL_IMAGE_COLUMNS_SQL}
           FROM ${table} g
-          LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = g.nutrition_library_item_id
+          LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id)
           ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
           WHERE ${where}
           ORDER BY g.position ASC`;

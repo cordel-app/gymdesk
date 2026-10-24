@@ -1344,11 +1344,11 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
         // app renders it on the food card (#722) and falls back to a placeholder
         // when it is null.
         const { rows: items } = await db.query(
-          `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+          `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position, nli.image_url,
                   ${localizedDescriptionSql('nli', getRequestLocale(req))} AS description
            FROM member_nutrition_plan_meal_items i
-           JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+           JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
            WHERE i.meal_id = ?
            ORDER BY i.position ASC`,
           [meal.id],
@@ -1375,10 +1375,10 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     // `image_url` the meal foods above already carry. There is no second image
     // source for My Nutrition (§3).
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.id, r.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT r.id, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               nli.image_url, r.applies_all_days
        FROM member_nutrition_plan_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
        ORDER BY r.position ASC`,
       [plan.id, gymId],
@@ -1391,10 +1391,10 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     // `null`, which the page renders as the standard fallback.
     const { rows: goalRows } = await db.query(
       `SELECT g.id, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days,
-              g.nutrition_library_item_id,
+              COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id) AS nutrition_library_item_id,
               COALESCE(ng.image_thumbnail_url, ng.image_url, nli.image_url) AS image_url
        FROM member_nutrition_plan_goals g
-       LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = g.nutrition_library_item_id
+       LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id)
        ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
        WHERE g.member_nutrition_plan_id = ? AND g.gym_id = ?
        ORDER BY g.position ASC`,
