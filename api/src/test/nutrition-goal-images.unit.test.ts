@@ -117,13 +117,13 @@ describe('translated search', () => {
 describe('Personal Goal translations (#1719)', () => {
   const personalMigration = require(join(__dirname, '..', 'infra', 'migrations', '292_personal_goal_translations.js'));
 
-  it('read and write personal_goal_translations, not the nutrition table', () => {
-    expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_translations');
+  it('read the personal translation catalogue (#1849 2e), not the nutrition table', () => {
+    expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_translation_catalogue');
     expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_id');
-    expect(localizedGoalExprs('g', 'es', 'personal')).toContain('personal_goal_translations');
+    expect(localizedGoalExprs('g', 'es', 'personal')).toContain('personal_goal_translation_catalogue');
     expect(localizedGoalExprs('g', 'es')).toContain('nutrition_goal_translations');
     const where = buildGoalListWhere('peso', ['1=1'], [], { searchTranslations: true, translationKind: 'personal' }).where;
-    expect(where).toContain('personal_goal_translations');
+    expect(where).toContain('personal_goal_translation_catalogue');
     expect(where).not.toContain('nutrition_goal_translations');
   });
 

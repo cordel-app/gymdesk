@@ -221,6 +221,15 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
 export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
   if (draft.version !== 1 || draft.root_product_set_id !== draft.id) {
+    // #1982 — the editor saves every Billing & Duration field, so a pair that is
+    // not being changed is not a refusal; only an actual change on a later
+    // version (which shares the chain's schedule) is.
+    const { rows: cur } = await tx.query<any>(
+      'SELECT recurring_billing_interval, recurring_billing_unit FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      [draft.id, draft.gym_id]);
+    const sameInterval = cur[0] && Number(cur[0].recurring_billing_interval) === Number(body?.recurring_billing_interval);
+    const sameUnit = cur[0] && (cur[0].recurring_billing_unit ?? null) === (body?.recurring_billing_unit ?? null);
+    if (sameInterval && sameUnit) return { ok: true };
     return { kind: 'invalid', message: 'recurring_billing_interval cannot be changed on a plan billed from a ProductSet; assign a new plan' };
   }
   const interval = Number(body?.recurring_billing_interval);

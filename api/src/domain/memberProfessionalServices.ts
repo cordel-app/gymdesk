@@ -1,7 +1,7 @@
 import { assignmentVersionId } from '../api/assignment-config';
 import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
-import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from './professionalServiceAdjustments';
+import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -120,7 +120,10 @@ export function aggregateProfessionalServiceGrants(
 
   for (const row of rows) {
     const sessions = Number(row.sessions);
-    if (!Number.isFinite(sessions) || sessions <= 0) continue;
+    // #1986: a debt (negative manual-adjustment row) is kept; every other
+    // non-positive row grants nothing and is dropped.
+    if (!Number.isFinite(sessions)) continue;
+    if (sessions <= 0 && !(sessions < 0 && row.kind === 'manual_adjustment')) continue;
 
     const key = `${row.professional_service_id}:${row.kind}:${row.reference_id}:${row.product_id}`;
     if (seen.has(key)) continue;
@@ -280,11 +283,12 @@ export async function loadMemberProfessionalServiceGrants(
   // #1189 stage 3: the sessions already spent from the grants that carry no
   // counter of their own. A returned row (`returned_at`) no longer counts.
   const { rows: consumed } = await db.query<ConsumedTotal>(
-    `SELECT source_kind, source_reference_id, COUNT(*) AS consumed
-       FROM professional_service_consumptions
-      WHERE gym_id = ? AND member_id = ? AND returned_at IS NULL
-        AND source_kind <> 'class_package'
-      GROUP BY source_kind, source_reference_id`,
+    `SELECT psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name, COUNT(*) AS consumed
+       FROM professional_service_consumptions psc
+       JOIN professional_services ps ON ps.id = psc.professional_service_id
+      WHERE psc.gym_id = ? AND psc.member_id = ? AND psc.returned_at IS NULL
+        AND psc.source_kind <> 'class_package'
+      GROUP BY psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name`,
     [gymId, memberId],
   );
 
@@ -305,12 +309,32 @@ export async function loadMemberProfessionalServiceGrants(
     [...packageRows, ...promotionRows, ...serviceRows, ...planRows],
     consumed.filter((c) => c.source_kind !== MANUAL_ADJUSTMENT_KIND),
   );
-  if (adjustments.length === 0) return derived;
+  const manualConsumed = consumed.filter((c) => c.source_kind === MANUAL_ADJUSTMENT_KIND);
+  if (adjustments.length === 0 && manualConsumed.length === 0) return derived;
   const names = new Map<number, string>(adjustments.map((a: { professional_service_id: number; name: string }) => [a.professional_service_id, a.name]));
-  return applyConsumption(
-    applyAdjustmentsToGrants(derived, netAdjustments(adjustments), names, SPEND_ORDER),
-    consumed.filter((c) => c.source_kind === MANUAL_ADJUSTMENT_KIND),
-  );
+  const withAdjustments = applyAdjustmentsToGrants(derived, netAdjustments(adjustments), names, SPEND_ORDER);
+  // #1986: sessions spent against a service the Member had no balance on (a
+  // staff booking that accepted a negative balance) are consumption of the
+  // manual-adjustment grant at reference 0. Where no such grant exists they are
+  // a debt, reported as one negative row so the balance reads below zero and a
+  // later purchase or correction pays it off.
+  const withDebt = [...withAdjustments];
+  for (const c of manualConsumed) {
+    if (Number(c.source_reference_id) !== MANUAL_ADJUSTMENT_REFERENCE_ID) continue;
+    const serviceId = Number(c.professional_service_id);
+    if (!Number.isInteger(serviceId) || serviceId <= 0) continue;
+    if (withDebt.some((r) => r.professional_service_id === serviceId && r.kind === MANUAL_ADJUSTMENT_KIND)) continue;
+    withDebt.push({
+      professional_service_id: serviceId,
+      professional_service_name: c.name ?? '',
+      kind: MANUAL_ADJUSTMENT_KIND,
+      reference_id: MANUAL_ADJUSTMENT_REFERENCE_ID,
+      product_id: 0,
+      product_name: '',
+      sessions: 0,
+    });
+  }
+  return applyConsumption(withDebt, manualConsumed);
 }
 
 /** The Member's Professional Services with their session counts, ready to serve. */

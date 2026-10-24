@@ -346,6 +346,19 @@ Migration 111 added `next_billing_date` and `last_billed_at`, migration 194 `fai
 
 Both are **run state, not editable fields**: they are written by the rejection branch of `POST /billing/run` and cleared by every path where money arrives or the assignment resumes — the run's own success and waived branches, the payment webhook's `completed` branch, `clearDunningState()` behind the two staff payment actions, and a transition to `active` (`/reactivate` or a direct `PUT` status flip, so a resumed assignment gets the full two attempts again). No route accepts them as input. They are not part of the Assigned Plan snapshot (`has_billing_snapshot`) for migration 192's reason, and because the Assigned Plan reads select `um.*` they do appear in list/detail responses and in `recordAudit` snapshots — a diff of two audit entries around a rejection can therefore differ by a field no human touched.
 
+### Scheduled jobs (GitHub Actions)
+
+The API runs no scheduler of its own: every recurring job is a scheduled GitHub Actions workflow in `.github/workflows/` that POSTs to an internal API endpoint. Each call goes to `$API_BASE_URL/<path>`, where `API_BASE_URL` is the environment's GitHub variable — since #1086 the admin app's relay prefix (`https://admin.<host>/api/internal`), which forwards the request to the API with its `X-Internal-Secret` header.
+
+| Workflow | Schedule (UTC) | POST, in order |
+|---|---|---|
+| `billing-run.yml` | Daily at 06:00, second attempt at 10:00 | 1. `/billing/run` — charges the due Billing Events<br>2. `/billing/cleanup` — expires stale, abandoned payment requests<br>3. `/promotion-lifecycle/run` — moves Promotions past their End Date to `expired`<br>4. `/plan-allowance-renewals/run` — renews plan-included sessions |
+| `recurring-booking-run.yml` | Daily at 03:00 | `/recurring-bookings/run` — advances the rolling 2-month recurring-booking window |
+| `booking-reminder-run.yml` | Every 15 minutes | `/booking-reminders/run` — sends the 2-hour training reminder |
+| `codeql.yml` | Mondays at 08:00 | None — CodeQL security analysis of the code |
+
+The 10:00 billing attempt is a safety net: once today's run has completed, `/billing/run` answers `200` with `skipped_reason: 'already_completed_today'` (#780) and charges nothing again. Workflows triggered only by hand (`workflow_dispatch`, such as `exercises-import.yml` or `billing-reset-dev.yml`) have no schedule and are not listed here.
+
 ### `billing_run_log` (migration 111, reshaped by migration 193)
 
 Not a per-tenant table — intentional exception to the `gym_id` convention, because it tracks a platform-wide job rather than tenant data.
@@ -1565,7 +1578,7 @@ Stage 1 of #1849 is this note only: no migration, route or screen changes. It re
 |---|---|---|---|---|
 | Payment methods | `base_payment_methods` (migration 284) | same | gym rows | done |
 | Products | `base_products` (migration 298) | same | `products` (`base_product_id` provenance, migration 299; Import System Products, #1851) | done |
-| Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` (migration 304 copies the System rows, ids kept; unread until 2b/2c) | `personal_goals` | stage 2a done, 2b-2c open |
+| Personal Goals | `personal_goals` with `gym_id IS NULL`; translations in `personal_goal_translations`, images under `cordel/goals/` | `base_personal_goals` (migration 304 copies the System rows, ids kept; Cordel CRUD writes it since 2b, mirrored onto the legacy row of the same id until 2c/5) | `personal_goals` | stage 2a-2c done (gym reads via the `personal_goal_catalogue` view; FKs still on legacy rows), 2d done (`base_personal_goal_id` on the assignment and activation tables, additive); 2e done (readers/writers on `base_personal_goal_id`, translations via `personal_goal_translation_catalogue`); 2f FK cut-over + legacy removal open; #1850 gym import: `personal_goals.base_personal_goal_id` (migration 318) records the template of a gym-owned copy, created by gym creation and `POST /personal-goals/import` |
 | Nutrition Goals | `nutrition_goals` with `gym_id IS NULL` | `base_nutrition_goals` | `nutrition_goals` | stage 4 |
 | Nutrition Library foods | `nutrition_library_items` with `gym_id IS NULL` | `base_nutrition_library_items` | `nutrition_library_items` | stage 4 |
 | Exercises | `exercises` with `gym_id IS NULL`; gym copy records `cloned_from_id` (the reference import flow) | `base_exercises` | `exercises` | stage 4 |

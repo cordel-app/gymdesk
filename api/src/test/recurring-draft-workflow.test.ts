@@ -22,6 +22,8 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
+import { advanceBillingDate } from '../domain/billingDate';
+import { daysBetween } from '../domain/proration';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 const SECRET = 'test-1537-webhook';
@@ -103,9 +105,9 @@ async function pay(paymentRequestId: number) {
 
 const base = (memberId: number) => `/members/${memberId}/product-purchases`;
 const mset = (id: number) => `/product-sets/${id}`;
-async function activePlan(m: number, price = 40): Promise<number> {
+async function activePlan(m: number, price = 40, startsAt = TODAY): Promise<number> {
   const planId = await plan(price);
-  const created = await auth(request.post('/product-sets')).send({ member_id: m, membership_plan_id: planId, starts_at: TODAY });
+  const created = await auth(request.post('/product-sets')).send({ member_id: m, membership_plan_id: planId, starts_at: startsAt });
   expect(created.status).toBe(201);
   const paid = await auth(request.post(`${mset(created.body.id)}/save-and-pay`)).send({});
   expect((await pay(paid.body.payment_request_id)).status).toBe(200);
@@ -317,5 +319,33 @@ describe('cancellation and payment lifecycle (#1537)', () => {
     expect((await pay(sp.body.payment_request_id)).status).toBe(200);
     expect((await auth(request.get(mset(draftId)))).body.status).toBe('active');
     expect((await auth(request.get(mset(activeId)))).body.status).toBe('superseded');
+  });
+});
+
+describe('a recurring Product added mid-cycle (#1867 stage 4)', () => {
+  it('is charged a prorated first stretch up to the plan schedule, shown in the simulation', async () => {
+    const m = await member();
+    const anchor = day(-10);
+    await activePlan(m, 40, anchor);
+    const next = advanceBillingDate(anchor, 1, 'month');
+    const days = Math.min(daysBetween(TODAY, next), 31);
+    const trainer = await product({ name: 'Trainer Pro', frequency: 'month', amount: '31.00', type: 'service' });
+    const buy = await auth(request.post(base(m))).send({ product_id: trainer });
+    const draftId = buy.body.product_set_id as number;
+
+    const review = await auth(request.get(`${mset(draftId)}/review`));
+    expect(review.status).toBe(200);
+    expect(Number(review.body.amount_due)).toBe(days);
+
+    const sim = await auth(request.get(`${mset(draftId)}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+    const initial = sim.body.dates.find((d: any) => d.kind === 'initial_payment');
+    const line = initial.lines.find((l: any) => l.label === 'Trainer Pro');
+    expect(line.proration).toEqual({ prorated_days: days, period_days: 31 });
+    expect(line.actual_charge).toBe(days);
+    expect(line.regular_price).toBe(31);
+    // Aligned to the plan: the next charge is on the schedule date, at full price.
+    const aligned = sim.body.dates.find((d: any) => d.date === next);
+    expect(aligned.lines.find((l: any) => l.label === 'Trainer Pro').actual_charge).toBe(31);
   });
 });

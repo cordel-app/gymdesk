@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { recordNotifications } from '../infra/notifications';
+import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import {
   BOOKING_REMINDER_LEAD_MINUTES,
   BOOKING_REMINDER_MAX_PER_RUN,
@@ -30,6 +31,9 @@ import {
  * `BOOKING_REMINDERS_INTERNAL_SECRET`. Unset, the route answers `401` and no
  * reminder is ever raised, which is why it is a `docs/go-to-production.md` item
  * rather than an optional extra.
+ *
+ * **Execution history (#1996)** is `job_run_log`, one row per invocation, written
+ * by `startJobRun()`/`finishJobRun()`; it guards nothing.
  *
  * **No run log.** `claimRun()`/`finishRun()` (#780) enforce *one completed run
  * per UTC date* for the two runs that move money and book slots; this one is
@@ -82,6 +86,7 @@ function checkInternalSecret(req: Request, res: Response): boolean {
 bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
 
+  const jobRunId = await startJobRun('booking_reminders');
   try {
     const { rows } = await db.query(
       reminderCandidatesSql(),
@@ -111,8 +116,10 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       ...(failures.length > 0 ? { failures } : {}),
     };
     req.log.info(body, 'booking reminder run');
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: body });
     res.json(body);
   } catch (err) {
+    await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
     req.log.error({ err: (err as Error).message }, 'booking reminder run failed');
     res.status(500).json({ error: 'Internal server error' });
   }

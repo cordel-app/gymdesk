@@ -13,7 +13,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
-import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
+import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import {
@@ -150,6 +150,9 @@ export default function MemberCalendarPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   // #1189 stage 4 — the services a refused booking said would unlock it.
   const [unlockServiceIds, setUnlockServiceIds] = useState<number[]>([]);
+  // #1985: services to choose between, inline in the booking flow.
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
+  const [chosenServiceId, setChosenServiceId] = useState<number | null>(null);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -276,6 +279,8 @@ export default function MemberCalendarPage() {
   function handleEventClick(info: any) {
     setActionMsg(null);
     setUnlockServiceIds([]);
+    setServiceOptions([]);
+    setChosenServiceId(null);
     setSelected(info.event.extendedProps as ScheduleSession);
   }
 
@@ -286,13 +291,20 @@ export default function MemberCalendarPage() {
     try {
       await apiFetch('/me/bookings', {
         method: 'POST',
-        body: JSON.stringify({ class_session_id: selected.id }),
+        body: JSON.stringify({ class_session_id: selected.id, ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}) }),
       });
       refetch();
       setSelected(null);
     } catch (e: any) {
+      const options = selectableServices(e);
+      if (options.length > 0) {
+        setServiceOptions(options);
+        setActionMsg(t('select_service_prompt'));
+        return;
+      }
       setUnlockServiceIds(requiredServiceIds(e));
-      setActionMsg(e.message ?? t('error_generic'));
+      const names = requiredServiceNames(e);
+      setActionMsg(names.length ? t('service_required_message', { services: names.join(', ') }) : (e.message ?? t('error_generic')));
     } finally { setActionLoading(false); }
   }
 
@@ -620,6 +632,16 @@ export default function MemberCalendarPage() {
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
             )}
+            {serviceOptions.length > 0 && (
+              <div role="radiogroup" aria-label={t('select_service_prompt')} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                {serviceOptions.map((o) => (
+                  <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: memberTheme.text }}>
+                    <input type="radio" name="professional_service" checked={chosenServiceId === o.id} onChange={() => setChosenServiceId(o.id)} />
+                    {o.name}
+                  </label>
+                ))}
+              </div>
+            )}
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
@@ -631,7 +653,7 @@ export default function MemberCalendarPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
+                <button onClick={book} disabled={actionLoading || (serviceOptions.length > 0 && chosenServiceId == null)} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

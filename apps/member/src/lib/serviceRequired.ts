@@ -41,3 +41,34 @@ export function serviceFilterFromParam(raw: string | null | undefined): number[]
   }
   return ids;
 }
+
+// #1985 — a booking the member may make with more than one of their services
+// is refused with `400 { code: 'professional_service_selection_required' }`
+// naming the services they hold a balance on; the surface asks which to spend
+// inline and sends it back as `professional_service_id`.
+export const PROFESSIONAL_SERVICE_SELECTION_CODE = 'professional_service_selection_required';
+
+export interface ServiceOption { id: number; name: string }
+
+function serviceEntries(err: unknown): ServiceOption[] {
+  const list = (err as { body?: { professional_services?: unknown } } | null)?.body?.professional_services;
+  if (!Array.isArray(list)) return [];
+  const out: ServiceOption[] = [];
+  for (const entry of list) {
+    const id = Number((entry as { id?: unknown })?.id);
+    const name = String((entry as { name?: unknown })?.name ?? '').trim();
+    if (Number.isInteger(id) && id > 0 && name && !out.some((o) => o.id === id)) out.push({ id, name });
+  }
+  return out;
+}
+
+/** The services to choose between, or `[]` when the error is not a selection request. */
+export function selectableServices(err: unknown): ServiceOption[] {
+  const e = err as { code?: unknown } | null;
+  return e?.code === PROFESSIONAL_SERVICE_SELECTION_CODE ? serviceEntries(err) : [];
+}
+
+/** The names a refused booking says would unlock it (empty for any other error). */
+export function requiredServiceNames(err: unknown): string[] {
+  return requiredServiceIds(err).length ? serviceEntries(err).map((s) => s.name) : [];
+}

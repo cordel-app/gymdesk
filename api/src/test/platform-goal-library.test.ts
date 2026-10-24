@@ -2,7 +2,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, deleteTestSystemPersonalGoals, request } from './helpers';
 
 // Override the default @clerk/backend mock: make test-user-id a superadmin.
 const mockGetUser = vi.hoisted(() =>
@@ -101,6 +101,8 @@ afterAll(async () => {
   for (const [table, ids] of Object.entries(createdSystemIds)) {
     if (ids.length === 0) continue;
     const marks = ids.map(() => '?').join(',');
+    // #1849 2b: a System Personal Goal also has a Base row under the same id.
+    if (table === 'personal_goals') await deleteTestSystemPersonalGoals(`id IN (${marks})`, ids);
     await db.query(`DELETE FROM ${table} WHERE id IN (${marks})`, ids);
   }
   await db.end();

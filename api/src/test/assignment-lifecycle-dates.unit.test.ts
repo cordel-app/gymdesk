@@ -12,7 +12,7 @@ describe('assignment lifecycle dates (#1695)', () => {
     expect(read('api/assignment-commit.ts')).toMatch(/purchased_at = COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)/);
     const proj = read('api/product-set-projection.ts');
     expect(proj).toMatch(/purchased_at = IF\(status IN \('cancelled','expired'\), purchased_at, COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)\)/);
-    expect(proj).toMatch(/purchased_at, created_by\)\s+VALUES \(\?, \?, \?, \?, \?, 'active', UTC_TIMESTAMP\(\), \?\)/);
+    expect(proj).toMatch(/purchased_at, created_by\)\s+VALUES \(\?, \?, \?, \?, \?, 'active', COALESCE\(\(SELECT um0\.purchased_at FROM user_memberships um0 WHERE um0\.id = \? AND um0\.gym_id = \?\), UTC_TIMESTAMP\(\)\), \?\)/);
   });
 
   it('every cancelling UPDATE keeps the first closed_at', () => {

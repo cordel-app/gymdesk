@@ -364,5 +364,5 @@ function toNumberOrNull(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
 }
 
-export const platformPersonalGoalsRouter = createPlatformGoalLibraryRouter('personal');
+// #1849 stage 2b: Cordel's Personal Goals moved to `platform-base-personal-goals.ts`.
 export const platformNutritionGoalsRouter = createPlatformGoalLibraryRouter('nutrition');

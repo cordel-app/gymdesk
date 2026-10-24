@@ -48,6 +48,12 @@ export interface LineContext {
 
 export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}): BillingEventLineRow {
   const benefit = primaryBenefit(line.benefits);
+  // #1867 stage 4: the engine's own prorated line carries its evidence.
+  if (!ctx.proration && line.proration) {
+    ctx = { ...ctx, proration: {
+      proratedDays: line.proration.prorated_days, periodDays: line.proration.period_days, amount: line.actual_charge,
+    } };
+  }
   return {
     kind: line.kind,
     product_id: line.product_id,

@@ -140,7 +140,30 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId,
 
   // Booking spends nothing (#973 `Q2`): a session is spent on attendance, a
   // late cancellation or a no-show, by the consumption ledger (#1189 stage 3).
-  if (decision.eligible) return;
+  if (decision.eligible) {
+    // #1985: several qualifying services → the member picks one; exactly one →
+    // it is used without asking. A staff booking (overrideAccess) never asks.
+    const choice = opts?.serviceChoice;
+    if (choice && decision.required.length > 0) {
+      const options = decision.matched.map((m) => ({ id: m.professional_service_id, name: m.name }));
+      const requested = choice.requested ?? null;
+      if (requested != null) {
+        if (!options.some((o) => o.id === requested)) {
+          throw Object.assign(new Error('The selected Professional Service cannot be used for this booking.'), {
+            status: 400, code: 'professional_service_invalid', professional_services: options,
+          });
+        }
+        choice.resolved = requested;
+      } else if (options.length > 1) {
+        throw Object.assign(new Error('Select the Professional Service to use for this booking.'), {
+          status: 400, code: 'professional_service_selection_required', professional_services: options,
+        });
+      } else if (options.length === 1) {
+        choice.resolved = options[0].id;
+      }
+    }
+    return;
+  }
 
   throw Object.assign(
     new Error('This member has no sessions available for the Professional Services this activity requires.'),
@@ -153,3 +176,61 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId,
     },
   );
 });
+
+/**
+ * #1986: the Professional Service a staff override books against.
+ *
+ * A staff booking runs with `overrideAccess`, which skips the gate, so nothing
+ * has asked which service pays for it. This answers that, from the same
+ * eligibility decision the member path uses:
+ *   - the member holds a balance on a required service → the requested one
+ *     (it must be among those), else the only one, else none (default order);
+ *   - the member holds none → the requested required service, or the only
+ *     required one, and the booking is marked as accepting a negative balance;
+ *     several required services and none requested is a selection request
+ *     naming all of them, so staff pick which balance goes negative.
+ */
+export async function resolveStaffServiceChoice(
+  tx: Tx,
+  gymId: string,
+  memberId: number,
+  activityTypeId: number,
+  calendarEventId: number,
+  requested: number | null,
+): Promise<{ serviceId: number | null; negativeBalanceOk: boolean }> {
+  const decision = await resolveActivityTypeEligibility(tx, gymId, memberId, activityTypeId, { calendarEventId });
+  if (decision.required.length === 0) {
+    if (requested != null) {
+      throw Object.assign(new Error('This event does not require a Professional Service.'), {
+        status: 400, code: 'professional_service_invalid', professional_services: [],
+      });
+    }
+    return { serviceId: null, negativeBalanceOk: false };
+  }
+  const requiredOptions = decision.required.map((s) => ({ id: s.id, name: s.name }));
+  if (decision.eligible) {
+    const options = decision.matched.map((m) => ({ id: m.professional_service_id, name: m.name }));
+    if (requested != null) {
+      if (!options.some((o) => o.id === requested)) {
+        throw Object.assign(new Error('The selected Professional Service cannot be used for this booking.'), {
+          status: 400, code: 'professional_service_invalid', professional_services: options,
+        });
+      }
+      return { serviceId: requested, negativeBalanceOk: false };
+    }
+    return { serviceId: options.length === 1 ? options[0].id : null, negativeBalanceOk: false };
+  }
+  if (requested != null) {
+    if (!requiredOptions.some((o) => o.id === requested)) {
+      throw Object.assign(new Error('The selected Professional Service cannot be used for this booking.'), {
+        status: 400, code: 'professional_service_invalid', professional_services: requiredOptions,
+      });
+    }
+    return { serviceId: requested, negativeBalanceOk: true };
+  }
+  if (requiredOptions.length === 1) return { serviceId: requiredOptions[0].id, negativeBalanceOk: true };
+  throw Object.assign(new Error('Select the Professional Service to deduct from.'), {
+    status: 400, code: 'professional_service_selection_required', professional_services: requiredOptions,
+    negative_balance: true,
+  });
+}

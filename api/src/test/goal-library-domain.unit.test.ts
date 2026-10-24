@@ -156,7 +156,7 @@ describe('per-gym configurable kinds (#1181)', () => {
     expect(goalKindIsGymConfigurable('nutrition')).toBe(false);
     const sql = gymGoalStatusSql('g');
     expect(sql).toContain("COALESCE((SELECT gpg.status FROM gym_personal_goals gpg");
-    expect(sql).toContain('gpg.personal_goal_id = g.id AND gpg.gym_id = ?');
+    expect(sql).toContain('COALESCE(gpg.base_personal_goal_id, gpg.personal_goal_id) = g.id AND gpg.gym_id = ?');
     expect(sql.trim().endsWith("'active')")).toBe(true);
     // Exactly one bind, the gym's, so a caller adds one parameter per use.
     expect(sql.match(/\?/g)).toHaveLength(1);

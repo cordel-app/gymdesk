@@ -123,6 +123,11 @@ function statusCell(line: BillingEventSimulationLine, t: Translate): React.React
       {line.prepaid_periods != null && (
         <span> · {t('simulation_prepaid_periods', { count: line.prepaid_periods })}</span>
       )}
+      {/* #1867 stage 4 — a Product joining an existing schedule mid-period is
+          charged the days up to the schedule's next date, and says so. */}
+      {line.proration != null && (
+        <span> · {t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days })}</span>
+      )}
       {/* A discounted or waived line still shows what it would otherwise have
           cost, which is what makes the benefit legible. */}
       {line.actual_charge !== line.regular_price && (

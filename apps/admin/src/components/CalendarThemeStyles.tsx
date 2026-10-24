@@ -415,6 +415,46 @@ export const CALENDAR_THEME_CSS = `
     letter-spacing: 0.02em;
   }
 }
+/* Toolbar polish (#1987). Visual only: Previous/Next/Today and the Day/Week/
+   Month selector read as cohesive segmented groups with one height, radius and
+   rhythm, the current date is the prominent centred element, and the selected
+   view is unmistakable. Every colour is a Calendar Buttons / header token, so
+   the toolbar follows the Theme in light and dark; no behaviour is touched. */
+.gd-calendar .fc .fc-header-toolbar {
+  align-items: center;
+  padding: 6px 0;
+}
+.gd-calendar .fc .fc-button-group {
+  border-radius: var(--gd-calendar-nav-btn-radius, 8px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.gd-calendar .fc .fc-button-group > .fc-button {
+  margin: 0;
+  font-weight: 600;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.gd-calendar .fc .fc-button-group > .fc-button + .fc-button {
+  margin-left: -1px;
+}
+.gd-calendar .fc .fc-button-primary:not(.fc-button-active):not(:disabled):not(.fc-today-button) {
+  opacity: 0.85;
+}
+.gd-calendar .fc .fc-button-primary.fc-button-active {
+  opacity: 1;
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--gd-calendar-nav-btn-text, #ffffff) 70%, transparent);
+}
+.gd-calendar .fc .fc-button:disabled {
+  opacity: 0.45;
+}
+.gd-calendar .fc .fc-toolbar-title {
+  font-size: 1.25em;
+  font-weight: 700;
+  text-align: center;
+}
+.gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+  justify-content: center;
+}
 `;
 
 export function CalendarThemeStyles() {
