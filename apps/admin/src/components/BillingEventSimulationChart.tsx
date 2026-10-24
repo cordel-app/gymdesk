@@ -40,6 +40,9 @@ export function BillingEventSimulationChart({
     () => billingEventChartPoints(
       dates, formatDate, fmtMoney, undefined,
       (total) => t('chart_total', { total }),
+      (line) => (line.proration
+        ? t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days })
+        : null),
     ),
     // formatDate is a new closure per render; the dates decide the points.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -62,4 +62,17 @@ describe('billing event chart point details (#1808)', () => {
     expect(p.detailLines).toEqual(['Membership Plan — €20.00', 'Personal Training — €15.00']);
     expect(p.valueLabel).toBe('Total: €35.00');
   });
+
+  it('says a Product line was prorated (#1867 stage 4)', () => {
+    const line = (label: string, actual_charge: number, proration: { prorated_days: number; period_days: number } | null) => ({
+      kind: 'product' as const, label, product_id: 1, mandatory: false, quantity: 1,
+      unit_price: 31, regular_price: 31, actual_charge, prepaid_periods: null, proration, benefits: [],
+    });
+    const [p] = billingEventChartPoints(
+      [{ date: '2026-10-24', total: 29, lines: [line('Trainer', 28, { prorated_days: 28, period_days: 31 }), line('Locker', 1, null)] } as never],
+      fmtD, fmtA, undefined, undefined,
+      (l) => (l.proration ? `Prorated: ${l.proration.prorated_days} of ${l.proration.period_days} days` : null),
+    );
+    expect(p.detailLines).toEqual(['Trainer — €28.00 (Prorated: 28 of 31 days)', 'Locker — €1.00']);
+  });
 });
