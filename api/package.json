@@ -16,6 +16,7 @@
     "exercises:audit-categories": "tsx src/scripts/audit-exercise-categories.ts",
     "exercises:backfill-result-types": "tsx src/scripts/backfill-exercise-result-types.ts",
     "exercises:backfill-descriptions": "tsx src/scripts/backfill-exercise-descriptions.ts",
+    "foods:audit-base-links": "tsx src/scripts/audit-base-food-links.ts",
     "goals:audit-base-links": "tsx src/scripts/audit-base-goal-links.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",
