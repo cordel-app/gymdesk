@@ -444,9 +444,8 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   ): Promise<void> {
     await q.query(
       `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
-       VALUES (?, ?, (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?) AS incoming
+       VALUES (?, (SELECT id FROM personal_goals WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?) AS incoming
        ON DUPLICATE KEY UPDATE
-         base_personal_goal_id = incoming.base_personal_goal_id,
          status = incoming.status,
          modified_at = UTC_TIMESTAMP(),
          modified_by = incoming.created_by`,
