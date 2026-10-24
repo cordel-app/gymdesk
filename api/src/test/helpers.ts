@@ -287,8 +287,15 @@ export async function legacyChildQuery(sql: string, params: unknown[] = []): Pro
     let placeholders = 0;
     for (let i = 0; i < at; i++) placeholders += (tokens[i].match(/\?/g) ?? []).length;
     if (tokens[at].trim() !== '?') throw new Error('legacy child fixture: user_membership_id must be a placeholder');
-    queue[placeholders] = await versionOfAssignment(Number(queue[placeholders]));
+    const assignmentId = Number(queue[placeholders]);
+    queue[placeholders] = await versionOfAssignment(assignmentId);
     columns[at] = 'product_set_id';
+    // A Membership Plan application is the assignment's too (#1995 stage 3).
+    if (/^\s*INSERT INTO user_membership_promotions\b/i.test(insert[1])) {
+      columns.push('user_membership_id');
+      tokens.push('?');
+      queue.push(assignmentId);
+    }
     return db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
   }
   // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version.

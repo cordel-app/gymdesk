@@ -1,6 +1,5 @@
 import { db, Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
-import { assignmentVersionId } from './assignment-config';
 import {
   LIVE_ASSIGNMENT_STATUSES,
   LiveAssignment,
@@ -161,7 +160,7 @@ export async function supersedeApplications(
   await tx.query(
     `UPDATE user_membership_promotions
         SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE gym_id = ? AND status = 'applied' AND product_set_id = ${assignmentVersionId('?')}`,
+      WHERE gym_id = ? AND status = 'applied' AND user_membership_id = ?`,
     [actor, gymId, umId]);
 }
 

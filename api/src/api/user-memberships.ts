@@ -393,15 +393,12 @@ async function loadApplicationsKeyedBy(
   const byAssignment = new Map<number, PromotionApplication[]>();
   const ids = [...new Set(keys)];
   if (ids.length === 0) return byAssignment;
-  // #1325 PR 3e-4a: an assignment's applications are its current version's own
-  // (`product_set_id`); there is no per-assignment copy.
-  const owner = column === 'user_membership_id'
-    ? `FROM user_memberships um
-       JOIN user_membership_promotions ump
-         ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id`
-    : 'FROM user_membership_promotions ump';
-  const ownerKey = column === 'user_membership_id' ? 'um.id' : 'ump.product_set_id';
-  const filter = column === 'user_membership_id' ? 'um.id' : 'ump.product_set_id';
+  // #1995 stage 3: a Membership Plan application belongs to the assignment
+  // (`user_membership_id`); `product_set_id` keys only a version read directly
+  // (a Draft not yet projected, a Product-target application).
+  const owner = 'FROM user_membership_promotions ump';
+  const ownerKey = `ump.${column}`;
+  const filter = `ump.${column}`;
   const { rows } = await exec.query(
     `SELECT ump.id, ${ownerKey} AS owner_key, ump.promotion_id, ump.status,
             ump.applied_at, ump.revoked_at, ump.snapshot,
