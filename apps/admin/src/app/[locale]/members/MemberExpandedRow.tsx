@@ -558,7 +558,7 @@ export function MemberExpandedRow({
               the ledger is the separate Actual Billing Events section at the foot of the tab (#1867). */}
           {billingSectionMode === 'simulation' && (
             <Section label={t('members.section_billing_event_simulation')}>
-              <ProposedSetForecast productSetId={inFlightSetId} />
+              <ProposedSetForecast productSetId={inFlightSetId} reloadKey={configuration} />
             </Section>
           )}
 

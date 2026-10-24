@@ -16,7 +16,15 @@ import type { BillingEventSimulationData } from '@/components/BillingEventSimula
 import { ProductSetForecast } from './MemberProductSet';
 import { withoutZeroRows } from './productsWorkflowView';
 
-export function ProposedSetForecast({ productSetId }: { productSetId: number | null }) {
+export function ProposedSetForecast({ productSetId, reloadKey }: {
+  productSetId: number | null;
+  /**
+   * #1867 §6 — changes whenever the Draft's configuration is re-read (a line
+   * added or removed, a discount, a promotion), so the simulation is read again
+   * rather than left showing the Draft as it was when it was first opened.
+   */
+  reloadKey?: unknown;
+}) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
   // #1613 — display only: hides rows charging zero, changes no data.
@@ -37,7 +45,7 @@ export function ProposedSetForecast({ productSetId }: { productSetId: number | n
       .catch(() => { if (!cancelled) setState({ loading: false, error: true, forecast: null }); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productSetId]);
+  }, [productSetId, reloadKey]);
 
   if (productSetId == null) return <p style={cardHintStyle}>{t('new_simulation_hint')}</p>;
   return (
