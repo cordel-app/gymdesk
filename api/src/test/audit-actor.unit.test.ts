@@ -162,7 +162,7 @@ describe('gate: audited tables', () => {
       .join('\n');
     // Created with the columns from the start (professional_service_* ledgers, #1227)
     // or renamed in place (feature_flags): no list entry in the migrations.
-    const bornConformant = ['professional_service_adjustments', 'professional_service_consumptions', 'feature_flags', 'base_payment_methods', 'base_products', 'base_personal_goals', 'base_nutrition_goals'];
+    const bornConformant = ['professional_service_adjustments', 'professional_service_consumptions', 'feature_flags', 'base_payment_methods', 'base_products', 'base_personal_goals', 'base_nutrition_goals', 'base_nutrition_library_items'];
     for (const table of AUDITED_TABLES) {
       if (bornConformant.includes(table)) continue;
       expect(migrations).toContain(`'${table}'`);
