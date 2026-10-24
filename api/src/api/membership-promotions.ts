@@ -642,8 +642,10 @@ export async function applyPromotionToProductSet(
    * #1521 — a Promotion that is about a **Product** (`applies_to = 'product'`)
    * is applied to a Draft that need not carry a Membership Plan: it is matched
    * on the Product it grants, not on `promotion_membership_plans`.
+   * #1991 stage 3: `lineId` is the recurring line (Product snapshot) the
+   * application is owned by.
    */
-  opts: { productTarget?: boolean } = {},
+  opts: { productTarget?: boolean; lineId?: number } = {},
 ): Promise<{ application_id: number }> {
   const { rows: setRows } = await tx.query(
     'SELECT id, owner_member_id, membership_plan_id, status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -671,6 +673,13 @@ export async function applyPromotionToProductSet(
   if (opts.productTarget) {
     if (promo.applies_to !== 'product') {
       throw Object.assign(new Error('Promotion is not about a Product'), { status: 400 });
+    }
+    if (opts.lineId != null) {
+      const { rows: lineRows } = await tx.query(
+        'SELECT 1 FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ? AND product_set_id = ?',
+        [opts.lineId, gymId, productSetId],
+      );
+      if (lineRows.length === 0) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });
     }
   } else {
     // #1863 — the plan a Draft inherited from the previous Active version is not
@@ -703,9 +712,14 @@ export async function applyPromotionToProductSet(
     throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
   }
 
+  // The owner decides what a duplicate or a stacking conflict is: the line for a
+  // Product-target application, the plan (no line) for a Plan one (#1991).
+  const lineId = opts.productTarget && opts.lineId != null ? opts.lineId : null;
   const { rows: existing } = await tx.query(
-    "SELECT id, promotion_id FROM user_membership_promotions WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'",
-    [productSetId, gymId],
+    `SELECT id, promotion_id FROM user_membership_promotions
+      WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'
+        AND ${lineId != null ? 'recurrent_snapshot_id = ?' : 'recurrent_snapshot_id IS NULL'}`,
+    lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
   );
   if (existing.some((r: any) => Number(r.promotion_id) === promotionId)) {
     throw Object.assign(new Error('This promotion is already applied to this ProductSet'), { status: 409 });
@@ -723,9 +737,9 @@ export async function applyPromotionToProductSet(
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
-       (gym_id, product_set_id, user_membership_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, ?, ?, ?, 'applied', ?)`,
-    [gymId, productSetId, ownUm, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
+       (gym_id, product_set_id, user_membership_id, recurrent_snapshot_id, promotion_id, created_by, status, snapshot)
+     VALUES (?, ?, ?, ?, ?, ?, 'applied', ?)`,
+    [gymId, productSetId, ownUm, lineId, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
   );
   await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
   return { application_id: Number(insertId) };

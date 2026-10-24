@@ -87,15 +87,28 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 async function copyApplications(tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number }) {
   const { rows } = await tx.query<any>(
     `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-            modified_at, modified_by
+            modified_at, modified_by, recurrent_snapshot_id
        FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?`, [gymId, from.productSetId]);
   for (const app of rows) {
+    // #1991 stage 3: a Product-target application follows its line into the new
+    // version (a clone keeps `line_ref`), so the copy is owned by the copy.
+    let ownerLine: number | null = null;
+    if (app.recurrent_snapshot_id != null) {
+      const { rows: lines } = await tx.query<any>(
+        `SELECT n.id FROM member_products_recurrent_snapshot o
+           JOIN member_products_recurrent_snapshot n
+             ON n.gym_id = o.gym_id AND n.product_set_id = ? AND COALESCE(n.line_ref, n.id) = COALESCE(o.line_ref, o.id)
+          WHERE o.id = ? AND o.gym_id = ? ORDER BY n.id LIMIT 1`,
+        [to.productSetId, app.recurrent_snapshot_id, gymId]);
+      ownerLine = lines[0] ? Number(lines[0].id) : null;
+      if (ownerLine == null) continue; // the line is not part of the successor, nor is its application
+    }
     const { insertId } = await tx.query(
       `INSERT INTO user_membership_promotions
-         (gym_id, product_set_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
+         (gym_id, product_set_id, recurrent_snapshot_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
           modified_at, modified_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, to.productSetId, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, to.productSetId, ownerLine, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
         app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
         app.revoked_at, app.modified_at, app.modified_by]);
     for (const table of [

@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import {
   DRAFT_TTL_MINUTES,
   PendingAttempt,
@@ -167,6 +168,15 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
     await tx.query(
       `UPDATE product_sets SET status = 'superseded', superseded_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'active'`,
       [previous.id],
+    );
+    // #1991 stage 3: what the predecessor version still has applied is history,
+    // Product-target applications included (they have no assignment to carry
+    // them). Idempotent: only `applied` rows move, and `revoked` ones stay revoked.
+    await tx.query(
+      `UPDATE user_membership_promotions
+          SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE gym_id = ? AND product_set_id = ? AND status = 'applied'`,
+      [SYSTEM_ACTOR, gymId, previous.id],
     );
   }
   await tx.query(
