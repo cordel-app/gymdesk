@@ -61,6 +61,8 @@ afterAll(async () => {
   await cleanupTestGyms();
   if (createdItemIds.length > 0) {
     const marks = createdItemIds.map(() => '?').join(',');
+    // #1849 F2: Cordel's router owns a Base row per food; the legacy row is its mirror.
+    await db.query(`DELETE FROM base_nutrition_library_items WHERE id IN (${marks})`, createdItemIds);
     await db.query(
       `DELETE FROM nutrition_library_items WHERE id IN (${marks})`,
       createdItemIds,

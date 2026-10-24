@@ -8,7 +8,7 @@ import {
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, replaceTranslations, validateTranslations, localizedNameSql,
   buildListWhere, pagingClause,
-  itemDetailColumnsSql, normalizeDescription,
+  itemDetailColumnsSql, normalizeDescription, BASE_FOOD_TABLES,
 } from '../domain/nutritionLibrary';
 import {
   loadDescriptionTranslationsMap, localizedDescriptionSql,
@@ -29,8 +29,21 @@ import {
   storeNutritionImagePair,
   sweepReplacedNutritionImage,
 } from './nutrition-image-storage';
+import { mirrorFoodToLegacy } from './base-food-mirror';
 import { getRequestLocale, SUPPORTED_LOCALES, BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 
+/**
+ * #1849 stage F2 — Cordel's Base Foods, on `base_nutrition_library_items` and its
+ * four junctions. Personal Goals' 2b / Nutrition Goals' N2 one catalogue over.
+ *
+ * Until the gym side moves onto the Base tables every write here is **mirrored onto
+ * the legacy System row of the same id** (`mirrorFoodToLegacy()`): the gym-facing
+ * router and the plan tables still reference the legacy row by id. A new food takes
+ * its id from `nutrition_library_items` first (gyms still create their own foods
+ * there), then the Base row is inserted under that id, so the two cannot collide.
+ * Response shapes are the ones this router always served (`status` active|deleted,
+ * derived here from `deleted_at`).
+ */
 export const platformNutritionLibraryRouter = Router();
 
 /**
@@ -40,7 +53,7 @@ export const platformNutritionLibraryRouter = Router();
  * own folder, and the ownership of the row is what decides which — see
  * `domain/baseNutritionImages.ts`.
  */
-const ITEM_COLUMNS = `nli.id, nli.name, nli.status, nli.image_url, nli.created_at, nli.modified_at,
+const ITEM_COLUMNS = `nli.id, nli.name, IF(nli.deleted_at IS NULL, 'active', 'deleted') AS status, nli.image_url, nli.created_at, nli.modified_at,
   ${itemDetailColumnsSql('nli')}`;
 
 /**
@@ -82,10 +95,11 @@ platformNutritionLibraryRouter.get('/locales', requireSuperadmin, (_req, res) =>
 platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const status = req.query.status as string | undefined;
   const locale = getRequestLocale(req);
-  const base = ['gym_id IS NULL', status ? 'status = ?' : "status != 'deleted'"];
-  const baseParams = status ? [status] : [];
+  // Base rows have no `status`: it is derived from `deleted_at` (a requested 'deleted' lists the soft-deleted).
+  const base = [status === 'deleted' ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
+  const baseParams: any[] = [];
 
-  const built = buildListWhere(req, base, baseParams, locale);
+  const built = buildListWhere(req, base, baseParams, locale, BASE_FOOD_TABLES);
   if ('error' in built) return res.status(400).json(built);
   const { where, params } = built;
 
@@ -93,7 +107,7 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
 
   try {
     const { rows: countRows } = await db.query<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM nutrition_library_items WHERE ${where}`,
+      `SELECT COUNT(*) AS total FROM base_nutrition_library_items WHERE ${where}`,
       params,
     );
     const total = countRows[0]?.total ?? 0;
@@ -105,8 +119,8 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
     // is the caller's locale and `translations` the full per-locale set, which
     // this page is where superadmins author (#643).
     const { rows } = await db.query<{ id: number; name: string; display_name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale)} AS display_name, ${localizedDescriptionSql('nli', locale)} AS display_description
-       FROM nutrition_library_items nli
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale, BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', locale, BASE_FOOD_TABLES)} AS display_description
+       FROM base_nutrition_library_items nli
        WHERE ${where}
        ORDER BY display_name ASC
        ${pagingSql}`,
@@ -115,7 +129,7 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
 
     const ids = rows.map((r) => r.id);
     const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-      loadCategoriesMap(ids), loadQualitiesMap(ids), loadTranslationsMap(ids), loadDescriptionTranslationsMap(ids),
+      loadCategoriesMap(ids, BASE_FOOD_TABLES), loadQualitiesMap(ids, BASE_FOOD_TABLES), loadTranslationsMap(ids, BASE_FOOD_TABLES), loadDescriptionTranslationsMap(ids, BASE_FOOD_TABLES),
     ]);
     res.json({
       items: rows.map((r) => ({
@@ -153,7 +167,7 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
   }
   try {
     const { rows: existing } = await db.query(
-      "SELECT id FROM nutrition_library_items WHERE gym_id IS NULL AND name = ? AND status != 'deleted'",
+      "SELECT id FROM base_nutrition_library_items WHERE name = ? AND deleted_at IS NULL",
       [name.trim()],
     );
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
@@ -165,25 +179,30 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
        VALUES (NULL, ?, ?, 'active', ?)`,
       [name.trim(), description.value ?? null, actor],
     );
+    await db.query(
+      `INSERT INTO base_nutrition_library_items (id, name, description, created_by) VALUES (?, ?, ?, ?)`,
+      [insertId, name.trim(), description.value ?? null, actor],
+    );
 
-    await replaceCategories(insertId, category_ids);
+    await replaceCategories(insertId, category_ids, BASE_FOOD_TABLES);
     if (Array.isArray(quality_ids) && quality_ids.length > 0) {
-      await replaceQualities(insertId, quality_ids);
+      await replaceQualities(insertId, quality_ids, BASE_FOOD_TABLES);
     }
     if (translations !== undefined) {
-      await replaceTranslations(insertId, translations);
+      await replaceTranslations(insertId, translations, BASE_FOOD_TABLES);
     }
     if (descTr.value !== undefined) {
-      await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!));
+      await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!, BASE_FOOD_TABLES));
     }
+    await mirrorFoodToLegacy(insertId);
 
     const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-       FROM nutrition_library_items nli WHERE nli.id = ?`,
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
+       FROM base_nutrition_library_items nli WHERE nli.id = ?`,
       [insertId],
     );
     const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-      loadCategoriesMap([insertId]), loadQualitiesMap([insertId]), loadTranslationsMap([insertId]), loadDescriptionTranslationsMap([insertId]),
+      loadCategoriesMap([insertId], BASE_FOOD_TABLES), loadQualitiesMap([insertId], BASE_FOOD_TABLES), loadTranslationsMap([insertId], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([insertId], BASE_FOOD_TABLES),
     ]);
     const item = {
       ...rows[0],
@@ -221,7 +240,7 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
   if (descTr.error) return res.status(400).json({ error: descTr.error });
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, name, description, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, name, description, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -229,7 +248,7 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
 
     if (name?.trim()) {
       const { rows: conflict } = await db.query(
-        "SELECT id FROM nutrition_library_items WHERE gym_id IS NULL AND name = ? AND id != ? AND status != 'deleted'",
+        "SELECT id FROM base_nutrition_library_items WHERE name = ? AND id != ? AND deleted_at IS NULL",
         [name.trim(), id],
       );
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
@@ -245,28 +264,29 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
     if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
 
     params.push(id);
-    await db.query(`UPDATE nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
+    await db.query(`UPDATE base_nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
 
     if (Array.isArray(category_ids)) {
-      await replaceCategories(Number(id), category_ids);
+      await replaceCategories(Number(id), category_ids, BASE_FOOD_TABLES);
     }
     if (Array.isArray(quality_ids)) {
-      await replaceQualities(Number(id), quality_ids);
+      await replaceQualities(Number(id), quality_ids, BASE_FOOD_TABLES);
     }
     if (translations !== undefined) {
-      await replaceTranslations(Number(id), translations);
+      await replaceTranslations(Number(id), translations, BASE_FOOD_TABLES);
     }
     if (descTr.value !== undefined) {
-      await db.transaction((conn) => replaceDescriptionTranslations(conn, Number(id), descTr.value!));
+      await db.transaction((conn) => replaceDescriptionTranslations(conn, Number(id), descTr.value!, BASE_FOOD_TABLES));
     }
+    await mirrorFoodToLegacy(String(id));
 
     const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-       FROM nutrition_library_items nli WHERE nli.id = ?`,
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
+       FROM base_nutrition_library_items nli WHERE nli.id = ?`,
       [id],
     );
     const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-      loadCategoriesMap([Number(id)]), loadQualitiesMap([Number(id)]), loadTranslationsMap([Number(id)]), loadDescriptionTranslationsMap([Number(id)]),
+      loadCategoriesMap([Number(id)], BASE_FOOD_TABLES), loadQualitiesMap([Number(id)], BASE_FOOD_TABLES), loadTranslationsMap([Number(id)], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([Number(id)], BASE_FOOD_TABLES),
     ]);
     const item = {
       ...rows[0],
@@ -291,15 +311,16 @@ platformNutritionLibraryRouter.put('/:id/qualities', requireSuperadmin, async (r
 
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
-    await replaceQualities(Number(id), quality_ids);
+    await replaceQualities(Number(id), quality_ids, BASE_FOOD_TABLES);
+    await mirrorFoodToLegacy(String(id));
 
-    const qualitiesMap = await loadQualitiesMap([Number(id)]);
+    const qualitiesMap = await loadQualitiesMap([Number(id)], BASE_FOOD_TABLES);
     res.json({ item_id: Number(id), qualities: qualitiesMap[Number(id)] ?? [] });
   } catch (err) { next(err); }
 });
@@ -315,15 +336,16 @@ platformNutritionLibraryRouter.put('/:id/categories', requireSuperadmin, async (
 
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
-    await replaceCategories(Number(id), category_ids);
+    await replaceCategories(Number(id), category_ids, BASE_FOOD_TABLES);
+    await mirrorFoodToLegacy(String(id));
 
-    const categoriesMap = await loadCategoriesMap([Number(id)]);
+    const categoriesMap = await loadCategoriesMap([Number(id)], BASE_FOOD_TABLES);
     res.json({ item_id: Number(id), categories: categoriesMap[Number(id)] ?? [] });
   } catch (err) { next(err); }
 });
@@ -341,15 +363,16 @@ platformNutritionLibraryRouter.put('/:id/translations', requireSuperadmin, async
 
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
-    await replaceTranslations(Number(id), translations);
+    await replaceTranslations(Number(id), translations, BASE_FOOD_TABLES);
+    await mirrorFoodToLegacy(String(id));
 
-    const translationsMap = await loadTranslationsMap([Number(id)]);
+    const translationsMap = await loadTranslationsMap([Number(id)], BASE_FOOD_TABLES);
     recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, next: { translations: translationsMap[Number(id)] ?? {} } });
     res.json({ item_id: Number(id), translations: translationsMap[Number(id)] ?? {} });
   } catch (err) { next(err); }
@@ -382,7 +405,7 @@ platformNutritionLibraryRouter.post(
   async (req, res, next) => {
     try {
       const { rows: existing } = await db.query<{ id: number; name: string; status: string; image_url: string | null }>(
-        'SELECT id, name, status, image_url FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL',
+        "SELECT id, name, IF(deleted_at IS NULL, 'active', 'deleted') AS status, image_url FROM base_nutrition_library_items WHERE id = ?",
         [req.params.id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -411,22 +434,23 @@ platformNutritionLibraryRouter.post(
       const staleUrl = food.image_url;
       const actor = platformActor(req);
       await db.query(
-        `UPDATE nutrition_library_items
+        `UPDATE base_nutrition_library_items
          SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
         [url, actor, food.id],
       );
+      await mirrorFoodToLegacy(food.id);
       await sweepReplacedNutritionImage(
         staleUrl, key, (k) => k.toLowerCase().startsWith(`${PLATFORM_NUTRITION_PREFIX}/`), { itemId: food.id },
       );
 
       const { rows } = await db.query(
-        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
-         FROM nutrition_library_items nli WHERE nli.id = ?`,
+        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
+         FROM base_nutrition_library_items nli WHERE nli.id = ?`,
         [food.id],
       );
       const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-        loadCategoriesMap([food.id]), loadQualitiesMap([food.id]), loadTranslationsMap([food.id]), loadDescriptionTranslationsMap([food.id]),
+        loadCategoriesMap([food.id], BASE_FOOD_TABLES), loadQualitiesMap([food.id], BASE_FOOD_TABLES), loadTranslationsMap([food.id], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([food.id], BASE_FOOD_TABLES),
       ]);
       const item = {
         ...rows[0],
@@ -453,7 +477,7 @@ platformNutritionLibraryRouter.delete('/:id', requireSuperadmin, async (req, res
   const { id } = req.params;
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -464,12 +488,12 @@ platformNutritionLibraryRouter.delete('/:id', requireSuperadmin, async (req, res
     // (#799 §13, migration 196).
     const actor = platformActor(req);
     await db.query(
-      `UPDATE nutrition_library_items
-       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
-           modified_at = UTC_TIMESTAMP()
+      `UPDATE base_nutrition_library_items
+       SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP()
        WHERE id = ?`,
       [actor, id],
     );
+    await mirrorFoodToLegacy(String(id));
     recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
     res.status(204).send();
   } catch (err) { next(err); }

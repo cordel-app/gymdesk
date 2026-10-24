@@ -31,6 +31,7 @@ import { db } from '../infra/db';
 /** Every column that stores a full media URL rather than an object key. */
 export const STORED_URL_COLUMNS: ReadonlyArray<{ table: string; column: string }> = [
   { table: 'nutrition_library_items', column: 'image_url' },
+  { table: 'base_nutrition_library_items', column: 'image_url' },
   { table: 'exercises', column: 'image_url' },
   { table: 'exercises', column: 'image_thumbnail_url' },
   { table: 'exercises', column: 'video_url' },
