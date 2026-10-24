@@ -6,9 +6,11 @@ import { DEFAULT_GYM_PRODUCTS } from '../domain/defaultGymProducts';
 import { seedDefaultGymProducts } from '../api/gym-default-products';
 import {
   TEST_AUTH_HEADER,
+  allocateTestBaseGoalId,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  deleteTestSystemPersonalGoals,
   request,
 } from './helpers';
 
@@ -555,16 +557,20 @@ describe('gym creation seeds the Base Personal Goals (#1850)', () => {
   const baseIds: number[] = [];
 
   beforeAll(async () => {
-    const { insertId } = await db.query(
-      `INSERT INTO base_personal_goals (name, description, target_value, target_unit, target_type, created_by)
-       VALUES ('Gym Seed Test Goal', 'Seeded by gym creation', 4, 'kg', 'relative', 'System')`,
+    // The id comes from the gym-owned goals' sequence (#1849), like a Cordel-created Base goal.
+    const insertId = await allocateTestBaseGoalId();
+    await db.query(
+      `INSERT INTO base_personal_goals (id, name, description, target_value, target_unit, target_type, created_by)
+       VALUES (?, 'Gym Seed Test Goal', 'Seeded by gym creation', 4, 'kg', 'relative', 'System')`,
+      [insertId],
     );
     baseIds.push(insertId);
   });
 
   afterAll(async () => {
-    // Gyms are removed by the file's own cleanup; the template is ours to remove.
-    await db.query('DELETE FROM base_personal_goals WHERE id = ?', [baseIds[0]]);
+    // The template is ours to remove, and the gyms created meanwhile hold an activation
+    // row for it (RESTRICT FK), which the helper deletes first.
+    await deleteTestSystemPersonalGoals('id = ?', [baseIds[0]]);
   });
 
   async function seededGoals(gymId: string) {
