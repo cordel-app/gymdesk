@@ -740,26 +740,22 @@ export async function allocateTestBaseGoalId(): Promise<number> {
 }
 
 /**
- * #1849 F2: a System Food as Cordel's router sees it — a Base row plus the legacy
- * System row of the same id that mirrors it (the id comes from the legacy sequence,
- * as the router does it).
+ * #1849 F2/F5: a System Food as Cordel's router sees it — a Base row only, its id drawn
+ * from the legacy sequence as the router does it.
  */
 export async function createTestBaseFood(name: string): Promise<number> {
+  // The id is drawn from the legacy table's sequence, as Cordel's router does (F5).
   const { insertId } = await db.query(
-    "INSERT INTO nutrition_library_items (gym_id, name, status, created_by) VALUES (NULL, ?, 'active', 'System')",
-    [name],
+    "INSERT INTO nutrition_library_items (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')",
   );
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [insertId]);
   await db.query('INSERT INTO base_nutrition_library_items (id, name, created_by) VALUES (?, ?, ?)', [insertId, name, 'System']);
   return insertId as number;
 }
 
-/** Removes System Foods a test created, plugs included: the plan tables' RESTRICT FKs go first. */
+/** Removes System Foods a test created (Base rows; the plan tables' RESTRICT FKs go first). */
 export async function deleteTestBaseFoods(where: string, params: unknown[] = []): Promise<void> {
-  const { rows } = await db.query<{ id: number }>(`SELECT id FROM nutrition_library_items WHERE gym_id IS NULL AND ${where}`, params);
-  for (const { id } of rows) {
-    await db.query('DELETE FROM base_nutrition_library_items WHERE id = ?', [id]);
-    await db.query('DELETE FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL', [id]);
-  }
+  await db.query(`DELETE FROM base_nutrition_library_items WHERE ${where}`, params);
 }
 
 /**
@@ -769,10 +765,12 @@ export async function deleteTestBaseFoods(where: string, params: unknown[] = [])
  * Base tables, under the same ids. Idempotent; call it after the fixture's inserts.
  */
 export async function syncLegacySystemFoodsToBase(): Promise<void> {
-  // A fixture that dropped its legacy System food in an earlier run left the Base copy
-  // behind; its live name would make the INSERT IGNORE below skip the new row silently.
-  await db.query(`DELETE IGNORE b FROM base_nutrition_library_items b
-    LEFT JOIN nutrition_library_items i ON i.id = b.id AND i.gym_id IS NULL WHERE i.id IS NULL`);
+  // A fixture that dropped its legacy System food in an earlier run left a Base copy
+  // under another id; its live name would make the INSERT IGNORE below skip the new row
+  // silently. Only a Base row sharing a name with a fixture's legacy row is touched: the
+  // seeded Base foods have no legacy twin any more (#1849 F5).
+  await db.query(`DELETE b FROM base_nutrition_library_items b
+    JOIN nutrition_library_items i ON i.name = b.name AND i.gym_id IS NULL AND i.id <> b.id`);
   await db.query(`
     INSERT IGNORE INTO base_nutrition_library_items
       (id, name, description, image_url, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by)

@@ -168,9 +168,9 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
        ORDER BY r.position ASC`,
       [id],
@@ -487,7 +487,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items'
       [mealId],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (NULL, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
+      'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (NULL, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
       [mealId, Number(nutrition_library_item_id), Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
     );
     const { rows } = await db.query(
@@ -549,9 +549,9 @@ platformNutritionPlanTemplatesRouter.get('/:id/restrictions', requireSuperadmin,
   try {
     if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
     const { rows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
        ORDER BY r.position ASC`,
       [id],
@@ -574,13 +574,13 @@ platformNutritionPlanTemplatesRouter.post('/:id/restrictions', requireSuperadmin
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_restrictions (gym_id, nutrition_plan_template_id, nutrition_library_item_id, applies_all_days, position) VALUES (NULL, ?, ?, ?, ?)',
-      [id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
+      'INSERT INTO nutrition_plan_template_restrictions (gym_id, nutrition_plan_template_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (NULL, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
+      [id, Number(nutrition_library_item_id), Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_category_catalogue nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_item_catalogue nli ON nli.id = r.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(r.base_nutrition_library_item_id, r.nutrition_library_item_id)
        WHERE r.id = ?`,
       [insertId],
     );
@@ -635,7 +635,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/goals', requireSuperadmin, async
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
+      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
       [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id, illustration.id],
     );
     const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [insertId]);
@@ -657,7 +657,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireSuperadmin, a
     const illustrationErr = await validateGoalIllustration(null, illustration.id);
     if (illustrationErr) return res.status(400).json({ error: illustrationErr });
     const { rowCount } = await db.query(
-      'UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = ?, base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?) WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
+      'UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?) WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
       [illustration.id, illustration.id, gid, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Goal not found' });
