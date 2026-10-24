@@ -4869,6 +4869,8 @@
     "override_legend": "A value in red is an explicit override of the inherited permission."
   },
   "nutrition_plans": {
+    "version_confirm": "Saving ends the current version of this plan today and creates a new version, with your changes, starting tomorrow. The previous version stays available as history.",
+    "version_confirm_btn": "Save new version",
     "title": "Assigned Nutrition Plans",
     "assign_title": "Assign Nutrition Plan",
     "new_plan": "+ New Nutrition Plan",

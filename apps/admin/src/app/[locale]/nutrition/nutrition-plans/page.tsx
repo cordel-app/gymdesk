@@ -29,7 +29,8 @@ interface MemberNutritionPlan {
   member_id: number;
   member_name: string;
   template_id: number | null;
-  status: 'active' | 'completed' | 'deleted';
+  status: 'active' | 'completed' | 'deleted' | 'draft';
+  draft_of_plan_id?: number | null;
   start_date: string | null;
   day_count: number;
   created_at: string;
@@ -119,6 +120,8 @@ export default function NutritionPlansPage() {
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+  // #1970: Save on a version draft asks for confirmation before ending the current version.
+  const [versionConfirmOpen, setVersionConfirmOpen] = useState(false);
 
   // Unsaved-changes guard
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -175,7 +178,26 @@ export default function NutritionPlansPage() {
     }
   }
 
+  // #1970: Edit on an active plan works on a Draft copy; the original is untouched until Save.
+  async function beginEdit(plan: MemberNutritionPlan) {
+    if (plan.status !== 'active') { startEdit(plan); return; }
+    try {
+      const draft = await apiFetch<MemberNutritionPlan>(`/member-nutrition-plans/${plan.id}/edit-draft`, { method: 'POST' });
+      await load();
+      startEdit({ ...draft, member_name: plan.member_name });
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plans.error_generic'));
+    }
+  }
+
   function cancelEdit() {
+    // #1970: Cancel on a version draft discards it; the original stays as it was.
+    const draftRow = rows.find((r) => r.id === editingId);
+    if (draftRow?.draft_of_plan_id) {
+      apiFetch(`/member-nutrition-plans/${draftRow.id}`, { method: 'DELETE' })
+        .then(() => { load(); })
+        .catch((err: any) => toast(err.message ?? t('nutrition_plans.error_generic')));
+    }
     setEditingId(null);
     setEditForm(emptyEditForm);
     setEditError(null);
@@ -183,10 +205,22 @@ export default function NutritionPlansPage() {
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('nutrition_plans.error_required')); return; }
+    const row = rows.find((r) => r.id === editingId)!;
+    if (row.draft_of_plan_id && !versionConfirmOpen) { setVersionConfirmOpen(true); return; }
+    setVersionConfirmOpen(false);
     setEditSaving(true); setEditError(null);
     const body = { name: editForm.name.trim(), description: editForm.description.trim() || null, start_date: editForm.start_date || null };
     try {
-      await apiFetch(`/member-nutrition-plans/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
+      if (row.draft_of_plan_id) {
+        // #1970: name/description first, then one transaction ends the old version and activates this one.
+        await apiFetch(`/member-nutrition-plans/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: body.name, description: body.description }),
+        });
+        await apiFetch(`/member-nutrition-plans/${editingId}/publish-version`, { method: 'POST' });
+      } else {
+        await apiFetch(`/member-nutrition-plans/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
+      }
       setEditingId(null); setEditForm(emptyEditForm); load();
     } catch (err: any) {
       setEditError(err.message ?? t('nutrition_plans.error_generic'));
@@ -312,7 +346,7 @@ export default function NutritionPlansPage() {
               locale={locale}
               t={t}
               onToggleExpand={() => toggleExpand(row)}
-              onEdit={() => guardUnsaved(() => startEdit(row))}
+              onEdit={() => guardUnsaved(() => beginEdit(row))}
               onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
               onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
               onComplete={() => guardUnsaved(() => setCompleting(row))}
@@ -349,6 +383,15 @@ export default function NutritionPlansPage() {
         cancelLabel={t('nutrition_plans.cancel')}
         onConfirm={del}
         onCancel={() => setDeleting(null)}
+      />
+
+      <ConfirmDialog
+        open={versionConfirmOpen}
+        message={t('nutrition_plans.version_confirm')}
+        confirmLabel={t('nutrition_plans.version_confirm_btn')}
+        cancelLabel={t('nutrition_plans.cancel')}
+        onConfirm={saveEdit}
+        onCancel={() => setVersionConfirmOpen(false)}
       />
 
       {/* Unsaved changes guard */}
@@ -407,7 +450,7 @@ function PlanCard({
 }) {
   const gymFmt = useGymFormatSettings();
   const isActive = plan.status === 'active';
-  const canEditPlan = canWrite && isActive;
+  const canEditPlan = canWrite && (isActive || plan.status === 'draft');
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
     ...(isActive ? [{ label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),

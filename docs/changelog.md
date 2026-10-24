@@ -2,7 +2,8 @@
 
 One entry per ticket, written by the ticket's own PR at merge time and never edited afterwards. Newest month first. The entries up to 2026-09-07 are the roadmap's original Status list (one item per ticket); everything after it was moved here from that section on 2026-10-09, when each heading was checked against the GitHub issue state — the entries that still read *In progress* are the ones whose issue is still open.
 
-What the product does today and what is still open is `docs/roadmap.md`; this file is the record of how it got there. A ticket's entry goes under the month its issue was closed in, as a `- **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
+What the product does today and what is still open is `docs/roadmap.md`; this file is the record of how it got there. A ticket's entry goes under the month its issue was closed in, as a `- **Done**: #1970 stage 2 (Admin UI for versioned Assigned Nutrition Plan edits, mirroring #1969 stage 2: ⋮ → Edit on an active plan calls `POST /member-nutrition-plans/:id/edit-draft` and edits the draft; Save asks a confirmation (current version ends today, new one starts tomorrow, previous kept as history) then updates name/description and calls `publish-version`; Cancel deletes the draft and leaves the original untouched. No API or migration change; closes #1970)
+- **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
 
