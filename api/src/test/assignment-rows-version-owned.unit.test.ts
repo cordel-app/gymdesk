@@ -30,13 +30,13 @@ describe('an assignment has no rows of its own (#1325 PR 3e-4b)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no child row is keyed by user_membership_id', () => {
-    const tables = '(user_membership_(session|oneoff|periodical|promotions)|member_products_recurrent_snapshot)';
+  it('no child row is keyed by user_membership_id (applied Promotions are the assignment's again, #1995)', () => {
+    const tables = '(user_membership_(session|oneoff|periodical)|member_products_recurrent_snapshot)';
     const offenders = files.filter((f) => {
       const text = code(f);
       // An INSERT naming the column, or a predicate comparing it.
       const insert = new RegExp(`INSERT\\s+INTO\\s+${tables}\\s*\\([^)]*\\buser_membership_id\\b`, 'i');
-      const keyed = new RegExp(`\\b(ums|umss|ump|copy)\\.user_membership_id\\b`, 'i');
+      const keyed = new RegExp(`\\b(ums|umss|copy)\\.user_membership_id\\b`, 'i');
       return insert.test(text) || keyed.test(text);
     });
     expect(offenders).toEqual([]);
