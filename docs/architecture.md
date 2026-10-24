@@ -1420,6 +1420,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 | Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `fitness-admin` / GHCR `fitness-admin` |
 | Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `fitness-members` (**plural**) / GHCR `fitness-members` |
 | Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-pay` / GHCR `fitness-pay`. Traefik route assigned. Oscar owns `fitness-pay.container`; `deploy-payment.yml` writes its `Environment=` lines from GitHub, pulls + restarts. |
+| Web | `https://cordel.tech` → corfront `:8084` (Traefik route to be assigned by Oscar) | "corfront" VPS | `cordel-web` / GHCR `cordel-web`. Static nginx site (`apps/web/`, listens on 80; the quadlet `infra/web/cordel-web.container` publishes `PublishPort=8084:80`). No runtime environment, so `deploy-web.yml` only pulls and restarts. It refuses to build while an `[[…]]` placeholder (holder name, NIF, address, email) is left in the pages; the legal pages are public, linked from every footer and `noindex`. |
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, network and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
@@ -1489,6 +1490,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
+| `deploy-web.yml` | Build/push/restart `cordel-web` (corfront `:8084`) |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
 
 ### Operator scripts (`api/src/scripts/`)

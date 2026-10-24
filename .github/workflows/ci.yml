@@ -105,3 +105,12 @@ jobs:
 
       - name: Build nginx image
         run: docker build -f apps/payment/Dockerfile -t fitness-pay:ci apps/payment
+
+  web:
+    name: Web site
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build nginx image
+        run: docker build -f apps/web/Dockerfile -t cordel-web:ci apps/web
