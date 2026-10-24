@@ -4,7 +4,7 @@ import React from 'react';
 import { ViewAuditLogButton, AuditLogScope } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nutritionItemProfile';
-import { GOAL_AUDIT_ENTITIES, GoalKind, GoalRow } from './goalProfile';
+import { GOAL_AUDIT_ENTITIES, GoalKind, GoalRow, isSystemOriginGoal } from './goalProfile';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
@@ -44,7 +44,7 @@ export function GoalDetailsModal({ goal, kind, scope = 'gym', name, label, onClo
         <Field label={label('label_description')} value={displayValue(goal.description)} wrap />
         <Field
           label={label('ownership')}
-          value={goal.gym_id === null ? label('ownership_system') : label('ownership_gym')}
+          value={isSystemOriginGoal(goal) ? label('ownership_system') : label('ownership_gym')}
         />
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
