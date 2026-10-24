@@ -59,7 +59,7 @@ export function toBillingEventLine(line: SimulationLine): BillingEventLine {
   return {
     kind: line.kind, label: line.label, product_id: line.product_id, mandatory: false,
     quantity: line.quantity, unit_price: line.unit_price, regular_price: line.regular_price,
-    actual_charge: line.actual_charge, prepaid_periods: line.prepaid_periods, benefits: line.benefits,
+    actual_charge: line.actual_charge, prepaid_periods: line.prepaid_periods, proration: line.proration ?? null, benefits: line.benefits,
   };
 }
 

@@ -65,6 +65,8 @@
 // price by a cent.
 
 import { advanceBillingDate } from './billingDate';
+import { cadenceForFrequency } from './scheduleAllocation';
+import { prorate } from './proration';
 import {
   PlanDuration,
   PlanDurationStatus,
@@ -190,6 +192,13 @@ export interface SimulationService {
   quantity: number;
   startsOn: string;
   endsOn: string | null;
+  /**
+   * #1867 stage 4 — the anchor date of the schedule this line was allocated to
+   * (`allocateSchedule()`): the dates it bills on are the anchor stepped by the
+   * line's cadence, and a line that starts between two of them is charged a
+   * prorated first stretch up to the next one. `null` for a line with no schedule.
+   */
+  alignTo?: string | null;
 }
 
 /**
@@ -408,6 +417,12 @@ export interface SimulationLine {
    * Membership Fee cycle.
    */
   prepaid_periods: number | null;
+  /**
+   * #1867 stage 4 — set on the first, partial charge of a recurring Product that
+   * joined an existing schedule mid-period: the days charged out of the period's
+   * (`domain/proration.ts`). `actual_charge` is already the prorated amount.
+   */
+  proration?: { prorated_days: number; period_days: number } | null;
 }
 
 export interface SimulationEvent {
@@ -1151,14 +1166,25 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
  * carries no benefit explanation.
  */
 function buildServiceStream(a: SimulationAssignment, service: SimulationService): Stream | null {
-  const cadence = service.billingFrequency ? cadenceForProduct(service.billingFrequency) : null;
-  if (!cadence) return null;
+  const base = service.billingFrequency ? cadenceForProduct(service.billingFrequency) : null;
+  if (!base) return null;
 
   const start = maxDate(a.startsAt, service.startsOn);
   const end = a.endsAt != null && service.endsOn != null
     ? minDate(a.endsAt, service.endsOn)
     : (a.endsAt ?? service.endsOn);
   if (end != null && end < start) return null;
+
+  // #1867 stage 4 — a line starting between two dates of its schedule bills a
+  // prorated first stretch on its start date and then follows the schedule.
+  const scheduleCadence = cadenceForFrequency(service.billingFrequency);
+  const joinDate = service.alignTo && scheduleCadence
+    ? nextAlignedDate(service.alignTo, start, base.advance)
+    : null;
+  const proration = joinDate && scheduleCadence ? prorate(1, scheduleCadence, start, joinDate) : null;
+  const cadence: Cadence = joinDate
+    ? { ...base, advance: (d) => (d === start ? joinDate : base.advance(d)) }
+    : base;
 
   const quantity = Math.max(1, Math.trunc(service.quantity) || 1);
   const unit = round2(service.unitPrice);
@@ -1168,13 +1194,17 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   // Promotion was applied.
   const coverage = a.promotions.filter((promo) => promo.productTarget).flatMap((promo) => promo.grants
     .filter((grant) => grant.category === 'periodical' && grant.productId === service.productId)
-    .map((grant) => ({ promo, grant, firstCovered: occurrenceIndexOf(start, promo.appliedAt, cadence) })));
+    .map((grant) => ({ promo, grant, firstCovered: occurrenceIndexOf(start, promo.appliedAt, base) })));
   return {
     cadence,
     section: cadence.section,
     start,
     end,
-    resolve: (date, occurrence) => resolveCoveredCharge(coverage, regular, [], date, occurrence),
+    resolve: (date, occurrence) => {
+      const resolved = resolveCoveredCharge(coverage, regular, [], date, occurrence);
+      if (!proration || occurrence !== 0) return resolved;
+      return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
+    },
     line: (date, resolved) => ({
       kind: 'product',
       label: service.name,
@@ -1188,8 +1218,27 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
       actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(start, 1, 'year'),
       prepaid_periods: null,
+      proration: proration && date === start
+        ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
     }),
   };
+}
+
+/**
+ * The first date of the schedule anchored on `anchor` that falls strictly after
+ * `start`, or `null` when `start` is itself one of the schedule's dates (nothing
+ * to prorate) or precedes the anchor.
+ */
+export function nextAlignedDate(anchor: string, start: string, advance: (d: string) => string): string | null {
+  if (anchor > start) return null;
+  let cursor = anchor;
+  for (let i = 0; i < MAX_OCCURRENCE_SCAN && cursor <= start; i++) {
+    if (cursor === start) return null;
+    const next = advance(cursor);
+    if (next <= cursor) return null;
+    cursor = next;
+  }
+  return cursor > start ? cursor : null;
 }
 
 /**
