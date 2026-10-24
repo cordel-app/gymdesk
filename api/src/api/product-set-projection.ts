@@ -97,6 +97,14 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
 
 /** Points a version's Membership Plan Promotion applications at its assignment. */
 async function attachApplications(tx: Tx, gymId: string, productSetId: number, umId: number) {
+  // A version that takes over an assignment in place (the Admin's set-first
+  // edit) supersedes the applications of the version it replaces: they stay as
+  // that version's history, keyed by it, and stop being the assignment's.
+  await tx.query(
+    `UPDATE user_membership_promotions
+        SET user_membership_id = NULL
+      WHERE gym_id = ? AND user_membership_id = ? AND product_set_id <> ?`,
+    [gymId, umId, productSetId]);
   await tx.query(
     `UPDATE user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
