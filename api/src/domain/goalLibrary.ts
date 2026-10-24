@@ -284,7 +284,7 @@ export function buildGoalListWhere(
   search: unknown,
   base: string[],
   baseParams: unknown[] = [],
-  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' | 'base_personal' } = {},
+  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' | 'base_personal' | 'base_nutrition' } = {},
 ): { where: string; params: unknown[] } {
   const term = typeof search === 'string' ? search.trim() : '';
   const where = [...base];
@@ -293,7 +293,9 @@ export function buildGoalListWhere(
     if (searchTranslations) {
       // #1623 — the base name, the slug **or any** stored translated name, so a
       // search in one language finds the goal whatever language the screen is in.
-      const t = translationKind === 'base_personal'
+      const t = translationKind === 'base_nutrition'
+        ? { table: 'base_nutrition_goal_translations', fk: 'base_nutrition_goal_id' }
+        : translationKind === 'base_personal'
         ? { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' }
         : translationKind === 'personal'
         ? { table: 'personal_goal_translation_catalogue', fk: 'personal_goal_id' }
