@@ -72,7 +72,8 @@
     "home": "Inici",
     "base_payment_methods": "Mètodes de pagament",
     "base_products": "Productes base",
-    "base_professional_services": "Serveis professionals base"
+    "base_professional_services": "Serveis professionals base",
+    "jobs": "Tasques"
   },
   "dashboard": {
     "title": "Tauler",
@@ -5275,5 +5276,41 @@
     "modified_at": "Modificat el",
     "modified_by": "Modificat per",
     "not_configured": "Sense configurar"
+  },
+  "job_runs": {
+    "title": "Tasques",
+    "intro": "Historial d'execució de les tasques del sistema de la plataforma (facturació nocturna, reserves recurrents, neteja, cicle de vida de Promocions, renovació de bosses del pla i recordatoris de reserva), de la més recent a la més antiga.",
+    "filter_job": "Tasca",
+    "filter_status": "Estat",
+    "filter_from": "Des de",
+    "filter_to": "Fins a",
+    "all_jobs": "Totes les tasques",
+    "all_statuses": "Tots els estats",
+    "apply": "Aplica",
+    "clear": "Esborra els filtres",
+    "utc_hint": "Les dates són dies UTC; l'interval per defecte són els darrers 7 dies, avui inclòs.",
+    "range_invalid": "\"Des de\" no pot ser posterior a \"Fins a\".",
+    "load_failed": "No s'han pogut carregar les execucions.",
+    "loading": "Carregant…",
+    "empty": "No hi ha execucions en aquest interval.",
+    "previous": "Anterior",
+    "next": "Següent",
+    "page_of": "Pàgina {page} de {pages} · {total} execucions",
+    "field_started": "Inici",
+    "field_duration": "Durada",
+    "field_http_status": "Estat HTTP",
+    "field_error": "Error",
+    "job_billing_run": "Facturació",
+    "job_recurring_bookings": "Reserves recurrents",
+    "job_billing_cleanup": "Neteja de facturació",
+    "job_promotion_lifecycle": "Cicle de vida de Promocions",
+    "job_plan_allowance_renewals": "Renovació de bosses del pla",
+    "job_booking_reminders": "Recordatoris de reserva",
+    "job_unknown": "Tasca desconeguda",
+    "status_in_progress": "En curs",
+    "status_completed": "Completada",
+    "status_failed": "Fallida",
+    "status_skipped": "Omesa",
+    "status_unknown": "Desconegut"
   }
 }

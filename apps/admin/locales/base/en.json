@@ -71,7 +71,8 @@
     "home": "Home",
     "base_payment_methods": "Payment Methods",
     "base_products": "Base Products",
-    "base_professional_services": "Base Professional Services"
+    "base_professional_services": "Base Professional Services",
+    "jobs": "Jobs"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5262,5 +5263,41 @@
     "modified_at": "Modified At",
     "modified_by": "Modified By",
     "not_configured": "Not configured"
+  },
+  "job_runs": {
+    "title": "Jobs",
+    "intro": "The execution history of the platform's system jobs (nightly billing, recurring bookings, cleanup, Promotion lifecycle, plan allowance renewals and booking reminders), newest first.",
+    "filter_job": "Job",
+    "filter_status": "Status",
+    "filter_from": "From",
+    "filter_to": "To",
+    "all_jobs": "All jobs",
+    "all_statuses": "All statuses",
+    "apply": "Apply",
+    "clear": "Clear filters",
+    "utc_hint": "Dates are UTC days; the default range is the last 7 days, today included.",
+    "range_invalid": "\"From\" must not be after \"To\".",
+    "load_failed": "The job runs could not be loaded.",
+    "loading": "Loading…",
+    "empty": "No job runs in this range.",
+    "previous": "Previous",
+    "next": "Next",
+    "page_of": "Page {page} of {pages} · {total} runs",
+    "field_started": "Started",
+    "field_duration": "Duration",
+    "field_http_status": "HTTP status",
+    "field_error": "Error",
+    "job_billing_run": "Billing run",
+    "job_recurring_bookings": "Recurring bookings",
+    "job_billing_cleanup": "Billing cleanup",
+    "job_promotion_lifecycle": "Promotion lifecycle",
+    "job_plan_allowance_renewals": "Plan allowance renewals",
+    "job_booking_reminders": "Booking reminders",
+    "job_unknown": "Unknown job",
+    "status_in_progress": "In progress",
+    "status_completed": "Completed",
+    "status_failed": "Failed",
+    "status_skipped": "Skipped",
+    "status_unknown": "Unknown"
   }
 }
