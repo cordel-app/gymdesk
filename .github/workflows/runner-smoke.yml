@@ -1,0 +1,45 @@
+name: Runner smoke test
+
+# Manual check that a self-hosted runner works (#2042 corfront, #2043 corback).
+# workflow_dispatch only: a pull request must never be able to run on a
+# self-hosted runner (api/src/test/self-hosted-runner-guard.unit.test.ts).
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Runner host
+        type: choice
+        options: [corfront, corback]
+        required: true
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, "${{ inputs.host }}", dev]
+    environment: dev
+    steps:
+      - name: Runner identity
+        run: |
+          whoami
+          podman --version
+          systemctl --user is-system-running || true
+
+      # corback only: what the API deploy needs (#2043).
+      - name: GHCR login
+        if: inputs.host == 'corback'
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ github.repository_owner }}
+        run: |
+          echo "$GHCR_PAT" | podman login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Database reachable
+        if: inputs.host == 'corback'
+        env:
+          DB_HOST: ${{ secrets.CORDEL_FITNESS_DB_HOST }}
+        run: |
+          # HeatWave is VCN-private; migrations run from this host, so the TCP
+          # port must be open from here.
+          timeout 10 bash -c 'exec 3<>"/dev/tcp/$DB_HOST/3306"' \
+            && echo "DB port 3306 reachable" \
+            || { echo "ERROR: cannot reach the database from this host"; exit 1; }
