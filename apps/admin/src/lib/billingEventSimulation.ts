@@ -41,6 +41,8 @@ export interface BillingEventSimulationLine {
    * ordinary fee cycle, so the note appears exactly where the server put it.
    */
   prepaid_periods: number | null;
+  /** #1867 stage 4 — the partial first period of a Product that joined an existing schedule. */
+  proration?: { prorated_days: number; period_days: number } | null;
   benefits: BillingEventSimulationBenefit[];
 }
 
