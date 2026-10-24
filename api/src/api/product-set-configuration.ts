@@ -290,9 +290,12 @@ export async function loadProductSetSimulationAssignment(
   }));
 
   const { rows: serviceRows } = await exec.query(
-    `SELECT id, line_ref, product_id, quantity, starts_at, ends_at, item_name, item_billing_frequency, unit_price
-       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?
-      ORDER BY starts_at ASC, id ASC`,
+    `SELECT s.id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at, s.item_name,
+            s.item_billing_frequency, s.unit_price, sch.anchor_date AS schedule_anchor
+       FROM member_products_recurrent_snapshot s
+       LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
+      WHERE s.gym_id = ? AND s.product_set_id = ?
+      ORDER BY s.starts_at ASC, s.id ASC`,
     [gymId, productSetId],
   );
   const services: SimulationService[] = (serviceRows as any[]).map((s) => ({
@@ -305,6 +308,7 @@ export async function loadProductSetSimulationAssignment(
     quantity: Math.max(1, Math.trunc(Number(s.quantity)) || 1),
     startsOn: toDateOnly(s.starts_at),
     endsOn: s.ends_at != null ? toDateOnly(s.ends_at) : null,
+    alignTo: s.schedule_anchor != null ? toDateOnly(s.schedule_anchor) : null,
   }));
 
   return {
@@ -462,7 +466,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     // own key, so a recurring line paid up front is recognised by its lines:
     // the same Product, on the same date, in a payment already recorded.
     const productIds = event.lines.map((l) => l.product_id).filter((id): id is number => id != null);
-    if (event.scheduleKey !== PLAN_SCHEDULE_KEY && productIds.length > 0) {
+    if (!event.lines.some((l) => l.kind === 'membership_fee') && productIds.length > 0) {
       const { rows: paidUp } = await tx.query(
         `SELECT be.id FROM billing_events be
            JOIN billing_event_lines bl ON bl.billing_event_id = be.id
