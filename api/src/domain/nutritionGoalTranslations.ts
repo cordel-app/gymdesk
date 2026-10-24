@@ -30,9 +30,11 @@ export const GOAL_DESCRIPTION_MAX_LENGTH = 1000;
  */
 export type TranslatedGoalKind = 'nutrition' | 'personal' | 'base_personal';
 
-const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string }> = {
+// `read` is what a SELECT goes through: for Personal Goals the translation catalogue
+// view (#1849 stage 2e: System goals' from the Base table), otherwise the table itself.
+const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string; read?: string }> = {
   nutrition: { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' },
-  personal: { table: 'personal_goal_translations', fk: 'personal_goal_id' },
+  personal: { table: 'personal_goal_translations', fk: 'personal_goal_id', read: 'personal_goal_translation_catalogue' },
   // #1849 stage 2b: the Base Personal Goals' own junction (migration 304).
   base_personal: { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' },
 };
@@ -97,10 +99,10 @@ export const SYSTEM_PERSONAL_GOAL_TRANSLATIONS: Record<string, { es: string; ca:
 };
 
 function column(col: 'name' | 'description', alias: string, locale: SupportedLocale, kind: TranslatedGoalKind): string {
-  const { table, fk } = KIND_TABLES[kind];
+  const { table, fk, read } = KIND_TABLES[kind];
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.${col}`;
-  return `COALESCE((SELECT NULLIF(ngt.${col}, '') FROM ${table} ngt
+  return `COALESCE((SELECT NULLIF(ngt.${col}, '') FROM ${read ?? table} ngt
             WHERE ngt.${fk} = ${alias}.id AND ngt.locale = ${literal}), ${alias}.${col})`;
 }
 
@@ -117,9 +119,9 @@ export function localizedGoalExprs(alias: string, locale: SupportedLocale, kind:
  * empty replace-all set and wipe the translations on the first save.
  */
 export function goalTranslationsExpr(alias: string, as = 'translations', kind: TranslatedGoalKind = 'nutrition'): string {
-  const { table, fk } = KIND_TABLES[kind];
+  const { table, fk, read } = KIND_TABLES[kind];
   return `(SELECT JSON_OBJECTAGG(ngta.locale, JSON_OBJECT('name', ngta.name, 'description', ngta.description))
-            FROM ${table} ngta WHERE ngta.${fk} = ${alias}.id) AS ${as}`;
+            FROM ${read ?? table} ngta WHERE ngta.${fk} = ${alias}.id) AS ${as}`;
 }
 
 /** The aggregate's `NULL`-for-none as the `{}` the API contract promises. */
@@ -140,9 +142,9 @@ export function withGoalTranslations<T extends { translations?: unknown }>(row: 
  * same pattern to all of them.
  */
 export function goalTranslatedSearchSql(alias: string, kind: TranslatedGoalKind = 'nutrition'): string {
-  const { table, fk } = KIND_TABLES[kind];
+  const { table, fk, read } = KIND_TABLES[kind];
   return `(${alias}.name LIKE ? OR ${alias}.slug LIKE ? OR EXISTS (
-            SELECT 1 FROM ${table} ngts
+            SELECT 1 FROM ${read ?? table} ngts
              WHERE ngts.${fk} = ${alias}.id AND ngts.name LIKE ?))`;
 }
 
@@ -249,10 +251,10 @@ export async function copyGoalTranslations(
   targetId: number | string,
   kind: TranslatedGoalKind = 'nutrition',
 ): Promise<void> {
-  const { table: TABLE, fk } = KIND_TABLES[kind];
+  const { table: TABLE, fk, read } = KIND_TABLES[kind];
   await tx.query(
     `INSERT INTO ${TABLE} (${fk}, locale, name, description)
-      SELECT ?, locale, name, description FROM ${TABLE} WHERE ${fk} = ?
+      SELECT ?, locale, name, description FROM ${read ?? TABLE} WHERE ${fk} = ?
       ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
     [targetId, sourceId],
   );
