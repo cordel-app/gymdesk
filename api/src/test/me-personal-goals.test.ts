@@ -32,7 +32,10 @@ function asMember(method: 'get' | 'post' | 'put' | 'delete', path: string, gid: 
 }
 
 async function assignDirect(gid: string, mid: number, goalId: number, extra: Record<string, unknown> = {}) {
-  const columns = ['gym_id', 'member_id', 'personal_goal_id', ...Object.keys(extra)];
+  // #1849 2f: a System goal is referenced through its Base column, an own goal through the gym one.
+  const { rows: base } = await db.query('SELECT id FROM base_personal_goals WHERE id = ?', [goalId]);
+  const column = base.length > 0 ? 'base_personal_goal_id' : 'personal_goal_id';
+  const columns = ['gym_id', 'member_id', column, ...Object.keys(extra)];
   const values = [gid, mid, goalId, ...Object.values(extra)];
   const { insertId } = await db.query(
     `INSERT INTO member_personal_goals (${columns.join(', ')})
@@ -67,7 +70,7 @@ beforeAll(async () => {
   gymGoalId = insertId;
 
   const { rows: sys } = await db.query<{ id: number }>(
-    "SELECT id FROM personal_goals WHERE gym_id IS NULL AND slug = 'weight_loss' LIMIT 1",
+    "SELECT id FROM base_personal_goals WHERE slug = 'weight_loss' LIMIT 1",
   );
   systemGoalId = sys[0].id;
 });
