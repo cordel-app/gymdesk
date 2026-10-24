@@ -482,6 +482,7 @@ export async function cleanupTestGyms() {
   // answer `already_completed_today` for every test in every later file.
   await db.query('DELETE FROM billing_run_log');
   await db.query('DELETE FROM recurring_booking_run_log');
+  await db.query('DELETE FROM job_run_log');
 
   const ids = _createdGymIds.splice(0);
   if (ids.length === 0) return;
@@ -698,4 +699,35 @@ export async function activateTestAssignment(gymId: string, umId: number): Promi
   if (res.status >= 300) {
     throw new Error(`activateTestAssignment: ${res.status} ${JSON.stringify(res.body)}`);
   }
+}
+
+/**
+ * #1849 stage 2e: removes System Personal Goals a test created. A Base goal is
+ * referenced `ON DELETE RESTRICT` by `gym_personal_goals` / `member_personal_goals`
+ * (a gym created in parallel seeds an activation row for every Base goal), so those
+ * references go first, then the Base row, then its legacy mirror.
+ */
+export async function deleteTestSystemPersonalGoals(where: string, params: unknown[] = []): Promise<void> {
+  const { rows } = await db.query<{ id: number }>(`SELECT id FROM base_personal_goals WHERE ${where}`, params);
+  for (const { id } of rows) {
+    await db.query('DELETE FROM gym_personal_goals WHERE personal_goal_id = ? OR base_personal_goal_id = ?', [id, id]);
+    await db.query('DELETE FROM member_personal_goals WHERE personal_goal_id = ? OR base_personal_goal_id = ?', [id, id]);
+    await db.query('DELETE FROM base_personal_goals WHERE id = ?', [id]);
+    await db.query('DELETE FROM personal_goals WHERE id = ? AND gym_id IS NULL', [id]);
+  }
+}
+
+/**
+ * #1849 2f: a new Base Personal Goal id must come from the gym-owned goals' sequence
+ * (`personal_goals`), so the two id spaces stay disjoint — the same throw-away row
+ * `allocateGoalId()` uses in the Cordel router. A fixture that lets
+ * `base_personal_goals` pick its own AUTO_INCREMENT can collide with a gym-owned goal
+ * on a fresh database, which makes the catalogue view answer for the wrong goal.
+ */
+export async function allocateTestBaseGoalId(): Promise<number> {
+  const { insertId } = await db.query(
+    "INSERT INTO personal_goals (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')",
+  );
+  await db.query('DELETE FROM personal_goals WHERE id = ?', [insertId]);
+  return insertId as number;
 }

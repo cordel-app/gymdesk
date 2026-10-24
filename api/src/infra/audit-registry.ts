@@ -88,7 +88,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
         `SELECT m.name AS member_name, pg.name AS goal_name
          FROM member_personal_goals mpg
          JOIN members m ON m.id = mpg.member_id
-         JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+         JOIN personal_goal_catalogue pg ON pg.id = COALESCE(mpg.base_personal_goal_id, mpg.personal_goal_id)
          WHERE mpg.id = ?`,
         [id],
       );

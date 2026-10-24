@@ -141,6 +141,44 @@ const btnBase: React.CSSProperties = {
 // eligibility and center coverage. Since #973 stage 1 eligibility is about the
 // Professional Services an activity names (`professional_service_required`),
 // not a Membership Plan list.
+// #1986: the booking API names the services to choose between with this code.
+const SERVICE_SELECTION_CODE = 'professional_service_selection_required';
+
+interface ServiceOption { id: number; name: string }
+
+function serviceOptionsFrom(err: any): ServiceOption[] {
+  const list = err?.body?.professional_services;
+  if (!Array.isArray(list)) return [];
+  const out: ServiceOption[] = [];
+  for (const e of list) {
+    const id = Number(e?.id);
+    const name = String(e?.name ?? '').trim();
+    if (Number.isInteger(id) && id > 0 && name && !out.some((o) => o.id === id)) out.push({ id, name });
+  }
+  return out;
+}
+
+/** Inline (not a modal) choice of the Professional Service a booking is charged to. */
+function ServiceChoice({ options, selected, onSelect, hint }: {
+  options: ServiceOption[]; selected: number | null; onSelect: (id: number | null) => void; hint: string;
+}) {
+  if (options.length < 2) return null;
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ color: '#374151', fontWeight: 600, marginBottom: 4 }}>{hint}</div>
+      <select
+        value={selected ?? ''}
+        onChange={(e) => onSelect(e.target.value ? Number(e.target.value) : null)}
+        aria-label={hint}
+        style={{ ...formControlStyle, width: '100%' }}
+      >
+        <option value="">Select a Professional Service…</option>
+        {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
 const OVERRIDABLE_ACCESS_CODES = ['professional_service_required', 'plan_required', 'center_not_covered'];
 
 // #979: the 409 codes the API answers when the trainer or space a cancellation
@@ -202,7 +240,12 @@ export function ClassSessionDetailPanel({
   const [addOverCapacity, setAddOverCapacity] = useState(false);
   const [adding, setAdding] = useState(false);
   // #481: staff-override confirm for an access-hook rejection (eligibility/entitlement).
-  const [accessOverrideError, setAccessOverrideError] = useState<{ code: string; message: string } | null>(null);
+  const [accessOverrideError, setAccessOverrideError] = useState<{ code: string; message: string; services: ServiceOption[] } | null>(null);
+  // #1986: the Professional Service staff pick inline when several qualify
+  // (a balance on more than one) or, after the no-balance warning, which one
+  // goes negative. `options` is what the API named; `selected` is the pick.
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
   const [overriding, setOverriding] = useState(false);
 
   // #977 — Mark as completed flow (§4/§11): a past event with bookings is
@@ -347,18 +390,30 @@ export function ClassSessionDetailPanel({
       const body: Record<string, any> = { member_id: selectedMember.id, class_session_id: session.id };
       if (addMode === 'enroll' && addOverCapacity) body.force = true;
       if (addMode === 'waitlist') body.waitlist = true;
+      if (selectedServiceId != null) body.professional_service_id = selectedServiceId;
       await apiFetch('/bookings', { method: 'POST', body: JSON.stringify(body) });
       setSelectedMember(null);
       setAddConfirmMsg(null);
       setAddOverCapacity(false);
       setAddMode('none');
+      setServiceOptions([]);
+      setSelectedServiceId(null);
       await load();
     } catch (err: any) {
+      // #1986: several services have a balance — ask which, inline, and wait.
+      if (err.body?.code === SERVICE_SELECTION_CODE) {
+        const opts = serviceOptionsFrom(err);
+        setServiceOptions(opts);
+        setSelectedServiceId(null);
+        if (opts.length > 0) return;
+      }
       // #481: eligibility/entitlement rejections offer a staff override instead
       // of a hard failure, mirroring the existing over-capacity confirm above.
       const code = err.body?.code;
       if (code && OVERRIDABLE_ACCESS_CODES.includes(code)) {
-        setAccessOverrideError({ code, message: err.message ?? 'This member cannot be added to this event.' });
+        const services = code === 'professional_service_required' ? serviceOptionsFrom(err) : [];
+        setSelectedServiceId(services.length === 1 ? services[0].id : null);
+        setAccessOverrideError({ code, message: err.message ?? 'This member cannot be added to this event.', services });
       } else {
         toast(err.message ?? 'Failed to add member');
       }
@@ -376,10 +431,16 @@ export function ClassSessionDetailPanel({
       const body: Record<string, any> = {
         member_id: selectedMember.id, class_session_id: session.id, override_eligibility: true,
       };
+      // #1986: the service whose balance goes negative (several required → staff chose).
+      if (accessOverrideError?.code === 'professional_service_required' && selectedServiceId != null) {
+        body.professional_service_id = selectedServiceId;
+      }
       if (addMode === 'enroll' && addOverCapacity) body.force = true;
       if (addMode === 'waitlist') body.waitlist = true;
       await apiFetch('/bookings', { method: 'POST', body: JSON.stringify(body) });
       setAccessOverrideError(null);
+      setServiceOptions([]);
+      setSelectedServiceId(null);
       setSelectedMember(null);
       setAddConfirmMsg(null);
       setAddOverCapacity(false);
@@ -1048,12 +1109,16 @@ export function ClassSessionDetailPanel({
                     Add <strong>{selectedMember.name}</strong> to this event?
                   </div>
                 )}
+                <ServiceChoice
+                  options={serviceOptions} selected={selectedServiceId} onSelect={setSelectedServiceId}
+                  hint="This member has a balance on several services. Which one should be used?"
+                />
                 {/* Only show confirm if not a hard block (already enrolled/waitlisted) */}
                 {(!addConfirmMsg || addOverCapacity) && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={confirmAdd}
-                      disabled={adding}
+                      disabled={adding || (serviceOptions.length > 1 && selectedServiceId == null)}
                       style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: adding ? 0.6 : 1 }}
                     >
                       {adding ? 'Adding…' : addOverCapacity ? 'Add anyway' : 'Confirm'}
@@ -1138,11 +1203,15 @@ export function ClassSessionDetailPanel({
                     Add <strong>{selectedMember.name}</strong> to the waiting list?
                   </div>
                 )}
+                <ServiceChoice
+                  options={serviceOptions} selected={selectedServiceId} onSelect={setSelectedServiceId}
+                  hint="This member has a balance on several services. Which one should be used?"
+                />
                 {!addConfirmMsg && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={confirmAdd}
-                      disabled={adding}
+                      disabled={adding || (serviceOptions.length > 1 && selectedServiceId == null)}
                       style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: adding ? 0.6 : 1 }}
                     >
                       {adding ? 'Adding…' : 'Add to waiting list'}
@@ -1449,23 +1518,41 @@ export function ClassSessionDetailPanel({
             background: 'var(--gd-card-bg, #fff)', borderRadius: 10, padding: 24,
             width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
           }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: '#b45309' }}>⚠ Booking restriction</div>
-            <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
-              {accessOverrideError.message}
-            </div>
-            <div style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
-              Do you want to add them anyway?
-            </div>
+            {accessOverrideError.code === 'professional_service_required' ? (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: '#b45309' }}>⚠ No available professional service balance</div>
+                <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
+                  This member has no available balance for any of the professional services required for this event.
+                  If you proceed, their balance will become negative.
+                </div>
+                <div style={{ fontSize: 13 }}>
+                  <ServiceChoice
+                    options={accessOverrideError.services} selected={selectedServiceId} onSelect={setSelectedServiceId}
+                    hint="Which professional service should be deducted?"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: '#b45309' }}>⚠ Booking restriction</div>
+                <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
+                  {accessOverrideError.message}
+                </div>
+                <div style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
+                  Do you want to add them anyway?
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={confirmOverrideAdd}
-                disabled={overriding}
+                disabled={overriding || (accessOverrideError.code === 'professional_service_required' && accessOverrideError.services.length > 1 && selectedServiceId == null)}
                 style={{ ...btnBase, background: '#b45309', color: '#fff', flex: 1, opacity: overriding ? 0.6 : 1 }}
               >
                 {overriding ? 'Adding…' : 'Add anyway'}
               </button>
               <button
-                onClick={() => setAccessOverrideError(null)}
+                onClick={() => { setAccessOverrideError(null); setSelectedServiceId(null); }}
                 disabled={overriding}
                 style={{ ...btnBase, background: '#f3f4f6', color: '#374151', flex: 1 }}
               >

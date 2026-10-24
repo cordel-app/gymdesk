@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { CardDetailRow } from '@/components/CardDetailRow';
+import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
 import { BillingEventSimulation, type BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { cardHintStyle, cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
@@ -143,20 +144,30 @@ export function ProductSetProducts({ lines, loading, error }: { lines: ProductSe
 }
 
 /** The Billing Events Forecast: expected events, computed on read and persisted nowhere. */
-export function ProductSetForecast({ forecast, loading, error }: {
+export function ProductSetForecast({ forecast, loading, error, chartSimulation }: {
   forecast: BillingEventSimulationData | null; loading: boolean; error: boolean;
+  /** #1951 — the unfiltered simulation the chart plots; defaults to `forecast`. */
+  chartSimulation?: BillingEventSimulationData | null;
 }) {
   const t = useTranslations('members');
   const tPlan = useTranslations('assigned_plans_page');
   const gymFmt = useGymFormatSettings();
   if (loading) return <p style={cardHintStyle}>{t('product_set_loading')}</p>;
   if (error) return <p style={cardHintStyle}>{t('product_set_error')}</p>;
+  const translate = (key: string, values?: Record<string, string | number>) => tPlan(key as any, values as any);
+  const formatDate = (date: string) => fmtYmd(date, gymFmt) ?? date;
   return (
-    <BillingEventSimulation
-      simulation={forecast}
-      t={(key, values) => tPlan(key as any, values as any)}
-      formatDate={(date) => fmtYmd(date, gymFmt) ?? date}
-    />
+    <>
+      {/* #1951 — the chart plots every period, €0.00 ones included, whatever the
+          list below hides: it is fed the unfiltered simulation with showZero. */}
+      <BillingEventSimulationChart
+        simulation={chartSimulation ?? forecast}
+        showZero
+        t={translate}
+        formatDate={formatDate}
+      />
+      <BillingEventSimulation simulation={forecast} t={translate} formatDate={formatDate} />
+    </>
   );
 }
 

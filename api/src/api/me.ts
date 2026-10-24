@@ -1,3 +1,4 @@
+import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
@@ -1033,7 +1034,13 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx));
+    // #1985: the service the member picked when several qualify; null = none picked.
+    const rawService = req.body.professional_service_id;
+    const chosenService = rawService == null || rawService === '' ? null : Number(rawService);
+    if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
+      return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
+    }
+    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx), chosenService);
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1233,12 +1240,16 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json([]); }
     // #1540: the member's profile gender picks which exercise image is shown.
     const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
+    // #1967: a plan applies only from its start_date through its end_date, in the gym's zone.
+    const today = gymToday(new Date(), await gymTimeZone(gymId));
     const { rows } = await db.query(
       `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
        WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.status = 'active'
+         AND (tp.start_date IS NULL OR tp.start_date <= ?)
+         AND (tp.end_date IS NULL OR tp.end_date >= ?)
          AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id AND mtp.status = 'active')
        ORDER BY tp.created_at DESC, tp.id DESC`,
-      [gymId, memberId],
+      [gymId, memberId, today, today],
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -1304,13 +1315,17 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     let memberId: number;
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json({ plan: null }); }
 
+    const parsedDate = parseNutritionPlanDate(req.query.date);
+    if (parsedDate === null) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const onDate = parsedDate ?? new Date().toISOString().slice(0, 10);
+
     const { rows: planRows } = await db.query(
-      `SELECT id, name, description, start_date
-       FROM member_nutrition_plans
-       WHERE gym_id = ? AND member_id = ? AND status = 'active'
+      `SELECT id, name, description, start_date, end_date
+       FROM member_nutrition_plans mnp
+       WHERE gym_id = ? AND member_id = ? AND ${planEffectiveOnSql('mnp')}
        ORDER BY created_at DESC
        LIMIT 1`,
-      [gymId, memberId],
+      [gymId, memberId, onDate, onDate],
     );
     if (planRows.length === 0) return res.json({ plan: null });
     const plan = planRows[0];

@@ -61,6 +61,17 @@ export const GOAL_LIBRARY_FEATURE_KEYS: Record<GoalLibraryKind, string> = {
   nutrition: 'nutrition.nutrition_library',
 };
 
+/**
+ * #1849 stage 2c — what a gym-facing **read** selects from. Personal Goals read
+ * the `personal_goal_catalogue` view (System goals from `base_personal_goals`, a
+ * gym's own from `personal_goals`); Nutrition Goals are unchanged. Writes always
+ * target `GOAL_LIBRARY_TABLES`.
+ */
+export const GOAL_LIBRARY_READ_SOURCES: Record<GoalLibraryKind, string> = {
+  personal: 'personal_goal_catalogue',
+  nutrition: 'nutrition_goals',
+};
+
 /** What `status` may hold. Mirrored by `chk_<prefix>_status` (migration 206). */
 export const GOAL_STATUSES = ['active', 'deleted'] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
@@ -160,7 +171,17 @@ export type GymGoalStatus = (typeof GYM_GOAL_STATUSES)[number];
  */
 export function gymGoalStatusSql(goalAlias: string): string {
   return `COALESCE((SELECT gpg.status FROM gym_personal_goals gpg
-    WHERE gpg.personal_goal_id = ${goalAlias}.id AND gpg.gym_id = ?), 'active')`;
+    WHERE ${assignedGoalIdSql('gpg')} = ${goalAlias}.id AND gpg.gym_id = ?), 'active')`;
+}
+
+/**
+ * #1849 stage 2e — the catalogue id a `member_personal_goals` / `gym_personal_goals`
+ * row refers to: its System goal (`base_personal_goal_id`) when it has one, else
+ * the gym-owned goal (`personal_goal_id`). Every reader goes through this, so
+ * stage 2f can clear `personal_goal_id` on System-goal rows without touching them.
+ */
+export function assignedGoalIdSql(alias: string): string {
+  return `COALESCE(${alias}.base_personal_goal_id, ${alias}.personal_goal_id)`;
 }
 
 /**
@@ -263,7 +284,7 @@ export function buildGoalListWhere(
   search: unknown,
   base: string[],
   baseParams: unknown[] = [],
-  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' } = {},
+  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' | 'base_personal' } = {},
 ): { where: string; params: unknown[] } {
   const term = typeof search === 'string' ? search.trim() : '';
   const where = [...base];
@@ -272,8 +293,10 @@ export function buildGoalListWhere(
     if (searchTranslations) {
       // #1623 — the base name, the slug **or any** stored translated name, so a
       // search in one language finds the goal whatever language the screen is in.
-      const t = translationKind === 'personal'
-        ? { table: 'personal_goal_translations', fk: 'personal_goal_id' }
+      const t = translationKind === 'base_personal'
+        ? { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' }
+        : translationKind === 'personal'
+        ? { table: 'personal_goal_translation_catalogue', fk: 'personal_goal_id' }
         : { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' };
       where.push(`(g.name LIKE ? OR g.slug LIKE ? OR EXISTS (
         SELECT 1 FROM ${t.table} ngts

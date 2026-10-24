@@ -54,7 +54,12 @@ export interface AccessHook {
     tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null,
     // #980 stage 3: the occurrence being booked, so a gate that is answered
     // per occurrence (its own Eligible Professional Services) can read it.
-    opts?: { overrideAccess?: boolean; calendarEventId?: number },
+    opts?: {
+      overrideAccess?: boolean;
+      calendarEventId?: number;
+      /** #1985: the service the member picked (in) and the one the gate settled on (out). */
+      serviceChoice?: { requested?: number | null; resolved?: number | null };
+    },
   ): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
@@ -106,6 +111,8 @@ export async function bookMemberOnSession(
   overrideAccess = false,
   /** #1182 stage 3: who booked — `created_by`. Plain text from `resolveRequestActor()`, `SYSTEM_ACTOR` for a run. */
   actor: string | null = null,
+  /** #1985: the Professional Service the member chose to consume, when several qualify. */
+  professionalServiceId?: number | null,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -120,8 +127,24 @@ export async function bookMemberOnSession(
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
+    // Only a caller that passes the argument (the member's own booking) is asked to choose.
+    const serviceChoice: { requested?: number | null; resolved?: number | null } | undefined =
+      professionalServiceId === undefined ? undefined : { requested: professionalServiceId };
     for (const hook of accessHooks) {
-      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess, calendarEventId: Number(session[0].id) });
+      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess, calendarEventId: Number(session[0].id), serviceChoice });
+    }
+    let chosenServiceId = serviceChoice?.resolved ?? null;
+    // #1986: a staff override skips the gate, so settle the service here; the
+    // booking may be marked as accepting a negative balance when none is left.
+    let negativeBalanceOk = false;
+    if (overrideAccess && professionalServiceId !== undefined) {
+      // Lazy: activity-eligibility imports this module to register its hook.
+      const { resolveStaffServiceChoice } = await import('./activity-eligibility');
+      const staff = await resolveStaffServiceChoice(
+        tx, gymId, memberId, session[0].activity_type_id, Number(session[0].id), professionalServiceId,
+      );
+      chosenServiceId = staff.serviceId;
+      negativeBalanceOk = staff.negativeBalanceOk;
     }
 
     const { rows: nextRows } = await tx.query(
@@ -157,9 +180,9 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by)
-         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?)`,
-        [gymId, session[0].center_id, memberId, sessionId, actor],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by, professional_service_id, negative_balance_ok)
+         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?, ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId, negativeBalanceOk ? 1 : 0],
       );
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
@@ -268,6 +291,12 @@ export async function cancelBooking(
 bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { member_id, class_session_id, force, waitlist, override_eligibility } = req.body;
+  // #1986: the service staff chose (when several qualify); null = none chosen.
+  const rawService = req.body.professional_service_id;
+  const chosenService = rawService == null || rawService === '' ? null : Number(rawService);
+  if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
+    return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
+  }
   if (!member_id || !class_session_id) {
     return res.status(400).json({ error: 'member_id and class_session_id are required' });
   }
@@ -281,6 +310,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
     const result = await bookMemberOnSession(
       gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist),
       undefined, Boolean(override_eligibility), resolveRequestActor(getTenantContext(req)),
+      chosenService,
     );
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
@@ -308,6 +338,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
         // services that would unlock the booking, for the member-facing
         // surface that routes to buying one.
         ...(err.professional_services ? { professional_services: err.professional_services } : {}),
+        ...(err.negative_balance ? { negative_balance: true } : {}),
       });
     }
     handleDupEntry(err, res, next, 'This member already has an active booking for this session.');

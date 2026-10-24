@@ -21,7 +21,8 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeStyle } from '@/components/listChrome';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { inlineActionsRowStyle, secondaryBtnStyle } from '@/components/formChrome';
+import { ImportProfessionalServicesModal } from './ImportProfessionalServicesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ interface ProfessionalService {
   description: string | null;
   is_system: number;
   system_key: string | null;
+  max_capacity: number | null;
   status: ServiceStatus;
   created_at: string;
   modified_at: string | null;
@@ -43,11 +45,21 @@ interface ProfessionalService {
 type EditForm = {
   name: string;
   description: string;
+  max_capacity: string;
 };
+
+/** '' → no capacity; otherwise a positive whole number (the API's rule, mirrored for the message only). */
+function parseCapacityInput(value: string): { value: number | null } | { error: true } {
+  const v = value.trim();
+  if (v === '') return { value: null };
+  if (!/^\d+$/.test(v) || Number(v) <= 0) return { error: true };
+  return { value: Number(v) };
+}
 
 type InlineNew = {
   name: string;
   description: string;
+  max_capacity: string;
   saving: boolean;
   error: string | null;
 };
@@ -56,6 +68,7 @@ function emptyEditForm(item: ProfessionalService): EditForm {
   return {
     name: item.name,
     description: item.description ?? '',
+    max_capacity: item.max_capacity === null || item.max_capacity === undefined ? '' : String(item.max_capacity),
   };
 }
 
@@ -136,6 +149,7 @@ export default function ProfessionalServicesPage() {
   const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
   const newNameRef = useRef<HTMLInputElement>(null);
 
+  const [importOpen, setImportOpen] = useState(false);
   const [details, setDetails] = useState<ProfessionalService | null>(null);
   const [deleting, setDeleting] = useState<ProfessionalService | null>(null);
 
@@ -174,7 +188,7 @@ export default function ProfessionalServicesPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', description: '', saving: false, error: null });
+    setInlineNew({ name: '', description: '', max_capacity: '', saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -183,6 +197,8 @@ export default function ProfessionalServicesPage() {
   async function saveInlineNew() {
     if (!inlineNew) return;
     if (!inlineNew.name.trim()) { setInlineNew({ ...inlineNew, error: t('error_name_required') }); return; }
+    const capacity = parseCapacityInput(inlineNew.max_capacity);
+    if ('error' in capacity) { setInlineNew({ ...inlineNew, error: t('error_max_capacity') }); return; }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
       await apiFetch('/professional-services', {
@@ -190,6 +206,7 @@ export default function ProfessionalServicesPage() {
         body: JSON.stringify({
           name: inlineNew.name.trim(),
           description: inlineNew.description.trim() || null,
+          max_capacity: capacity.value,
         }),
       });
       setInlineNew(null);
@@ -217,6 +234,8 @@ export default function ProfessionalServicesPage() {
   async function handleSave(item: ProfessionalService) {
     if (!editForm) return;
     if (!editForm.name.trim()) { setEditError(t('error_name_required')); return; }
+    const capacity = parseCapacityInput(editForm.max_capacity);
+    if ('error' in capacity) { setEditError(t('error_max_capacity')); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/professional-services/${item.id}`, {
@@ -224,6 +243,7 @@ export default function ProfessionalServicesPage() {
         body: JSON.stringify({
           name: editForm.name.trim(),
           description: editForm.description.trim() || null,
+          max_capacity: capacity.value,
         }),
       });
       cancelEdit();
@@ -301,6 +321,16 @@ export default function ProfessionalServicesPage() {
                 style={inlineInputStyle}
               />
             </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelStyle}>{t('label_max_capacity')}</label>
+            <input
+              type="number" min={1} step={1}
+              value={inlineNew.max_capacity}
+              onChange={(e) => setInlineNew({ ...inlineNew, max_capacity: e.target.value })}
+              placeholder={t('placeholder_max_capacity')}
+              style={inlineInputStyle}
+            />
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={inlineActionsRowStyle}>
@@ -384,6 +414,16 @@ export default function ProfessionalServicesPage() {
                 style={inlineInputStyle}
               />
             </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={inlineLabelStyle}>{t('label_max_capacity')}</label>
+              <input
+                type="number" min={1} step={1}
+                value={editForm.max_capacity}
+                onChange={(e) => setEditForm({ ...editForm, max_capacity: e.target.value })}
+                placeholder={t('placeholder_max_capacity')}
+                style={inlineInputStyle}
+              />
+            </div>
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={inlineActionsRowStyle}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
@@ -398,6 +438,7 @@ export default function ProfessionalServicesPage() {
         {isExpanded && !isEditing && (
           <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-border, #eee)' }}>
             <DetailRow label={t('label_description')} value={item.description ?? t('no_description')} />
+            <DetailRow label={t('label_max_capacity')} value={item.max_capacity === null || item.max_capacity === undefined ? t('no_max_capacity') : String(item.max_capacity)} />
           </div>
         )}
       </div>
@@ -412,7 +453,12 @@ export default function ProfessionalServicesPage() {
     <div style={{ padding: '24px 32px', maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{t('title')}</h1>
-        <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {isAdmin && (
+            <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(secondaryBtnStyle, !canWrite)} disabled={!canWrite}>{t('import_services')}</button>
+          )}
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        </div>
       </div>
 
       {loading ? (
@@ -447,6 +493,16 @@ export default function ProfessionalServicesPage() {
         </div>
       )}
 
+      <ImportProfessionalServicesModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={(result) => {
+          setImportOpen(false);
+          toast(t('import_done', { n: result.imported.length }) + (result.skipped.length > 0 ? ` ${t('import_skipped', { n: result.skipped.length })}` : ''));
+          load();
+        }}
+      />
+
       {/* Details modal */}
       <CrudModal
         open={details !== null}
@@ -464,6 +520,7 @@ export default function ProfessionalServicesPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <ModalField label={t('label_name')} value={details.name} />
             <ModalField label={t('label_description')} value={details.description ?? t('no_description')} />
+            <ModalField label={t('label_max_capacity')} value={details.max_capacity === null || details.max_capacity === undefined ? t('no_max_capacity') : String(details.max_capacity)} />
             <ModalField label={t('label_status')} value={tStatus(details.status)} />
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

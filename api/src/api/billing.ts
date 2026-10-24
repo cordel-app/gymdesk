@@ -4,6 +4,7 @@ import { db } from '../infra/db';
 import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
 import { cancelAbandonedPurchases } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
+import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { expireDrafts } from './product-sets';
 
@@ -196,6 +197,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
 billingRouter.post('/cleanup', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
 
+  const jobRunId = await startJobRun('billing_cleanup');
   try {
     const { rowCount: unopened } = await db.query(
       `UPDATE payment_requests
@@ -238,14 +240,17 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       { expired, unopened, abandoned, abandonedAfterHours: hours, purchasesCancelled },
       'payment_requests cleanup: expired rows',
     );
-    res.json({
+    const cleanupBody = {
       expired,
       expired_unopened: unopened,
       expired_abandoned: abandoned,
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
-    });
+    };
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: cleanupBody });
+    res.json(cleanupBody);
   } catch (err) {
+    await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
     req.log.error({ err: (err as Error).message }, 'billing cleanup failed');
     res.status(500).json({ error: 'Internal server error' });
   }

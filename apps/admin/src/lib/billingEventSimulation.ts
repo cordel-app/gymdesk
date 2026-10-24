@@ -41,6 +41,8 @@ export interface BillingEventSimulationLine {
    * ordinary fee cycle, so the note appears exactly where the server put it.
    */
   prepaid_periods: number | null;
+  /** #1867 stage 4 — the partial first period of a Product that joined an existing schedule. */
+  proration?: { prorated_days: number; period_days: number } | null;
   benefits: BillingEventSimulationBenefit[];
 }
 
@@ -271,6 +273,8 @@ export function billingEventChartPoints(
   formatAmount: (amount: number) => string,
   lineName: (line: BillingEventSimulationLine) => string = (line) => line.label,
   totalLabel: (formattedTotal: string) => string = (formattedTotal) => formattedTotal,
+  /** #1867 stage 4 — an explanation appended to a line's tooltip entry (its proration); `null` for none. */
+  lineNote: (line: BillingEventSimulationLine) => string | null = () => null,
 ): BillingEventChartPoint[] {
   const points: BillingEventChartPoint[] = [];
   for (const group of dates) {
@@ -279,7 +283,10 @@ export function billingEventChartPoints(
     points.push({
       x, y: group.total, date: group.date,
       label: formatDate(group.date), valueLabel: totalLabel(formatAmount(group.total)),
-      detailLines: group.lines.map((line) => `${lineName(line)} — ${formatAmount(line.actual_charge)}`),
+      detailLines: group.lines.map((line) => {
+        const note = lineNote(line);
+        return `${lineName(line)} — ${formatAmount(line.actual_charge)}${note ? ` (${note})` : ''}`;
+      }),
     });
   }
   return points.sort((a, b) => a.x - b.x);

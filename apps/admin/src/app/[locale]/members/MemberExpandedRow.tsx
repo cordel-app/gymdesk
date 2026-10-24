@@ -38,6 +38,7 @@ import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
+import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -187,6 +188,7 @@ export function MemberExpandedRow({
   // #1963 — the inactive plan groups start collapsed.
   const [trainingInactiveOpen, setTrainingInactiveOpen] = useState(false);
   const [nutritionInactiveOpen, setNutritionInactiveOpen] = useState(false);
+  const [assignNutritionOpen, setAssignNutritionOpen] = useState(false);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   // #1118 §12 — the Products this Member bought from the Members App, each with
@@ -556,7 +558,7 @@ export function MemberExpandedRow({
               the ledger is the separate Actual Billing Events section at the foot of the tab (#1867). */}
           {billingSectionMode === 'simulation' && (
             <Section label={t('members.section_billing_event_simulation')}>
-              <ProposedSetForecast productSetId={inFlightSetId} />
+              <ProposedSetForecast productSetId={inFlightSetId} reloadKey={configuration} />
             </Section>
           )}
 
@@ -670,7 +672,14 @@ export function MemberExpandedRow({
           {/* Nutrition Plans */}
           <Section label={t('members.section_nutrition_plans')} divider={false}>
             {nutritionPlans.length === 0 ? (
-              <p style={dim}>{t('members.no_nutrition_plans')}</p>
+              <>
+                <p style={dim}>{t('members.no_nutrition_plans')}</p>
+                {canManageNutrition && (
+                  <button type="button" style={primaryBtnSmall()} onClick={() => setAssignNutritionOpen(true)}>
+                    {t('members.assign_nutrition_plan')}
+                  </button>
+                )}
+              </>
             ) : (
               <div>
                 {(() => {
@@ -705,7 +714,12 @@ export function MemberExpandedRow({
                   const inactiveN = nutritionPlans.filter((p) => p.status !== 'active');
                   return (
                     <>
-                      {renderNutrition(activeN)}
+                      {activeN.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={subLabelStyle}>{t('members.plans_active')}</div>
+                          {renderNutrition(activeN)}
+                        </div>
+                      )}
                       {inactiveN.length > 0 && (
                         <div>
                           <InactiveToggle
@@ -724,6 +738,18 @@ export function MemberExpandedRow({
           </Section>
         </>
       )}
+
+      <NewNutritionPlanDialog
+        open={assignNutritionOpen}
+        initialMemberId={Number(memberId)}
+        onClose={() => setAssignNutritionOpen(false)}
+        onCreated={() => {
+          setAssignNutritionOpen(false);
+          apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`)
+            .then(setNutritionPlans)
+            .catch(() => {});
+        }}
+      />
 
       {tab === 'personal_goals' && (
         <>

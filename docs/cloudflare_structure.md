@@ -12,6 +12,10 @@
 │   │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
 │   │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
 │   │
+│   ├── professional_services/
+│   │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
+│   │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
 │   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
@@ -66,6 +70,10 @@
         ├── products
         │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
         │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
+        │
+        ├── professional_services/
+        │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
+        │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
         │  
         ├── goals
         │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px

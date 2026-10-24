@@ -108,7 +108,9 @@ async function updateGoal(path: string, id: number, body: Record<string, unknown
 /** The id of one of migration 206's seeded System rows (never mutated here). */
 async function systemGoalId(table: string, slug: string): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
+    table === 'personal_goals'
+      ? 'SELECT id FROM base_personal_goals WHERE slug = ?'
+      : `SELECT id FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
     [slug],
   );
   return rows[0]?.id;
@@ -366,7 +368,7 @@ for (const kind of KINDS) {
       expect(res.status).toBe(403);
 
       const { rows } = await db.query<{ name: string; status: string; modified_at: string | null }>(
-        `SELECT name, status, modified_at FROM ${table} WHERE id = ?`,
+        `SELECT name, status, modified_at FROM ${table === 'personal_goals' ? 'personal_goal_catalogue' : table} WHERE id = ?`,
         [seededId],
       );
       expect(rows[0].name).toBe(kind.systemName);
@@ -630,7 +632,7 @@ for (const kind of KINDS) {
       const res = await updateGoal(path, id, { target_value: 99 });
       expect(res.status).toBe(403);
       const { rows } = await db.query<{ target_value: string | null }>(
-        `SELECT target_value FROM ${table} WHERE id = ?`, [id],
+        `SELECT target_value FROM ${table === 'personal_goals' ? 'personal_goal_catalogue' : table} WHERE id = ?`, [id],
       );
       expect(Number(rows[0].target_value)).toBe(-3);
     });
@@ -706,7 +708,9 @@ for (const kind of KINDS) {
       expect(seeded.created_at).toBeTruthy();
       // The row really does carry a Cordel actor underneath.
       const { rows } = await db.query<{ created_by: string | null }>(
-        `SELECT created_by FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
+        table === 'personal_goals'
+          ? 'SELECT created_by FROM base_personal_goals WHERE slug = ?'
+          : `SELECT created_by FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
         [kind.systemSlug],
       );
       expect(rows[0].created_by).toBe('Cordel');

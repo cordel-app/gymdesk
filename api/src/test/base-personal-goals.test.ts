@@ -1,5 +1,5 @@
-// #1849 stage 2a: migration 304 copies the System Personal Goals into
-// base_personal_goals, keeping ids, and leaves the legacy rows untouched.
+// #1849 stage 2f-2: migration 320 deletes the legacy System rows of personal_goals;
+// base_personal_goals (copied by 304, ids kept) is the only copy of a System goal.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -8,40 +8,32 @@ afterAll(async () => {
   await db.end();
 });
 
-describe('base_personal_goals copy (#1849 stage 2a)', () => {
-  it('holds every System goal under its original id with the same definition', async () => {
-    // Only the seeded (slugged) System goals: other test files may add System
-    // goals after the migration ran, and those were never copied. The id list
-    // stays in SQL because `db.query` is a prepared statement and does not
-    // expand an array bound to `IN (?)`.
-    const { rows: legacy } = await db.query<any>(
-      `SELECT id, slug, name, target_value, target_unit, target_type FROM personal_goals
-        WHERE gym_id IS NULL AND slug IS NOT NULL ORDER BY id`,
+describe('base_personal_goals after the legacy delete (#1849 stage 2f-2)', () => {
+  it('holds the seven seeded System goals with their definition', async () => {
+    const { rows } = await db.query<any>(
+      `SELECT slug, name, target_value, target_unit, target_type FROM base_personal_goals
+        WHERE slug IN ('weight_loss','weight_gain','muscle_gain','maintenance','performance','recovery','energy')
+        ORDER BY slug`,
     );
-    expect(legacy.length).toBeGreaterThan(0);
-    const { rows: base } = await db.query<any>(
-      `SELECT id, slug, name, target_value, target_unit, target_type FROM base_personal_goals
-        WHERE id IN (SELECT id FROM personal_goals WHERE gym_id IS NULL AND slug IS NOT NULL)
-        ORDER BY id`,
-    );
-    expect(base).toEqual(legacy);
+    expect(rows.map((r: any) => r.slug)).toEqual(
+      ['energy', 'maintenance', 'muscle_gain', 'performance', 'recovery', 'weight_gain', 'weight_loss']);
+    const loss = rows.find((r: any) => r.slug === 'weight_loss');
+    expect(loss.name).toBe('Weight Loss');
+    expect(Number(loss.target_value)).toBe(-3);
+    expect(loss.target_unit).toBe('kg');
+    expect(loss.target_type).toBe('relative');
   });
 
-  it('copies the translations of the System goals', async () => {
+  it('keeps the seeded translations in the Base junction', async () => {
     const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS missing FROM personal_goal_translations t
-         JOIN personal_goals g ON g.id = t.personal_goal_id AND g.gym_id IS NULL AND g.slug IS NOT NULL
-         LEFT JOIN base_personal_goal_translations b
-           ON b.base_personal_goal_id = t.personal_goal_id AND b.locale = t.locale
-        WHERE b.locale IS NULL`,
+      `SELECT COUNT(*) AS n FROM base_personal_goal_translations t
+         JOIN base_personal_goals b ON b.id = t.base_personal_goal_id AND b.slug = 'weight_loss'`,
     );
-    expect(Number(rows[0].missing)).toBe(0);
+    expect(Number(rows[0].n)).toBeGreaterThan(0);
   });
 
-  it('leaves the legacy System rows in place', async () => {
-    const { rows } = await db.query<any>(
-      'SELECT COUNT(*) AS n FROM personal_goals WHERE gym_id IS NULL AND slug IS NOT NULL',
-    );
-    expect(Number(rows[0].n)).toBeGreaterThanOrEqual(7);
+  it('leaves no System row in personal_goals', async () => {
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM personal_goals WHERE gym_id IS NULL');
+    expect(Number(rows[0].n)).toBe(0);
   });
 });

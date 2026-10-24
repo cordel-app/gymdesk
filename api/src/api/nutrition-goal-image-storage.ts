@@ -46,10 +46,16 @@ export interface NutritionGoalImageScope {
   prefix: string | null;
   /** #1722: which catalogue the goal is in — its table and its folder. Defaults to Nutrition Goals. */
   kind?: GoalLibraryKind;
+  /**
+   * #1849 stage 2b: a table that overrides the kind's own — `base_personal_goals`,
+   * which has no `gym_id` (every row is the platform's), so the ownership
+   * predicate is vacuous there.
+   */
+  table?: string;
 }
 
 function tableOf(scope: NutritionGoalImageScope): string {
-  return GOAL_LIBRARY_TABLES[scope.kind ?? 'nutrition'];
+  return scope.table ?? GOAL_LIBRARY_TABLES[scope.kind ?? 'nutrition'];
 }
 
 function folderOf(scope: NutritionGoalImageScope): string {
@@ -58,6 +64,7 @@ function folderOf(scope: NutritionGoalImageScope): string {
 
 /** The ownership predicate of the row, so a gym write can never touch a System goal or another gym's. */
 function ownerWhere(scope: NutritionGoalImageScope): { sql: string; params: unknown[] } {
+  if (scope.table) return { sql: '1 = 1', params: [] };
   return scope.gymId === null
     ? { sql: 'gym_id IS NULL', params: [] }
     : { sql: 'gym_id = ?', params: [scope.gymId] };

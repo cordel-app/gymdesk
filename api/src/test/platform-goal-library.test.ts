@@ -2,7 +2,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, deleteTestSystemPersonalGoals, request } from './helpers';
 
 // Override the default @clerk/backend mock: make test-user-id a superadmin.
 const mockGetUser = vi.hoisted(() =>
@@ -77,6 +77,8 @@ const gymGoalIds: Record<string, number> = {};
 /** The name no System row ever takes, so the search case can assert an empty page. */
 const GYM_ONLY_NAME = `PGL Gym Only ${RUN}`;
 /** The name a System row deliberately reuses, to prove the keys do not collide. */
+/** #1849 2f: Cordel's Personal Goals live in base_personal_goals alone. */
+const systemTable = (t: string) => (t === 'personal_goals' ? 'base_personal_goals' : t);
 const GYM_SHARED_NAME = `PGL Gym Shared ${RUN}`;
 
 beforeAll(async () => {
@@ -101,6 +103,8 @@ afterAll(async () => {
   for (const [table, ids] of Object.entries(createdSystemIds)) {
     if (ids.length === 0) continue;
     const marks = ids.map(() => '?').join(',');
+    // #1849 2b: a System Personal Goal also has a Base row under the same id.
+    if (table === 'personal_goals') await deleteTestSystemPersonalGoals(`id IN (${marks})`, ids);
     await db.query(`DELETE FROM ${table} WHERE id IN (${marks})`, ids);
   }
   await db.end();
@@ -233,7 +237,7 @@ for (const kind of KINDS) {
       expect(renamed.body.modified_by).toBe('Super Admin');
       expect(renamed.body.modified_at).not.toBeNull();
 
-      const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${table} WHERE id = ?`, [created.body.id]);
+      const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${systemTable(table)} WHERE id = ?`, [created.body.id]);
       expect(rows[0].slug).toBeNull();
     });
 
@@ -402,7 +406,7 @@ for (const kind of KINDS) {
         .send({ name: '  ' });
       expect(res.status).toBe(400);
 
-      const { rows } = await db.query<{ name: string }>(`SELECT name FROM ${table} WHERE id = ?`, [created.body.id]);
+      const { rows } = await db.query<{ name: string }>(`SELECT name FROM ${systemTable(table)} WHERE id = ?`, [created.body.id]);
       expect(rows[0].name).toBe(`PGL Blank Put ${RUN}`);
     });
 

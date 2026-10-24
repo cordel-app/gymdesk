@@ -17,6 +17,7 @@ import {
 } from '../infra/storage';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { seedDefaultGymProducts } from './gym-default-products';
+import { seedDefaultGymPersonalGoals } from './gym-default-personal-goals';
 import { logger } from '../lib/logger';
 
 export const gymsRouter = Router();
@@ -294,14 +295,16 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // explicit `active` row per goal, `gym_professional_services`' pattern. A
     // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
     await db.query(
-      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
-       SELECT ?, id, 'active', ? FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
+      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+       SELECT ?, NULL, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
       [id, actorName],
     );
     // #1149: the gym's default Products — one writer for both creation paths,
     // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
     // a System Product's name and type still come from `charge_types`).
     await seedDefaultGymProducts(id);
+    // #1850: every live Base Personal Goal becomes a gym-owned goal of the new gym.
+    await seedDefaultGymPersonalGoals(id, actorName);
     const { rows } = await db.query(
       `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
       [id],
@@ -466,11 +469,12 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     [newId, actorName],
   );
   await db.query(
-    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
-     SELECT ?, id, 'active', ? FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
+    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+     SELECT ?, NULL, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
     [newId, actorName],
   );
   await seedDefaultGymProducts(newId);
+  await seedDefaultGymPersonalGoals(newId, actorName);
   const { rows } = await db.query(
     `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [newId],

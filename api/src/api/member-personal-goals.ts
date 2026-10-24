@@ -9,7 +9,7 @@ import { readingActor } from '../domain/personalGoalAssignment';
 // The catalogue's own feature key, so this router and `/personal-goals` are
 // gated by one declaration (#1070 — a feature-level permission override applies
 // to the key, so the two halves of Personal Goals cannot be granted apart).
-import { GOAL_LIBRARY_FEATURE_KEYS, gymGoalStatusSql } from '../domain/goalLibrary';
+import { GOAL_LIBRARY_FEATURE_KEYS, assignedGoalIdSql, gymGoalStatusSql } from '../domain/goalLibrary';
 import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   buildAssignmentListWhere,
@@ -89,7 +89,7 @@ const requireWrite = requireFeatureWrite(GOAL_LIBRARY_FEATURE_KEYS.personal, 'NU
  * viewer's language, not the row's.
  */
 const COLUMNS = `
-  mpg.id, mpg.gym_id, mpg.member_id, mpg.personal_goal_id,
+  mpg.id, mpg.gym_id, mpg.member_id, ${assignedGoalIdSql('mpg')} AS personal_goal_id,
   mpg.target_value, mpg.target_unit, mpg.target_type, mpg.start_date, mpg.target_date,
   mpg.end_date,
   mpg.status, mpg.notes,
@@ -112,7 +112,7 @@ const COLUMNS = `
 const FROM = `
   FROM member_personal_goals mpg
   JOIN members m ON m.id = mpg.member_id AND m.gym_id = mpg.gym_id
-  JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+  JOIN personal_goal_catalogue pg ON pg.id = ${assignedGoalIdSql('mpg')}
                         AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
 `;
 
@@ -288,7 +288,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     // comes to name something the catalogue no longer offers.
     const { rows: goalRows } = await db.query(
       `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, pg.target_type, ${gymGoalStatusSql('pg')} AS gym_status
-       FROM personal_goals pg
+       FROM personal_goal_catalogue pg
        WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
       [gymId, goalId, gymId],
     );
@@ -334,11 +334,11 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
-           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
+           (gym_id, member_id, personal_goal_id, base_personal_goal_id, goal_name, target_value, target_unit, target_type,
             start_date, target_date, status, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?)`,
+         VALUES (?, ?, (SELECT id FROM personal_goals WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_personal_goals WHERE id = ?), ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?)`,
         [
-          gymId, memberId, goalId, catalogue.name,
+          gymId, memberId, goalId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
           status.value ?? null, notes.value ?? null,

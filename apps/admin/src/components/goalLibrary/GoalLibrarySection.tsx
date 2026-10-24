@@ -28,7 +28,7 @@ import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
   emptyGoalForm, formatGoalTarget, goalAvailability, goalFormError,
   goalKindHasWebpImage, goalKindIsTranslated, goalListName,
-  goalKindIsGymConfigurable, isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
+  goalKindIsGymConfigurable, isMeasurableGoalKind, isSystemGoal, isSystemOriginGoal, toGoalFormValues, toGoalPayload,
   truncateDescription,
 } from './goalProfile';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -475,7 +475,7 @@ export function GoalLibrarySection({
         )}
         <ReadOnlyField
           label={label('ownership')}
-          value={goal.gym_id === null ? label('ownership_system') : label('ownership_gym')}
+          value={isSystemOriginGoal(goal) ? label('ownership_system') : label('ownership_gym')}
         />
       </div>
     );
@@ -550,7 +550,7 @@ export function GoalLibrarySection({
         <span>
           <strong>{nameOf(goal)}</strong>
           {/* The quiet pill every list uses for "what kind of row is this" (#724). */}
-          {isSystemGoal(goal) && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
+          {isSystemOriginGoal(goal) && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
         </span>
       ),
     },
@@ -642,7 +642,7 @@ export function GoalLibrarySection({
             )}
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>
               {nameOf(goal)}
-              {isSystemGoal(goal) && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
+              {isSystemOriginGoal(goal) && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
             </div>
             <ContextMenu items={menuItemsFor(goal)} ariaLabel={`Actions for ${nameOf(goal)}`} />
           </div>

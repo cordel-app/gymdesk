@@ -6,9 +6,11 @@ import { DEFAULT_GYM_PRODUCTS } from '../domain/defaultGymProducts';
 import { seedDefaultGymProducts } from '../api/gym-default-products';
 import {
   TEST_AUTH_HEADER,
+  allocateTestBaseGoalId,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  deleteTestSystemPersonalGoals,
   request,
 } from './helpers';
 
@@ -546,5 +548,69 @@ describe('POST /platform/gyms/:id/duplicate', () => {
       expect(row.name).not.toBeNull();
       expect(row.type).toBe('fee');
     }
+  });
+});
+
+// ─── #1850: a new gym starts with every Base Personal Goal as its own goal ────
+
+describe('gym creation seeds the Base Personal Goals (#1850)', () => {
+  const baseIds: number[] = [];
+
+  beforeAll(async () => {
+    // The id comes from the gym-owned goals' sequence (#1849), like a Cordel-created Base goal.
+    const insertId = await allocateTestBaseGoalId();
+    await db.query(
+      `INSERT INTO base_personal_goals (id, name, description, target_value, target_unit, target_type, created_by)
+       VALUES (?, 'Gym Seed Test Goal', 'Seeded by gym creation', 4, 'kg', 'relative', 'System')`,
+      [insertId],
+    );
+    baseIds.push(insertId);
+  });
+
+  afterAll(async () => {
+    // The template is ours to remove, and the gyms created meanwhile hold an activation
+    // row for it (RESTRICT FK), which the helper deletes first.
+    await deleteTestSystemPersonalGoals('id = ?', [baseIds[0]]);
+  });
+
+  async function seededGoals(gymId: string) {
+    const { rows } = await db.query<any>(
+      `SELECT * FROM personal_goals WHERE gym_id = ? AND base_personal_goal_id IS NOT NULL`,
+      [gymId],
+    );
+    return rows;
+  }
+
+  it('POST /platform/gyms gives the new gym a gym-owned copy of every live template', async () => {
+    const res = await platformCreateGym({ name: 'Personal Goals Seed Gym' });
+    expect(res.status).toBe(201);
+
+    const { rows: templates } = await db.query<any>('SELECT id FROM base_personal_goals WHERE deleted_at IS NULL');
+    const goals = await seededGoals(res.body.id);
+    expect(goals.map((g: any) => g.base_personal_goal_id).sort()).toEqual(templates.map((t: any) => t.id).sort());
+
+    const ours = goals.find((g: any) => g.base_personal_goal_id === baseIds[0]);
+    expect(ours).toMatchObject({
+      gym_id: res.body.id, name: 'Gym Seed Test Goal', slug: null,
+      target_unit: 'kg', target_type: 'relative', status: 'active',
+    });
+    expect(Number(ours.target_value)).toBe(4);
+  });
+
+  it('POST /platform/gyms/:id/duplicate gives the copy its own goals, once each', async () => {
+    const source = await platformCreateGym({ name: 'Personal Goals Duplicate Source' });
+    const res = await request
+      .post(`/platform/gyms/${source.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(201);
+    extraGymIds.push(res.body.id);
+
+    const copy = await seededGoals(res.body.id);
+    const original = await seededGoals(source.body.id);
+    expect(copy.map((g: any) => g.base_personal_goal_id).sort())
+      .toEqual(original.map((g: any) => g.base_personal_goal_id).sort());
+    expect(copy.every((g: any) => g.gym_id === res.body.id)).toBe(true);
+    // Goals are the copy's own rows, never the source gym's.
+    expect(copy.some((g: any) => original.some((o: any) => o.id === g.id))).toBe(false);
   });
 });

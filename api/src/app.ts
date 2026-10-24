@@ -74,7 +74,8 @@ import { platformNutritionLibraryRouter } from './api/platform-nutrition-library
 // both kinds — `api/src/domain/goalLibrary.ts` is what decides they are the same
 // shape — so each is mounted twice rather than written twice.
 import { nutritionGoalsRouter, personalGoalsRouter } from './api/goal-library';
-import { platformNutritionGoalsRouter, platformPersonalGoalsRouter } from './api/platform-goal-library';
+import { platformNutritionGoalsRouter } from './api/platform-goal-library';
+import { platformPersonalGoalsRouter } from './api/platform-base-personal-goals';
 import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
 import {
   platformExercisesRouter,

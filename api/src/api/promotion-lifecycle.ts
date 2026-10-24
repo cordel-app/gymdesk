@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { promotionExpiryWhereSql } from '../domain/promotionLifecycle';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { finishJobRun, startJobRun } from '../infra/job-run-log';
 
 /**
  * #900: the scheduled sweep that moves a Promotion past its End Date to
@@ -24,6 +25,9 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
  * status sweep somebody else's clock already asked for. If this job ever gets a
  * workflow of its own it gets a secret of its own with it, the way
  * `RECURRING_BOOKINGS_INTERNAL_SECRET` belongs to its own workflow.
+ *
+ * **Execution history (#1996)** is `job_run_log`, one row per invocation, written
+ * by `startJobRun()`/`finishJobRun()`; it guards nothing.
  *
  * **No run log.** `claimRun()`/`finishRun()` (#780) exist because the billing
  * and recurring-booking runs must not overlap and must run once a day; this one
@@ -68,6 +72,7 @@ function checkInternalSecret(req: Request, res: Response): boolean {
 promotionLifecycleRouter.post('/run', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
 
+  const jobRunId = await startJobRun('promotion_lifecycle');
   try {
     const { rowCount: expired } = await db.query(
       `UPDATE promotions p
@@ -79,8 +84,10 @@ promotionLifecycleRouter.post('/run', async (req: Request, res: Response) => {
     );
 
     req.log.info({ expired }, 'promotion lifecycle sweep: expired promotions past their end date');
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { expired } });
     res.json({ expired });
   } catch (err) {
+    await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
     req.log.error({ err: (err as Error).message }, 'promotion lifecycle sweep failed');
     res.status(500).json({ error: 'Internal server error' });
   }

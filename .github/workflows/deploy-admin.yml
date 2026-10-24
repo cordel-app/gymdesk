@@ -79,6 +79,14 @@ jobs:
 
             echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
+            # Each deploy pulls a new :latest and the previous image loses its
+            # tag; those dangling images fill the disk and stop deploys at the
+            # check below (#1850 follow-up: corfront hit 780 MB free). Prune only
+            # dangling images: a tagged image, or one a running container uses,
+            # is never touched — which also makes this safe for the other two
+            # apps that deploy to this host.
+            podman image prune -f || true
+
             AVAILABLE=$(df / --output=avail | tail -1)
             if [ "$AVAILABLE" -lt 1048576 ]; then
               echo "ERROR: Less than 1GB free on disk (${AVAILABLE}KB available). Aborting deploy."
