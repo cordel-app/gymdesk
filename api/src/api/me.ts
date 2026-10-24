@@ -1929,7 +1929,7 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
       `SELECT p.id, p.name, p.description
        FROM user_memberships um
        JOIN user_membership_promotions ump
-         ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id
+         ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id
        JOIN promotions p ON p.id = ump.promotion_id
        WHERE ump.gym_id = ? AND um.member_id = ?
          AND ump.status = 'applied' AND um.status = 'active'
