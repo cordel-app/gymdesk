@@ -76,10 +76,10 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
   if (mealRows.length === 0) return null;
   const meal = mealRows[0];
   const { rows: items } = await db.query(
-    `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
+    `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
             i.component_type, i.quantity, i.unit, i.position
      FROM nutrition_plan_template_meal_items i
-     JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+     JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
      WHERE i.meal_id = ?
      ORDER BY i.position ASC`,
     [mealId],
@@ -154,10 +154,10 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
         const { rows: items } = await db.query(
-          `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+          `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position
            FROM nutrition_plan_template_meal_items i
-           JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+           JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
            WHERE i.meal_id = ?
            ORDER BY i.position ASC`,
           [meal.id],
@@ -366,10 +366,10 @@ platformNutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', requireSupera
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
       const { rows: items } = await db.query(
-        `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+        `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM nutrition_plan_template_meal_items i
-         JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+         JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
          WHERE i.meal_id = ? ORDER BY i.position ASC`,
         [meal.id],
       );
@@ -415,10 +415,10 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requi
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
       const { rows: items } = await db.query(
-        `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+        `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM nutrition_plan_template_meal_items i
-         JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+         JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
          WHERE i.meal_id = ? ORDER BY i.position ASC`,
         [meal.id],
       );
@@ -487,14 +487,14 @@ platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items'
       [mealId],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (NULL, ?, ?, ?, ?, ?, ?)',
-      [mealId, Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
+      'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (NULL, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
+      [mealId, Number(nutrition_library_item_id), Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM nutrition_plan_template_meal_items i
-       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
        WHERE i.id = ?`,
       [insertId],
     );
@@ -518,10 +518,10 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/r
     }
     await db.transaction(async (tx) => reorder(tx, 'nutrition_plan_template_meal_items', 'meal_id', mealId, order));
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+      `SELECT i.id, COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM nutrition_plan_template_meal_items i
-       JOIN nutrition_library_item_catalogue nli ON nli.id = i.nutrition_library_item_id
+       JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id)
        WHERE i.meal_id = ?
        ORDER BY i.position ASC`,
       [mealId],
@@ -635,8 +635,8 @@ platformNutritionPlanTemplatesRouter.post('/:id/goals', requireSuperadmin, async
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id],
+      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
+      [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id, illustration.id],
     );
     const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [insertId]);
     res.status(201).json(rows[0]);
@@ -657,8 +657,8 @@ platformNutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireSuperadmin, a
     const illustrationErr = await validateGoalIllustration(null, illustration.id);
     if (illustrationErr) return res.status(400).json({ error: illustrationErr });
     const { rowCount } = await db.query(
-      'UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = ? WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
-      [illustration.id, gid, id],
+      'UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = ?, base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?) WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
+      [illustration.id, illustration.id, gid, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Goal not found' });
     const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [gid]);

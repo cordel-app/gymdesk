@@ -72,8 +72,8 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
         );
         for (const item of items) {
           await tx.query(
-            'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+            'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
+            [gymId, newMealId, (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
           );
         }
       }
@@ -85,8 +85,8 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
     );
     for (const r of restrictions) {
       await tx.query(
-        'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
-        [gymId, planId, r.nutrition_library_item_id, r.applies_all_days, r.position],
+        'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
+        [gymId, planId, (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), r.applies_all_days, r.position],
       );
     }
 
@@ -96,8 +96,8 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
     );
     for (const g of goals) {
       await tx.query(
-        'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [gymId, planId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
+        'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
+        [gymId, planId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null), (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null)],
       );
     }
   } else {
