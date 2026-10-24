@@ -78,7 +78,7 @@ const gymGoalIds: Record<string, number> = {};
 const GYM_ONLY_NAME = `PGL Gym Only ${RUN}`;
 /** The name a System row deliberately reuses, to prove the keys do not collide. */
 /** #1849 2f: Cordel's Personal Goals live in base_personal_goals alone. */
-const systemTable = (t: string) => (t === 'personal_goals' ? 'base_personal_goals' : t);
+const systemTable = (t: string) => (t === 'personal_goals' ? 'base_personal_goals' : t === 'nutrition_goals' ? 'base_nutrition_goals' : t);
 const GYM_SHARED_NAME = `PGL Gym Shared ${RUN}`;
 
 beforeAll(async () => {
@@ -105,6 +105,7 @@ afterAll(async () => {
     const marks = ids.map(() => '?').join(',');
     // #1849 2b: a System Personal Goal also has a Base row under the same id.
     if (table === 'personal_goals') await deleteTestSystemPersonalGoals(`id IN (${marks})`, ids);
+    if (table === 'nutrition_goals') await db.query(`DELETE FROM base_nutrition_goals WHERE id IN (${marks})`, ids);
     await db.query(`DELETE FROM ${table} WHERE id IN (${marks})`, ids);
   }
   await db.end();
