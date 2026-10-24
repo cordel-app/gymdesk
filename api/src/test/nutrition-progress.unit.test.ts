@@ -113,3 +113,28 @@ describe('nutritionProgress weighted score (#1603)', () => {
     expect(statusOn(half, y).status).toBe('partial'); // 26.7 + 15 = 41.7 of 70 = 60 %
   });
 });
+
+describe('#1957 assignment date windows', () => {
+  const d1 = '2026-10-12', d2 = '2026-10-13', d3 = '2026-10-14'; // TODAY is later
+  const meals = [
+    { id: 1, weekday: 7, from: null, to: d2 },  // completed plan: ends d2 inclusive
+    { id: 2, weekday: 7, from: d3, to: null },  // its successor: starts d3
+  ];
+  it('a meal counts only inside its assignment, both bounds inclusive', () => {
+    expect(isMealScheduledOn(meals[0], d2)).toBe(true);
+    expect(isMealScheduledOn(meals[0], d3)).toBe(false);
+    expect(isMealScheduledOn(meals[1], d2)).toBe(false);
+    expect(isMealScheduledOn(meals[1], d3)).toBe(true);
+    expect(isMealScheduledOn({ id: 3, weekday: 7 }, d1)).toBe(true); // ongoing, unbounded
+  });
+  it('a past day is scored on the meals of the assignment that covered it', () => {
+    const p = nutritionProgress(meals, [{ mealId: 1, date: d1 }], TODAY, d1);
+    expect(p.day.total).toBe(1);
+    expect(p.day.completed).toBe(1);
+  });
+  it('requirements outside their window drop out of the daily score', () => {
+    const req = { goalIds: [5], restrictionIds: [], windows: { 'goal|5': { from: d3, to: null } } };
+    expect(nutritionProgress([], [], TODAY, d1, req).week_days.find((x) => x.date === d1)?.status).toBe('rest');
+    expect(nutritionProgress([], [], TODAY, d3, req).week_days.find((x) => x.date === d3)?.status).toBe('pending');
+  });
+});

@@ -11,14 +11,20 @@ import { ROLLING_MONTH_DAYS, ROLLING_WEEK_DAYS } from './workoutProgress';
 
 export const ALL_DAYS_WEEKDAY = 7;
 
-export interface PlanMeal { id: number; weekday: number }
+/** Inclusive effective range of the assignment a meal or requirement belongs to (#1957); null = unbounded. */
+export interface DateWindow { from?: string | null; to?: string | null }
+export interface PlanMeal extends DateWindow { id: number; weekday: number }
 export interface MealCompletion { mealId: number; date: string }
 export interface ProgressCounts { completed: number; total: number; percent: number }
 export type NutritionDayStatus = 'completed' | 'partial' | 'pending' | 'scheduled' | 'rest';
 export type RequirementKind = 'goal' | 'restriction';
 export type RequirementLevel = 'partial' | 'done';
 /** The plan's goals and dietary restrictions; both apply on every day (applies_all_days). */
-export interface PlanRequirements { goalIds: number[]; restrictionIds: number[] }
+export interface PlanRequirements {
+  goalIds: number[]; restrictionIds: number[];
+  /** Effective range per `goal|id` / `restriction|id` (#1957); absent = every date. */
+  windows?: Record<string, DateWindow>;
+}
 export interface RequirementCompletion { kind: RequirementKind; itemId: number; date: string; level: RequirementLevel }
 
 // #1603 — the daily score is weighted: restrictions 30 %, goals 30 %, meals 40 %.
@@ -43,9 +49,14 @@ export function weekdayOf(date: string): number {
   return DateTime.fromISO(date, { zone: 'UTC' }).weekday - 1;
 }
 
-/** A meal is scheduled on a date when its day is that weekday or "all days". */
+/** Both bounds inclusive, as `planEffectiveOnSql()`. */
+export function inWindow(w: DateWindow | undefined, date: string): boolean {
+  return !w || ((!w.from || w.from <= date) && (!w.to || w.to >= date));
+}
+
+/** A meal is scheduled on a date when its assignment covers it and its day is that weekday or "all days". */
 export function isMealScheduledOn(meal: PlanMeal, date: string): boolean {
-  return meal.weekday === ALL_DAYS_WEEKDAY || meal.weekday === weekdayOf(date);
+  return inWindow(meal, date) && meal.weekday === ALL_DAYS_WEEKDAY || meal.weekday === weekdayOf(date);
 }
 
 /** Only today and the past can be marked done. */
@@ -93,18 +104,20 @@ export function nutritionProgress(
       possible += WEIGHT_MEALS;
       earned += WEIGHT_MEALS * (scheduled.filter((m) => isDone(m, date)).length / scheduled.length);
     }
-    if (requirements.goalIds.length > 0) {
+    const goalIds = requirements.goalIds.filter((id) => inWindow(requirements.windows?.[`goal|${id}`], date));
+    const restrictionIds = requirements.restrictionIds.filter((id) => inWindow(requirements.windows?.[`restriction|${id}`], date));
+    if (goalIds.length > 0) {
       possible += WEIGHT_GOALS;
-      const done = requirements.goalIds.filter((id) => reqLevel.get(`goal|${id}|${date}`) === 'done').length;
-      earned += WEIGHT_GOALS * (done / requirements.goalIds.length);
+      const done = goalIds.filter((id) => reqLevel.get(`goal|${id}|${date}`) === 'done').length;
+      earned += WEIGHT_GOALS * (done / goalIds.length);
     }
-    if (requirements.restrictionIds.length > 0) {
+    if (restrictionIds.length > 0) {
       possible += WEIGHT_RESTRICTIONS;
-      const credit = requirements.restrictionIds.reduce((sum, id) => {
+      const credit = restrictionIds.reduce((sum, id) => {
         const level = reqLevel.get(`restriction|${id}|${date}`);
         return sum + (level === 'done' ? 1 : level === 'partial' ? PARTIAL_CREDIT : 0);
       }, 0);
-      earned += WEIGHT_RESTRICTIONS * (credit / requirements.restrictionIds.length);
+      earned += WEIGHT_RESTRICTIONS * (credit / restrictionIds.length);
     }
     return possible === 0 ? null : Math.round((earned / possible) * 100);
   };

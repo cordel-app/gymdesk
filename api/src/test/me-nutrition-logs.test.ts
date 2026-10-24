@@ -115,3 +115,11 @@ describe('GET /me/nutrition-progress', () => {
     expect(res.body.every((l: any) => l.meal_id === allDaysMealId)).toBe(true);
   });
 });
+
+describe('POST /me/nutrition-logs — assignment date range (#1957)', () => {
+  it('refuses a meal of an ongoing assignment on a date before its start_date', async () => {
+    await db.query('UPDATE member_nutrition_plans SET start_date = ? WHERE member_id = ? AND status = \'active\'', [today, memberId]);
+    await asMember(request.post('/me/nutrition-logs')).send({ meal_id: allDaysMealId, logged_date: yesterday }).expect(400);
+    await asMember(request.post('/me/nutrition-logs')).send({ meal_id: allDaysMealId, logged_date: today }).expect((r) => { if (![200, 201].includes(r.status)) throw new Error(`status ${r.status}`); });
+  });
+});
