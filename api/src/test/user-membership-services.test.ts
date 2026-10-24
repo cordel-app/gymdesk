@@ -583,6 +583,61 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(rows).toHaveLength(0);
   });
 
+  // #1914 — a removed line keeps what was paid for.
+  async function paidPeriod(umId: number, lineId: number, outcome: 'completed' | 'failed' | 'pending' | 'waive', start: number, end: number) {
+    const { rows } = await db.query(
+      'SELECT product_set_id, schedule_id FROM member_products_recurrent_snapshot WHERE id = ?', [lineId]);
+    const line = rows[0];
+    expect(line.schedule_id).not.toBeNull();
+    const m = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    const memberId = m.rows[0].member_id;
+    const ev = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id, period_start, period_end, billing_date, is_scheduled)
+       VALUES (?, ?, 'recurring_payment', 'system', 25, ?, ?, ?, ?, ?, 1)`,
+      [gymId, memberId, line.product_set_id, line.schedule_id, dayOffset(start), dayOffset(end), dayOffset(start)]);
+    await db.query(
+      `INSERT INTO payment_requests (gym_id, member_id, amount, status, source, billing_event_id, attempt, method, provider_status)
+       VALUES (?, ?, ?, ?, 'billing_run', ?, 1, ?, ?)`,
+      [gymId, memberId, outcome === 'waive' ? 0 : 25, outcome === 'waive' ? 'completed' : outcome, ev.insertId,
+        outcome === 'waive' ? 'waive' : 'provider',
+        outcome === 'completed' ? 'SUCCEEDED' : outcome === 'failed' ? 'FAILED' : null]);
+  }
+
+  it('ends a removed line on the last day of its last paid period when that is still ahead', async () => {
+    const umId = await createAssignedPlan(gymId);
+    const itemId = await createProduct(gymId);
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-5) });
+    await paidPeriod(umId, created.body.id, 'completed', -5, 24);
+
+    const res = await removeService(gymId, umId, created.body.id);
+    expect(res.body, JSON.stringify(res.body)).toMatchObject({ ends_at: dayOffset(24) });
+    const list = await listServices(gymId, umId);
+    expect(list.body[0].ends_at).toBe(dayOffset(24));
+    expect(list.body[0].active).toBe(true);
+  });
+
+  it('does not count failed or waived attempts as paid', async () => {
+    const umId = await createAssignedPlan(gymId);
+    const itemId = await createProduct(gymId);
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-5) });
+    await paidPeriod(umId, created.body.id, 'failed', 25, 54);
+    await paidPeriod(umId, created.body.id, 'waive', 55, 84);
+
+    const res = await removeService(gymId, umId, created.body.id);
+    expect(res.body.ends_at).toBe(today());
+  });
+
+  it('ends today when the last paid period is already over, and a repeat removal is refused', async () => {
+    const umId = await createAssignedPlan(gymId);
+    const itemId = await createProduct(gymId);
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-29) });
+    await paidPeriod(umId, created.body.id, 'completed', -29, -10);
+
+    const res = await removeService(gymId, umId, created.body.id);
+    expect(res.body.ends_at).toBe(today());
+    expect((await removeService(gymId, umId, created.body.id)).status).toBe(409);
+  });
+
   it('stamps ends_at = today for a service that is already being billed, keeping the row', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
