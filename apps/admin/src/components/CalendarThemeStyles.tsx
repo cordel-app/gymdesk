@@ -373,9 +373,15 @@ export const CALENDAR_THEME_CSS = `
    colour, clipped to the padding box so the strip stays the pure event colour.
    The text takes the calendar's own foreground, which already reads on that
    surface. Events with no colour configured keep the theme's event tokens. */
-.gd-calendar .fc .fc-scrollgrid-section-header > td {
-  padding-bottom: 6px;
+.gd-calendar .fc .fc-scrollgrid-section-header > th {
+  padding-bottom: 8px;
   border-bottom-width: 0;
+  background: transparent;
+}
+.gd-calendar .fc .fc-scrollgrid-section-header .fc-scroller-harness {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--gd-calendar-grid-border, #dddddd);
 }
 .gd-calendar .fc .fc-col-header-cell {
   border-bottom: 2px solid var(--gd-calendar-grid-border, #dddddd);

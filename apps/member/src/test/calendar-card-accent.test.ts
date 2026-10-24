@@ -15,7 +15,7 @@ describe('weekday header and event cards (#1892 stage 5)', () => {
   it.each(sheets.map((s, i) => [i === 0 ? 'admin' : 'member', s] as const))(
     '%s sheet separates the header and uses a left accent over a soft surface',
     (_name, css) => {
-      expect(css).toContain('.fc-scrollgrid-section-header > td');
+      expect(css).toContain('.fc-scrollgrid-section-header > th');
       expect(css).toContain('.fc-col-header-cell.fc-day-today');
       expect(css).toContain('border-width: 0 0 0 4px');
       expect(css).toContain('background-clip: padding-box');
