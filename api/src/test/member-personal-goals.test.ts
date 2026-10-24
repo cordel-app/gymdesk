@@ -107,7 +107,7 @@ beforeAll(async () => {
   otherGymGoalId = await createGymGoal(otherGymId, `MPG Foreign Goal ${RUN}`);
 
   const { rows } = await db.query<{ id: number }>(
-    "SELECT id FROM personal_goals WHERE gym_id IS NULL AND slug = 'weight_loss'",
+    "SELECT id FROM base_personal_goals WHERE slug = 'weight_loss'",
   );
   systemGoalId = rows[0]?.id;
 });
