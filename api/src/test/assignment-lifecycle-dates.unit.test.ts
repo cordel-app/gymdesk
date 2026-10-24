@@ -11,7 +11,7 @@ describe('assignment lifecycle dates (#1695)', () => {
   it('commit and projection stamp purchased_at once', () => {
     expect(read('api/assignment-commit.ts')).toMatch(/purchased_at = COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)/);
     const proj = read('api/product-set-projection.ts');
-    expect(proj).toMatch(/purchased_at = IF\(status IN \('cancelled','expired'\), purchased_at, COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)\)/);
+    expect(proj).toMatch(/purchased_at = IF\(status IN \('cancelled','expired','superseded'\), purchased_at, COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)\)/);
     expect(proj).toMatch(/purchased_at, created_by\)\s+VALUES \(\?, \?, \?, \?, \?, 'active', COALESCE\(\(SELECT um0\.purchased_at FROM user_memberships um0 WHERE um0\.id = \? AND um0\.gym_id = \?\), UTC_TIMESTAMP\(\)\), \?\)/);
   });
 

@@ -126,7 +126,7 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
             (SELECT mp.name FROM user_memberships um
                JOIN membership_plans mp ON mp.id = um.membership_plan_id
               WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled')
+                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')
               ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS plan_name
        FROM members m
       WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.id IN (${top.map(() => '?').join(',')})`,
@@ -268,7 +268,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
                 (SELECT mp.name FROM user_memberships um
                    JOIN membership_plans mp ON mp.id = um.membership_plan_id
                   WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                    AND um.status NOT IN ('draft', 'pending_payment', 'cancelled')
+                    AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')
                   ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS plan_name
            FROM members m
           WHERE m.gym_id = ? AND m.deleted_at IS NULL

@@ -135,9 +135,13 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const umV2 = await assignmentOf(draftId);
     expect(umV2).not.toBe(umV1);
     expect(await names(umV2)).toEqual([promo]);
-    expect(await names(umV1)).toEqual([promo]); // predecessor's snapshots untouched
+    // #1991: the predecessor and its application are `superseded`, snapshots untouched.
+    expect(await names(umV1)).toEqual([]);
+    const { rows: kept } = await db.query<any>(
+      'SELECT promotion_id, status, snapshot IS NOT NULL AS has_snapshot FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
+    expect(kept.map((r: any) => [Number(r.promotion_id), r.status, Number(r.has_snapshot)])).toEqual([[promo, 'superseded', 1]]);
     const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [umV1]);
-    expect(rows[0].status).not.toBe('active');
+    expect(rows[0].status).toBe('superseded');
     const { rows: ids } = await db.query<any>(
       'SELECT COUNT(DISTINCT id) AS n FROM user_membership_promotions WHERE user_membership_id IN (?, ?)', [umV1, umV2]);
     expect(Number(ids[0].n)).toBe(2);

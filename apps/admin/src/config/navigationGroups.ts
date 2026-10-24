@@ -414,6 +414,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.mobile_builds',
       },
       {
+        // #1996: the execution history of the system jobs.
+        href: '/{{locale}}/cordel/jobs',
+        labelKey: 'nav.jobs',
+      },
+      {
         href: '/{{locale}}/cordel/nutrition-library',
         labelKey: 'nav.base_nutrition_library',
         separatorAbove: true,
