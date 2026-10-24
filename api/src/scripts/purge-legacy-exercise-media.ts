@@ -16,8 +16,7 @@
  * object, a folder marker, or anything outside those folders, and keeps going
  * after a failure (the exit code is non-zero if any object could not be removed).
  *
- * Against a deployed bucket it runs from the VPS through
- * `.github/workflows/exercises-purge-legacy-media.yml` as
+ * Against a deployed bucket it runs from the VPS as
  * `node dist/scripts/purge-legacy-exercise-media.js`; `import 'dotenv/config'`
  * comes first for the reason `import-free-exercise-db.ts` documents.
  */

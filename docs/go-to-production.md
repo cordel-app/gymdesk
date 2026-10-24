@@ -18,7 +18,7 @@ Tick items off in the PR that completes them.
       schedule or a push to `main` still targets `dev` until the steps below are done. The
       two scheduled workflows read their host from the environment **variable**
       `vars.API_BASE_URL` and go red with an explicit error when it is missing — there is no
-      hardcoded fallback. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` stay on `dev`.
+      hardcoded fallback. `ci.yml` and `debug-vps.yml` stay on `dev`.
 - [ ] **Owner steps for #784, in this order** (GitHub Settings — no repo change except 3):
   1. [ ] Add the variable **`API_BASE_URL`** (`https://api.vdicube.com`) to the **`dev`**
          environment's *variables* (not secrets). It must exist before the #784 PR merges,
@@ -412,15 +412,12 @@ Tick items off in the PR that completes them.
       destination objects, but if that sweep itself could not run (the log line is
       *"Failed theme clone left an orphaned object in Cloudflare R2"*) the keys it names sit under a
       `themes/<theme_id>-…/` folder whose id no `themes` row carries, so they are safe to delete by hand.
-- [ ] **Load the Base Exercise descriptions** (#1608), after the catalogue import: run **Backfill Base Exercise Descriptions**
-      (`.github/workflows/exercises-backfill-descriptions.yml`) once with `dry_run` on, read the report, then again with it
-      off. Existing non-empty values are never overwritten; the run ends with a completeness line and fails if any Base
+- [ ] **Load the Base Exercise descriptions** (#1608), after the catalogue import: run `exercises:backfill-descriptions` (from the deployed image on the VPS: `node dist/scripts/backfill-exercise-descriptions.js`;
+      its workflow was removed) once as the default dry run, read the report, then again with `--execute`. Existing non-empty values are never overwritten; the run ends with a completeness line and fails if any Base
       Exercise still lacks one of its six values.
-- [ ] **Import the Base Exercise catalogue** (#964): run the **Import Base Exercises** workflow
-      (`.github/workflows/exercises-import.yml`, `workflow_dispatch`), picking the environment. It runs the
-      importer from the VPS against that environment's database — the same reason migrations run there, since
-      the database is VCN-private and a GitHub runner cannot reach it — using the API image already deployed,
-      so deploy first if the host has none. Locally the same thing is `cd api && npm run exercises:import-free-db`
+- [ ] **Import the Base Exercise catalogue** (#964): run the importer from the VPS against that environment's database
+      (`node dist/scripts/import-free-exercise-db.js`; its workflow was removed) — the same reason migrations run there,
+      since the database is VCN-private — using the API image already deployed, so deploy first if the host has none. Locally the same thing is `cd api && npm run exercises:import-free-db`
       against whatever `api/.env` points at. It needs no `CLOUDFLARE_R2_*` credentials — the import stores no
       image at all — but it does need outbound HTTPS to fetch the dataset, or a local copy passed with
       `--from <file>` (set `FREE_EXERCISE_DB_URL`, or the workflow's `dataset_url` input, if you mirror it).
@@ -484,9 +481,8 @@ Tick items off in the PR that completes them.
       are re-cropped by the same run (a muscle image stands in for an exercise with none of its
       own). An image uploaded
       on production after go-live is already cropped, so this matters only for objects copied in
-      from dev or uploaded by an older build: run **Re-crop exercise images**
-      (`.github/workflows/exercises-recrop-images.yml`) with `environment: pro`, first as the
-      default dry run, then with `dry_run` unticked. It runs the deployed image, overwrites masters
+      from dev or uploaded by an older build: run the re-crop (`node dist/scripts/recrop-exercise-images.js` from the VPS; its workflow was removed)
+      against `pro`, first as the default dry run, then with `--execute`. It runs the deployed image, overwrites masters
       and thumbnails under the same keys, writes no row, and a second run finds nothing. On dev the
       dry run (2026-10-16) found 0 exercises with an image of their own; a pro dispatch before the
       environment exists fails at the first query (`getaddrinfo ENOTFOUND`) and writes nothing.
@@ -1257,17 +1253,17 @@ runbook is how.
       migrated (the existing exercise media was test data). The objects those columns pointed
       at — the 2048 PNG pair, the MP4 with its 512 PNG poster, in the `exercises/images/` and
       `exercises/videos/` folders of `cordel/` and of every gym, plus anything left under the
-      pre-#1035 `Exercises/Images/` and `Exercises/Videos/` — are still in R2. Run **Purge
-      legacy exercise media** (`.github/workflows/exercises-purge-legacy-media.yml`) once per
-      environment: a dry run first (the default) to read the list, then with `dry_run` off. It
+      pre-#1035 `Exercises/Images/` and `Exercises/Videos/` — are still in R2. Run the purge
+      (`node dist/scripts/purge-legacy-exercise-media.js` from the VPS; its workflow was removed) once per
+      environment: a dry run first (the default) to read the list, then with `--execute`. It
       decides from object keys alone, so it does not matter whether it runs before or after the
       deploy that applies migration 277, a second run finds nothing, and it never touches a
       `-male`/`-female` WebP or MP4 or a folder marker.
 - [ ] **Re-crop the exercise images stored before #1527's crop** (#1527 follow-up). Exercise
       uploads now centre-crop to the square; masters stored earlier still carry the transparent
-      bands My Training shows as a grey strip. Run **Re-crop exercise images**
-      (`.github/workflows/exercises-recrop-images.yml`) once per environment: a dry run first
-      (the default), then with `dry_run` off. It overwrites each master and thumbnail under the
+      bands My Training shows as a grey strip. Run the re-crop
+      (`node dist/scripts/recrop-exercise-images.js` from the VPS; its workflow was removed) once per environment: a dry run first
+      (the default), then with `--execute`. It overwrites each master and thumbnail under the
       same key and writes no row, so a browser may show a cached copy until it refreshes; a
       second run finds nothing.
 - [ ] **An exercise video upload is buffered in the API process** (#719 part 2):

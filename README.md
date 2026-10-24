@@ -73,7 +73,7 @@ gymdesk/
                       # wordpress-integration (read before building features; agents: start at CLAUDE.md)
   .github/
     workflows/        # ci.yml, codeql.yml; deploy.yml (api), deploy-admin.yml, deploy-member.yml,
-                      # deploy-payment.yml, deploy-alloy.yml; billing-run.yml and
+                      # deploy-payment.yml; billing-run.yml and
                       # recurring-booking-run.yml (nightly jobs); debug-vps.yml, test-ssh*.yml
 ```
 

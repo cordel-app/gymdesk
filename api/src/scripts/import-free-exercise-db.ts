@@ -56,8 +56,7 @@
  * comes before `../infra/db`, which builds its pool at module scope: the
  * deferred `config()` this file used to call in its body was reached only after
  * that pool had already thrown, so the documented `npm run` invocation failed on
- * a correct `api/.env`. And against a deployed database it runs from the VPS
- * through `.github/workflows/exercises-import.yml`, as
+ * a correct `api/.env`. And against a deployed database it runs from the VPS as
  * `node dist/scripts/import-free-exercise-db.js` — `tsx` is a devDependency and
  * `src/` is not in the runner image.
  */
