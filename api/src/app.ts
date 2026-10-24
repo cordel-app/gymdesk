@@ -69,7 +69,7 @@ import { paymentsRouter } from './api/payments';
 import { paymentsDashboardRouter } from './api/payments-dashboard';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
-import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
+import { platformNutritionLibraryRouter } from './api/platform-base-nutrition-library';
 // #947: the Nutrition Library's two goal catalogues. One factory per side serves
 // both kinds — `api/src/domain/goalLibrary.ts` is what decides they are the same
 // shape — so each is mounted twice rather than written twice.

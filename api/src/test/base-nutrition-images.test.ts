@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestBaseFood, createTestGym, createTestMembership, deleteTestBaseFoods, request } from './helpers';
 import sharp from 'sharp';
 import { encodePngRgba } from '../domain/pngImage';
 const BASE_NUTRITION_IMAGE_SIZE = 512;
@@ -87,11 +87,8 @@ let secondFoodId: number;
 let gymFoodId: number;
 
 async function createBaseFood(name: string): Promise<number> {
-  const { insertId } = await db.query(
-    "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (NULL, ?, 'active')",
-    [name],
-  );
-  return insertId as number;
+  // #1849 F2: Cordel's router owns the Base row; the legacy System row is its mirror.
+  return createTestBaseFood(name);
 }
 
 function upload(id: number | string, body: Buffer, contentType = 'image/png') {
@@ -103,9 +100,11 @@ function upload(id: number | string, body: Buffer, contentType = 'image/png') {
 }
 
 async function imageUrlOf(id: number): Promise<string | null> {
+  // A System food's image lives on its Base row (the legacy row mirrors it); a gym food's on its own.
   const { rows } = await db.query<{ image_url: string | null }>(
-    'SELECT image_url FROM nutrition_library_items WHERE id = ?',
-    [id],
+    `SELECT image_url FROM base_nutrition_library_items WHERE id = ?
+     UNION ALL SELECT image_url FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL`,
+    [id, id],
   );
   return rows[0]?.image_url ?? null;
 }
@@ -124,7 +123,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query("DELETE FROM nutrition_library_items WHERE name LIKE 'Test Base Image %'");
+  await deleteTestBaseFoods("name LIKE 'Test Base Image %'");
   await cleanupTestGyms();
   for (const key of R2_ENV_KEYS) {
     if (originalEnv[key] === undefined) delete process.env[key];
@@ -139,13 +138,11 @@ beforeEach(async () => {
   sendMock.mockReset();
   sendMock.mockResolvedValue({});
   await db.query(
-    "UPDATE nutrition_library_items SET image_url = NULL, name = ?, status = 'active' WHERE id = ?",
+    "UPDATE base_nutrition_library_items SET image_url = NULL, name = ?, deleted_at = NULL WHERE id = ?",
     [BASE_FOOD_NAME, foodId],
   );
-  await db.query(
-    "UPDATE nutrition_library_items SET image_url = NULL, status = 'active' WHERE id IN (?, ?)",
-    [secondFoodId, gymFoodId],
-  );
+  await db.query('UPDATE base_nutrition_library_items SET image_url = NULL, deleted_at = NULL WHERE id = ?', [secondFoodId]);
+  await db.query("UPDATE nutrition_library_items SET image_url = NULL, status = 'active' WHERE id = ?", [gymFoodId]);
 });
 
 afterEach(() => {
@@ -251,7 +248,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
     await upload(foodId, validPng());
     const staleKey = lastPutKey();
 
-    await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
+    await db.query('UPDATE base_nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
     sendMock.mockClear();
 
     const res = await upload(foodId, validPng());
@@ -264,7 +261,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
   it('moves an image stored under the old cordel/Nutrition/ folder', async () => {
     const legacyKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`; // pre-#1035, pre-#1562
-    await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${legacyKey}`, foodId]);
+    await db.query('UPDATE base_nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${legacyKey}`, foodId]);
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
@@ -274,7 +271,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
   it('still saves the new image when sweeping the renamed food\'s old object fails', async () => {
     await upload(foodId, validPng());
-    await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
+    await db.query('UPDATE base_nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
     sendMock.mockReset();
     sendMock.mockImplementation((command: any) => (
       command?.__type === 'delete' ? Promise.reject(new Error('R2 down')) : Promise.resolve({})
@@ -387,7 +384,7 @@ describe('POST /platform/nutrition-library/:id/image — scope', () => {
   });
 
   it('returns 409 for a deleted food', async () => {
-    await db.query("UPDATE nutrition_library_items SET status = 'deleted' WHERE id = ?", [foodId]);
+    await db.query('UPDATE base_nutrition_library_items SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [foodId]);
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(409);
     expect(sentCommands('put')).toHaveLength(0);
