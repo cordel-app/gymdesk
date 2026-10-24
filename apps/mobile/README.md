@@ -13,7 +13,7 @@ npm run open:android     # Android Studio
 npm test                 # the profile rules, offline
 ```
 
-`cap` needs **Node 22+**; the two profile scripts run on Node 20.
+`cap` needs **Node 22+** (CI and the Docker images run 24); the two profile scripts are plain `tsx` and run on any Node.
 
 - **What a build is for** is `profiles/<id>.json`, overridden per field by the
   `MOBILE_*` variables in `.env.example`. Stage 1 has one profile,
