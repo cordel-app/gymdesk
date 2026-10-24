@@ -28,11 +28,13 @@ export const GOAL_DESCRIPTION_MAX_LENGTH = 1000;
  * `personal_goal_translations` (migration 292). One module serves both kinds, so
  * the rules (fallback, replace-all, omit-keeps) cannot drift between them.
  */
-export type TranslatedGoalKind = 'nutrition' | 'personal';
+export type TranslatedGoalKind = 'nutrition' | 'personal' | 'base_personal';
 
 const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string }> = {
   nutrition: { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' },
   personal: { table: 'personal_goal_translations', fk: 'personal_goal_id' },
+  // #1849 stage 2b: the Base Personal Goals' own junction (migration 304).
+  base_personal: { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' },
 };
 
 export interface GoalTranslation {
