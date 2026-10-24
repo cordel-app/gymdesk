@@ -160,7 +160,10 @@ beforeAll(async () => {
   noBucketGoalId = await createGoal(noBucketGymId, 'Test Goal Image No Bucket');
   frontDeskGoalId = await createGoal(frontDeskGymId, 'Test Goal Image Front Desk');
   // #1849 2f: a System goal is a Base row alone.
-  systemGoalId = (await db.query("INSERT INTO base_personal_goals (name, created_by) VALUES ('Test Goal Image System Owned', 'System')")).insertId as number;
+  // The id is drawn from the gym-owned goals' sequence (as Cordel's router does) so the two id spaces stay disjoint.
+  systemGoalId = (await db.query("INSERT INTO personal_goals (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')")).insertId as number;
+  await db.query('DELETE FROM personal_goals WHERE id = ?', [systemGoalId]);
+  await db.query("INSERT INTO base_personal_goals (id, name, created_by) VALUES (?, 'Test Goal Image System Owned', 'System')", [systemGoalId]);
 
   const { rows } = await db.query<{ id: number }>(
     "SELECT id FROM nutrition_goals WHERE gym_id IS NULL AND slug = 'protein'",
