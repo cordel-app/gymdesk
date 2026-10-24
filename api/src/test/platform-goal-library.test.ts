@@ -101,6 +101,8 @@ afterAll(async () => {
   for (const [table, ids] of Object.entries(createdSystemIds)) {
     if (ids.length === 0) continue;
     const marks = ids.map(() => '?').join(',');
+    // #1849 2b: a System Personal Goal also has a Base row under the same id.
+    if (table === 'personal_goals') await db.query(`DELETE FROM base_personal_goals WHERE id IN (${marks})`, ids);
     await db.query(`DELETE FROM ${table} WHERE id IN (${marks})`, ids);
   }
   await db.end();
