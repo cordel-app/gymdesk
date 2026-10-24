@@ -93,7 +93,7 @@ const COLUMNS = `
 
 const FROM = `
   FROM member_personal_goals mpg
-  JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+  JOIN personal_goal_catalogue pg ON pg.id = mpg.personal_goal_id
                         AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
 `;
 
@@ -178,7 +178,7 @@ mePersonalGoalsRouter.get('/available', async (req, res, next) => {
     // assignable by every gym, this gym's own are, another gym's are invisible.
     const { rows } = await db.query(
       `SELECT pg.id, pg.slug, pg.name, pg.description, pg.target_value, pg.target_unit, pg.target_type
-       FROM personal_goals pg
+       FROM personal_goal_catalogue pg
        WHERE (pg.gym_id IS NULL OR pg.gym_id = ?)
          AND pg.status != 'deleted'
          -- #1181: a goal the gym deactivated is not offered for a new assignment.
@@ -241,7 +241,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
 
     const { rows: goalRows } = await db.query(
       `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, pg.target_type, ${gymGoalStatusSql('pg')} AS gym_status
-       FROM personal_goals pg
+       FROM personal_goal_catalogue pg
        WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
       [gymId, goalId, gymId],
     );

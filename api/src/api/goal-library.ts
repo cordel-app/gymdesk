@@ -6,6 +6,7 @@ import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
   GOAL_LIBRARY_FEATURE_KEYS,
   GOAL_LIBRARY_TABLES,
+  GOAL_LIBRARY_READ_SOURCES,
   GoalLibraryKind,
   buildGoalListWhere,
   goalKindHasWebpImage,
@@ -81,6 +82,8 @@ import { resolveRequestActor } from '../domain/auditActor';
 export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   const router = Router();
   const table = GOAL_LIBRARY_TABLES[kind];
+  // #1849 stage 2c: reads of the catalogue go through its read source (a view for Personal Goals).
+  const readTable = GOAL_LIBRARY_READ_SOURCES[kind];
   const entityType = GOAL_LIBRARY_AUDIT_ENTITIES[kind];
   // #1034 §1: only a measurable kind has the pair, and `nutrition_goals` has no
   // such columns — projecting them there would answer ER_BAD_FIELD_ERROR, which
@@ -135,7 +138,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   }
 
   async function loadGoal(id: unknown, gymId: string, locale: SupportedLocale = BASE_LOCALE) {
-    const { rows } = await db.query(`SELECT ${columnsFor(locale)} FROM ${table} g WHERE g.id = ?`, [...columnParams(gymId), id]);
+    const { rows } = await db.query(`SELECT ${columnsFor(locale)} FROM ${readTable} g WHERE g.id = ?`, [...columnParams(gymId), id]);
     return rows[0] ? shapeGoal(rows[0]) : undefined;
   }
 
@@ -181,7 +184,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
     try {
       const { rows: countRows } = await db.query<{ total: number }>(
-        `SELECT COUNT(*) AS total FROM ${table} g WHERE ${where}`,
+        `SELECT COUNT(*) AS total FROM ${readTable} g WHERE ${where}`,
         params,
       );
       // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's
@@ -194,7 +197,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // `display_name` is). The base names are the English ones the slugs were
       // seeded with, so the order is stable rather than per-request.
       const { rows } = await db.query(
-        `SELECT ${columnsFor(getRequestLocale(req))} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
+        `SELECT ${columnsFor(getRequestLocale(req))} FROM ${readTable} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
         [...columnParams(gymId), ...params],
       );
       res.json({ items: rows.map(shapeGoal), total: countRows[0]?.total ?? 0, limit, offset });
@@ -228,7 +231,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // a gym from naming one of its own the same way, which is also what the
       // (gym, name) shape of `<prefix>_live_name_key` allows.
       const { rows: existing } = await db.query(
-        `SELECT id FROM ${table} WHERE gym_id = ? AND name = ? AND status != 'deleted'`,
+        `SELECT id FROM ${readTable} WHERE gym_id = ? AND name = ? AND status != 'deleted'`,
         [gymId, name.value],
       );
       if (existing.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
@@ -276,7 +279,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     try {
       const { rows: existing } = await db.query(
         `SELECT id, gym_id, name, description, status${hasWebpImage ? ', image_url, image_thumbnail_url' : ''}${measurable ? ', target_value, target_unit, target_type' : ''}
-         FROM ${table} WHERE id = ?`,
+         FROM ${readTable} WHERE id = ?`,
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Goal not found' });
@@ -286,7 +289,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
       if (name.value !== undefined) {
         const { rows: conflict } = await db.query(
-          `SELECT id FROM ${table} WHERE gym_id = ? AND name = ? AND id != ? AND status != 'deleted'`,
+          `SELECT id FROM ${readTable} WHERE gym_id = ? AND name = ? AND id != ? AND status != 'deleted'`,
           [gymId, name.value, id],
         );
         if (conflict.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
@@ -354,7 +357,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     async function loadNutritionGoalForImage(req: any, res: any, requirePrefix: boolean) {
       const { gymId } = getTenantContext(req);
       const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null; image_thumbnail_url: string | null }>(
-        `SELECT id, gym_id, name, status, image_url, image_thumbnail_url FROM ${table} WHERE id = ?`,
+        `SELECT id, gym_id, name, status, image_url, image_thumbnail_url FROM ${readTable} WHERE id = ?`,
         [req.params.id],
       );
       const row = rows[0];
@@ -450,7 +453,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     const { gymId } = getTenantContext(req);
     const { rows } = await db.query(
       `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit, target_type' : ''}${hasWebpImage ? ', image_url, image_thumbnail_url' : ''}
-       FROM ${table} WHERE id = ? AND (gym_id IS NULL OR gym_id = ?)`,
+       FROM ${readTable} WHERE id = ? AND (gym_id IS NULL OR gym_id = ?)`,
       [req.params.id, gymId],
     );
     if (rows.length === 0) { res.status(404).json({ error: 'Goal not found' }); return null; }
@@ -535,7 +538,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         // rather than a silently numbered name.
         const newName = `${source.name} - Copy`;
         const { rows: existing } = await db.query(
-          `SELECT id FROM ${table} WHERE gym_id = ? AND name = ? AND status != 'deleted'`,
+          `SELECT id FROM ${readTable} WHERE gym_id = ? AND name = ? AND status != 'deleted'`,
           [gymId, newName],
         );
         if (existing.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
@@ -589,7 +592,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, gym_id, status FROM ${table} WHERE id = ?`,
+        `SELECT id, gym_id, status FROM ${readTable} WHERE id = ?`,
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Goal not found' });
