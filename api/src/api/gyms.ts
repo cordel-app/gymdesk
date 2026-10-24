@@ -17,6 +17,7 @@ import {
 } from '../infra/storage';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { seedDefaultGymProducts } from './gym-default-products';
+import { seedDefaultGymPersonalGoals } from './gym-default-personal-goals';
 import { logger } from '../lib/logger';
 
 export const gymsRouter = Router();
@@ -302,6 +303,8 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
     // a System Product's name and type still come from `charge_types`).
     await seedDefaultGymProducts(id);
+    // #1850: every live Base Personal Goal becomes a gym-owned goal of the new gym.
+    await seedDefaultGymPersonalGoals(id, actorName);
     const { rows } = await db.query(
       `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
       [id],
@@ -471,6 +474,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     [newId, actorName],
   );
   await seedDefaultGymProducts(newId);
+  await seedDefaultGymPersonalGoals(newId, actorName);
   const { rows } = await db.query(
     `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [newId],

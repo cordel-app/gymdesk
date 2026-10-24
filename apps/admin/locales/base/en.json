@@ -3968,7 +3968,20 @@
     "image_staged": "Will be uploaded once the goal is saved.",
     "image_retry": "Retry upload",
     "show_all_attributes": "Show all attributes",
-    "hide_all_attributes": "Hide all attributes"
+    "hide_all_attributes": "Hide all attributes",
+    "import_system": "Import System Personal Goals",
+    "import_modal_title": "Import System Personal Goals",
+    "import_select_all_matching": "Select all matching",
+    "import_clear_all_matching": "Clear all matching",
+    "import_available_count": "{n} goals available",
+    "import_selected_count": "{n} selected",
+    "import_empty": "No system personal goals match the search.",
+    "import_importing": "Importing…",
+    "import_confirm": "Import",
+    "import_already_imported": "Imported",
+    "import_done": "Imported {n} personal goals.",
+    "import_skipped": "{n} were already in your library.",
+    "import_note": "Imported goals become your gym’s own copies; changes to the system goals never overwrite them."
   },
   "assigned_personal_goals": {
     "title": "Assigned Personal Goals",

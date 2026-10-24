@@ -3981,7 +3981,20 @@
     "image_staged": "Es pujarà quan es desi l'objectiu.",
     "image_retry": "Reintenta la pujada",
     "show_all_attributes": "Mostra tots els atributs",
-    "hide_all_attributes": "Amaga tots els atributs"
+    "hide_all_attributes": "Amaga tots els atributs",
+    "import_system": "Importa objectius personals del sistema",
+    "import_modal_title": "Importa objectius personals del sistema",
+    "import_select_all_matching": "Selecciona tots els resultats",
+    "import_clear_all_matching": "Treu tots els resultats",
+    "import_available_count": "{n} objectius disponibles",
+    "import_selected_count": "{n} seleccionats",
+    "import_empty": "Cap objectiu personal del sistema coincideix amb la cerca.",
+    "import_importing": "Important…",
+    "import_confirm": "Importa",
+    "import_already_imported": "Importat",
+    "import_done": "S’han importat {n} objectius personals.",
+    "import_skipped": "{n} ja eren a la teva biblioteca.",
+    "import_note": "Els objectius importats passen a ser còpies pròpies del teu gimnàs; els canvis als objectius del sistema mai les sobreescriuen."
   },
   "assigned_personal_goals": {
     "title": "Objectius Personals Assignats",

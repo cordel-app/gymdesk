@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireFeatureWrite } from '../infra/tenantContext';
+import { getTenantContext, requireFeatureWrite, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
@@ -64,6 +64,7 @@ import {
   clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import { resolveRequestActor } from '../domain/auditActor';
+import { importBasePersonalGoals, listBasePersonalGoalsForGym } from './gym-default-personal-goals';
 
 /**
  * #947 — a gym's view of one goal catalogue (Personal Goals or Nutrition Goals).
@@ -112,7 +113,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}${kind === 'personal' ? ' g.base_personal_goal_id, (g.gym_id IS NULL OR g.base_personal_goal_id IS NOT NULL) AS is_system,' : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
@@ -127,7 +128,11 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    */
   function shapeGoal<T extends Record<string, unknown>>(input: T) {
     // #1623: `translations` is `{}` rather than NULL for a goal with none.
-    const row = translated ? withGoalTranslations(input as any) as T : input;
+    const withTranslations = translated ? withGoalTranslations(input as any) as T : input;
+    // #1850: a System row, or a gym's copy of a Base Personal Goal, reads as system-origin.
+    const row = withTranslations && 'is_system' in withTranslations
+      ? { ...withTranslations, is_system: Boolean(withTranslations.is_system) } as T
+      : withTranslations;
     if (!row || !measurable) return row;
     return {
       ...row,
@@ -463,6 +468,47 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   }
 
   if (configurable) {
+    // ─── #1850 — Import System Personal Goals ─────────────────────────────────
+    // `GET /base` reads the global `base_personal_goals` templates with this
+    // gym's import state; `POST /import` creates gym-owned goals from the chosen
+    // ones. Never an UPDATE of a goal the gym already has (a re-import skips it).
+    router.get('/base', requireRole('admin'), async (req, res, next) => {
+      const { gymId } = getTenantContext(req);
+      const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      try {
+        const rows = await listBasePersonalGoalsForGym(gymId, q || undefined);
+        res.json(rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          description: r.description,
+          target_value: r.target_value === null ? null : Number(r.target_value),
+          target_unit: r.target_unit,
+          target_type: r.target_type,
+          imported: r.imported,
+          imported_personal_goal_id: r.imported_personal_goal_id,
+        })));
+      } catch (err) { next(err); }
+    });
+
+    router.post('/import', requireRole('admin'), requireWrite, async (req, res, next) => {
+      const ctx = getTenantContext(req);
+      const ids = req.body?.base_personal_goal_ids;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.length > 200
+        || !ids.every((v: unknown) => Number.isInteger(v) && (v as number) > 0)) {
+        return res.status(400).json({ error: 'base_personal_goal_ids must be a non-empty array of positive integers' });
+      }
+      try {
+        const result = await importBasePersonalGoals(ctx.gymId, [...new Set<number>(ids)], resolveRequestActor(ctx));
+        for (const baseId of result.imported) {
+          recordAudit(req, {
+            action: 'create', entityType, entityName: 'Import System Personal Goal',
+            next: { base_personal_goal_id: baseId },
+          });
+        }
+        res.json(result);
+      } catch (err) { next(err); }
+    });
+
     for (const [action, status] of [['activate', 'active'], ['deactivate', 'inactive']] as const) {
       router.post(`/:id/${action}`, requireWrite, async (req, res, next) => {
         const { gymId } = getTenantContext(req);
