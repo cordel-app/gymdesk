@@ -182,6 +182,8 @@ export interface GoalRow {
   id: number;
   /** `null` = a System row, owned by the platform and read-only to every gym (§5). */
   gym_id: string | null;
+  /** #1850: a System row, or a gym's own copy of a Base Personal Goal (the API derives it). */
+  is_system?: boolean;
   /**
    * A seeded System row's stable handle, `null` for everything else — a gym's own
    * goal and a System goal Cordel added later both carry only a name. It is what
@@ -394,6 +396,15 @@ export function formatGoalTarget(goal: Pick<GoalRow, 'target_value' | 'target_un
 /** Whether this row is the platform's (System) rather than the gym's own. */
 export function isSystemGoal(goal: GoalRow): boolean {
   return goal.gym_id === null;
+}
+
+/**
+ * Whether the goal *originates* from the system (#1850): a System row, or the
+ * gym's own copy of one. Display only — an imported copy is still gym-owned, so
+ * whether a goal is editable stays `isSystemGoal()`.
+ */
+export function isSystemOriginGoal(goal: GoalRow): boolean {
+  return goal.is_system ?? goal.gym_id === null;
 }
 
 /**
