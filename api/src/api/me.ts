@@ -13,7 +13,7 @@ import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
-import { canCompleteOn, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
+import { canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -1406,38 +1406,36 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
 });
 
 /**
- * #1580: the caller's active nutrition plan's meals as (id, weekday) pairs — the
- * only thing meal-completion rules need from the plan.
+ * #1580/#1957: the meals of every assignment of the caller that has been in force (active, or completed
+ * with an `end_date`), each with its assignment's inclusive date range. A date's meals are therefore
+ * those of the assignment effective on it, never the current plan's for every date.
  */
-async function activePlanMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number }[]> {
+async function planMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number; from: string | null; to: string | null }[]> {
   const { rows } = await db.query(
-    `SELECT m.id, d.weekday
+    `SELECT m.id, d.weekday, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date
      FROM member_nutrition_plans p
      JOIN member_nutrition_plan_days d ON d.member_nutrition_plan_id = p.id AND d.gym_id = p.gym_id
      JOIN member_nutrition_plan_meals m ON m.member_nutrition_plan_day_id = d.id AND m.gym_id = p.gym_id
-     WHERE p.gym_id = ? AND p.member_id = ? AND p.status = 'active'
-       AND p.id = (SELECT id FROM member_nutrition_plans WHERE gym_id = ? AND member_id = ? AND status = 'active'
-                   ORDER BY created_at DESC LIMIT 1)`,
-    [gymId, memberId, gymId, memberId],
+     WHERE p.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`,
+    [gymId, memberId],
   );
-  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday) }));
+  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday), from: r.from_date, to: r.to_date }));
 }
 
 /**
- * #1603: the active plan's goals and dietary restrictions. Both apply on every
- * day (`applies_all_days` is the only scope the plan routers write).
+ * #1603/#1957: goals and dietary restrictions of every assignment that has been in force, each with
+ * its assignment's range. Both apply on every day of that range (`applies_all_days`).
  */
-async function activePlanRequirements(gymId: string, memberId: number): Promise<PlanRequirements> {
-  const planSql = `(SELECT id FROM member_nutrition_plans WHERE gym_id = ? AND member_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1)`;
-  const { rows: g } = await db.query(
-    `SELECT id FROM member_nutrition_plan_goals WHERE gym_id = ? AND member_nutrition_plan_id = ${planSql}`,
-    [gymId, gymId, memberId],
-  );
-  const { rows: r } = await db.query(
-    `SELECT id FROM member_nutrition_plan_restrictions WHERE gym_id = ? AND member_nutrition_plan_id = ${planSql}`,
-    [gymId, gymId, memberId],
-  );
-  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id) };
+async function planRequirements(gymId: string, memberId: number): Promise<PlanRequirements> {
+  const plans = `JOIN member_nutrition_plans p ON p.id = x.member_nutrition_plan_id AND p.gym_id = x.gym_id
+     WHERE x.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`;
+  const cols = `x.id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date`;
+  const { rows: g } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_goals x ${plans}`, [gymId, memberId]);
+  const { rows: r } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_restrictions x ${plans}`, [gymId, memberId]);
+  const windows: Record<string, { from: string | null; to: string | null }> = {};
+  for (const x of g as any[]) windows[`goal|${x.id}`] = { from: x.from_date, to: x.to_date };
+  for (const x of r as any[]) windows[`restriction|${x.id}`] = { from: x.from_date, to: x.to_date };
+  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id), windows };
 }
 
 /**
@@ -1455,7 +1453,7 @@ meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled
     const q = typeof req.query.date === 'string' ? req.query.date : '';
     if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     const selected = q || today;
-    const meals = await activePlanMeals(gymId, memberId);
+    const meals = await planMeals(gymId, memberId);
     const { rows: logs } = await db.query(
       `SELECT meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
@@ -1463,7 +1461,7 @@ meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled
        DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS + 7 }).toISODate(),
        DateTime.fromISO(selected).plus({ days: 7 }).toISODate()],
     );
-    const requirements = await activePlanRequirements(gymId, memberId);
+    const requirements = await planRequirements(gymId, memberId);
     const { rows: reqLogs } = await db.query(
       `SELECT goal_id, restriction_id, level, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_requirement_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
@@ -1522,7 +1520,7 @@ meRouter.post('/nutrition-logs', requireRole('member'), requireFeatureEnabled('n
   }
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const meals = await activePlanMeals(gymId, memberId);
+    const meals = await planMeals(gymId, memberId);
     const meal = meals.find((m) => m.id === mealId);
     if (!meal) return res.status(403).json({ error: 'You can only log meals of your own nutrition plan.' });
     if (!isMealScheduledOn(meal, loggedDate)) return res.status(400).json({ error: 'That meal is not scheduled on that date.' });
@@ -1585,9 +1583,13 @@ meRouter.post('/nutrition-requirement-logs', requireRole('member'), requireFeatu
   if (goalId !== null && level === 'partial') return res.status(400).json({ error: 'A goal can only be marked done.' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const requirements = await activePlanRequirements(gymId, memberId);
+    const requirements = await planRequirements(gymId, memberId);
     const owned = goalId !== null ? requirements.goalIds.includes(goalId) : requirements.restrictionIds.includes(restrictionId as number);
     if (!owned) return res.status(403).json({ error: 'You can only log items of your own nutrition plan.' });
+    const key = goalId !== null ? `goal|${goalId}` : `restriction|${restrictionId}`;
+    if (!inWindow(requirements.windows?.[key], loggedDate)) {
+      return res.status(400).json({ error: 'That item is not part of your nutrition plan on that date.' });
+    }
     const today = gymToday(new Date(), await gymTimeZone(gymId));
     if (!canCompleteOn(loggedDate, today)) return res.status(400).json({ error: 'A future day cannot be marked as done.' });
     const itemKey = goalId !== null ? `g${goalId}` : `r${restrictionId}`;

@@ -61,6 +61,8 @@ export default function NutritionPage() {
   const { flags: featureFlags } = useFeatureFlags();
 
   const [plan, setPlan] = useState<NutritionPlan | null | undefined>(undefined);
+  // #1957: the assignment in force on the selected date (a past or later day may belong to another one).
+  const [dayPlan, setDayPlan] = useState<NutritionPlan | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // #1580: the selected day is a date; the gym's today replaces the device clock once the API answers.
@@ -104,6 +106,16 @@ export default function NutritionPage() {
     })();
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
+
+  useEffect(() => {
+    if (!plan) return;
+    if (selectedDate === today) { setDayPlan(plan); return; }
+    let cancelled = false;
+    apiFetch<{ plan: NutritionPlan | null }>(`/me/nutrition-plan?date=${selectedDate}`)
+      .then((d) => { if (!cancelled) setDayPlan(d.plan); })
+      .catch(() => { /* keep the previous day's plan on screen */ });
+    return () => { cancelled = true; };
+  }, [plan, selectedDate, today]);
 
   async function loadProgress(date: string) {
     try {
@@ -196,8 +208,9 @@ export default function NutritionPage() {
   // Defaulted rather than read straight off the payload: the Member app and the
   // API deploy from two workflows, so a member app running briefly ahead of the
   // API must render the page rather than throw on a missing key.
-  const goals = plan?.goals ?? [];
-  const restrictions = plan?.restrictions ?? [];
+  const shown = dayPlan === undefined ? plan : dayPlan;
+  const goals = shown?.goals ?? [];
+  const restrictions = shown?.restrictions ?? [];
 
   // The plan's day numbering is Monday-based (0=Mon … 6=Sun), unlike training's.
   // #1874: another week shows its own dates and results; the month card stays today's.
@@ -208,7 +221,7 @@ export default function NutritionPage() {
   const dayCounts = otherWeek ? progress.day : summary.day;
   const weekCounts = otherWeek ? progress.week : summary.week;
   const selectedWeekday = mondayIndex(selectedDate);
-  const mealsForDate: Meal[] = (plan?.days ?? [])
+  const mealsForDate: Meal[] = (shown?.days ?? [])
     .filter((d) => d.weekday === ALL_DAYS_WEEKDAY || d.weekday === selectedWeekday)
     .flatMap((d) => d.meals);
 
