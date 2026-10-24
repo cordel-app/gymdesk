@@ -150,6 +150,7 @@ export const AUDITED_TABLES: readonly string[] = [
   'base_payment_methods',
   'base_products',
   'base_personal_goals',
+  'base_nutrition_goals',
   'gym_personal_goals',
   'gyms',
   'member_nutrition_plans',
