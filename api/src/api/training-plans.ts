@@ -241,14 +241,19 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
   }
   try {
     const { rows: planRows } = await db.query(
-      "SELECT status, end_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
+      "SELECT status, end_date, draft_of_plan_id FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
       [planId, memberId, gymId],
     );
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     if (planRows[0].status === 'completed') return res.status(403).json({ error: 'Completed training plans are read-only' });
 
     // #1958: saving a Draft plan activates it (an explicit expired status still wins).
-    const nextStatus = planRows[0].status === 'draft' && (!status || status === 'draft') ? 'active' : status;
+    // #1969: a version draft (draft_of_plan_id) is activated only by POST /publish-version.
+    const isVersionDraft = planRows[0].draft_of_plan_id != null;
+    if (isVersionDraft && status && status !== 'draft') {
+      return res.status(409).json({ error: 'A version draft is activated by publishing it, not by changing its status' });
+    }
+    const nextStatus = planRows[0].status === 'draft' && !isVersionDraft && (!status || status === 'draft') ? 'active' : status;
 
     if (nextStatus === 'expired') {
       const effectiveEndDate = ('end_date' in req.body) ? end_date : planRows[0].end_date;

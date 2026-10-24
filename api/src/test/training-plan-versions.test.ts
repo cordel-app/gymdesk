@@ -49,6 +49,19 @@ describe('assigned training plan versions (#1969)', () => {
     expect(orig.body.name).toBe('Strength');
   });
 
+  it('saving the header of a version draft keeps it a draft; only publish activates it (#1969 stage 2)', async () => {
+    const { rows } = await db.query("SELECT id FROM training_plans WHERE draft_of_plan_id = ?", [planId]);
+    const draftId = rows[0].id;
+    const put = await auth(request.put(`${base()}/${draftId}`)).send({ name: 'Strength', description: 'edited' });
+    expect(put.status).toBe(200);
+    expect(put.body.status).toBe('draft');
+    const bad = await auth(request.put(`${base()}/${draftId}`)).send({ status: 'active' });
+    expect(bad.status).toBe(409);
+    const list = await auth(request.get('/training-plans?limit=50'));
+    const row = list.body.items.find((r: any) => r.id === draftId);
+    expect(row.draft_of_plan_id).toBe(planId);
+  });
+
   it('is tenant scoped and unauthenticated requests are refused', async () => {
     expect((await auth(request.post(`${base()}/${planId}/edit-draft`), otherGymId)).status).toBe(404);
     expect((await request.post(`${base()}/${planId}/edit-draft`)).status).toBe(401);
