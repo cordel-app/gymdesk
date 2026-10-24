@@ -61,6 +61,17 @@ export const GOAL_LIBRARY_FEATURE_KEYS: Record<GoalLibraryKind, string> = {
   nutrition: 'nutrition.nutrition_library',
 };
 
+/**
+ * #1849 stage 2c — what a gym-facing **read** selects from. Personal Goals read
+ * the `personal_goal_catalogue` view (System goals from `base_personal_goals`, a
+ * gym's own from `personal_goals`); Nutrition Goals are unchanged. Writes always
+ * target `GOAL_LIBRARY_TABLES`.
+ */
+export const GOAL_LIBRARY_READ_SOURCES: Record<GoalLibraryKind, string> = {
+  personal: 'personal_goal_catalogue',
+  nutrition: 'nutrition_goals',
+};
+
 /** What `status` may hold. Mirrored by `chk_<prefix>_status` (migration 206). */
 export const GOAL_STATUSES = ['active', 'deleted'] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
