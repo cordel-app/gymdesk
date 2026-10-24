@@ -54,7 +54,7 @@ const asGym = (gym: string) => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': g
 
 async function gymStatus(gym: string, goalId: number): Promise<string | null> {
   const { rows } = await db.query<{ status: string }>(
-    'SELECT status FROM gym_personal_goals WHERE gym_id = ? AND personal_goal_id = ?',
+    'SELECT status FROM gym_personal_goals WHERE gym_id = ? AND COALESCE(base_personal_goal_id, personal_goal_id) = ?',
     [gym, goalId],
   );
   return rows[0]?.status ?? null;
@@ -87,7 +87,7 @@ beforeAll(async () => {
   await createTestMembership(gymB, 'admin');
 
   const { rows } = await db.query<{ id: number }>(
-    "SELECT id FROM personal_goals WHERE gym_id IS NULL AND slug = 'weight_loss'",
+    "SELECT id FROM base_personal_goals WHERE slug = 'weight_loss'",
   );
   systemGoalId = rows[0].id;
 
@@ -124,14 +124,14 @@ describe('per-gym availability (#1181 §2)', () => {
   });
 
   it('deactivates a System goal for one gym, never touching the shared row or another gym', async () => {
-    const before = await db.query('SELECT * FROM personal_goals WHERE id = ?', [systemGoalId]);
+    const before = await db.query('SELECT * FROM base_personal_goals WHERE id = ?', [systemGoalId]);
     const res = await request.post(`${ROOT}/${systemGoalId}/deactivate`).set(asGym(gymA));
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(systemGoalId);
     expect(res.body.gym_status).toBe('inactive');
     expect(res.body.gym_id).toBeNull();
     // The definition is untouched, column for column.
-    const after = await db.query('SELECT * FROM personal_goals WHERE id = ?', [systemGoalId]);
+    const after = await db.query('SELECT * FROM base_personal_goals WHERE id = ?', [systemGoalId]);
     expect(after.rows[0]).toEqual(before.rows[0]);
     // Gym B still sees its own, independent state.
     expect((await listed(gymB, systemGoalId)).gym_status).toBe('active');
@@ -211,7 +211,7 @@ describe('an inactive goal is not assignable (#1181 §2 — enforced server-side
 
 describe('Duplicate (#1181 §1)', () => {
   it('copies a System goal into a new, active, gym-owned goal and leaves the source untouched', async () => {
-    const before = await db.query('SELECT * FROM personal_goals WHERE id = ?', [systemGoalId]);
+    const before = await db.query('SELECT * FROM base_personal_goals WHERE id = ?', [systemGoalId]);
     const res = await request.post(`${ROOT}/${systemGoalId}/duplicate`).set(asGym(gymA));
     expect(res.status).toBe(201);
     expect(res.body.name).toBe('Weight Loss - Copy');
@@ -223,7 +223,7 @@ describe('Duplicate (#1181 §1)', () => {
     expect(res.body.target_unit).toBe(before.rows[0].target_unit);
     expect(res.body.description).toBe(before.rows[0].description);
     expect(res.body.created_by).toBe('Super Admin');
-    const after = await db.query('SELECT * FROM personal_goals WHERE id = ?', [systemGoalId]);
+    const after = await db.query('SELECT * FROM base_personal_goals WHERE id = ?', [systemGoalId]);
     expect(after.rows[0]).toEqual(before.rows[0]);
     expect(await gymStatus(gymA, res.body.id)).toBe('active');
     // Editable now, because it is the gym's own.
@@ -260,12 +260,12 @@ describe('gym creation seeds the System goals (#1181 §2)', () => {
     expect(res.status).toBe(201);
     const { rows } = await db.query<{ n: number }>(
       `SELECT COUNT(*) AS n FROM gym_personal_goals gpg
-       JOIN personal_goals pg ON pg.id = gpg.personal_goal_id AND pg.gym_id IS NULL
+       JOIN base_personal_goals pg ON pg.id = gpg.base_personal_goal_id
        WHERE gpg.gym_id = ? AND gpg.status = 'active'`,
       [res.body.id],
     );
     const { rows: system } = await db.query<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'",
+      "SELECT COUNT(*) AS n FROM base_personal_goals WHERE deleted_at IS NULL",
     );
     expect(Number(rows[0].n)).toBe(Number(system[0].n));
     await db.query('DELETE FROM gyms WHERE id = ?', [res.body.id]);

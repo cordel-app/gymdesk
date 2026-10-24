@@ -77,6 +77,8 @@ const gymGoalIds: Record<string, number> = {};
 /** The name no System row ever takes, so the search case can assert an empty page. */
 const GYM_ONLY_NAME = `PGL Gym Only ${RUN}`;
 /** The name a System row deliberately reuses, to prove the keys do not collide. */
+/** #1849 2f: Cordel's Personal Goals live in base_personal_goals alone. */
+const systemTable = (t: string) => (t === 'personal_goals' ? 'base_personal_goals' : t);
 const GYM_SHARED_NAME = `PGL Gym Shared ${RUN}`;
 
 beforeAll(async () => {
@@ -235,7 +237,7 @@ for (const kind of KINDS) {
       expect(renamed.body.modified_by).toBe('Super Admin');
       expect(renamed.body.modified_at).not.toBeNull();
 
-      const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${table} WHERE id = ?`, [created.body.id]);
+      const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${systemTable(table)} WHERE id = ?`, [created.body.id]);
       expect(rows[0].slug).toBeNull();
     });
 
@@ -404,7 +406,7 @@ for (const kind of KINDS) {
         .send({ name: '  ' });
       expect(res.status).toBe(400);
 
-      const { rows } = await db.query<{ name: string }>(`SELECT name FROM ${table} WHERE id = ?`, [created.body.id]);
+      const { rows } = await db.query<{ name: string }>(`SELECT name FROM ${systemTable(table)} WHERE id = ?`, [created.body.id]);
       expect(rows[0].name).toBe(`PGL Blank Put ${RUN}`);
     });
 

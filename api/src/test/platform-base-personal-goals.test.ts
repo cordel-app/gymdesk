@@ -1,5 +1,5 @@
-// #1849 stages 2b-2c: Cordel's Base Personal Goals CRUD writes base_personal_goals
-// and mirrors every write onto the legacy System row of the same id.
+// #1849: Cordel's Base Personal Goals CRUD writes base_personal_goals alone (the 2b
+// legacy mirror is gone since 2f-1); new ids come from the gym-owned goals' sequence.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -53,7 +53,7 @@ async function legacy(id: number) {
 }
 
 describe('platform personal goals on base_personal_goals', () => {
-  it('create writes the Base row and a legacy mirror under the same id, with translations', async () => {
+  it('create writes the Base row only, with translations, on an id no gym-owned goal can take', async () => {
     const res = await request.post('/platform/personal-goals').set('Authorization', TEST_AUTH_HEADER).send({
       name: NAME, description: 'd', target_value: 5, target_unit: 'kg',
       translations: { es: { name: 'Prueba 2b' } },
@@ -65,9 +65,12 @@ describe('platform personal goals on base_personal_goals', () => {
     expect(res.body.translations.es.name).toBe('Prueba 2b');
     const { rows } = await db.query<any>('SELECT name FROM base_personal_goals WHERE id = ?', [createdId]);
     expect(rows[0].name).toBe(NAME);
-    expect(await legacy(createdId)).toMatchObject({ name: NAME, gym_id: null, status: 'active' });
-    const { rows: t } = await db.query<any>('SELECT name FROM personal_goal_translations WHERE personal_goal_id = ?', [createdId]);
+    expect(await legacy(createdId)).toBeUndefined();
+    const { rows: t } = await db.query<any>('SELECT name FROM base_personal_goal_translations WHERE base_personal_goal_id = ?', [createdId]);
     expect(t.map((r: any) => r.name)).toEqual(['Prueba 2b']);
+    const own = await db.query("INSERT INTO personal_goals (gym_id, name, status) VALUES (NULL, 'Test Base Goal 2b probe', 'deleted')");
+    expect(own.insertId).toBeGreaterThan(createdId);
+    await db.query('DELETE FROM personal_goals WHERE id = ?', [own.insertId]);
   });
 
   it('rejects a duplicate live name', async () => {
@@ -75,12 +78,11 @@ describe('platform personal goals on base_personal_goals', () => {
     expect(res.status).toBe(409);
   });
 
-  it('update changes the Base row and the mirror; lists and reads come from the Base table', async () => {
+  it('update changes the Base row; lists come from the Base table', async () => {
     const res = await request.put(`/platform/personal-goals/${createdId}`).set('Authorization', TEST_AUTH_HEADER)
       .send({ name: `${NAME} edited`, target_value: 7 });
     expect(res.status).toBe(200);
     expect(res.body.target_value).toBe(7);
-    expect(await legacy(createdId)).toMatchObject({ name: `${NAME} edited` });
     const list = await request.get('/platform/personal-goals').query({ search: 'Base Goal 2b' }).set('Authorization', TEST_AUTH_HEADER);
     expect(list.body.items.map((g: any) => g.id)).toContain(createdId);
   });
@@ -93,12 +95,11 @@ describe('platform personal goals on base_personal_goals', () => {
     expect(res.status).toBe(404);
   });
 
-  it('delete soft-deletes the Base row and the mirror', async () => {
+  it('delete soft-deletes the Base row', async () => {
     const res = await request.delete(`/platform/personal-goals/${createdId}`).set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(204);
     const { rows } = await db.query<any>('SELECT deleted_at FROM base_personal_goals WHERE id = ?', [createdId]);
     expect(rows[0].deleted_at).not.toBeNull();
-    expect((await legacy(createdId)).status).toBe('deleted');
     expect((await request.delete(`/platform/personal-goals/${createdId}`).set('Authorization', TEST_AUTH_HEADER)).status).toBe(409);
   });
 });

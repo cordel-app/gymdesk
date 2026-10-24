@@ -11,6 +11,7 @@ import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
+  allocateTestBaseGoalId,
   createTestMembership,
   request,
 } from './helpers';
@@ -35,10 +36,11 @@ describe('Import System Personal Goals', () => {
 
   beforeAll(async () => {
     const insert = async (name: string, value: number | null, unit: string | null) => {
-      const { insertId } = await db.query(
-        `INSERT INTO base_personal_goals (name, description, target_value, target_unit, target_type, created_by)
-         VALUES (?, 'Template description', ?, ?, 'relative', 'System')`,
-        [name, value, unit],
+      const insertId = await allocateTestBaseGoalId();
+      await db.query(
+        `INSERT INTO base_personal_goals (id, name, description, target_value, target_unit, target_type, created_by)
+         VALUES (?, ?, 'Template description', ?, ?, 'relative', 'System')`,
+        [insertId, name, value, unit],
       );
       await db.query(
         `INSERT INTO base_personal_goal_translations (base_personal_goal_id, locale, name, description)
