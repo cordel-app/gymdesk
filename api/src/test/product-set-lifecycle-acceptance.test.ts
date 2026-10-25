@@ -5,7 +5,6 @@ import { createDraft, addCoverage, cancelInFlight } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ensureRecurringDraft } from '../api/recurring-purchase-draft';
 import { applyPromotionToProductSet, fetchAppliedPromotions } from '../api/membership-promotions';
-import { revokePromotionMutator } from '../api/product-set-bridge';
 
 let gymId: string;
 let planId: number;
