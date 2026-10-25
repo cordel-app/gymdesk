@@ -81,3 +81,38 @@ describe('GET /me/training-plans date range (#1967)', () => {
     expect(names).not.toContain('Past range');
   });
 });
+
+describe('GET /me/training-plans?date= historical view (#1967)', () => {
+  it('rejects a malformed date', async () => {
+    await asMember(request.get('/me/training-plans?date=yesterday')).expect(400);
+  });
+
+  it('shows the plan that applied on a past date, including one since completed', async () => {
+    const mk = async (name: string, status: string, start: string, end: string | null) => {
+      const id = await createPlan(name, status, ['active']);
+      await db.query('UPDATE training_plans SET start_date = ?, end_date = ? WHERE id = ?', [start, end, id]);
+    };
+    await mk('Hist completed', 'completed', '2001-01-01', '2001-06-30');
+    await mk('Hist expired', 'expired', '2001-01-01', '2001-03-31');
+    await mk('Hist later', 'active', '2001-07-01', null);
+
+    const inside = await asMember(request.get('/me/training-plans?date=2001-02-15')).expect(200);
+    const insideNames = inside.body.map((p: any) => p.name);
+    expect(insideNames).toContain('Hist completed');
+    expect(insideNames).toContain('Hist expired');
+    expect(insideNames).not.toContain('Hist later'); // not yet started
+
+    // Boundaries are inclusive of end_date and exclusive after it.
+    const onEnd = await asMember(request.get('/me/training-plans?date=2001-06-30')).expect(200);
+    expect(onEnd.body.map((p: any) => p.name)).toContain('Hist completed');
+    const afterEnd = await asMember(request.get('/me/training-plans?date=2001-07-01')).expect(200);
+    const afterNames = afterEnd.body.map((p: any) => p.name);
+    expect(afterNames).not.toContain('Hist completed');
+    expect(afterNames).toContain('Hist later');
+  });
+
+  it('never exposes a completed plan as a current one', async () => {
+    const res = await asMember(request.get('/me/training-plans')).expect(200);
+    expect(res.body.map((p: any) => p.name)).not.toContain('Hist completed');
+  });
+});
