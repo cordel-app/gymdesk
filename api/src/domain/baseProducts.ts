@@ -16,7 +16,11 @@ export const BASE_PRODUCT_TYPES = ['fee', 'sessions'] as const;
 export const BASE_PRODUCT_STATUSES = ['active', 'inactive'] as const;
 export const BASE_PRODUCT_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 
+export const BASE_PRODUCT_TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
+
 export const MAX_NAME_LENGTH = 150;
+export const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_TEXT_LENGTH = 20_000;
 export const MAX_CHARGE_TYPE_CODE_LENGTH = 50;
 const MAX_INT = 1_000_000;
 const MAX_AMOUNT = 99_999_999.99;
@@ -33,6 +37,10 @@ export type BaseProductInput = {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  description: string | null;
+  notes: string | null;
+  package_information: string | null;
+  tax_behavior: (typeof BASE_PRODUCT_TAX_BEHAVIORS)[number];
 };
 
 export type BaseProductRow = {
@@ -48,6 +56,14 @@ export type BaseProductRow = {
   mandatory: number | boolean;
   validity_days: number | null;
   one_time_purchase: number | boolean;
+  // #2009 stage 1 (migration 335). The image pair is written by the upload
+  // pipeline (stage 3), never by a JSON body, so it is on the row only.
+  description?: string | null;
+  notes?: string | null;
+  package_information?: string | null;
+  tax_behavior?: string;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
 };
 
 function positiveInt(value: unknown): number | null | undefined {
@@ -82,6 +98,7 @@ export function parseBaseProductInput(
         charge_type_code: null, name: '', type: 'fee', units: null, amount: null,
         billing_frequency: 'once', status: 'active', enrollment_status: 'public',
         mandatory: false, validity_days: null, one_time_purchase: false,
+        description: null, notes: null, package_information: null, tax_behavior: 'inclusive',
       };
 
   if (has('name')) {
@@ -140,6 +157,22 @@ export function parseBaseProductInput(
     const days = positiveInt(src.validity_days);
     if (days === undefined) return { error: 'validity_days must be a positive integer' };
     out.validity_days = days;
+  }
+  // #2009: free text a gym Product holds too. Absent keeps; blank clears.
+  for (const [key, max] of [['description', MAX_DESCRIPTION_LENGTH], ['notes', MAX_TEXT_LENGTH], ['package_information', MAX_TEXT_LENGTH]] as const) {
+    if (has(key)) {
+      const v = src[key];
+      if (v === null || v === undefined) out[key] = null;
+      else if (typeof v !== 'string') return { error: `${key} must be a string` };
+      else if (v.trim().length > max) return { error: `${key} must be at most ${max} characters` };
+      else out[key] = v.trim() || null;
+    }
+  }
+  if (has('tax_behavior')) {
+    if (!(BASE_PRODUCT_TAX_BEHAVIORS as readonly string[]).includes(src.tax_behavior)) {
+      return { error: `tax_behavior must be one of: ${BASE_PRODUCT_TAX_BEHAVIORS.join(', ')}` };
+    }
+    out.tax_behavior = src.tax_behavior;
   }
 
   if (out.type === 'sessions' && out.units === null) return { error: 'units is required for a sessions product' };
