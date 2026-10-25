@@ -231,6 +231,74 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
 }
 
 /**
+ * #1991 stage 4: `pending_payment → draft`. A checkout that was cancelled or
+ * whose payment link expired returns to the Draft it was saved from: the
+ * configuration (plan snapshot, lines, applications, coverage) is untouched,
+ * the unpaid initial event and its attempts are deleted, and the linked
+ * assignment goes back to `draft` with it. Applications have no pending state
+ * of their own — they stay `applied` and are a Draft's again by the version.
+ * Refused (`unresolved`) unless `canCancelPending()` says every attempt is
+ * definitively unsuccessful or none was submitted; the events are locked first,
+ * so a webhook confirming a payment either settles before this reads (and the
+ * attempt is `completed`) or waits for it and finds the set a Draft.
+ */
+export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, actor = SYSTEM_ACTOR): Promise<CancelOutcome> {
+  const row = await lockSet(tx, gymId, id);
+  if (!row) return { kind: 'not_found' };
+  if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
+
+  const { rows: events } = await tx.query<{ id: number }>(
+    `SELECT id FROM billing_events WHERE gym_id = ? AND product_set_id = ? FOR UPDATE`, [gymId, id]);
+  const { rows: attempts } = await tx.query<{ provider_ref: string | null; provider_status: string | null; status: string }>(
+    `SELECT provider_ref, provider_status, status FROM payment_requests
+      WHERE gym_id = ? AND billing_event_id IN (SELECT id FROM billing_events WHERE product_set_id = ?)`,
+    [gymId, id]);
+  if (!canCancelPending(attempts.map((a) => ({
+    providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
+  })))) return { kind: 'unresolved' };
+
+  if (events.length > 0) {
+    const ids = events.map((e) => e.id);
+    const marks = ids.map(() => '?').join(',');
+    await tx.query(`DELETE FROM payment_requests WHERE gym_id = ? AND billing_event_id IN (${marks})`, [gymId, ...ids]);
+    await tx.query(`DELETE FROM billing_events WHERE gym_id = ? AND id IN (${marks})`, [gymId, ...ids]);
+  }
+  // The request the set names (a Pay-now link that carries no event) goes too.
+  await tx.query(
+    `DELETE FROM payment_requests WHERE gym_id = ? AND id IN (
+       SELECT payment_request_id FROM (SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL) x)
+      AND status <> 'completed'`, [gymId, id]);
+  await tx.query(
+    `UPDATE product_sets SET status = 'draft', payment_request_id = NULL, last_activity_at = UTC_TIMESTAMP()
+      WHERE id = ? AND status = 'pending_payment'`, [id]);
+  await tx.query(
+    `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
+        SET um.status = 'draft', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
+      WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
+  return { kind: 'cancelled' };
+}
+
+/**
+ * Returns every Pending Payment whose payment link expired to Draft: the
+ * latest attempt on its initial event is `expired` and every attempt is
+ * definitively unsuccessful. A `failed` attempt alone is not expiry (the
+ * member may pay again), and a set with no attempt is not swept.
+ */
+export async function expirePendingPayments(): Promise<number> {
+  const { rows } = await db.query<{ id: number; gym_id: string }>(
+    `SELECT ps.id, ps.gym_id FROM product_sets ps
+      WHERE ps.status = 'pending_payment'
+        AND (SELECT pr.status FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id
+              WHERE be.product_set_id = ps.id ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) = 'expired'`);
+  let n = 0;
+  for (const r of rows) {
+    const out = await db.transaction((tx) => returnPendingToDraft(tx, r.gym_id, Number(r.id)));
+    if (out.kind === 'cancelled') n += 1;
+  }
+  return n;
+}
+
+/**
  * Deletes every Draft that has been idle for more than two hours. One statement,
  * so the status and expiry are re-evaluated by the database at delete time and a
  * set that moved to `pending_payment` between a read and this call survives.
