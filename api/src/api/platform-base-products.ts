@@ -17,6 +17,7 @@ export const platformBaseProductsRouter = Router();
 
 const COLUMNS = `bp.id, bp.charge_type_code, bp.name, bp.type, bp.units, bp.amount, bp.billing_frequency,
   bp.status, bp.enrollment_status, bp.mandatory, bp.validity_days, bp.one_time_purchase,
+  bp.description, bp.notes, bp.package_information, bp.tax_behavior, bp.image_url, bp.image_thumbnail_url,
   bp.created_at, bp.created_by, bp.modified_at, bp.modified_by`;
 
 function shape(row: any) {
@@ -42,6 +43,8 @@ function toInput(row: any): BaseProductInput {
     amount: row.amount, billing_frequency: row.billing_frequency, status: row.status,
     enrollment_status: row.enrollment_status, mandatory: row.mandatory,
     validity_days: row.validity_days, one_time_purchase: row.one_time_purchase,
+    description: row.description, notes: row.notes, package_information: row.package_information,
+    tax_behavior: row.tax_behavior,
   };
 }
 
@@ -93,10 +96,12 @@ platformBaseProductsRouter.post('/', requireSuperadmin, async (req, res, next) =
       const result = await db.query(
         `INSERT INTO base_products
            (charge_type_code, name, type, units, amount, billing_frequency, status,
-            enrollment_status, mandatory, validity_days, one_time_purchase, created_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+            enrollment_status, mandatory, validity_days, one_time_purchase,
+            description, notes, package_information, tax_behavior, created_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
         [v.charge_type_code, v.name, v.type, v.units, v.amount, v.billing_frequency, v.status,
-          v.enrollment_status, v.mandatory ? 1 : 0, v.validity_days, v.one_time_purchase ? 1 : 0, actor],
+          v.enrollment_status, v.mandatory ? 1 : 0, v.validity_days, v.one_time_purchase ? 1 : 0,
+          v.description, v.notes, v.package_information, v.tax_behavior, actor],
       );
       id = result.insertId;
     } catch (err: any) {
@@ -126,10 +131,12 @@ platformBaseProductsRouter.put('/:id', requireSuperadmin, async (req, res, next)
         `UPDATE base_products
             SET charge_type_code = ?, name = ?, type = ?, units = ?, amount = ?, billing_frequency = ?,
                 status = ?, enrollment_status = ?, mandatory = ?, validity_days = ?, one_time_purchase = ?,
+                description = ?, notes = ?, package_information = ?, tax_behavior = ?,
                 modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND deleted_at IS NULL`,
         [v.charge_type_code, v.name, v.type, v.units, v.amount, v.billing_frequency, v.status,
-          v.enrollment_status, v.mandatory ? 1 : 0, v.validity_days, v.one_time_purchase ? 1 : 0, actor, existing.id],
+          v.enrollment_status, v.mandatory ? 1 : 0, v.validity_days, v.one_time_purchase ? 1 : 0,
+          v.description, v.notes, v.package_information, v.tax_behavior, actor, existing.id],
       );
     } catch (err: any) {
       if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A base product for this charge type or name already exists' });
