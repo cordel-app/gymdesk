@@ -112,6 +112,7 @@ describe('gate: audited tables', () => {
     { file: 'api/promotion-image-storage.ts', table: 'promotions', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/gym-default-personal-goals.ts', table: 'personal_goals', why: 'image references written right after the same import inserted the row (which carries created_by)' },
     { file: 'api/plan-image-storage.ts', table: 'membership_plans', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/professional-service-image-storage.ts', table: 'professional_services', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/payment-method-image-storage.ts', table: 'base_payment_methods', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },
     { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
