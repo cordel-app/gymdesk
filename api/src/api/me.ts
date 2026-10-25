@@ -1242,14 +1242,22 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
     const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
     // #1967: a plan applies only from its start_date through its end_date, in the gym's zone.
     const today = gymToday(new Date(), await gymTimeZone(gymId));
+    const q = typeof req.query.date === 'string' ? req.query.date : '';
+    if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const selected = q || today;
+    // A past date answers with the plans that applied then, including ones since
+    // completed or expired; today and later keep the current-plan rules.
+    const historical = selected < today;
+    const statusSql = historical ? "tp.status IN ('active', 'completed', 'expired')" : "tp.status = 'active'";
+    const assignmentSql = historical ? '' : "AND mtp.status = 'active'";
     const { rows } = await db.query(
       `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
-       WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.status = 'active'
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND ${statusSql}
          AND (tp.start_date IS NULL OR tp.start_date <= ?)
          AND (tp.end_date IS NULL OR tp.end_date >= ?)
-         AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id AND mtp.status = 'active')
+         AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id ${assignmentSql})
        ORDER BY tp.created_at DESC, tp.id DESC`,
-      [gymId, memberId, today, today],
+      [gymId, memberId, selected, selected],
     );
     res.json(rows);
   } catch (err) { next(err); }
