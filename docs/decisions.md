@@ -4,6 +4,22 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 22. Deploys run on self-hosted runners on the VPSs, not over SSH (#2041–#2046, 2026-10-24)
+
+**Decision**: the `deploy` job of the API and the three corfront apps runs on a GitHub Actions self-hosted runner installed on the VPS it deploys to (labels `self-hosted, linux, ARM64, corfront|corback, dev|pro`), as the `podman` user, in a user systemd unit (`infra/runner/`). Builds stay on GitHub-hosted runners (`build` job, `needs:` the deploy). Port 22 is closed to the internet (OCI security list: the owner's IP only, as a recovery path).
+
+**Why**: the runner is an agent that only makes *outbound* connections to GitHub, so nothing has to reach the VPS from the internet. SSH deploys needed port 22 open to GitHub's address ranges and a private key stored in GitHub for each host.
+
+**Alternatives rejected**: SSH with an IP allow-list (GitHub-hosted runners have thousands of changing addresses); OCI Run Command (ties the deploy to OCI's API and IAM, and gives no streamed job log).
+
+**Consequences**:
+- A self-hosted runner runs whatever its workflow says on a host holding the deploy credentials. **No workflow triggered by `pull_request` / `pull_request_target` may mention `self-hosted`** — `api/src/test/self-hosted-runner-guard.unit.test.ts` fails the build. The `dev` environment should only accept deployments from `main`.
+- The org is on the free plan, so runners cannot be confined to a restricted runner group; the test above and the environment rule are the guards.
+- Secrets and vars reach the deploy script as step `env:`; no `secrets.*` is interpolated into a script body.
+- `install-runner.sh` is idempotent and is how PRO is installed later, through a non-SSH path (see `docs/go-to-production.md`).
+
+---
+
 ## 21. The GitHub Actions nightly runs are relayed by the admin app, behind an explicit path allowlist (#1086, 2026-10-06)
 
 **Decision**: `.github/workflows/billing-run.yml` and `recurring-booking-run.yml` call the **admin app** — `https://admin.vdicube.com/api/internal/<path>` on dev, `https://admin.cordel.tech/api/internal/<path>` on pro — and that app relays each POST to the API's own route at `CORDEL_FITNESS_API_URL`. The relay is a Next route handler (`apps/admin/src/app/api/internal/[...path]/route.ts`) over a pure decision module (`apps/admin/src/lib/internalRunRelay.ts`) and a transport module (`lib/internalRunUpstream.ts`). `API_BASE_URL` keeps its name and holds the admin origin **plus the prefix**, so the workflows' own `$API_BASE_URL/billing/run` is unchanged.
