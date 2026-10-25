@@ -1423,7 +1423,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, network and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
-- **Our workflows own build + release only**: build arm64 image → push to GHCR → SSH as `podman` → (API: `podman image prune -f` of dangling images, then abort if < 1 GB free — see #729) → `podman pull` → (API only: run Knex migrations from the image — the DB is VCN-private, CI can't reach it) → `systemctl --user restart <unit>` → health check.
+- **Our workflows own build + release only**: build arm64 image → push to GHCR → the `deploy` job on the VPS's **self-hosted runner** (user `podman`, no SSH, #2044/#2045; see decision #22) → (API: `podman image prune -f` of dangling images, then abort if < 1 GB free — see #729) → `podman pull` → (API only: run Knex migrations from the image — the DB is VCN-private, CI can't reach it) → `systemctl --user restart <unit>` → health check.
 - **The runtime environment comes from GitHub, never from the unit.** Every deploy workflow (`deploy.yml` on corback since #1177; `deploy-admin.yml`, `deploy-member.yml` and `deploy-payment.yml` on corfront since the corfront-env change) deletes the unit's `Environment=` lines and writes one `Environment=KEY=value` per variable from the GitHub environment (`vars`/`secrets` of `dev` or `pro`), then `daemon-reload` and restart. To change a value, change it in GitHub and redeploy; a value hand-edited on a VPS is gone after the next deploy. A new variable is added in three places of its workflow (the step's `env:`, `envs:` and the heredoc) — `api/src/test/deploy-env-forwarding.unit.test.ts` and `corfront-deploy-env.unit.test.ts` fail when a variable the app reads is not forwarded. Each corfront deploy checks first and changes nothing when a required variable is empty in GitHub or the unit carries an `Environment=` key the workflow does not manage (it names the keys, never the values), and prints the API address the unit held before. Ports, network and restart policy stay Oscar's.
 - Workflows must **never** `podman run` the app containers or `podman generate systemd` — that fights the running unit for the port (exit 126).
 
@@ -1434,14 +1434,14 @@ Notes:
 - Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List.
 - Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar). `pay.vdicube.com` → `:8083`. PCI: strip query strings from access logs on that host so `page_token` is never stored — the container's own access log already does (`log_format pay_no_query`, #1083).
 - The payment container's config is an **`envsubst` template** (`apps/payment/templates/default.conf.template`), substituted by the official nginx image at start, because one image tag serves dev and pro: `CORDEL_FITNESS_API_PUBLIC_URL` is what the browser-facing proxies call and `CORDEL_FITNESS_API_INTERNAL_URL` is what the `/webhooks/payment` relay calls (#1083 — the API's internal address, no trailing slash). The Dockerfile carries the dev values as image defaults, and `deploy-payment.yml` writes both into Oscar's live unit from GitHub variables (the reference quadlet, `infra/payment-app/fitness-pay.container`, shows the shape). `deploy-payment.yml` probes the relay with the same `GET` Monei's dashboard preflights with, so a wrong internal address fails the deploy instead of silently losing payment confirmations.
-- Diagnostics: `test-ssh.yml` / `test_ssh_corfront.yml` (workflow_dispatch) print identity/ports/`podman ps`; `debug-vps.yml` does deeper corback checks.
+- Diagnostics: `runner-smoke.yml` (workflow_dispatch, host choice) prints identity and `podman --version` on the self-hosted runner; on corback it also checks `podman login ghcr.io` and that the migrations database is reachable. The runner is installed/repaired with `infra/runner/install-runner.sh` (user unit `actions-runner.service`, linger enabled, so it survives a reboot).
 - Legacy names are fully retired: `gymdesk-*` containers/images, VPS user `github`, Vercel, `backend-dev.gymdesk.uk` — do not reference them.
 
 ---
 
 ## CI/CD Configuration (GitHub Actions)
 
-Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `pro`, default `dev`) (#784). The production environment is named **`pro`** (created 2026-10-04) — the choice offered `production` until a dispatch on it was found to target an environment that does not exist; `api/src/test/workflow-environments.unit.test.ts` holds the set. When PRO carries live gyms, flip the scheduled workflows' fallback to `'pro'` — the owner steps are in `docs/go-to-production.md` §1.
+Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml` declares `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `pro`, default `dev`) (#784). The production environment is named **`pro`** (created 2026-10-04) — the choice offered `production` until a dispatch on it was found to target an environment that does not exist; `api/src/test/workflow-environments.unit.test.ts` holds the set. When PRO carries live gyms, flip the scheduled workflows' fallback to `'pro'` — the owner steps are in `docs/go-to-production.md` §1.
 
 ### Environment-scoped (per env: `dev` today, `production` later)
 
@@ -1449,7 +1449,6 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 |------|------|---------|
 | `CORDEL_FITNESS_DB_HOST/_USER/_PASSWORD/_NAME` | secrets | (reserved — runtime DB config lives in Oscar's unit; kept in sync here) |
 | `DATABASE_URL_MIGRATIONS` | secret | `deploy.yml` — Knex migrations on the VPS (DDL user `fitness_deploy`) |
-| `DATABASE_URL_MYSQL` | secret | `debug-vps.yml` — connectivity probe (DML user `fitness`) |
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | secrets | CI + deploys (Clerk test instance in dev) |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | secret | `deploy.yml` → API `/webhooks/clerk`. **Must equal the Signing Secret of the Clerk webhook endpoint** — since #1085 that endpoint is the admin app's relay (`https://admin.vdicube.com/api/webhooks/clerk` on dev, `https://admin.cordel.tech/api/webhooks/clerk` on pro), not the API's own URL; the secret itself is unchanged by that move and stays in the API, which is still the only thing that verifies a signature. The endpoint must be **enabled** and subscribed to `user.created` and `user.deleted` (#709). A mismatch makes every event fail with `400 Invalid signature` — the dev endpoint sat disabled that way from 2026-09-08 to 2026-09-23. Changing the secret needs a redeploy (`gh workflow run deploy.yml --ref main`); missed events can be resent from the endpoint's *Replay → Replay missing messages*. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
@@ -1489,7 +1488,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
-| `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
+| `runner-smoke.yml` | Self-hosted runner check (workflow_dispatch) |
 
 ### Operator scripts (`api/src/scripts/`)
 
