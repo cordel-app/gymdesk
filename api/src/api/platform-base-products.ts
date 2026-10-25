@@ -4,6 +4,12 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { parseBaseProductInput, type BaseProductInput } from '../domain/baseProducts';
+import {
+  isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit, parseMemberImageRequest,
+} from './member-image-storage';
+import {
+  BASE_PRODUCT_IMAGE_COLUMNS, clearBaseProductImage, migrateBaseProductImageOnRename, storeBaseProductImage,
+} from './base-product-image-storage';
 
 /**
  * #1822 — Cordel → Base Products. The only writer of `base_products`, the
@@ -142,6 +148,12 @@ platformBaseProductsRouter.put('/:id', requireSuperadmin, async (req, res, next)
       if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A base product for this charge type or name already exists' });
       throw err;
     }
+    // #2009: the image key carries the template's name, so a rename moves it.
+    if (v.name !== existing.name && existing.image_url) {
+      await migrateBaseProductImageOnRename({
+        id: existing.id, name: v.name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url,
+      });
+    }
     const row = await loadOne(existing.id);
     recordAudit(req, { action: 'update', entityType: 'base_product', entityId: existing.id, previous: existing, next: row });
     res.json(row);
@@ -161,5 +173,49 @@ platformBaseProductsRouter.delete('/:id', requireSuperadmin, async (req, res, ne
     );
     recordAudit(req, { action: 'soft_delete', entityType: 'base_product', entityId: existing.id, previous: existing });
     res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+// ─── Image (#2009 stage 3) ────────────────────────────────────────────────────
+// The only writers of a template's `image_url` / `image_thumbnail_url`, under
+// `cordel/base_products/`. Processing and limits are the Member photo's.
+
+async function loadForImage(req: any, res: any) {
+  const { rows } = await db.query(
+    `SELECT ${BASE_PRODUCT_IMAGE_COLUMNS} FROM base_products WHERE id = ? AND deleted_at IS NULL`,
+    [req.params.id],
+  );
+  if (!rows[0]) { res.status(404).json({ error: 'Base product not found' }); return null; }
+  return { id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url, image_thumbnail_url: rows[0].image_thumbnail_url };
+}
+
+platformBaseProductsRouter.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const baseProduct = await loadForImage(req, res);
+    if (!baseProduct) return;
+    const stored = await storeBaseProductImage({
+      baseProduct, images: parsed, modifiedBy: resolvePlatformActor(req.superadminName),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'base_product', entityId: baseProduct.id, entityName: baseProduct.name,
+      previous: { image_url: baseProduct.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await loadOne(baseProduct.id));
+  } catch (err) { next(err); }
+});
+
+platformBaseProductsRouter.delete('/:id/image', requireSuperadmin, async (req, res, next) => {
+  try {
+    const baseProduct = await loadForImage(req, res);
+    if (!baseProduct) return;
+    await clearBaseProductImage({ baseProduct, modifiedBy: resolvePlatformActor(req.superadminName) });
+    recordAudit(req, {
+      action: 'update', entityType: 'base_product', entityId: baseProduct.id, entityName: baseProduct.name,
+      previous: { image_url: baseProduct.image_url }, next: { image_url: null },
+    });
+    res.json(await loadOne(baseProduct.id));
   } catch (err) { next(err); }
 });
