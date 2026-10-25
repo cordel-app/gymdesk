@@ -288,6 +288,15 @@ export function AssignedPlanConfiguration({
 
   async function saveDuration() {
     if (!durationForm) return;
+    // #2092 — validate everything before the first request, so an invalid
+    // Direct Discount cannot leave the form half saved.
+    // #1925 — the fee is adjusted by a direct discount (%), stored as the
+    // assignment's Personal Membership Fee Benefit; 0 or blank is no benefit.
+    const pct = durationForm.direct_discount_percent === '' ? 0 : Number(durationForm.direct_discount_percent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast(t('direct_discount_invalid'));
+      return;
+    }
     setSaving(true);
     try {
       // Every field is sent, blank included: clearing one means "not
@@ -305,13 +314,6 @@ export function AssignedPlanConfiguration({
           recurring_billing_unit: durationForm.recurring_billing_unit || null,
         }),
       });
-      // #1925 — the fee is adjusted by a direct discount (%), stored as the
-      // assignment's Personal Membership Fee Benefit; 0 or blank is no benefit.
-      const pct = durationForm.direct_discount_percent === '' ? 0 : Number(durationForm.direct_discount_percent);
-      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-        toast(t('direct_discount_invalid'));
-        return;
-      }
       await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
         method: 'PUT',
         body: JSON.stringify(pct > 0
