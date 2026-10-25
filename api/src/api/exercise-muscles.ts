@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from '../domain/exerciseTables';
 
 /**
  * #1368 stage 2 — `muscles` is the catalogue, `exercise_muscles.muscle_id` the link.
@@ -28,11 +29,20 @@ export async function insertExerciseMuscle(
   exerciseId: number | string,
   slug: string,
   role: string,
-  opts: { ignoreDuplicate?: boolean } = {},
+  opts: { ignoreDuplicate?: boolean; tables?: ExerciseTables } = {},
 ): Promise<void> {
+  const tables = opts.tables ?? LEGACY_EXERCISE_TABLES;
   await tx.query('INSERT IGNORE INTO muscles (slug, name, created_by) VALUES (?, ?, ?)', [slug, humanize(slug), SYSTEM_ACTOR]);
+  if (!tables.musclesHaveGymId) {
+    await tx.query(
+      `INSERT ${opts.ignoreDuplicate ? 'IGNORE ' : ''}INTO ${tables.muscles} (exercise_id, muscle, muscle_id, role)
+       SELECT ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
+      [exerciseId, role, slug],
+    );
+    return;
+  }
   await tx.query(
-    `INSERT ${opts.ignoreDuplicate ? 'IGNORE ' : ''}INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role)
+    `INSERT ${opts.ignoreDuplicate ? 'IGNORE ' : ''}INTO ${tables.muscles} (gym_id, exercise_id, muscle, muscle_id, role)
      SELECT ?, ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
     [gymId, exerciseId, role, slug],
   );

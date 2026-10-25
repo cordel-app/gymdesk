@@ -64,6 +64,8 @@
 import { readFileSync } from 'node:fs';
 import 'dotenv/config';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { BASE_EXERCISE_TABLES } from '../domain/exerciseTables';
+import { mirrorExerciseToLegacy, reserveBaseExerciseId } from '../api/exercise-base-mirror';
 import { syncExerciseResultTypes } from '../api/exercise-result-types';
 import { db } from '../infra/db';
 import { insertExerciseMuscle } from '../api/exercise-muscles';
@@ -159,9 +161,8 @@ async function loadExistingBaseExercises(): Promise<ExistingBaseExercise[]> {
   const { rows } = await db.query(
     `SELECT e.id, e.name, e.slug, e.source, e.source_id, e.status, e.description,
             e.equipment, e.category, e.level, e.mechanic, e.force_type,
-            (SELECT GROUP_CONCAT(m.slug) FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id WHERE em.exercise_id = e.id) AS muscle_keys
-       FROM exercises e
-      WHERE e.gym_id IS NULL`,
+            (SELECT GROUP_CONCAT(m.slug) FROM base_exercise_muscles em JOIN muscles m ON m.id = em.muscle_id WHERE em.exercise_id = e.id) AS muscle_keys
+       FROM base_exercises e`,
   );
   return rows.map((row: any) => ({
     id: Number(row.id),
@@ -186,18 +187,19 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
     let exerciseId: number;
     if (plan.action === 'create') {
       const columns = Object.keys(plan.fields);
-      const { insertId } = await tx.query(
-        `INSERT INTO exercises (gym_id, ${columns.join(', ')}, created_by) VALUES (NULL, ${columns.map(() => '?').join(', ')}, ?)`,
-        [...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), SYSTEM_ACTOR],
+      // #1849 E2: the Base table is the source; the id comes from the legacy sequence.
+      exerciseId = await reserveBaseExerciseId(tx);
+      await tx.query(
+        `INSERT INTO base_exercises (id, ${columns.join(', ')}, created_by) VALUES (?, ${columns.map(() => '?').join(', ')}, ?)`,
+        [exerciseId, ...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), SYSTEM_ACTOR],
       );
-      exerciseId = Number(insertId);
     } else {
       exerciseId = match!.row.id;
       const columns = Object.keys(plan.fields);
       if (columns.length > 0) {
         await tx.query(
-          `UPDATE exercises SET ${columns.map((c) => `${c} = ?`).join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
-            WHERE id = ? AND gym_id IS NULL`,
+          `UPDATE base_exercises SET ${columns.map((c) => `${c} = ?`).join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ?`,
           [...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), SYSTEM_ACTOR, exerciseId],
         );
       }
@@ -206,13 +208,14 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
       // A base exercise's links carry `gym_id = NULL` like the row itself
       // (migration 106). IGNORE keeps the pair's unique index from turning a
       // concurrent re-run into a failure.
-      await insertExerciseMuscle(tx, null, exerciseId, link.key, link.role, { ignoreDuplicate: true });
+      await insertExerciseMuscle(tx, null, exerciseId, link.key, link.role, { ignoreDuplicate: true, tables: BASE_EXERCISE_TABLES });
     }
     // #1360: the exercise's Recorded Metrics follow its category. A category the
     // dataset gives that is not one of the seven leaves the rows alone (reported
     // by `exercises:audit-categories`), never a guessed set.
     const finalCategory = (plan.fields as Record<string, unknown>).category ?? match?.row.category ?? null;
-    await syncExerciseResultTypes(tx, exerciseId, finalCategory);
+    await syncExerciseResultTypes(tx, exerciseId, finalCategory, BASE_EXERCISE_TABLES);
+    await mirrorExerciseToLegacy(tx, exerciseId);
     return exerciseId;
   });
 }

@@ -26,7 +26,7 @@ const ACTOR_COLUMNS = ['created_by', 'modified_by', 'deleted_by'];
 
 describe('the platform router stamps the actor on every write', () => {
   it('on create', () => {
-    expect(platformRouter).toMatch(/created_by\)\s*\n\s*VALUES \(NULL/);
+    expect(platformRouter).toMatch(/created_by\)\s*\n\s*VALUES \(\?/);
     expect(platformRouter).toContain('function platformActor(req: { superadminName?: string | null })');
   });
 

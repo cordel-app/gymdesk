@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createClerkClient } from '@clerk/backend';
 import sharp from 'sharp';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createBaseExercise, createTestGym, createTestMembership, deleteBaseExercises, request } from './helpers';
 import { buildMp4 } from './mp4-fixtures';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -126,11 +126,12 @@ beforeAll(async () => {
 
   exerciseId = await createExercise(gymId, EXERCISE_NAME);
   otherGymExerciseId = await createExercise(otherGymId, 'Test Gender Media Other');
-  baseExerciseId = await createExercise(null, 'Test Gender Media Base');
+  baseExerciseId = await createBaseExercise({ name: 'Test Gender Media Base' });
 });
 
 afterAll(async () => {
   await db.query("DELETE FROM exercises WHERE name LIKE 'Test Gender Media %'");
+  await deleteBaseExercises([baseExerciseId]);
   await cleanupTestGyms();
   for (const key of R2_ENV_KEYS) {
     if (originalEnv[key] === undefined) delete process.env[key];
@@ -152,7 +153,15 @@ beforeEach(async () => {
   await db.query(
     `UPDATE exercises SET image_male_url = NULL, image_female_url = NULL, video_male_url = NULL, video_female_url = NULL
       WHERE id IN (?, ?)`,
-    [otherGymExerciseId, baseExerciseId],
+    [otherGymExerciseId, otherGymExerciseId],
+  );
+  await db.query(
+    `UPDATE base_exercises SET image_male_url = NULL, image_female_url = NULL, video_male_url = NULL, video_female_url = NULL WHERE id = ?`,
+    [baseExerciseId],
+  );
+  await db.query(
+    `UPDATE exercises SET image_male_url = NULL, image_female_url = NULL, video_male_url = NULL, video_female_url = NULL WHERE id = ?`,
+    [baseExerciseId],
   );
 });
 

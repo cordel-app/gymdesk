@@ -7,7 +7,7 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { createBaseExercise as createBaseExerciseRow, deleteBaseExercises, TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, syncLegacySystemExercisesToBase } from './helpers';
 
 const sendMock = vi.hoisted(() => vi.fn());
 
@@ -78,16 +78,20 @@ interface Media {
 const NO_MEDIA: Media = { image_male_url: null, image_female_url: null, video_male_url: null, video_female_url: null };
 
 async function createBaseExercise(name: string, media: Partial<Media> = {}): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO exercises (gym_id, name, status, image_male_url, image_female_url, video_male_url, video_female_url)
-     VALUES (NULL, ?, 'active', ?, ?, ?, ?)`,
-    [name, media.image_male_url ?? null, media.image_female_url ?? null, media.video_male_url ?? null, media.video_female_url ?? null],
-  );
-  baseIds.push(insertId);
-  return insertId;
+  const id = await createBaseExerciseRow({
+    name, status: 'active',
+    image_male_url: media.image_male_url ?? null, image_female_url: media.image_female_url ?? null,
+    video_male_url: media.video_male_url ?? null, video_female_url: media.video_female_url ?? null,
+  });
+  baseIds.push(id);
+  return id;
 }
 
 async function setMedia(id: number, media: Partial<Media>) {
+  await db.query(
+    `UPDATE base_exercises SET image_male_url = ?, image_female_url = ?, video_male_url = ?, video_female_url = ? WHERE id = ?`,
+    [media.image_male_url ?? null, media.image_female_url ?? null, media.video_male_url ?? null, media.video_female_url ?? null, id],
+  );
   await db.query(
     `UPDATE exercises SET image_male_url = ?, image_female_url = ?, video_male_url = ?, video_female_url = ? WHERE id = ?`,
     [media.image_male_url ?? null, media.image_female_url ?? null, media.video_male_url ?? null, media.video_female_url ?? null, id],
@@ -137,11 +141,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (baseIds.length > 0) {
-    const marks = baseIds.map(() => '?').join(',');
-    await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercise_allowed_result_types WHERE exercise_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+    await deleteBaseExercises(baseIds);
   }
   await db.query(`DELETE FROM exercises WHERE name LIKE '${NAME_PREFIX}%'`);
   await cleanupTestGyms();
@@ -163,6 +163,8 @@ afterEach(() => {
 });
 
 // ─── Import copies references only (#719 §2, §3, §24) ─────────────────────────
+
+beforeEach(async () => { await syncLegacySystemExercisesToBase(); });
 
 describe('POST /exercises/import — media references', () => {
   it('copies the Base Exercise’s image and video references and uploads nothing', async () => {

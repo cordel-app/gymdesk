@@ -48,7 +48,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   training_plan_template:         { kind: 'simple',   label: 'Training Plan Templates',  table: 'training_plan_templates', nameColumn: 'name' },
   workout_template:               { kind: 'simple',   label: 'Workout Templates',        table: 'workout_templates',       nameColumn: 'name' },
   workout:                        { kind: 'simple',   label: 'Workouts',                 table: 'workouts',                nameColumn: 'name' },
-  exercise:                       { kind: 'simple',   label: 'Exercises',                table: 'exercises',               nameColumn: 'name' },
+  exercise:                       { kind: 'simple',   label: 'Exercises',                table: 'exercise_catalogue',      nameColumn: 'name' },
   // #1368 stage 3: the global muscle catalogue, administered from Cordel.
   muscle:                         { kind: 'simple',   label: 'Muscles',                  table: 'muscles',                 nameColumn: 'name' },
   class_type:                     { kind: 'simple',   label: 'Class Types',              table: 'class_types',             nameColumn: 'name' },
@@ -288,7 +288,7 @@ const FK_MAP: Record<string, { table: string; nameColumn: string }> = {
   training_plan_template_id:  { table: 'training_plan_templates', nameColumn: 'name' },
   workout_template_id:        { table: 'workout_templates',       nameColumn: 'name' },
   class_type_id:              { table: 'class_types',             nameColumn: 'name' },
-  exercise_id:                { table: 'exercises',               nameColumn: 'name' },
+  exercise_id:                { table: 'exercise_catalogue',      nameColumn: 'name' },
   center_id:                  { table: 'centers',                 nameColumn: 'name' },
   space_id:                   { table: 'spaces',                  nameColumn: 'name' },
   promotion_id:               { table: 'promotions',              nameColumn: 'name' },

@@ -18,9 +18,9 @@
  * `db.query` and the filtering is exercised over HTTP (the CLAUDE.md rule).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, beforeEach } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, syncLegacySystemExercisesToBase } from './helpers';
 
 const suffix = `${Date.now()}`;
 
@@ -132,6 +132,7 @@ afterAll(async () => {
   const marks = ids.map(() => '?').join(',');
   await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, ids);
   await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, ids);
+  await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, ids);
   await cleanupTestGyms();
   await db.end();
 });
@@ -145,6 +146,8 @@ const baseList = (query = '') =>
 const mine = (body: any[]) => body.filter((e) => String(e.name).endsWith(suffix)).map((e) => e.name);
 
 // ─── GET /exercises — a gym's own list ──────────────────────────────────────
+
+beforeEach(async () => { await syncLegacySystemExercisesToBase(); });
 
 describe('GET /exercises: the shared filter vocabulary', () => {
   it('filters by a single muscle, either role', async () => {

@@ -1,6 +1,7 @@
 import supertest from 'supertest';
 import { app } from '../app';
 import { db } from '../infra/db';
+import { mirrorExerciseToLegacy } from '../api/exercise-base-mirror';
 
 export const request = supertest(app);
 
@@ -786,5 +787,66 @@ export async function syncLegacySystemFoodsToBase(): Promise<void> {
   for (const [legacy, base, cols] of copies) {
     await db.query(`INSERT IGNORE INTO ${base} (${cols}) SELECT ${cols.split(', ').map((c) => `t.${c}`).join(', ')}
       FROM ${legacy} t JOIN nutrition_library_items i ON i.id = t.item_id AND i.gym_id IS NULL`);
+  }
+}
+
+/**
+ * #1849 stage E2 — a Base exercise fixture: a row of `base_exercises` whose id comes from
+ * the legacy `exercises` sequence (so it can never collide with a gym-owned id), with the
+ * transitional legacy System row of the same id that the plan tables still reference.
+ */
+export async function createBaseExercise(
+  fields: Record<string, unknown> & { name: string },
+): Promise<number> {
+  const { insertId: id } = await db.query(
+    `INSERT INTO exercises (gym_id, name, status, created_by) VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')`,
+  );
+  await db.query('DELETE FROM exercises WHERE id = ?', [id]);
+  const cols = Object.keys(fields);
+  await db.query(
+    `INSERT INTO base_exercises (id, ${cols.join(', ')}, created_by) VALUES (?, ${cols.map(() => '?').join(', ')}, 'System')`,
+    [id, ...cols.map((c) => fields[c])],
+  );
+  await db.transaction((tx) => mirrorExerciseToLegacy(tx, id));
+  return Number(id);
+}
+
+/** Removes Base exercises and their legacy twins (referenced rows are the caller's to delete first). */
+export async function deleteBaseExercises(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const marks = ids.map(() => '?').join(',');
+  await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM exercises WHERE gym_id IS NULL AND id IN (${marks})`, ids);
+  await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, ids);
+}
+
+/**
+ * #1849 E2 — makes a fixture that still inserts a System exercise the old way (a legacy row
+ * with `gym_id IS NULL`) visible to Cordel's router and the Base reads, by copying the
+ * legacy System exercises and their junctions into the Base tables under the same ids
+ * (an upsert: it follows later edits of the fixture's legacy row). Idempotent.
+ */
+export async function syncLegacySystemExercisesToBase(): Promise<void> {
+  const cols = `name, description, short_description, status, min_reps_default, max_reps_default,
+       rest_default_seconds, sets_default, source, source_id, slug, equipment, category, level,
+       mechanic, force_type, image_male_url, image_female_url, video_male_url, video_female_url,
+       created_at, modified_at, modified_by, deleted_by`;
+  await db.query(`
+    INSERT INTO base_exercises (id, ${cols}, created_by, deleted_at)
+    SELECT id, ${cols}, COALESCE(created_by, 'System'),
+           CASE WHEN status = 'deleted' THEN COALESCE(deleted_at, UTC_TIMESTAMP()) ELSE deleted_at END
+      FROM exercises WHERE gym_id IS NULL
+    ON DUPLICATE KEY UPDATE ${cols.split(',').map((c) => c.trim()).filter((c) => c !== 'created_at').map((c) => `${c} = VALUES(${c})`).join(', ')},
+      deleted_at = VALUES(deleted_at)`);
+  const copies: Array<[string, string, string]> = [
+    ['exercise_translations', 'base_exercise_translations', 'exercise_id, locale, name, created_at, modified_at'],
+    ['exercise_description_translations', 'base_exercise_description_translations', 'exercise_id, locale, short_description, description, created_at, modified_at'],
+    ['exercise_muscles', 'base_exercise_muscles', 'exercise_id, role, muscle, muscle_id, created_at'],
+    ['exercise_allowed_result_types', 'base_exercise_allowed_result_types', 'exercise_id, result_type_id'],
+  ];
+  for (const [legacy, base, cols2] of copies) {
+    await db.query(`DELETE b FROM ${base} b JOIN exercises e ON e.id = b.exercise_id AND e.gym_id IS NULL`);
+    await db.query(`INSERT IGNORE INTO ${base} (${cols2}) SELECT ${cols2.split(', ').map((c) => `t.${c}`).join(', ')}
+      FROM ${legacy} t JOIN exercises e ON e.id = t.exercise_id AND e.gym_id IS NULL`);
   }
 }

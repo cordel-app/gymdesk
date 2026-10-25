@@ -1,6 +1,7 @@
 import { Tx } from '../infra/db';
 import { SupportedLocale, TRANSLATABLE_LOCALES, isSupportedLocale, BASE_LOCALE } from '../infra/locale';
 import { localeLiteral } from './nameTranslations';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from './exerciseTables';
 
 /**
  * Exercise descriptions in every supported language (#1419).
@@ -24,28 +25,28 @@ export interface DescriptionTranslation {
 
 const TABLE = 'exercise_description_translations';
 
-function expr(column: 'short_description' | 'description', alias: string, locale: SupportedLocale): string {
+function expr(column: 'short_description' | 'description', alias: string, locale: SupportedLocale, table = TABLE): string {
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.${column}`;
-  return `COALESCE((SELECT NULLIF(edt.${column}, '') FROM ${TABLE} edt
+  return `COALESCE((SELECT NULLIF(edt.${column}, '') FROM ${table} edt
             WHERE edt.exercise_id = ${alias}.id AND edt.locale = ${literal}), ${alias}.${column})`;
 }
 
 /** The description alone, localized, as a bare expression (for a JSON_OBJECT). */
-export function localizedDescriptionExpr(alias: string, locale: SupportedLocale): string {
-  return expr('description', alias, locale);
+export function localizedDescriptionExpr(alias: string, locale: SupportedLocale, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return expr('description', alias, locale, tables.descriptions);
 }
 
 /** `display_short_description` and `display_description`, resolved for `locale`. */
-export function localizedDescriptionExprs(alias: string, locale: SupportedLocale): string {
-  return `${expr('short_description', alias, locale)} AS display_short_description,
-    ${expr('description', alias, locale)} AS display_description`;
+export function localizedDescriptionExprs(alias: string, locale: SupportedLocale, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return `${expr('short_description', alias, locale, tables.descriptions)} AS display_short_description,
+    ${expr('description', alias, locale, tables.descriptions)} AS display_description`;
 }
 
 /** `{ locale: { short_description, description } }`, `NULL` when there are none. */
-export function descriptionTranslationsExpr(alias: string, as = 'description_translations'): string {
+export function descriptionTranslationsExpr(alias: string, as = 'description_translations', tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
   return `(SELECT JSON_OBJECTAGG(edta.locale, JSON_OBJECT('short_description', edta.short_description, 'description', edta.description))
-            FROM ${TABLE} edta WHERE edta.exercise_id = ${alias}.id) AS ${as}`;
+            FROM ${tables.descriptions} edta WHERE edta.exercise_id = ${alias}.id) AS ${as}`;
 }
 
 /** The aggregate's `NULL`-for-none as the `{}` the API contract promises. */
@@ -128,7 +129,9 @@ export async function replaceExerciseDescriptionTranslations(
   tx: Tx,
   exerciseId: number | string,
   translations: Record<string, Partial<DescriptionTranslation>>,
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): Promise<void> {
+  const TABLE = tables.descriptions;
   const byLocale = new Map<string, DescriptionTranslation>();
   for (const [locale, entry] of Object.entries(translations ?? {})) {
     const short = typeof entry?.short_description === 'string' ? entry.short_description.trim() : '';
@@ -160,16 +163,17 @@ export async function copyExerciseDescriptionTranslations(
   tx: Tx,
   sourceId: number | string,
   targetId: number | string,
+  source: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): Promise<void> {
   // The base short description is a column of `exercises`, so it travels here
   // too: the INSERTs of the three copy paths predate it.
   await tx.query(
-    'UPDATE exercises t JOIN exercises s ON s.id = ? SET t.short_description = s.short_description WHERE t.id = ?',
+    `UPDATE exercises t JOIN ${source.exercises} s ON s.id = ? SET t.short_description = s.short_description WHERE t.id = ?`,
     [sourceId, targetId],
   );
   await tx.query(
     `INSERT INTO ${TABLE} (exercise_id, locale, short_description, description)
-      SELECT ?, locale, short_description, description FROM ${TABLE} WHERE exercise_id = ?
+      SELECT ?, locale, short_description, description FROM ${source.descriptions} WHERE exercise_id = ?
       ON DUPLICATE KEY UPDATE short_description = VALUES(short_description),
         description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
     [targetId, sourceId],

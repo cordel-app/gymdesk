@@ -14,7 +14,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createBaseExercise, createTestGym, deleteBaseExercises, request } from './helpers';
 import { FREE_EXERCISE_DB_SOURCE } from '../domain/freeExerciseDb';
 
 const mockGetUser = vi.hoisted(() =>
@@ -85,21 +85,18 @@ const SEEDS: SeedRow[] = [
 ];
 
 async function insertBaseExercise(row: SeedRow): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO exercises
-       (gym_id, name, slug, source, source_id, equipment, category, level, mechanic, force_type)
-     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.name, row.slug, FREE_EXERCISE_DB_SOURCE, `${row.slug}-source`, row.equipment, row.category,
-     row.level, row.mechanic, row.force_type],
-  );
+  const id = await createBaseExercise({
+    name: row.name, slug: row.slug, source: FREE_EXERCISE_DB_SOURCE, source_id: `${row.slug}-source`,
+    equipment: row.equipment, category: row.category, level: row.level, mechanic: row.mechanic, force_type: row.force_type,
+  });
   for (const muscle of row.muscles) {
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role)
-       SELECT NULL, ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
-      [insertId, muscle.role, muscle.key],
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role)
+       SELECT ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
+      [id, muscle.role, muscle.key],
     );
   }
-  return Number(insertId);
+  return id;
 }
 
 beforeAll(async () => {
@@ -124,10 +121,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const ids = [...baseIds, gymExerciseId, gymOnlyExerciseId];
+  const ids = [gymExerciseId, gymOnlyExerciseId];
   const marks = ids.map(() => '?').join(',');
   await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, ids);
   await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, ids);
+  await deleteBaseExercises(baseIds);
   await cleanupTestGyms();
   await db.end();
 });
@@ -165,8 +163,8 @@ describe('the list carries the provenance and metadata columns', () => {
 describe('migration 209 — what the unique keys actually enforce', () => {
   it('refuses a second Base Exercise with the same (source, source_id)', async () => {
     await expect(db.query(
-      `INSERT INTO exercises (gym_id, name, slug, source, source_id)
-       VALUES (NULL, ?, ?, ?, ?)`,
+      `INSERT INTO base_exercises (name, slug, source, source_id)
+       VALUES (?, ?, ?, ?)`,
       [`Duplicate provenance ${suffix}`, `duplicate-provenance-${suffix}`,
        FREE_EXERCISE_DB_SOURCE, `barbell-bench-press-${suffix}-source`],
     )).rejects.toThrow();
@@ -174,7 +172,7 @@ describe('migration 209 — what the unique keys actually enforce', () => {
 
   it('refuses a second live Base Exercise with the same slug', async () => {
     await expect(db.query(
-      'INSERT INTO exercises (gym_id, name, slug) VALUES (NULL, ?, ?)',
+      'INSERT INTO base_exercises (name, slug) VALUES (?, ?)',
       [`Duplicate slug ${suffix}`, `barbell-bench-press-${suffix}`],
     )).rejects.toThrow();
   });
@@ -338,15 +336,15 @@ describe('#969 — the filter toolbar’s own parameters', () => {
       expect(res.body.equipment).not.toContain(GYM_ONLY_EQUIPMENT);
       // …and the total counts the platform's rows alone.
       const { rows } = await db.query(
-        "SELECT COUNT(*) AS n FROM exercises WHERE gym_id IS NULL AND status != 'deleted'",
+        "SELECT COUNT(*) AS n FROM base_exercises WHERE status != 'deleted'",
       );
       expect(res.body.total).toBe(Number(rows[0].n));
     });
 
     it('leaves a soft-deleted Base Exercise out of both halves', async () => {
       const { insertId } = await db.query(
-        `INSERT INTO exercises (gym_id, name, slug, equipment, status)
-         VALUES (NULL, ?, ?, ?, 'deleted')`,
+        `INSERT INTO base_exercises (name, slug, equipment, status, deleted_at)
+         VALUES (?, ?, ?, 'deleted', UTC_TIMESTAMP())`,
         [`Deleted facet ${suffix}`, `deleted-facet-${suffix}`, `deleted-equipment-${suffix}`],
       );
       try {
@@ -354,7 +352,7 @@ describe('#969 — the filter toolbar’s own parameters', () => {
         expect(res.body.equipment).not.toContain(`deleted-equipment-${suffix}`);
         expect(names((await list('')).body)).not.toContain(`Deleted facet ${suffix}`);
       } finally {
-        await db.query('DELETE FROM exercises WHERE id = ?', [insertId]);
+        await db.query('DELETE FROM base_exercises WHERE id = ?', [insertId]);
       }
     });
   });

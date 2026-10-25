@@ -1,4 +1,5 @@
 import { imageThumbnailUrlFor } from './exerciseGenderMedia';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from './exerciseTables';
 
 /**
  * #1368 stage 4 — the image an exercise is shown with.
@@ -33,13 +34,13 @@ export interface EffectiveImage {
 }
 
 /** The principal muscles of exercise alias `alias` that have an image. */
-export const primaryMuscleImagesSql = (alias = 'e') => `
+export const primaryMuscleImagesSql = (alias = 'e', tables: ExerciseTables = LEGACY_EXERCISE_TABLES) => `
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pm.id, 'name', pm.name,
                                       'image_url', COALESCE(pm.image_male_url, pm.image_female_url),
                                       'image_thumbnail_url', IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail),
                                       'image_male_thumbnail_url', pm.image_male_url_thumbnail,
                                       'image_female_thumbnail_url', pm.image_female_url_thumbnail))
-     FROM exercise_muscles pem
+     FROM ${tables.muscles} pem
      JOIN muscles pm ON pm.id = pem.muscle_id
      WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL) AS primary_muscle_images`;
 

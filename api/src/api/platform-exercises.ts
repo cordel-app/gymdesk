@@ -40,6 +40,8 @@ import {
   parseExerciseListFilter,
 } from '../domain/exerciseListFilters';
 import { resolvePlatformActor } from '../domain/auditActor';
+import { BASE_EXERCISE_TABLES as B } from '../domain/exerciseTables';
+import { mirrorExerciseToLegacy, reserveBaseExerciseId } from './exercise-base-mirror';
 
 export const platformExercisesRouter = Router();
 
@@ -62,19 +64,19 @@ function platformActor(req: { superadminName?: string | null }) {
  * exercise (§8), so nothing downstream branches on where the row came from.
  */
 const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
-  SELECT e.*,
-    ${localizedExerciseNameExpr('e', locale, 'display_name')},
-    ${exerciseTranslationsExpr('e')},
-    ${localizedDescriptionExprs('e', locale)},
-    ${descriptionTranslationsExpr('e')},
+  SELECT e.*, NULL AS gym_id, NULL AS cloned_from_id,
+    ${localizedExerciseNameExpr('e', locale, 'display_name', B)},
+    ${exerciseTranslationsExpr('e', 'translations', B)},
+    ${localizedDescriptionExprs('e', locale, B)},
+    ${descriptionTranslationsExpr('e', 'description_translations', B)},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
-     FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
-    ${primaryMuscleImagesSql('e')},
+     FROM ${B.muscles} em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e', B)},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
-     FROM exercise_allowed_result_types eart
+     FROM ${B.resultTypes} eart
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
-  FROM exercises e
+  FROM ${B.exercises} e
 `;
 
 /** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
@@ -98,7 +100,7 @@ function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secon
 }
 
 async function nameTaken(name: string, excludeId?: string | number): Promise<boolean> {
-  let sql = "SELECT id FROM exercises WHERE gym_id IS NULL AND name = ? AND status != 'deleted'";
+  let sql = `SELECT id FROM ${B.exercises} WHERE name = ? AND status != 'deleted'`;
   const params: any[] = [name];
   if (excludeId !== undefined) { sql += ' AND id != ?'; params.push(excludeId); }
   const { rows } = await db.query(sql, params);
@@ -108,7 +110,7 @@ async function nameTaken(name: string, excludeId?: string | number): Promise<boo
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
 /** The rows this router owns: the platform's own, minus the soft-deleted. */
-const BASE_SCOPE_SQL = "e.gym_id IS NULL AND e.status != 'deleted'";
+const BASE_SCOPE_SQL = "e.status != 'deleted'";
 
 /**
  * #964 §18, extended by #969: the Base Exercises catalogue is ~900 rows after
@@ -130,9 +132,9 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const parsed = parseExerciseListFilter(req.query as Record<string, unknown>);
   if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   const locale = getRequestLocale(req);
-  const where = exerciseListFilterSql('e', parsed.filter);
+  const where = exerciseListFilterSql('e', parsed.filter, B);
   const sql = `${selectFor(locale)} WHERE ${BASE_SCOPE_SQL}${where.sql}`
-    + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
+    + ` ORDER BY ${localizedExerciseNameSql('e', locale, B)} ASC`;
   try {
     const { rows } = await db.query(sql, where.params);
     res.json(rows.map(shapeExercise));
@@ -153,10 +155,10 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
  */
 platformExercisesRouter.get('/facets', requireSuperadmin, async (_req, res, next) => {
   try {
-    const facetQuery = exerciseFacetsQuery(BASE_SCOPE_SQL);
+    const facetQuery = exerciseFacetsQuery(BASE_SCOPE_SQL, [], B);
     const [facets, totals] = await Promise.all([
       db.query(facetQuery.sql, facetQuery.params),
-      db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${BASE_SCOPE_SQL}`),
+      db.query(`SELECT COUNT(*) AS total FROM ${B.exercises} e WHERE ${BASE_SCOPE_SQL}`),
     ]);
     res.json({
       total: Number(totals.rows[0]?.total ?? 0),
@@ -207,7 +209,7 @@ platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, nex
 platformExercisesRouter.get('/:id', requireSuperadmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
+      `${selectForReq(req)} WHERE e.id = ? AND e.status != 'deleted'`,
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
@@ -247,27 +249,29 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       return res.status(409).json({ error: 'A base exercise with this name already exists.' });
     }
     const insertId = await db.transaction(async (tx) => {
-      const { insertId } = await tx.query(
-        `INSERT INTO exercises
-          (gym_id, name, description, short_description, category,
+      const newId = await reserveBaseExerciseId(tx);
+      await tx.query(
+        `INSERT INTO ${B.exercises}
+          (id, name, description, short_description, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
            created_by)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name.trim(), description ?? null, shortDescription.value, categoryInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId, name.trim(), description ?? null, shortDescription.value, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active',
          actor],
       );
       if (muscles) {
         for (const m of muscles) {
-          await insertExerciseMuscle(tx, null, insertId, m.key, m.role);
+          await insertExerciseMuscle(tx, null, newId, m.key, m.role, { tables: B });
         }
       }
       await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
-      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
-      if (translations) await replaceExerciseTranslations(tx, insertId, translations);
-      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, insertId, descriptionTranslations);
-      return insertId;
+      await syncExerciseResultTypes(tx, newId, categoryInput.value, B);
+      if (translations) await replaceExerciseTranslations(tx, newId, translations, B);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, newId, descriptionTranslations, B);
+      await mirrorExerciseToLegacy(tx, newId);
+      return newId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
     const created = shapeExercise(rows[0]);
@@ -306,7 +310,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   const actor = platformActor(req);
   try {
     const { rows: existing } = await db.query(
-      "SELECT id FROM exercises WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      `SELECT id FROM ${B.exercises} WHERE id = ? AND status != 'deleted'`,
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Exercise not found' });
@@ -315,7 +319,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
     }
     await db.transaction(async (tx) => {
       await tx.query(
-        `UPDATE exercises SET
+        `UPDATE ${B.exercises} SET
           name                  = COALESCE(?, name),
           description           = IF(?, ?, description),
           short_description     = IF(?, ?, short_description),
@@ -328,7 +332,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           modified_at           = UTC_TIMESTAMP(),
           -- #1182: who last changed it, snapshotted beside when.
           modified_by           = ?
-         WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,
+         WHERE id = ? AND status != 'deleted'`,
         [
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
@@ -344,16 +348,17 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
         ],
       );
       if (muscles) {
-        await tx.query('DELETE FROM exercise_muscles WHERE exercise_id = ? AND gym_id IS NULL', [id]);
+        await tx.query(`DELETE FROM ${B.muscles} WHERE exercise_id = ?`, [id]);
         for (const m of muscles) {
-          await insertExerciseMuscle(tx, null, id, m.key, m.role);
+          await insertExerciseMuscle(tx, null, id, m.key, m.role, { tables: B });
         }
       }
-      const category = await effectiveCategory(tx, id, categoryInput);
+      const category = await effectiveCategory(tx, id, categoryInput, B);
       await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
-      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
-      if (translations) await replaceExerciseTranslations(tx, id, translations);
-      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations);
+      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category, B);
+      if (translations) await replaceExerciseTranslations(tx, id, translations, B);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations, B);
+      await mirrorExerciseToLegacy(tx, id);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
     const updated = shapeExercise(rows[0]);
@@ -369,11 +374,16 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
 
 platformExercisesRouter.delete('/:id', requireSuperadmin, async (req, res, next) => {
   try {
-    const { rowCount } = await db.query(
-      "UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
-      [platformActor(req), req.params.id],
-    );
-    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
+    const deleted = await db.transaction(async (tx) => {
+      const { rowCount } = await tx.query(
+        `UPDATE ${B.exercises} SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND status != 'deleted'`,
+        [platformActor(req), req.params.id],
+      );
+      if ((rowCount ?? 0) === 0) return false;
+      await mirrorExerciseToLegacy(tx, String(req.params.id));
+      return true;
+    });
+    if (!deleted) return res.status(404).json({ error: 'Exercise not found' });
     recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });
     res.status(204).send();
   } catch (err) { next(err); }
@@ -388,7 +398,7 @@ platformExercisesRouter.use(createExerciseGenderMediaRouter({
   scope: 'platform',
   guard: requireSuperadmin,
   respond: async (req, res, id) => {
-    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [id]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
     res.json(shapeExercise(rows[0]));
   },
 }));

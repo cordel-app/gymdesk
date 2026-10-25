@@ -2,7 +2,7 @@
 // Covers: base resources appearing in gym-level lists, 403 guards on PUT/DELETE for base resources,
 // and the clone/assign endpoints introduced in #260.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, beforeEach } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -10,6 +10,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  syncLegacySystemExercisesToBase,
 } from './helpers';
 
 // IDs of base resources (gym_id IS NULL) inserted directly for tests.
@@ -58,12 +59,15 @@ afterAll(async () => {
       `DELETE FROM exercises WHERE id IN (${marks}) AND gym_id IS NULL`,
       baseExerciseIds,
     );
+    await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseExerciseIds);
   }
   await cleanupTestGyms();
   await db.end();
 });
 
 // ─── Exercises: base resources visible + write guards + clone ─────────────────
+
+beforeEach(async () => { await syncLegacySystemExercisesToBase(); });
 
 describe('gym-level exercises: base resource visibility', () => {
   let gymId: string;

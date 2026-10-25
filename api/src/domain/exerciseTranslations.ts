@@ -1,5 +1,6 @@
 import { Tx } from '../infra/db';
 import { SupportedLocale } from '../infra/locale';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from './exerciseTables';
 import {
   TranslatedNameConfig,
   copyTranslationsFor,
@@ -41,13 +42,18 @@ export const EXERCISE_TRANSLATIONS: TranslatedNameConfig = {
   maxNameLength: 200,
 };
 
+/** The junction configuration over `tables` (#1849 E2): the legacy table unless told otherwise. */
+export function exerciseTranslationsConfig(tables: ExerciseTables = LEGACY_EXERCISE_TABLES): TranslatedNameConfig {
+  return tables.translations === EXERCISE_TRANSLATIONS.table ? EXERCISE_TRANSLATIONS : { ...EXERCISE_TRANSLATIONS, table: tables.translations };
+}
+
 /**
  * SQL resolving an exercise's name in `locale`, falling back to `name`.
  *
  * @param alias table alias of `exercises` in the enclosing query
  */
-export function localizedExerciseNameSql(alias: string, locale: SupportedLocale): string {
-  return translatedNameSql(EXERCISE_TRANSLATIONS, alias, locale);
+export function localizedExerciseNameSql(alias: string, locale: SupportedLocale, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return translatedNameSql(exerciseTranslationsConfig(tables), alias, locale);
 }
 
 /**
@@ -63,8 +69,9 @@ export function localizedExerciseNameExpr(
   alias: string,
   locale: SupportedLocale,
   as = 'exercise_name',
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): string {
-  return translatedNameExpr(EXERCISE_TRANSLATIONS, alias, locale, as);
+  return translatedNameExpr(exerciseTranslationsConfig(tables), alias, locale, as);
 }
 
 /**
@@ -72,8 +79,8 @@ export function localizedExerciseNameExpr(
  * §7): a gym searching `Press de Banca` finds the exercise whose base name is
  * `Bench Press`. Carries two placeholders — bind the same `%pattern%` twice.
  */
-export function exerciseNameSearchSql(alias: string): string {
-  return translatedNameSearchSql(EXERCISE_TRANSLATIONS, alias);
+export function exerciseNameSearchSql(alias: string, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return translatedNameSearchSql(exerciseTranslationsConfig(tables), alias);
 }
 
 /**
@@ -83,8 +90,8 @@ export function exerciseNameSearchSql(alias: string): string {
  * from the row the page already holds (#800), and a form seeded without the
  * translations would submit an empty replace-all set and wipe them.
  */
-export function exerciseTranslationsExpr(alias: string, as = 'translations'): string {
-  return translationsAggregateExpr(EXERCISE_TRANSLATIONS, alias, as);
+export function exerciseTranslationsExpr(alias: string, as = 'translations', tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return translationsAggregateExpr(exerciseTranslationsConfig(tables), alias, as);
 }
 
 /** `{}` rather than `NULL` for an exercise with no translations. */
@@ -100,8 +107,9 @@ export function replaceExerciseTranslations(
   tx: Tx,
   exerciseId: number | string,
   translations: Record<string, string>,
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): Promise<void> {
-  return replaceTranslationsFor(EXERCISE_TRANSLATIONS, tx, exerciseId, translations);
+  return replaceTranslationsFor(exerciseTranslationsConfig(tables), tx, exerciseId, translations);
 }
 
 /**
@@ -114,8 +122,19 @@ export function copyExerciseTranslations(
   tx: Tx,
   sourceId: number | string,
   targetId: number | string,
+  source: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): Promise<void> {
-  return copyTranslationsFor(EXERCISE_TRANSLATIONS, tx, sourceId, targetId);
+  // The copy always lands on the gym-owned (legacy) junction; `source` is where the
+  // original lives (#1849 E2: a Base exercise's names sit in `base_exercise_translations`).
+  if (source.translations === EXERCISE_TRANSLATIONS.table) {
+    return copyTranslationsFor(EXERCISE_TRANSLATIONS, tx, sourceId, targetId);
+  }
+  return tx.query(
+    `INSERT INTO ${EXERCISE_TRANSLATIONS.table} (${EXERCISE_TRANSLATIONS.entityColumn}, locale, name)
+      SELECT ?, locale, name FROM ${source.translations} WHERE exercise_id = ?
+      ON DUPLICATE KEY UPDATE name = VALUES(name), modified_at = UTC_TIMESTAMP()`,
+    [targetId, sourceId],
+  ).then(() => undefined);
 }
 
 /** Validate a `translations` payload for an exercise. */

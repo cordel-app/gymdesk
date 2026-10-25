@@ -1,4 +1,5 @@
 import { exerciseNameSearchSql } from './exerciseTranslations';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from './exerciseTables';
 
 /**
  * What the exercise lists may be filtered by, and the SQL those filters become
@@ -141,6 +142,7 @@ export function isExerciseListFiltered(filter: ExerciseListFilter): boolean {
 export function exerciseListFilterSql(
   alias: string,
   filter: ExerciseListFilter,
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): { sql: string; params: unknown[] } {
   const parts: string[] = [];
   const params: unknown[] = [];
@@ -154,9 +156,9 @@ export function exerciseListFilterSql(
     // internal identifier (#1356) and is never searched.
     // #1355 §2: and the description, base or translated, so an exercise is
     // found by what it says in the language the gym wrote it in.
-    parts.push(`(${exerciseNameSearchSql(alias)}
+    parts.push(`(${exerciseNameSearchSql(alias, tables)}
       OR ${alias}.short_description LIKE ? OR ${alias}.description LIKE ?
-      OR EXISTS (SELECT 1 FROM exercise_description_translations edt
+      OR EXISTS (SELECT 1 FROM ${tables.descriptions} edt
         WHERE edt.exercise_id = ${alias}.id AND (edt.short_description LIKE ? OR edt.description LIKE ?)))`);
     const like = `%${filter.q}%`;
     params.push(like, like, like, like, like, like);
@@ -174,7 +176,7 @@ export function exerciseListFilterSql(
     // (§6); `any` is the single `IN` #964's query already had.
     const groups = filter.muscleMatch === 'all' ? values.map((value) => [value]) : [values];
     for (const group of groups) {
-      parts.push(`EXISTS (SELECT 1 FROM exercise_muscles em
+      parts.push(`EXISTS (SELECT 1 FROM ${tables.muscles} em
         WHERE em.exercise_id = ${alias}.id
           AND em.muscle_id IN (SELECT m.id FROM muscles m WHERE m.slug IN (${group.map(() => '?').join(', ')}))${role ? ' AND em.role = ?' : ''})`);
       params.push(...group);
@@ -196,10 +198,10 @@ export function exerciseListFilterSql(
  * @param scopeSql a `WHERE` body scoping the rows (e.g. `e.gym_id IS NULL AND
  *   e.status != 'deleted'`), using the alias `e`
  */
-export function exerciseFacetsSql(scopeSql: string): string {
+export function exerciseFacetsSql(scopeSql: string, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
   return EXERCISE_METADATA_COLUMNS
     .map((column) => `SELECT '${column}' AS facet, e.${column} AS value
-      FROM exercises e
+      FROM ${tables.exercises} e
       WHERE ${scopeSql} AND e.${column} IS NOT NULL AND e.${column} <> ''
       GROUP BY e.${column}`)
     .join('\n    UNION ALL\n    ');
@@ -219,9 +221,10 @@ export function exerciseFacetsSql(scopeSql: string): string {
 export function exerciseFacetsQuery(
   scopeSql: string,
   scopeParams: unknown[] = [],
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): { sql: string; params: unknown[] } {
   return {
-    sql: exerciseFacetsSql(scopeSql),
+    sql: exerciseFacetsSql(scopeSql, tables),
     params: EXERCISE_METADATA_COLUMNS.flatMap(() => scopeParams),
   };
 }

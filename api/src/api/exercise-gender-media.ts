@@ -32,6 +32,7 @@ import { recordAudit } from '../infra/audit';
 import { getTenantContext } from '../infra/tenantContext';
 import { apiRateLimitKey } from '../domain/apiRateLimit';
 import { resolvePlatformActor, resolveRequestActor } from '../domain/auditActor';
+import { mirrorExerciseToLegacy } from './exercise-base-mirror';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import {
   EXERCISE_GENDER_IMAGE_MIME,
@@ -144,7 +145,7 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
     const columns = 'id, gym_id, name, status, image_male_url, image_female_url, video_male_url, video_female_url';
     if (scope === 'platform') {
       const { rows } = await db.query<MediaRow & { status: string }>(
-        `SELECT ${columns} FROM exercises WHERE id = ? AND gym_id IS NULL`,
+        `SELECT ${columns.replace('gym_id', 'NULL AS gym_id')} FROM base_exercises WHERE id = ?`,
         [req.params.id],
       );
       const row = rows[0];
@@ -187,13 +188,23 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
 
   async function stillReferenced(url: string, ctx: MediaContext): Promise<boolean> {
     const { clause, params } = mediaReferenceClause(url);
-    const gymClause = scope === 'platform' ? '' : 'AND gym_id = ?';
+    if (scope === 'platform') {
+      // #1849 E2: the other Base exercises, and the gyms' copies that may point at the same object.
+      const { rows } = await db.query(
+        `SELECT id FROM base_exercises WHERE id != ? AND status != 'deleted' AND ${clause}
+         UNION ALL
+         SELECT id FROM exercises WHERE gym_id IS NOT NULL AND status != 'deleted' AND ${clause}
+         LIMIT 1`,
+        [ctx.exercise.id, ...params, ...params],
+      );
+      return rows.length > 0;
+    }
     const { rows } = await db.query(
       `SELECT id FROM exercises
-        WHERE id != ? AND status != 'deleted' ${gymClause}
+        WHERE id != ? AND status != 'deleted' AND gym_id = ?
           AND ${clause}
         LIMIT 1`,
-      scope === 'platform' ? [ctx.exercise.id, ...params] : [ctx.exercise.id, ctx.gymId, ...params],
+      [ctx.exercise.id, ctx.gymId, ...params],
     );
     return rows.length > 0;
   }
@@ -296,8 +307,18 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
   const column = (gender: ExerciseGender, kind: 'image' | 'video') => EXERCISE_GENDER_MEDIA_COLUMNS[gender][kind];
 
   async function writeColumn(ctx: MediaContext, col: string, value: string | null, req: Request) {
-    const where = scope === 'platform' ? 'id = ? AND gym_id IS NULL' : 'id = ? AND gym_id = ?';
-    const params = scope === 'platform' ? [value, actorOf(req), ctx.exercise.id] : [value, actorOf(req), ctx.exercise.id, ctx.gymId];
+    if (scope === 'platform') {
+      await db.transaction(async (tx) => {
+        await tx.query(
+          `UPDATE base_exercises SET ${col} = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
+          [value, actorOf(req), ctx.exercise.id],
+        );
+        await mirrorExerciseToLegacy(tx, ctx.exercise.id);
+      });
+      return;
+    }
+    const where = 'id = ? AND gym_id = ?';
+    const params = [value, actorOf(req), ctx.exercise.id, ctx.gymId];
     await db.query(
       `UPDATE exercises SET ${col} = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE ${where}`,
       params,
