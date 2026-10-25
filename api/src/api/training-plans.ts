@@ -158,7 +158,7 @@ export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') 
                       'target_value', we.target_value, 'min_value', we.min_value, 'max_value', we.max_value,
                       'unit', we.unit) AS item
                   FROM workout_exercises we
-                  JOIN exercises e ON e.id = we.exercise_id
+                  JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id)
                   LEFT JOIN result_types rt ON rt.id = we.result_type_id
                   WHERE we.workout_block_id = b.id AND we.deleted_at IS NULL
                   ORDER BY we.position
@@ -193,10 +193,10 @@ async function copyPlanContentsTx(tx: Tx, gymId: string, gymMembershipId: number
       for (const ex of b.exercises ?? []) {
         await tx.query(
           `INSERT INTO workout_exercises
-            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+            (gym_id, workout_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
              result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, bId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
+           VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, bId, ex.exercise_id, ex.base_exercise_id ?? ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
            ex.rest_seconds, ex.tempo, ex.notes,
            ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
            gymMembershipId],
@@ -501,7 +501,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
       `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
+       FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       (id) => [id],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: row.id, next: row });
@@ -552,7 +552,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     const { rows } = await db.query(
       `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
+       FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_exercise', entityId: exId, next: rows[0] });
@@ -693,7 +693,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     const { rows } = await db.query(
       `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
+       FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_exercise', entityId: exId, next: rows[0] });
@@ -741,9 +741,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireModule
         );
         await tx.query(
           `INSERT INTO workout_exercises
-            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+            (gym_id, workout_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
              result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-           SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+           SELECT gym_id, ?, exercise_id, COALESCE(base_exercise_id, (SELECT b.id FROM base_exercises b WHERE b.id = workout_exercises.exercise_id)), position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
              result_type_id, target_value, min_value, max_value, unit, ?
            FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
           [newBlockId, gymMembershipId, block.id],
@@ -789,9 +789,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate
       );
       await tx.query(
         `INSERT INTO workout_exercises
-          (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+          (gym_id, workout_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
            result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-         SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+         SELECT gym_id, ?, exercise_id, COALESCE(base_exercise_id, (SELECT b.id FROM base_exercises b WHERE b.id = workout_exercises.exercise_id)), position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
            result_type_id, target_value, min_value, max_value, unit, ?
          FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
         [copyId, gymMembershipId, blockId],
@@ -882,8 +882,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
     const { insertId } = await db.query(
       `INSERT INTO workout_exercises
-        (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
+        (gym_id, workout_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
        SELECT we.gym_id, we.workout_block_id, we.exercise_id,
+              COALESCE(we.base_exercise_id, (SELECT b.id FROM base_exercises b WHERE b.id = we.exercise_id)),
               (SELECT COALESCE(MAX(position), 0) + 1 FROM workout_exercises WHERE workout_block_id = ?),
               we.min_reps, we.max_reps, we.sets, we.rest_seconds, we.tempo, we.notes, ?
        FROM workout_exercises we
@@ -894,7 +895,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     const { rows } = await db.query(
       `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
+       FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [insertId],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: insertId, next: rows[0] });

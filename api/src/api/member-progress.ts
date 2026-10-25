@@ -56,7 +56,7 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
               ${allowedTypesSql}
-       FROM exercises e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
+       FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
     const out = exRows.map((ex: any) => ({
@@ -75,14 +75,14 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
 async function exerciseDetail(gymId: string, memberId: number, exerciseId: number, locale: string | undefined, req: Request) {
   const { rows: logRows } = await db.query(
     `SELECT el.id, el.notes, el.modified_at, ${LOG_SELECT}
-     FROM exercise_logs el WHERE el.gym_id = ? AND el.member_id = ? AND el.exercise_id = ?
+     FROM exercise_logs el WHERE el.gym_id = ? AND el.member_id = ? AND COALESCE(el.base_exercise_id, el.exercise_id) = ?
      ORDER BY el.logged_date DESC, el.id DESC`,
     [gymId, memberId, exerciseId],
   );
   if (logRows.length === 0) return null;
   const { rows: exRows } = await db.query(
     `SELECT e.id, ${localizedExerciseNameExpr('e', getRequestLocale(req))}, ${allowedTypesSql}
-     FROM exercises e WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL)`,
+     FROM exercise_catalogue e WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL)`,
     [exerciseId, gymId],
   );
   if (exRows.length === 0) return null;

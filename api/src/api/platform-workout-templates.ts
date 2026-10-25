@@ -151,7 +151,7 @@ platformWorkoutTemplatesRouter.get('/:id', requireSuperadmin, async (req, res, n
                     'target_value', wte.target_value, 'min_value', wte.min_value, 'max_value', wte.max_value,
                     'unit', wte.unit) AS item
                 FROM workout_template_exercises wte
-                JOIN exercises e ON e.id = wte.exercise_id
+                JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id)
                 LEFT JOIN result_types rt ON rt.id = wte.result_type_id
                 WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
                 ORDER BY wte.position
@@ -347,7 +347,7 @@ platformWorkoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', requireSupe
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte
-       JOIN exercises e ON e.id = wte.exercise_id
+       JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id)
        WHERE wte.workout_template_block_id = ? AND wte.gym_id IS NULL AND wte.deleted_at IS NULL
        ORDER BY wte.position ASC`,
       [blockId],
@@ -379,7 +379,7 @@ platformWorkoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireSup
     }
     // Base exercises only (gym_id IS NULL) can be linked to base templates
     const { rows: exRows } = await db.query(
-      'SELECT 1 FROM exercises WHERE id = ? AND gym_id IS NULL AND status != \'deleted\'',
+      'SELECT 1 FROM base_exercises WHERE id = ? AND status != \'deleted\'',
       [parsed.exercise_id],
     );
     if (exRows.length === 0) return res.status(400).json({ error: 'exercise_id is not a base exercise' });
@@ -389,15 +389,15 @@ platformWorkoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireSup
     );
     const row = await insertAndFetch(
       `INSERT INTO workout_template_exercises
-        (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+        (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
          result_type_id, target_value, min_value, max_value, unit)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [blockId, parsed.exercise_id, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit],
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
+       FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       (exId) => [exId],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_template_exercise', entityId: row.id, next: row });
@@ -427,17 +427,17 @@ platformWorkoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requi
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
     const { rows: exRows } = await db.query(
-      "SELECT 1 FROM exercises WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      "SELECT 1 FROM base_exercises WHERE id = ? AND status != 'deleted'",
       [parsed.exercise_id],
     );
     if (exRows.length === 0) return res.status(400).json({ error: 'exercise_id is not a base exercise' });
     const { rowCount } = await db.query(
       `UPDATE workout_template_exercises SET
-        exercise_id = ?, min_reps = ?, max_reps = ?, sets = ?, rest_seconds = ?, tempo = ?,
+        exercise_id = ?, base_exercise_id = ?, min_reps = ?, max_reps = ?, sets = ?, rest_seconds = ?, tempo = ?,
         result_type_id = ?, target_value = ?, min_value = ?, max_value = ?, unit = ?,
         modified_at = UTC_TIMESTAMP()
        WHERE id = ? AND workout_template_block_id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
-      [parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo,
+      [parsed.exercise_id, parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit,
        exId, blockId],
     );
@@ -445,7 +445,7 @@ platformWorkoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requi
     const { rows } = await db.query(
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
-       FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
+       FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_template_exercise', entityId: exId, next: rows[0] });

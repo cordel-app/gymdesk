@@ -292,7 +292,7 @@ exercisesRouter.get('/locales', (_req, res) => {
 const IMPORTED_COPY_ID = `
   (SELECT MIN(g.id) FROM exercises g
     WHERE g.gym_id = ? AND g.status != 'deleted'
-      AND (g.cloned_from_id = e.id OR g.name = e.name))`;
+      AND (COALESCE(g.base_exercise_id, g.cloned_from_id) = e.id OR g.name = e.name))`;
 
 /**
  * #719 part 3 (§12): whether re-importing this Base Exercise would actually move
@@ -318,7 +318,7 @@ const MEDIA_REFRESHABLE = `
         THEN 1 ELSE 0 END
     FROM exercises g
     WHERE g.gym_id = ? AND g.status != 'deleted'
-      AND (g.cloned_from_id = e.id OR g.name = e.name)
+      AND (COALESCE(g.base_exercise_id, g.cloned_from_id) = e.id OR g.name = e.name)
     ORDER BY g.id ASC LIMIT 1), 0)`;
 
 /**
@@ -652,15 +652,15 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
           (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
-           status, created_by, cloned_from_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+           status, created_by, cloned_from_id, base_exercise_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, (SELECT id FROM base_exercises WHERE id = ?))`,
         // #719 §2: the copy takes the Base Exercise's media *references*, not
         // its bytes — no System object is duplicated into the gym's folder, and
         // the copy owns the references from here on (§3's snapshot rule).
         [gymId, copyName, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
-         actor, id],
+         actor, id, id],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {
@@ -760,7 +760,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         const { rows: existing } = await tx.query<ExerciseMediaRefs & { id: number; name: string }>(
           `SELECT id, name, image_male_url, image_female_url, video_male_url, video_female_url
              FROM exercises
-            WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?)
+            WHERE gym_id = ? AND status != 'deleted' AND (COALESCE(base_exercise_id, cloned_from_id) = ? OR name = ?)
             ORDER BY id ASC LIMIT 1`,
           [gymId, id, src.name],
         );
@@ -805,13 +805,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
             (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
-             status, created_by, cloned_from_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+             status, created_by, cloned_from_id, base_exercise_id, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
-           actor, id, src.category ?? null],
+           actor, id, id, src.category ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
