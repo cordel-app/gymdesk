@@ -24,7 +24,6 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
-import { MemberBillingSimulation } from './MemberBillingSimulation';
 import {
   MemberPurchasedProducts,
   type PurchasedProduct,
@@ -38,6 +37,7 @@ import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
+import { MemberPayments } from './MemberPayments';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
@@ -179,7 +179,6 @@ export function MemberExpandedRow({
   const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
   // so remounting it is how a change in either section above re-runs it.
-  const [simulationKey, setSimulationKey] = useState(0);
 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [clerkStatus, setClerkStatus] = useState<({ status: string } & ClerkAccountFields) | null>(null);
@@ -284,14 +283,11 @@ export function MemberExpandedRow({
   }
 
   // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL PRODUCTS
-  // sections lands here — it re-reads the configuration both are rendered from
-  // and remounts the Billing Simulation, so the simulation always
-  // shows the Member's current complete configuration. The other expanded-row
+  // sections lands here — it re-reads the configuration both are rendered from. The other expanded-row
   // sections (training plans, packages, billing events) are left alone.
   async function reloadConfiguration() {
     try {
       setConfiguration(await apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`));
-      setSimulationKey((k) => k + 1);
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'));
     }
@@ -562,11 +558,6 @@ export function MemberExpandedRow({
             </Section>
           )}
 
-          {/* Billing Simulation (#629) — a section of its own, never nested inside
-              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
-          <Section label={t('members.section_billing_simulation')}>
-            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
-          </Section>
 
           {/* #1660 — Summary: the pending draft's additions and removals, last on
               the tab, with Save & Pay / Cancel directly beneath. */}
@@ -833,6 +824,15 @@ export function MemberExpandedRow({
               can be edited (value and notes) or hard-deleted from their ⋮ menu. */}
           <Section label={t('members.section_progress')} divider={false}>
             <MemberProgress memberId={memberId} canWrite={canManageTraining} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'payments' && (
+        <>
+          {/* Payments (#2099) — read-only: actual billing events and their transactions. */}
+          <Section label={t('members.section_payments')} divider={false}>
+            <MemberPayments memberId={memberId} />
           </Section>
         </>
       )}

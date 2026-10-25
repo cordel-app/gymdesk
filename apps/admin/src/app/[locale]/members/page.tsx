@@ -5,7 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteFeature, canWriteModule } from '@/config/permissions';
+import { canAccessModule, canWriteFeature, canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -213,6 +213,7 @@ export default function MembersPage() {
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   const canManageNutrition = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
+  const canReadPayments = isSuperadmin || (activeGym?.role != null && canAccessModule(activeGym.role, 'PAYMENTS'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
   // #948 §4: the PERSONAL GOALS section writes through `/member-personal-goals`,
   // which is mounted on NUTRITION — the same module the catalogue is. #1070: and
@@ -726,7 +727,7 @@ export default function MembersPage() {
                 the card is a workspace rather than one very long column. */}
             <div style={tabStripWrapStyle}>
               <Tabs
-                tabs={MEMBER_TABS}
+                tabs={MEMBER_TABS.filter((tb) => tb.id !== 'payments' || canReadPayments)}
                 active={activeTab}
                 onChange={(tab) => selectTab(m.id, tab)}
                 label={(key) => t(`members.${key}`)}
