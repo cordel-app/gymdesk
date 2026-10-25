@@ -91,6 +91,15 @@ export interface EditableLine {
   quantity: number;
   unitPrice: number;
   billingFrequency: string | null;
+  /** A frozen Membership Plan benefit (the plan's, possibly inherited from the Active version), not an added service. */
+  fromPlan: boolean;
+}
+
+/** #1988 — the plan the version carries, so the lines that come from it are explained. */
+export function planSummary(config: { planName?: string | null; membershipFeePrice?: number | null } | null | undefined):
+  { name: string; fee: number | null } | null {
+  if (!config?.planName) return null;
+  return { name: config.planName, fee: config.membershipFeePrice ?? null };
 }
 
 export function editableLines(config: {
@@ -100,11 +109,11 @@ export function editableLines(config: {
   const out: EditableLine[] = [];
   for (const b of config?.planBenefits ?? []) {
     if (b.category !== 'periodical') continue;
-    out.push({ serviceId: null, key: `benefit-${b.productId}`, name: b.name, quantity: b.quantity, unitPrice: b.unitPrice, billingFrequency: b.billingFrequency });
+    out.push({ serviceId: null, key: `benefit-${b.productId}`, name: b.name, quantity: b.quantity, unitPrice: b.unitPrice, billingFrequency: b.billingFrequency, fromPlan: true });
   }
   for (const s of config?.services ?? []) {
     if (s.endsOn != null) continue;
-    out.push({ serviceId: s.id, key: `service-${s.id}`, name: s.name, quantity: s.quantity, unitPrice: s.unitPrice, billingFrequency: s.billingFrequency });
+    out.push({ serviceId: s.id, key: `service-${s.id}`, name: s.name, quantity: s.quantity, unitPrice: s.unitPrice, billingFrequency: s.billingFrequency, fromPlan: false });
   }
   return out;
 }
