@@ -223,3 +223,58 @@ export async function migrateProfessionalServiceImageOnRename(
   await sweepReplacedImage(scope, service.id, service.image_thumbnail_url, newThumbUrl);
   return { image_url: newUrl, image_thumbnail_url: newThumbUrl };
 }
+
+/**
+ * Import (#2010 stage 2): copies a Base service's master and thumbnail into the
+ * gym's own folder under the *new* service's id, server-side, and points the
+ * gym's row at the copies. The copy is independent of the Base objects. A failed
+ * copy deletes what it wrote and leaves the row without an image — never a row
+ * pointing at a missing object. A Base service with no image, an unconfigured
+ * bucket or a gym with no folder prefix imports without one. Returns whether
+ * the image was copied.
+ */
+export async function copyBaseProfessionalServiceImage(args: {
+  gymId: string;
+  prefix: string | null;
+  base: { image_url: string | null; image_thumbnail_url: string | null };
+  service: { id: number; name: string };
+}): Promise<boolean> {
+  const { gymId, prefix, base, service } = args;
+  if (!base.image_url || !prefix || !isStorageConfigured()) return false;
+  const sourceKey = storageKeyFromObjectUrl(base.image_url);
+  if (!sourceKey) return false;
+  const sourceThumbKey = base.image_thumbnail_url ? storageKeyFromObjectUrl(base.image_thumbnail_url) : null;
+
+  const destKey = buildProfessionalServiceImageKey(prefix, service.id, service.name);
+  const destThumbKey = buildProfessionalServiceImageThumbnailKey(prefix, service.id, service.name);
+  const written: string[] = [];
+  try {
+    await ensureStorageFolders(professionalServiceImageFolderKeys(prefix));
+    await copyStorageObject(sourceKey, destKey);
+    written.push(destKey);
+    if (sourceThumbKey) {
+      await copyStorageObject(sourceThumbKey, destThumbKey);
+      written.push(destThumbKey);
+    }
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'copyStorageObject', key: destKey });
+    logger.warn({ err, details, gymId, serviceId: service.id }, 'Imported professional service has no image: copy from the Base service failed');
+    for (const key of written) {
+      try { await deleteStorageObject(key); } catch { /* an orphan to sweep, never a failure */ }
+    }
+    return false;
+  }
+
+  await db.query(
+    `UPDATE professional_services SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND gym_id = ?`,
+    [
+      buildStorageObjectUrl(destKey) as string,
+      sourceThumbKey ? (buildStorageObjectUrl(destThumbKey) as string) : null,
+      service.id,
+      gymId,
+    ],
+  );
+  return true;
+}

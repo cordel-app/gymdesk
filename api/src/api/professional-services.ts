@@ -12,6 +12,7 @@ import {
 import {
   PROFESSIONAL_SERVICE_IMAGE_COLUMNS,
   clearProfessionalServiceImage,
+  copyBaseProfessionalServiceImage,
   migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
@@ -110,9 +111,10 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
   try {
     const imported: number[] = [];
     const skipped: number[] = [];
+    const prefix = await gymStorageFolderPrefix(gymId);
     for (const baseId of [...new Set<number>(ids)]) {
       const { rows } = await db.query(
-        `SELECT id, name, description, max_capacity FROM professional_services
+        `SELECT id, name, description, max_capacity, image_url, image_thumbnail_url FROM professional_services
           WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
         [baseId],
       );
@@ -140,6 +142,9 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
           return { insertId: serviceId };
         });
         imported.push(base.id);
+        // The image is copied after the row exists (its key carries the new id); a
+        // failed copy costs the image alone, never the import.
+        await copyBaseProfessionalServiceImage({ gymId, prefix, base, service: { id: insertId, name: base.name } });
         recordAudit(req, {
           action: 'create',
           entityType: 'professional_service',
