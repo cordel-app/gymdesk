@@ -100,7 +100,7 @@ async function createExercise(gym: string | null, name: string): Promise<number>
 
 async function mediaOf(id: number) {
   const { rows } = await db.query<Record<string, string | null>>(
-    'SELECT image_male_url, image_female_url, video_male_url, video_female_url FROM exercises WHERE id = ?',
+    'SELECT image_male_url, image_female_url, video_male_url, video_female_url FROM exercise_catalogue WHERE id = ?',
     [id],
   );
   return rows[0];

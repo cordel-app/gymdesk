@@ -26,7 +26,7 @@ exerciseLogsRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, nex
     // already reads — only the exercises routers keep `name` separate, because
     // their rows back an edit form.
     let sql = `
-      SELECT el.*, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
+      SELECT el.*, COALESCE(el.base_exercise_id, el.exercise_id) AS exercise_id, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
         (SELECT JSON_ARRAYAGG(item) FROM (
           SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
           FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number

@@ -106,7 +106,7 @@ const primaryMuscleImageSql = (alias: string, column: 'image_url' | 'image_thumb
   const [m, o] = sex === 'female' ? ['female', 'male'] : ['male', 'female'];
   return `(SELECT ${column === 'image_url'
       ? `COALESCE(pm.image_${m}_url, pm.image_${o}_url)`
-      : `IF(pm.image_${m}_url IS NOT NULL, pm.image_${m}_url_thumbnail, pm.image_${o}_url_thumbnail)`} FROM exercise_muscles pem JOIN muscles pm ON pm.id = pem.muscle_id
+      : `IF(pm.image_${m}_url IS NOT NULL, pm.image_${m}_url_thumbnail, pm.image_${o}_url_thumbnail)`} FROM exercise_muscle_catalogue pem JOIN muscles pm ON pm.id = pem.muscle_id
      WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL
      ORDER BY LOWER(pm.name), pm.id LIMIT 1)`;
 };

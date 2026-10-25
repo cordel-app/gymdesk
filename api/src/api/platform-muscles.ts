@@ -108,7 +108,7 @@ function allImageUrls(m: MuscleRow): (string | null)[] {
 
 const SELECT_MUSCLE = `
   SELECT m.*,
-    (SELECT COUNT(DISTINCT em.exercise_id) FROM exercise_muscles em WHERE em.muscle_id = m.id) AS exercise_count
+    (SELECT COUNT(DISTINCT em.exercise_id) FROM exercise_muscle_catalogue em WHERE em.muscle_id = m.id) AS exercise_count
   FROM muscles m`;
 
 function parseName(body: any): { value: string } | { error: string } {
@@ -250,7 +250,7 @@ platformMusclesRouter.delete('/:id', requireSuperadmin, async (req, res, next) =
     const muscle = await loadMuscle(String(req.params.id));
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
     const used = await db.query<{ n: number }>(
-      'SELECT COUNT(DISTINCT exercise_id) AS n FROM exercise_muscles WHERE muscle_id = ?', [muscle.id],
+      'SELECT COUNT(DISTINCT exercise_id) AS n FROM exercise_muscle_catalogue WHERE muscle_id = ?', [muscle.id],
     );
     const exerciseCount = Number(used.rows[0]?.n ?? 0);
     if (exerciseCount > 0) {

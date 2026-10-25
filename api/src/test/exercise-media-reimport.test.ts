@@ -352,7 +352,7 @@ describe('POST /exercises/import — re-import restores System media', () => {
     const res = await importIds([baseId]);
     expect(res.body.refreshed).toHaveLength(1);
     const { rows } = await db.query(
-      'SELECT name, description, sets_default, cloned_from_id, image_male_url FROM exercises WHERE id = ?',
+      'SELECT name, description, sets_default, base_exercise_id, image_male_url FROM exercises WHERE id = ?',
       [copyId],
     );
     expect(rows[0]).toMatchObject({
@@ -361,7 +361,7 @@ describe('POST /exercises/import — re-import restores System media', () => {
       sets_default: 7,
       image_male_url: SYSTEM_IMAGE,
     });
-    expect(Number(rows[0].cloned_from_id)).toBe(baseId);
+    expect(Number(rows[0].base_exercise_id)).toBe(baseId);
   });
 
   it('refreshes a same-named copy that carries no provenance, without claiming it', async () => {
@@ -373,10 +373,10 @@ describe('POST /exercises/import — re-import restores System media', () => {
     const res = await importIds([baseId]);
     expect(res.body.imported).toEqual([]);
     expect(res.body.refreshed[0]).toMatchObject({ exercise_id: legacyId, image_refreshed: true });
-    const { rows } = await db.query('SELECT image_male_url, cloned_from_id FROM exercises WHERE id = ?', [legacyId]);
+    const { rows } = await db.query('SELECT image_male_url, cloned_from_id, base_exercise_id FROM exercises WHERE id = ?', [legacyId]);
     // The media is restored; the row stays Custom — a re-import is not a claim of provenance.
     expect(rows[0].image_male_url).toBe(SYSTEM_IMAGE);
-    expect(rows[0].cloned_from_id).toBeNull();
+    expect(rows[0].base_exercise_id).toBeNull();
   });
 
   it('imports and refreshes in the same request', async () => {

@@ -162,7 +162,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                     'is_optional', b.is_optional, 'notes', b.notes, 'result_unit', b.result_unit,
                     'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                       SELECT JSON_OBJECT(
-                          'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
+                          'id', wte.id, 'position', wte.position, 'exercise_id', COALESCE(wte.base_exercise_id, wte.exercise_id),
                           'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
                           'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
                           'min_reps', wte.min_reps, 'max_reps', wte.max_reps,

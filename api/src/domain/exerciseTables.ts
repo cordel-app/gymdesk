@@ -2,8 +2,8 @@
  * #1849 stage E2 (Exercises) — which tables an exercise helper reads or writes, the
  * `FoodTables` (domain/nutritionLibrary.ts) of this catalogue.
  *
- * - `LEGACY_EXERCISE_TABLES`: the gym-owned rows (and, until the final stage, the
- *   mirrored System rows the plan tables still reference).
+ * - `LEGACY_EXERCISE_TABLES`: the gym-owned rows (the legacy System rows and the
+ *   mirror onto them are gone since migration 343).
  * - `BASE_EXERCISE_TABLES`: the platform's Exercises (`base_exercises`, migration 336),
  *   which Cordel's router writes.
  * - `CATALOGUE_EXERCISE_TABLES`: the read models (migration 338) a gym-facing reader

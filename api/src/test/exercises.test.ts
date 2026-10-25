@@ -621,17 +621,17 @@ describe('GET /exercises/base', () => {
 
     activeBaseId = await createBaseExercise('Zz718 Barbell Bench Press');
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role) SELECT ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [activeBaseId],
     );
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role) SELECT ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
       [activeBaseId],
     );
 
     otherBaseId = await createBaseExercise('Zz718 Lat Pulldown');
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'back'`,
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role) SELECT ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'back'`,
       [otherBaseId],
     );
 
@@ -650,7 +650,7 @@ describe('GET /exercises/base', () => {
     if (baseIds.length === 0) return;
     const marks = baseIds.map(() => '?').join(',');
     await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE base_exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
@@ -747,7 +747,7 @@ describe('GET /exercises/base', () => {
 
   it('marks a base exercise the gym imported (cloned_from_id) as already imported', async () => {
     const { insertId: copyId } = await db.query(
-      `INSERT INTO exercises (gym_id, name, status, cloned_from_id) VALUES (?, 'Zz718 Renamed Copy', 'active', ?)`,
+      `INSERT INTO exercises (gym_id, name, status, base_exercise_id) VALUES (?, 'Zz718 Renamed Copy', 'active', ?)`,
       [gymId, activeBaseId],
     );
     const res = await get('/exercises/base');
@@ -773,7 +773,7 @@ describe('GET /exercises/base', () => {
 
   it('ignores a soft-deleted copy when deciding whether it is imported', async () => {
     const { insertId: deletedCopy } = await db.query(
-      `INSERT INTO exercises (gym_id, name, status, cloned_from_id) VALUES (?, 'Zz718 Deleted Copy', 'deleted', ?)`,
+      `INSERT INTO exercises (gym_id, name, status, base_exercise_id) VALUES (?, 'Zz718 Deleted Copy', 'deleted', ?)`,
       [gymId, activeBaseId],
     );
     const res = await get('/exercises/base');
@@ -814,17 +814,17 @@ describe('POST /exercises/import', () => {
     inactiveBaseId = await createBaseExercise('Zz718i Withdrawn Exercise', 'inactive');
 
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role) SELECT ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [benchId],
     );
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
+      `INSERT INTO base_exercise_muscles (exercise_id, muscle, muscle_id, role) SELECT ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
       [benchId],
     );
     const { rows: rts } = await db.query<{ id: number }>('SELECT id FROM result_types ORDER BY id LIMIT 1');
     resultTypeId = rts[0].id;
     await db.query(
-      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+      'INSERT IGNORE INTO base_exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
       [benchId, resultTypeId],
     );
   });
@@ -834,7 +834,7 @@ describe('POST /exercises/import', () => {
     const marks = baseIds.map(() => '?').join(',');
     await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercise_allowed_result_types WHERE exercise_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE base_exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
@@ -1014,7 +1014,7 @@ describe('GET /exercises: non-imported base exercises are not listed (#804)', ()
     if (baseIds.length === 0) return;
     const marks = baseIds.map(() => '?').join(',');
     await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE base_exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
