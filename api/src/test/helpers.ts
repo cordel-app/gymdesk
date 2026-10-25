@@ -1,7 +1,6 @@
 import supertest from 'supertest';
 import { app } from '../app';
 import { db } from '../infra/db';
-import { mirrorExerciseToLegacy } from '../api/exercise-base-mirror';
 
 export const request = supertest(app);
 
@@ -792,8 +791,8 @@ export async function syncLegacySystemFoodsToBase(): Promise<void> {
 
 /**
  * #1849 stage E2 — a Base exercise fixture: a row of `base_exercises` whose id comes from
- * the legacy `exercises` sequence (so it can never collide with a gym-owned id), with the
- * transitional legacy System row of the same id that the plan tables still reference.
+ * the legacy `exercises` sequence (so it can never collide with a gym-owned id). Since E6 there is
+ * no legacy twin: plan rows reference it through `base_exercise_id`.
  */
 export async function createBaseExercise(
   fields: Record<string, unknown> & { name: string },
@@ -807,26 +806,29 @@ export async function createBaseExercise(
     `INSERT INTO base_exercises (id, ${cols.join(', ')}, created_by) VALUES (?, ${cols.map(() => '?').join(', ')}, 'System')`,
     [id, ...cols.map((c) => fields[c])],
   );
-  await db.transaction((tx) => mirrorExerciseToLegacy(tx, id));
   return Number(id);
 }
 
-/** Removes Base exercises and their legacy twins (referenced rows are the caller's to delete first). */
+/** Removes Base exercises (referenced rows are the caller's to delete first; gym copies cloned from them go too). */
 export async function deleteBaseExercises(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');
-  await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM exercises WHERE gym_id IS NULL AND id IN (${marks})`, ids);
+  await db.query(`DELETE FROM exercises WHERE base_exercise_id IN (${marks})`, ids);
   await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, ids);
 }
 
 /**
- * #1849 E2 — makes a fixture that still inserts a System exercise the old way (a legacy row
- * with `gym_id IS NULL`) visible to Cordel's router and the Base reads, by copying the
- * legacy System exercises and their junctions into the Base tables under the same ids
- * (an upsert: it follows later edits of the fixture's legacy row). Idempotent.
+ * #1849 E2/E6 — a fixture that still inserts a System exercise the old way (a legacy row with
+ * `gym_id IS NULL`, with legacy junction rows and plan rows pointing at it) is moved to where
+ * a System exercise lives since migration 343: copied into the Base tables under the same id,
+ * its references re-pointed to `base_exercise_id` (the old column cleared), and the legacy row
+ * deleted. Call it after the fixture's inserts; rows the fixture inserts afterwards must use
+ * `base_exercise_id`. Idempotent, and it touches nothing else (the seeded Base exercises have
+ * no legacy twin).
  */
 export async function syncLegacySystemExercisesToBase(): Promise<void> {
+  const { rows: legacyRows } = await db.query('SELECT id FROM exercises WHERE gym_id IS NULL');
+  if (legacyRows.length === 0) return;
   const cols = `name, description, short_description, status, min_reps_default, max_reps_default,
        rest_default_seconds, sets_default, source, source_id, slug, equipment, category, level,
        mechanic, force_type, image_male_url, image_female_url, video_male_url, video_female_url,
@@ -849,4 +851,15 @@ export async function syncLegacySystemExercisesToBase(): Promise<void> {
     await db.query(`INSERT IGNORE INTO ${base} (${cols2}) SELECT ${cols2.split(', ').map((c) => `t.${c}`).join(', ')}
       FROM ${legacy} t JOIN exercises e ON e.id = t.exercise_id AND e.gym_id IS NULL`);
   }
+  for (const [table, col] of [
+    ['workout_template_exercises', 'exercise_id'], ['workout_exercises', 'exercise_id'],
+    ['exercise_logs', 'exercise_id'], ['member_standalone_exercises', 'exercise_id'], ['exercises', 'cloned_from_id'],
+  ]) {
+    await db.query(`UPDATE ${table} t JOIN exercises x ON x.id = t.${col} AND x.gym_id IS NULL
+      SET t.base_exercise_id = x.id, t.${col} = NULL`);
+  }
+  for (const junction of Object.keys(Object.fromEntries(copies.map(([l]) => [l, 1])))) {
+    await db.query(`DELETE j FROM ${junction} j JOIN exercises e ON e.id = j.exercise_id AND e.gym_id IS NULL`);
+  }
+  await db.query('DELETE FROM exercises WHERE gym_id IS NULL');
 }

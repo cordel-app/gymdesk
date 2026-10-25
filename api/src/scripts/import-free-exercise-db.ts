@@ -65,7 +65,7 @@ import { readFileSync } from 'node:fs';
 import 'dotenv/config';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { BASE_EXERCISE_TABLES } from '../domain/exerciseTables';
-import { mirrorExerciseToLegacy, reserveBaseExerciseId } from '../api/exercise-base-mirror';
+import { reserveBaseExerciseId } from '../api/base-exercise-ids';
 import { syncExerciseResultTypes } from '../api/exercise-result-types';
 import { db } from '../infra/db';
 import { insertExerciseMuscle } from '../api/exercise-muscles';
@@ -215,7 +215,6 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
     // by `exercises:audit-categories`), never a guessed set.
     const finalCategory = (plan.fields as Record<string, unknown>).category ?? match?.row.category ?? null;
     await syncExerciseResultTypes(tx, exerciseId, finalCategory, BASE_EXERCISE_TABLES);
-    await mirrorExerciseToLegacy(tx, exerciseId);
     return exerciseId;
   });
 }

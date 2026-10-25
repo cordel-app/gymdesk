@@ -32,7 +32,6 @@ import { recordAudit } from '../infra/audit';
 import { getTenantContext } from '../infra/tenantContext';
 import { apiRateLimitKey } from '../domain/apiRateLimit';
 import { resolvePlatformActor, resolveRequestActor } from '../domain/auditActor';
-import { mirrorExerciseToLegacy } from './exercise-base-mirror';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import {
   EXERCISE_GENDER_IMAGE_MIME,
@@ -161,7 +160,9 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
       [req.params.id],
     );
     const row = rows[0];
-    if (row && row.gym_id === null) {
+    // A Base exercise has no row in `exercises` any more (#1849 E6): answer it as before.
+    const isBase = !row && (await db.query('SELECT 1 FROM base_exercises WHERE id = ?', [req.params.id])).rows.length > 0;
+    if (isBase || (row && row.gym_id === null)) {
       res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
       return null;
     }
@@ -308,13 +309,10 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
 
   async function writeColumn(ctx: MediaContext, col: string, value: string | null, req: Request) {
     if (scope === 'platform') {
-      await db.transaction(async (tx) => {
-        await tx.query(
-          `UPDATE base_exercises SET ${col} = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
-          [value, actorOf(req), ctx.exercise.id],
-        );
-        await mirrorExerciseToLegacy(tx, ctx.exercise.id);
-      });
+      await db.query(
+        `UPDATE base_exercises SET ${col} = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
+        [value, actorOf(req), ctx.exercise.id],
+      );
       return;
     }
     const where = 'id = ? AND gym_id = ?';

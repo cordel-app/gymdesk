@@ -86,8 +86,8 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
             `INSERT INTO workout_exercises
               (gym_id, workout_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
                result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-             VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, blockId, ex.exercise_id, ex.base_exercise_id ?? ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, blockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
              ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
              gymMembershipId],
           );

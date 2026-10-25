@@ -81,7 +81,7 @@ meStandaloneExercisesRouter.get('/', async (req: Request, res: Response, next: N
     const memberId = await resolveMemberId(gymId, getTenantContext(req));
     const sex = await memberSex(gymId, memberId);
     const { rows } = await db.query(
-      `SELECT s.id, s.exercise_id, s.exercise_date, ${localizedExerciseNameExpr('e', getRequestLocale(req), 'exercise_name')},
+      `SELECT s.id, COALESCE(s.base_exercise_id, s.exercise_id) AS exercise_id, s.exercise_date, ${localizedExerciseNameExpr('e', getRequestLocale(req), 'exercise_name')},
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               (SELECT ${MUSCLE_SLUG_SQL} FROM exercise_muscles em WHERE em.exercise_id = e.id AND em.role = 'principal' ORDER BY em.id LIMIT 1) AS primary_muscle,

@@ -41,7 +41,7 @@ import {
 } from '../domain/exerciseListFilters';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { BASE_EXERCISE_TABLES as B } from '../domain/exerciseTables';
-import { mirrorExerciseToLegacy, reserveBaseExerciseId } from './exercise-base-mirror';
+import { reserveBaseExerciseId } from './base-exercise-ids';
 
 export const platformExercisesRouter = Router();
 
@@ -270,7 +270,6 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       await syncExerciseResultTypes(tx, newId, categoryInput.value, B);
       if (translations) await replaceExerciseTranslations(tx, newId, translations, B);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, newId, descriptionTranslations, B);
-      await mirrorExerciseToLegacy(tx, newId);
       return newId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
@@ -358,7 +357,6 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
       if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category, B);
       if (translations) await replaceExerciseTranslations(tx, id, translations, B);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations, B);
-      await mirrorExerciseToLegacy(tx, id);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
     const updated = shapeExercise(rows[0]);
@@ -380,7 +378,6 @@ platformExercisesRouter.delete('/:id', requireSuperadmin, async (req, res, next)
         [platformActor(req), req.params.id],
       );
       if ((rowCount ?? 0) === 0) return false;
-      await mirrorExerciseToLegacy(tx, String(req.params.id));
       return true;
     });
     if (!deleted) return res.status(404).json({ error: 'Exercise not found' });
