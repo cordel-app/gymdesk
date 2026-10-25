@@ -49,7 +49,6 @@ export type MemberSectionKey =
   | 'section_billing_event_simulation'
   | 'section_recurring_products'
   | 'section_additional_services'
-  | 'section_billing_simulation'
   | 'section_pt_slots'
   | 'section_professional_services'
   | 'section_billing_events'
@@ -87,7 +86,6 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       // #1613 — one billing section: BILLING EVENT SIMULATION while billing-
       // affecting changes are pending, else the persisted BILLING EVENTS.
       'section_billing_event_simulation',
-      'section_billing_simulation',
       // #1867 — Actual Billing Events, last on the tab.
       'section_billing_events',
     ],

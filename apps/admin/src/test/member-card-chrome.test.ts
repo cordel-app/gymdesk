@@ -44,7 +44,6 @@ const CARD_FILES = [
   'MemberProductsWorkflow.tsx',
   'AddProductPurchase.tsx',
   'MemberProfessionalServices.tsx',
-  'MemberBillingSimulation.tsx',
   'MemberPersonalTrainingSlots.tsx',
   'AssignPlanInlineEditor.tsx',
 ] as const;

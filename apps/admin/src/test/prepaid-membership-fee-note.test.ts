@@ -20,7 +20,6 @@ import {
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const COMPONENT = join(__dirname, '..', 'components', 'BillingEventSimulation.tsx');
-const MEMBER_SIMULATION = join(__dirname, '..', 'app', '[locale]', 'members', 'MemberBillingSimulation.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
@@ -59,12 +58,6 @@ describe('Billing Event Simulation: a prepaid Membership Fee', () => {
     expect(src).not.toMatch(/line\.(unit_price|regular_price|actual_charge)\s*[*+/-]/);
   });
 
-  it('is noted on the Member card\'s own Billing Simulation too', () => {
-    const src = read(MEMBER_SIMULATION);
-    expect(src).toContain('line.prepaid_periods != null');
-    expect(src).toContain("t('billing_simulation_prepaid_periods'");
-  });
-
   it('names the periods its amount covers in the Example Timeline cell', () => {
     expect(formatPlanTimelineBilling(
       { amount: 210, waived: false }, 'No charge', 'VAT included', '3 periods prepaid',
@@ -88,7 +81,6 @@ describe('Billing Event Simulation: a prepaid Membership Fee', () => {
         expect(value).toContain('plural');
       }
       expect(locales[code].plans.timeline_prepaid_periods).toContain('plural');
-      expect(locales[code].members.billing_simulation_prepaid_periods).toContain('plural');
     }
   });
 });
