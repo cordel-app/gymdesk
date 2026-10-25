@@ -1473,8 +1473,6 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | Name | Kind | Notes |
 |------|------|-------|
 | `GHCR_PAT` | secret | Container registry access, shared |
-| `CORBACK_SSH_HOST`, `CORBACK_SSH_PRIVATE_KEY` | secret | SSH as user `podman` on corback |
-| `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | SSH as user `podman` on corfront |
 
 CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container** (schema `fitness`, plain `DATABASE_URL`) — the real HeatWave DB is unreachable from CI runners.
 
