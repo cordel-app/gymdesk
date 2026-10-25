@@ -31,9 +31,9 @@ exerciseLogsRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, nex
           SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
           FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
         ) t) AS sets
-      FROM exercise_logs el JOIN exercises e ON e.id = el.exercise_id
+      FROM exercise_logs el JOIN exercise_catalogue e ON e.id = COALESCE(el.base_exercise_id, el.exercise_id)
       WHERE el.member_id = ? AND el.gym_id = ?`;
-    if (exercise) { sql += ' AND el.exercise_id = ?'; params.push(exercise); }
+    if (exercise) { sql += ' AND COALESCE(el.base_exercise_id, el.exercise_id) = ?'; params.push(exercise); }
     sql += ' ORDER BY el.logged_date DESC, el.id DESC';
     const { rows } = await db.query(sql, params);
     res.json(rows);

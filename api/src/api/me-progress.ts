@@ -49,12 +49,12 @@ export function toLog(r: any): ProgressLog {
   };
 }
 
-export const LOG_SELECT = `el.exercise_id, el.logged_date, el.duration_seconds, el.skipped,
+export const LOG_SELECT = `COALESCE(el.base_exercise_id, el.exercise_id) AS exercise_id, el.logged_date, el.duration_seconds, el.skipped,
   (SELECT JSON_ARRAYAGG(JSON_OBJECT('set_number', s.set_number, 'weight', s.weight, 'reps', s.reps))
      FROM exercise_log_sets s WHERE s.exercise_log_id = el.id AND s.gym_id = el.gym_id) AS sets`;
 
 export const allowedTypesSql = `(SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'slug', rt.slug, 'name', rt.name))
-   FROM exercise_allowed_result_types ar JOIN result_types rt ON rt.id = ar.result_type_id
+   FROM exercise_allowed_result_type_catalogue ar JOIN result_types rt ON rt.id = ar.result_type_id
    WHERE ar.exercise_id = e.id) AS allowed_result_types`;
 
 async function memberSex(gymId: string, memberId: number) {
@@ -86,7 +86,7 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
               ${allowedTypesSql}
-       FROM exercises e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
+       FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
     const out = exRows.map((ex: any) => {
@@ -113,13 +113,13 @@ meProgressRouter.get('/exercises/:exerciseId', async (req: Request, res: Respons
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: logRows } = await db.query(
       `SELECT ${LOG_SELECT} FROM exercise_logs el
-       WHERE el.gym_id = ? AND el.member_id = ? AND el.exercise_id = ?`,
+       WHERE el.gym_id = ? AND el.member_id = ? AND COALESCE(el.base_exercise_id, el.exercise_id) = ?`,
       [gymId, memberId, exerciseId],
     );
     if (logRows.length === 0) return res.status(404).json({ error: 'No progress for this exercise' });
     const { rows: exRows } = await db.query(
       `SELECT e.id, ${localizedExerciseNameExpr('e', getRequestLocale(req))}, ${allowedTypesSql}
-       FROM exercises e WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL)`,
+       FROM exercise_catalogue e WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [exerciseId, gymId],
     );
     if (exRows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
