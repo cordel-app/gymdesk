@@ -6,7 +6,7 @@ import { cancelAbandonedPurchases } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
-import { expireDrafts } from './product-sets';
+import { expireDrafts, expirePendingPayments } from './product-sets';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
 // stage 11 (see that module for why), and is re-exported here so every caller
@@ -234,6 +234,8 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // status and age in the database, so a set that was committed in between
     // survives. Reported beside the totals, never folded into `expired`.
     const draftsExpired = await expireDrafts();
+    // #1991 stage 4: a Pending Payment whose link expired returns to Draft.
+    const pendingReturned = await expirePendingPayments();
 
     const expired = unopened + abandoned;
     req.log.info(
@@ -246,6 +248,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       expired_abandoned: abandoned,
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
+      pending_returned_to_draft: pendingReturned,
     };
     await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: cleanupBody });
     res.json(cleanupBody);

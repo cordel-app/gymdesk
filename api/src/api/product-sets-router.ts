@@ -12,7 +12,7 @@ import { productSetDraftRouter } from './product-set-draft-router';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
 import { activePlanConflictBody } from '../domain/oneActivePlan';
 import {
-  Actor, cancelInFlight, createDraft, submitForPayment,
+  Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
 import { diffConfigurations } from '../domain/productSetDiff';
@@ -452,8 +452,8 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
 });
 
 /**
- * Cancels an in-flight version. A Pending Payment checkout is removed with its
- * initial event and attempts only while `canCancelPending()` says every attempt
+ * Cancels an in-flight version. A Draft is deleted; a Pending Payment checkout
+ * returns to Draft (its initial event and attempts removed) only while `canCancelPending()` says every attempt
  * is definitively unsuccessful or none was ever submitted (#1535): a submitted
  * attempt with no provider status is an unknown outcome and a paid one is
  * money received, so both answer `payment_unresolved` and nothing is touched.
@@ -462,27 +462,8 @@ async function cancelCheckout(gymId: string, set: any) {
   if (set.status !== 'pending_payment') {
     return db.transaction((tx) => cancelInFlight(tx, gymId, Number(set.id)));
   }
-  return db.transaction(async (tx) => {
-    const { rows: events } = await tx.query<{ id: number }>(
-      `SELECT id FROM billing_events WHERE gym_id = ? AND product_set_id = ? FOR UPDATE`, [gymId, Number(set.id)]);
-    const { rows: attempts } = await tx.query<{ provider_ref: string | null; provider_status: string | null; status: string }>(
-      `SELECT provider_ref, provider_status, status FROM payment_requests
-        WHERE gym_id = ? AND billing_event_id IN (SELECT id FROM billing_events WHERE product_set_id = ?)`,
-      [gymId, Number(set.id)]);
-    const ok = canCancelPending(attempts.map((a) => ({
-      providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
-    })));
-    if (!ok) return { kind: 'unresolved' as const };
-    if (events.length > 0) {
-      await tx.query(
-        `DELETE FROM payment_requests WHERE gym_id = ? AND billing_event_id IN (${events.map(() => '?').join(',')})`,
-        [gymId, ...events.map((e) => e.id)]);
-      await tx.query(
-        `DELETE FROM billing_events WHERE gym_id = ? AND id IN (${events.map(() => '?').join(',')})`,
-        [gymId, ...events.map((e) => e.id)]);
-    }
-    return cancelInFlight(tx, gymId, Number(set.id));
-  });
+  // #1991 stage 4: a cancelled checkout returns to the Draft it was saved from.
+  return db.transaction((tx) => returnPendingToDraft(tx, gymId, Number(set.id)));
 }
 
 function cancelFailure(result: { kind: string; status?: string }) {

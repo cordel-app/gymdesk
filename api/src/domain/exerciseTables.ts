@@ -6,7 +6,7 @@
  *   mirrored System rows the plan tables still reference).
  * - `BASE_EXERCISE_TABLES`: the platform's Exercises (`base_exercises`, migration 336),
  *   which Cordel's router writes.
- * - `CATALOGUE_EXERCISE_TABLES`: the read models (migration 337) a gym-facing reader
+ * - `CATALOGUE_EXERCISE_TABLES`: the read models (migration 338) a gym-facing reader
  *   joins: Base rows (`gym_id` NULL) plus the gym-owned legacy rows.
  */
 export interface ExerciseTables {
