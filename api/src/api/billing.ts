@@ -6,6 +6,8 @@ import { cancelAbandonedPurchases } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
+import { getPaymentProvider } from '../payments';
+import { settlePaymentRequest, type SettleLogger } from './payment-settlement';
 import { expireDrafts, expirePendingPayments } from './product-sets';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
@@ -212,13 +214,24 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // The grace period is added in SQL so the comparison stays in the database's
     // UTC clock, the same one `page_token_expires` was written against.
     const hours = abandonedRequestHours();
+
+    // #2087: before an opened request is written off, ask the provider what
+    // became of it. A payment the provider reports as succeeded (webhook never
+    // arrived) is settled instead of expired, so it can never be returned to
+    // Draft with the money taken. A provider that cannot be reached leaves the
+    // row `pending` for the next run; one that still reports it unfinished
+    // falls through to the expiry below, as before.
+    const { reconciled, unreachable, moreToCheck } = await reconcileAbandonedRequests(hours, req.log);
+
     const { rowCount: abandoned } = await db.query(
       `UPDATE payment_requests
        SET status = 'expired', modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE status = 'pending'
          AND page_token IS NULL
-         AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)`,
-      [SYSTEM_ACTOR, hours],
+         AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+         AND ? = 0
+         AND (provider_ref IS NULL OR provider_ref NOT IN (${unreachable.map(() => '?').join(',') || "''"}))`,
+      [SYSTEM_ACTOR, hours, moreToCheck ? 1 : 0, ...unreachable],
     );
 
     // #1121 stage 2: a product purchase whose payment is over has to stop being
@@ -246,6 +259,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       expired,
       expired_unopened: unopened,
       expired_abandoned: abandoned,
+      reconciled,
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
       pending_returned_to_draft: pendingReturned,
@@ -258,3 +272,43 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+const RECONCILE_BATCH = 200;
+
+/**
+ * #2087: the abandoned-and-opened `pending` requests, checked against the
+ * provider before cleanup expires them. Returns how many were settled and the
+ * provider refs whose lookup failed (kept out of the expiry this run).
+ */
+async function reconcileAbandonedRequests(
+  hours: number,
+  log: SettleLogger,
+): Promise<{ reconciled: number; unreachable: string[]; moreToCheck: boolean }> {
+  // A literal, validated LIMIT: a bound `LIMIT ?` is refused by the prepared statement.
+  const { rows } = await db.query<{ provider_ref: string }>(
+    `SELECT provider_ref FROM payment_requests
+     WHERE status = 'pending' AND page_token IS NULL AND provider_ref IS NOT NULL
+       AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+     ORDER BY id LIMIT ${RECONCILE_BATCH}`,
+    [hours],
+  );
+  let reconciled = 0;
+  const unreachable: string[] = [];
+  for (const row of rows) {
+    try {
+      const payload = await getPaymentProvider().getPaymentStatus(row.provider_ref);
+      // Only a definite outcome is settled; a still-pending answer is expired below.
+      if (payload.status === 'pending') {
+        log.warn({ providerRef: row.provider_ref, providerStatus: payload.providerStatus }, 'billing cleanup: provider still reports the payment unfinished');
+        continue;
+      }
+      const outcome = await settlePaymentRequest(payload, { via: 'cleanup', log });
+      if (outcome.kind === 'settled') reconciled += 1;
+    } catch (err) {
+      unreachable.push(row.provider_ref);
+      log.warn({ providerRef: row.provider_ref, err: (err as Error).message }, 'billing cleanup: provider lookup failed, request left pending');
+    }
+  }
+  // A full batch means older rows were not looked at: they must not be written off unchecked.
+  return { reconciled, unreachable, moreToCheck: rows.length >= RECONCILE_BATCH };
+}

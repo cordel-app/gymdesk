@@ -7,7 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 import { InlineStyle } from '@/components/InlineStyle';
-import { isFailedPaymentReturn, paymentErrorPath } from '@/lib/paymentReturn';
+import { isFailedPaymentReturn, paymentErrorPath, paymentIdFromReturn } from '@/lib/paymentReturn';
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 30000;
@@ -55,7 +55,18 @@ export default function PaymentSuccessPage() {
       } catch {}
     };
 
-    poll();
+    // #2087: a 3DS payment leaves the hosted page before it has a result, so
+    // this return is where the API is asked to confirm with the provider. The
+    // answer only speeds up the poll below; a failure here changes nothing and
+    // the webhook remains the fallback.
+    const paymentId = paymentIdFromReturn(searchParams);
+    if (paymentId) {
+      apiFetch<{ status: string }>(`/payment-page/payments/${encodeURIComponent(paymentId)}/confirm`, { method: 'POST' })
+        .catch(() => {})
+        .finally(poll);
+    } else {
+      poll();
+    }
     intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
     timeoutRef.current = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);

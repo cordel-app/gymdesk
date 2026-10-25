@@ -205,7 +205,20 @@ sign-in-then-back lands on the locale-less path which redirects again.
 `.env.example` and the Members App middleware, and nothing at runtime would notice a locale
 creeping back in.
 
-### A5. The webhook settles it
+### A5. The webhook settles it (and so does the confirmation, #2087)
+
+**One settle function, three callers.** Since #2087 everything after the payload is
+parsed lives in `settlePaymentRequest()` (`api/src/api/payment-settlement.ts`), called by
+the webhook (`via: 'webhook'`), by `POST /payment-page/payments/:paymentId/confirm`
+(`via: 'confirm'`) and by `POST /billing/cleanup` (`via: 'cleanup'`). The confirm route is
+public and rate-limited (20/min); it **ignores the request body**, looks the row up by
+`provider_ref`, asks the provider (`getPaymentStatus()`, Monei `GET /payments/{id}`),
+refuses with 409 if the returned order is not the row's own, and settles from the provider's
+answer. The hosted page calls it after every `confirmPayment()` result and the Members App
+success page calls it for a 3DS return carrying the payment id; a failed confirmation never
+blocks the redirect. The settle transaction reads the row `FOR UPDATE` and decides
+`settleable` under that lock, so a webhook and a confirmation racing on one payment settle
+it once. The sections below describe the webhook as the first caller of that function.
 
 `POST /webhooks/payment` (`api/src/api/webhooks.ts`), mounted in `app.ts` **before**
 `express.json()` with `express.raw({ type: '*/*' })` so the HMAC can be verified against the
@@ -589,6 +602,12 @@ a `completed` transaction. There is no status column.
 > - **Poll every 60 s.** The number changes about once a night.
 
 ### B8. `POST /billing/cleanup`
+
+**Reconcile before expiring (#2087).** Before the abandoned-and-opened step writes a
+request off, cleanup asks the provider about up to 200 of them (`getPaymentStatus()`) and
+settles any with a definite outcome through `settlePaymentRequest()` (`reconciled` in the
+response). Still unfinished at the provider → expired as below; provider unreachable → the
+row stays `pending` for the next run; a full batch skips the expiry that run.
 
 `payment_requests` carries **two** deadlines and they are not interchangeable (#789,
 `api/src/domain/paymentRequestExpiry.ts`). `page_token_expires` (creation + 10 minutes)

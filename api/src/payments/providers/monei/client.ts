@@ -19,7 +19,15 @@ export class MoneiClient {
     return this.post<MoneiRecurringPaymentResponse>('/payments', body);
   }
 
+  async getPayment(id: string): Promise<MoneiPayment> {
+    return this.request<MoneiPayment>('GET', `/payments/${encodeURIComponent(id)}`);
+  }
+
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    return this.request<T>('POST', path, body);
+  }
+
+  private async request<T>(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
     const headers: Record<string, string> = {
       // MONEI's API expects the raw API key, not a Bearer-scheme token —
       // confirmed against the official SDK's setApiKeyToObject(), which
@@ -34,9 +42,9 @@ export class MoneiClient {
     if (this.accountId) headers['MONEI-Account-ID'] = this.accountId;
 
     const response = await fetch(`${MONEI_API_BASE}${path}`, {
-      method: 'POST',
+      method,
       headers,
-      body: JSON.stringify(body),
+      ...(body ? { body: JSON.stringify(body) } : {}),
     });
 
     if (!response.ok) {

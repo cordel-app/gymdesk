@@ -4,6 +4,8 @@ export interface MoneiPayment {
   status: string;
   amount: number;
   currency: string;
+  paymentToken?: string;
+  sequenceId?: string;
   nextAction?: {
     redirectUrl: string;
   };

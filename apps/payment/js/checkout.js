@@ -68,6 +68,23 @@
     }
   }
 
+  async function confirmWithApi(id) {
+    try {
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 8000);
+      var response = await fetch('/payment-page/payments/' + encodeURIComponent(id) + '/confirm', {
+        method: 'POST',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+      var body = await response.json();
+      return body && body.status ? body.status : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
   async function loadToken() {
     var token = getQueryParam('token');
     if (!token) {
@@ -207,7 +224,16 @@
         return;
       }
 
-      if (result.status === 'SUCCEEDED') {
+      // #2087: tell the API the payment has finished so it asks the provider
+      // and settles now, without waiting for the webhook. The body carries
+      // nothing — the browser is never the proof — and a failure here never
+      // blocks the redirect; the webhook is the fallback.
+      var outcome = await confirmWithApi(paymentId);
+      if (outcome === 'completed') {
+        redirect(okUrl);
+      } else if (outcome === 'failed' || outcome === 'expired') {
+        redirect(koUrl);
+      } else if (result.status === 'SUCCEEDED') {
         redirect(okUrl);
       } else {
         redirect(koUrl);

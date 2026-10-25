@@ -51,3 +51,13 @@ export function paymentErrorMessageKey(reason: string | null, purpose: string | 
   if (reason !== 'failed') return 'payment_error.not_completed';
   return purpose === 'card_update' ? 'payment_error.card_failed' : 'payment_error.failed';
 }
+
+/**
+ * #2087: the provider's payment id on a return URL (Monei appends it to
+ * `completeUrl`; both spellings are read). It is only ever used to ask the API
+ * to confirm with the provider — the page never settles anything from it.
+ */
+export function paymentIdFromReturn(params: { get(name: string): string | null }): string | null {
+  const id = params.get('payment_id') ?? params.get('id');
+  return id && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : null;
+}

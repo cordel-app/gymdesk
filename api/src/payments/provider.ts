@@ -21,5 +21,11 @@ export interface PaymentProvider {
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer
   ): Promise<WebhookPayload>;
+  /**
+   * #2087: ask the provider for a payment's current state. Returns the same
+   * normalised shape `parseWebhook()` does, so one settle function serves the
+   * webhook, the hosted page's confirmation and the cleanup reconciliation.
+   */
+  getPaymentStatus(providerRef: string): Promise<WebhookPayload>;
   executeRecurring(params: ExecuteRecurringParams): Promise<ExecuteRecurringResult>;
 }

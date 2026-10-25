@@ -109,7 +109,7 @@ function isBarePayment(body: unknown): body is MoneiCallbackPayment {
   return !('object' in b) && typeof b.id === 'string' && typeof b.status === 'string';
 }
 
-function chargePayload(charge: MoneiCallbackPayment, rawBody: Buffer): WebhookPayload {
+export function chargePayload(charge: MoneiCallbackPayment, rawBody?: Buffer): WebhookPayload {
   const status = MONEI_STATUS_MAP[charge.status] ?? 'failed';
   return {
     orderId: charge.orderId,

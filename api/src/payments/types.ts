@@ -42,7 +42,8 @@ export interface WebhookPayload {
   sequenceId: string | null;
   cardLast4: string | null;
   cardBrand: string | null;
-  rawBody: Buffer;
+  /** Present on a parsed webhook only; a status lookup has no raw body. */
+  rawBody?: Buffer;
   /**
    * The provider's own status, verbatim (#1325). `status` above is the internal
    * four-value mapping and collapses distinct outcomes — an unrecognised or

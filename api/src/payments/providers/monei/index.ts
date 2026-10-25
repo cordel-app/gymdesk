@@ -8,7 +8,7 @@ import type {
   ExecuteRecurringResult,
 } from '../../types';
 import { MoneiClient } from './client';
-import { verifyAndParseWebhook } from './webhook';
+import { chargePayload, verifyAndParseWebhook } from './webhook';
 
 export class MoneiProvider implements PaymentProvider {
   private readonly client: MoneiClient;
@@ -89,6 +89,12 @@ export class MoneiProvider implements PaymentProvider {
     rawBody: Buffer
   ): Promise<WebhookPayload> {
     return verifyAndParseWebhook(headers, rawBody, this.signingKeys);
+  }
+
+  /** #2087: GET /payments/{id}, mapped through the very function the webhook uses. */
+  async getPaymentStatus(providerRef: string): Promise<WebhookPayload> {
+    const payment = await this.client.getPayment(providerRef);
+    return chargePayload(payment as Parameters<typeof chargePayload>[0]);
   }
 
   async executeRecurring(params: ExecuteRecurringParams): Promise<ExecuteRecurringResult> {
