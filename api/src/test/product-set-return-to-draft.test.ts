@@ -133,4 +133,40 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     expect(await eventCount(expired.id)).toBe(0);
     expect(await st(failed.id)).toBe('pending_payment');
   });
+
+  it('Save & Pay stamps pending_at, and returning to Draft clears it', async () => {
+    const p = await pending();
+    const at = async () => (await db.query<any>('SELECT pending_at FROM product_sets WHERE id = ?', [p.id])).rows[0].pending_at;
+    expect(await at()).not.toBeNull();
+    await db.query(`UPDATE payment_requests SET status = 'failed' WHERE id = ?`, [p.requestId]);
+    expect((await auth(request.delete(`/product-sets/${p.id}`))).status).toBe(204);
+    expect(await at()).toBeNull();
+  });
+
+  it('the two-hour timer returns an unconfirmed checkout to Draft, and not before', async () => {
+    const late = await pending();
+    const early = await pending();
+    for (const x of [late, early]) await db.query(`UPDATE payment_requests SET status = 'failed' WHERE id = ?`, [x.requestId]);
+    await db.query(`UPDATE product_sets SET pending_at = UTC_TIMESTAMP() - INTERVAL 121 MINUTE WHERE id = ?`, [late.id]);
+    await db.query(`UPDATE product_sets SET pending_at = UTC_TIMESTAMP() - INTERVAL 90 MINUTE WHERE id = ?`, [early.id]);
+    await expirePendingPayments();
+    const st = async (id: number) => (await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id])).rows[0].status;
+    expect(await st(late.id)).toBe('draft');
+    expect(await eventCount(late.id)).toBe(0);
+    expect(await st(early.id)).toBe('pending_payment');
+  });
+
+  it('the timer never rolls back a payment whose outcome is unknown or that settled', async () => {
+    const unknown = await pending();
+    const paid = await pending();
+    await db.query(`UPDATE payment_requests SET provider_ref = 'x', status = 'pending', provider_status = NULL WHERE id = ?`, [unknown.requestId]);
+    await db.query(`UPDATE payment_requests SET status = 'completed' WHERE id = ?`, [paid.requestId]);
+    await db.query(`UPDATE product_sets SET pending_at = UTC_TIMESTAMP() - INTERVAL 300 MINUTE WHERE id IN (?, ?)`, [unknown.id, paid.id]);
+    await expirePendingPayments();
+    for (const x of [unknown, paid]) {
+      const { rows } = await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [x.id]);
+      expect(rows[0].status).toBe('pending_payment');
+      expect(await eventCount(x.id)).toBe(1);
+    }
+  });
 });
