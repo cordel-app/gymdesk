@@ -44,10 +44,21 @@ function restoreDefault(): void {
   if (original !== null) link.setAttribute('href', original);
 }
 
+/** Only an http(s) URL, re-serialised by the URL parser, ever reaches the link's href. */
+export function safeIconUrl(href: string): string | null {
+  try {
+    const u = new URL(href, window.location.href);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Applies `href` as the favicon; `null`, or a logo that fails to load, keeps the default. Returns a cancel function. */
 export function applyFavicon(href: string | null): () => void {
   if (typeof document === 'undefined') return () => {};
-  if (!href) {
+  const safe = href ? safeIconUrl(href) : null;
+  if (!safe) {
     restoreDefault();
     return () => {};
   }
@@ -61,12 +72,12 @@ export function applyFavicon(href: string | null): () => void {
       link.setAttribute('data-gd-favicon-default', link.getAttribute('href') ?? '');
     }
     link.removeAttribute('type');
-    link.setAttribute('href', href);
+    link.setAttribute('href', safe);
   };
   probe.onerror = () => {
     if (!cancelled) restoreDefault();
   };
-  probe.src = href;
+  probe.src = safe;
   return () => {
     cancelled = true;
   };

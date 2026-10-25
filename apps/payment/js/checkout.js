@@ -118,6 +118,11 @@
       gymLogoEl.alt = data.gymName || '';
       gymLogoEl.hidden = false;
       // #2094 — the tab icon is the gym's logo; a logo that fails to load keeps the default.
+      var iconUrl = null;
+      try {
+        var parsedIcon = new URL(data.logoUrl, window.location.href);
+        if (parsedIcon.protocol === 'https:' || parsedIcon.protocol === 'http:') iconUrl = parsedIcon.href;
+      } catch (e) { iconUrl = null; }
       var iconProbe = new Image();
       iconProbe.onload = function () {
         var icon = document.querySelector('link[rel~="icon"]');
@@ -127,9 +132,9 @@
           document.head.appendChild(icon);
         }
         icon.removeAttribute('type');
-        icon.href = data.logoUrl;
+        icon.href = iconUrl;
       };
-      iconProbe.src = data.logoUrl;
+      if (iconUrl) iconProbe.src = iconUrl;
     } else {
       gymLogoEl.hidden = true;
     }
