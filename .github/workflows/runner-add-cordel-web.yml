@@ -1,0 +1,26 @@
+name: Runner for cordel-web (TEMPORARY)
+
+# TEMPORARY: registers a second self-hosted runner on corfront for the private
+# repo cordel-app/cordel-web, by running infra/runner/install-runner-cordel-web.sh
+# on the existing corfront runner (no SSH). The registration token comes from the
+# repo secret RUNNER_REG_TOKEN (masked in logs), set just before a run and deleted
+# right after. workflow_dispatch only, so no pull request can trigger it
+# (api/src/test/self-hosted-runner-guard.unit.test.ts). Remove once the runner is
+# an organisation-level one.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: [self-hosted, corfront, dev]
+    environment: dev
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the cordel-web runner on corfront
+        env:
+          RUNNER_TOKEN: ${{ secrets.RUNNER_REG_TOKEN }}
+        run: bash infra/runner/install-runner-cordel-web.sh
