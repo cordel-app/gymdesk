@@ -1,6 +1,16 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
+import { PLATFORM_STORAGE_ROOT } from '../infra/storage';
+import {
+  isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit, parseMemberImageRequest,
+} from './member-image-storage';
+import {
+  PROFESSIONAL_SERVICE_IMAGE_COLUMNS,
+  clearProfessionalServiceImage,
+  migrateProfessionalServiceImageOnRename,
+  storeProfessionalServiceImage,
+} from './professional-service-image-storage';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { getRequestLocale as resolveLocale } from '../infra/locale';
@@ -30,6 +40,8 @@ interface Row {
   is_system: number;
   system_key: string | null;
   max_capacity: number | null;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -64,7 +76,7 @@ async function shape(rows: Row[], locale: string) {
 
 async function loadOne(id: unknown, locale: string) {
   const { rows } = await db.query<Row>(
-    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity,
+    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.image_url, ps.image_thumbnail_url,
             ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
        FROM professional_services ps WHERE ps.id = ? AND ${BASE_WHERE}`,
     [id],
@@ -95,7 +107,7 @@ platformProfessionalServicesRouter.get('/', requireSuperadmin, async (req, res, 
       params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
     const { rows } = await db.query<Row>(
-      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity,
+      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.image_url, ps.image_thumbnail_url,
               ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
          FROM professional_services ps WHERE ${where} ORDER BY ps.name ASC`,
       params,
@@ -193,6 +205,13 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
       );
       if (translations) await writeTranslations(tx, existing.id, translations);
     });
+    // #2010: the image key carries the service's name, so a rename moves it.
+    if (name !== existing.name && existing.image_url) {
+      await migrateProfessionalServiceImageOnRename(
+        { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
+        { id: existing.id, name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url },
+      );
+    }
     const row = await loadOne(existing.id, locale);
     recordAudit(req, { action: 'update', entityType: 'professional_service', entityId: String(existing.id), entityName: name, previous: existing, next: row });
     res.json(row);
@@ -200,6 +219,54 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
     if (err?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A professional service with this name already exists.' });
     next(err);
   }
+});
+
+// ─── Image (#2010) ────────────────────────────────────────────────────────────
+// The only writers of a Base service's `image_url` / `image_thumbnail_url`, under
+// `cordel/professional_services/`. Processing and limits are the Member photo's.
+
+async function loadBaseForImage(req: any, res: any) {
+  const { rows } = await db.query(
+    `SELECT ${PROFESSIONAL_SERVICE_IMAGE_COLUMNS} FROM professional_services ps WHERE ps.id = ? AND ${BASE_WHERE}`,
+    [req.params.id],
+  );
+  if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return null; }
+  return { id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url, image_thumbnail_url: rows[0].image_thumbnail_url };
+}
+
+platformProfessionalServicesRouter.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const service = await loadBaseForImage(req, res);
+    if (!service) return;
+    const stored = await storeProfessionalServiceImage({
+      scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT }, service, images: parsed,
+      modifiedBy: resolvePlatformActor(req.superadminName),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
+      previous: { image_url: service.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await loadOne(service.id, resolveLocale(req)));
+  } catch (err) { next(err); }
+});
+
+platformProfessionalServicesRouter.delete('/:id/image', requireSuperadmin, async (req, res, next) => {
+  try {
+    const service = await loadBaseForImage(req, res);
+    if (!service) return;
+    await clearProfessionalServiceImage({
+      scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT }, service,
+      modifiedBy: resolvePlatformActor(req.superadminName),
+    });
+    recordAudit(req, {
+      action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
+      previous: { image_url: service.image_url }, next: { image_url: null },
+    });
+    res.json(await loadOne(service.id, resolveLocale(req)));
+  } catch (err) { next(err); }
 });
 
 /** Names of the tables still holding a reference to the service (derived from the schema's own FKs). */

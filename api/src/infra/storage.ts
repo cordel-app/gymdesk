@@ -138,6 +138,8 @@ export const PROMOTIONS_FOLDER = 'promotions';
 export const PRODUCTS_FOLDER = 'products';
 /** #1765: the gym-level `calendar_events/` root, holding a Calendar Event's own image. */
 export const CALENDAR_EVENTS_FOLDER = 'calendar_events';
+/** #2010: a Professional Service's image folder, directly under the gym root (and under `cordel/` for a Base service). */
+export const PROFESSIONAL_SERVICES_FOLDER = 'professional_services';
 
 /**
  * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
@@ -228,6 +230,9 @@ const GYM_FOLDERS = [
   // #1765: the gym-level `calendar_events/` root, holding a Calendar Event's image.
   // Appended last, with its writer (`POST /(class-sessions|calendar-events)/:id/image`).
   `${CALENDAR_EVENTS_FOLDER}/`,
+  // #2010: the gym-level `professional_services/` root, holding a Professional
+  // Service's image. Appended last, with its writer (`POST /professional-services/:id/image`).
+  `${PROFESSIONAL_SERVICES_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;
