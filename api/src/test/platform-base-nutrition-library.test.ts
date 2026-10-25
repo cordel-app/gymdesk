@@ -1,5 +1,5 @@
 // #1849 stages F2-F2b: Cordel's Base Foods CRUD writes the base_nutrition_library_* tables
-// and mirrors every write onto the legacy System food of the same id.
+// and, since F5, writes nothing onto the legacy table.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -58,7 +58,7 @@ async function count(table: string, id: number) {
 }
 
 describe('platform foods on base_nutrition_library_items (#1849 F2)', () => {
-  it('create writes the Base row, its junctions and a legacy mirror under the same id', async () => {
+  it('create writes the Base row and its junctions, and no legacy row', async () => {
     const { rows: cats } = await db.query<any>("SELECT id FROM nutrition_library_categories WHERE slug = 'main_dish'");
     const { rows: quals } = await db.query<any>('SELECT id FROM nutritional_qualities ORDER BY id LIMIT 2');
     const res = await request.post('/platform/nutrition-library').set(H).send({
@@ -72,12 +72,12 @@ describe('platform foods on base_nutrition_library_items (#1849 F2)', () => {
     expect(res.body.description_translations.es).toBe('Descripción F2');
     const { rows } = await db.query<any>('SELECT name FROM base_nutrition_library_items WHERE id = ?', [createdId]);
     expect(rows[0].name).toBe(NAME);
-    expect(await legacy(createdId)).toMatchObject({ name: NAME, gym_id: null, status: 'active' });
+    expect(await legacy(createdId)).toBeUndefined();
     expect(await count('base_nutrition_library_item_categories', createdId)).toBe(1);
-    expect(await count('nutrition_library_item_categories', createdId)).toBe(1);
-    expect(await count('nutrition_library_item_qualities', createdId)).toBe(quals.length);
-    expect(await count('nutrition_library_item_translations', createdId)).toBe(1);
-    expect(await count('nutrition_library_item_description_translations', createdId)).toBe(1);
+    expect(await count('base_nutrition_library_item_qualities', createdId)).toBe(quals.length);
+    expect(await count('base_nutrition_library_item_translations', createdId)).toBe(1);
+    expect(await count('base_nutrition_library_item_description_translations', createdId)).toBe(1);
+    expect(await count('nutrition_library_item_categories', createdId)).toBe(0);
   });
 
   it('rejects a duplicate live name', async () => {
@@ -85,11 +85,12 @@ describe('platform foods on base_nutrition_library_items (#1849 F2)', () => {
     expect((await request.post('/platform/nutrition-library').set(H).send({ name: NAME, category_ids: [cats[0].id] })).status).toBe(409);
   });
 
-  it('update changes the Base row and the mirror; the list reads the Base table', async () => {
+  it('update changes the Base row; the list reads the Base table', async () => {
     const res = await request.put(`/platform/nutrition-library/${createdId}`).set(H)
       .send({ name: `${NAME} edited`, translations: { es: 'Editada F2' } });
     expect(res.status).toBe(200);
-    expect(await legacy(createdId)).toMatchObject({ name: `${NAME} edited` });
+    expect((await db.query<any>('SELECT name FROM base_nutrition_library_items WHERE id = ?', [createdId])).rows[0].name).toBe(`${NAME} edited`);
+    expect(await legacy(createdId)).toBeUndefined();
     await db.query("UPDATE base_nutrition_library_items SET description = 'only in base' WHERE id = ?", [createdId]);
     const list = await request.get('/platform/nutrition-library').query({ search: 'Food F2' }).set(H);
     expect(list.body.items.find((i: any) => i.id === createdId).description).toBe('only in base');
@@ -101,11 +102,11 @@ describe('platform foods on base_nutrition_library_items (#1849 F2)', () => {
     expect((await request.put(`/platform/nutrition-library/${own.insertId}`).set(H).send({ name: 'x' })).status).toBe(404);
   });
 
-  it('delete soft-deletes the Base row and the mirror', async () => {
+  it('delete soft-deletes the Base row', async () => {
     expect((await request.delete(`/platform/nutrition-library/${createdId}`).set(H)).status).toBe(204);
     const { rows } = await db.query<any>('SELECT deleted_at FROM base_nutrition_library_items WHERE id = ?', [createdId]);
     expect(rows[0].deleted_at).not.toBeNull();
-    expect((await legacy(createdId)).status).toBe('deleted');
+    expect(await legacy(createdId)).toBeUndefined();
     expect((await request.delete(`/platform/nutrition-library/${createdId}`).set(H)).status).toBe(409);
   });
 });

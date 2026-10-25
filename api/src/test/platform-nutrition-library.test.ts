@@ -818,7 +818,7 @@ describe('translations', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .send({ translations: { es: `Lentejas v1 ${suffix}` } });
     const { rows: first } = await db.query<{ created_at: string; modified_at: string | null }>(
-      "SELECT created_at, modified_at FROM nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
+      "SELECT created_at, modified_at FROM base_nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
       [itemId],
     );
 
@@ -827,7 +827,7 @@ describe('translations', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .send({ translations: { es: `Lentejas v2 ${suffix}` } });
     const { rows: second } = await db.query<{ created_at: string; modified_at: string | null }>(
-      "SELECT created_at, modified_at FROM nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
+      "SELECT created_at, modified_at FROM base_nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
       [itemId],
     );
     expect(new Date(second[0].created_at).getTime()).toBe(new Date(first[0].created_at).getTime());
@@ -913,7 +913,7 @@ describe('description and audit snapshot (#799)', () => {
 
     // `status` stays the flag every query filters on; `deleted_at` records when.
     const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by: string | null }>(
-      'SELECT status, deleted_at, deleted_by FROM nutrition_library_items WHERE id = ?',
+      "SELECT IF(deleted_at IS NULL, 'active', 'deleted') AS status, deleted_at, deleted_by FROM base_nutrition_library_items WHERE id = ?",
       [created.body.id],
     );
     expect(rows[0].status).toBe('deleted');

@@ -627,6 +627,17 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 
 ## 4. API surface
 
+- [ ] **Foods cut-over (#1849 F5).** Before migrations 333 (exclusive food references) and
+      334 (delete the legacy System rows of `nutrition_library_items`) run on a database that
+      holds real data: take a `mysqldump` of `nutrition_library_items`, its four
+      `nutrition_library_item_*` junctions, the `base_nutrition_library_*` tables and the six
+      plan reference tables (`member_nutrition_plan_meal_items`, `member_nutrition_plan_restrictions`,
+      `member_nutrition_plan_goals`, `nutrition_plan_template_meal_items`,
+      `nutrition_plan_template_restrictions`, `nutrition_plan_template_goals`), run
+      `npm run foods:audit-base-links` (every check OK; `legacy_system_rows_remaining` is
+      informational) and keep the dump until the deploy is verified. 333 refuses on an
+      inconsistent row; 334 refuses while anything references a legacy System food or a legacy
+      row differs from its Base twin.
 - [ ] **Nutrition Goals cut-over (#1849 N4).** Before migration 323 (delete the legacy System
       rows of `nutrition_goals`) runs on a database that holds real data: take a `mysqldump` of
       `nutrition_goals`, `nutrition_goal_translations`, `base_nutrition_goals` and
