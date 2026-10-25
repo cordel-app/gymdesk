@@ -413,8 +413,7 @@ to provision and rotate.
 >   manual dispatch. A nightly charge against Monei test keys proves nothing a manual run
 >   doesn't, and a red `dev` run at night trains people to ignore the email that means a
 >   member wasn't charged (#778).
-> - `ci.yml` and `debug-vps.yml` stay on `dev`: CI needs no production
->   secret, and the other is a debugging tool.
+> - `ci.yml` stays on `dev`: CI needs no production secret.
 > - `API_BASE_URL` is an environment **variable**, not a secret: a hostname is not a
 >   credential, and seeing it in the run log is how a run that hit the wrong API is
 >   diagnosed.
