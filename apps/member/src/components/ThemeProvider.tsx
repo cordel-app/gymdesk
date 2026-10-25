@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { DEFAULT_TOKENS, applyTokens, ThemeTokens } from '@/lib/themeTokens';
 import { applyMembersAppTokens } from '@/lib/membersAppTokens';
+import { applyFavicon, faviconHref } from '@/lib/favicon';
 import { CARD_TOUCH_CSS } from '@/lib/cardTouch';
 import { BUTTON_STATES_CSS } from '@/lib/buttonStates';
 import { InlineStyle } from './InlineStyle';
@@ -26,6 +27,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // source (the page background, the calendar surfaces, the titles) wins.
     applyMembersAppTokens(tokens);
   }, [theme?.id, theme?.tokens]);
+
+  // #2094 — the tab icon follows the gym's logo.
+  const faviconSrc = faviconHref(theme);
+  useEffect(() => applyFavicon(faviconSrc), [faviconSrc]);
 
   return (
     <>

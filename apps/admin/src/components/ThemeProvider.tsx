@@ -5,6 +5,7 @@ import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { DEFAULT_TOKENS, applyTokens } from '@/lib/themeTokens';
 import { saveThemeSnapshot } from '@/lib/themeSnapshot';
+import { applyFavicon, faviconHref } from '@/lib/favicon';
 
 /**
  * Writes theme CSS variables to <html> whenever the active gym or center changes.
@@ -28,6 +29,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (activeGym) saveThemeSnapshot(activeGym.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeGym?.theme?.id, activeGym?.id, activeGym?.theme?.tokens, activeCenterId, centers, loading]);
+
+  // #2094 — the tab icon follows the active gym's logo.
+  const faviconSrc = faviconHref(activeGym?.theme);
+  useEffect(() => applyFavicon(faviconSrc), [faviconSrc]);
 
   return <>{children}</>;
 }

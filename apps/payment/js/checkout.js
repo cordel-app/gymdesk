@@ -117,6 +117,19 @@
       gymLogoEl.src = data.logoUrl;
       gymLogoEl.alt = data.gymName || '';
       gymLogoEl.hidden = false;
+      // #2094 — the tab icon is the gym's logo; a logo that fails to load keeps the default.
+      var iconProbe = new Image();
+      iconProbe.onload = function () {
+        var icon = document.querySelector('link[rel~="icon"]');
+        if (!icon) {
+          icon = document.createElement('link');
+          icon.rel = 'icon';
+          document.head.appendChild(icon);
+        }
+        icon.removeAttribute('type');
+        icon.href = data.logoUrl;
+      };
+      iconProbe.src = data.logoUrl;
     } else {
       gymLogoEl.hidden = true;
     }
