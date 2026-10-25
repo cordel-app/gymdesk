@@ -37,6 +37,7 @@ import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
+import { MemberPayments } from './MemberPayments';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
@@ -823,6 +824,15 @@ export function MemberExpandedRow({
               can be edited (value and notes) or hard-deleted from their ⋮ menu. */}
           <Section label={t('members.section_progress')} divider={false}>
             <MemberProgress memberId={memberId} canWrite={canManageTraining} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'payments' && (
+        <>
+          {/* Payments (#2099) — read-only: actual billing events and their transactions. */}
+          <Section label={t('members.section_payments')} divider={false}>
+            <MemberPayments memberId={memberId} />
           </Section>
         </>
       )}

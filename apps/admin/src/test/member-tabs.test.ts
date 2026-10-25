@@ -66,7 +66,7 @@ function renderedSections(): string[] {
 describe('Member card tabs: the declaration (#961)', () => {
   it('is the tabs the tickets name, in its order', () => {
     expect(MEMBER_TABS.map((tab) => tab.id)).toEqual([
-      'profile', 'products_services', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress',
+      'profile', 'products_services', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress', 'payments',
     ]);
     expect(MEMBER_TAB_IDS).toEqual(MEMBER_TABS.map((tab) => tab.id));
     // Profile is what a Member opens on (§"Navigation behaviour").
@@ -98,6 +98,8 @@ describe('Member card tabs: the declaration (#961)', () => {
     expect(sectionsForTab('personal_goals')).toEqual(['section_personal_goals']);
     expect(sectionsForTab('training_plan')).toEqual(['section_training_plans']);
     expect(sectionsForTab('progress')).toEqual(['section_progress']);
+    // #2099: Payments sits immediately after Progress.
+    expect(sectionsForTab('payments')).toEqual(['section_payments']);
   });
 
   it('gives every section exactly one tab', () => {
@@ -176,7 +178,7 @@ describe('Member card tabs: only the selected tab renders (#961)', () => {
 describe('Member card tabs: the shared strip (#961)', () => {
   it('is the app\'s one tab component, rendered from MEMBER_TABS', () => {
     expect(pageSrc).toContain('<Tabs');
-    expect(pageSrc).toContain('tabs={MEMBER_TABS}');
+    expect(pageSrc).toContain('tabs={MEMBER_TABS.filter(');
     expect(pageSrc).toContain("from '@/components/Tabs'");
     // Promoted out of the Nutrition Library's own strip rather than copied:
     // one tab look and one keyboard implementation in the app.
