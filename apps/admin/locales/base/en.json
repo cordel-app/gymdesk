@@ -4186,7 +4186,7 @@
     "waitlist_inherited": "inherited from the activity",
     "event_eligible_services": "Eligible Professional Services",
     "eligible_services_any": "Any member",
-    "eligible_services_inherited": "inherited from the activity",
+    "eligible_services_inherited": "Inherited from the activity",
     "eligible_services_hint": "A member needs available sessions for at least one selected service. Select none to let any member book this event.",
     "waitlist_mode_disabled": "Disabled",
     "waitlist_mode_open": "Open",

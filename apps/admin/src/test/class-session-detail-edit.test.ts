@@ -135,9 +135,12 @@ describe('Class session detail panel: Edit mode (#980 stage 1)', () => {
 
 describe('Class session detail panel: Eligible Professional Services (#980 stage 3)', () => {
   it('shows the effective list as a value in read-only mode, and a checkbox list only in Edit mode', () => {
-    const readOnlyBlock = panelSrc.slice(panelSrc.indexOf('{!editingDetails && ('), panelSrc.indexOf('{editingDetails && ('));
+    const readOnlyBlock = panelSrc.slice(panelSrc.indexOf('showRows={!editingDetails}'), panelSrc.indexOf('{editingDetails && ('));
     expect(readOnlyBlock).toContain("t('event_eligible_services')");
     expect(readOnlyBlock).not.toContain('session-eligible-');
+    // #1984 — a bullet per service and a chip, not a comma list with inline text.
+    expect(readOnlyBlock).toContain('<ul');
+    expect(readOnlyBlock).toContain('listNameBadgeStyle');
     const editBlock = panelSrc.slice(panelSrc.indexOf('{editingDetails && ('));
     expect(editBlock).toContain('session-eligible-');
     expect(editBlock).toContain('type="checkbox"');
