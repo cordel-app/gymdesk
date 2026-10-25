@@ -7,7 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 import { InlineStyle } from '@/components/InlineStyle';
-import { isFailedPaymentReturn, paymentErrorPath } from '@/lib/paymentReturn';
+import { isFailedPaymentReturn, paymentConfirmPath, paymentErrorPath, returnedPaymentId } from '@/lib/paymentReturn';
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 30000;
@@ -28,6 +28,9 @@ export default function PaymentSuccessPage() {
   // declined card or a failed 3D Secure check never becomes a completed
   // request, so polling for one would only end in the timeout.
   const failed = isFailedPaymentReturn(searchParams.get('status'));
+  // #2087: after a 3DS redirect the hosted page never got to confirm, so the
+  // return does it — the API settles from MONEI's answer, never from this URL.
+  const paymentId = returnedPaymentId(searchParams.get('id'));
   const [status, setStatus] = useState<'processing' | 'done' | 'timeout'>('processing');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,6 +38,9 @@ export default function PaymentSuccessPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
+    if (paymentId) {
+      apiFetch(paymentConfirmPath(paymentId), { method: 'POST' }).catch(() => {});
+    }
     if (failed) { router.replace(paymentErrorPath(locale, purpose)); return; }
 
     const settled = () => {
@@ -66,7 +72,7 @@ export default function PaymentSuccessPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [appLoading, isLinked, locale, isCardUpdate, failed, purpose]);
+  }, [appLoading, isLinked, locale, isCardUpdate, failed, purpose, paymentId]);
 
   return (
     <main style={styles.container}>

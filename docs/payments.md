@@ -186,6 +186,21 @@ The page then renders Monei's `CardInput`, requires the consent checkbox, and ca
 `monei.confirmPayment()`; 3DS happens inside Monei. Card data never reaches a Gymdesk
 server.
 
+**The page confirms the payment with the API as soon as `confirmPayment()` resolves**
+(#2087), whatever status it resolved with: `POST /payment-page/payments/:paymentId/confirm`
+(`api/src/api/payment-page.ts`, no auth, 20 req/min per IP, through the same `/payment-page/`
+proxy). The API reads the payment **back from MONEI** (`getPaymentStatus()`, `GET
+/v1/payments/{id}` with our API key), checks that MONEI's `orderId` is the row's
+`provider_order` (409 otherwise) and settles through §A5's `settlePaymentRequest()`. The
+request body is never read — the browser's status is a prompt to ask MONEI, never evidence.
+The page waits at most 8 s for the answer: `completed` goes to the OK page, `failed` /
+`expired` to the KO page, and anything else (`pending`, `502 { status: 'unknown' }` when MONEI
+cannot be reached, a timeout) falls back to MONEI's own result, as before. When
+`confirmPayment()` returns a 3DS redirect instead, the page leaves and the **Members App's
+return page** makes the same call with the `id` MONEI appends to `completeUrl`
+(`returnedPaymentId()` in `apps/member/src/lib/paymentReturn.ts`). The webhook stays the
+fallback (§A5).
+
 **The return carries no locale** (#1081). `okUrl`/`koUrl` are `PAYMENT_OK_URL` /
 `PAYMENT_KO_URL` verbatim (plus `purpose=card_update` where `withPurposeParam()` appends
 it), and those are **one deploy-time value for every member of every gym** — so the API
@@ -247,6 +262,33 @@ The relay is one `location = /webhooks/payment` block in
 Nothing below this paragraph changes with the relay — the route, its branches and its
 idempotency are what they were.
 
+**One settle function, three callers** (#2087). Everything the webhook does after
+`parseWebhook()` is `settlePaymentRequest()` in `api/src/api/payment-settlement.ts`, and it is
+called by:
+
+- the webhook (`via: 'webhook'`), with the payload exactly as before;
+- the hosted page's confirmation (`via: 'confirm'`, §A4) and the cleanup (`via: 'cleanup'`,
+  §B8), both through `settleFromProviderLookup()` with the payment the API **read back**.
+  A read is judged by MONEI's raw status through `classifyProviderStatus()`
+  (`domain/providerPaymentStatus.ts`) instead of the adapter's four-value map, which reads
+  `PENDING_PROCESSING` and anything unknown as `failed`: asking a moment after the card was
+  submitted is exactly when an in-flight status is likely. Only `settled` (completed) and
+  `unsuccessful` (failed / expired) move a row; in flight, refunded and unknown write nothing.
+
+Whichever arrives first settles; the others find the row `completed` and skip it. The row is
+read **`FOR UPDATE` inside the transaction that settles it** — until #2087 it was read
+outside the transaction with no lock, so two deliveries landing together could both pass the
+check below and the branch that records a request with no Billing Event wrote two. Every log
+line carries `via`.
+
+> **Decisions (2026-10-25, #2087)** — change them here if they turn out wrong:
+> - The page confirms after **every** `confirmPayment()` result, not only `SUCCEEDED`, so a
+>   failure is recorded at once too.
+> - One public confirm route serves the hosted page and the Members App's 3DS return page.
+> - The confirm route answers a row already `completed` or `failed` from our row, without
+>   asking MONEI again.
+> - No migration and no stored "confirmed via" column: `via` is a log field.
+
 - `parseWebhook()` verifies the HMAC as its **first** operation
   (`api/src/payments/providers/monei/webhook.ts`: `HMAC-SHA256` over `${t}.${rawBody}`,
   compared with `crypto.timingSafeEqual`). Invalid ⇒ `400`, **no DB query at all**.
@@ -284,7 +326,7 @@ Then, by branch:
 | `failed` / `expired` | `payment_requests.status` and `provider_ref` only — and only on a row still `pending`, since a terminal row is never revived by a non-`completed` payload |
 | `pending` | **nothing** — an intermediate status must not flip the row, or the guard above would strand it before the real outcome arrives |
 
-The `completed` transaction (`webhooks.ts`, the `completed` branch):
+The `completed` transaction (`payment-settlement.ts`, the `completed` branch):
 
 1. `payment_requests` → `status = 'completed'`, `provider_ref`, `completed_at`;
 2. a `payment_recorded` Billing Event (`source = 'provider'`, `created_by` = `System`) carrying
@@ -617,7 +659,27 @@ The grace period is `abandonedRequestHours()` — `PAYMENT_REQUEST_ABANDONED_HOU
 a checkout takes. It is added in SQL, keeping the comparison in the same UTC clock
 `page_token_expires` was written against.
 
-Answers `{ expired, expired_unopened, expired_abandoned, purchases_cancelled }`. **`expired` stays the total**,
+**Before writing an opened request off, cleanup asks MONEI** (#2087,
+`reconcileAbandonedRequests()` in `api/src/api/payment-settlement.ts`). The opened rows past the
+window that carry a `provider_ref` are read back, at most `RECONCILE_BATCH_SIZE` (200) per run:
+
+- MONEI says it succeeded → settled as completed (`via: 'cleanup'`), plan activated, never
+  expired — this is the member who paid while the webhook was lost, whom the old statement
+  expired and `expirePendingPayments()` then returned to Draft, deleting the request and the
+  Billing Event;
+- MONEI says it failed / expired / was cancelled → settled with that outcome;
+- MONEI still reports no outcome (or names another order) → expired by the statement above,
+  as before;
+- MONEI cannot be reached, or the row is past the batch → left `pending` for the next run.
+
+The second statement therefore only expires rows with no `provider_ref` or rows MONEI was asked
+about and still reports pending. `reconciled` counts the rows MONEI's answer settled.
+
+> **Decisions (2026-10-25, #2087)**: at most 200 lookups per run; a request MONEI still reports
+> pending after the window is expired as before; an unreachable MONEI leaves the row for the
+> next run (it runs twice a day, #781).
+
+Answers `{ expired, expired_unopened, expired_abandoned, reconciled, purchases_cancelled }`. **`expired` stays the total**,
 because `.github/workflows/billing-run.yml` parses that field by name (#778); the two
 components are reported beside it, not instead of it. It runs twice a day because the
 workflow does (#781), which is harmless: expiring stale pending requests is idempotent.
@@ -1194,6 +1256,14 @@ amount, back-linked both ways; a `payment_methods` row; and `next_billing_date` 
 With a back-dated `starts_at`, expect instead the first `starts_at + n·cadence` **after**
 today (#790) — never a date in the past — and the next run to charge nothing for it.
 
+**5b. Settled without the webhook (#2087).** Repeat 3–4 with `PAYMENT_NOTIFICATION_URL`
+pointing at a URL that does not answer (or the tunnel stopped). Expect the request to be
+`completed` and the plan active the moment the page redirects, and the API log to carry
+`Payment settlement: completed` with `via: "confirm"`. With a 3DS card, expect the same line
+when the Members App's success page loads, and check that MONEI's `completeUrl` redirect
+carries the payment `id` in its query — the return page confirms with it. Restore the
+notification URL and let MONEI retry: the webhook logs `already processed, skipping`.
+
 **6. Declined first payment.** Repeat 3–4 with a Monei test card that **declines**. Expect
 the request to end `failed` and — correctly — **no** `billing_events` row at all, which is
 why a failed first payment is invisible to the staff ledger (#779 Q2).
@@ -1334,7 +1404,7 @@ differently.
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
 | [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |
 | [#790](https://github.com/cordel-app/gymdesk/issues/790) | ✅ done — the first `next_billing_date` (and a reactivated one) is the first boundary after today; elapsed and paused cycles are written off |
-| — | No reconciliation job against the provider. `POST /payments` (the staff ledger write) records a charge or a cash payment; nothing reads the provider back to confirm our rows agree with it. |
+| — | Partly closed by [#2087](https://github.com/cordel-app/gymdesk/issues/2087): a first payment is read back from the provider when the hosted page finishes and before cleanup writes an opened request off (§A4, §B8). There is still no job that compares settled rows, recurring (MIT) charges or refunds against the provider. |
 
 Production-readiness items (live credentials, Monei AoC, SRI for `monei.js`, the dedicated
 `fitness-pay` VPS) are tracked in `docs/go-to-production.md` §5, not here.

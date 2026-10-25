@@ -51,3 +51,23 @@ export function paymentErrorMessageKey(reason: string | null, purpose: string | 
   if (reason !== 'failed') return 'payment_error.not_completed';
   return purpose === 'card_update' ? 'payment_error.card_failed' : 'payment_error.failed';
 }
+
+/** A MONEI payment id, as the API's confirm route accepts it (#2087). */
+const RETURNED_PAYMENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * #2087: the MONEI payment id the provider appends to the return (`?id=…`),
+ * or null when there is none or it is not shaped like one. The return page
+ * hands it to the API's confirm route, which reads the payment back from
+ * MONEI — the id is a lookup key, never evidence of the outcome.
+ */
+export function returnedPaymentId(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const trimmed = id.trim();
+  return RETURNED_PAYMENT_ID.test(trimmed) ? trimmed : null;
+}
+
+/** The API path that settles a returned payment from MONEI's own answer. */
+export function paymentConfirmPath(paymentId: string): string {
+  return `/payment-page/payments/${encodeURIComponent(paymentId)}/confirm`;
+}

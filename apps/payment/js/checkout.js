@@ -181,6 +181,30 @@
     if (consentEl.checked) enableIframe();
   });
 
+  // #2087: asks the API to settle the payment from MONEI's answer. Resolves
+  // to the API's status (`completed`, `failed`, `expired`, `pending`) or null
+  // when it could not be reached in time — never throws, so a slow or failed
+  // confirmation can delay the redirect by at most CONFIRM_TIMEOUT_MS and
+  // never block it. The webhook remains the fallback either way.
+  var CONFIRM_TIMEOUT_MS = 8000;
+  async function confirmWithApi(id) {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, CONFIRM_TIMEOUT_MS) : null;
+    try {
+      var response = await fetch('/payment-page/payments/' + encodeURIComponent(id) + '/confirm', {
+        method: 'POST',
+        signal: controller ? controller.signal : undefined,
+      });
+      if (!response.ok) return null;
+      var body = await response.json();
+      return body && typeof body.status === 'string' ? body.status : null;
+    } catch (err) {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   formEl.addEventListener('submit', async function (event) {
     event.preventDefault();
     if (!consentEl.checked || !cardInput || !paymentId) return;
@@ -207,7 +231,17 @@
         return;
       }
 
-      if (result.status === 'SUCCEEDED') {
+      // #2087: tell the API the payment has finished, so it settles it from
+      // MONEI's own answer now rather than waiting for the webhook. The API
+      // never takes our word for the outcome — it reads the payment back from
+      // MONEI — so its answer decides where to go when it has one, and
+      // MONEI's result here is the fallback when it has none.
+      var confirmed = await confirmWithApi(paymentId);
+      if (confirmed === 'completed') {
+        redirect(okUrl);
+      } else if (confirmed === 'failed' || confirmed === 'expired') {
+        redirect(koUrl);
+      } else if (result.status === 'SUCCEEDED') {
         redirect(okUrl);
       } else {
         redirect(koUrl);

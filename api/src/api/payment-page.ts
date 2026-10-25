@@ -3,6 +3,8 @@ import rateLimit from 'express-rate-limit';
 import { db } from '../infra/db';
 import { CARD_UPDATE_SOURCE, withPurposeParam, type PaymentPagePurpose } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
+import { getPaymentProvider } from '../payments';
+import { settleFromProviderLookup } from './payment-settlement';
 
 export const paymentPageRouter = Router();
 
@@ -149,5 +151,78 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
     });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+const confirmRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many requests' }),
+});
+
+/** A MONEI payment id: letters, digits, `_` and `-` (anything else names no row). */
+const PROVIDER_PAYMENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * #2087: the hosted page calls this once `monei.confirmPayment()` resolves —
+ * whatever status it resolved with — and the Members App's return page calls
+ * it after a 3DS redirect. It settles the payment **from MONEI's own answer**:
+ * the request body is never read, the API reads the payment back with
+ * `getPaymentStatus()` and hands that payload to the same
+ * `settlePaymentRequest()` the webhook uses. The webhook stays the fallback
+ * (recurring charges, a closed tab, a confirmation that failed) and finds the
+ * row already settled when it arrives.
+ *
+ * No auth: the MONEI payment id is handed only to whoever opened the single-use
+ * page token, guessing one costs at most a lookup, and only MONEI's answer
+ * moves a row.
+ *
+ * Answers `{ status }`: `completed` / `failed` / `expired` once the row holds
+ * an outcome, `pending` while MONEI has none (nothing written), and
+ * `502 { status: 'unknown' }` when MONEI cannot be reached (nothing written).
+ */
+paymentPageRouter.post('/payments/:paymentId/confirm', confirmRateLimit as any, async (req: Request, res: Response) => {
+  const paymentId = String(req.params.paymentId);
+  if (!PROVIDER_PAYMENT_ID.test(paymentId)) return res.status(404).json({ error: 'Not found' });
+
+  try {
+    const { rows } = await db.query<{ status: string; provider_order: string }>(
+      `SELECT status, provider_order FROM payment_requests WHERE provider_ref = ? ORDER BY id DESC LIMIT 1`,
+      [paymentId],
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'Not found' });
+
+    // A row the provider has already settled for good needs no second lookup.
+    if (row.status === 'completed' || row.status === 'failed') {
+      return res.json({ status: row.status });
+    }
+
+    let payload;
+    try {
+      payload = await getPaymentProvider().getPaymentStatus(paymentId);
+    } catch (err) {
+      req.log.warn({ paymentId, err: (err as Error).message }, 'Payment confirm: provider lookup failed');
+      return res.status(502).json({ status: 'unknown' });
+    }
+
+    // The provider's payment must be the one this row was created for.
+    if (payload.orderId !== row.provider_order) {
+      req.log.error({ paymentId }, 'Payment confirm: provider order id does not match the payment request');
+      return res.status(409).json({ error: 'Payment does not match' });
+    }
+
+    const outcome = await settleFromProviderLookup(payload, { via: 'confirm', log: req.log });
+    switch (outcome.kind) {
+      case 'settled': return res.json({ status: outcome.status });
+      case 'already_processed': return res.json({ status: outcome.status });
+      case 'intermediate': return res.json({ status: 'pending' });
+      default: return res.status(404).json({ error: 'Not found' });
+    }
+  } catch (err) {
+    req.log.error({ paymentId, err: (err as Error).message }, 'Payment confirm processing error');
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });

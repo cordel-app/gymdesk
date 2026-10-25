@@ -210,3 +210,43 @@ describe('verifyAndParseWebhook() — the payment callback', () => {
     expect(() => verifyAndParseWebhook(sign(raw, ''), raw, ['', ''])).toThrow('Invalid webhook signature');
   });
 });
+
+describe('MoneiProvider.getPaymentStatus() (#2087)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the payment back with the API key and maps it as a callback would be', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: 'pay_123', orderId: 'order-1', status: 'SUCCEEDED', amount: 3000, currency: 'EUR',
+      paymentToken: 'tok_1', sequenceId: 'seq_1', paymentMethod: { card: { last4: '4242', brand: 'visa' } },
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { MoneiProvider } = await import('../payments/providers/monei');
+
+    const payload = await new MoneiProvider('api-key', 'secret', 'acc_9').getPaymentStatus('pay_123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.monei.com/v1/payments/pay_123');
+    expect(init.method).toBe('GET');
+    expect(init.headers).toMatchObject({ Authorization: 'api-key', 'MONEI-Account-ID': 'acc_9' });
+    expect(payload).toMatchObject({
+      orderId: 'order-1', status: 'completed', providerRef: 'pay_123', providerStatus: 'SUCCEEDED',
+      paymentToken: 'tok_1', sequenceId: 'seq_1', cardLast4: '4242', cardBrand: 'visa',
+    });
+  });
+
+  it('keeps an unrecognised status verbatim beside the internal mapping', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'pay_1', orderId: 'o', status: 'PENDING_PROCESSING' }))));
+    const { MoneiProvider } = await import('../payments/providers/monei');
+    const payload = await new MoneiProvider('k', 's').getPaymentStatus('pay_1');
+    expect(payload.providerStatus).toBe('PENDING_PROCESSING');
+  });
+
+  it('throws when MONEI answers an error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
+    const { MoneiProvider } = await import('../payments/providers/monei');
+    await expect(new MoneiProvider('k', 's').getPaymentStatus('pay_x')).rejects.toThrow(/404/);
+  });
+});

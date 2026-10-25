@@ -109,7 +109,12 @@ function isBarePayment(body: unknown): body is MoneiCallbackPayment {
   return !('object' in b) && typeof b.id === 'string' && typeof b.status === 'string';
 }
 
-function chargePayload(charge: MoneiCallbackPayment, rawBody: Buffer): WebhookPayload {
+/**
+ * One MONEI Payment as the normalised payload — shared by the webhook and by
+ * `getPaymentStatus()` (#2087), so a callback and a lookup cannot read the
+ * same payment two ways.
+ */
+export function chargePayload(charge: MoneiCallbackPayment, rawBody?: Buffer): WebhookPayload {
   const status = MONEI_STATUS_MAP[charge.status] ?? 'failed';
   return {
     orderId: charge.orderId,
