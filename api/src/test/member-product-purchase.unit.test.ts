@@ -272,10 +272,12 @@ describe('the vocabulary matches its CHECKs (migration 228)', () => {
 
 describe('a purchase is not a membership cycle (the money paths)', () => {
   const webhook = () => {
-    const source = read(REPO, 'api', 'src', 'api', 'webhooks.ts');
+    // #2087: the webhook's settlement lives in payment-settlement.ts, shared
+    // with the hosted page's confirmation and the cleanup.
+    const source = read(REPO, 'api', 'src', 'api', 'payment-settlement.ts');
     const start = source.indexOf("payload.status === 'completed' && pr.source === PRODUCT_PURCHASE_SOURCE");
     expect(start).toBeGreaterThan(0);
-    return source.slice(start, source.indexOf("} else if (payload.status === 'completed') {", start));
+    return source.slice(start, source.indexOf("if (payload.status === 'completed') {", start));
   };
 
   // Each of these would be wrong in a way nothing fails on: a card stored from
@@ -304,7 +306,7 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
   });
 
   it('a failed or expired payment cancels the purchase', () => {
-    const source = read(REPO, 'api', 'src', 'api', 'webhooks.ts');
+    const source = read(REPO, 'api', 'src', 'api', 'payment-settlement.ts');
     const branch = source.slice(source.indexOf("payload.status === 'failed' || payload.status === 'expired'"));
     expect(branch.slice(0, 900)).toContain('cancelProductPurchase');
   });

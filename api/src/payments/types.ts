@@ -42,7 +42,8 @@ export interface WebhookPayload {
   sequenceId: string | null;
   cardLast4: string | null;
   cardBrand: string | null;
-  rawBody: Buffer;
+  /** The signed bytes of a webhook; absent for a payment read back with `getPaymentStatus()` (#2087). */
+  rawBody?: Buffer;
   /**
    * The provider's own status, verbatim (#1325). `status` above is the internal
    * four-value mapping and collapses distinct outcomes — an unrecognised or

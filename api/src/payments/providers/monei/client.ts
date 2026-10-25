@@ -19,7 +19,23 @@ export class MoneiClient {
     return this.post<MoneiRecurringPaymentResponse>('/payments', body);
   }
 
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  /**
+   * #2087: reads one payment back from MONEI — what the hosted page's
+   * confirmation and the cleanup ask instead of waiting for the callback.
+   */
+  async getPayment(id: string): Promise<MoneiPayment> {
+    const response = await fetch(`${MONEI_API_BASE}/payments/${encodeURIComponent(id)}`, {
+      method: 'GET',
+      headers: this.headers(),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Monei API error ${response.status}: ${text}`);
+    }
+    return response.json() as Promise<MoneiPayment>;
+  }
+
+  private headers(): Record<string, string> {
     const headers: Record<string, string> = {
       // MONEI's API expects the raw API key, not a Bearer-scheme token —
       // confirmed against the official SDK's setApiKeyToObject(), which
@@ -32,10 +48,13 @@ export class MoneiClient {
     // Merchant operations (creating a payment) need the target merchant
     // sub-account named explicitly, or the request 401s.
     if (this.accountId) headers['MONEI-Account-ID'] = this.accountId;
+    return headers;
+  }
 
+  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const response = await fetch(`${MONEI_API_BASE}${path}`, {
       method: 'POST',
-      headers,
+      headers: this.headers(),
       body: JSON.stringify(body),
     });
 

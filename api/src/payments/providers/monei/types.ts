@@ -7,6 +7,8 @@ export interface MoneiPayment {
   nextAction?: {
     redirectUrl: string;
   };
+  paymentToken?: string;
+  sequenceId?: string;
   paymentMethod?: {
     card?: {
       last4: string;

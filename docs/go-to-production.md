@@ -900,6 +900,12 @@ runbook is how.
       redirect; (c) a signed-out return being sent to sign-in and brought back to the right
       localized page. Both pages are deliberately not public — each polls an authenticated
       route.
+- [ ] **#2087 — confirm the payment read-back against the live account.** With the live
+      key (and `MONEI_ACCOUNT_ID` for a Connect partner key), `GET /v1/payments/{id}` must
+      answer for a merchant payment, or every hosted-page confirmation answers `502` and
+      payments fall back to the webhook alone. Also confirm, on a 3DS payment, that the
+      redirect to `PAYMENT_OK_URL` carries the payment `id` in its query (the Members App's
+      return page confirms with it; with no `id` it only polls, as before). Runbook step 5b.
 - [ ] **corfront env from GitHub — the variables each corfront deploy now requires, per
       environment.** `deploy-admin.yml` / `deploy-member.yml` need the variable
       `CORDEL_FITNESS_API_URL` (the API's address as corfront reaches it) and the secret

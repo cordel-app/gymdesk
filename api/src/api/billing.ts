@@ -7,6 +7,7 @@ import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log'
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { expireDrafts, expirePendingPayments } from './product-sets';
+import { reconcileAbandonedRequests } from './payment-settlement';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
 // stage 11 (see that module for why), and is re-exported here so every caller
@@ -190,6 +191,9 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
  *    long window below, counted from the token's own TTL, so a terminal webhook
  *    can still land on it. Past that the provider never resolved it and the row
  *    is written off.
+ *    Since #2087 the provider is asked first (`reconcileAbandonedRequests()`):
+ *    a request it reports as paid is settled instead, and only one it still
+ *    reports with no outcome is written off.
  *
  * `expired` stays the total, because `.github/workflows/billing-run.yml` parses
  * that field (#778); the two components are reported beside it.
@@ -212,13 +216,23 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // The grace period is added in SQL so the comparison stays in the database's
     // UTC clock, the same one `page_token_expires` was written against.
     const hours = abandonedRequestHours();
+    // #2087: the provider is asked first. A request it reports as settled is
+    // settled from its answer instead of being written off; one it still
+    // reports pending is in `writeOff` and expires below as before; one it
+    // could not be asked about stays pending for the next run. A request with
+    // no provider payment id has nothing to ask and expires as before.
+    const { reconciled, writeOff } = await reconcileAbandonedRequests(hours, req.log);
+    const writeOffClause = writeOff.length > 0
+      ? `(provider_ref IS NULL OR id IN (${writeOff.map(() => '?').join(',')}))`
+      : 'provider_ref IS NULL';
     const { rowCount: abandoned } = await db.query(
       `UPDATE payment_requests
        SET status = 'expired', modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE status = 'pending'
          AND page_token IS NULL
-         AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)`,
-      [SYSTEM_ACTOR, hours],
+         AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+         AND ${writeOffClause}`,
+      [SYSTEM_ACTOR, hours, ...writeOff],
     );
 
     // #1121 stage 2: a product purchase whose payment is over has to stop being
@@ -239,13 +253,15 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
 
     const expired = unopened + abandoned;
     req.log.info(
-      { expired, unopened, abandoned, abandonedAfterHours: hours, purchasesCancelled },
+      { expired, unopened, abandoned, reconciled, abandonedAfterHours: hours, purchasesCancelled },
       'payment_requests cleanup: expired rows',
     );
     const cleanupBody = {
       expired,
       expired_unopened: unopened,
       expired_abandoned: abandoned,
+      // #2087: opened requests the provider's answer settled instead of being expired.
+      reconciled,
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
       pending_returned_to_draft: pendingReturned,
