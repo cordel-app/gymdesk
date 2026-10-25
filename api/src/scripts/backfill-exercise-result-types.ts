@@ -11,6 +11,7 @@
  */
 import 'dotenv/config';
 import { db } from '../infra/db';
+import { BASE_EXERCISE_TABLES } from '../domain/exerciseTables';
 import { isExerciseCategory } from '../domain/exerciseCategories';
 import { derivedResultTypeIds, syncExerciseResultTypes } from '../api/exercise-result-types';
 
@@ -35,7 +36,12 @@ async function main() {
       if (derived.join(',') === current.join(',')) { unchanged += 1; return; }
       changed += 1;
       console.log(`${execute ? 'update' : 'would update'} #${r.id} ${r.name} [${r.category}]: ${current.join(',') || '(none)'} -> ${derived.join(',')}`);
-      if (execute) await syncExerciseResultTypes(tx, r.id, r.category);
+      if (execute) {
+        await syncExerciseResultTypes(tx, r.id, r.category);
+        // #1849 E2: a System exercise's metrics are the Base table's; the legacy row mirrors it.
+        const { rows: base } = await tx.query('SELECT id FROM base_exercises WHERE id = ?', [r.id]);
+        if (base.length) await syncExerciseResultTypes(tx, r.id, r.category, BASE_EXERCISE_TABLES);
+      }
     });
   }
   console.log(`\n${execute ? 'Executed' : 'Dry run'}: ${changed} changed, ${unchanged} already correct, ${skipped} skipped (unsupported category).`);

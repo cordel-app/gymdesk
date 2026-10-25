@@ -1,6 +1,6 @@
 // Tests for exercises.ts router
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, beforeEach } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -8,6 +8,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  syncLegacySystemExercisesToBase,
 } from './helpers';
 
 // Single top-level afterAll — runs after all describe blocks in this file.
@@ -17,6 +18,8 @@ afterAll(async () => {
 });
 
 // ─── GET /exercises ────────────────────────────────────────────────────────────
+
+beforeEach(async () => { await syncLegacySystemExercisesToBase(); });
 
 describe('GET /exercises', () => {
   let gymId: string;
@@ -604,6 +607,7 @@ describe('GET /exercises/base', () => {
       [name, status],
     );
     baseIds.push(insertId);
+    await syncLegacySystemExercisesToBase();
     return insertId;
   }
 
@@ -648,6 +652,7 @@ describe('GET /exercises/base', () => {
     await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
 
   function get(path: string, gym = gymId) {
@@ -794,6 +799,7 @@ describe('POST /exercises/import', () => {
       [name, status],
     );
     baseIds.push(insertId);
+    await syncLegacySystemExercisesToBase();
     return insertId;
   }
 
@@ -830,6 +836,7 @@ describe('POST /exercises/import', () => {
     await db.query(`DELETE FROM exercise_allowed_result_types WHERE exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
 
   function post(body: unknown, gym = gymId) {
@@ -983,6 +990,7 @@ describe('GET /exercises: non-imported base exercises are not listed (#804)', ()
       [name, status],
     );
     baseIds.push(insertId);
+    await syncLegacySystemExercisesToBase();
     return insertId;
   }
 
@@ -1008,6 +1016,7 @@ describe('GET /exercises: non-imported base exercises are not listed (#804)', ()
     await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
     await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM base_exercises WHERE id IN (${marks})`, baseIds);
   });
 
   function get(path: string) {

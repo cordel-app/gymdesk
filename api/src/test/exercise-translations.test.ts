@@ -21,6 +21,8 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  deleteBaseExercises,
+  syncLegacySystemExercisesToBase,
 } from './helpers';
 
 const NAME_PREFIX = 'Zz967 ';
@@ -58,6 +60,7 @@ async function createBaseExercise(name: string, translations: Record<string, str
       [insertId, locale, value],
     );
   }
+  await syncLegacySystemExercisesToBase();
   return insertId;
 }
 
@@ -79,15 +82,17 @@ beforeAll(async () => {
 afterAll(async () => {
   if (baseIds.length > 0) {
     const marks = baseIds.map(() => '?').join(',');
-    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
-    await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+    await deleteBaseExercises(baseIds);
   }
   await db.query(`DELETE FROM exercises WHERE name LIKE '${NAME_PREFIX}%'`);
+  await db.query(`DELETE FROM base_exercises WHERE name LIKE '${NAME_PREFIX}%'`);
   await cleanupTestGyms();
   await db.end();
 });
 
 // ─── GET /exercises/locales ───────────────────────────────────────────────────
+
+beforeEach(async () => { await syncLegacySystemExercisesToBase(); });
 
 describe('GET /exercises/locales', () => {
   it('returns 401 without auth', async () => {

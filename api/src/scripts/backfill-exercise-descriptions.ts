@@ -20,6 +20,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { db } from '../infra/db';
+import { mirrorExerciseToLegacy } from '../api/exercise-base-mirror';
 import { BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 import { planDescriptionBackfill } from '../domain/exerciseDescriptionBackfill';
 import bundledContent from '../data/base-exercise-descriptions.json';
@@ -33,13 +34,13 @@ async function main() {
   let filled = 0, unchanged = 0, missing = 0, warned = 0;
   for (const [slug, byLocale] of Object.entries(content)) {
     const { rows } = await db.query<any>(
-      "SELECT id, name, description, short_description FROM exercises WHERE slug = ? AND gym_id IS NULL AND status != 'deleted'",
+      "SELECT id, name, description, short_description FROM base_exercises WHERE slug = ? AND status != 'deleted'",
       [slug],
     );
     if (rows.length === 0) { missing += 1; console.log(`missing ${slug} — no Base Exercise with this slug`); continue; }
     const ex = rows[0];
     const { rows: trs } = await db.query<any>(
-      'SELECT locale, short_description, description FROM exercise_description_translations WHERE exercise_id = ?',
+      'SELECT locale, short_description, description FROM base_exercise_description_translations WHERE exercise_id = ?',
       [ex.id],
     );
     const existing: Record<string, any> = { [BASE_LOCALE]: ex };
@@ -56,12 +57,12 @@ async function main() {
       for (const [locale, w] of Object.entries(plan.writes)) {
         if (locale === BASE_LOCALE) {
           await tx.query(
-            'UPDATE exercises SET short_description = COALESCE(?, short_description), description = COALESCE(?, description), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+            'UPDATE base_exercises SET short_description = COALESCE(?, short_description), description = COALESCE(?, description), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
             [w.short_description ?? null, w.description ?? null, 'System', ex.id],
           );
         } else {
           await tx.query(
-            `INSERT INTO exercise_description_translations (exercise_id, locale, short_description, description)
+            `INSERT INTO base_exercise_description_translations (exercise_id, locale, short_description, description)
              VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
                short_description = COALESCE(NULLIF(short_description, ''), VALUES(short_description)),
@@ -71,6 +72,7 @@ async function main() {
           );
         }
       }
+      await mirrorExerciseToLegacy(tx, ex.id);
     });
   }
   console.log(`\n${execute ? 'Executed' : 'Dry run'}: ${filled} filled, ${unchanged} already complete, ${missing} slug(s) not found, ${warned} warning(s).`);
@@ -78,10 +80,10 @@ async function main() {
   // Completeness: all six values (short + full in the base locale and each translatable one).
   const locales = [BASE_LOCALE, ...(TRANSLATABLE_LOCALES as string[])];
   const { rows: bases } = await db.query<any>(
-    "SELECT id, slug, name, short_description, description FROM exercises WHERE gym_id IS NULL AND status != 'deleted'",
+    "SELECT id, slug, name, short_description, description FROM base_exercises WHERE status != 'deleted'",
   );
   const { rows: all } = await db.query<any>(
-    'SELECT t.exercise_id, t.locale, t.short_description, t.description FROM exercise_description_translations t JOIN exercises e ON e.id = t.exercise_id WHERE e.gym_id IS NULL',
+    'SELECT t.exercise_id, t.locale, t.short_description, t.description FROM base_exercise_description_translations t',
   );
   const byEx = new Map<number, Record<string, any>>();
   for (const t of all) (byEx.get(t.exercise_id) ?? byEx.set(t.exercise_id, {}).get(t.exercise_id)!)[t.locale] = t;

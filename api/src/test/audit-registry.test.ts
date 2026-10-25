@@ -17,7 +17,7 @@ const DETAILS_VIEW_ENTITIES: Record<string, string | null> = {
   member: 'members',
   membership_plan: 'membership_plans',
   promotion: 'promotions',
-  exercise: 'exercises',
+  exercise: 'exercise_catalogue',
   workout_template: 'workout_templates',
   training_plan: 'training_plans',
   training_plan_template: 'training_plan_templates',

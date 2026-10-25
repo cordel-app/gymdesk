@@ -52,6 +52,10 @@ import {
 } from '../domain/exerciseListFilters';
 import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale } from '../infra/locale';
 import { logger } from '../lib/logger';
+import { BASE_EXERCISE_TABLES, CATALOGUE_EXERCISE_TABLES } from '../domain/exerciseTables';
+
+/** #1849 E2: gym-facing reads go through the catalogue views (Base rows + the gym's own). */
+const C = CATALOGUE_EXERCISE_TABLES;
 
 /**
  * P5.1 / #55: per-gym exercises. #62: muscles are a static in-app catalog
@@ -127,21 +131,21 @@ musclesRouter.get('/', async (_req, res, next) => {
  */
 const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
-    ${localizedExerciseNameExpr('e', locale, 'display_name')},
-    ${exerciseTranslationsExpr('e')},
-    ${localizedDescriptionExprs('e', locale)},
-    ${descriptionTranslationsExpr('e')},
+    ${localizedExerciseNameExpr('e', locale, 'display_name', C)},
+    ${exerciseTranslationsExpr('e', 'translations', C)},
+    ${localizedDescriptionExprs('e', locale, C)},
+    ${descriptionTranslationsExpr('e', 'description_translations', C)},
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by END        AS created_by,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by END       AS modified_by,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.deleted_by END        AS deleted_by,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
-     FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
-    ${primaryMuscleImagesSql('e')},
+     FROM ${C.muscles} em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e', C)},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
-     FROM exercise_allowed_result_types eart
+     FROM ${C.resultTypes} eart
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
-  FROM exercises e
+  FROM ${C.exercises} e
 `;
 
 /**
@@ -344,19 +348,19 @@ exercisesRouter.get('/base', async (req, res, next) => {
   // The `?`s inside IMPORTED_COPY_ID and MEDIA_REFRESHABLE sit in the SELECT
   // list, so their gymIds bind before the WHERE-clause filters below, in order.
   const locale = getRequestLocale(req);
-  const where = exerciseListFilterSql('e', parsed.filter);
+  const where = exerciseListFilterSql('e', parsed.filter, C);
   const sql = `
-    SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
+    SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name', C)},
       e.slug, e.description,
       e.image_male_url, e.image_female_url, e.video_male_url, e.video_female_url,
-      ${primaryMuscleImagesSql('e')},
+      ${primaryMuscleImagesSql('e', C)},
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
-       FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+       FROM ${C.muscles} em WHERE em.exercise_id = e.id) AS muscles,
       ${IMPORTED_COPY_ID} AS imported_exercise_id,
       ${MEDIA_REFRESHABLE} AS media_refreshable
-    FROM exercises e
+    FROM ${C.exercises} e
     WHERE ${BASE_LIBRARY_SCOPE_SQL}${where.sql}
-    ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
+    ORDER BY ${localizedExerciseNameSql('e', locale, C)} ASC`;
   try {
     const { rows } = await db.query(sql, [gymId, gymId, ...where.params]);
     // MySQL answers the CASE with 0/1; the contract is a boolean.
@@ -374,11 +378,11 @@ exercisesRouter.get('/base', async (req, res, next) => {
  * statement either way — the scope is the only parameter.
  */
 exercisesRouter.get('/base/facets', async (_req, res, next) => {
-  const facetQuery = exerciseFacetsQuery(BASE_LIBRARY_SCOPE_SQL);
+  const facetQuery = exerciseFacetsQuery(BASE_LIBRARY_SCOPE_SQL, [], C);
   try {
     const [facets, totals] = await Promise.all([
       db.query(facetQuery.sql, facetQuery.params),
-      db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${BASE_LIBRARY_SCOPE_SQL}`),
+      db.query(`SELECT COUNT(*) AS total FROM ${C.exercises} e WHERE ${BASE_LIBRARY_SCOPE_SQL}`),
     ]);
     res.json({
       total: Number(totals.rows[0]?.total ?? 0),
@@ -474,7 +478,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   const { gymId } = getTenantContext(req);
   const id = String(req.params.id);
   // Guard: base exercises (gym_id IS NULL) may only be modified via /platform/exercises
-  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercises WHERE id = ?', [id]);
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercise_catalogue WHERE id = ?', [id]);
   if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
     return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
   }
@@ -558,7 +562,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
 
 exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercises WHERE id = ?', [req.params.id]);
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercise_catalogue WHERE id = ?', [req.params.id]);
   if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
     return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
   }
@@ -672,8 +676,8 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
       // #967: a copy is a copy — the per-locale names travel with the name they
       // translate, or the copy would read in English for every viewer the
       // original served in their own language.
-      await copyExerciseTranslations(tx, id, insertId);
-      await copyExerciseDescriptionTranslations(tx, id, insertId);
+      await copyExerciseTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
+      await copyExerciseDescriptionTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
       return insertId;
     });
 
@@ -824,8 +828,8 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         // deliberately not translations — the gym may have corrected one, and
         // overwriting that is what §4's "do not overwrite an existing
         // translation" forbids.
-        await copyExerciseTranslations(tx, id, insertId);
-      await copyExerciseDescriptionTranslations(tx, id, insertId);
+        await copyExerciseTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
+      await copyExerciseDescriptionTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
         insertedIds.push(insertId);
       }
       return { insertedIds, refreshed, skipped };

@@ -1,4 +1,5 @@
 import { Tx } from '../infra/db';
+import { ExerciseTables, LEGACY_EXERCISE_TABLES } from '../domain/exerciseTables';
 import { resultTypeSlugsForCategory, normalizeExerciseCategory } from '../domain/exerciseCategories';
 
 /**
@@ -24,13 +25,13 @@ export async function derivedResultTypeIds(tx: Tx, category: unknown): Promise<n
 }
 
 /** Replace the exercise's rows with the set its category derives. No-op without a supported category. */
-export async function syncExerciseResultTypes(tx: Tx, exerciseId: number | string, category: unknown): Promise<void> {
+export async function syncExerciseResultTypes(tx: Tx, exerciseId: number | string, category: unknown, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): Promise<void> {
   const ids = await derivedResultTypeIds(tx, category);
   if (!ids) return;
-  await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [exerciseId]);
+  await tx.query(`DELETE FROM ${tables.resultTypes} WHERE exercise_id = ?`, [exerciseId]);
   for (const id of ids) {
     await tx.query(
-      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+      `INSERT IGNORE INTO ${tables.resultTypes} (exercise_id, result_type_id) VALUES (?, ?)`,
       [exerciseId, id],
     );
   }
@@ -67,8 +68,9 @@ export async function effectiveCategory(
   tx: Tx,
   exerciseId: number | string,
   categoryInput: { provided: boolean; value: string | null },
+  tables: ExerciseTables = LEGACY_EXERCISE_TABLES,
 ): Promise<string | null> {
   if (categoryInput.provided) return normalizeExerciseCategory(categoryInput.value);
-  const { rows } = await tx.query('SELECT category FROM exercises WHERE id = ?', [exerciseId]);
+  const { rows } = await tx.query(`SELECT category FROM ${tables.exercises} WHERE id = ?`, [exerciseId]);
   return rows.length ? normalizeExerciseCategory(rows[0].category) : null;
 }
