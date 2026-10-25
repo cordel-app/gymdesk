@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1991 stage 4 (Pending Payment returns to Draft: cancelling a checkout, or the cleanup run finding its payment link `expired`, moves the version back to `draft` through `returnPendingToDraft()` instead of deleting it. The configuration, applications and coverage are kept, the unpaid initial event and its attempts are deleted, the linked assignment goes back to `draft`, and the two-hour Draft clock restarts. The `canCancelPending()` guard is unchanged, so an unknown-outcome or settled payment is never rolled back; a merely `failed` attempt is not expiry. `POST /billing/cleanup` reports `pending_returned_to_draft`.)
+
 - **Done**: #1967 (stage 3: `GET /me/training-plans` takes an optional `?date=YYYY-MM-DD`; a past date returns the plans that applied then, including ones since completed or expired, bounded by `start_date`/`end_date`; today and later keep the current-plan rules)
 
 - **Done**: #1984 stage 1 (Calendar event details: Eligible Professional Services is a bullet list, one service per line, and the inherited case shows an `Inherited from the activity` chip (`listNameBadgeStyle`) instead of `(inherited from the activity)` appended to a comma list; empty state unchanged. Presentation only, no API change. The per-service Occupied / Available figure is not built: a Professional Service has no capacity and a booking is not tied to a service, so it needs the count defined first)
