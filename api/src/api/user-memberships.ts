@@ -552,8 +552,15 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     gymId, um.membership_plan_id, (snapshot as any)?.membership_fee_price ?? membershipFee,
   );
 
+  // #2097 — the ProductSet version this assignment is (a Draft's own), which
+  // the Save & Pay payment modal reviews and pays through `/product-sets/:id`.
+  const { rows: versionRows } = await db.query<{ id: number }>(
+    `SELECT ${assignmentVersionId('?')} AS id`, [um.id],
+  );
+
   res.json({
     ...um,
+    product_set_id: versionRows[0]?.id != null ? Number(versionRows[0].id) : null,
     effective_price: effectivePrice,
     // The fee resolved for this assignment's current cycle (#635 stage 15) —
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
