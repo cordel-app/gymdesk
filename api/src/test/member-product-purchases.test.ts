@@ -477,3 +477,51 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(rows.map((r: any) => Number(r.promotion_id))).toEqual([a]);
   });
 });
+
+describe('#1923 — a Promotion leaves the recurring line in the Draft', () => {
+  it('keeps the line, its Promotion and the Draft status when read back', async () => {
+    const m = await member();
+    const locker = await product({ name: 'Locker Rental 1923', frequency: 'month', amount: '20.00', type: 'service' });
+    const promo = await promotion({ name: 'Rec 1923' });
+    await grant(promo, locker, 'periodical', 'percentage_discount', 50);
+    const ok = await auth(request.post(base(m))).send({ product_id: locker, promotion_ids: [promo] });
+    expect(ok.status).toBe(201);
+    const detail = await auth(request.get(`/product-sets/${ok.body.product_set_id}`));
+    expect(detail.body.status).toBe('draft');
+    const lines = detail.body.configuration?.services ?? [];
+    expect(lines.map((l: any) => Number(l.productId))).toEqual([locker]);
+    const sim = await auth(request.get(`/product-sets/${ok.body.product_set_id}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+  });
+});
+
+describe('#1923 — a promoted line survives the next Draft clone', () => {
+  it('carries the line and its application into a Draft cloned from the Active version', async () => {
+    const m = await member();
+    const planId = await plan(40);
+    const created = await auth(request.post('/product-sets')).send({ member_id: m, membership_plan_id: planId, starts_at: TODAY });
+    const paid0 = await auth(request.post(`/product-sets/${created.body.id}/save-and-pay`)).send({});
+    expect((await pay(paid0.body.payment_request_id)).status).toBe(200);
+
+    const locker = await product({ name: 'Locker Rental 1923b', frequency: 'month', amount: '20.00', type: 'service' });
+    const promo = await promotion({ name: 'Rec 1923b' });
+    await grant(promo, locker, 'periodical', 'percentage_discount', 50);
+    const add = await auth(request.post(base(m))).send({ product_id: locker, promotion_ids: [promo] });
+    expect(add.status).toBe(201);
+    const sp = await auth(request.post(`/product-sets/${add.body.product_set_id}/save-and-pay`)).send({});
+    expect((await pay(sp.body.payment_request_id)).status).toBe(200);
+
+    const other = await product({ name: 'Towel 1923', frequency: 'month', amount: '5.00', type: 'service' });
+    const next = await auth(request.post(base(m))).send({ product_id: other });
+    expect(next.status).toBe(201);
+    const { rows } = await db.query<any>(
+      'SELECT id, product_id FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [next.body.product_set_id]);
+    console.log('CLONELINES', JSON.stringify(rows), 'locker', locker);
+    const apps = await db.query<any>(
+      `SELECT id, product_id, line_id FROM user_membership_promotions WHERE product_set_id = ? AND status='applied'`, [next.body.product_set_id]).catch((e: any) => ({ rows: [e.message] }));
+    console.log('CLONEAPPS', JSON.stringify(apps.rows));
+    expect(rows.map((r: any) => Number(r.product_id))).toContain(locker);
+    const sim = await auth(request.get(`/product-sets/${next.body.product_set_id}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+  });
+});
