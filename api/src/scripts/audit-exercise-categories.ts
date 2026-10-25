@@ -25,10 +25,10 @@ async function main() {
   const { rows } = await db.query<any>(
     `SELECT e.id, e.name, e.category, e.gym_id, e.source, e.cloned_from_id,
             (SELECT GROUP_CONCAT(rt.slug ORDER BY rt.id)
-               FROM exercise_allowed_result_types eart
+               FROM exercise_allowed_result_type_catalogue eart
                JOIN result_types rt ON rt.id = eart.result_type_id
               WHERE eart.exercise_id = e.id) AS metrics
-       FROM exercises e
+       FROM exercise_catalogue e
       WHERE e.status != 'deleted'
       ORDER BY e.id`,
   );

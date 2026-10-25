@@ -4,10 +4,11 @@
  * counts rows that would be a problem and must be 0, except the ones flagged
  * `informational`. Foods' `baseFoodLinkAudit.ts` one catalogue over.
  *
- * Stage E3 (migration 339) added `base_exercise_id` beside the old column, additive: a
- * row pointing at a System exercise carries the Base reference too (the ids are equal),
- * one pointing at a gym-owned exercise carries none. The exactly-one rule and the delete
- * of the legacy System rows are the later stages; until then the old column stays filled.
+ * Since the cut-over (migration 342, stage E5) a System exercise is referenced through
+ * `base_exercise_id` alone and a gym-owned one through the old column alone: exactly one
+ * on the four mandatory tables, at most one on `exercises` (provenance; its SET NULL FKs
+ * cannot carry a CHECK, MySQL error 3823). Migration 343 (stage E6) deletes the legacy
+ * System rows; the last checks below must read 0 before it runs.
  *
  * `gymId` narrows the reference-table checks to one gym; tests use it, the script audits
  * everything. (`exercise_logs` and `member_standalone_exercises` carry a `gym_id` too.)
@@ -40,44 +41,49 @@ export function baseExerciseLinkChecks(gymId?: string): { checks: BaseExerciseLi
     },
   ];
   for (const { table, column } of EXERCISE_REFERENCE_TABLES) {
+    const optional = table === 'exercises';
     checks.push(
       {
-        key: `${table}_system_without_base_link`,
-        description: `${table}: rows pointing at a System exercise with no base_exercise_id`,
+        key: `${table}_not_exactly_one`,
+        description: optional
+          ? `${table}: rows with both a gym-owned (${column}) and a Base (base_exercise_id) reference`
+          : `${table}: rows referencing both a gym-owned and a Base exercise, or neither`,
+        scoped: true,
+        sql: optional
+          ? `SELECT COUNT(*) AS n FROM ${table} t
+              WHERE t.${column} IS NOT NULL AND t.base_exercise_id IS NOT NULL${gym('t')}`
+          : `SELECT COUNT(*) AS n FROM ${table} t
+              WHERE (t.${column} IS NULL) = (t.base_exercise_id IS NULL)${gym('t')}`,
+      },
+      {
+        key: `${table}_exercise_unknown`,
+        description: `${table}: rows whose exercise is in neither table`,
+        scoped: true,
+        sql: `SELECT COUNT(*) AS n FROM ${table} t
+               WHERE COALESCE(t.base_exercise_id, t.${column}) IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM exercise_catalogue c
+                                  WHERE c.id = COALESCE(t.base_exercise_id, t.${column}))${gym('t')}`,
+      },
+      {
+        key: `${table}_references_legacy_system_exercise`,
+        description: `${table}: rows still pointing at a legacy System exercise (exercises.gym_id IS NULL) — blocks deleting them (migration 343)`,
         scoped: true,
         sql: `SELECT COUNT(*) AS n FROM ${table} t
                 JOIN exercises x ON x.id = t.${column} AND x.gym_id IS NULL
-               WHERE t.base_exercise_id IS NULL${gym('t')}`,
-      },
-      {
-        key: `${table}_base_link_mismatch`,
-        description: `${table}: base_exercise_id differing from ${column}, or set while ${column} names a gym-owned exercise`,
-        scoped: true,
-        sql: `SELECT COUNT(*) AS n FROM ${table} t
-                LEFT JOIN exercises x ON x.id = t.${column}
-               WHERE t.base_exercise_id IS NOT NULL
-                 AND (t.${column} IS NULL OR t.base_exercise_id <> t.${column} OR x.gym_id IS NOT NULL)${gym('t')}`,
-      },
-      {
-        key: `${table}_base_link_unknown`,
-        description: `${table}: base_exercise_id naming no base_exercises row`,
-        scoped: true,
-        sql: `SELECT COUNT(*) AS n FROM ${table} t
-               WHERE t.base_exercise_id IS NOT NULL
-                 AND NOT EXISTS (SELECT 1 FROM base_exercises b WHERE b.id = t.base_exercise_id)${gym('t')}`,
+               WHERE 1 = 1${gym('t')}`,
       },
     );
   }
   checks.push(
     {
       key: 'legacy_system_exercise_missing_in_base',
-      description: 'Legacy System exercises with no base_exercises row',
+      description: 'Legacy System exercises with no base_exercises row (would be lost by migration 343)',
       sql: `SELECT COUNT(*) AS n FROM exercises e
              WHERE e.gym_id IS NULL AND NOT EXISTS (SELECT 1 FROM base_exercises b WHERE b.id = e.id)`,
     },
     {
       key: 'legacy_system_rows_remaining',
-      description: 'Legacy System rows still in exercises (0 once they are deleted, stage E6)',
+      description: 'Legacy System rows still in exercises (0 once migration 343 has run)',
       sql: 'SELECT COUNT(*) AS n FROM exercises e WHERE e.gym_id IS NULL',
       informational: true,
     },

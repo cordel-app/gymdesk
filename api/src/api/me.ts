@@ -1697,7 +1697,7 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
     const logId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, standalone_exercise_id, exercise_id, base_exercise_id, logged_date, notes, duration_seconds, skipped)
-         VALUES (?, ?, ?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?)`,
         [gymId, memberId, workout_exercise_id ?? null, standalone_exercise_id, exerciseId, exerciseId, logged_date, notes ?? null,
          duration_seconds ?? null, Boolean(skipped)],
       );
@@ -1720,7 +1720,7 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
       return insertId;
     });
     const { rows } = await db.query(
-      `SELECT el.*, (SELECT JSON_ARRAYAGG(item) FROM (
+      `SELECT el.*, COALESCE(el.base_exercise_id, el.exercise_id) AS exercise_id, (SELECT JSON_ARRAYAGG(item) FROM (
                        SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
                        FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
                      ) t) AS sets
@@ -1764,7 +1764,7 @@ meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled(
       }
     });
     const { rows } = await db.query(
-      `SELECT el.*, (SELECT JSON_ARRAYAGG(item) FROM (
+      `SELECT el.*, COALESCE(el.base_exercise_id, el.exercise_id) AS exercise_id, (SELECT JSON_ARRAYAGG(item) FROM (
                        SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
                        FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
                      ) t) AS sets
@@ -1787,7 +1787,7 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
     const memberId = await resolveMemberId(gymId, ctx);
     const params: any[] = [gymId, memberId];
     // #967: the member reads an exercise's name in their own language.
-    let sql = `SELECT el.*, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
+    let sql = `SELECT el.*, COALESCE(el.base_exercise_id, el.exercise_id) AS exercise_id, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
                       (SELECT JSON_ARRAYAGG(item) FROM (
                          SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
                          FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number

@@ -1,5 +1,5 @@
-// #1849 stage E1 (Exercises): migration 336 creates base_exercises and its four junctions and
-// copies the System rows (ids kept). Nothing reads them yet; the legacy tables are untouched.
+// #1849 stages E1/E6 (Exercises): migration 336 creates base_exercises and its four junctions and
+// copies the System rows (ids kept); migration 343 deletes the legacy System rows.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -9,26 +9,25 @@ afterAll(async () => {
 });
 
 describe('base_exercises (#1849 stage E1)', () => {
-  it('has a Base twin, under the same id and name, for every legacy System exercise', async () => {
-    const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM exercises e
-        WHERE e.gym_id IS NULL AND NOT EXISTS (SELECT 1 FROM base_exercises b WHERE b.id = e.id AND b.name = e.name)`,
-    );
+  it('has no legacy System exercise left (migration 343)', async () => {
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM exercises WHERE gym_id IS NULL');
     expect(Number(rows[0].n)).toBe(0);
   });
 
-  it('keeps ids disjoint: no Base exercise shares an id with a gym-owned one, and the sequence is past every legacy id', async () => {
+  it('keeps ids disjoint: no Base exercise shares an id with a gym-owned one, and the sequence is past every Base id', async () => {
     const { rows } = await db.query<any>(
       'SELECT COUNT(*) AS n FROM base_exercises b JOIN exercises e ON e.id = b.id AND e.gym_id IS NOT NULL',
     );
     expect(Number(rows[0].n)).toBe(0);
+    // information_schema caches table statistics; refresh the one AUTO_INCREMENT read below.
+    await db.query('ANALYZE TABLE exercises');
     const { rows: seq } = await db.query<any>(
       `SELECT TABLE_NAME AS t, AUTO_INCREMENT AS a FROM information_schema.TABLES
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('base_exercises', 'exercises')`,
     );
     const a = Object.fromEntries(seq.map((r: any) => [r.t, Number(r.a)]));
-    const { rows: max } = await db.query<any>('SELECT COALESCE(MAX(id), 0) AS m FROM exercises');
-    expect(a.base_exercises).toBeGreaterThan(Number(max[0].m) - 1);
+    const { rows: max } = await db.query<any>('SELECT COALESCE(MAX(id), 0) AS m FROM base_exercises');
+    expect(a.exercises).toBeGreaterThan(Number(max[0].m));
   });
 
   it('cascades the junctions from the Base exercise and keeps the shared lookups', async () => {
@@ -44,7 +43,7 @@ describe('base_exercises (#1849 stage E1)', () => {
     for (const r of rows.filter((x: any) => x.ref === 'base_exercises')) expect(r.rule, r.t).toBe('CASCADE');
   });
 
-  it('leaves the references to the legacy table as they were', async () => {
+  it('keeps the FK of the plan tables to the legacy table for gym-owned exercises', async () => {
     const { rows } = await db.query<any>(
       `SELECT COUNT(*) AS n FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'exercises'

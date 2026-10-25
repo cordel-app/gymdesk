@@ -1,5 +1,5 @@
-// #1849 stage E2: Cordel's Base Exercises CRUD writes the base_exercise* tables and mirrors
-// them onto the legacy System row of the same id (transitional, removed in the final stage).
+// #1849 stages E2/E6: Cordel's Base Exercises CRUD writes the base_exercise* tables alone
+// (the transitional mirror onto the legacy System row is gone with migration 343).
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -54,7 +54,7 @@ const count = async (table: string, id: number) =>
   Number((await one(`SELECT COUNT(*) AS n FROM ${table} WHERE exercise_id = ?`, [id])).n);
 
 describe('platform exercises on base_exercises (#1849 E2)', () => {
-  it('create writes the Base row + junctions and mirrors the legacy System row with the same id', async () => {
+  it('create writes the Base row + junctions and no legacy System row', async () => {
     const res = await request.post('/platform/exercises').set(H).send({
       name: NAME, description: 'd', category: 'strength',
       muscles: [{ key: 'chest', role: 'principal' }, { key: 'triceps', role: 'secondary' }],
@@ -74,12 +74,10 @@ describe('platform exercises on base_exercises (#1849 E2)', () => {
     expect(await count('base_exercise_muscles', id)).toBe(2);
     expect(await count('base_exercise_allowed_result_types', id)).toBeGreaterThan(0);
 
-    // The mirror: the legacy System row of the same id, junctions included.
-    expect(await one('SELECT name, status, gym_id FROM exercises WHERE id = ?', [id])).toMatchObject({ name: NAME, status: 'active', gym_id: null });
-    expect(await count('exercise_translations', id)).toBe(1);
-    expect(await count('exercise_description_translations', id)).toBe(1);
-    expect(await count('exercise_muscles', id)).toBe(2);
-    expect(await count('exercise_allowed_result_types', id)).toBe(await count('base_exercise_allowed_result_types', id));
+    // No legacy twin any more.
+    expect(await one('SELECT COUNT(*) AS n FROM exercises WHERE id = ?', [id])).toMatchObject({ n: 0 });
+    expect(await count('exercise_translations', id)).toBe(0);
+    expect(await count('exercise_muscles', id)).toBe(0);
   });
 
   it('the id comes from the legacy sequence, so a Base id never collides with a gym-owned one', async () => {
@@ -91,17 +89,15 @@ describe('platform exercises on base_exercises (#1849 E2)', () => {
     expect(res.body.id).toBeGreaterThan(Number(insertId));
   });
 
-  it('update changes the Base row and the mirror, and replaces the junctions', async () => {
+  it('update changes the Base row and replaces the junctions', async () => {
     const id = ids[0];
     const res = await request.put(`/platform/exercises/${id}`).set(H).send({
       description: 'new', muscles: [{ key: 'back', role: 'principal' }], translations: { es: 'Otro' },
     });
     expect(res.status).toBe(200);
     expect((await one('SELECT description FROM base_exercises WHERE id = ?', [id])).description).toBe('new');
-    expect((await one('SELECT description FROM exercises WHERE id = ?', [id])).description).toBe('new');
     expect(await count('base_exercise_muscles', id)).toBe(1);
-    expect(await count('exercise_muscles', id)).toBe(1);
-    expect((await one('SELECT name FROM exercise_translations WHERE exercise_id = ?', [id])).name).toBe('Otro');
+    expect((await one('SELECT name FROM base_exercise_translations WHERE exercise_id = ?', [id])).name).toBe('Otro');
   });
 
   it('a duplicate name is a 409, and the list and detail read the Base table', async () => {
@@ -114,11 +110,10 @@ describe('platform exercises on base_exercises (#1849 E2)', () => {
     expect(list.body.find((e: any) => e.id === ids[0])?.description).toBe('only-in-base');
   });
 
-  it('delete soft-deletes the Base row and the mirror', async () => {
+  it('delete soft-deletes the Base row', async () => {
     const res = await request.delete(`/platform/exercises/${ids[0]}`).set(H);
     expect(res.status).toBe(204);
     expect(await one('SELECT status, deleted_at FROM base_exercises WHERE id = ?', [ids[0]])).toMatchObject({ status: 'deleted' });
-    expect((await one('SELECT status FROM exercises WHERE id = ?', [ids[0]])).status).toBe('deleted');
     expect((await request.get(`/platform/exercises/${ids[0]}`).set(H)).status).toBe(404);
     expect((await request.delete(`/platform/exercises/${ids[0]}`).set(H)).status).toBe(404);
   });

@@ -627,6 +627,18 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 
 ## 4. API surface
 
+- [ ] **Exercises cut-over (#1849 E5/E6).** Before migrations 342 (exclusive exercise
+      references) and 343 (delete the legacy System rows of `exercises`) run on a database
+      that holds real data: take a `mysqldump` of `exercises`, its four junctions
+      (`exercise_translations`, `exercise_description_translations`, `exercise_muscles`,
+      `exercise_allowed_result_types`), the `base_exercise*` tables and the four referencing
+      tables (`workout_template_exercises`, `workout_exercises`, `exercise_logs`,
+      `member_standalone_exercises`), run `npm run exercises:audit-base-links` (every check
+      OK; `legacy_system_rows_remaining` is informational) and keep the dump until the deploy
+      is verified. 342 refuses on a row pointing at a legacy System exercise with no Base link
+      or whose two columns disagree; 343 refuses while anything references a legacy System
+      exercise or a legacy row differs from its Base twin. Cordel must have deployed the code
+      that no longer mirrors before 343 runs.
 - [ ] **Foods cut-over (#1849 F5).** Before migrations 333 (exclusive food references) and
       334 (delete the legacy System rows of `nutrition_library_items`) run on a database that
       holds real data: take a `mysqldump` of `nutrition_library_items`, its four

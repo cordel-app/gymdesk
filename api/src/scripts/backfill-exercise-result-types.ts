@@ -18,10 +18,10 @@ import { derivedResultTypeIds, syncExerciseResultTypes } from '../api/exercise-r
 async function main() {
   const execute = process.argv.includes('--execute');
   const { rows } = await db.query<any>(
-    `SELECT e.id, e.name, e.category,
+    `SELECT e.id, e.name, e.category, e.gym_id,
             (SELECT GROUP_CONCAT(eart.result_type_id ORDER BY eart.result_type_id)
-               FROM exercise_allowed_result_types eart WHERE eart.exercise_id = e.id) AS current_ids
-       FROM exercises e WHERE e.status != 'deleted' ORDER BY e.id`,
+               FROM exercise_allowed_result_type_catalogue eart WHERE eart.exercise_id = e.id) AS current_ids
+       FROM exercise_catalogue e WHERE e.status != 'deleted' ORDER BY e.id`,
   );
   let changed = 0, unchanged = 0, skipped = 0;
   for (const r of rows) {
@@ -37,7 +37,7 @@ async function main() {
       changed += 1;
       console.log(`${execute ? 'update' : 'would update'} #${r.id} ${r.name} [${r.category}]: ${current.join(',') || '(none)'} -> ${derived.join(',')}`);
       if (execute) {
-        await syncExerciseResultTypes(tx, r.id, r.category);
+        await syncExerciseResultTypes(tx, r.id, r.category, r.gym_id === null ? BASE_EXERCISE_TABLES : undefined);
         // #1849 E2: a System exercise's metrics are the Base table's; the legacy row mirrors it.
         const { rows: base } = await tx.query('SELECT id FROM base_exercises WHERE id = ?', [r.id]);
         if (base.length) await syncExerciseResultTypes(tx, r.id, r.category, BASE_EXERCISE_TABLES);

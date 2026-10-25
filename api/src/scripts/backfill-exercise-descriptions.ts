@@ -20,7 +20,6 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { db } from '../infra/db';
-import { mirrorExerciseToLegacy } from '../api/exercise-base-mirror';
 import { BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 import { planDescriptionBackfill } from '../domain/exerciseDescriptionBackfill';
 import bundledContent from '../data/base-exercise-descriptions.json';
@@ -72,7 +71,6 @@ async function main() {
           );
         }
       }
-      await mirrorExerciseToLegacy(tx, ex.id);
     });
   }
   console.log(`\n${execute ? 'Executed' : 'Dry run'}: ${filled} filled, ${unchanged} already complete, ${missing} slug(s) not found, ${warned} warning(s).`);

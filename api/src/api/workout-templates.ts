@@ -227,7 +227,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
               'is_optional', b.is_optional, 'notes', b.notes, 'result_unit', b.result_unit,
               'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
-                    'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
+                    'id', wte.id, 'position', wte.position, 'exercise_id', COALESCE(wte.base_exercise_id, wte.exercise_id),
                     'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
                     'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
                     'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
@@ -398,8 +398,8 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
             `INSERT INTO workout_template_exercises
               (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
                result_type_id, target_value, min_value, max_value, unit)
-             VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newBlockId, ex.exercise_id, ex.base_exercise_id ?? ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
              ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
           );
         }
@@ -462,8 +462,8 @@ workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async 
             `INSERT INTO workout_template_exercises
               (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
                result_type_id, target_value, min_value, max_value, unit)
-             VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newBlockId, ex.exercise_id, ex.base_exercise_id ?? ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
              ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
           );
         }
@@ -670,8 +670,8 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireModuleWrite
           `INSERT INTO workout_template_exercises
             (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
              result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-           VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, newBlockId, ex.exercise_id, ex.base_exercise_id ?? ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+           VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
            ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null, gymMembershipId],
         );
       }
@@ -704,7 +704,7 @@ workoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', async (req, res, ne
   try {
     if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
     const { rows } = await db.query(
-      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
+      `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte
        JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id)
@@ -754,7 +754,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireModuleWrite
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
-      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
+      `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       (exId) => [exId],
@@ -775,7 +775,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireModu
   try {
     await db.transaction(async (tx) => reorder(tx, 'workout_template_exercises', 'workout_template_block_id', blockId, order));
     const { rows } = await db.query(
-      'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+      'SELECT *, COALESCE(base_exercise_id, exercise_id) AS exercise_id FROM workout_template_exercises WHERE workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL ORDER BY position ASC',
       [blockId, gymId],
     );
     res.json(rows);
@@ -805,7 +805,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireModule
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
+      `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       [exId],
@@ -853,10 +853,10 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', re
       `INSERT INTO workout_template_exercises
         (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
          result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
-       VALUES (?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, blockId, src.exercise_id, src.base_exercise_id ?? src.exercise_id, posRows[0].next_position, src.min_reps, src.max_reps, src.sets, src.rest_seconds, src.tempo,
+       VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, blockId, src.exercise_id ?? null, src.base_exercise_id ?? null, posRows[0].next_position, src.min_reps, src.max_reps, src.sets, src.rest_seconds, src.tempo,
        src.result_type_id ?? null, src.target_value ?? null, src.min_value ?? null, src.max_value ?? null, src.unit ?? null, gymMembershipId],
-      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
+      `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       (newId) => [newId],
