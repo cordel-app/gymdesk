@@ -138,8 +138,8 @@ export function MemberMembershipPlans({
   const selectable = options.filter((o) => !activePlanIds.has(o.id));
 
   // #1538 stage 3: `⋮ → Edit` on the running plan. Editing never touches the
-  // Active version: it starts a Draft of the same plan (the existing Assign New
-  // Plan route, frozen from the Plan as it stands today), which replaces the
+  // Active version: it starts a Draft that is a copy of the Active version's own
+  // configuration (#2091 — not re-frozen from the catalogue Plan), which replaces the
   // Active row in the view and is opened in Edit mode. Cancel on the Draft
   // deletes it and the Active plan is back; Save & Pay commits it.
   async function editPlan(plan: MemberPlanRow) {
@@ -147,13 +147,7 @@ export function MemberMembershipPlans({
     setCreating(true);
     setCreateError(null);
     try {
-      const row = await apiFetch<{ id: number }>(`/user-memberships/${plan.id}/assign-new-plan`, {
-        method: 'POST',
-        body: JSON.stringify({
-          membership_plan_id: plan.membership_plan_id,
-          starts_at: new Date().toISOString().slice(0, 10),
-        }),
-      });
+      const row = await apiFetch<{ id: number }>(`/user-memberships/${plan.id}/edit-draft`, { method: 'POST' });
       setNewDraftId(row.id);
       onChanged();
     } catch (err: any) {

@@ -2,9 +2,9 @@ import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
-import { createDraftSetForAssignment, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
+import { createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
+import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
@@ -1449,6 +1449,61 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
+  }
+});
+
+// #2091: `⋮ → Edit` on a running plan. Creates the Draft assignment the editor
+// opens, with the Active version's own configuration copied onto it (not
+// re-frozen from the catalogue Plan). Idempotent: an existing Draft assignment
+// of the same owner is returned. The running plan is not touched.
+userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, res, next) => {
+  const { gymId, role, userId } = getTenantContext(req);
+  const actorText = resolveRequestActor(getTenantContext(req));
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<any>(
+        'SELECT id, member_id, membership_plan_id, starts_at, ends_at, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [req.params.id, gymId]);
+      const um = rows[0];
+      if (!um) return { kind: 'not_found' as const };
+      if (um.status === 'draft') return { kind: 'created' as const, id: Number(um.id), reused: true };
+      if (!['active', 'paused'].includes(um.status)) return { kind: 'invalid' as const, status: String(um.status) };
+      const active = await projectedSetFor(tx, gymId, Number(um.id));
+      if (!active) return { kind: 'not_projected' as const };
+      const { rows: owned } = await tx.query<any>(
+        `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND um.status = 'draft' FOR UPDATE`,
+        [gymId, active.owner_member_id]);
+      if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
+      const dateOnly = (v: any) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
+      const { insertId } = await tx.query(
+        `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [um.member_id, gymId, um.membership_plan_id, dateOnly(um.starts_at), dateOnly(um.ends_at),
+          ASSIGNMENT_CREATION_STATUS, actorText]);
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: um.member_id,
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
+        source: sourceForRole(role), actorUserId: userId,
+      });
+      await createDraftSetFromActive(tx, {
+        gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
+        membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+        actor: { name: actorText },
+      });
+      return { kind: 'created' as const, id: Number(insertId), reused: false };
+    });
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'invalid') return res.status(409).json({ error: `Cannot edit a membership with status '${outcome.status}'` });
+    if (outcome.kind === 'not_projected') return res.status(409).json({ error: 'not_projected' });
+    if (!outcome.reused) {
+      recordAudit(req, { action: 'edit_draft', entityType: 'user_membership', entityId: outcome.id,
+        previous: { supersedes_user_membership_id: Number(req.params.id) } });
+    }
+    res.status(outcome.reused ? 200 : 201).json({ id: outcome.id, reused: outcome.reused });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    next(err);
   }
 });
 
