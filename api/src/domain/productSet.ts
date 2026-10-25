@@ -26,6 +26,9 @@ export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
 /** A Draft expires after two hours without a successful update (#1325). */
 export const DRAFT_TTL_MINUTES = 120;
 
+/** #1991: a Pending Payment that is not confirmed within two hours returns to Draft. */
+export const PENDING_TTL_MINUTES = 120;
+
 const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]>> = {
   draft: ['pending_payment', 'active'],
   pending_payment: ['active'],

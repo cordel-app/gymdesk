@@ -2,6 +2,7 @@ import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import {
   DRAFT_TTL_MINUTES,
+  PENDING_TTL_MINUTES,
   PendingAttempt,
   canCancelPending,
 } from '../domain/productSet';
@@ -144,7 +145,7 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   if (row.status !== 'draft') return { kind: 'not_allowed', status: row.status };
   if (Number(row.expired) === 1) return { kind: 'expired' };
   await tx.query(
-    `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ? WHERE id = ? AND status = 'draft'`,
+    `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
     [paymentRequestId, id],
   );
   return { kind: 'ok', productSet: { ...row, status: 'pending_payment' } };
@@ -269,7 +270,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
        SELECT payment_request_id FROM (SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL) x)
       AND status <> 'completed'`, [gymId, id]);
   await tx.query(
-    `UPDATE product_sets SET status = 'draft', payment_request_id = NULL, last_activity_at = UTC_TIMESTAMP()
+    `UPDATE product_sets SET status = 'draft', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND status = 'pending_payment'`, [id]);
   await tx.query(
     `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
@@ -279,17 +280,19 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
 }
 
 /**
- * Returns every Pending Payment whose payment link expired to Draft: the
- * latest attempt on its initial event is `expired` and every attempt is
- * definitively unsuccessful. A `failed` attempt alone is not expiry (the
- * member may pay again), and a set with no attempt is not swept.
+ * Returns every Pending Payment that was not confirmed in time to Draft: it has
+ * been pending for more than `PENDING_TTL_MINUTES`, or the latest attempt on its
+ * initial event is `expired` (the payment link is over). A `failed` attempt
+ * alone is not expiry (the member may pay again). A payment of unknown outcome
+ * or one that settled is left alone by `returnPendingToDraft()`'s own guard.
  */
 export async function expirePendingPayments(): Promise<number> {
   const { rows } = await db.query<{ id: number; gym_id: string }>(
     `SELECT ps.id, ps.gym_id FROM product_sets ps
       WHERE ps.status = 'pending_payment'
-        AND (SELECT pr.status FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id
-              WHERE be.product_set_id = ps.id ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) = 'expired'`);
+        AND (COALESCE(ps.pending_at, ps.last_activity_at) < UTC_TIMESTAMP() - INTERVAL ${PENDING_TTL_MINUTES} MINUTE
+         OR (SELECT pr.status FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id
+              WHERE be.product_set_id = ps.id ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) = 'expired')`);
   let n = 0;
   for (const r of rows) {
     const out = await db.transaction((tx) => returnPendingToDraft(tx, r.gym_id, Number(r.id)));

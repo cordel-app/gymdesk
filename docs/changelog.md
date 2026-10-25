@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1991 stage 4b (Pending Payment two-hour timer: migration 337 adds `product_sets.pending_at`, stamped by `submitForPayment()` and cleared when the version returns to Draft. `POST /billing/cleanup` now also returns to Draft, through `returnPendingToDraft()`, every Pending Payment older than `PENDING_TTL_MINUTES` (120), in addition to the expired-link case of stage 4. The `canCancelPending()` guard still protects an unknown-outcome or settled payment, so a checkout whose payment page was opened and abandoned stays pending until that attempt expires. Promotion applications keep no state of their own for Draft or Pending Payment: they stay `applied` and follow their version.)
+
 - **Done**: #1991 stage 4 (Pending Payment returns to Draft: cancelling a checkout, or the cleanup run finding its payment link `expired`, moves the version back to `draft` through `returnPendingToDraft()` instead of deleting it. The configuration, applications and coverage are kept, the unpaid initial event and its attempts are deleted, the linked assignment goes back to `draft`, and the two-hour Draft clock restarts. The `canCancelPending()` guard is unchanged, so an unknown-outcome or settled payment is never rolled back; a merely `failed` attempt is not expiry. `POST /billing/cleanup` reports `pending_returned_to_draft`.)
 
 - **Done**: #1967 (stage 3: `GET /me/training-plans` takes an optional `?date=YYYY-MM-DD`; a past date returns the plans that applied then, including ones since completed or expired, bounded by `start_date`/`end_date`; today and later keep the current-plan rules)
