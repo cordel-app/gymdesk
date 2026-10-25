@@ -35,12 +35,10 @@ function read(file: string): string {
 const expandedRowSrc = read('MemberExpandedRow.tsx');
 const plansSrc = read('MemberMembershipPlans.tsx');
 const inFlightSrc = read('ProductSetsInFlight.tsx');
-const simulationSrc = read('MemberBillingSimulation.tsx');
 
 const SECTION_KEYS = [
   'section_membership_plan',
   'section_additional_services',
-  'section_billing_simulation',
 ];
 
 const PLAN_KEYS = [
@@ -65,7 +63,7 @@ describe('Member Membership sections (#634)', () => {
     expect(expandedRowSrc).toContain('/user-memberships/member/${memberId}/configuration');
     expect(expandedRowSrc).toContain('<MemberMembershipPlans');
     expect(expandedRowSrc).not.toContain('MemberAdditionalServices');
-    expect(expandedRowSrc).toContain('<MemberBillingSimulation');
+    expect(expandedRowSrc).not.toContain('MemberBillingSimulation');
   });
 
   it('never nests Additional Services or the Simulation in a plan card (§13)', () => {
@@ -123,21 +121,13 @@ describe('Member Membership sections (#634)', () => {
     expect(plansSrc).toContain('live.map(');
   });
 
-  it('re-runs the Billing Simulation whenever the configuration changes (§12)', () => {
-    expect(expandedRowSrc).toContain('setSimulationKey((k) => k + 1)');
-    expect(expandedRowSrc).toContain('key={simulationKey}');
-    for (const src of [plansSrc]) {
-      expect(src).toContain('onChanged');
-    }
-  });
-
-  it('names the Membership Plan behind each simulated charge (§7)', () => {
-    expect(simulationSrc).toContain('line.plan_name');
+  it('re-reads the configuration whenever a section changes (§12)', () => {
+    expect(plansSrc).toContain('onChanged');
   });
 
   it('introduces no modal anywhere in the four sections (§15)', () => {
     // #1460: the shared Assign Plan to Member workflow is inline too.
-    for (const src of [plansSrc, simulationSrc]) {
+    for (const src of [plansSrc]) {
       expect(src).not.toContain('CrudModal');
       expect(src).not.toMatch(/<\w*Modal[\s/>]/);
     }
