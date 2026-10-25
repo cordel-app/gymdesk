@@ -528,6 +528,15 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 })}
               </p>
             )}
+            {/* #2090 — the chart lives under this heading: every month, a month
+                with nothing due drawn as 0, over the same simulation. */}
+            <BillingEventSimulationChart
+              simulation={detail.billing_event_simulation}
+              showZero
+              continuousMonths
+              t={(key, values) => t(key as any, values as any)}
+              formatDate={(date) => fmtTimelineDate(date, gymFmt)}
+            />
             <ExampleTimeline
               labels={{
                 // #1130 stage 2 — the Cycle column, rendered only for the rows
@@ -596,15 +605,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           Benefit are all in the server's numbers. The page formats, it never
           prices (#817). Read-only: computed on every read, persisted nowhere,
           and it charges nothing. */}
-      <CardSection label={t('section_billing_event_chart')}>
-        <BillingEventSimulationChart
-          simulation={detail.billing_event_simulation}
-          showZero={forecastShowZero}
-          t={(key, values) => t(key as any, values as any)}
-          formatDate={(date) => fmtTimelineDate(date, gymFmt)}
-        />
-      </CardSection>
-
       <CardSection label={t('section_billing_forecast')}>
         <button
           type="button"

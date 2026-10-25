@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingDateAtX, billingDateToX, billingEventChartPoints, selectedBillingGroup, visibleBillingDates,
+  billingDateAtX, billingDateToX, billingEventChartPoints, fillMissingMonths, selectedBillingGroup, visibleBillingDates,
 } from '@/lib/billingEventSimulation';
 
 const group = (date: string, total: number) => ({ date, total, lines: [] });
@@ -74,5 +74,27 @@ describe('billing event chart point details (#1808)', () => {
       (l) => (l.proration ? `Prorated: ${l.proration.prorated_days} of ${l.proration.period_days} days` : null),
     );
     expect(p.detailLines).toEqual(['Trainer — €28.00 (Prorated: 28 of 31 days)', 'Locker — €1.00']);
+  });
+});
+
+describe('continuous monthly timeline (#2090)', () => {
+  const pts = (dates: string[]) => billingEventChartPoints(dates.map((d) => group(d, 10)), fmtD, fmtA);
+
+  it('adds an explicit zero point for every skipped month, in order', () => {
+    const filled = fillMissingMonths(pts(['2026-01-15', '2026-04-15']), fmtD, fmtA);
+    expect(filled.map((p) => p.date)).toEqual(['2026-01-15', '2026-02-15', '2026-03-15', '2026-04-15']);
+    expect(filled.map((p) => p.y)).toEqual([10, 0, 0, 10]);
+  });
+
+  it('clamps the day to short months', () => {
+    const filled = fillMissingMonths(pts(['2026-01-31', '2026-03-31']), fmtD, fmtA);
+    expect(filled[1].date).toBe('2026-02-28');
+  });
+
+  it('leaves monthly and 4-weekly sequences untouched', () => {
+    const monthly = pts(['2026-01-01', '2026-02-01', '2026-03-01']);
+    expect(fillMissingMonths(monthly, fmtD, fmtA)).toEqual(monthly);
+    const fourWeekly = pts(['2026-01-01', '2026-01-29', '2026-02-26', '2026-03-26']);
+    expect(fillMissingMonths(fourWeekly, fmtD, fmtA)).toEqual(fourWeekly);
   });
 });
