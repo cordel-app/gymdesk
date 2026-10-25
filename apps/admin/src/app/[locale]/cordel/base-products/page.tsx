@@ -12,6 +12,7 @@ import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
@@ -29,6 +30,8 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
  */
 
 const TYPES = ['fee', 'sessions'] as const;
+// Mirrors BASE_PRODUCT_TAX_BEHAVIORS (api/src/domain/baseProducts.ts): a behaviour only, rate ids are per gym.
+const TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 // Mirrors OFFERED_PRODUCT_FREQUENCIES (api/src/domain/productFrequency.ts).
 const FREQUENCIES = ['once', 'four_weeks', 'month', 'year'] as const;
 
@@ -45,6 +48,12 @@ interface BaseProduct {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  description: string | null;
+  notes: string | null;
+  package_information: string | null;
+  tax_behavior: (typeof TAX_BEHAVIORS)[number];
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   created_at: string | null;
   created_by: string | null;
   modified_at: string | null;
@@ -64,6 +73,10 @@ interface Form {
   mandatory: boolean;
   validity_days: string;
   one_time_purchase: boolean;
+  description: string;
+  notes: string;
+  package_information: string;
+  tax_behavior: (typeof TAX_BEHAVIORS)[number];
 }
 
 function formFor(p: BaseProduct | null): Form {
@@ -80,6 +93,10 @@ function formFor(p: BaseProduct | null): Form {
     mandatory: p?.mandatory ?? false,
     validity_days: p?.validity_days != null ? String(p.validity_days) : '',
     one_time_purchase: p?.one_time_purchase ?? false,
+    description: p?.description ?? '',
+    notes: p?.notes ?? '',
+    package_information: p?.package_information ?? '',
+    tax_behavior: p?.tax_behavior ?? 'inclusive',
   };
 }
 
@@ -96,6 +113,10 @@ function payloadFor(f: Form) {
     mandatory: f.mandatory,
     validity_days: f.validity_days.trim() ? Number(f.validity_days) : null,
     one_time_purchase: f.one_time_purchase,
+    description: f.description.trim() || null,
+    notes: f.notes.trim() || null,
+    package_information: f.package_information.trim() || null,
+    tax_behavior: f.tax_behavior,
   };
 }
 
@@ -211,6 +232,20 @@ export default function BaseProductsPage() {
         <option value="public">{t('enrollment_public')}</option>
         <option value="staff_only">{t('enrollment_staff_only')}</option>
       </select>
+      <label style={formFieldLabelStyle}>{t('tax_behavior')}</label>
+      <select style={formControlStyle} value={form.tax_behavior} onChange={(e) => set('tax_behavior', e.target.value as Form['tax_behavior'])}>
+        {TAX_BEHAVIORS.map((v) => <option key={v} value={v}>{t(`tax_behavior_${v}`)}</option>)}
+      </select>
+      <label style={formFieldLabelStyle}>{t('description')}</label>
+      <textarea style={formControlStyle} rows={2} value={form.description} onChange={(e) => set('description', e.target.value)} />
+      {form.type === 'sessions' && (
+        <>
+          <label style={formFieldLabelStyle}>{t('package_information')}</label>
+          <textarea style={formControlStyle} rows={2} value={form.package_information} onChange={(e) => set('package_information', e.target.value)} />
+        </>
+      )}
+      <label style={formFieldLabelStyle}>{t('notes')}</label>
+      <textarea style={formControlStyle} rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       <label style={formFieldLabelStyle}>{t('validity_days')}</label>
       <input style={formControlStyle} type="number" min={1} step={1} value={form.validity_days} onChange={(e) => set('validity_days', e.target.value)} />
       <label style={{ ...formFieldLabelStyle, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -221,6 +256,29 @@ export default function BaseProductsPage() {
         <input type="checkbox" checked={form.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
         {t('one_time_purchase')}
       </label>
+      {/* #2009 stage 3 — the template's image, acting on the server at once
+          (`POST`/`DELETE /platform/base-products/:id/image`). Its key carries the
+          template's id, so the create form offers none. The objects live under
+          `cordel/`, which no gym's storage settings gate. */}
+      {form.id != null && (
+        <div style={{ margin: '12px 0 4px' }}>
+          <label style={formFieldLabelStyle}>{t('section_media')}</label>
+          <MemberImageField
+            target={{
+              kind: 'immediate',
+              memberId: form.id,
+              basePath: '/platform/base-products',
+              imageUrl: rows.find((r) => r.id === form.id)?.image_url ?? null,
+              stamp: rows.find((r) => r.id === form.id)?.modified_at,
+              onChanged: (updated) => {
+                setRows((prev) => prev.map((r) => (r.id === form.id ? { ...r, ...(updated as BaseProduct) } : r)));
+              },
+            }}
+            requiresGymStorage={false}
+            label={(key) => t(key as any)}
+          />
+        </div>
+      )}
       {error && <div style={formErrorStyle} role="alert">{error}</div>}
       <div style={inlineActionsRowStyle}>
         <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
@@ -294,7 +352,12 @@ export default function BaseProductsPage() {
             <p><strong>{t('billing_frequency')}:</strong> {billingFrequencyLabel(details.billing_frequency, tFreq) ?? '—'}</p>
             <p><strong>{t('status')}:</strong> {t(details.status)}</p>
             <p><strong>{t('enrollment_status')}:</strong> {t(details.enrollment_status === 'public' ? 'enrollment_public' : 'enrollment_staff_only')}</p>
+            <p><strong>{t('tax_behavior')}:</strong> {t(`tax_behavior_${details.tax_behavior}`)}</p>
+            <p><strong>{t('description')}:</strong> {details.description ?? dash}</p>
+            <p><strong>{t('package_information')}:</strong> {details.package_information ?? dash}</p>
+            <p><strong>{t('notes')}:</strong> {details.notes ?? dash}</p>
             <p><strong>{t('validity_days')}:</strong> {details.validity_days ?? dash}</p>
+            <MemberImagePreview src={memberImagePreviewSrc(details.image_url, details.modified_at)} emptyLabel={t('image_none')} />
             <p><strong>{t('mandatory')}:</strong> {details.mandatory ? t('yes') : t('no')}</p>
             <p><strong>{t('one_time_purchase')}:</strong> {details.one_time_purchase ? t('yes') : t('no')}</p>
             <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
