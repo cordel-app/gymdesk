@@ -1,10 +1,20 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { parseMaxCapacity } from '../domain/baseProfessionalServices';
+import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import {
+  PROFESSIONAL_SERVICE_IMAGE_COLUMNS,
+  clearProfessionalServiceImage,
+  migrateProfessionalServiceImageOnRename,
+  storeProfessionalServiceImage,
+} from './professional-service-image-storage';
 
 export const professionalServicesRouter = Router();
 
@@ -17,6 +27,8 @@ const SELECT = `
     ps.is_system,
     ps.system_key,
     ps.max_capacity,
+    ps.image_url,
+    ps.image_thumbnail_url,
     ps.base_professional_service_id,
     ps.deleted_at,
     ps.created_at,
@@ -233,6 +245,17 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
       [name?.trim() ?? null, description ?? null, capacityGiven ? 1 : 0, capacity.value, actor, req.params.id, gymId],
     );
 
+    // #2010: the image key carries the service's name, so a rename moves it.
+    {
+      const { rows: imgRows } = await db.query(
+        `SELECT ${PROFESSIONAL_SERVICE_IMAGE_COLUMNS} FROM professional_services WHERE id = ? AND gym_id = ?`,
+        [req.params.id, gymId],
+      );
+      if (imgRows[0]?.image_url) {
+        await migrateProfessionalServiceImageOnRename({ gymId, prefix: await gymStorageFolderPrefix(gymId) }, imgRows[0]);
+      }
+    }
+
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ? AND ps.gym_id = ?`, [gymId, req.params.id, gymId]);
     recordAudit(req, {
       action: 'update',
@@ -299,7 +322,7 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: source } = await db.query(
-      `SELECT id, name, description, max_capacity FROM professional_services
+      `SELECT id, name, description, max_capacity, image_url, image_thumbnail_url FROM professional_services
        WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND deleted_at IS NULL`,
       [req.params.id, gymId],
     );
@@ -310,9 +333,11 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, created_by)
-         VALUES (?, ?, ?, 0, NULL, ?, ?)`,
-        [gymId, newName, src.description, src.max_capacity, actor],
+           (gym_id, name, description, is_system, system_key, max_capacity, image_url, image_thumbnail_url, created_by)
+         VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+        // #2010: the copy inherits the source's image *references*. No object is
+        // copied or re-processed, so one object may be referenced by several rows.
+        [gymId, newName, src.description, src.max_capacity, src.image_url ?? null, src.image_thumbnail_url ?? null, actor],
       );
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
@@ -328,6 +353,76 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A professional service with this name already exists.');
   }
+});
+
+// ─── Image (#2010) ────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `professional_services.image_url`
+// / `image_thumbnail_url` for a gym's own service (besides Duplicate, which
+// inherits the references). Base services are the platform's (`/platform/...`) and
+// answer 403 here, as the PUT does. Processing and limits are the Member photo's.
+
+async function loadServiceForImage(req: Request, res: Response, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${PROFESSIONAL_SERVICE_IMAGE_COLUMNS}, is_system, gym_id FROM professional_services WHERE id = ? AND deleted_at IS NULL`,
+    [req.params.id],
+  );
+  const row = rows[0];
+  if (row && (row.is_system || row.gym_id === null)) {
+    res.status(403).json({ error: 'System Professional Services cannot be edited.' });
+    return null;
+  }
+  if (!row || row.gym_id !== gymId) { res.status(404).json({ error: 'Not found' }); return null; }
+  const prefix = await gymStorageFolderPrefix(gymId);
+  if (!prefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return {
+    gymId, prefix,
+    service: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url },
+  };
+}
+
+async function readServiceForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, id]);
+  return rows[0];
+}
+
+professionalServicesRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadServiceForImage(req, res, true);
+    if (!context) return;
+    const { gymId, service } = context;
+    const stored = await storeProfessionalServiceImage({
+      scope: { gymId, prefix: context.prefix as string }, service, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
+      previous: { image_url: service.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readServiceForImageAnswer(gymId, service.id));
+  } catch (err) { next(err); }
+});
+
+professionalServicesRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadServiceForImage(req, res, false);
+    if (!context) return;
+    const { gymId, prefix, service } = context;
+    await clearProfessionalServiceImage({
+      scope: { gymId, prefix }, service, modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    recordAudit(req, {
+      action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
+      previous: { image_url: service.image_url }, next: { image_url: null },
+    });
+    res.json(await readServiceForImageAnswer(gymId, service.id));
+  } catch (err) { next(err); }
 });
 
 // ─── DELETE /:id — soft-delete custom Professional Services only ─────────────
