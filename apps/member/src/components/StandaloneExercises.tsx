@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { MemberDialog } from '@/components/MemberDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
 import {
   inputStyle, memberTheme, noticeStyle, primaryButtonStyle, secondaryButtonStyle,
 } from '@/lib/memberChrome';
@@ -103,7 +104,12 @@ export function StandaloneExercises({ date }: { date: string }) {
       {message && <div style={styles.message}>{message}</div>}
 
       {items.length === 0 && <p style={styles.hint}>{t('standalone_empty')}</p>}
-      {items.map((item) => (
+      {items.length > 0 && (
+      <BlockExerciseCarousel
+        groupLabel={t('standalone_title')}
+        prevLabel={t('exercise_prev')} nextLabel={t('exercise_next')}
+        positionLabel={(i, n) => t('exercise_position', { current: i, total: n })}
+        cards={items.map((item) => (
         <div key={item.id} style={styles.card}>
           <div style={styles.exerciseMedia}>
             <ExerciseMedia fill exercise={{
@@ -144,7 +150,9 @@ export function StandaloneExercises({ date }: { date: string }) {
             </div>
           )}
         </div>
-      ))}
+        ))}
+      />
+      )}
 
       <button type="button" onClick={() => { setPicking(true); setMessage(null); }} style={styles.addExerciseBtn}>
         {t('standalone_add')}
@@ -177,7 +185,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   hint: { color: memberTheme.textMuted, fontSize: 13, margin: '4px 0 12px' },
   message: { ...noticeStyle('error'), marginBottom: 12 },
-  card: { marginTop: 8, marginBottom: 10, padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
+  card: { marginTop: 8, padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
   exerciseMedia: { display: 'block', width: '100%' },
   info: { display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 12px 0' },
   rowTop: { display: 'flex', alignItems: 'center', gap: 8 },
