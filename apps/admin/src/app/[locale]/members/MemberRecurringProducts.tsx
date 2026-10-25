@@ -27,9 +27,9 @@ import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetSummary } from './membershipConfiguration';
 import { AddProductPurchase } from './AddProductPurchase';
 import { ReviewChangesModal } from './ReviewChangesModal';
-import { editableLines, recurringState, type EditableLine } from './recurringProductsView';
+import { editableLines, planSummary, recurringState, type EditableLine } from './recurringProductsView';
 
-interface Detail { configuration?: Parameters<typeof editableLines>[0] }
+interface Detail { configuration?: Parameters<typeof editableLines>[0] & Parameters<typeof planSummary>[0] }
 
 export function MemberRecurringProducts({
   memberId, current, reloadKey, canWrite, isAdmin, onChanged, reviewing, onReviewingChange,
@@ -53,6 +53,7 @@ export function MemberRecurringProducts({
   const state = recurringState(current, canWrite);
 
   const [lines, setLines] = useState<EditableLine[]>([]);
+  const [plan, setPlan] = useState<ReturnType<typeof planSummary>>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,12 +64,12 @@ export function MemberRecurringProducts({
 
   const setId = current?.id ?? null;
   useEffect(() => {
-    if (setId == null) { setLines([]); return; }
+    if (setId == null) { setLines([]); setPlan(null); return; }
     let cancelled = false;
     setLoading(true);
     apiFetch<Detail>(`/product-sets/${setId}`)
-      .then((d) => { if (!cancelled) setLines(editableLines(d.configuration)); })
-      .catch(() => { if (!cancelled) setLines([]); })
+      .then((d) => { if (!cancelled) { setLines(editableLines(d.configuration)); setPlan(planSummary(d.configuration)); } })
+      .catch(() => { if (!cancelled) { setLines([]); setPlan(null); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,6 +148,12 @@ export function MemberRecurringProducts({
 
       {state.chip == null && <p style={cardHintStyle}>{t('recurring_empty')}</p>}
       {state.chip != null && loading && <p style={cardHintStyle}>{t('product_set_loading')}</p>}
+      {state.chip != null && !loading && plan && (
+        <CardDetailRow
+          label={t('recurring_plan_label')}
+          value={`${plan.name}${plan.fee != null ? ` · €${plan.fee.toFixed(2)}` : ''}`}
+        />
+      )}
       {state.chip != null && !loading && lines.length === 0 && <p style={cardHintStyle}>{t('product_set_no_products')}</p>}
 
       {adding && (
@@ -167,7 +174,7 @@ export function MemberRecurringProducts({
           <div key={l.key} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '4px 0' }}>
             <div style={{ flex: 1, minWidth: 160 }}>
               <CardDetailRow
-                label={l.name}
+                label={l.fromPlan ? `${l.name} (${t('recurring_from_plan')})` : l.name}
                 value={`${l.quantity} × €${l.unitPrice.toFixed(2)}${freq ? ` · ${freq}` : ''}`}
               />
             </div>
