@@ -292,6 +292,43 @@ export function billingEventChartPoints(
   return points.sort((a, b) => a.x - b.x);
 }
 
+/**
+ * #2090 — a continuous monthly timeline: a calendar month that falls between two
+ * points and has none is added as an explicit zero point (same day of month as
+ * the previous point, clamped), so a month with nothing due is drawn as 0 rather
+ * than skipped. Cadences shorter than a month (4 weeks) never leave a gap, so they
+ * are untouched. The added points carry no `date` match in the simulation, so
+ * selecting one shows no detail. Nothing is priced here.
+ */
+export function fillMissingMonths(
+  points: readonly BillingEventChartPoint[],
+  formatDate: (date: string) => string,
+  formatAmount: (amount: number) => string,
+  totalLabel: (formattedTotal: string) => string = (formattedTotal) => formattedTotal,
+): BillingEventChartPoint[] {
+  const out: BillingEventChartPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const current = points[i];
+    out.push(current);
+    const next = points[i + 1];
+    if (!next) continue;
+    const a = new Date(current.x);
+    const b = new Date(next.x);
+    const gap = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+    for (let k = 1; k < gap; k++) {
+      const monthStart = Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + k, 1);
+      const daysInMonth = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + k + 1, 0)).getUTCDate();
+      const x = monthStart + (Math.min(a.getUTCDate(), daysInMonth) - 1) * 86400000;
+      const date = new Date(x).toISOString().slice(0, 10);
+      out.push({
+        x, y: 0, date, label: formatDate(date),
+        valueLabel: totalLabel(formatAmount(0)), detailLines: [],
+      });
+    }
+  }
+  return out;
+}
+
 /** The group a chart click selected, or `null` when the date is not (or no longer) listed. */
 export function selectedBillingGroup<T extends { date: string }>(
   dates: readonly T[],

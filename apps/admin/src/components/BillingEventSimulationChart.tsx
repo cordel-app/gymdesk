@@ -15,6 +15,7 @@ import {
   type BillingEventSimulationData,
   billingDateAtX,
   billingEventChartPoints,
+  fillMissingMonths,
   billingDateToX,
   selectedBillingGroup,
   visibleBillingDates,
@@ -23,13 +24,15 @@ import {
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
 export function BillingEventSimulationChart({
-  simulation, t, formatDate, showZero = false,
+  simulation, t, formatDate, showZero = false, continuousMonths = false,
 }: {
   simulation: BillingEventSimulationData | null | undefined;
   t: Translate;
   formatDate: (date: string) => string;
   /** #1810 — the host's "Show €0 billing events" choice. */
   showZero?: boolean;
+  /** #2090 — draw every calendar month, a month with nothing due as an explicit 0. */
+  continuousMonths?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const dates = useMemo(
@@ -37,16 +40,20 @@ export function BillingEventSimulationChart({
     [simulation, showZero],
   );
   const points = useMemo(
-    () => billingEventChartPoints(
+    () => {
+      const total = (value: string) => t('chart_total', { total: value });
+      const base = billingEventChartPoints(
       dates, formatDate, fmtMoney, undefined,
-      (total) => t('chart_total', { total }),
+      total,
       (line) => (line.proration
         ? t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days })
         : null),
-    ),
+      );
+      return continuousMonths ? fillMissingMonths(base, formatDate, fmtMoney, total) : base;
+    },
     // formatDate is a new closure per render; the dates decide the points.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dates],
+    [dates, continuousMonths],
   );
   const group = selectedBillingGroup(dates, selected);
 
