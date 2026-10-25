@@ -22,6 +22,11 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeStyle } from '@/components/listChrome';
 import { inlineActionsRowStyle, secondaryBtnStyle } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { MemberImageField } from '@/components/MemberImageField';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import { cardSectionLabelStyle } from '@/components/formChrome';
 import { ImportProfessionalServicesModal } from './ImportProfessionalServicesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -37,6 +42,8 @@ interface ProfessionalService {
   is_system: number;
   system_key: string | null;
   max_capacity: number | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   status: ServiceStatus;
   created_at: string;
   modified_at: string | null;
@@ -137,6 +144,7 @@ export default function ProfessionalServicesPage() {
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
+  const [view, setView] = useExerciseViewMode();
   const [items, setItems] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -218,7 +226,16 @@ export default function ProfessionalServicesPage() {
 
   // ─── Edit ────────────────────────────────────────────────────────────────────
 
+  function applyImageChange(updated: unknown) {
+    const next = updated as ProfessionalService;
+    setItems((prev) => prev.map((r) => (r.id === next.id
+      ? { ...r, image_url: next.image_url, image_thumbnail_url: next.image_thumbnail_url, modified_at: next.modified_at }
+      : r)));
+  }
+
   function openEdit(item: ProfessionalService) {
+    // Editing happens in the List view only; Edit from a card switches to it (#2010).
+    setView('list');
     setEditingId(item.id);
     setEditForm(emptyEditForm(item));
     setEditError(null);
@@ -344,6 +361,43 @@ export default function ProfessionalServicesPage() {
     );
   }
 
+  // ─── Card header (Cards view, #2010) ───────────────────────────────────────
+
+  function renderCardHeader(item: ProfessionalService, menuItems: ContextMenuItem[]) {
+    const isSystem = Boolean(item.is_system);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {item.image_url && (
+          <CardSquareImage src={item.image_url} alt={item.name} version={item.modified_at} placeholder={null} />
+        )}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {!item.image_url && <MemberAvatar name={item.name} imageUrl={null} size={40} />}
+            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>
+              {item.name}
+              {isSystem && <span style={listNameBadgeStyle}>{t('system_badge')}</span>}
+            </div>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
+            </div>
+          </div>
+          <div
+            title={item.description ?? undefined}
+            style={{ fontSize: 13, color: '#888', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {item.description || '—'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <StatusBadge status={item.status} label={tStatus(item.status)} />
+            <span style={{ fontSize: 13, color: '#888' }}>
+              {t('label_max_capacity')}: {item.max_capacity ?? '—'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderRow(item: ProfessionalService) {
     const isSystem = Boolean(item.is_system);
     const isExpanded = expanded.has(item.id);
@@ -367,9 +421,12 @@ export default function ProfessionalServicesPage() {
 
     return (
       <div key={item.id} style={cardStyle}>
-        {/* Collapsed header */}
+        {view === 'cards' ? renderCardHeader(item, menuItems) : (
+        /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(item.id)}>
-          <div className={CELL_CLASS.name} title={item.name} style={{ minWidth: 0 }}>
+          <div className={CELL_CLASS.name} title={item.name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MemberAvatar name={item.name} imageUrl={item.image_thumbnail_url ?? item.image_url} stamp={item.modified_at} size={36} />
+            <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {item.name}
               {isSystem && (
@@ -383,6 +440,7 @@ export default function ProfessionalServicesPage() {
                 {item.description}
               </div>
             )}
+            </div>
           </div>
           <div className={CELL_CLASS.status}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
@@ -392,6 +450,7 @@ export default function ProfessionalServicesPage() {
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
           </div>
         </div>
+        )}
 
         {/* Inline edit (custom services only) */}
         {isEditing && editForm && (
@@ -422,6 +481,22 @@ export default function ProfessionalServicesPage() {
                 onChange={(e) => setEditForm({ ...editForm, max_capacity: e.target.value })}
                 placeholder={t('placeholder_max_capacity')}
                 style={inlineInputStyle}
+              />
+            </div>
+            <div style={{ ...cardSectionLabelStyle, marginBottom: 8 }}>{t('section_media')}</div>
+            <div style={{ marginBottom: 12 }}>
+              <MemberImageField
+                target={{
+                  kind: 'immediate',
+                  memberId: item.id,
+                  basePath: '/professional-services',
+                  imageUrl: item.image_url ?? null,
+                  stamp: item.modified_at,
+                  onChanged: applyImageChange,
+                }}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+                label={(key) => t(key as any)}
               />
             </div>
             {editError && <p style={errorStyle}>{editError}</p>}
@@ -461,12 +536,21 @@ export default function ProfessionalServicesPage() {
         </div>
       </div>
 
+      <div style={{ marginBottom: 12 }}>
+        <ExerciseViewToggle value={view} onChange={setView} />
+      </div>
+
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : items.length === 0 && !inlineNew ? (
         <>
           {renderInlineNewRow()}
           <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
+      ) : view === 'cards' ? (
+        <>
+          {renderInlineNewRow()}
+          <CardGrid>{items.map(renderRow)}</CardGrid>
         </>
       ) : (
         /* The header band and the cards share LIST_GRID_COLUMNS and scroll

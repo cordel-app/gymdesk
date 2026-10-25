@@ -13,6 +13,8 @@ export interface BasePs {
   name: string;
   description: string | null;
   max_capacity: number | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   display_name: string;
   display_description: string | null;
   created_at: string | null;
