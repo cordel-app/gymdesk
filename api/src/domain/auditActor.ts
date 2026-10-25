@@ -152,6 +152,7 @@ export const AUDITED_TABLES: readonly string[] = [
   'base_personal_goals',
   'base_nutrition_goals',
   'base_nutrition_library_items',
+  'base_exercises',
   'gym_personal_goals',
   'gyms',
   'member_nutrition_plans',
