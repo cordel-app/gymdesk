@@ -17,6 +17,7 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 import { EventImageControl } from './EventImageControl';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { eventPanelSurfaceStyle } from './EventPanelChrome';
 import { CalendarEventHeader, CalendarEventInfoCard, DetailRow } from './CalendarEventDetails';
 import { sessionEventView } from './calendarEventView';
@@ -570,12 +571,6 @@ export function ClassSessionDetailPanel({
     return [...active, ...storedInactive];
   }
 
-  function eligibleServicesLabel(current: ClassSession): string {
-    const names = current.eligible_professional_services.map((svc) => svc.name).join(', ');
-    const value = names || t('eligible_services_any');
-    return current.eligible_services_override ? value : `${value} (${t('eligible_services_inherited')})`;
-  }
-
   /**
    * §3 — is this save the one that closes the waiting list? Only a move *to*
    * `disabled` is, and only while the occurrence is not already there;
@@ -843,8 +838,22 @@ export function ClassSessionDetailPanel({
                 session.waitlist_mode == null ? ` (${t('waitlist_inherited')})` : ''}`}
             />
             {/* #980 stage 3 — who may book this occurrence, as a value. The
-                `(inherited …)` note says the list is the Activity Type's. */}
-            <DetailRow label={t('event_eligible_services')} value={eligibleServicesLabel(session)} />
+                chip says the list is the Activity Type's. */}
+            <div style={{ fontSize: 13, marginBottom: 4 }}>
+              <span style={{ color: '#6b7280' }}>{t('event_eligible_services')}: </span>
+              {!session.eligible_services_override && (
+                <span style={listNameBadgeStyle}>{t('eligible_services_inherited')}</span>
+              )}
+              {session.eligible_professional_services.length > 0 ? (
+                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                  {session.eligible_professional_services.map((svc) => (
+                    <li key={svc.id}>{svc.name}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span> {t('eligible_services_any')}</span>
+              )}
+            </div>
           </>
         )}
         footer={editingDetails ? (

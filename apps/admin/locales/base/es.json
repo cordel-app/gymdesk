@@ -4170,7 +4170,7 @@
     "waitlist_inherited": "heredada de la actividad",
     "event_eligible_services": "Servicios profesionales elegibles",
     "eligible_services_any": "Cualquier miembro",
-    "eligible_services_inherited": "heredados de la actividad",
+    "eligible_services_inherited": "Heredados de la actividad",
     "eligible_services_hint": "El miembro necesita sesiones disponibles de al menos uno de los servicios seleccionados. Sin selección, cualquier miembro puede reservar este evento.",
     "waitlist_mode_disabled": "Desactivada",
     "waitlist_mode_open": "Abierta",
