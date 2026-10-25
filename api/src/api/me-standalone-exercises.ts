@@ -91,7 +91,7 @@ meStandaloneExercisesRouter.get('/', async (req: Request, res: Response, next: N
                           FROM exercise_log_sets ls WHERE ls.exercise_log_id = l.id)) AS item
                  FROM exercise_logs l WHERE l.standalone_exercise_id = s.id ORDER BY l.id
                ) t) AS logs
-       FROM member_standalone_exercises s JOIN exercises e ON e.id = s.exercise_id
+       FROM member_standalone_exercises s JOIN exercise_catalogue e ON e.id = COALESCE(s.base_exercise_id, s.exercise_id)
        WHERE s.gym_id = ? AND s.member_id = ? AND s.exercise_date = ? ORDER BY s.id`,
       [gymId, memberId, date],
     );

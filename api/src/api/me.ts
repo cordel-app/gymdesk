@@ -1672,7 +1672,7 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
     if (standalone_exercise_id != null) {
       // The log is dated by the standalone exercise's own day.
       const { rows: seRows } = await db.query(
-        `SELECT exercise_id, DATE_FORMAT(exercise_date, '%Y-%m-%d') AS exercise_date FROM member_standalone_exercises
+        `SELECT exercise_id, base_exercise_id, DATE_FORMAT(exercise_date, '%Y-%m-%d') AS exercise_date FROM member_standalone_exercises
          WHERE id = ? AND gym_id = ? AND member_id = ?`,
         [standalone_exercise_id, gymId, memberId],
       );
@@ -1680,10 +1680,10 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
       if (seRows[0].exercise_date !== String(logged_date).slice(0, 10)) {
         return res.status(400).json({ error: 'logged_date must be the day the exercise was added to' });
       }
-      exerciseId = seRows[0].exercise_id;
+      exerciseId = seRows[0].base_exercise_id ?? seRows[0].exercise_id;
     } else {
       const { rows: weRows } = await db.query(
-        `SELECT we.exercise_id FROM workout_exercises we
+        `SELECT we.exercise_id, we.base_exercise_id FROM workout_exercises we
          JOIN workout_blocks wb ON wb.id = we.workout_block_id
          JOIN workouts w ON w.id = wb.workout_id
          JOIN training_plans tp ON tp.id = w.training_plan_id
@@ -1691,21 +1691,21 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
         [workout_exercise_id, gymId, memberId],
       );
       if (weRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
-      exerciseId = weRows[0].exercise_id;
+      exerciseId = weRows[0].base_exercise_id ?? weRows[0].exercise_id;
     }
 
     const logId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, standalone_exercise_id, exercise_id, logged_date, notes, duration_seconds, skipped)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, memberId, workout_exercise_id ?? null, standalone_exercise_id, exerciseId, logged_date, notes ?? null,
+        `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, standalone_exercise_id, exercise_id, base_exercise_id, logged_date, notes, duration_seconds, skipped)
+         VALUES (?, ?, ?, ?, ?, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?)`,
+        [gymId, memberId, workout_exercise_id ?? null, standalone_exercise_id, exerciseId, exerciseId, logged_date, notes ?? null,
          duration_seconds ?? null, Boolean(skipped)],
       );
       if (Array.isArray(sets)) {
         // Sets continue the numbering of the exercise's earlier sets that day.
         const { rows: prior } = await tx.query(
           `SELECT COUNT(*) AS n FROM exercise_log_sets s JOIN exercise_logs l ON l.id = s.exercise_log_id
-           WHERE l.gym_id = ? AND l.member_id = ? AND l.exercise_id = ? AND l.logged_date = ? AND l.id <> ?`,
+           WHERE l.gym_id = ? AND l.member_id = ? AND COALESCE(l.base_exercise_id, l.exercise_id) = ? AND l.logged_date = ? AND l.id <> ?`,
           [gymId, memberId, exerciseId, logged_date, insertId],
         );
         const offset = Number(prior[0]?.n ?? 0);
@@ -1792,9 +1792,9 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
                          SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
                          FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
                        ) t) AS sets
-               FROM exercise_logs el JOIN exercises e ON e.id = el.exercise_id
+               FROM exercise_logs el JOIN exercise_catalogue e ON e.id = COALESCE(el.base_exercise_id, el.exercise_id)
                WHERE el.gym_id = ? AND el.member_id = ?`;
-    if (exerciseId) { sql += ' AND el.exercise_id = ?'; params.push(exerciseId); }
+    if (exerciseId) { sql += ' AND COALESCE(el.base_exercise_id, el.exercise_id) = ?'; params.push(exerciseId); }
     sql += ' ORDER BY el.logged_date DESC, el.id DESC';
     // #1297: an optional page size. Validated as an integer and written into the
     // statement — a bound LIMIT is refused by the prepared-statement protocol.

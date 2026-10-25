@@ -171,7 +171,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                           'target_value', wte.target_value, 'min_value', wte.min_value, 'max_value', wte.max_value,
                           'unit', wte.unit) AS item
                       FROM workout_template_exercises wte
-                      JOIN exercises e ON e.id = wte.exercise_id
+                      JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id)
                       LEFT JOIN result_types rt ON rt.id = wte.result_type_id
                       WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
                       ORDER BY wte.position
