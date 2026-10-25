@@ -13,8 +13,12 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle, inlineActionsRowStyle,
-  inlineEditorStyle, inlineEditorTitleStyle, secondaryBtnSmall,
+  inlineEditorStyle, inlineEditorTitleStyle, secondaryBtnSmall, cardSectionLabelStyle,
 } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { MemberImageField } from '@/components/MemberImageField';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import {
@@ -37,6 +41,7 @@ export default function BaseProfessionalServicesPage() {
   const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
+  const [view, setView] = useExerciseViewMode();
   const [rows, setRows] = useState<BasePs[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -104,6 +109,13 @@ export default function BaseProfessionalServicesPage() {
     }
   }
 
+  function applyImageChange(updated: unknown) {
+    const next = updated as BasePs;
+    setRows((prev) => prev.map((r) => (r.id === next.id
+      ? { ...r, image_url: next.image_url, image_thumbnail_url: next.image_thumbnail_url, modified_at: next.modified_at }
+      : r)));
+  }
+
   function setText(l: Loc, field: 'name' | 'description', value: string) {
     setForm((f) => f && ({ ...f, texts: { ...f.texts, [l]: { ...f.texts[l], [field]: value } } }));
   }
@@ -129,6 +141,23 @@ export default function BaseProfessionalServicesPage() {
         onChange={(e) => setForm({ ...form, max_capacity: e.target.value })}
       />
       <div style={formHelpTextStyle}>{t('max_capacity_help')}</div>
+      {form.id != null && (
+        <>
+          <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
+          <MemberImageField
+            target={{
+              kind: 'immediate',
+              memberId: form.id,
+              basePath: '/platform/professional-services',
+              imageUrl: rows.find((r) => r.id === form.id)?.image_url ?? null,
+              stamp: rows.find((r) => r.id === form.id)?.modified_at,
+              onChanged: applyImageChange,
+            }}
+            requiresGymStorage={false}
+            label={(key) => t(key as any)}
+          />
+        </>
+      )}
       {error && <div style={formErrorStyle} role="alert">{error}</div>}
       <div style={inlineActionsRowStyle}>
         <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
@@ -138,6 +167,15 @@ export default function BaseProfessionalServicesPage() {
   );
 
   const dash = '—';
+  const rowMenu = (s: BasePs) => (
+    <ContextMenu
+      items={[
+        { label: t('edit'), onClick: () => { setView('list'); setForm(formFor(s)); setError(null); } },
+        { label: t('details'), onClick: () => setDetails(s) },
+        { label: t('delete'), onClick: () => setDeleting(s), danger: true },
+      ]}
+    />
+  );
   const when = (v: string | null | undefined) => (v ? formatGymDateTime(v, fmt) : dash);
 
   return (
@@ -147,18 +185,42 @@ export default function BaseProfessionalServicesPage() {
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => { setForm(emptyForm()); setError(null); }}>{t('add')}</button>
       </div>
 
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <ExerciseViewToggle value={view} onChange={setView} />
         <FormInput style={{ width: 220 }} placeholder={t('search')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('search')} />
       </div>
 
       {form?.id === null && editor}
 
+      {view === 'cards' && !loading && rows.length > 0 ? (
+        <div style={{ marginTop: form?.id === null ? 12 : 0 }}>
+          <CardGrid>
+            {rows.map((s) => (
+              <div key={s.id} style={{ ...cardSurfaceStyle, overflow: 'hidden' }}>
+                {s.image_url && <CardSquareImage src={s.image_url} alt={s.display_name} version={s.modified_at} placeholder={null} />}
+                <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {!s.image_url && <MemberAvatar name={s.display_name} imageUrl={null} size={40} />}
+                    <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{s.display_name}</div>
+                    {rowMenu(s)}
+                  </div>
+                  <div style={{ fontSize: 13, color: '#888', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={s.display_description ?? undefined}>
+                    {s.display_description ?? dash}
+                  </div>
+                  <div style={{ fontSize: 13 }}>{t('max_capacity')}: {s.max_capacity ?? dash}</div>
+                </div>
+              </div>
+            ))}
+          </CardGrid>
+        </div>
+      ) : (
       <div style={{ ...cardSurfaceStyle, marginTop: form?.id === null ? 12 : 0 }}>
         {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((s) => (
           form?.id === s.id ? (
             <div key={s.id} style={{ padding: 12, borderTop: '1px solid var(--gd-separator, #eee)' }}>{editor}</div>
           ) : (
             <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--gd-separator, #eee)' }}>
+              <MemberAvatar name={s.display_name} imageUrl={s.image_thumbnail_url ?? s.image_url} stamp={s.modified_at} size={36} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{s.display_name}</div>
                 <div style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -166,17 +228,12 @@ export default function BaseProfessionalServicesPage() {
                 </div>
               </div>
               <div style={{ fontSize: 13 }}>{t('max_capacity')}: {s.max_capacity ?? dash}</div>
-              <ContextMenu
-                items={[
-                  { label: t('edit'), onClick: () => { setForm(formFor(s)); setError(null); } },
-                  { label: t('details'), onClick: () => setDetails(s) },
-                  { label: t('delete'), onClick: () => setDeleting(s), danger: true },
-                ]}
-              />
+              {rowMenu(s)}
             </div>
           )
         ))}
       </div>
+      )}
 
       <CrudModal
         open={!!details}
