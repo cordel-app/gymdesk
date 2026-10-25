@@ -588,6 +588,8 @@
     "recurring_status_none": "—",
     "recurring_payment_pending": "Payment pending",
     "recurring_expired": "This draft has expired.",
+    "recurring_plan_label": "Membership Plan",
+    "recurring_from_plan": "from plan",
     "recurring_empty": "This member has no recurring products yet. Add one to start a draft.",
     "recurring_add_product": "+ Add Product",
     "recurring_remove": "Remove",

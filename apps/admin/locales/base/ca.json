@@ -589,6 +589,8 @@
     "recurring_status_none": "—",
     "recurring_payment_pending": "Pagament pendent",
     "recurring_expired": "Aquest esborrany ha caducat.",
+    "recurring_plan_label": "Pla de membresia",
+    "recurring_from_plan": "del pla",
     "recurring_empty": "Aquest membre encara no té productes recurrents. Afegeix-ne un per iniciar un esborrany.",
     "recurring_add_product": "+ Afegeix producte",
     "recurring_remove": "Treu",

@@ -588,6 +588,8 @@
     "recurring_status_none": "—",
     "recurring_payment_pending": "Pago pendiente",
     "recurring_expired": "Este borrador ha caducado.",
+    "recurring_plan_label": "Plan de membresía",
+    "recurring_from_plan": "del plan",
     "recurring_empty": "Este miembro aún no tiene productos recurrentes. Añade uno para iniciar un borrador.",
     "recurring_add_product": "+ Añadir producto",
     "recurring_remove": "Quitar",

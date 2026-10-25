@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changeMessage, confirmAction, editableLines, recurringState } from '../app/[locale]/members/recurringProductsView';
+import { changeMessage, confirmAction, editableLines, planSummary, recurringState } from '../app/[locale]/members/recurringProductsView';
 
 const set = (status: string, expired = false): any => ({ id: 1, status, expired });
 
@@ -35,6 +35,14 @@ describe('lines and change wording', () => {
         { id: 10, productId: 4, name: 'D', quantity: 1, unitPrice: 4, billingFrequency: 'month', endsOn: '2026-01-01' }],
     });
     expect(lines.map((l) => [l.name, l.serviceId])).toEqual([['A', null], ['C', 9]]);
+    expect(lines.map((l) => l.fromPlan)).toEqual([true, false]);
+  });
+
+  it('names the plan a version carries (#1988), and nothing when it has none', () => {
+    expect(planSummary({ planName: 'Gold', membershipFeePrice: 30 })).toEqual({ name: 'Gold', fee: 30 });
+    expect(planSummary({ planName: 'Gold' })).toEqual({ name: 'Gold', fee: null });
+    expect(planSummary({ planName: null })).toBeNull();
+    expect(planSummary(undefined)).toBeNull();
   });
 
   it('maps a change to a locale key with its values', () => {
