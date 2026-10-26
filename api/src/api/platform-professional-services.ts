@@ -11,6 +11,7 @@ import {
   migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
+import { attachTranslations, writeTranslations } from './professional-service-translations';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { getRequestLocale as resolveLocale } from '../infra/locale';
@@ -48,31 +49,7 @@ interface Row {
   modified_by: string | null;
 }
 
-async function shape(rows: Row[], locale: string) {
-  if (rows.length === 0) return [];
-  const { rows: tr } = await db.query<any>(
-    `SELECT professional_service_id AS id, locale, name, description
-       FROM professional_service_translations
-      WHERE professional_service_id IN (${rows.map(() => '?').join(',')})`,
-    rows.map((r) => r.id),
-  );
-  const byId = new Map<number, BasePsTranslations>();
-  for (const t of tr) {
-    const m = byId.get(t.id) ?? {};
-    m[t.locale] = { name: t.name, description: t.description };
-    byId.set(t.id, m);
-  }
-  return rows.map((r) => {
-    const translations = byId.get(r.id) ?? {};
-    const shown = translations[locale];
-    return {
-      ...r,
-      translations,
-      display_name: shown?.name || r.name,
-      display_description: shown?.description || r.description,
-    };
-  });
-}
+const shape = attachTranslations;
 
 async function loadOne(id: unknown, locale: string) {
   const { rows } = await db.query<Row>(
@@ -82,17 +59,6 @@ async function loadOne(id: unknown, locale: string) {
     [id],
   );
   return rows[0] ? (await shape(rows, locale))[0] : null;
-}
-
-async function writeTranslations(tx: { query: (sql: string, params?: any[]) => Promise<any> }, id: number, t: BasePsTranslations) {
-  for (const [locale, v] of Object.entries(t)) {
-    await tx.query(
-      `INSERT INTO professional_service_translations (professional_service_id, locale, name, description)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
-      [id, locale, v.name, v.description],
-    );
-  }
 }
 
 platformProfessionalServicesRouter.get('/', requireSuperadmin, async (req, res, next) => {

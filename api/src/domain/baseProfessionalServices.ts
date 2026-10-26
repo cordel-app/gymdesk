@@ -44,10 +44,15 @@ export function parseBaseDescription(value: unknown): { value: string | null } |
 }
 
 /**
- * Judges a `translations` map: every non-base locale must carry a name, a
- * description is optional, an unknown locale is a 400 (never dropped quietly).
+ * Judges a `translations` map: an unknown locale is a 400 (never dropped
+ * quietly) and a description is optional. A Base service must carry a name in
+ * every locale (`requireAll`); a gym's own service (#2110) may leave a locale
+ * out or blank, which falls back to the base text at read time.
  */
-export function parseBasePsTranslations(value: unknown): { value: BasePsTranslations } | { error: string } {
+export function parsePsTranslations(
+  value: unknown,
+  opts: { requireAll: boolean },
+): { value: BasePsTranslations } | { error: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { error: 'translations must be an object keyed by locale' };
   }
@@ -60,6 +65,8 @@ export function parseBasePsTranslations(value: unknown): { value: BasePsTranslat
   const out: BasePsTranslations = {};
   for (const locale of BASE_PS_TRANSLATION_LOCALES) {
     const entry = input[locale];
+    const blank = !entry || typeof entry !== 'object' || (typeof entry.name === 'string' && !entry.name.trim() && !entry.description);
+    if (!opts.requireAll && blank) continue;
     if (!entry || typeof entry !== 'object') return { error: `translations.${locale}.name is required` };
     const name = parseBaseName(entry.name);
     if ('error' in name) return { error: `translations.${locale}.${name.error}` };
@@ -68,4 +75,8 @@ export function parseBasePsTranslations(value: unknown): { value: BasePsTranslat
     out[locale] = { name: name.value, description: description.value };
   }
   return { value: out };
+}
+
+export function parseBasePsTranslations(value: unknown): { value: BasePsTranslations } | { error: string } {
+  return parsePsTranslations(value, { requireAll: true });
 }

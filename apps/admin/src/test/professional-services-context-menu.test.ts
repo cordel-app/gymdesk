@@ -20,7 +20,8 @@ import { join } from 'path';
 // This is a source scan: apps/admin has no component-test harness, so the page
 // is parsed as text in the same style as included-services-removed.test.ts.
 
-const PAGE = join(__dirname, '..', 'app', '[locale]', 'professional-services', 'page.tsx');
+// #2110: the menu lives in the one shared renderer both pages use.
+const PAGE = join(__dirname, '..', 'components', 'professionalServices', 'ProfessionalServicesView.tsx');
 const CONTEXT_MENU = join(__dirname, '..', 'components', 'ContextMenu.tsx');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -160,9 +161,11 @@ describe('#802 Professional Services context menu — behaviour is unchanged', (
   });
 
   it('calls the same endpoints', () => {
-    expect(page).toContain('/duplicate`, { method: \'POST\' }');
-    expect(page).toContain('/deactivate`, { method: \'POST\' }');
-    expect(page).toContain('/activate`, { method: \'POST\' }');
+    expect(page).toContain("verb: 'activate' | 'deactivate' | 'duplicate'");
+    expect(page).toContain('`${cfg.apiRoot}/${item.id}/${verb}`, { method: \'POST\' }');
+    expect(page).toContain("action(item, 'duplicate')");
+    expect(page).toContain("action(item, 'deactivate')");
+    expect(page).toContain("action(item, 'activate')");
   });
 
   it('still opens the existing Details modal, with its View Audit Log button', () => {
