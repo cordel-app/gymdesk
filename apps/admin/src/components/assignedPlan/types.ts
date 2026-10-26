@@ -293,6 +293,8 @@ export interface AssignedPlanDetail {
   promotions: AppliedPromotion[];
   additional_services: AssignedPlanService[];
   billing_events: BillingEventsView;
+  /** #2097 — the ProductSet version this assignment is; the Save & Pay modal reviews and pays it. */
+  product_set_id?: number | null;
   /**
    * #924 stage 3 — the Membership Fee Simulation. `null` only for a response
    * written before the projection existed; the card renders the unavailable

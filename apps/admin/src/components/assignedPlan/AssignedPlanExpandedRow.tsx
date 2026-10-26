@@ -40,6 +40,7 @@ import {
   ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS,
 } from './types';
 import type { AssignedPlanDetail } from './types';
+import { ReviewChangesModal } from '@/app/[locale]/members/ReviewChangesModal';
 
 // #786: an assignment is `active` from creation, so there is no pre-activation
 // status left to Submit from. The dates-and-discount Edit form that only a
@@ -156,6 +157,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // #1240: Cancel on a Draft is a hard delete, confirmed first.
   const [discardOpen, setDiscardOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
+  // #2097: Save & Pay opens the payment modal (review, method, Pay) instead of
+  // committing inline; nothing is committed or charged until Pay inside it.
+  const [payModalOpen, setPayModalOpen] = useState(false);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
   const { canWrite: canWritePayments, isAdmin, readOnlyTitle } = useModuleAccess('PAYMENTS');
@@ -227,6 +231,12 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
     } finally {
       setActionBusy(false);
     }
+  }
+
+  /** #2097: open the payment modal for a Draft that has its version; else the plain commit. */
+  function startSaveAndPay() {
+    if (detail?.product_set_id != null) setPayModalOpen(true);
+    else saveAndPay();
   }
 
   /** A cash / manual first payment: `POST /:id/record-payment` writes it and activates. */
@@ -371,7 +381,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       // Not passed by reference: the click's `MouseEvent` would land in
       // `confirmReplacement` and confirm the replacement on the first attempt
       // (#956's own rule for these handlers).
-      ? [{ label: t('action_save_and_pay'), onClick: () => saveAndPay(), ...write }]
+      ? [{ label: t('action_save_and_pay'), onClick: () => startSaveAndPay(), ...write }]
       : []),
     ...(canRecordPayment
       ? [
@@ -644,7 +654,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             {t('action_draft_save')}
           </button>}
           {!embedded && <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
-            onClick={() => saveAndPay()}>{t('action_save_and_pay')}</button>}
+            onClick={() => startSaveAndPay()}>{t('action_save_and_pay')}</button>}
         </div>
       )}
 
@@ -657,6 +667,15 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         onCancel={() => setDiscardOpen(false)}
         busy={actionBusy}
       />
+
+      {detail.product_set_id != null && (
+        <ReviewChangesModal
+          productSetId={detail.product_set_id}
+          open={payModalOpen}
+          onClose={() => setPayModalOpen(false)}
+          onCommitted={async ({ checkoutUrl }) => { setPayModalOpen(false); if (checkoutUrl) setPaymentLink(checkoutUrl); await loadDetail(); onChanged(); }}
+        />
+      )}
 
       {showDetails && (
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />
