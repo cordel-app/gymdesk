@@ -50,8 +50,8 @@ import {
   ProductBenefitRow,
   ProductBenefitView,
   ProductOption,
-  toBenefitItems,
 } from '@/components/ProductBenefits';
+import { saveBenefitSection } from '@/lib/benefitEditing';
 import type {
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
@@ -170,6 +170,11 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
     product_type: b.item_type,
     product_billing_frequency: b.item_billing_frequency,
     product_status: 'active',
+    // #2093 stage 2: the agreed treatment and renewal Frequency travel with the
+    // draft, so the shared engine edits them and an unedited line round-trips.
+    action: b.action,
+    value: b.value,
+    ...(b.frequency !== undefined && { frequency: b.frequency }),
   };
 }
 
@@ -187,8 +192,6 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
 function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
   return {
     ...toDraftRow(b),
-    action: b.action,
-    value: b.value,
     frequency: b.frequency,
     original_price_incl_tax: b.original_price_incl_tax,
     final_price_incl_tax: b.final_price_incl_tax,
@@ -357,10 +360,20 @@ export function AssignedPlanConfiguration({
   async function saveBenefits(endpoint: string) {
     setSaving(true);
     try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/${endpoint}`, {
-        method: 'PUT',
-        body: JSON.stringify({ items: toBenefitItems(benefitDraft) }),
-      });
+      // #2093 stage 2: the Plans card's engine — every line is validated before
+      // anything is sent, and a failure keeps the editor open with the input.
+      const result = await saveBenefitSection({
+        save: async (items) => {
+          await apiFetch(`/user-memberships/${assignedPlanId}/${endpoint}`, {
+            method: 'PUT',
+            body: JSON.stringify({ items }),
+          });
+        },
+      }, benefitDraft);
+      if (!result.ok) {
+        toast(t('benefit_value_required', { item: result.row.product_name }));
+        return;
+      }
       cancelEdit();
       onChanged();
     } catch (err: any) {
@@ -577,6 +590,8 @@ export function AssignedPlanConfiguration({
                   setDraft={setBenefitDraft}
                   categoryItems={categoryItems(section)}
                   showFrequency={showFrequency}
+                  frequencyColumn={viewFrequencyColumn}
+                  benefitContext="plan"
                 />
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
                 <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />

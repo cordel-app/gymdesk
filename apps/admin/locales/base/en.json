@@ -4488,6 +4488,8 @@
     "section_media": "Media"
   },
   "assigned_plans_page": {
+    "item_action_value_percentage_discount": "Discount (%)",
+    "benefit_value_required": "Enter a value for the benefit applied to \"{item}\".",
     "title": "Assigned Plans",
     "loading": "Loading…",
     "empty": "No plans assigned yet.",
