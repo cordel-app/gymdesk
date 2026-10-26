@@ -15,7 +15,7 @@ const uniq = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).sli
 
 describe('gym Professional Service translations (#2110)', () => {
   let gymId: string;
-  const h = () => ({ 'x-gym-id': gymId, ...TEST_AUTH_HEADER });
+  const h = () => ({ 'x-gym-id': gymId, Authorization: TEST_AUTH_HEADER });
 
   beforeAll(async () => {
     gymId = await createTestGym('PS Translations Gym');
