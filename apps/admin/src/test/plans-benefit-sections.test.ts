@@ -136,7 +136,9 @@ describe('Plans: One-off / Session / Period Benefits (#635 §3–§5)', () => {
   });
 
   it('keeps an already-selected item visible after it goes inactive (#550)', () => {
-    expect(componentSrc).toContain('inactive: true');
+    // #2093: benefitRowOptions() moved to the shared editing engine.
+    const engineSrc = stripComments(readFileSync(join(__dirname, '..', 'lib', 'benefitEditing.ts'), 'utf-8'));
+    expect(engineSrc).toContain('inactive: true');
   });
 
   it('introduces no modal (§15)', () => {

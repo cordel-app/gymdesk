@@ -38,8 +38,7 @@ import {
   ProductBenefitRow,
   BenefitFrequencyColumn,
   ProductOption,
-  invalidBenefitValueRow,
-  toBenefitItems,
+  saveBenefitSection,
 } from '@/components/ProductBenefits';
 import {
   DEFAULT_PLAN_BILLING_FREQUENCY,
@@ -776,17 +775,20 @@ export default function PlansPage() {
     // #896 §6: an action that asks for a value must carry one. The API refuses
     // the same shape (`benefitConfigError()`); catching it here is what lets
     // the message name the item instead of the field.
-    const incomplete = invalidBenefitValueRow(benefitDraft);
-    if (incomplete) {
-      toast(t('plans.benefit_value_required', { item: incomplete.product_name }));
-      return;
-    }
     setBenefitSaving(true);
     try {
-      await apiFetch(`/membership-plans/${planId}/${endpoint}`, {
-        method: 'PUT',
-        body: JSON.stringify({ items: toBenefitItems(benefitDraft) }),
-      });
+      const result = await saveBenefitSection({
+        save: async (items) => {
+          await apiFetch(`/membership-plans/${planId}/${endpoint}`, {
+            method: 'PUT',
+            body: JSON.stringify({ items }),
+          });
+        },
+      }, benefitDraft);
+      if (!result.ok) {
+        toast(t('plans.benefit_value_required', { item: result.row.product_name }));
+        return;
+      }
       setBenefitEditFor(null);
       setBenefitDraft([]);
       load();
