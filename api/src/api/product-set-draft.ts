@@ -1,5 +1,8 @@
 import { db, Tx } from '../infra/db';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
+import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
+import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
+import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
@@ -117,7 +120,16 @@ export async function loadBenefitSection(gymId: string, productSetId: number, ca
 export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: ProductBenefitCategory,
   items: unknown): Promise<{ ok: true } | DraftRefusal> {
   if (!Array.isArray(items)) return { kind: 'invalid', message: 'items must be an array' };
-  const parsed: { product_id: number; quantity: number }[] = [];
+  // #2093 stage 2: the line's own treatment, renewal Frequency and Mandatory
+  // flag travel under the Plan editor's rule — a key the request does not name
+  // keeps what the line is stored with, so a quantity-only client is unchanged.
+  type Parsed = {
+    product_id: number; quantity: number;
+    benefit: ProductBenefit | null;
+    frequency?: SessionBenefitFrequency | null;
+    mandatory?: boolean;
+  };
+  const parsed: Parsed[] = [];
   const seen = new Set<number>();
   for (const item of items) {
     const productId = Number((item as any)?.product_id);
@@ -125,8 +137,18 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (!Number.isInteger(productId) || productId <= 0) return { kind: 'invalid', message: 'product_id is required' };
     if (!Number.isInteger(quantity) || quantity <= 0) return { kind: 'invalid', message: 'quantity must be a positive integer' };
     if (seen.has(productId)) return { kind: 'invalid', message: `Duplicate product_id: ${productId}` };
+    const pair = parseProductBenefitInput('plan', item as any);
+    if (pair.error) return { kind: 'invalid', message: pair.error };
+    const frequency = category === 'session' ? parseSessionBenefitFrequencyInput(item) : { keep: true as const };
+    if ('error' in frequency && frequency.error) return { kind: 'invalid', message: frequency.error };
+    const mandatoryInput = parsePlanBenefitMandatoryInput(item);
+    if (mandatoryInput.error) return { kind: 'invalid', message: mandatoryInput.error };
     seen.add(productId);
-    parsed.push({ product_id: productId, quantity });
+    parsed.push({
+      product_id: productId, quantity, benefit: pair.benefit,
+      ...(frequency.keep ? {} : { frequency: (frequency as any).frequency }),
+      ...(mandatoryInput.keep ? {} : { mandatory: mandatoryInput.mandatory }),
+    });
   }
 
   const table = BENEFIT_TABLE[category];
@@ -154,9 +176,17 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
       [draft.gym_id, draft.id, ...parsed.map((p) => p.product_id)]);
   }
   for (const p of parsed) {
+    // Columns this line's request named; everything else is left as stored.
+    const extra: string[] = [];
+    const extraParams: unknown[] = [];
+    if (p.benefit) { extra.push('`action` = ?', '`value` = ?'); extraParams.push(p.benefit.action, p.benefit.value); }
+    if (p.frequency !== undefined) { extra.push('frequency = ?'); extraParams.push(p.frequency); }
+    if (p.mandatory !== undefined) { extra.push('mandatory = ?'); extraParams.push(p.mandatory ? 1 : 0); }
     if (attached.has(p.product_id)) {
-      await tx.query(`UPDATE ${table} SET quantity = ? WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
-        [p.quantity, draft.gym_id, draft.id, p.product_id]);
+      await tx.query(
+        `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''}
+          WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
+        [p.quantity, ...extraParams, draft.gym_id, draft.id, p.product_id]);
     } else {
       await tx.query(
         `INSERT INTO ${table}
@@ -165,6 +195,11 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
            FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
           WHERE gc.id = ? AND gc.gym_id = ?`,
         [draft.gym_id, draft.id, p.quantity, p.product_id, draft.gym_id]);
+      if (extra.length) {
+        await tx.query(
+          `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
+          [...extraParams, draft.gym_id, draft.id, p.product_id]);
+      }
     }
   }
   await allocateItemSchedules(tx, draft.gym_id, draft.id);

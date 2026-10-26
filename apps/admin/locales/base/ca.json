@@ -4501,6 +4501,8 @@
     "section_media": "Multimèdia"
   },
   "assigned_plans_page": {
+    "item_action_value_percentage_discount": "Descompte (%)",
+    "benefit_value_required": "Introdueix un valor per al benefici aplicat a \"{item}\".",
     "title": "Plans Assignats",
     "loading": "Carregant…",
     "empty": "Encara no hi ha plans assignats.",

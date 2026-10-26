@@ -310,11 +310,10 @@ describe('who names a context', () => {
     expect(plansSrc.match(/benefitContext="plan"/g) ?? []).toHaveLength(2);
   });
 
-  it('the Assigned Plan snapshot editor does not', () => {
-    // Its `PUT` takes quantity alone (#635 stage 6), so a dropdown there would
-    // be a control that silently changes nothing.
+  it('the Assigned Plan snapshot editor does too (#2093 stage 2)', () => {
+    // Its section `PUT` persists the pair, so the editor offers the dropdown.
     const editor = (assignedPlanSrc.match(/<ProductBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
-    expect(editor, 'the Assigned Plan editor offers an action dropdown').not.toContain('benefitContext');
+    expect(editor).toContain('benefitContext="plan"');
   });
 
   it("the Assigned Plan's read-only sections do, to *show* what was agreed (#924)", () => {
