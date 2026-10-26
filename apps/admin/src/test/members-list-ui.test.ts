@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -73,7 +74,7 @@ function stripComments(src: string): string {
 }
 
 const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
-const productsSrc = stripComments(readFileSync(PRODUCTS_PATH, 'utf-8'));
+const productsSrc = stripComments(readProductsPageSource(PRODUCTS_PATH));
 const filterBarSrc = stripComments(readFileSync(FILTER_BAR_PATH, 'utf-8'));
 const listChromeSrc = stripComments(readFileSync(LIST_CHROME_PATH, 'utf-8'));
 const dataTableSrc = stripComments(readFileSync(DATA_TABLE_PATH, 'utf-8'));
