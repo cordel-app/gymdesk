@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -50,7 +51,7 @@ const EXPECTED_LABEL: Record<(typeof LOCALE_CODES)[number], string> = {
 };
 
 describe('Products: "Amount" renamed to "Price" (#670)', () => {
-  const source = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
+  const source = stripComments(readProductsPageSource(PAGE_PATH));
 const PROFILE_PATH = join(
   __dirname, '..', 'app', '[locale]', 'financials', 'products', 'productProfile.ts',
 );
@@ -115,7 +116,7 @@ const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
     expect(source).toContain("amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,");
     expect(source).toContain("amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,");
     // The list cell still prefers the tax-inclusive figure and falls back to the raw amount.
-    expect(source).toContain('{item.amount_incl_tax != null');
+    expect(source).toContain('item.amount_incl_tax != null');
     expect(source).toContain('fmtAmount(item.amount, item.currency)');
   });
 

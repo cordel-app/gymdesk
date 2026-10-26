@@ -15,16 +15,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { CardGrid, CardSquareImage } from '@/components/CardGrid';
-import { MemberAvatar } from '@/components/MemberAvatar';
+import { CardGrid } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
-import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
-import {
-  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn, listCellClasses,
-  listNameBadgeAccentStyle, listNameBadgeStyle, listScrollerClass,
-} from '@/components/listChrome';
+import { primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 // #974 §5: the list's own filter control (#724), so the search box and the Type
 // filter follow the Theme's input pair instead of a hardcoded `#ccc`.
 import { filterControlStyle } from '@/components/FilterBar';
@@ -59,6 +53,16 @@ import {
   visibleProductSections,
 } from './productProfile';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
+import {
+  ProductCardHeader,
+  ProductListFrame,
+  ProductListRow,
+  type ProductListText,
+  fmtAmount,
+  productCardStyle as cardStyle,
+  productExpandedBodyStyle as expandedBodyStyle,
+  productValueHintStyle as valueHintStyle,
+} from '@/components/products/ProductListChrome';
 import { ImportSystemProductsModal } from './ImportSystemProductsModal';
 import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './productFrequency';
 import {
@@ -87,65 +91,6 @@ type EnrollmentStatus = ProductEnrollmentStatus;
 // decides the "total price for N sessions" line, so the page cannot ask one
 // question of one spelling and another of a second.
 const SESSION_TYPE: ItemType = SESSION_ITEM_TYPE;
-
-// ─── List columns (#637) ──────────────────────────────────────────────────────
-// The column headers and every collapsed row are laid out from this one
-// definition, so a long name or a long "created by" can never push a row's
-// values out of line with its header. Every column is a fixed track except the
-// name, which is the only one allowed to absorb the leftover width; when the
-// viewport is narrower than the sum of the tracks the list scrolls
-// horizontally instead of dropping or squeezing columns.
-
-interface ListColumn extends ListGridColumn {
-  /** Header label, a key in the `products` namespace. */
-  labelKey: string;
-  /** Fixed track width in px — also the minimum for the flexible column. */
-  width: number;
-  /** Set on the one flexible column: it becomes minmax(width, growfr). */
-  grow?: number;
-  align?: 'right';
-}
-
-// #1011 stage 2: `mobile` says what each column is on a phone, in the one
-// vocabulary `listChrome` declares. The item's name is the row's identity and
-// its status the badge beside it; everything else — the type, the units, the
-// price and its tax, the frequency, who created it and when, and whether
-// members may buy it — is read in the expanded card, which renders the same
-// declaration in both modes (#974).
-const LIST_COLUMNS: ListColumn[] = [
-  { key: 'name', labelKey: 'col_name', width: 180, grow: 2, mobile: 'name' },
-  { key: 'type', labelKey: 'col_type', width: 100, mobile: 'secondary' },
-  { key: 'units', labelKey: 'col_units', width: 70, align: 'right', mobile: 'secondary' },
-  // #942: the Price cell carries the "Total price for N sessions" line under
-  // the figure, and every cell on this grid is nowrap-and-ellipsis (#637). 200
-  // is what the longest of those sentences needs in en/es/ca without being cut.
-  { key: 'price', labelKey: 'col_price', width: 200, mobile: 'secondary' },
-  { key: 'tax_rate', labelKey: 'col_tax_rate', width: 80, mobile: 'secondary' },
-  { key: 'frequency', labelKey: 'col_frequency', width: 110, mobile: 'secondary' },
-  { key: 'created_by', labelKey: 'col_created_by', width: 100, mobile: 'secondary' },
-  { key: 'created_at', labelKey: 'col_created_at', width: 90, mobile: 'secondary' },
-  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
-  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 100, mobile: 'secondary' },
-  // Wide enough for the longest translated header ("ACCIONES") next to the
-  // chevron and the ⋮ menu the cell also holds.
-  { key: 'actions', labelKey: 'col_actions', width: 84, mobile: 'actions' },
-];
-
-/** The mobile class a column's header cell and its row cells share (#1011). */
-const CELL_CLASS = listCellClasses(LIST_COLUMNS);
-
-const LIST_COLUMN_GAP = 10;
-const LIST_ROW_PADDING_X = 16;
-
-const LIST_GRID_COLUMNS = LIST_COLUMNS
-  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
-  .join(' ');
-
-/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
-const LIST_MIN_WIDTH =
-  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
-  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
-  + LIST_ROW_PADDING_X * 2;
 
 interface LinkedProfessionalService {
   id: number;
@@ -228,12 +173,6 @@ interface ProfessionalService {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtAmount(amount: string | null, currency: string) {
-  if (amount == null) return '—';
-  const sym = currency === 'EUR' ? '€' : currency;
-  return `${sym}${parseFloat(amount).toFixed(2)}`;
-}
 
 function fmtDate(iso: string | null, s: GymFormatSettings) {
   if (!iso) return '—';
@@ -669,47 +608,12 @@ export default function ProductsPage() {
     );
   }
 
-  // The closed card (#1832). The expanded body below it is the list row's own
-  // (ProductLayout), so the two views cannot drift.
-  function renderCardHeader(item: Product, isExpanded: boolean, menuItems: ContextMenuItem[]) {
-    const image = item.image_url;
-    const price = item.amount_incl_tax != null
-      ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
-      : fmtAmount(item.amount, item.currency);
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {image && <CardSquareImage src={image} alt={item.name} version={item.modified_at} placeholder={null} />}
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {!image && <MemberAvatar name={item.name} imageUrl={null} stamp={item.modified_at} size={40} />}
-            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{item.name}</div>
-            <div onClick={(e) => e.stopPropagation()}>
-              <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
-            </div>
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--gd-text-secondary, #666)' }}>
-            {t(`type_${item.type}`)} · {price} · {billingFrequencyLabel(item.billing_frequency, tFreq) ?? '—'}
-          </div>
-          <div>
-            <StatusBadge status={item.status} label={tStatus(item.status)} />
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          onClick={() => toggleExpand(item.id)}
-          style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
-            padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
-            borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
-          }}
-        >
-          <span>{isExpanded ? t('hide_all_attributes') : t('show_all_attributes')}</span>
-          <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-        </button>
-      </div>
-    );
-  }
+  const listText: ProductListText = {
+    t: t as any,
+    tFreq: tFreq as any,
+    tStatus: tStatus as any,
+    formatDate: (iso) => fmtDate(iso, gymFmt),
+  };
 
   function renderRow(item: Product) {
     const isExpanded = expanded.has(item.id);
@@ -1000,78 +904,23 @@ export default function ProductsPage() {
 
     return (
       <div key={item.id} id={`product-card-${item.id}`} style={cardStyle}>
-        {view === 'cards' ? renderCardHeader(item, isExpanded, menuItems) : (
-        /* Collapsed header — one cell per LIST_COLUMNS entry, same order */
-        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(item.id)}>
-          <div className={CELL_CLASS.name} style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }} title={item.name}>
-            {item.name}
-            {isSystem && (
-              <span style={listNameBadgeStyle}>
-                {t('system_badge')}
-              </span>
-            )}
-            {/* #894: read-only, and read from the column rather than from the
-                item's name or type — a System item is not mandatory by virtue
-                of being a System item. The checkbox stays in the edit form.
-                #913: the accent pill, not the neutral one — Mandatory has to
-                be noticeable beside System rather than blend into the row. */}
-            {isMandatory && (
-              <span style={listNameBadgeAccentStyle}>
-                {t('mandatory_badge')}
-              </span>
-            )}
-            {Boolean(item.one_time_purchase) && (
-              <span style={listNameBadgeStyle}>
-                {t('one_time_badge')}
-              </span>
-            )}
-          </div>
-          <div className={CELL_CLASS.type} style={{ ...cellStyle, fontSize: 13, color: '#555' }}>
-            {t(`type_${item.type}`)}
-          </div>
-          <div className={CELL_CLASS.units} style={{ ...cellStyle, fontSize: 13, color: '#555', textAlign: 'right' }}>
-            {item.units != null ? item.units : '—'}
-          </div>
-          <div className={CELL_CLASS.price} style={{ ...cellStyle, fontSize: 13 }}>
-            {item.amount_incl_tax != null
-              ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
-              : fmtAmount(item.amount, item.currency)}
-            {/* #942: the figure above is the whole package, not one session.
-                The number it shows is unchanged — this line only says what it
-                covers, so `5` in the Units column beside `€50.00` can no longer
-                be read as €250.00. */}
-            {sessionNote && <span style={listHintStyle} title={sessionNote}>{sessionNote}</span>}
-          </div>
-          <div className={CELL_CLASS.tax_rate} style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
-            {item.applied_tax_rate != null
-              ? item.applied_tax_rate === 0 ? t('exempt') : `${item.applied_tax_rate}%`
-              : '—'}
-          </div>
-          <div className={CELL_CLASS.frequency} style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
-            {billingFrequencyLabel(item.billing_frequency, tFreq) ?? '—'}
-          </div>
-          <div className={CELL_CLASS.created_by} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
-            {item.created_by ?? '—'}
-          </div>
-          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
-            {fmtDate(item.created_at, gymFmt)}
-          </div>
-          <div className={CELL_CLASS.status} style={badgeCellStyle}>
-            <StatusBadge status={item.status} label={tStatus(item.status)} />
-          </div>
-          <div className={CELL_CLASS.enrollment_status} style={badgeCellStyle}>
-            <StatusBadge
-              status={item.enrollment_status === 'public' ? 'active' : 'paused'}
-              label={tStatus(item.enrollment_status)}
-            />
-          </div>
-          <div className={CELL_CLASS.actions} style={actionsCellStyle}>
-            <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-            <div onClick={(e) => e.stopPropagation()}>
-              <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
-            </div>
-          </div>
-        </div>
+        {view === 'cards' ? (
+          <ProductCardHeader
+            item={item}
+            isExpanded={isExpanded}
+            menuItems={menuItems}
+            text={listText}
+            onToggle={() => toggleExpand(item.id)}
+          />
+        ) : (
+        <ProductListRow
+          item={item}
+          isExpanded={isExpanded}
+          menuItems={menuItems}
+          sessionNote={sessionNote}
+          text={listText}
+          onToggle={() => toggleExpand(item.id)}
+        />
         )}
 
         {/* #974: one layout, two modes. Expanding the card reads and
@@ -1190,37 +1039,21 @@ export default function ProductsPage() {
           )}
         </>
       ) : (
-      <>
-      {/* Headers + rows share LIST_GRID_COLUMNS and scroll together (#637) */}
-      <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
-        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
-          {/* Column headers */}
-          {(items.length > 0 || inlineNew) && (
-            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
-              {LIST_COLUMNS.map((col) => (
-                <div key={col.key} className={CELL_CLASS[col.key]} style={{ ...cellStyle, textAlign: col.align }}>
-                  {t(col.labelKey)}
-                </div>
-              ))}
-            </div>
-          )}
+      <ProductListFrame showHeader={items.length > 0 || inlineNew !== null} t={t as any}>
+        {/* Inline new */}
+        {renderInlineNewRow()}
 
-          {/* Inline new */}
-          {renderInlineNewRow()}
-
-          {/* List */}
-          {loading ? (
-            <p style={{ color: '#888' }}>{t('loading')}</p>
-          ) : items.length === 0 && !inlineNew ? (
-            <p style={{ color: '#888' }}>{t('empty')}</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.map(renderRow)}
-            </div>
-          )}
-        </div>
-      </div>
-      </>
+        {/* List */}
+        {loading ? (
+          <p style={{ color: '#888' }}>{t('loading')}</p>
+        ) : items.length === 0 && !inlineNew ? (
+          <p style={{ color: '#888' }}>{t('empty')}</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {items.map(renderRow)}
+          </div>
+        )}
+      </ProductListFrame>
       )}
 
       {/* Details modal */}
@@ -1348,33 +1181,6 @@ function ModalField({ label, value, hint }: { label: string; value: string; hint
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-// #942: the clarification line beside a displayed price. One base plus the one
-// tweak each surface needs, rather than three looks — `formHelpTextStyle` is the
-// help line's chrome and a page does not restate it (#929). Italic, so the line
-// reads as a gloss on the figure above it rather than as a second value.
-const valueHintStyle: React.CSSProperties = {
-  ...formHelpTextStyle, fontStyle: 'italic',
-};
-
-// Inside a collapsed row's Price cell, where the figure above it is 13px and the
-// row has no vertical room to spare.
-const listHintStyle: React.CSSProperties = {
-  ...valueHintStyle, display: 'block', margin: '2px 0 0', fontSize: 11,
-};
-
-const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
-
-/**
- * The expanded body, in both modes (#974 §1). One padding and one hairline, so
- * the card does not change shape as `⋮ → Edit` opens: the read-only half used
- * to sit at `'0 20px 16px'` and the editor at `'16px 20px'`, which moved the
- * first section's heading up by 16px the moment you started editing.
- */
-const expandedBodyStyle: React.CSSProperties = {
-  padding: '16px 20px',
-  borderTop: '1px solid var(--gd-border, #eee)',
-};
-
 /** The row the Professional Services chips wrap in, in both modes. */
 const chipRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8 };
 
@@ -1389,42 +1195,6 @@ const selectedChipStyle: React.CSSProperties = { ...chipCheckboxLabel(true), cur
 /** #945: the line that flags a retired Billing Frequency for correction. */
 const legacyFrequencyNoticeStyle: React.CSSProperties = {
   fontSize: 11, color: '#8a6d1f', marginTop: 4,
-};
-
-// The grid the column headers and every collapsed row are laid out on (#637).
-const listGridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: LIST_GRID_COLUMNS,
-  alignItems: 'center',
-  gap: LIST_COLUMN_GAP,
-};
-
-const rowStyle: React.CSSProperties = {
-  ...listGridStyle, padding: `12px ${LIST_ROW_PADDING_X}px`,
-  cursor: 'pointer', userSelect: 'none',
-};
-
-const colHeaderStyle: React.CSSProperties = {
-  ...listGridStyle, padding: `6px ${LIST_ROW_PADDING_X}px`,
-  // Rows sit inside a bordered card, so the header carries a matching
-  // transparent border — without it every column would be off by 1px.
-  border: '1px solid transparent',
-  fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
-  marginBottom: 4,
-};
-
-/** Keeps an over-long value inside its track instead of widening the row. */
-const cellStyle: React.CSSProperties = {
-  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-};
-
-/** Badges size themselves, so this cell only needs to not stretch them. */
-const badgeCellStyle: React.CSSProperties = {
-  minWidth: 0, display: 'flex', alignItems: 'center',
-};
-
-const actionsCellStyle: React.CSSProperties = {
-  minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
 };
 
 function chipCheckboxLabel(checked: boolean): React.CSSProperties {

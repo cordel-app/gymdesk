@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
 // #1832 — Products gets the Cards view of Exercises, Activities and Promotions.
-const page = readFileSync(join(__dirname, '..', 'app/[locale]/financials/products/page.tsx'), 'utf8');
+const page = readProductsPageSource(join(__dirname, '..', 'app/[locale]/financials/products/page.tsx'));
 
 describe('Products cards view (#1832)', () => {
   it('reuses the shared view toggle and card grid', () => {
