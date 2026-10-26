@@ -121,6 +121,22 @@ describe('persisted Scheduled Billing Events (#1325 PR 2b)', () => {
     expect((await scheduledEvents(set.id)).length).toBe(events.length);
   });
 
+  it('persists no actual event for a cycle that owes nothing, while the simulation still shows it (#2106)', async () => {
+    const planId = await plan({ price: 50, free: 1 });
+    const set = await newVersion(await member(), planId, TODAY, 50);
+    const sim = await loadProductSetSimulationAssignment(gymId, set.id);
+    expect(sim).not.toBeNull();
+    await db.transaction((tx) => materialiseScheduledEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
+    const events = await scheduledEvents(set.id);
+    expect(events.every((e: any) => Number(e.amount) > 0)).toBe(true);
+    const { rows: free } = await db.query<any>(
+      'SELECT id FROM billing_events WHERE product_set_id = ? AND amount <= 0', [set.id]);
+    expect(free.length).toBe(0);
+    const { rows: reqs } = await db.query<any>(
+      'SELECT id FROM payment_requests WHERE gym_id = ? AND billing_event_id IN (SELECT id FROM billing_events WHERE product_set_id = ?)', [gymId, set.id]);
+    expect(reqs.length).toBe(0);
+  });
+
   it('a plan-less set with a recurring service has its own independent schedule', async () => {
     const owner = await member();
     const locker = await product('LockerOnly', 15, 'month');
