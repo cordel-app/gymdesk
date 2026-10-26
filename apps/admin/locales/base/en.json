@@ -4823,6 +4823,12 @@
     "error_generic": "Something went wrong. Please try again."
   },
   "professional_services": {
+    "name_in": "Name ({locale})",
+    "description_in": "Description ({locale})",
+    "max_capacity_help": "Positive whole number. Leave empty for no limit.",
+    "error_required_translations": "A name in every language is required.",
+    "created_by": "Created By",
+    "modified_by": "Modified By",
     "title": "Professional Services",
     "loading": "Loading…",
     "empty": "No professional services configured.",

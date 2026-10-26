@@ -4809,6 +4809,12 @@
     "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
   },
   "professional_services": {
+    "name_in": "Nombre ({locale})",
+    "description_in": "Descripción ({locale})",
+    "max_capacity_help": "Número entero positivo. Déjalo vacío para no limitar.",
+    "error_required_translations": "Se requiere un nombre en cada idioma.",
+    "created_by": "Creado por",
+    "modified_by": "Modificado por",
     "title": "Servicios profesionales",
     "loading": "Cargando…",
     "empty": "No hay servicios profesionales configurados.",

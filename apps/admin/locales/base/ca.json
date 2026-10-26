@@ -4836,6 +4836,12 @@
     "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
   },
   "professional_services": {
+    "name_in": "Nom ({locale})",
+    "description_in": "Descripció ({locale})",
+    "max_capacity_help": "Nombre enter positiu. Deixa-ho buit per no limitar.",
+    "error_required_translations": "Cal un nom en cada idioma.",
+    "created_by": "Creat per",
+    "modified_by": "Modificat per",
     "title": "Serveis professionals",
     "loading": "Carregant…",
     "empty": "No hi ha serveis professionals configurats.",

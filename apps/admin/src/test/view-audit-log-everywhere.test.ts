@@ -63,7 +63,7 @@ const DETAILS_VIEWS: {
   { file: 'training-plans/page.tsx',                                      entityType: 'training_plan' },
   { file: 'training-plan-templates/page.tsx',                             entityType: 'training_plan_template' },
   { file: 'activity-types/page.tsx',                                      entityType: 'activity_type' },
-  { file: 'professional-services/page.tsx',                               entityType: 'professional_service' },
+  { file: 'components/professionalServices/ProfessionalServicesView.tsx', entityType: 'professional_service', root: 'src' },
   { file: 'centers/page.tsx',                                             entityType: 'center' },
   { file: 'spaces/page.tsx',                                              entityType: 'space' },
   { file: 'staff/page.tsx',                                               entityType: 'staff' },
