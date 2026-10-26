@@ -4662,6 +4662,7 @@
     "label_direct_discount": "Direct discount (%)",
     "label_effective_fee": "Effective fee",
     "direct_discount_invalid": "Direct discount must be between 0 and 100.",
+    "duration_invalid": "Durations must be whole numbers of 0 or more.",
     "label_personal_fee_benefit": "Personal Membership Fee Benefit",
     "label_personal_fee_benefit_percentage": "Discount (%)",
     "personal_fee_benefit_no_benefit": "No benefit",

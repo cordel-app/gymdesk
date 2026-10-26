@@ -4675,6 +4675,7 @@
     "label_direct_discount": "Descompte directe (%)",
     "label_effective_fee": "Quota efectiva",
     "direct_discount_invalid": "El descompte directe ha de estar entre 0 i 100.",
+    "duration_invalid": "Les durades han de ser nombres enters de 0 o més.",
     "label_personal_fee_benefit": "Benefici Personal de la Quota de Membresia",
     "label_personal_fee_benefit_percentage": "Descompte (%)",
     "personal_fee_benefit_no_benefit": "Sense benefici",

@@ -52,6 +52,7 @@ import {
   ProductOption,
 } from '@/components/ProductBenefits';
 import { saveBenefitSection } from '@/lib/benefitEditing';
+import { billingDurationPayload, directDiscountPayload, durationFormError } from '@/lib/durationEditing';
 import type {
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
@@ -291,37 +292,22 @@ export function AssignedPlanConfiguration({
 
   async function saveDuration() {
     if (!durationForm) return;
-    // #2092 — validate everything before the first request, so an invalid
-    // Direct Discount cannot leave the form half saved.
-    // #1925 — the fee is adjusted by a direct discount (%), stored as the
-    // assignment's Personal Membership Fee Benefit; 0 or blank is no benefit.
-    const pct = durationForm.direct_discount_percent === '' ? 0 : Number(durationForm.direct_discount_percent);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      toast(t('direct_discount_invalid'));
+    // #2093 stage 3: validate every field before the first request (#2092), so
+    // nothing is half saved. A failure keeps the editor open with the input.
+    const problem = durationFormError(durationForm);
+    if (problem) {
+      toast(t(problem));
       return;
     }
     setSaving(true);
     try {
-      // Every field is sent, blank included: clearing one means "not
-      // configured", which the API stores as NULL and reads differently from 0.
       await apiFetch(`/user-memberships/${assignedPlanId}/billing-duration`, {
         method: 'PUT',
-        body: JSON.stringify({
-          free_periods: durationForm.free_periods === '' ? null : Number(durationForm.free_periods),
-          paid_periods: durationForm.paid_periods === '' ? null : Number(durationForm.paid_periods),
-          pay_beforehand_periods: durationForm.pay_beforehand_periods === ''
-            ? null : Number(durationForm.pay_beforehand_periods),
-          bonus_periods: durationForm.bonus_periods === '' ? null : Number(durationForm.bonus_periods),
-          recurring_billing_interval: durationForm.recurring_billing_interval === ''
-            ? null : Number(durationForm.recurring_billing_interval),
-          recurring_billing_unit: durationForm.recurring_billing_unit || null,
-        }),
+        body: JSON.stringify(billingDurationPayload(durationForm)),
       });
       await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
         method: 'PUT',
-        body: JSON.stringify(pct > 0
-          ? { action: 'percentage_discount', value: pct }
-          : { action: 'no_benefit', value: null }),
+        body: JSON.stringify(directDiscountPayload(durationForm)),
       });
       cancelEdit();
       onChanged();

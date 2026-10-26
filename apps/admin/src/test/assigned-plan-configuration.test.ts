@@ -78,8 +78,8 @@ describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
   // Stage 13: the Pre-paid Duration is sent like the other three — blank means
   // "not configured", which the API stores as NULL and reads differently from 0.
   it('sends the Pre-paid Duration, blank included', () => {
-    expect(src).toContain('pay_beforehand_periods: durationForm.pay_beforehand_periods');
-    expect(src).toMatch(/pay_beforehand_periods[\s\S]{0,80}\? null : Number\(durationForm\.pay_beforehand_periods\)/);
+    // #2093 stage 3: the payload is built in lib/durationEditing (tested there).
+    expect(src).toContain('billingDurationPayload(durationForm)');
   });
 
   it('saves it to the assignment, never to the Membership Plan (§15)', () => {
