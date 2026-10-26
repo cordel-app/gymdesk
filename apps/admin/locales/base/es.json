@@ -4474,6 +4474,8 @@
     "section_media": "Multimedia"
   },
   "assigned_plans_page": {
+    "item_action_value_percentage_discount": "Descuento (%)",
+    "benefit_value_required": "Introduce un valor para el beneficio aplicado a \"{item}\".",
     "title": "Planes Asignados",
     "loading": "Cargando…",
     "empty": "Todavía no hay planes asignados.",
