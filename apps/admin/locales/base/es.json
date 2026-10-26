@@ -4648,6 +4648,7 @@
     "label_direct_discount": "Descuento directo (%)",
     "label_effective_fee": "Cuota efectiva",
     "direct_discount_invalid": "El descuento directo debe estar entre 0 y 100.",
+    "duration_invalid": "Las duraciones deben ser números enteros de 0 o más.",
     "label_personal_fee_benefit": "Beneficio Personal de la Cuota de Membresía",
     "label_personal_fee_benefit_percentage": "Descuento (%)",
     "personal_fee_benefit_no_benefit": "Sin beneficio",
