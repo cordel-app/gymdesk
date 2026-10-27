@@ -7,6 +7,7 @@ import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
 import { classifyProviderStatus, normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordStatusChange } from './billing-events';
+import { payerMemberSql } from './payer-resolution';
 
 /**
  * #1325 PR 2c — executing a ProductSet's persisted Billing Events.
@@ -60,6 +61,8 @@ interface DueEvent {
   gym_id: string;
   product_set_id: number;
   member_id: number | null;
+  /** #2123: whose card is charged — the beneficiary's Family Owner, else the beneficiary. */
+  payer_member_id: number | null;
   amount: string | number;
   payment_token: string | null;
   sequence_id: string | null;
@@ -131,10 +134,10 @@ export async function executeDueScheduledEvents(opts: {
 
   // First attempts (scheduled and due) and retries (failed, set still Active).
   const { rows: due } = await db.query<DueEvent>(
-    `SELECT be.id, be.gym_id, be.product_set_id, be.member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
+    `SELECT be.id, be.gym_id, be.product_set_id, be.member_id, ${payerMemberSql('be.member_id', 'be.gym_id')} AS payer_member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
        FROM billing_events be
        JOIN product_sets ps ON ps.id = be.product_set_id AND ps.status = 'active'
-       LEFT JOIN payment_methods pm ON pm.member_id = be.member_id AND pm.gym_id = be.gym_id
+       LEFT JOIN payment_methods pm ON pm.member_id = ${payerMemberSql('be.member_id', 'be.gym_id')} AND pm.gym_id = be.gym_id
       WHERE be.billing_date <= ?
         AND (be.is_scheduled = 1 OR be.event_type = 'failed_billing')
       ORDER BY be.billing_date ASC, be.id ASC`,
@@ -177,16 +180,16 @@ export async function executeDueScheduledEvents(opts: {
       if (amount === 0) {
         const { insertId } = await tx.query(
           `INSERT INTO payment_requests
-             (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+             (gym_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               provider_order, source, attempt, method, created_by, created_at, completed_at)
-           VALUES (?, ?, 0, 'EUR', ?, ?, 'completed', 'monei', ?, 'billing_run', ?, 'waive', ?,
+           VALUES (?, ?, ?, 0, 'EUR', ?, ?, 'completed', 'monei', ?, 'billing_run', ?, 'waive', ?,
                    UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-          [event.gym_id, event.member_id, feeTypeId, event.id, orderId, nextAttempt, SYSTEM_ACTOR],
+          [event.gym_id, event.member_id, event.payer_member_id, feeTypeId, event.id, orderId, nextAttempt, SYSTEM_ACTOR],
         );
         attemptId = insertId;
         await tx.query(
-          `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing',
-                modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [SYSTEM_ACTOR, event.id]);
+          `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing', payer_member_id = ?,
+                modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [event.payer_member_id, SYSTEM_ACTOR, event.id]);
         return 'waived';
       }
 
@@ -194,17 +197,17 @@ export async function executeDueScheduledEvents(opts: {
 
       const { insertId } = await tx.query(
         `INSERT INTO payment_requests
-           (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+           (gym_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
             provider_order, source, attempt, method, created_by, created_at)
-         VALUES (?, ?, ?, 'EUR', ?, ?, 'pending', ?, ?, 'billing_run', ?, 'provider', ?, UTC_TIMESTAMP())`,
-        [event.gym_id, event.member_id, amount, feeTypeId, event.id, event.provider ?? 'monei', orderId, nextAttempt, SYSTEM_ACTOR],
+         VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', ?, ?, 'billing_run', ?, 'provider', ?, UTC_TIMESTAMP())`,
+        [event.gym_id, event.member_id, event.payer_member_id, amount, feeTypeId, event.id, event.provider ?? 'monei', orderId, nextAttempt, SYSTEM_ACTOR],
       );
       attemptId = insertId;
       // The event leaves "scheduled" the moment an attempt exists; its status is
       // now its latest attempt's. The type is settled below.
       await tx.query(
-        'UPDATE billing_events SET is_scheduled = 0, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
-        [SYSTEM_ACTOR, event.id]);
+        'UPDATE billing_events SET is_scheduled = 0, payer_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+        [event.payer_member_id, SYSTEM_ACTOR, event.id]);
       return 'go';
     });
 

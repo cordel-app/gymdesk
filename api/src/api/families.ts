@@ -3,6 +3,8 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
+import { PAYER_CHANGE_MESSAGES } from '../domain/familyPayerChange';
+import { checkFamilyPayerChange } from './family-payer-change';
 
 /**
  * #2123 stage 1: Family, a first-class entity independent of Product Sets. Mounted at
@@ -14,7 +16,13 @@ import { resolveRequestActor } from '../domain/auditActor';
 export const familiesRouter = Router({ mergeParams: true });
 
 class FamilyError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string, public memberIds?: number[]) { super(message); }
+}
+
+/** #2123 stage 4: refuse a change of payer that would strand a billable obligation. */
+async function assertPayerChangeSafe(tx: Tx, gymId: string, newPayers: Map<number, number>) {
+  const block = await checkFamilyPayerChange(tx, gymId, newPayers);
+  if (block) throw new FamilyError(409, block.code, PAYER_CHANGE_MESSAGES[block.code], block.memberIds);
 }
 
 type Q = Pick<Tx, 'query'> | typeof db;
@@ -57,7 +65,7 @@ async function shape(q: Q, gymId: string, family: { id: number; name: string }) 
 function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try { await fn(req, res); } catch (err) {
-      if (err instanceof FamilyError) return res.status(err.status).json({ error: err.message, code: err.code });
+      if (err instanceof FamilyError) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.memberIds ? { member_ids: err.memberIds } : {}) });
       next(err);
     }
   };
@@ -153,6 +161,8 @@ familiesRouter.put('/owner', requireModuleWrite('MEMBERS'), handle(async (req, r
       throw new FamilyError(400, 'not_a_family_member', 'The new owner must be a member of the family');
     }
     if (prev.owner_member_id !== newOwnerId) {
+      await assertPayerChangeSafe(tx, gymId,
+        new Map(prev.members.map((m) => [m.member_id, newOwnerId] as [number, number])));
       // Two statements inside the transaction: clear first so the one-owner key never collides.
       // No stored card, billing event or payment record moves with the ownership.
       await tx.query('UPDATE family_members SET is_owner = 0 WHERE family_id = ? AND gym_id = ?', [family.id, gymId]);
@@ -186,6 +196,7 @@ familiesRouter.delete('/members/:otherId', requireModuleWrite('MEMBERS'), handle
       await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
       return { previous: prev, next: null, dissolved: true, id: family.id };
     }
+    await assertPayerChangeSafe(tx, gymId, new Map([[otherId, otherId]]));
     await tx.query('DELETE FROM family_members WHERE family_id = ? AND gym_id = ? AND member_id = ?', [family.id, gymId, otherId]);
     await tx.query('UPDATE families SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
       [actor, family.id, gymId]);
@@ -201,7 +212,9 @@ familiesRouter.delete('/', requireModuleWrite('MEMBERS'), handle(async (req, res
     const family = await familyOf(tx, gymId, Number((req.params as any).memberId), true);
     if (!family) throw new FamilyError(404, 'family_not_found', 'The member does not belong to a family');
     const prev = await shape(tx, gymId, family);
-    // Stage 1 has no financial link to a family; stage 4 refuses this while obligations exist.
+    // Each member goes back to paying for themself, which needs a card if they owe anything.
+    await assertPayerChangeSafe(tx, gymId,
+      new Map(prev.members.filter((m) => !m.is_owner).map((m) => [m.member_id, m.member_id] as [number, number])));
     await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
     return prev;
   });

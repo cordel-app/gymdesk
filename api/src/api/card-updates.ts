@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
+import { payerMemberSql } from './payer-resolution';
 import {
   CARD_UPDATE_SOURCE,
   cardRemovalBlock,
@@ -196,22 +197,29 @@ export async function loadLatestCardUpdate(
   return rows[0] ?? null;
 }
 
-/** `null` when the member may remove their card — see `cardRemovalBlock()`. */
+/**
+ * `null` when the member may remove their card — see `cardRemovalBlock()`. Since #2123 the
+ * card pays for every obligation whose payer it is: a Family Owner's covers their family
+ * members' Product Sets as well as their own, and a family member's own card pays for none
+ * of the family's.
+ */
 export async function loadCardRemovalBlock(
   gymId: string,
   memberId: number,
 ): Promise<RemovalBlockReason | null> {
+  const payer = payerMemberSql('um.member_id', 'um.gym_id');
   const { rows } = await db.query<{ status: string }>(
-    `SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ?`,
+    `SELECT um.status FROM user_memberships um
+      WHERE um.gym_id = ? AND ${payer} = ?`,
     [gymId, memberId],
   );
   // #1325: what is scheduled to be charged is the ProductSet's persisted
-  // events. Any scheduled event, or a failed one still owed, of a version the
-  // member owns makes the card billable.
+  // events. Any scheduled event, or a failed one still owed, of a version whose
+  // owner this member pays for makes the card billable.
   const { rows: scheduled } = await db.query<{ n: number }>(
     `SELECT COUNT(*) AS n
        FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
-      WHERE be.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active'
+      WHERE be.gym_id = ? AND ${payerMemberSql('ps.owner_member_id', 'be.gym_id')} = ? AND ps.status = 'active'
         AND (be.is_scheduled = 1 OR (be.event_type = 'failed_billing'
              AND NOT EXISTS (SELECT 1 FROM payment_requests pr
                               WHERE pr.billing_event_id = be.id AND pr.status = 'completed')))`,
