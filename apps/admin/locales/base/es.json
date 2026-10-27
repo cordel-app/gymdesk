@@ -4912,6 +4912,13 @@
     "override_legend": "Un valor en rojo es una excepción explícita al permiso heredado."
   },
   "nutrition_plans": {
+    "col_name": "Nombre",
+    "col_member": "Miembro",
+    "col_days": "Días",
+    "col_start_date": "Fecha de inicio",
+    "col_created_at": "Creado el",
+    "col_created_by": "Creado por",
+    "col_status": "Estado",
     "version_confirm": "Al guardar, la versión actual de este plan termina hoy y se crea una nueva versión, con tus cambios, que empieza mañana. La versión anterior se conserva como histórico.",
     "version_confirm_btn": "Guardar nueva versión",
     "title": "Planes de nutrición asignados",

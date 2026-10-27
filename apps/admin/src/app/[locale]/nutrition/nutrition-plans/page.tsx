@@ -17,7 +17,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
-  listCellClasses, listScrollerClass,
+  listCellClasses, listHeaderCellStyle, listHeaderRowStyle, listScrollerClass,
 } from '@/components/listChrome';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
 import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
@@ -32,6 +32,7 @@ interface MemberNutritionPlan {
   status: 'active' | 'completed' | 'deleted' | 'draft';
   draft_of_plan_id?: number | null;
   start_date: string | null;
+  end_date: string | null;
   day_count: number;
   created_at: string;
   created_by: string | null;
@@ -64,6 +65,8 @@ function formatDate(iso: string, settings: GymFormatSettings) {
  * date are read in the expanded tree.
  */
 interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `nutrition_plans` namespace. Absent = no title. */
+  labelKey?: string;
   /** Fixed track width in px — also the minimum for a flexible column. */
   width: number;
   /** Set on a flexible column: it becomes minmax(width, growfr). */
@@ -73,12 +76,13 @@ interface ListColumn extends ListGridColumn {
 const LIST_COLUMNS: ListColumn[] = [
   // The chevron is the row's own affordance rather than a value, so it stays.
   { key: 'expand', width: 14, mobile: 'keep' },
-  { key: 'name', width: 140, grow: 2, mobile: 'name' },
-  { key: 'member', width: 120, grow: 1, mobile: 'keep' },
-  { key: 'days', width: 80, mobile: 'secondary' },
-  { key: 'created_at', width: 100, mobile: 'secondary' },
-  { key: 'created_by', width: 140, mobile: 'secondary' },
-  { key: 'status', width: 90, mobile: 'keep' },
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'member', labelKey: 'col_member', width: 120, grow: 1, mobile: 'keep' },
+  { key: 'days', labelKey: 'col_days', width: 80, mobile: 'secondary' },
+  { key: 'start_date', labelKey: 'col_start_date', width: 110, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 140, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
   { key: 'actions', width: 44, mobile: 'actions' },
 ];
 
@@ -331,6 +335,13 @@ export default function NutritionPlansPage() {
         <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
         <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+            {LIST_COLUMNS.map((col) => (
+              <div key={col.key} className={CELL_CLASS[col.key]} style={colHeaderCellStyle}>
+                {col.labelKey ? t(`nutrition_plans.${col.labelKey}`) : null}
+              </div>
+            ))}
+          </div>
           {rows.map((row) => (
             <PlanCard
               key={row.id}
@@ -511,6 +522,14 @@ function PlanCard({
           <span className={CELL_CLASS.days} style={metaCellStyle}>
             {t('nutrition_plans.day_count', { count: plan.day_count })}
           </span>
+          <span className={CELL_CLASS.start_date} style={metaCellStyle}>
+            {plan.start_date ? (
+              <>
+                <div>{formatGymDateOnly(plan.start_date, gymFmt)}</div>
+                {plan.end_date && <div style={endDateStyle}>→ {formatGymDateOnly(plan.end_date, gymFmt)}</div>}
+              </>
+            ) : '—'}
+          </span>
           <span className={CELL_CLASS.created_at} style={metaCellStyle}>
             {formatDate(plan.created_at, gymFmt)}
           </span>
@@ -639,6 +658,19 @@ const memberCellStyle: React.CSSProperties = {
   minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
+// The header band: the shared list header type on this list's own grid, inset
+// like a row so each title sits over its column.
+const colHeaderStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS, alignItems: 'center',
+  gap: LIST_COLUMN_GAP,
+  ...listHeaderRowStyle, ...listHeaderCellStyle,
+  padding: `12px ${ROW_PADDING_X}px`,
+};
+const colHeaderCellStyle: React.CSSProperties = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+/** The end date under the start date, as in Assigned Training Plans. */
+const endDateStyle: React.CSSProperties = { fontSize: 12, color: '#6b7280' };
 const metaCellStyle: React.CSSProperties = {
   fontSize: 13, color: '#888', whiteSpace: 'nowrap',
 };

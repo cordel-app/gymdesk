@@ -4926,6 +4926,13 @@
     "override_legend": "A value in red is an explicit override of the inherited permission."
   },
   "nutrition_plans": {
+    "col_name": "Name",
+    "col_member": "Member",
+    "col_days": "Days",
+    "col_start_date": "Start Date",
+    "col_created_at": "Created At",
+    "col_created_by": "Created By",
+    "col_status": "Status",
     "version_confirm": "Saving ends the current version of this plan today and creates a new version, with your changes, starting tomorrow. The previous version stays available as history.",
     "version_confirm_btn": "Save new version",
     "title": "Assigned Nutrition Plans",
