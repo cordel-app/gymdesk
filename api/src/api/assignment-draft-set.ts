@@ -3,6 +3,7 @@ import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
 import { syncMandatoryQuantities } from './product-set-draft';
+import { cloneConfiguration } from './product-set-bridge';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -174,4 +175,33 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
         WHERE gym_id = ? AND root_product_set_id = ? AND anchor_date = ?`,
       [newStart, gymId, draft.id, oldStart]);
   }
+}
+
+/**
+ * #2091 — `⋮ → Edit` on a running plan: a Draft assignment whose version is a
+ * **copy of the Active version's own configuration** (`cloneConfiguration()`),
+ * never re-frozen from the catalogue Plan. The Active version, its assignment
+ * and its billing stay exactly as they are until the Draft completes Save & Pay.
+ */
+export async function createDraftSetFromActive(tx: Tx, input: {
+  gymId: string; userMembershipId: number; ownerMemberId: number; activeSetId: number;
+  membershipPlanId: number | null; startsAt: string; endsAt: string | null;
+  actor: { name: string | null; type?: string | null };
+}): Promise<number> {
+  const created = await createDraft(tx, {
+    gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
+    startsAt: input.startsAt, actor: input.actor,
+  });
+  if (created.kind === 'in_flight') {
+    throw Object.assign(
+      new Error('This member already has a ProductSet version in flight'),
+      { status: 409, code: 'in_flight', productSetId: created.productSetId },
+    );
+  }
+  const setId = created.productSet.id;
+  await tx.query('UPDATE product_sets SET ends_at = ?, user_membership_id = ? WHERE id = ? AND gym_id = ?',
+    [input.endsAt, input.userMembershipId, setId, input.gymId]);
+  await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
+  await syncDraftAssignment(tx, input.gymId, setId);
+  return setId;
 }

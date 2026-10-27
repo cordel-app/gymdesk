@@ -13,6 +13,7 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import {
   draftFromReading, formatValue, progressChartPoints, readingPayload, resultUnitKey,
   type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
@@ -59,6 +60,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
               onClick={() => setOpen(isOpen ? null : item.exercise_id)}
               style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', width: '100%' }}
             >
+              <ExerciseAvatar src={item.image_thumbnail_url ?? item.image_url ?? null} name={item.exercise_name} />
               <strong style={{ flex: '1 1 160px' }}>{item.exercise_name}</strong>
               <Stat label={t('members.progress_days')} value={String(item.days_exercised)} />
               <Stat label={t('members.progress_max_weight')} value={formatValue(item.max_weight, t('members.progress_unit_kg'), gym)} />
@@ -77,6 +79,22 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
       })}
     </div>
   );
+}
+
+const AVATAR_SIZE = 36;
+
+/** Circular exercise picture (the API's sex-resolved thumbnail); a neutral disc when there is none or it fails to load. */
+function ExerciseAvatar({ src, name }: { src: string | null; name: string }) {
+  const [broken, setBroken] = useState(false);
+  const style: React.CSSProperties = {
+    width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
+    background: 'var(--gd-app-bg, #f3f4f6)', border: '1px solid var(--gd-card-border, #e5e7eb)', boxSizing: 'border-box',
+  };
+  if (src && SAFE_IMAGE_SRC.test(src) && !broken) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt={name} loading="lazy" onError={() => setBroken(true)} style={style} />;
+  }
+  return <span aria-hidden="true" style={{ ...style, display: 'inline-block' }} />;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -182,12 +200,32 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
                 <>
                   <span style={{ flex: '1 1 200px' }}>
                     {r.skipped ? t('members.progress_skipped') : (
-                      [
-                        ...r.sets.map((s) => `${formatValue(s.weight, t('members.progress_unit_kg'), gym)} × ${formatValue(s.reps, null, gym)}`),
-                        r.duration_seconds !== null ? formatValue(r.duration_seconds, t('members.progress_unit_seconds'), gym) : null,
-                      ].filter(Boolean).join(' · ') || '—'
+                      <>
+                        {r.sets.length > 0 && (
+                          <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+                            <thead>
+                              <tr>
+                                {['progress_col_set', 'progress_reps', 'progress_weight'].map((k) => (
+                                  <th key={k} style={{ ...cardSectionLabelStyle, textAlign: 'left', padding: '2px 12px 2px 0' }}>{t(`members.${k}`)}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[...r.sets].sort((a, b) => a.set_number - b.set_number).map((s) => (
+                                <tr key={s.id}>
+                                  <td style={{ padding: '2px 12px 2px 0' }}>{s.set_number}</td>
+                                  <td style={{ padding: '2px 12px 2px 0' }}>{formatValue(s.reps, null, gym)}</td>
+                                  <td style={{ padding: '2px 12px 2px 0' }}>{formatValue(s.weight, t('members.progress_unit_kg'), gym)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                        {r.duration_seconds !== null && <div>{formatValue(r.duration_seconds, t('members.progress_unit_seconds'), gym)}</div>}
+                        {r.sets.length === 0 && r.duration_seconds === null && '—'}
+                      </>
                     )}
-                    {r.notes ? <em style={{ marginLeft: 8 }}>{r.notes}</em> : null}
+                    {r.notes ? <em style={{ display: 'block' }}>{r.notes}</em> : null}
                   </span>
                   <ContextMenu
                     ariaLabel={t('members.progress_reading_actions')}

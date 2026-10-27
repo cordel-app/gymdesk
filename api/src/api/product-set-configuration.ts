@@ -451,6 +451,10 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     const lines: BillingEventLineRow[] = event.lines.map((l) => lineFromSimulation(l));
     const amount = linesTotal(lines);
     if (!linesMatchTotal(lines, amount)) throw new Error('Billing event lines do not sum to the event amount');
+    // #2106: an actual obligation that owes nothing (a free period, a fully
+    // discounted cycle) is never persisted. The simulations keep their €0 rows:
+    // they do not come through here.
+    if (amount <= 0) continue;
 
     const { rows: existing } = scheduleId != null
       ? await tx.query(

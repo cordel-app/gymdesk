@@ -26,7 +26,7 @@ import {
   utcToday,
 } from '../domain/personalGoalAssignment';
 import {
-  initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
+  defaultStartDate, initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
 } from '../domain/goalReadings';
 import {
   insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
@@ -318,12 +318,18 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     const effectiveUnit = targetUnit.value === undefined
       ? (effectiveValue === null ? null : (catalogue.target_unit ?? null))
       : targetUnit.value;
+    // #2133 §3 — no explicit start date: the Initial Reading's day.
+    const effectiveStart = defaultStartDate({
+      explicit: startDate.value,
+      hasInitialReading: !!(initialReading && 'value' in initialReading),
+      initialReadingAt: initialReadingAt.value,
+    });
 
     const pairError = goalAssignmentFieldError({
       targetValue: effectiveValue,
       targetUnit: effectiveUnit,
       targetType: effectiveType,
-      startDate: startDate.value ?? null,
+      startDate: effectiveStart,
       targetDate: targetDate.value ?? null,
     });
     if (pairError) return res.status(400).json({ error: pairError });
@@ -340,7 +346,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
         [
           gymId, memberId, goalId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,
-          startDate.value ?? null, targetDate.value ?? null,
+          effectiveStart, targetDate.value ?? null,
           status.value ?? null, notes.value ?? null,
           actor,
         ],
@@ -414,8 +420,9 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     // stays behind is exactly the case a per-field check misses.
     const next = {
       targetValue: targetValue.value === undefined ? previous.target_value : targetValue.value,
-      targetUnit: targetUnit.value === undefined ? previous.target_unit : targetUnit.value,
-      targetType: targetType.value === undefined ? previous.target_type : targetType.value,
+      // #2133 §2 — type and unit are read-only on edit; clearing the value clears the unit.
+      targetUnit: targetValue.value === null ? null : previous.target_unit,
+      targetType: previous.target_type,
       startDate: startDate.value === undefined ? toDateOnly(previous.start_date) : startDate.value,
       targetDate: targetDate.value === undefined ? toDateOnly(previous.target_date) : targetDate.value,
     };
@@ -442,8 +449,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     const params: unknown[] = [actor];
     // `undefined` is "the body did not mention it"; `null` is an explicit clear.
     if (targetValue.value !== undefined) { updates.push('target_value = ?'); params.push(targetValue.value); }
-    if (targetUnit.value !== undefined) { updates.push('target_unit = ?'); params.push(targetUnit.value); }
-    if (targetType.value !== undefined) { updates.push('target_type = ?'); params.push(targetType.value); }
+    if (targetValue.value === null && previous.target_unit !== null) updates.push('target_unit = NULL');
     if (startDate.value !== undefined) { updates.push('start_date = ?'); params.push(startDate.value); }
     if (targetDate.value !== undefined) { updates.push('target_date = ?'); params.push(targetDate.value); }
     if (notes.value !== undefined) { updates.push('notes = ?'); params.push(notes.value); }

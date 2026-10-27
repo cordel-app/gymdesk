@@ -7,13 +7,14 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormInput } from '@/components/CrudModal';
-import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
-import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
+import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
+import {
+  ProductListFrame, ProductListRow, productCardStyle, type ProductListText, type ProductRowData,
+} from '@/components/products/ProductListChrome';
 import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
@@ -122,6 +123,9 @@ function payloadFor(f: Form) {
 
 export default function BaseProductsPage() {
   const t = useTranslations('base_products');
+  // #2105 stage 2: the shared Products list renderer reads the `products` namespace.
+  const tp = useTranslations('products');
+  const tStatus = useTranslations('status');
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const { apiFetch } = useApiClient();
   const fmt = useGymFormatSettings();
@@ -196,6 +200,18 @@ export default function BaseProductsPage() {
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => f && ({ ...f, [key]: value }));
   const dash = '—';
   const when = (v: string | null | undefined) => (v ? formatGymDateTime(v, fmt) : dash);
+  const listText: ProductListText = {
+    t: tp as any,
+    tFreq: tFreq as any,
+    tStatus: tStatus as any,
+    formatDate: (iso) => (iso ? formatGymDateTime(iso, fmt) : dash),
+  };
+  // Adapter: a template has a numeric amount, EUR only and no tax rate.
+  const rowData = (p: BaseProduct): ProductRowData => ({
+    ...p,
+    amount: p.amount == null ? null : String(p.amount),
+    currency: 'EUR',
+  });
   const price = (p: BaseProduct) => (p.amount == null ? dash : p.amount.toFixed(2));
 
   const editor = form && (
@@ -307,31 +323,32 @@ export default function BaseProductsPage() {
 
       {form?.id === null && editor}
 
-      <div style={{ ...cardSurfaceStyle, marginTop: form?.id === null ? 12 : 0 }}>
-        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((p) => (
-          form?.id === p.id ? (
-            <div key={p.id} style={{ padding: 12, borderTop: '1px solid var(--gd-separator, #eee)' }}>{editor}</div>
-          ) : (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--gd-separator, #eee)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{p.name}</div>
-                <div style={{ fontSize: 13, color: '#666' }}>
-                  {t(`type_${p.type}`)} · {price(p)} · {billingFrequencyLabel(p.billing_frequency, tFreq) ?? '—'}
-                  {p.charge_type_code ? ` · ${p.charge_type_code}` : ''}
-                </div>
+      <ProductListFrame showHeader={rows.length > 0} t={tp as any}>
+        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: form?.id === null ? 12 : 0 }}>
+            {rows.map((p) => (
+              <div key={p.id} style={productCardStyle}>
+                {form?.id === p.id ? (
+                  <div style={{ padding: 12 }}>{editor}</div>
+                ) : (
+                  <ProductListRow
+                    item={rowData(p)}
+                    isExpanded={false}
+                    sessionNote={null}
+                    text={listText}
+                    onToggle={() => { setForm(formFor(p)); setError(null); }}
+                    menuItems={[
+                      { label: t('edit'), onClick: () => { setForm(formFor(p)); setError(null); } },
+                      { label: t('details'), onClick: () => setDetails(p) },
+                      { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                    ]}
+                  />
+                )}
               </div>
-              <StatusBadge status={p.status} label={t(p.status)} />
-              <ContextMenu
-                items={[
-                  { label: t('edit'), onClick: () => { setForm(formFor(p)); setError(null); } },
-                  { label: t('details'), onClick: () => setDetails(p) },
-                  { label: t('delete'), onClick: () => setDeleting(p), danger: true },
-                ]}
-              />
-            </div>
-          )
-        ))}
-      </div>
+            ))}
+          </div>
+        )}
+      </ProductListFrame>
 
       <CrudModal
         open={!!details}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -48,7 +49,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const source = stripComments(readFileSync(PAGE, 'utf-8'));
+const source = stripComments(readProductsPageSource(PAGE));
 
 describe('#942 sessionPackageNote: which sentence belongs beside a price', () => {
   it('names the session package wording with the item\'s own Units', () => {
@@ -220,7 +221,7 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
   it('changes no displayed figure and no payload (AC 1, AC 8)', () => {
     // The collapsed row's price expression is untouched: the tax-inclusive
     // figure when the API computed one, the raw amount otherwise.
-    expect(source).toContain('{item.amount_incl_tax != null');
+    expect(source).toContain('item.amount_incl_tax != null');
     expect(source).toContain('fmtAmount(item.amount, item.currency)');
     // Both forms still submit the price under the API's `amount` key, unscaled.
     expect(source).toContain("amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,");

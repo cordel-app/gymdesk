@@ -8,6 +8,8 @@ export interface ProgressSet { id?: number; set_number: number; weight: number |
 export interface ProgressSummary {
   exercise_id: number;
   exercise_name: string;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   days_exercised: number;
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;

@@ -255,6 +255,39 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
     await db.query('UPDATE products SET status = ?, amount = 20 WHERE id = ?', ['active', periodicalItem]);
   });
 
+  it('persists a line’s treatment, keeps it when a later save names none, and refuses a bad pair (#2093)', async () => {
+    const waived = await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 2, action: 'waive' },
+    ]);
+    expect(waived.status).toBe(200);
+    expect(waived.body[0]).toMatchObject({ action: 'waive', value: null });
+
+    const discounted = await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 2, action: 'percentage_discount', value: 25 },
+    ]);
+    expect(discounted.status).toBe(200);
+    expect(discounted.body[0]).toMatchObject({ action: 'percentage_discount', value: 25 });
+
+    // A quantity-only client keeps what is stored.
+    const kept = await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 3 },
+    ]);
+    expect(kept.status).toBe(200);
+    expect(kept.body[0]).toMatchObject({ quantity: 3, action: 'percentage_discount', value: 25 });
+
+    // A Plan never configures a fixed price, and a discount needs a value.
+    expect((await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 3, action: 'fixed_price', value: 5 },
+    ])).status).toBe(400);
+    expect((await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 3, action: 'percentage_discount' },
+    ])).status).toBe(400);
+
+    await putBenefits(gymId, umId, 'periodical-benefits', [
+      { product_id: periodicalItem, quantity: 2, action: 'no_benefit' },
+    ]);
+  });
+
   it('serves the same section on its own GET', async () => {
     const res = await getBenefits(gymId, umId, 'periodical-benefits');
     expect(res.status).toBe(200);

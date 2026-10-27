@@ -50,8 +50,9 @@ import {
   ProductBenefitRow,
   ProductBenefitView,
   ProductOption,
-  toBenefitItems,
 } from '@/components/ProductBenefits';
+import { saveBenefitSection } from '@/lib/benefitEditing';
+import { billingDurationPayload, directDiscountPayload, durationFormError } from '@/lib/durationEditing';
 import type {
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
@@ -170,6 +171,11 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
     product_type: b.item_type,
     product_billing_frequency: b.item_billing_frequency,
     product_status: 'active',
+    // #2093 stage 2: the agreed treatment and renewal Frequency travel with the
+    // draft, so the shared engine edits them and an unedited line round-trips.
+    action: b.action,
+    value: b.value,
+    ...(b.frequency !== undefined && { frequency: b.frequency }),
   };
 }
 
@@ -187,8 +193,6 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
 function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
   return {
     ...toDraftRow(b),
-    action: b.action,
-    value: b.value,
     frequency: b.frequency,
     original_price_incl_tax: b.original_price_incl_tax,
     final_price_incl_tax: b.final_price_incl_tax,
@@ -288,35 +292,22 @@ export function AssignedPlanConfiguration({
 
   async function saveDuration() {
     if (!durationForm) return;
+    // #2093 stage 3: validate every field before the first request (#2092), so
+    // nothing is half saved. A failure keeps the editor open with the input.
+    const problem = durationFormError(durationForm);
+    if (problem) {
+      toast(t(problem));
+      return;
+    }
     setSaving(true);
     try {
-      // Every field is sent, blank included: clearing one means "not
-      // configured", which the API stores as NULL and reads differently from 0.
       await apiFetch(`/user-memberships/${assignedPlanId}/billing-duration`, {
         method: 'PUT',
-        body: JSON.stringify({
-          free_periods: durationForm.free_periods === '' ? null : Number(durationForm.free_periods),
-          paid_periods: durationForm.paid_periods === '' ? null : Number(durationForm.paid_periods),
-          pay_beforehand_periods: durationForm.pay_beforehand_periods === ''
-            ? null : Number(durationForm.pay_beforehand_periods),
-          bonus_periods: durationForm.bonus_periods === '' ? null : Number(durationForm.bonus_periods),
-          recurring_billing_interval: durationForm.recurring_billing_interval === ''
-            ? null : Number(durationForm.recurring_billing_interval),
-          recurring_billing_unit: durationForm.recurring_billing_unit || null,
-        }),
+        body: JSON.stringify(billingDurationPayload(durationForm)),
       });
-      // #1925 — the fee is adjusted by a direct discount (%), stored as the
-      // assignment's Personal Membership Fee Benefit; 0 or blank is no benefit.
-      const pct = durationForm.direct_discount_percent === '' ? 0 : Number(durationForm.direct_discount_percent);
-      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-        toast(t('direct_discount_invalid'));
-        return;
-      }
       await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
         method: 'PUT',
-        body: JSON.stringify(pct > 0
-          ? { action: 'percentage_discount', value: pct }
-          : { action: 'no_benefit', value: null }),
+        body: JSON.stringify(directDiscountPayload(durationForm)),
       });
       cancelEdit();
       onChanged();
@@ -355,10 +346,20 @@ export function AssignedPlanConfiguration({
   async function saveBenefits(endpoint: string) {
     setSaving(true);
     try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/${endpoint}`, {
-        method: 'PUT',
-        body: JSON.stringify({ items: toBenefitItems(benefitDraft) }),
-      });
+      // #2093 stage 2: the Plans card's engine — every line is validated before
+      // anything is sent, and a failure keeps the editor open with the input.
+      const result = await saveBenefitSection({
+        save: async (items) => {
+          await apiFetch(`/user-memberships/${assignedPlanId}/${endpoint}`, {
+            method: 'PUT',
+            body: JSON.stringify({ items }),
+          });
+        },
+      }, benefitDraft);
+      if (!result.ok) {
+        toast(t('benefit_value_required', { item: result.row.product_name }));
+        return;
+      }
       cancelEdit();
       onChanged();
     } catch (err: any) {
@@ -575,6 +576,8 @@ export function AssignedPlanConfiguration({
                   setDraft={setBenefitDraft}
                   categoryItems={categoryItems(section)}
                   showFrequency={showFrequency}
+                  frequencyColumn={viewFrequencyColumn}
+                  benefitContext="plan"
                 />
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
                 <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />

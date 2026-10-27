@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -41,11 +42,11 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
+const pageSrc = stripComments(readProductsPageSource(PAGE_PATH));
 
 // The collapsed row: everything between the row container and the inline editor.
 const collapsedRowSrc = pageSrc.match(
-  /<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {8}<\/div>\n/,
+  /<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {4}<\/div>\n/,
 )?.[0] ?? '';
 
 const locales = Object.fromEntries(
@@ -140,13 +141,13 @@ describe('Products: column alignment (#637)', () => {
     for (const marker of [
       '{item.name}',
       '{t(`type_${item.type}`)}',
-      '{fmtDate(item.created_at, gymFmt)}',
+      '{formatDate(item.created_at)}',
       'label={tStatus(item.status)}',
       'label={tStatus(item.enrollment_status)}',
     ]) {
       expect(collapsedRowSrc, `the row no longer renders ${marker}`).toContain(marker);
     }
-    expect(collapsedRowSrc).toMatch(/onClick=\{\(\) => toggleExpand\(item\.id\)\}/);
+    expect(collapsedRowSrc).toMatch(/onClick=\{onToggle\}/);
     expect(collapsedRowSrc).toMatch(/ariaLabel=\{`Actions for \$\{item\.name\}`\}/);
   });
 });

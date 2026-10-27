@@ -4,8 +4,14 @@
  * first so an unreachable or undecodable URL leaves the default icon in place
  * rather than a broken one. Same module in the Members App (the two apps share
  * no frontend module).
+ *
+ * The page's own icon links are never rewritten: while a logo is shown they are
+ * parked (their `rel` switched off) behind one managed link, and restoring the
+ * default removes that link and gives them their `rel` back. No value read from
+ * the DOM ever reaches an `href`.
  */
 const MANAGED_ATTR = 'data-gd-favicon';
+const PARKED_REL = 'gd-parked-icon';
 
 export interface FaviconTheme {
   id: number | string;
@@ -23,25 +29,30 @@ export function faviconHref(theme: FaviconTheme | null | undefined): string | nu
   return `/api/proxy/themes/${theme.id}/logo${v}`;
 }
 
-function iconLink(create: boolean): HTMLLinkElement | null {
-  const existing = document.querySelector<HTMLLinkElement>(`link[rel~="icon"]`);
-  if (existing || !create) return existing;
+let parked: { link: HTMLLinkElement; rel: string }[] = [];
+
+function parkPageIcons(): void {
+  document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]').forEach((link) => {
+    if (link.hasAttribute(MANAGED_ATTR)) return;
+    parked.push({ link, rel: link.rel });
+    link.rel = PARKED_REL;
+  });
+}
+
+function managedLink(): HTMLLinkElement {
+  const existing = document.head.querySelector<HTMLLinkElement>(`link[${MANAGED_ATTR}]`);
+  if (existing) return existing;
   const link = document.createElement('link');
   link.rel = 'icon';
-  link.setAttribute(MANAGED_ATTR, 'created');
+  link.setAttribute(MANAGED_ATTR, '');
   document.head.appendChild(link);
   return link;
 }
 
 function restoreDefault(): void {
-  const link = iconLink(false);
-  if (!link) return;
-  if (link.getAttribute(MANAGED_ATTR) === 'created') {
-    link.remove();
-    return;
-  }
-  const original = link.getAttribute('data-gd-favicon-default');
-  if (original !== null) link.setAttribute('href', original);
+  document.head.querySelector(`link[${MANAGED_ATTR}]`)?.remove();
+  for (const { link, rel } of parked) link.rel = rel;
+  parked = [];
 }
 
 /** Only an http(s) URL, re-serialised by the URL parser, ever reaches the link's href. */
@@ -66,13 +77,8 @@ export function applyFavicon(href: string | null): () => void {
   const probe = new Image();
   probe.onload = () => {
     if (cancelled) return;
-    const link = iconLink(true);
-    if (!link) return;
-    if (!link.hasAttribute('data-gd-favicon-default')) {
-      link.setAttribute('data-gd-favicon-default', link.getAttribute('href') ?? '');
-    }
-    link.removeAttribute('type');
-    link.setAttribute('href', safe);
+    parkPageIcons();
+    managedLink().href = safe;
   };
   probe.onerror = () => {
     if (!cancelled) restoreDefault();

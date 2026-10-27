@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -210,7 +211,7 @@ describe('a grid list cannot hide a cell the way a table can', () => {
 
 describe('the three grid lists are on it', () => {
   const PAGES: Array<[string, string]> = [
-    ['Products', readPage('financials', 'products')],
+    ['Products', stripComments(readProductsPageSource(join(APP_DIR, 'financials', 'products', 'page.tsx')))],
     ['Members', readPage('members')],
     ['Training Plans', readPage('training-plans')],
   ];

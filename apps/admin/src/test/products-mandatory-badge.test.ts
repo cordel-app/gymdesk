@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -32,12 +33,12 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const page = stripComments(readFileSync(PRODUCTS_PAGE, 'utf-8'));
+const page = stripComments(readProductsPageSource(PRODUCTS_PAGE));
 
 /** The collapsed header only: everything before the inline editor. */
-const header = page.match(/<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {8}<\/div>\n/)?.[0] ?? '';
+const header = page.match(/<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {4}<\/div>\n/)?.[0] ?? '';
 /** The name cell inside it, which is where both badges belong. */
-const nameCell = header.match(/<div className=\{CELL_CLASS\.name\} style=\{\{ \.\.\.cellStyle, fontWeight: 600[\s\S]*?\n {10}<\/div>/)?.[0] ?? '';
+const nameCell = header.match(/<div className=\{CELL_CLASS\.name\} style=\{\{ \.\.\.cellStyle, fontWeight: 600[\s\S]*?\n {6}<\/div>/)?.[0] ?? '';
 
 function productsKey(code: string, key: string): string | undefined {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')) as Record<string, unknown>;
@@ -93,7 +94,7 @@ describe('Products: Mandatory badge in the card header (#894)', () => {
     expect(chrome).toContain('export const listNameBadgeStyle');
     expect(chrome).toContain('export const listNameBadgeAccentStyle');
     for (const file of [PRODUCTS_PAGE, ...OTHER_BADGE_PAGES]) {
-      const src = readFileSync(file, 'utf-8');
+      const src = file === PRODUCTS_PAGE ? readProductsPageSource(file) : readFileSync(file, 'utf-8');
       expect(src, `${file} does not import the shared badge style`)
         .toMatch(/import \{[^}]*\blistNameBadgeStyle\b[^}]*\} from '@\/components\/listChrome';/);
       expect(src, `${file} still restates the badge style inline`)

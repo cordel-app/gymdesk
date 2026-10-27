@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readProductsPageSource } from './productsSource';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -53,7 +54,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const pageSrc = stripComments(readFileSync(join(ITEM_DIR, 'page.tsx'), 'utf-8'));
+const pageSrc = stripComments(readProductsPageSource(join(ITEM_DIR, 'page.tsx')));
 const layoutSrc = stripComments(readFileSync(join(ITEM_DIR, 'ProductLayout.tsx'), 'utf-8'));
 const profileSrc = stripComments(readFileSync(join(ITEM_DIR, 'productProfile.ts'), 'utf-8'));
 
@@ -283,7 +284,7 @@ describe('the layout owns the structure and neither half restates it (#974 §1)'
   });
 
   it('gives the card one body padding, so nothing shifts as Edit opens', () => {
-    expect(pageSrc).toContain('const expandedBodyStyle');
+    expect(pageSrc).toContain('export const productExpandedBodyStyle');
     expect((pageSrc.match(/style=\{expandedBodyStyle\}/g) ?? []).length).toBe(1);
     expect(pageSrc).not.toContain("padding: '0 20px 16px'");
   });

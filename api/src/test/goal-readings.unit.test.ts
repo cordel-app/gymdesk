@@ -11,6 +11,7 @@ import {
   RECORDED_AT_SKEW_MS,
   READING_VALUE_MAX,
   activeInitialReadingOf,
+  defaultStartDate,
   initialReadingTimestamp,
   assignReadingPeriods,
   initialReadingHistoryOf,
@@ -273,5 +274,21 @@ describe('summarizeReadings', () => {
     expect(summary.latest_reading).toBe(80);
     expect(summary.initial_reading).toBe(80);
     expect(summary.progress_percent).toBeNull();
+  });
+});
+
+describe('defaultStartDate (#2133 §3)', () => {
+  const now = new Date('2026-10-27T10:00:00Z');
+  it('keeps an explicit start date', () => {
+    expect(defaultStartDate({ explicit: '2026-01-01', hasInitialReading: true, initialReadingAt: '2026-02-02 08:00:00', now })).toBe('2026-01-01');
+  });
+  it('defaults to the day of an explicit initial reading', () => {
+    expect(defaultStartDate({ explicit: null, hasInitialReading: true, initialReadingAt: '2026-02-02 08:00:00', now })).toBe('2026-02-02');
+  });
+  it('defaults to today when the initial reading is recorded now', () => {
+    expect(defaultStartDate({ explicit: undefined, hasInitialReading: true, initialReadingAt: undefined, now })).toBe('2026-10-27');
+  });
+  it('invents nothing without an initial reading', () => {
+    expect(defaultStartDate({ explicit: null, hasInitialReading: false, initialReadingAt: undefined, now })).toBeNull();
   });
 });

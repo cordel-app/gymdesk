@@ -4,7 +4,9 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { parseMaxCapacity } from '../domain/baseProfessionalServices';
+import { parseMaxCapacity, parsePsTranslations } from '../domain/baseProfessionalServices';
+import { getRequestLocale } from '../infra/locale';
+import { attachTranslations, copyTranslations, deleteTranslations, writeTranslations } from './professional-service-translations';
 import {
   gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
   parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
@@ -42,6 +44,11 @@ const SELECT = `
   JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
 `;
 
+/** One row (or none) shaped with its translations and the request locale's display values (#2110). */
+async function shapeOne(req: Request, row: any) {
+  return row ? (await attachTranslations([row], getRequestLocale(req)))[0] : row;
+}
+
 const VALID_STATUSES = ['active', 'inactive'] as const;
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
@@ -58,10 +65,15 @@ professionalServicesRouter.get('/', async (req, res, next) => {
     let sql = `${SELECT} WHERE (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL`;
     params.push(gymId);
     if (status) { sql += ' AND gps.status = ?'; params.push(status); }
-    if (search) { sql += ' AND (ps.name LIKE ? OR ps.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (search) {
+      sql += ` AND (ps.name LIKE ? OR ps.description LIKE ? OR EXISTS (
+        SELECT 1 FROM professional_service_translations t
+         WHERE t.professional_service_id = ps.id AND (t.name LIKE ? OR t.description LIKE ?)))`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
     sql += ' ORDER BY ps.is_system DESC, ps.name ASC';
     const { rows } = await db.query(sql, params);
-    res.json(rows);
+    res.json(await attachTranslations(rows, getRequestLocale(req)));
   } catch (err) { next(err); }
 });
 
@@ -139,6 +151,7 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
              VALUES (?, ?, 'active', ?)`,
             [gymId, serviceId, actor],
           );
+          await copyTranslations(tx, base.id, serviceId);
           return { insertId: serviceId };
         });
         imported.push(base.id);
@@ -170,7 +183,7 @@ professionalServicesRouter.get('/:id', async (req, res, next) => {
       [gymId, req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    res.json(await shapeOne(req, rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -185,6 +198,14 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const capacity = parseMaxCapacity(req.body.max_capacity === undefined ? null : req.body.max_capacity);
   if ('error' in capacity) return res.status(400).json({ error: capacity.error });
+  // #2110: a gym's own service carries the same per-locale name/description as a
+  // Base one; a locale left out or blank simply falls back to the base text.
+  let translations: Record<string, { name: string; description: string | null }> = {};
+  if (req.body.translations !== undefined) {
+    const p = parsePsTranslations(req.body.translations, { requireAll: false });
+    if ('error' in p) return res.status(400).json({ error: p.error });
+    translations = p.value;
+  }
 
   try {
     const { insertId } = await db.transaction(async (tx) => {
@@ -194,6 +215,7 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
          VALUES (?, ?, ?, 0, NULL, ?, ?)`,
         [gymId, name.trim(), description?.trim() || null, capacity.value, actor],
       );
+      await writeTranslations(tx, serviceId, translations);
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
          VALUES (?, ?, 'active', ?)`,
@@ -210,7 +232,7 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
       entityName: name.trim(),
       next: { name: name.trim(), description: description ?? null, max_capacity: capacity.value },
     });
-    res.status(201).json(rows[0]);
+    res.status(201).json(await shapeOne(req, rows[0]));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A professional service with this name already exists.');
   }
@@ -229,6 +251,15 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
   const capacityGiven = req.body.max_capacity !== undefined;
   const capacity = capacityGiven ? parseMaxCapacity(req.body.max_capacity) : { value: null };
   if ('error' in capacity) return res.status(400).json({ error: capacity.error });
+  // Absent keeps the stored translations; a locale given blank clears it (#2110).
+  let translations: Record<string, { name: string; description: string | null }> | null = null;
+  let clearedLocales: string[] = [];
+  if (req.body.translations !== undefined) {
+    const p = parsePsTranslations(req.body.translations, { requireAll: false });
+    if ('error' in p) return res.status(400).json({ error: p.error });
+    translations = p.value;
+    clearedLocales = Object.keys(req.body.translations).filter((l) => !(l in p.value));
+  }
 
   try {
     const { rows: existing } = await db.query(
@@ -239,16 +270,22 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
     if (existing[0].is_system) return res.status(403).json({ error: 'System Professional Services cannot be edited.' });
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
 
-    await db.query(
-      `UPDATE professional_services SET
-         name                    = COALESCE(?, name),
-         description             = COALESCE(?, description),
-         max_capacity            = IF(?, ?, max_capacity),
-         modified_at             = UTC_TIMESTAMP(),
-         modified_by             = ?
-       WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-      [name?.trim() ?? null, description ?? null, capacityGiven ? 1 : 0, capacity.value, actor, req.params.id, gymId],
-    );
+    await db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE professional_services SET
+           name                    = COALESCE(?, name),
+           description             = COALESCE(?, description),
+           max_capacity            = IF(?, ?, max_capacity),
+           modified_at             = UTC_TIMESTAMP(),
+           modified_by             = ?
+         WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
+        [name?.trim() ?? null, description ?? null, capacityGiven ? 1 : 0, capacity.value, actor, req.params.id, gymId],
+      );
+      if (translations) {
+        await writeTranslations(tx, existing[0].id, translations);
+        await deleteTranslations(tx, existing[0].id, clearedLocales);
+      }
+    });
 
     // #2010: the image key carries the service's name, so a rename moves it.
     {
@@ -267,9 +304,13 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
       entityType: 'professional_service',
       entityId: String(req.params.id),
       entityName: rows[0]?.name,
-      next: { name, description, ...(capacityGiven ? { max_capacity: capacity.value } : {}) },
+      next: {
+        name, description,
+        ...(capacityGiven ? { max_capacity: capacity.value } : {}),
+        ...(translations ? { translations } : {}),
+      },
     });
-    res.json(rows[0]);
+    res.json(await shapeOne(req, rows[0]));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A professional service with this name already exists.');
   }
@@ -293,7 +334,7 @@ professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (re
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, req.params.id]);
     recordAudit(req, { action: 'activate', entityType: 'professional_service', entityId: String(req.params.id), entityName: rows[0]?.name });
-    res.json(rows[0]);
+    res.json(await shapeOne(req, rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -315,7 +356,7 @@ professionalServicesRouter.post('/:id/deactivate', requireRole('admin'), async (
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, req.params.id]);
     recordAudit(req, { action: 'deactivate', entityType: 'professional_service', entityId: String(req.params.id), entityName: rows[0]?.name });
-    res.json(rows[0]);
+    res.json(await shapeOne(req, rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -349,12 +390,13 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
          VALUES (?, ?, 'active', ?)`,
         [gymId, serviceId, actor],
       );
+      await copyTranslations(tx, src.id, serviceId, ' - Copy');
       return { insertId: serviceId };
     });
 
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, insertId]);
     recordAudit(req, { action: 'duplicate', entityType: 'professional_service', entityId: String(insertId), entityName: newName });
-    res.status(201).json(rows[0]);
+    res.status(201).json(await shapeOne(req, rows[0]));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A professional service with this name already exists.');
   }
@@ -410,7 +452,7 @@ professionalServicesRouter.post('/:id/image', requireRole('admin'), memberImageU
       action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
       previous: { image_url: service.image_url }, next: { image_url: stored.image_url },
     });
-    res.json(await readServiceForImageAnswer(gymId, service.id));
+    res.json(await shapeOne(req, await readServiceForImageAnswer(gymId, service.id)));
   } catch (err) { next(err); }
 });
 
@@ -426,9 +468,45 @@ professionalServicesRouter.delete('/:id/image', requireRole('admin'), async (req
       action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
       previous: { image_url: service.image_url }, next: { image_url: null },
     });
-    res.json(await readServiceForImageAnswer(gymId, service.id));
+    res.json(await shapeOne(req, await readServiceForImageAnswer(gymId, service.id)));
   } catch (err) { next(err); }
 });
+
+/** Live references that block deleting a gym Professional Service (#2129). */
+async function countProfessionalServiceReferences(
+  tx: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> },
+  gymId: string,
+  id: number,
+) {
+  const count = async (sql: string, params: any[]) => Number((await tx.query(sql, params)).rows[0].n);
+  const activities = await count(
+    `SELECT COUNT(*) AS n FROM activity_types at
+      WHERE at.gym_id = ? AND at.deleted_at IS NULL
+        AND (at.professional_service_id = ?
+             OR EXISTS (SELECT 1 FROM activity_type_eligible_professional_services x
+                         WHERE x.activity_type_id = at.id AND x.professional_service_id = ?))`,
+    [gymId, id, id],
+  );
+  const calendarEvents = await count(
+    `SELECT COUNT(*) AS n FROM calendar_events ce
+      WHERE ce.gym_id = ?
+        AND (ce.professional_service_id = ?
+             OR EXISTS (SELECT 1 FROM calendar_event_eligible_professional_services x
+                         WHERE x.calendar_event_id = ce.id AND x.professional_service_id = ?))`,
+    [gymId, id, id],
+  );
+  const linked = 'SELECT product_id FROM product_professional_services WHERE professional_service_id = ?';
+  let productSnapshots = 0;
+  for (const table of [
+    'member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
+    'user_membership_session', 'user_membership_oneoff', 'user_membership_periodical',
+  ]) {
+    productSnapshots += await count(
+      `SELECT COUNT(*) AS n FROM ${table} WHERE product_id IN (${linked})`, [id],
+    );
+  }
+  return { activities, calendar_events: calendarEvents, product_snapshots: productSnapshots };
+}
 
 // ─── DELETE /:id — soft-delete custom Professional Services only ─────────────
 
@@ -445,13 +523,29 @@ professionalServicesRouter.delete('/:id', requireRole('admin'), async (req, res,
     if (existing[0].is_system) return res.status(403).json({ error: 'System Professional Services cannot be deleted.' });
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
 
-    await db.query(
-      `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
-         base_professional_service_id = NULL,
-         modified_at = UTC_TIMESTAMP(), modified_by = ?
-       WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-      [actor, actor, req.params.id, gymId],
-    );
+    // The reference check and the soft delete share one transaction under a lock
+    // on the service row: creating a reference takes a shared lock on that row
+    // (FK), so it waits for this transaction instead of slipping in between.
+    const blocked = await db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM professional_services WHERE id = ? AND gym_id = ? FOR UPDATE', [req.params.id, gymId]);
+      const refs = await countProfessionalServiceReferences(tx, gymId, Number(req.params.id));
+      if (refs.activities + refs.calendar_events + refs.product_snapshots > 0) return refs;
+      await tx.query(
+        `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+           base_professional_service_id = NULL,
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
+        [actor, actor, req.params.id, gymId],
+      );
+      return null;
+    });
+    if (blocked) {
+      return res.status(409).json({
+        error: 'Professional Service is still in use. Deactivate it instead.',
+        code: 'professional_service_in_use',
+        references: blocked,
+      });
+    }
     recordAudit(req, {
       action: 'delete',
       entityType: 'professional_service',
