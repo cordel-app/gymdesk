@@ -125,24 +125,34 @@ export function AssignedPersonalGoalForm({
             style={formControlStyle}
           />
         </Field>
-        <Field label={label('label_target_type')} help={label('help_target_type')}>
-          <select
-            value={form.target_type}
-            onChange={(e) => set({ target_type: e.target.value === 'relative' ? 'relative' : 'absolute' })}
-            style={formControlStyle}
-          >
-            <option value="absolute">{label('target_type_absolute')}</option>
-            <option value="relative">{label('target_type_relative')}</option>
-          </select>
+        {/* #2133 §2 — type and unit are the Gym Goal's: editable only while
+            assigning, a value in edit mode (the API ignores them on a PUT). */}
+        <Field label={label('label_target_type')} help={mode === 'create' ? label('help_target_type') : undefined}>
+          {mode === 'create' ? (
+            <select
+              value={form.target_type}
+              onChange={(e) => set({ target_type: e.target.value === 'relative' ? 'relative' : 'absolute' })}
+              style={formControlStyle}
+            >
+              <option value="absolute">{label('target_type_absolute')}</option>
+              <option value="relative">{label('target_type_relative')}</option>
+            </select>
+          ) : (
+            <span style={formValueStyle}>{label(`target_type_${form.target_type}`)}</span>
+          )}
         </Field>
         <Field label={label('label_target_unit')}>
-          <input
-            value={form.target_unit}
-            onChange={(e) => set({ target_unit: e.target.value })}
-            placeholder={label('placeholder_target_unit')}
-            maxLength={20}
-            style={formControlStyle}
-          />
+          {mode === 'create' ? (
+            <input
+              value={form.target_unit}
+              onChange={(e) => set({ target_unit: e.target.value })}
+              placeholder={label('placeholder_target_unit')}
+              maxLength={20}
+              style={formControlStyle}
+            />
+          ) : (
+            <span style={formValueStyle}>{form.target_unit || '—'}</span>
+          )}
         </Field>
         <Field label={label('label_start_date')}>
           <input

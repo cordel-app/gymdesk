@@ -145,6 +145,24 @@ export function initialReadingTimestamp(input: {
 }
 
 /**
+ * #2133 §3 — the start date of a new assignment. An explicit date wins; with
+ * none, it is the day of the Initial Reading (its explicit timestamp, else the
+ * day it is recorded, i.e. today). No Initial Reading means no invented date.
+ * One rule for the staff and the member route.
+ */
+export function defaultStartDate(input: {
+  explicit: string | null | undefined;
+  hasInitialReading: boolean;
+  initialReadingAt: string | undefined;
+  now?: Date;
+}): string | null {
+  if (input.explicit) return input.explicit;
+  if (!input.hasInitialReading) return null;
+  if (input.initialReadingAt) return input.initialReadingAt.slice(0, 10);
+  return (input.now ?? new Date()).toISOString().slice(0, 10);
+}
+
+/**
  * A DATETIME reaches the application as a `Date` or as a string depending on
  * the driver's `dateStrings`, so one reader turns a stored row into the shape
  * every rule below works on. An unparsable timestamp answers `null` rather than
