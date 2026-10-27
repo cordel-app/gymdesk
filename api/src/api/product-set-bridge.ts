@@ -1,4 +1,5 @@
 import { loadPaidThrough } from './cancellation-entitlement';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -81,6 +82,7 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
     [toSetId, gymId, fromSetId]);
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
+  await syncPlanSnapshot(tx, gymId, toSetId);
 }
 
 /** Copies applied Promotions (and the grants each froze) between two versions. */

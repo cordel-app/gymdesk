@@ -1,4 +1,5 @@
 import { redirectEditToProductSet } from './assignment-edit-redirect';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
@@ -742,6 +743,7 @@ export async function applyPromotionToProductSet(
     [gymId, productSetId, ownUm, lineId, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
   );
   await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
+  await syncPlanSnapshot(tx, gymId, productSetId);
   return { application_id: Number(insertId) };
 }
 

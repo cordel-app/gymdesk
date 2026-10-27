@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { syncPlanSnapshotsForAssignment } from './plan-snapshot-sync';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
@@ -60,6 +61,8 @@ export async function recordStatusChange(tx: Tx, c: StatusChange): Promise<void>
       c.source,
     ],
   );
+  // #2125 stage 2: the plan snapshot of the versions this assignment projects follows its status.
+  await syncPlanSnapshotsForAssignment(tx, c.gymId, c.userMembershipId);
 }
 
 export const billingEventsRouter = Router();

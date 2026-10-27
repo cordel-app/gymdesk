@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -62,6 +63,7 @@ async function edit(req: any, res: Response, action: string,
       if (isRefusal(draft)) return draft;
       const result = await fn(tx, draft);
       if (isRef(result)) throw Object.assign(new Error('refused'), { refusal: result });
+      await syncPlanSnapshot(tx, gymId, id);
       return result;
     }).catch((err) => {
       if (err?.refusal) return err.refusal as DraftRefusal;
