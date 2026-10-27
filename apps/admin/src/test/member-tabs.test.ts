@@ -66,7 +66,7 @@ function renderedSections(): string[] {
 describe('Member card tabs: the declaration (#961)', () => {
   it('is the tabs the tickets name, in its order', () => {
     expect(MEMBER_TABS.map((tab) => tab.id)).toEqual([
-      'profile', 'products_services', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress', 'payments',
+      'profile', 'family', 'products_services', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress', 'payments',
     ]);
     expect(MEMBER_TAB_IDS).toEqual(MEMBER_TABS.map((tab) => tab.id));
     // Profile is what a Member opens on (§"Navigation behaviour").
@@ -92,6 +92,8 @@ describe('Member card tabs: the declaration (#961)', () => {
       'section_billing_event_simulation',
       'section_billing_events',
     ]);
+    // #2123: the Family tab, between Profile and Products.
+    expect(sectionsForTab('family')).toEqual(['section_family']);
     // #1227: the Member's Professional Service balance is a tab of its own.
     expect(sectionsForTab('professional_services')).toEqual(['section_professional_services', 'section_pt_slots']);
     expect(sectionsForTab('nutrition')).toEqual(['section_nutrition_plans']);

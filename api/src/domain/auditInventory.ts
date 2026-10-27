@@ -34,6 +34,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "class_types": ["legacy", "legacy activity catalogue kept only for the FK of the legacy class_sessions (replaced by activity_types); no writer"],
   "class_sessions": ["legacy", "legacy table read by the public API only (replaced by calendar_events)"],
   "class_type_user_memberships": ["legacy", "legacy plan-to-class-type relation; the plan-based booking gate is retired (#973)"],
+  "family_members": ["parent", "families (membership of one family; the family carries the audit)"],
   "exercise_allowed_result_types": ["parent", "exercises (derived from the category, #1360)"],
   "exercise_log_sets": ["parent", "exercise_logs"],
   "exercise_logs": ["technical", "member-authored workout log; member_id is the author"],

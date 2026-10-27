@@ -30,6 +30,7 @@
 
 export const MEMBER_TAB_IDS = [
   'profile',
+  'family',
   'products_services',
   'professional_services',
   'nutrition',
@@ -45,6 +46,7 @@ export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
 export type MemberSectionKey =
   | 'section_profile'
   | 'section_account'
+  | 'section_family'
   | 'section_membership_plan'
   | 'section_billing_event_simulation'
   | 'section_recurring_products'
@@ -72,6 +74,8 @@ export const MEMBER_TABS: readonly MemberTab[] = [
     labelKey: 'tab_profile',
     sections: ['section_profile', 'section_account'],
   },
+  // #2123 — Family sits between Profile and Products.
+  { id: 'family', labelKey: 'tab_family', sections: ['section_family'] },
   {
     id: 'products_services',
     labelKey: 'tab_products_services',
