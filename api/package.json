@@ -20,6 +20,7 @@
     "foods:audit-base-links": "tsx src/scripts/audit-base-food-links.ts",
     "goals:audit-base-links": "tsx src/scripts/audit-base-goal-links.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
+    "plan-snapshots:validate": "tsx src/scripts/validate-plan-snapshots.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",
     "storage:rewrite-urls": "tsx src/scripts/rewrite-storage-urls.ts",
     "test": "vitest run",
