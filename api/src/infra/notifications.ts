@@ -55,7 +55,13 @@ export type NotificationType =
    * event). The one alert whose text is the gym's own rather than a locale key;
    * the Alerts page files it under *Staff*, every other type under *Auto*.
    */
-  | 'staff_message';
+  | 'staff_message'
+  /**
+   * #1984 stage 2b: another member booked this member a place beside their own
+   * on a multi-person service. A booking the member never made, so the one
+   * booking alert a member's own action cannot explain (#1113 §4).
+   */
+  | 'participant_booked';
 
 export interface NotificationPayload {
   title: string;

@@ -115,6 +115,8 @@ export async function bookMemberOnSession(
   actor: string | null = null,
   /** #1985: the Professional Service the member chose to consume, when several qualify. */
   professionalServiceId?: number | null,
+  /** #1984 stage 2b: the member who booked this place for `memberId`; null = they booked it themselves. */
+  bookedByMemberId: number | null = null,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -170,7 +172,7 @@ export async function bookMemberOnSession(
          VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
         [gymId, session[0].center_id, memberId, sessionId, position, actor],
       );
-      return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
+      return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false, professional_service_id: null as number | null };
     }
 
     const { rows: countRows } = await tx.query(
@@ -190,11 +192,11 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by, professional_service_id, negative_balance_ok)
-         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?, ?)`,
-        [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId, negativeBalanceOk ? 1 : 0],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by, professional_service_id, negative_balance_ok, booked_by_member_id)
+         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?, ?, ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId, negativeBalanceOk ? 1 : 0, bookedByMemberId],
       );
-      return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
+      return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity, professional_service_id: chosenServiceId };
     }
 
     if (!waitlistOpen) {
@@ -210,7 +212,7 @@ export async function bookMemberOnSession(
        VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
       [gymId, session[0].center_id, memberId, sessionId, position, actor],
     );
-    return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
+    return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false, professional_service_id: null as number | null };
   };
   return existingTx ? run(existingTx) : db.transaction(run);
 }

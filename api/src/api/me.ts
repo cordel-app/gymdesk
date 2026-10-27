@@ -31,7 +31,10 @@ import { validateRequest as validateSharedRequest } from './shared-training-requ
 import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
-import { sendNotification } from '../infra/notifications';
+import { sendNotification, recordNotifications } from '../infra/notifications';
+import { parseParticipantIdsInput } from '../domain/bookingParticipants';
+import { loadLinkedParticipants } from './booking-participants';
+import { loadServiceCapacityViews } from './service-capacity';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
@@ -923,6 +926,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
+    // #1984: each offered service's own places, so the sheet can say `1 / 2`.
+    const serviceViews = await loadServiceCapacityViews(db, gymId, rows.map((r: any) => Number(r.id)));
     const shaped = rows.map((r: any) => {
       const booked = Number(r.booked_count);
       const cap = Number(r.effective_capacity);
@@ -977,6 +982,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         // is load-bearing — it is what tells the member app to fall back to
         // the theme's Calendar event colour instead of painting an inline one.
         color: r.color ?? null,
+        services: serviceViews.get(Number(r.id)) ?? [],
       };
     });
     res.json(shaped);
@@ -1027,6 +1033,27 @@ meRouter.get('/activity-types', requireRole('member'), requireFeatureEnabled('ca
 });
 
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
+/**
+ * #1984 stage 2b: the linked members the caller may book a place for on an
+ * occurrence — covered by a shared active Membership and eligible for the
+ * service, not already on it. The caller is never named by the request.
+ */
+meRouter.get('/bookings/linked-participants', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const eventId = Number(req.query.calendar_event_id);
+  const rawService = req.query.professional_service_id;
+  const serviceId = rawService == null || rawService === '' ? null : Number(rawService);
+  if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ error: 'calendar_event_id is required' });
+  if (serviceId !== null && (!Number.isInteger(serviceId) || serviceId <= 0)) {
+    return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
+  }
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    res.json(await loadLinkedParticipants(db, gymId, memberId, eventId, serviceId));
+  } catch (err) { next(err); }
+});
+
 meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
@@ -1040,7 +1067,61 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx), chosenService);
+    // #1984 stage 2b: optional linked members booked beside the member's own place.
+    const parsedParticipants = parseParticipantIdsInput(req.body.participant_member_ids, memberId);
+    if (!parsedParticipants.ok) return res.status(400).json({ error: parsedParticipants.error });
+    const participantIds = parsedParticipants.ids;
+    const actor = resolveRequestActor(ctx);
+    const sessionId = Number(class_session_id);
+    // One transaction: the member's place and every participant's, or none. A
+    // participant never lands on the waiting list — a place that is not there
+    // refuses the whole booking.
+    const { result, participants } = await db.transaction(async (tx) => {
+      const own = await bookMemberOnSession(gymId, memberId, sessionId, false, false, tx, false, actor, chosenService);
+      if (participantIds.length === 0) return { result: own, participants: [] as Array<{ member_id: number; booking_id: number }> };
+      if (own.status !== 'booked') {
+        throw Object.assign(new Error('Participants can only be added to a booked place.'), { status: 409, code: 'participants_need_a_place' });
+      }
+      const serviceId = own.professional_service_id ?? null;
+      if (serviceId == null) {
+        throw Object.assign(new Error('This event offers no Professional Service to share.'), { status: 400, code: 'participants_need_a_service' });
+      }
+      const candidates = await loadLinkedParticipants(tx, gymId, memberId, sessionId, serviceId);
+      const allowed = new Set(candidates.map((c) => c.id));
+      const added: Array<{ member_id: number; booking_id: number }> = [];
+      for (const pid of participantIds) {
+        if (!allowed.has(pid)) {
+          throw Object.assign(new Error('That member cannot be added to this booking.'), { status: 400, code: 'participant_not_available' });
+        }
+        const r = await bookMemberOnSession(gymId, pid, sessionId, false, false, tx, false, actor, serviceId, memberId);
+        if (r.status !== 'booked') {
+          throw Object.assign(new Error('This service has no places left for every participant.'), { status: 409, code: 'service_full' });
+        }
+        added.push({ member_id: pid, booking_id: r.id });
+      }
+      return { result: own, participants: added };
+    });
+    // The participants did not act, so for them this is news (#1113 §4); the
+    // booker's own confirmation is the response. Awaited so a failed insert is
+    // not invisible; the booking itself is already committed.
+    if (participants.length > 0) {
+      const { rows: evRows } = await db.query(
+        `SELECT at.name AS title, ce.starts_at, m.name AS booker_name
+           FROM calendar_events ce
+           JOIN activity_types at ON at.id = ce.activity_type_id
+           JOIN members m ON m.id = ? AND m.gym_id = ce.gym_id
+          WHERE ce.id = ? AND ce.gym_id = ?`,
+        [memberId, sessionId, gymId],
+      );
+      if (evRows[0]) {
+        await recordNotifications(gymId, participants.map((p) => ({
+          memberId: p.member_id, type: 'participant_booked' as const, entityType: 'session' as const, entityId: sessionId,
+          payload: { title: evRows[0].title, starts_at: evRows[0].starts_at, booked_by_name: evRows[0].booker_name },
+        }))).catch((e) => console.error('participant_booked notification failed', e));
+      }
+    }
+    const views = (await loadServiceCapacityViews(db, gymId, [sessionId])).get(sessionId) ?? [];
+    const service = views.find((v) => v.id === (result.professional_service_id ?? -1)) ?? null;
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1056,7 +1137,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     // What the member does get is the one alert they cannot know about
     // themselves: the 2-hour reminder (#1113 §2), raised by
     // `POST /booking-reminders/run` for the booking this request just created.
-    res.status(201).json(result);
+    res.status(201).json({ ...result, participants, service });
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });
     if (err.status) {

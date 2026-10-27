@@ -13,6 +13,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
+import { hasSharedService, leftServiceIncomplete, participantsBody, servicePlacesLabel, type LinkedParticipant, type ServicePlaces } from '@/lib/servicePlaces';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -96,6 +97,8 @@ interface ScheduleSession {
   // `null` means the gym configured none, and the theme's Calendar event
   // colour paints it instead.
   color: string | null;
+  /** #1984 — each offered Professional Service with its own places. */
+  services?: ServicePlaces[];
 }
 
 export default function MemberCalendarPage() {
@@ -153,6 +156,10 @@ export default function MemberCalendarPage() {
   // #1985: services to choose between, inline in the booking flow.
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [chosenServiceId, setChosenServiceId] = useState<number | null>(null);
+  // #1984 stage 2b — optional linked members booked beside the member's own place.
+  const [linkedCandidates, setLinkedCandidates] = useState<LinkedParticipant[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<number>>(new Set());
+  const [incompleteNotice, setIncompleteNotice] = useState(false);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -281,7 +288,17 @@ export default function MemberCalendarPage() {
     setUnlockServiceIds([]);
     setServiceOptions([]);
     setChosenServiceId(null);
-    setSelected(info.event.extendedProps as ScheduleSession);
+    setSelectedParticipants(new Set());
+    setLinkedCandidates([]);
+    const session = info.event.extendedProps as ScheduleSession;
+    setSelected(session);
+    // Only a service with more than one place can be shared, and only an
+    // event the member can still book offers the choice at all.
+    if (session.availability_state === 'AVAILABLE' && hasSharedService(session.services)) {
+      apiFetch<LinkedParticipant[]>(`/me/bookings/linked-participants?calendar_event_id=${session.id}`)
+        .then((list) => setLinkedCandidates(Array.isArray(list) ? list : []))
+        .catch(() => setLinkedCandidates([]));
+    }
   }
 
   async function book() {
@@ -289,13 +306,29 @@ export default function MemberCalendarPage() {
     setActionLoading(true);
     setActionMsg(null);
     try {
-      await apiFetch('/me/bookings', {
+      const created = await apiFetch('/me/bookings', {
         method: 'POST',
-        body: JSON.stringify({ class_session_id: selected.id, ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}) }),
+        body: JSON.stringify({
+          class_session_id: selected.id,
+          ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}),
+          ...participantsBody(selectedParticipants),
+        }),
       });
+      // The API says whether the booking left its service below capacity; the
+      // warning is a notice on the calendar, not an alert (#1113 §1).
+      setIncompleteNotice(leftServiceIncomplete(created));
       refetch();
       setSelected(null);
     } catch (e: any) {
+      if (e?.code === 'participant_not_available') {
+        setActionMsg(t('participant_unavailable'));
+        setSelectedParticipants(new Set());
+        return;
+      }
+      if (e?.code === 'service_full') {
+        setActionMsg(t('service_full_message'));
+        return;
+      }
       const options = selectableServices(e);
       if (options.length > 0) {
         setServiceOptions(options);
@@ -461,6 +494,13 @@ export default function MemberCalendarPage() {
         </div>
       </div>
 
+      {incompleteNotice && (
+        <div role="status" style={{ ...noticeStyle('warning'), fontSize: 13, margin: '0 0 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <span>{t('incomplete_warning')}</span>
+          <button onClick={() => setIncompleteNotice(false)} aria-label={t('dismiss')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+        </div>
+      )}
+
       {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
           FullCalendar (#559 stage 2); see CalendarThemeStyles. */}
       <div className="gd-calendar" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -622,6 +662,38 @@ export default function MemberCalendarPage() {
                 </span>
               )}
             </div>
+
+            {selected.services && selected.services.length > 0 && (
+              <ul aria-label={t('services_places')} style={{ listStyle: 'none', margin: '0 0 12px', padding: 0, fontSize: 13, color: memberTheme.textSecondary }}>
+                {selected.services.map((s) => (
+                  <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <span>{s.name}</span>
+                    <strong>{servicePlacesLabel(s)}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {selected.availability_state === 'AVAILABLE' && linkedCandidates.length > 0 && (
+              <fieldset style={{ border: 'none', margin: '0 0 12px', padding: 0 }}>
+                <legend style={{ fontSize: 13, fontWeight: 600, color: memberTheme.text, marginBottom: 4 }}>{t('participants_prompt')}</legend>
+                {linkedCandidates.map((c) => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: memberTheme.text }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedParticipants.has(c.id)}
+                      onChange={(e) => {
+                        const next = new Set(selectedParticipants);
+                        if (e.target.checked) next.add(c.id); else next.delete(c.id);
+                        setSelectedParticipants(next);
+                      }}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: memberTheme.textMuted }}>{t('participants_hint')}</p>
+              </fieldset>
+            )}
 
             {(selected.my_attendance_status === 'present' || selected.my_attendance_status === 'absent') && (
               <p style={{ fontSize: 13, color: memberTheme.textSecondary, margin: '0 0 12px' }}>

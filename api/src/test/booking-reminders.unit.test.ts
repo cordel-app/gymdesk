@@ -37,6 +37,11 @@ const MIGRATION = readFileSync(
   join(API_SRC, 'infra', 'migrations', '270_staff_message_notification.js'),
   'utf8',
 );
+// The CHECK's current definition: the latest migration that swaps it (348, #1984 stage 2b).
+const CHECK_MIGRATION = readFileSync(
+  join(API_SRC, 'infra', 'migrations', '348_booking_participants.js'),
+  'utf8',
+);
 const WORKFLOW = readFileSync(
   join(ROOT, '.github', 'workflows', 'booking-reminder-run.yml'),
   'utf8',
@@ -101,9 +106,9 @@ describe('the reminder is one declaration (#1113 §2)', () => {
       code(NOTIFICATIONS).indexOf('export interface NotificationPayload'),
     );
     const union = [...unionBlock.matchAll(/\|\s*'([a-z0-9_]+)'/g)].map((m) => m[1]);
-    const checkList = MIGRATION.slice(
-      MIGRATION.indexOf('const NOTIFICATION_TYPES'),
-      MIGRATION.indexOf('];', MIGRATION.indexOf('const NOTIFICATION_TYPES')),
+    const checkList = CHECK_MIGRATION.slice(
+      CHECK_MIGRATION.indexOf('const NOTIFICATION_TYPES'),
+      CHECK_MIGRATION.indexOf('];', CHECK_MIGRATION.indexOf('const NOTIFICATION_TYPES')),
     );
     const allowed = [...checkList.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
     expect(union).toContain(BOOKING_REMINDER_TYPE);
