@@ -65,7 +65,7 @@ describe('DELETE /professional-services/:id with references', () => {
     );
     await db.query('INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)', [gymId, productId, id]);
     const { insertId: memberId } = await db.query(
-      `INSERT INTO members (gym_id, first_name, last_name, email) VALUES (?, 'A', 'B', ?)`,
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'A B', ?)`,
       [gymId, `ps-del-${Date.now()}@example.com`],
     );
     await db.query(
