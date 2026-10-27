@@ -108,6 +108,8 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<PsRow | null>(null);
   const [deleting, setDeleting] = useState<PsRow | null>(null);
+  // #2129: the server refuses a delete while records still reference the service.
+  const [inUse, setInUse] = useState<{ activities: number; calendar_events: number; product_snapshots: number } | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { load(); }, [cfg.reloadKey, cfg.apiRoot]);
@@ -187,6 +189,10 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
       load();
     } catch (err: any) {
       setDeleting(null);
+      if (err?.status === 409 && err?.body?.code === 'professional_service_in_use') {
+        setInUse(err.body.references);
+        return;
+      }
       toast(err.message ?? t('error_generic'));
     }
   }
@@ -473,6 +479,23 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
+      />
+
+      <ConfirmDialog
+        open={inUse !== null}
+        message={(<div>
+          <p style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('delete_blocked_title')}</p>
+          <ul style={{ margin: '0 0 8px', paddingLeft: 18 }}>
+            <li>{t('delete_blocked_activities', { count: inUse?.activities ?? 0 })}</li>
+            <li>{t('delete_blocked_calendar_events', { count: inUse?.calendar_events ?? 0 })}</li>
+            <li>{t('delete_blocked_product_snapshots', { count: inUse?.product_snapshots ?? 0 })}</li>
+          </ul>
+          <p style={{ margin: 0 }}>{t('delete_blocked_hint')}</p>
+        </div>) as any}
+        confirmLabel={t('close')}
+        cancelLabel={t('close')}
+        onConfirm={() => setInUse(null)}
+        onCancel={() => setInUse(null)}
       />
     </div>
   );

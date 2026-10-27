@@ -4824,6 +4824,11 @@
     "error_generic": "Something went wrong. Please try again."
   },
   "professional_services": {
+    "delete_blocked_title": "This Professional Service cannot be deleted because it is still in use.",
+    "delete_blocked_activities": "Activities: {count}",
+    "delete_blocked_calendar_events": "Calendar events: {count}",
+    "delete_blocked_product_snapshots": "Product assignment snapshots: {count}",
+    "delete_blocked_hint": "Consider deactivating this Professional Service instead to prevent it from being offered for new purchases or assignments while preserving existing records.",
     "name_in": "Name ({locale})",
     "description_in": "Description ({locale})",
     "max_capacity_help": "Positive whole number. Leave empty for no limit.",
@@ -4921,6 +4926,13 @@
     "override_legend": "A value in red is an explicit override of the inherited permission."
   },
   "nutrition_plans": {
+    "col_name": "Name",
+    "col_member": "Member",
+    "col_days": "Days",
+    "col_start_date": "Start Date",
+    "col_created_at": "Created At",
+    "col_created_by": "Created By",
+    "col_status": "Status",
     "version_confirm": "Saving ends the current version of this plan today and creates a new version, with your changes, starting tomorrow. The previous version stays available as history.",
     "version_confirm_btn": "Save new version",
     "title": "Assigned Nutrition Plans",

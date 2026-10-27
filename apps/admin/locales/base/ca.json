@@ -4837,6 +4837,11 @@
     "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
   },
   "professional_services": {
+    "delete_blocked_title": "Aquest Servei Professional no es pot eliminar perquè encara està en ús.",
+    "delete_blocked_activities": "Activitats: {count}",
+    "delete_blocked_calendar_events": "Esdeveniments de calendari: {count}",
+    "delete_blocked_product_snapshots": "Instantànies d'assignació de productes: {count}",
+    "delete_blocked_hint": "Considera desactivar aquest Servei Professional perquè no s'ofereixi en noves compres o assignacions i es conservin els registres existents.",
     "name_in": "Nom ({locale})",
     "description_in": "Descripció ({locale})",
     "max_capacity_help": "Nombre enter positiu. Deixa-ho buit per no limitar.",
@@ -4934,6 +4939,13 @@
     "override_legend": "Un valor en vermell és una excepció explícita al permís heretat."
   },
   "nutrition_plans": {
+    "col_name": "Nom",
+    "col_member": "Membre",
+    "col_days": "Dies",
+    "col_start_date": "Data d'inici",
+    "col_created_at": "Creat el",
+    "col_created_by": "Creat per",
+    "col_status": "Estat",
     "version_confirm": "En desar, la versió actual d'aquest pla acaba avui i es crea una versió nova, amb els teus canvis, que comença demà. La versió anterior es conserva com a històric.",
     "version_confirm_btn": "Desar nova versió",
     "title": "Plans de nutrició assignats",
