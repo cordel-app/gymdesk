@@ -57,6 +57,7 @@ import { exerciseLogsRouter, workoutBlockLogsRouter } from './api/exercise-logs'
 import { auditLogsRouter } from './api/audit-logs';
 import { centersRouter } from './api/centers';
 import { memberCentersRouter } from './api/member-centers';
+import { familiesRouter } from './api/families';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
 import { operatingHoursRouter } from './api/operating-hours';
 import { publicRouter } from './api/public';
@@ -349,6 +350,8 @@ app.use('/operating-hours', requireAuth(), tenantContext, requireModuleAccess('O
 // MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
 app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), membersRouter);
 app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), memberCentersRouter);
+// #2123: Family (stage 1).
+app.use('/members/:memberId/family', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), familiesRouter);
 // #647 stage 1: the Member side of the Professional Service link. Gated on the
 // MEMBERS module (it reads one Member's entitlements) but on the Professional
 // Services feature flag, since it has nothing to return when that is off.

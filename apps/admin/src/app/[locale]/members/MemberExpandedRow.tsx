@@ -38,6 +38,7 @@ import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWor
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
+import { MemberFamily } from './MemberFamily';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
 import { NutritionPlanTree, type Hierarchy } from '../nutrition/nutrition-plan-templates/NutritionPlanTree';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
@@ -876,6 +877,15 @@ export function MemberExpandedRow({
               can be edited (value and notes) or hard-deleted from their ⋮ menu. */}
           <Section label={t('members.section_progress')} divider={false}>
             <MemberProgress memberId={memberId} canWrite={canManageTraining} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'family' && (
+        <>
+          {/* Family (#2123): who the Member's family is and who owns it; read-only unless MEMBERS write. */}
+          <Section label={t('members.section_family')} divider={false}>
+            <MemberFamily memberId={memberId} canWrite={canWriteMembers} />
           </Section>
         </>
       )}

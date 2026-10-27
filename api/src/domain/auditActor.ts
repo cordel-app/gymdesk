@@ -140,6 +140,7 @@ export function auditActorField(stored: string | null | undefined): string | nul
  * classification of every table).
  */
 export const AUDITED_TABLES: readonly string[] = [
+  'families',
   'activity_types',
   'calendar_events',
   'centers',

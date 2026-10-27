@@ -53,6 +53,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   muscle:                         { kind: 'simple',   label: 'Muscles',                  table: 'muscles',                 nameColumn: 'name' },
   class_type:                     { kind: 'simple',   label: 'Class Types',              table: 'class_types',             nameColumn: 'name' },
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
+  family:                         { kind: 'simple',   label: 'Families',                 table: 'families',                nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
   space:                          { kind: 'simple',   label: 'Spaces',                   table: 'spaces',                  nameColumn: 'name' },
   // #636: Cordel-level catalogue, administered outside any one gym.
