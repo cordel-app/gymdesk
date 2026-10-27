@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #2132 (Members → Nutrition Plan: each assigned plan is an expandable card whose body is the Assigned Nutrition Plans `NutritionPlanTree` with `canWrite={false}`, so it is read-only by construction; Edit button unchanged; the start/end date is a smaller, muted secondary line. No API or migration change. Not run locally: no `node_modules` in the authoring session)
 - **Done**: #2130 (Assigned Nutrition Plans list: a header band over every column and a Start Date column with the end date under it, as in Assigned Training Plans; the column labels are `nutrition_plans.col_*` in en/es/ca; no API, status or date change)
 - **Done**: #2129 (deleting a gym Professional Service is refused with `409 professional_service_in_use` and per-category counts while Activities, calendar events or Product snapshots of linked Products still reference it; the check and the soft delete share one transaction under a lock on the service row; the admin shows the counts and recommends deactivating. Soft delete, `deleted_by` and Recycle Bin restore were already in place. Not run locally: no `node_modules` or MySQL in the authoring session)
 - **Done**: #2127 (Members → Professional Services rows show the service's thumbnail in a circle before its name; `GET /members/:id/professional-services/wallet` reports `image_thumbnail_url`, falling back to the master; no image when none)
