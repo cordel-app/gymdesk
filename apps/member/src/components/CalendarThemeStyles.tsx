@@ -465,6 +465,71 @@ export const CALENDAR_THEME_CSS = `
 .gd-calendar .fc .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
   justify-content: center;
 }
+/* Modern calendar controls (#2131). Presentation only, in the Calendar Buttons
+   tokens: compact rounded Previous/Next/Today, the Day/Week/Month selector as
+   a separated segmented control, capsule weekday headers with today in the
+   buttons colour, and hover/active/focus states. Behaviour is FullCalendar's. */
+.gd-calendar .fc .fc-button {
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0.25em 0.9em;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+.gd-calendar .fc .fc-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+.gd-calendar .fc .fc-button-group {
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--gd-calendar-grid-border, #dddddd) 45%, transparent);
+}
+.gd-calendar .fc .fc-button-group > .fc-button,
+.gd-calendar .fc-direction-ltr .fc-button-group > .fc-button:not(:first-child),
+.gd-calendar .fc-direction-ltr .fc-button-group > .fc-button:not(:last-child),
+.gd-calendar .fc-direction-rtl .fc-button-group > .fc-button:not(:first-child),
+.gd-calendar .fc-direction-rtl .fc-button-group > .fc-button:not(:last-child) {
+  border-radius: 999px;
+  margin-left: 0;
+}
+.gd-calendar .fc .fc-button-group > .fc-button:not(.fc-button-active):not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--gd-calendar-day-text, #111827);
+}
+.gd-calendar .fc .fc-button-group > .fc-button:not(.fc-button-active):not(:disabled):hover {
+  background: color-mix(in srgb, var(--gd-calendar-nav-btn-bg, #2c3e50) 14%, transparent);
+}
+.gd-calendar .fc .fc-button-group > .fc-button.fc-button-active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.gd-calendar .fc .fc-today-button:not(:disabled) {
+  background: transparent;
+  color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+  border-color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+}
+.gd-calendar .fc .fc-today-button:not(:disabled):hover {
+  background: var(--gd-calendar-nav-btn-hover-bg, #1e2b37);
+  color: var(--gd-calendar-nav-btn-text, #ffffff);
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  display: inline-block;
+  margin: 4px 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  background: var(--gd-calendar-nav-btn-bg, #2c3e50);
+  color: var(--gd-calendar-nav-btn-text, #ffffff);
+}
+.gd-calendar .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  background: var(--gd-calendar-nav-btn-bg, #2c3e50);
+  color: var(--gd-calendar-nav-btn-text, #ffffff);
+  border-radius: 999px;
+  margin: 4px;
+  padding: 2px 8px;
+}
 `;
 
 export function CalendarThemeStyles() {
