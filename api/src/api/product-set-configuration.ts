@@ -16,6 +16,7 @@ import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
 import { projectActiveProductSet } from './product-set-projection';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -163,6 +164,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     );
   }
   await allocateItemSchedules(tx, gymId, productSetId);
+  await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 
@@ -561,6 +563,9 @@ export async function activateWithEvents(tx: Tx, input: {
   // screens still read is a projection of this version, written here and only
   // here, in the same transaction as the activation.
   await projectActiveProductSet(tx, input.gymId, input.productSetId, input.actor);
+  // #2125 stage 2: the plan snapshots follow — this version is active, its predecessor history.
+  await syncPlanSnapshot(tx, input.gymId, input.productSetId);
+  if (previousId != null) await syncPlanSnapshot(tx, input.gymId, previousId);
   return { ...moved, eventsCreated: created, eventsReplaced: replaced };
 }
 

@@ -76,6 +76,8 @@ beforeAll(async () => {
   await db.query(
     `INSERT INTO user_membership_promotion_session_snapshot (gym_id, user_membership_promotion_id, product_id, product_name, quantity, action, value)
      VALUES (?, ?, ?, 'Frozen grant', 3, 'fixed_price', 5.00)`, [gymId, ump, productId]);
+  // The dual-write (stage 2) already wrote snapshots at creation; this suite tests the backfill itself.
+  await db.query('DELETE FROM plan_snapshots WHERE gym_id = ?', [gymId]);
   await migration.backfillPlanSnapshots(knex);
 });
 

@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -148,6 +149,7 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
     `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
     [paymentRequestId, id],
   );
+  await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'ok', productSet: { ...row, status: 'pending_payment' } };
 }
 
@@ -184,6 +186,8 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
     `UPDATE product_sets SET status = 'active', activated_at = UTC_TIMESTAMP() WHERE id = ?`,
     [id],
   );
+  await syncPlanSnapshot(tx, gymId, id);
+  if (previous) await syncPlanSnapshot(tx, gymId, Number(previous.id));
   return { kind: 'ok', productSet: { ...row, status: 'active' } };
 }
 
@@ -276,6 +280,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
         SET um.status = 'draft', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
       WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
+  await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'cancelled' };
 }
 
@@ -332,4 +337,5 @@ export async function addCoverage(tx: Tx, input: {
      VALUES (?, ?, ?, ?)`,
     [input.gymId, input.rootProductSetId, input.memberId, input.isOwner ? 1 : 0],
   );
+  await syncPlanSnapshotsOfChain(tx, input.gymId, input.rootProductSetId);
 }

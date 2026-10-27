@@ -1,4 +1,5 @@
 import { Tx } from '../infra/db';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 
@@ -220,6 +221,8 @@ export async function syncDraftAssignment(
   tx: Tx, gymId: string, productSetId: number, actor?: string | null,
 ): Promise<void> {
   const set = await loadSet(tx, gymId, productSetId);
+  // #2125 stage 2: every Draft edit ends here, so the plan snapshot is re-derived here.
+  await syncPlanSnapshot(tx, gymId, productSetId);
   if (!set || set.user_membership_id == null) return;
   const umId = Number(set.user_membership_id);
   // A caller that passes the actor is an edit of the Draft (recorded as the

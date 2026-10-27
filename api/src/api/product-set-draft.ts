@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
 import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
@@ -538,6 +539,7 @@ export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: num
   await tx.query(
     `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
     [draft.gym_id, draft.root_product_set_id, memberId]);
+  await syncPlanSnapshotsOfChain(tx, draft.gym_id, draft.root_product_set_id);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -548,6 +550,7 @@ export async function removeCoveredMember(tx: Tx, draft: LockedDraft, memberId: 
     'DELETE FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND member_id = ? AND is_owner = 0',
     [draft.gym_id, draft.root_product_set_id, memberId]);
   if (rowCount === 0) return { kind: 'not_found' };
+  await syncPlanSnapshotsOfChain(tx, draft.gym_id, draft.root_product_set_id);
   await touch(tx, draft);
   return { ok: true };
 }
