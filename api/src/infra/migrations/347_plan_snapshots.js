@@ -343,10 +343,10 @@ async function backfillPlanSnapshots(knex) {
                ORDER BY p2.version DESC, p2.id DESC LIMIT 1)) IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM plan_promotion_snapshots x WHERE x.source_id = ump.id)`);
 
-  for (const [target, source, abbr] of [
-    ['plan_promotion_session_product_snapshots', 'user_membership_promotion_session_snapshot', 'session'],
-    ['plan_promotion_oneoff_product_snapshots', 'user_membership_promotion_oneoff_snapshot', 'oneoff'],
-    ['plan_promotion_periodical_product_snapshots', 'user_membership_promotion_periodical_snapshot', 'periodical'],
+  for (const [target, source] of [
+    ['plan_promotion_session_product_snapshots', 'user_membership_promotion_session_snapshot'],
+    ['plan_promotion_oneoff_product_snapshots', 'user_membership_promotion_oneoff_snapshot'],
+    ['plan_promotion_periodical_product_snapshots', 'user_membership_promotion_periodical_snapshot'],
   ]) {
     counts[target] = await run(`
       INSERT INTO ${target}
