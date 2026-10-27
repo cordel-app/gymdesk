@@ -39,6 +39,7 @@ import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
+import { NutritionPlanTree, type Hierarchy } from '../nutrition/nutrition-plan-templates/NutritionPlanTree';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -72,6 +73,8 @@ interface NutritionPlan {
   id: number;
   name: string;
   status: string;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 /** `GET /members/:memberId/centers` — the sole-active-center fallback included (#797). */
@@ -188,6 +191,10 @@ export function MemberExpandedRow({
   const [trainingInactiveOpen, setTrainingInactiveOpen] = useState(false);
   const [nutritionInactiveOpen, setNutritionInactiveOpen] = useState(false);
   const [assignNutritionOpen, setAssignNutritionOpen] = useState(false);
+  // #2132: expandable read-only plan cards, rendered by the Assigned Nutrition Plans tree.
+  const [nutritionExpanded, setNutritionExpanded] = useState<Set<number>>(new Set());
+  const [nutritionHierarchies, setNutritionHierarchies] = useState<Record<number, Hierarchy>>({});
+
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   // #1118 §12 — the Products this Member bought from the Members App, each with
@@ -676,17 +683,46 @@ export function MemberExpandedRow({
                 {(() => {
                   const renderNutrition = (plans: NutritionPlan[]) => (
                     <>
-                {plans.map((p) => (
+                {plans.map((p) => {
+                  const open = nutritionExpanded.has(p.id);
+                  const hierarchy = nutritionHierarchies[p.id];
+                  const toggle = () => {
+                    setNutritionExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                      return next;
+                    });
+                    if (!open && !hierarchy) {
+                      apiFetch<Hierarchy>(`/member-nutrition-plans/${p.id}/hierarchy`)
+                        .then((h) => setNutritionHierarchies((prev) => ({ ...prev, [p.id]: h })))
+                        .catch(() => {});
+                    }
+                  };
+                  return (
                   <div key={p.id} style={card}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        aria-expanded={open}
+                        style={{ all: 'unset', cursor: 'pointer', minWidth: 0, flex: 1, display: 'block' }}
+                      >
+                        <div style={{ fontWeight: 500, fontSize: 14 }}>
+                          <span style={{ fontSize: 12, color: '#aaa', marginRight: 8 }}>{open ? '▼' : '▶'}</span>
+                          {p.name}
+                        </div>
+                        {p.start_date && (
+                          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                            {formatGymDateOnly(p.start_date, gymFmt)}
+                            {p.end_date ? ` → ${formatGymDateOnly(p.end_date, gymFmt)}` : ''}
+                          </div>
+                        )}
                         {p.status && (
                           <div style={{ marginTop: 4 }}>
                             <StatusBadge status={p.status} label={p.status} />
                           </div>
                         )}
-                      </div>
+                      </button>
                       {canManageNutrition && (
                         <button
                           type="button"
@@ -697,8 +733,24 @@ export function MemberExpandedRow({
                         </button>
                       )}
                     </div>
+                    {open && (
+                      <div style={{ marginTop: 8 }}>
+                        {hierarchy ? (
+                          <NutritionPlanTree
+                            templateId={p.id}
+                            apiBase="/member-nutrition-plans"
+                            hierarchy={hierarchy}
+                            canWrite={false}
+                            onChanged={() => {}}
+                          />
+                        ) : (
+                          <p style={dim}>{t('nutrition_plans.loading')}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
                     </>
                   );
                   const activeN = nutritionPlans.filter((p) => p.status === 'active');
