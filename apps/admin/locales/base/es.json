@@ -4810,6 +4810,11 @@
     "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
   },
   "professional_services": {
+    "delete_blocked_title": "Este Servicio Profesional no se puede eliminar porque todavía está en uso.",
+    "delete_blocked_activities": "Actividades: {count}",
+    "delete_blocked_calendar_events": "Eventos de calendario: {count}",
+    "delete_blocked_product_snapshots": "Instantáneas de asignación de productos: {count}",
+    "delete_blocked_hint": "Considera desactivar este Servicio Profesional para que no se ofrezca en nuevas compras o asignaciones y se conserven los registros existentes.",
     "name_in": "Nombre ({locale})",
     "description_in": "Descripción ({locale})",
     "max_capacity_help": "Número entero positivo. Déjalo vacío para no limitar.",

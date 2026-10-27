@@ -472,6 +472,42 @@ professionalServicesRouter.delete('/:id/image', requireRole('admin'), async (req
   } catch (err) { next(err); }
 });
 
+/** Live references that block deleting a gym Professional Service (#2129). */
+async function countProfessionalServiceReferences(
+  tx: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> },
+  gymId: string,
+  id: number,
+) {
+  const count = async (sql: string, params: any[]) => Number((await tx.query(sql, params)).rows[0].n);
+  const activities = await count(
+    `SELECT COUNT(*) AS n FROM activity_types at
+      WHERE at.gym_id = ? AND at.deleted_at IS NULL
+        AND (at.professional_service_id = ?
+             OR EXISTS (SELECT 1 FROM activity_type_eligible_professional_services x
+                         WHERE x.activity_type_id = at.id AND x.professional_service_id = ?))`,
+    [gymId, id, id],
+  );
+  const calendarEvents = await count(
+    `SELECT COUNT(*) AS n FROM calendar_events ce
+      WHERE ce.gym_id = ?
+        AND (ce.professional_service_id = ?
+             OR EXISTS (SELECT 1 FROM calendar_event_eligible_professional_services x
+                         WHERE x.calendar_event_id = ce.id AND x.professional_service_id = ?))`,
+    [gymId, id, id],
+  );
+  const linked = 'SELECT product_id FROM product_professional_services WHERE professional_service_id = ?';
+  let productSnapshots = 0;
+  for (const table of [
+    'member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
+    'user_membership_session', 'user_membership_oneoff', 'user_membership_periodical',
+  ]) {
+    productSnapshots += await count(
+      `SELECT COUNT(*) AS n FROM ${table} WHERE product_id IN (${linked})`, [id],
+    );
+  }
+  return { activities, calendar_events: calendarEvents, product_snapshots: productSnapshots };
+}
+
 // ─── DELETE /:id — soft-delete custom Professional Services only ─────────────
 
 professionalServicesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
@@ -487,13 +523,29 @@ professionalServicesRouter.delete('/:id', requireRole('admin'), async (req, res,
     if (existing[0].is_system) return res.status(403).json({ error: 'System Professional Services cannot be deleted.' });
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
 
-    await db.query(
-      `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
-         base_professional_service_id = NULL,
-         modified_at = UTC_TIMESTAMP(), modified_by = ?
-       WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-      [actor, actor, req.params.id, gymId],
-    );
+    // The reference check and the soft delete share one transaction under a lock
+    // on the service row: creating a reference takes a shared lock on that row
+    // (FK), so it waits for this transaction instead of slipping in between.
+    const blocked = await db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM professional_services WHERE id = ? AND gym_id = ? FOR UPDATE', [req.params.id, gymId]);
+      const refs = await countProfessionalServiceReferences(tx, gymId, Number(req.params.id));
+      if (refs.activities + refs.calendar_events + refs.product_snapshots > 0) return refs;
+      await tx.query(
+        `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+           base_professional_service_id = NULL,
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
+        [actor, actor, req.params.id, gymId],
+      );
+      return null;
+    });
+    if (blocked) {
+      return res.status(409).json({
+        error: 'Professional Service is still in use. Deactivate it instead.',
+        code: 'professional_service_in_use',
+        references: blocked,
+      });
+    }
     recordAudit(req, {
       action: 'delete',
       entityType: 'professional_service',
