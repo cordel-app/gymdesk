@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { capacitiesPayload } from '@/lib/serviceCapacity';
 import { useTranslations } from 'next-intl';
 import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -32,7 +33,7 @@ import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberIm
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
-import { dashedAddBtnStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
+import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ interface Trainer { gym_membership_id: number; name: string; }
 // #973 stage 1: the Professional Services an activity names as its booking
 // requirement — the gym's own catalogue (`/professional-services`), never a
 // list of this page's own.
-interface ProfessionalService { id: number; name: string; is_system: number; status: 'active' | 'inactive'; }
+interface ProfessionalService { id: number; name: string; is_system: number; status: 'active' | 'inactive'; capacity?: number | null; }
 
 const STATUSES = ['active', 'inactive'] as const;
 // #980 stage 2: the same vocabulary the calendar event panel offers for an
@@ -224,6 +225,8 @@ export default function ActivityTypesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
   const [editSelectedServices, setEditSelectedServices] = useState<Set<number>>(new Set());
+  // #1984: the capacity typed per service ('' = the event's own capacity).
+  const [editServiceCapacities, setEditServiceCapacities] = useState<Record<number, string>>({});
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   // #1373: a staged image whose upload failed right after the activity was created.
@@ -413,6 +416,7 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
     const services = eligibleServicesMap.get(row.id) ?? (await fetchEligibleServices(row.id));
     setEditSelectedServices(new Set(services.map((p) => p.id)));
+    setEditServiceCapacities(Object.fromEntries(services.map((p) => [p.id, p.capacity != null ? String(p.capacity) : ''])));
     // The row is rendered by now (List view, expanded, editing): bring it into view.
     requestAnimationFrame(() => {
       document.getElementById(`activity-card-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -456,6 +460,9 @@ export default function ActivityTypesPage() {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
+    // #1984: each selected service's own capacity; a public event offers none.
+    const capacities = editForm.public_event ? {} : capacitiesPayload(editSelectedServices, editServiceCapacities);
+    if ('error' in capacities) { setEditError(t('service_capacity_hint')); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/activity-types/${row.id}`, {
@@ -479,7 +486,7 @@ export default function ActivityTypesPage() {
       });
       await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
         method: 'PUT',
-        body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices) }),
+        body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices), ...capacities }),
       });
       setSaveConflict(null);
       setEditingId(null);
@@ -1222,11 +1229,23 @@ export default function ActivityTypesPage() {
                           style={{ width: 15, height: 15 }}
                         />
                         {p.name}{p.status !== 'active' ? ` (${tStatus('inactive')})` : ''}
+                        {editSelectedServices.has(p.id) && (
+                          <input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            aria-label={`${t('service_capacity_label')}: ${p.name}`}
+                            placeholder={t('service_capacity_placeholder')}
+                            value={editServiceCapacities[p.id] ?? ''}
+                            onChange={(e) => setEditServiceCapacities({ ...editServiceCapacities, [p.id]: e.target.value })}
+                            style={{ ...formControlStyle, width: 130 }}
+                          />
+                        )}
                       </label>
                     ))}
                   </div>
                 )}
-                <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>{t('eligible_services_hint')}</p>
+                <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>{t('eligible_services_hint')} {t('service_capacity_hint')}</p>
               </div>
             )}
 
@@ -1273,7 +1292,7 @@ export default function ActivityTypesPage() {
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {(eligibleServicesMap.get(row.id) ?? []).map((p) => (
-                      <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
+                      <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}{p.capacity != null ? ` · ${t('service_capacity_places', { count: p.capacity })}` : ''}</span>
                     ))}
                   </div>
                 )}
@@ -1499,7 +1518,7 @@ export default function ActivityTypesPage() {
                   ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {(eligibleServicesMap.get(details.id) ?? []).map((p) => (
-                        <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
+                        <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}{p.capacity != null ? ` · ${t('service_capacity_places', { count: p.capacity })}` : ''}</span>
                       ))}
                     </div>
                   )}

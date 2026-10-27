@@ -19,6 +19,7 @@ import { parseTrainerMembershipId, validateTrainerMembershipId } from '../domain
 // declared once in the domain module both writers read rather than twice.
 import { WAITLIST_MODES } from '../domain/waitlistMode';
 // #1373: an Activity Type's image — the storage half is `activity-image-storage.ts`.
+import { parseServiceCapacitiesInput } from '../domain/serviceCapacity';
 import {
   ACTIVITY_STORAGE_NOT_INITIALIZED,
   activityImageBodyParser,
@@ -106,7 +107,7 @@ activityTypesRouter.get('/:id', async (req, res) => {
 // public_event = true, but always readable so the admin UI can populate the
 // picker once staff turns it off.
 const ELIGIBLE_SERVICES_SELECT = `
-  SELECT ps.id, ps.name, ps.is_system, gps.status
+  SELECT ps.id, ps.name, ps.is_system, gps.status, ateps.capacity
   FROM activity_type_eligible_professional_services ateps
   JOIN professional_services ps ON ps.id = ateps.professional_service_id AND ps.deleted_at IS NULL
   LEFT JOIN gym_professional_services gps
@@ -159,6 +160,23 @@ activityTypesRouter.put('/:id/eligible-professional-services', requireRole('admi
   // rule the single `professional_service_id` field validates against.
   const before = await loadEligibleServices(activityTypeId, gymId);
   const stored = new Set(before.map((r: any) => Number(r.id)));
+
+  // #1984: each service's own capacity. Absent keeps what is stored for the
+  // services that stay (the PUT is replace-all and would otherwise reset them),
+  // `null` follows the event's capacity again, a positive integer sets it.
+  let capacityInput = new Map<number, number | null>();
+  if (req.body.capacities !== undefined) {
+    const parsedCaps = parseServiceCapacitiesInput(req.body.capacities, 'capacities');
+    if (!parsedCaps.ok) return res.status(400).json({ error: parsedCaps.error });
+    capacityInput = parsedCaps.capacities;
+    for (const id of capacityInput.keys()) {
+      if (!ids.includes(id)) return res.status(400).json({ error: 'capacities may only name a selected service' });
+    }
+  }
+  const storedCapacity = new Map<number, number | null>(
+    before.map((r: any) => [Number(r.id), r.capacity == null ? null : Number(r.capacity)]),
+  );
+  const capacityFor = (id: number) => (capacityInput.has(id) ? capacityInput.get(id)! : storedCapacity.get(id) ?? null);
   for (const id of ids) {
     if (stored.has(id)) continue;
     const serviceErr = await validateProfessionalServiceId(gymId, id);
@@ -171,17 +189,17 @@ activityTypesRouter.put('/:id/eligible-professional-services', requireRole('admi
       [activityTypeId, gymId],
     );
     if (ids.length > 0) {
-      const values = ids.map(() => '(?, ?, ?)').join(', ');
-      const params = ids.flatMap((id) => [activityTypeId, id, gymId]);
+      const values = ids.map(() => '(?, ?, ?, ?)').join(', ');
+      const params = ids.flatMap((id) => [activityTypeId, id, gymId, capacityFor(id)]);
       await tx.query(
-        `INSERT INTO activity_type_eligible_professional_services (activity_type_id, professional_service_id, gym_id) VALUES ${values}`,
+        `INSERT INTO activity_type_eligible_professional_services (activity_type_id, professional_service_id, gym_id, capacity) VALUES ${values}`,
         params,
       );
     }
   });
 
   const after = await loadEligibleServices(activityTypeId, gymId);
-  const names = (rows: any[]) => rows.map((r) => r.name);
+  const names = (rows: any[]) => rows.map((r) => (r.capacity == null ? r.name : `${r.name} (${r.capacity})`));
   if (names(before).join('|') !== names(after).join('|')) {
     recordAudit(req, {
       action: 'update', entityType: 'activity_type', entityId: activityTypeId, entityName: existing[0].name,
@@ -597,8 +615,8 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     // may book the duplicate. The rows are copied as stored (no re-validation),
     // for the reason the trainer and the service above are.
     await tx.query(
-      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id)
-       SELECT gym_id, ?, professional_service_id
+      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id, capacity)
+       SELECT gym_id, ?, professional_service_id, capacity
        FROM activity_type_eligible_professional_services
        WHERE activity_type_id = ? AND gym_id = ?`,
       [insertId, req.params.id, gymId],
