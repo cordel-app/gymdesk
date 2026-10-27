@@ -90,6 +90,8 @@ describe('diffAuditedFields (#980 §11)', () => {
       'waitlist_mode',
       // #980 stage 3 — the effective Eligible Professional Services, by name.
       'eligible_professional_service_names',
+      // #1984 — the effective capacity of each offered Professional Service.
+      'service_capacity_summary',
     ]);
   });
 });

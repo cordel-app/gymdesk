@@ -42,6 +42,9 @@ export const SESSION_AUDITED_FIELDS = [
   // the Activity Type's otherwise), so `inherited → own` and `[PT] → []`
   // (restricted → any member) both read as the change they are.
   'eligible_professional_service_names',
+  // #1984 — the effective capacity of each offered Professional Service
+  // (`Name=capacity`), so an occurrence override reads as the change it is.
+  'service_capacity_summary',
 ] as const;
 
 export interface FieldChanges {

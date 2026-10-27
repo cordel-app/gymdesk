@@ -6,6 +6,8 @@ import { recordAudit } from '../infra/audit';
 import { sendNotification } from '../infra/notifications';
 import { resolveRequestActor, SYSTEM_ACTOR } from '../domain/auditActor';
 import { isLateCancellation, reasonForAttendance } from '../domain/serviceConsumption';
+import { isServiceFull } from '../domain/serviceCapacity';
+import { loadServiceOccupancy } from './service-capacity';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let serviceConsumptionModule: typeof import('./service-consumption') | null = null;
 async function serviceConsumption() {
@@ -176,7 +178,15 @@ export async function bookMemberOnSession(
       [sessionId],
     );
     const booked = Number(countRows[0].booked);
-    const overCapacity = booked >= Number(session[0].effective_capacity);
+    // #1984: the chosen Professional Service has places of its own. The event's
+    // capacity stays the ceiling; a full service is a full session for the
+    // member who asked for it, and booking another service does not touch it.
+    let serviceFull = false;
+    if (chosenServiceId != null) {
+      const svc = await loadServiceOccupancy(tx, gymId, Number(session[0].id), chosenServiceId, Number(session[0].effective_capacity));
+      serviceFull = isServiceFull(svc.occupied, svc.capacity);
+    }
+    const overCapacity = booked >= Number(session[0].effective_capacity) || serviceFull;
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
@@ -188,7 +198,10 @@ export async function bookMemberOnSession(
     }
 
     if (!waitlistOpen) {
-      throw Object.assign(new Error('This session is full and its waitlist is not open'), { status: 409, code: 'session_full_waitlist_not_open' });
+      throw Object.assign(
+        new Error(serviceFull ? 'This service is full for this session and its waitlist is not open' : 'This session is full and its waitlist is not open'),
+        { status: 409, code: serviceFull ? 'service_full' : 'session_full_waitlist_not_open' },
+      );
     }
 
     const position = Number(nextRows[0].next);
