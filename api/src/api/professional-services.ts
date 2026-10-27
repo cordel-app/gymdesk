@@ -475,7 +475,7 @@ professionalServicesRouter.delete('/:id/image', requireRole('admin'), async (req
 /** Live references that block deleting a gym Professional Service (#2129). */
 async function countProfessionalServiceReferences(
   tx: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> },
-  gymId: number,
+  gymId: string,
   id: number,
 ) {
   const count = async (sql: string, params: any[]) => Number((await tx.query(sql, params)).rows[0].n);
