@@ -33,6 +33,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 interface WalletRow {
   professional_service_id: number;
   name: string;
+  image_thumbnail_url?: string | null;
   available_items: number;
 }
 
@@ -148,6 +149,14 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                 }}
               >
                 <span aria-hidden="true" style={{ width: 12 }}>{historyId === id ? '▾' : '▸'}</span>
+                {row.image_thumbnail_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={row.image_thumbnail_url}
+                    alt=""
+                    style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                  />
+                )}
                 <span style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 500, fontSize: 14 }}>{row.name}</div>
                   <div style={cardMutedTextStyle}>

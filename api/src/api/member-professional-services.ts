@@ -63,7 +63,8 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
     const { rows: services } = await db.query(
-      `SELECT ps.id AS professional_service_id, ps.name
+      `SELECT ps.id AS professional_service_id, ps.name,
+              COALESCE(ps.image_thumbnail_url, ps.image_url) AS image_thumbnail_url
          FROM professional_services ps
          JOIN gym_professional_services gps
            ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
@@ -74,9 +75,10 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
     const balances = new Map(
       (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b]),
     );
-    res.json(services.map((s: { professional_service_id: number; name: string }) => ({
+    res.json(services.map((s: { professional_service_id: number; name: string; image_thumbnail_url: string | null }) => ({
       professional_service_id: s.professional_service_id,
       name: s.name,
+      image_thumbnail_url: s.image_thumbnail_url,
       available_items: balances.get(s.professional_service_id)?.sessions ?? 0,
       sources: balances.get(s.professional_service_id)?.sources ?? [],
     })));
