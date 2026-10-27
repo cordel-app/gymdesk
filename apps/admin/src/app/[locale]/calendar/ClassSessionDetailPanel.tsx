@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { serviceOccupancyLabel, type ServiceCapacityRow } from '@/lib/serviceCapacity';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
@@ -61,6 +62,8 @@ interface ClassSession {
    */
   eligible_services_override: boolean;
   eligible_professional_services: { id: number; name: string }[];
+  /** #1984: each offered service's own capacity and occupancy, as the API reports them. */
+  services?: ServiceCapacityRow[];
   booked_count: number;
   status: string;
   /**
@@ -847,7 +850,15 @@ export function ClassSessionDetailPanel({
               {session.eligible_professional_services.length > 0 ? (
                 <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
                   {session.eligible_professional_services.map((svc) => (
-                    <li key={svc.id}>{svc.name}</li>
+                    <li key={svc.id}>
+                      {svc.name}
+                      {(() => {
+                        const cap = session.services?.find((x) => x.id === svc.id);
+                        return cap ? (
+                          <> — <span title={t('service_occupancy_title')} style={listNameBadgeStyle}>{serviceOccupancyLabel(cap)}</span></>
+                        ) : null;
+                      })()}
+                    </li>
                   ))}
                 </ul>
               ) : (

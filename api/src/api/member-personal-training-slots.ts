@@ -550,7 +550,7 @@ async function bookOccurrence(
     }
     // A capacity or waitlist rejection is the slot going unavailable between
     // the projection and the INSERT — reported, not an error.
-    if (e.code === 'full' || e.code === 'session_full_waitlist_not_open') {
+    if (e.code === 'full' || e.code === 'session_full_waitlist_not_open' || e.code === 'service_full') {
       return {
         date: occurrence.date,
         calendar_event_id: occurrence.calendar_event_id,

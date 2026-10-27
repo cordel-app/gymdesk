@@ -1,5 +1,5 @@
 /**
- * Read-only validation of the #2125 stage 1 backfill (migration 346).
+ * Read-only validation of the #2125 stage 1 backfill (migration 347).
  *
  *   npm run plan-snapshots:validate
  *

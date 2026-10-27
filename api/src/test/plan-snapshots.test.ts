@@ -5,7 +5,7 @@ import { db } from '../infra/db';
 import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership } from './helpers';
 
 const require = createRequire(import.meta.url);
-const migration = require('../infra/migrations/346_plan_snapshots.js');
+const migration = require('../infra/migrations/347_plan_snapshots.js');
 const knex = require('knex')({ client: 'mysql2', connection: process.env.DATABASE_URL });
 
 afterAll(async () => {

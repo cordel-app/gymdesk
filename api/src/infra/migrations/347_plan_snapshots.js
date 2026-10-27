@@ -366,7 +366,7 @@ exports.backfillPlanSnapshots = backfillPlanSnapshots;
 exports.up = async (knex) => {
   await createTables(knex);
   const counts = await backfillPlanSnapshots(knex);
-  console.log(`migration 346: plan snapshots backfilled ${JSON.stringify(counts)}`);
+  console.log(`migration 347: plan snapshots backfilled ${JSON.stringify(counts)}`);
 };
 
 exports.down = async (knex) => {
