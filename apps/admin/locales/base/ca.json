@@ -4934,6 +4934,13 @@
     "override_legend": "Un valor en vermell és una excepció explícita al permís heretat."
   },
   "nutrition_plans": {
+    "col_name": "Nom",
+    "col_member": "Membre",
+    "col_days": "Dies",
+    "col_start_date": "Data d'inici",
+    "col_created_at": "Creat el",
+    "col_created_by": "Creat per",
+    "col_status": "Estat",
     "version_confirm": "En desar, la versió actual d'aquest pla acaba avui i es crea una versió nova, amb els teus canvis, que comença demà. La versió anterior es conserva com a històric.",
     "version_confirm_btn": "Desar nova versió",
     "title": "Plans de nutrició assignats",
