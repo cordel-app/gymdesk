@@ -395,11 +395,12 @@ describe('PUT /:id — editing my own target (§9)', () => {
     await db.query('DELETE FROM member_personal_goals WHERE id = ?', [id]);
   });
 
-  // The pair is checked against the row the write produces, not the body.
-  it('refuses a clear that would leave a unit qualifying nothing', async () => {
+  // Clearing the target value clears its unit with it (#2133 §2).
+  it('clears the unit together with the target value', async () => {
     const id = await assignDirect(gymId, memberId, gymGoalId, { target_value: 10, target_unit: 'km' });
     const res = await asMember('put', `${ROOT}/${id}`).send({ target_value: null });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.target_unit).toBeNull();
     await db.query('DELETE FROM member_personal_goals WHERE id = ?', [id]);
   });
 

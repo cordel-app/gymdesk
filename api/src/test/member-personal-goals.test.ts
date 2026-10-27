@@ -248,13 +248,27 @@ describe('assigned personal goals — validation', () => {
     expect(res.status).toBe(400);
   });
 
-  it('refuses clearing a target value that a stored unit still qualifies', async () => {
+  it('clears the unit with the target value, and ignores target_type / target_unit on edit (#2133 §2)', async () => {
     const created = await assign({ target_value: 5, target_unit: 'kg' });
+    const edit = await put(created.id, { notes: 'x', target_unit: 'lb', target_type: 'relative' });
+    expect(edit.status).toBe(200);
+    expect(edit.body).toMatchObject({ target_unit: 'kg', target_type: created.target_type });
     const res = await put(created.id, { target_value: null });
-    expect(res.status).toBe(400);
-    // Clearing both together is fine.
-    expect((await put(created.id, { target_value: null, target_unit: null })).status).toBe(200);
+    expect(res.status).toBe(200);
+    expect(res.body.target_unit).toBeNull();
     await del(created.id);
+  });
+
+  it('defaults the start date to the initial reading day, unless one is given (#2133 §3)', async () => {
+    const withReading = await assign({ initial_reading: 80, initial_reading_at: '2026-03-04 09:00:00' });
+    expect(String(withReading.start_date)).toContain('2026-03-04');
+    await del(withReading.id);
+    const explicit = await assign({ initial_reading: 80, start_date: '2026-02-01' });
+    expect(String(explicit.start_date)).toContain('2026-02-01');
+    await del(explicit.id);
+    const none = await assign({});
+    expect(none.start_date).toBeNull();
+    await del(none.id);
   });
 
   it('refuses a target date the stored start date is after', async () => {
