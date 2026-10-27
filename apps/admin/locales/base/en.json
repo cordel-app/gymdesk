@@ -4824,6 +4824,11 @@
     "error_generic": "Something went wrong. Please try again."
   },
   "professional_services": {
+    "delete_blocked_title": "This Professional Service cannot be deleted because it is still in use.",
+    "delete_blocked_activities": "Activities: {count}",
+    "delete_blocked_calendar_events": "Calendar events: {count}",
+    "delete_blocked_product_snapshots": "Product assignment snapshots: {count}",
+    "delete_blocked_hint": "Consider deactivating this Professional Service instead to prevent it from being offered for new purchases or assignments while preserving existing records.",
     "name_in": "Name ({locale})",
     "description_in": "Description ({locale})",
     "max_capacity_help": "Positive whole number. Leave empty for no limit.",

@@ -4837,6 +4837,11 @@
     "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
   },
   "professional_services": {
+    "delete_blocked_title": "Aquest Servei Professional no es pot eliminar perquè encara està en ús.",
+    "delete_blocked_activities": "Activitats: {count}",
+    "delete_blocked_calendar_events": "Esdeveniments de calendari: {count}",
+    "delete_blocked_product_snapshots": "Instantànies d'assignació de productes: {count}",
+    "delete_blocked_hint": "Considera desactivar aquest Servei Professional perquè no s'ofereixi en noves compres o assignacions i es conservin els registres existents.",
     "name_in": "Nom ({locale})",
     "description_in": "Descripció ({locale})",
     "max_capacity_help": "Nombre enter positiu. Deixa-ho buit per no limitar.",
