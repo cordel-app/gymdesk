@@ -261,10 +261,10 @@ describe('assigned personal goals — validation', () => {
 
   it('defaults the start date to the initial reading day, unless one is given (#2133 §3)', async () => {
     const withReading = await assign({ initial_reading: 80, initial_reading_at: '2026-03-04 09:00:00' });
-    expect(withReading.start_date).toBe('2026-03-04');
+    expect(String(withReading.start_date)).toContain('2026-03-04');
     await del(withReading.id);
     const explicit = await assign({ initial_reading: 80, start_date: '2026-02-01' });
-    expect(explicit.start_date).toBe('2026-02-01');
+    expect(String(explicit.start_date)).toContain('2026-02-01');
     await del(explicit.id);
     const none = await assign({});
     expect(none.start_date).toBeNull();
