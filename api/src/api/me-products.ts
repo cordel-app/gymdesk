@@ -1,4 +1,5 @@
 import { originOf } from '../domain/itemOrigin';
+import { syncProductSnapshotForPurchase, syncProductSnapshotForPaymentRequest } from './product-snapshot-sync';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -389,6 +390,7 @@ export async function saveProductPurchaseDraft(
     for (const step of price.promotions) {
       await writePurchasePromotionStep(tx, input.gymId, insertId, step);
     }
+    await syncProductSnapshotForPurchase(tx, input.gymId, insertId);
     return insertId;
   });
   return { purchaseId, amount: snapshot.amount, currency: snapshot.currency };
@@ -419,6 +421,7 @@ export async function deletePurchaseDraft(
       'DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND status = ?',
       [purchaseId, gymId, DRAFT_PURCHASE_STATUS],
     );
+    await syncProductSnapshotForPurchase(tx, gymId, purchaseId);
     return true;
   });
 }
@@ -511,6 +514,7 @@ export async function startProductPurchase(
           `DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
           [input.fromDraftId, input.gymId, input.memberId],
         );
+        await syncProductSnapshotForPurchase(tx, input.gymId, input.fromDraftId);
       }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to
@@ -577,6 +581,7 @@ export async function startProductPurchase(
       for (const step of price.promotions) {
         await writePurchasePromotionStep(tx, input.gymId, insertId, step);
       }
+      await syncProductSnapshotForPurchase(tx, input.gymId, insertId);
 
       return insertId;
     });
@@ -650,6 +655,7 @@ export async function completeProductPurchase(
     // The provider's confirmation is the system's act, not the member's (#1182).
     [validUntil, SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
+  if (rowCount > 0) await syncProductSnapshotForPaymentRequest(tx, gymId, paymentRequestId);
   return rowCount;
 }
 
@@ -672,6 +678,7 @@ export async function cancelProductPurchase(
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
     [SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
+  if (rowCount > 0) await syncProductSnapshotForPaymentRequest(conn, gymId, paymentRequestId);
   return rowCount;
 }
 
@@ -693,6 +700,12 @@ export async function cancelProductPurchase(
 export async function cancelAbandonedPurchases(
   conn: Pick<typeof db, 'query'> = db,
 ): Promise<number> {
+  const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
+    `SELECT mp.id, mp.gym_id FROM payment_requests pr
+       JOIN member_products_oneoff_snapshot mp ON mp.payment_request_id = pr.id
+      WHERE mp.status = ? AND pr.status IN ('expired', 'failed')`,
+    [PENDING_PURCHASE_STATUS],
+  );
   const { rowCount } = await conn.query(
     `UPDATE member_products_oneoff_snapshot mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id
@@ -700,6 +713,7 @@ export async function cancelAbandonedPurchases(
       WHERE mp.status = ? AND pr.status IN ('expired', 'failed')`,
     [SYSTEM_ACTOR, PENDING_PURCHASE_STATUS],
   );
+  for (const a of abandoned) await syncProductSnapshotForPurchase(conn, a.gym_id, Number(a.id));
   return rowCount;
 }
 

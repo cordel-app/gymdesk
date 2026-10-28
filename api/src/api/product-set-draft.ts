@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
 import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
@@ -95,6 +96,7 @@ export async function syncMandatoryQuantities(
 async function touch(tx: Tx, draft: LockedDraft) {
   await touchDraft(tx, draft.gym_id, draft.id);
   await syncMandatoryQuantities(tx, draft.gym_id, draft.id, draft.root_product_set_id);
+  await syncProductSnapshotsOfVersion(tx, draft.gym_id, draft.id);
 }
 
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
