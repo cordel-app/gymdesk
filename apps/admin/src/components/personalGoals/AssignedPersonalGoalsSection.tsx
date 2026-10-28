@@ -6,15 +6,13 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { DataTable, Column } from '@/components/DataTable';
-import { StatusBadge } from '@/components/StatusBadge';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { listNameBadgeStyle } from '@/components/listChrome';
 import {
   cardSectionLabelStyle, formFieldLabelStyle, formValueStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { AssignedGoalCard } from './AssignedGoalCard';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
 import { GoalReadingHeader } from './GoalReadingHeader';
@@ -333,67 +331,21 @@ export function AssignedPersonalGoalsSection({
     );
   }
 
-  const columns: Column<AssignedPersonalGoalRow>[] = [
-    {
-      // #1011: the Member identifies the row; the goal itself is read in the
-      // expanded body, which is where every other hidden column is read too.
-      header: label('col_member'),
-      mobile: 'name',
-      title: (row) => row.member_name,
-      render: (row) => <strong>{row.member_name}</strong>,
-    },
-    {
-      header: label('col_goal'),
-      mobile: 'secondary',
-      render: (row) => (
-        <span>
-          {nameOfGoal(row)}
-          {/* The quiet pill every list uses for "what kind of row is this" (#724). */}
-          {row.goal_gym_id === null && <span style={listNameBadgeStyle}>{label('ownership_system')}</span>}
-        </span>
-      ),
-    },
-    { header: label('col_target'), width: 140, mobile: 'secondary', render: (row) => <span style={cellStyle}>{formatTarget(row)}</span> },
-    {
-      // #1037 §11 — the figure the ticket's own header leads with, reported by
-      // the server and never computed here. `—` for an assignment with no
-      // readings or no target, which is not the same fact as `0%`.
-      header: label('col_progress'),
-      width: 110,
-      mobile: 'secondary',
-      render: (row) => <span style={cellStyle}>{formatProgress(row.progress_percent)}</span>,
-    },
-    {
-      header: label('col_period'),
-      width: 220,
-      mobile: 'secondary',
-      render: (row) => <span style={cellStyle}>{formatGoalPeriod(row, locale, gymFmt)}</span>,
-    },
-    {
-      header: label('col_status'),
-      width: 140,
-      mobile: 'keep',
-      render: (row) => <StatusBadge status={row.status} label={label(`status_${row.status}`)} />,
-    },
-    {
-      header: '',
-      width: 40,
-      mobile: 'actions',
-      render: (row) => (
-        <ContextMenu items={[
-          { label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },
-          // #1037 §3/§21 — two writers, two items: a measurement, and a new
-          // baseline every later percentage is computed from. Neither is a flag
-          // on the other, and both are gated like any write action.
-          { label: label('add_reading'), onClick: () => openReading(row, 'reading'), disabled: !canWrite, title: readOnlyTitle },
-          { label: label('set_initial_reading'), onClick: () => openReading(row, 'initial'), disabled: !canWrite, title: readOnlyTitle },
-          { label: label('unassign'), onClick: () => setDeleting(row), disabled: !canWrite, title: readOnlyTitle, danger: true },
-          // Details is always last (#802's rule for a page that fixes its order).
-          { label: label('details'), onClick: () => setDetailRow(row) },
-        ]} />
-      ),
-    },
-  ];
+  function renderActions(row: AssignedPersonalGoalRow) {
+    return (
+      <ContextMenu items={[
+        { label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },
+        // #1037 §3/§21 — two writers, two items: a measurement, and a new
+        // baseline every later percentage is computed from. Neither is a flag
+        // on the other, and both are gated like any write action.
+        { label: label('add_reading'), onClick: () => openReading(row, 'reading'), disabled: !canWrite, title: readOnlyTitle },
+        { label: label('set_initial_reading'), onClick: () => openReading(row, 'initial'), disabled: !canWrite, title: readOnlyTitle },
+        { label: label('unassign'), onClick: () => setDeleting(row), disabled: !canWrite, title: readOnlyTitle, danger: true },
+        // Details is always last (#802's rule for a page that fixes its order).
+        { label: label('details'), onClick: () => setDetailRow(row) },
+      ]} />
+    );
+  }
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, total);
@@ -457,15 +409,25 @@ export function AssignedPersonalGoalsSection({
         </div>
       )}
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(row) => row.id}
-        loading={loading}
-        loadingText={label('loading')}
-        emptyText={label('empty')}
-        renderExpanded={(row) => (
-          editingId === row.id
+      {loading && <p style={{ fontSize: 13, color: 'var(--gd-text-muted, #666)' }}>{label('loading')}</p>}
+      {!loading && rows.length === 0 && (
+        <p style={{ fontSize: 13, color: 'var(--gd-text-muted, #666)' }}>{label('empty')}</p>
+      )}
+      {/* #2133 item 4 — one collapsible card per assignment, the shared
+          `AssignedGoalCard` the Member card renders too. */}
+      {rows.map((row) => (
+        <AssignedGoalCard
+          key={row.id}
+          title={nameOfGoal(row)}
+          subtitle={row.member_name}
+          summary={`${label('col_target')}: ${formatTarget(row)} · ${label('col_progress')}: ${formatProgress(row.progress_percent)}`}
+          status={row.status}
+          statusLabel={label(`status_${row.status}`)}
+          open={expanded.has(row.id) || editingId === row.id}
+          onToggle={() => toggleExpand(row.id)}
+          actions={renderActions(row)}
+        >
+          {editingId === row.id
             ? (
               <AssignedPersonalGoalForm
                 mode="edit"
@@ -482,11 +444,9 @@ export function AssignedPersonalGoalsSection({
                 saveLabel={label('save')}
               />
             )
-            : renderReadOnly(row)
-        )}
-        expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
-        onToggleExpand={(row) => toggleExpand(row.id)}
-      />
+            : renderReadOnly(row)}
+        </AssignedGoalCard>
+      ))}
 
       {total > 0 && (
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
@@ -541,5 +501,3 @@ function ReadOnlyField({ label: fieldLabel, value, wrap }: { label: string; valu
     </div>
   );
 }
-
-const cellStyle: React.CSSProperties = { fontSize: 13 };

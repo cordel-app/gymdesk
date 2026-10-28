@@ -571,7 +571,7 @@ describe('#1037 who may record a reading', () => {
     // The expanded body stays read-only: the menu is the single entry point (#797).
     const expandedBody = sectionSrc.slice(
       sectionSrc.indexOf('function renderReadOnly'),
-      sectionSrc.indexOf('const columns'),
+      sectionSrc.indexOf('function renderActions'),
     );
     expect(expandedBody).not.toContain('<button');
     expect(expandedBody).not.toContain('onClick');
@@ -649,5 +649,17 @@ describe('#1037 stage 4 the progress chart', () => {
     // An assignment with no target gets no reference line and no `Target —`.
     expect(sectionSrc).toContain('row.target_value === null');
     expect(memberSectionSrc).toContain('row.target_value === null');
+  });
+});
+
+describe('#2133 item 4 — both screens draw the one collapsible card', () => {
+  it('renders AssignedGoalCard in the gym-wide section and the Member card, with no table', () => {
+    expect(sectionSrc).toContain('<AssignedGoalCard');
+    expect(memberSectionSrc).toContain('<AssignedGoalCard');
+    expect(sectionSrc).not.toContain('DataTable');
+    const cardSrc = read(join(COMPONENT_DIR, 'AssignedGoalCard.tsx'));
+    // The toggle and the actions are siblings, never nested buttons.
+    expect(cardSrc).toContain('aria-expanded={open}');
+    expect(cardSrc).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
   });
 });
