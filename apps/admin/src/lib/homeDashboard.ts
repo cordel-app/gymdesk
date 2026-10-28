@@ -127,5 +127,10 @@ export interface HomeData {
   };
   tasks: HomeTask[];
   classes?: { id: number; name: string; starts_at: string; ends_at: string; status: string; trainer_name: string | null; space_name: string | null; capacity: number | null; booked_count: number; waitlist_count: number }[];
+  /** #1984 stage 3: upcoming services with some, not all, places booked. */
+  incomplete_classes?: {
+    count: number;
+    items: { event_id: number; event_name: string; starts_at: string; service_id: number; service_name: string; occupied: number; capacity: number; remaining: number; participants: string[] }[];
+  };
   latest_members?: { id: number; name: string; image_url: string | null; created_at: string; plan_name: string | null }[];
 }

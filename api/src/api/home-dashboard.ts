@@ -25,6 +25,8 @@ import {
 } from '../domain/homeDashboard';
 import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
+import { loadServiceCapacityViews } from './service-capacity';
+import { incompleteServiceRows, type IncompleteServiceRow } from '../domain/incompleteClasses';
 
 export const homeDashboardRouter = Router();
 
@@ -195,6 +197,48 @@ async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
   return task;
 }
 
+/** Upcoming events inspected for incomplete services; bounds the per-service reads. */
+const INCOMPLETE_EVENT_SCAN_LIMIT = 200;
+const INCOMPLETE_LIST_LIMIT = 20;
+
+/**
+ * #1984 stage 3: upcoming sessions where a Professional Service has at least one
+ * booking but not all its places. Derived on read from the per-service capacity
+ * (`loadServiceCapacityViews()`), so it is never stored and cannot disagree with
+ * the Calendar. Cancelled, past and full services are excluded.
+ */
+async function loadIncompleteClasses(gymId: string, now: string): Promise<{ count: number; items: IncompleteServiceRow[] }> {
+  const { rows: events } = await db.query<any>(
+    `SELECT ce.id, ce.starts_at, at.name AS name
+       FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id
+      WHERE ${LIVE_SESSION} AND ce.starts_at > ?
+        AND EXISTS (SELECT 1 FROM calendar_event_bookings eb
+                     WHERE eb.calendar_event_id = ce.id AND eb.status = 'booked' AND eb.professional_service_id IS NOT NULL)
+      ORDER BY ce.starts_at ASC, ce.id ASC
+      LIMIT ${INCOMPLETE_EVENT_SCAN_LIMIT}`,
+    [gymId, now],
+  );
+  if (events.length === 0) return { count: 0, items: [] };
+  const ids = events.map((e: any) => Number(e.id));
+  const views = await loadServiceCapacityViews(db, gymId, ids);
+  const { rows: people } = await db.query<any>(
+    `SELECT ceb.calendar_event_id AS event_id, ceb.professional_service_id AS service_id, m.name
+       FROM calendar_event_bookings ceb
+       JOIN members m ON m.id = ceb.member_id AND m.gym_id = ceb.gym_id
+      WHERE ceb.gym_id = ? AND ceb.status = 'booked' AND ceb.professional_service_id IS NOT NULL
+        AND ceb.calendar_event_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY ceb.booked_at ASC, ceb.id ASC`,
+    [gymId, ...ids],
+  );
+  const all = incompleteServiceRows(
+    events.map((e: any) => ({ id: Number(e.id), name: e.name, starts_at: iso(e.starts_at) })),
+    views,
+    people.map((p: any) => ({ event_id: Number(p.event_id), service_id: Number(p.service_id), name: p.name })),
+  );
+  return { count: all.length, items: all.slice(0, INCOMPLETE_LIST_LIMIT) };
+}
+
 /**
  * Top Trainers and the weekly average (#1754): actual attendance only
  * (`attendance_status = 'present'` on a still-booked row of a live session),
@@ -316,6 +360,8 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
         total: Number(totalRows[0]?.c ?? 0),
         waitlist_total: list.reduce((n: number, c: any) => n + c.waitlist_count, 0),
       };
+
+      out.incomplete_classes = await loadIncompleteClasses(gymId, now);
 
       const weekParams = [gymId, now, week.from, week.to];
       const weekScope = `${LIVE_SESSION} AND ce.ends_at > ? AND ce.starts_at >= ? AND ce.starts_at < ?`;
