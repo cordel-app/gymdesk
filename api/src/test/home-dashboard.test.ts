@@ -187,3 +187,41 @@ describe('attendance KPIs (#1754)', () => {
     expect(res.body.cards.attendance.average_classes_per_member_per_week).toBeCloseTo(Math.round((7 / active / 4) * 100) / 100, 2);
   });
 });
+
+describe('GET /dashboard/home — incomplete classes (#1984 stage 3)', () => {
+  it('lists a service with some but not all places, hides full ones, and is tenant-scoped', async () => {
+    const u = `${Date.now()}`;
+    const { insertId: center } = await db.query('INSERT INTO centers (gym_id, name) VALUES (?, ?)', [gymA, `IC-${u}`]);
+    const { insertId: at } = await db.query(
+      `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Incomplete Act', 10, 'active')`, [gymA]);
+    const mkSvc = async (name: string, cap: number) => {
+      const { insertId } = await db.query(
+        'INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)', [gymA, `${name} ${u}`]);
+      await db.query(
+        `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id, capacity) VALUES (?, ?, ?, ?)`,
+        [gymA, at, insertId, cap]);
+      return insertId;
+    };
+    const duo = await mkSvc('Duo', 2);
+    const solo = await mkSvc('Solo', 1);
+    const { insertId: ev } = await db.query(
+      `INSERT INTO calendar_events (gym_id, center_id, title, activity_type_id, starts_at, ends_at, capacity, status)
+       VALUES (?, ?, 'IC', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 31 HOUR), 10, 'scheduled')`,
+      [gymA, center, at]);
+    const book = (svc: number) => db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, calendar_event_id, member_id, status, professional_service_id) VALUES (?, ?, ?, 'booked', ?)`,
+      [gymA, ev, memberA, svc]);
+    await book(duo);
+    const res = await get(gymA);
+    const mine = res.body.incomplete_classes.items.filter((i: any) => i.event_id === ev);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ service_id: duo, occupied: 1, capacity: 2, remaining: 1, participants: ['Home Member'] });
+
+    await db.query('UPDATE calendar_event_bookings SET professional_service_id = ? WHERE calendar_event_id = ?', [solo, ev]);
+    const res2 = await get(gymA);
+    expect(res2.body.incomplete_classes.items.filter((i: any) => i.event_id === ev)).toHaveLength(0);
+
+    const other = await get(gymB);
+    expect(other.body.incomplete_classes.items.filter((i: any) => i.event_id === ev)).toHaveLength(0);
+  });
+});

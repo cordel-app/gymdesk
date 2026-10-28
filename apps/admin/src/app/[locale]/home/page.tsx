@@ -250,6 +250,26 @@ export default function HomePage() {
           </div>
 
           <div style={panelsGrid}>
+            {data.incomplete_classes && data.incomplete_classes.count > 0 && (
+              <Panel title={t('incomplete_title')} icon={<CalendarClockIcon size={18} />}
+                aside={<strong style={{ fontSize: 22 }} data-testid="home-incomplete-count">{data.incomplete_classes.count}</strong>}>
+                <p style={{ ...mutedTextStyle, margin: '0 0 8px' }}>{t('incomplete_sub')}</p>
+                {data.incomplete_classes.items.map((i) => (
+                  <div key={`${i.event_id}-${i.service_id}`} className="gd-home-row" style={row} data-testid={`home-incomplete-${i.event_id}-${i.service_id}`}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{i.event_name} · {i.service_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
+                        {formatGymDate(i.starts_at, fmt)} {formatGymTime(i.starts_at, fmt)} · {i.participants.join(', ')}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-warning, #d97706)' }}>
+                        {t('incomplete_occupancy', { occupied: i.occupied, capacity: i.capacity, remaining: i.remaining })}
+                      </div>
+                    </div>
+                    <Link href={startClassHref(i.event_id, locale)} className="gd-home-link" style={linkStyle}>{t('incomplete_open')}</Link>
+                  </div>
+                ))}
+              </Panel>
+            )}
             {data.classes && (
               <Panel title={t('classes_title')} icon={<CalendarClockIcon size={18} />}
                 footer={<Link href={`/${locale}/calendar`} className="gd-home-link" style={linkStyle}>{t('classes_view_all')}</Link>}>
