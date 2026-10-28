@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { StatusBadge } from '@/components/StatusBadge';
 import {
   cardMutedTextStyle, dashedAddBtnStyle, innerCardStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
@@ -12,12 +11,13 @@ import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { primaryBtnSmall } from '@/components/ui';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { AssignedGoalCard } from './AssignedGoalCard';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
 import { GoalReadingHeader } from './GoalReadingHeader';
 import { GoalReadingChart } from './GoalReadingChart';
 import { GoalReadingHistory } from './GoalReadingHistory';
-import { GoalReadingsResponse, ReadingKind } from './goalReadings';
+import { GoalReadingsResponse, ReadingKind, formatProgress } from './goalReadings';
 import {
   ASSIGNED_PERSONAL_GOALS_ROOT, AssignedPersonalGoalFormValues,
   AssignedPersonalGoalListResponse, AssignedPersonalGoalRow,
@@ -77,6 +77,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
 
+  const [openIds, setOpenIds] = useState<Set<number>>(new Set());
   const [removing, setRemoving] = useState<AssignedPersonalGoalRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
 
@@ -217,8 +218,23 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
     <div>
       {rows.length === 0 && !creating && <p style={cardMutedTextStyle}>{t('member_empty')}</p>}
 
+      {/* #2133 item 4 — collapsible cards, the shared `AssignedGoalCard` the
+          gym-wide Assigned Personal Goals section renders too. */}
       {rows.map((row) => (
-        <div key={row.id} style={innerCardStyle}>
+        <AssignedGoalCard
+          key={row.id}
+          title={nameOfGoal(row)}
+          summary={`${t('col_target')}: ${formatTarget(row)} · ${t('col_progress')}: ${formatProgress(row.progress_percent)}`}
+          status={row.status}
+          statusLabel={t(`status_${row.status}` as any)}
+          open={openIds.has(row.id) || editingId === row.id}
+          onToggle={() => setOpenIds((prev) => {
+            if (editingId === row.id) return prev; // never collapse the card being edited
+            const next = new Set(prev);
+            if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+            return next;
+          })}
+        >
           {editingId === row.id ? (
             <AssignedPersonalGoalForm
               mode="edit"
@@ -246,25 +262,20 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                 unit={row.target_unit}
                 summary={row}
                 label={(key) => t(key as any)}
-                trailing={(
-                  <>
-                    <StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />
-                    {/* #1518: the item's own Edit, as on Professional Services. */}
-                    {canEdit && (
-                      <button
-                        type="button"
-                        style={primaryBtnSmall()}
-                        onClick={() => {
-                          setEditingId(row.id);
-                          setEditForm(toAssignedPersonalGoalFormValues(row));
-                          setEditError(null);
-                        }}
-                      >
-                        {t('edit')}
-                      </button>
-                    )}
-                  </>
-                )}
+                trailing={canEdit ? (
+                  // #1518: the item's own Edit, as on Professional Services.
+                  <button
+                    type="button"
+                    style={primaryBtnSmall()}
+                    onClick={() => {
+                      setEditingId(row.id);
+                      setEditForm(toAssignedPersonalGoalFormValues(row));
+                      setEditError(null);
+                    }}
+                  >
+                    {t('edit')}
+                  </button>
+                ) : undefined}
               />
               {/* The card's own `Label: Value` row (#929), never a second one. */}
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
@@ -316,7 +327,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
               )}
             </>
           )}
-        </div>
+        </AssignedGoalCard>
       ))}
 
       {creating && (
