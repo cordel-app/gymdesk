@@ -18,6 +18,7 @@
 // through the existing Save & Pay (`POST /product-sets/:id/save-and-pay`) and
 // the payment webhook, which is the one place a version is activated.
 
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import type { Tx } from '../infra/db';
 import { addService, lockDraft, isRefusal, type DraftRefusal } from './product-set-draft';
 import { createDraft, type Actor } from './product-sets';
@@ -154,6 +155,8 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
 
   const refused = await applyPromotions(tx, input, draftId, added.id);
   if (refused) return refused;
+  // The line's direct discount was written after addService() synced it.
+  await syncProductSnapshotsOfVersion(tx, input.gymId, draftId);
   return { kind: 'ok', productSetId: draftId, lineId: added.id };
 }
 

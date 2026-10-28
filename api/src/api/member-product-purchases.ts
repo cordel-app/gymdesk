@@ -16,6 +16,7 @@
 // role, whatever its Members write access), and every answer is re-resolved
 // server-side from the Product's id, so the UI is never the enforcement.
 
+import { syncProductSnapshotForPurchase } from './product-snapshot-sync';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -427,6 +428,7 @@ memberProductPurchasesRouter.post('/:id/cancel', requireModuleWrite('MEMBERS'), 
           WHERE id = ? AND gym_id = ? AND cancelled_on IS NULL`,
         [today, validUntil, actor, id, gymId],
       );
+      await syncProductSnapshotForPurchase(tx, gymId, id);
       return { status: 200 as const, changed: true, row: { cancelled_on: today, valid_until: validUntil } };
     });
     if (result.status === 404) return res.status(404).json({ error: 'Purchase not found' });

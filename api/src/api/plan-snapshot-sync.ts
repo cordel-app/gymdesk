@@ -11,6 +11,7 @@
  * included, and creates no purchase, application or charge of its own.
  */
 import type { Tx } from '../infra/db';
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 
 /** The snapshot status of a version: its own, except where its projected assignment has moved on. */
 const STATUS_SQL = `CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
@@ -30,6 +31,8 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
 
 /** Re-derives the plan snapshot of one ProductSet version from its legacy rows. */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
+  await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
   const { rows: legacy } = await tx.query<{ id: number }>(
     `SELECT psps.id
        FROM product_set_plan_snapshots psps
