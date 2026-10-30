@@ -693,19 +693,20 @@ export function GoalLibrarySection({
               style={{ ...filterControlStyle, minWidth: 220 }}
             />
           </FilterField>
-          <div style={{ marginLeft: 'auto' }}>
-            <ExerciseViewToggle value={view} onChange={setView} />
-          </div>
         </FilterBar>
-        <button
-          type="button"
-          style={{ ...readOnlyStyle(primaryBtnStyle(), !canWrite), marginBottom: 16 }}
-          onClick={openInlineNew}
-          disabled={!canWrite || creating}
-          title={readOnlyTitle}
-        >
-          {kindLabel('add')}
-        </button>
+        {/* #2151 — the view toggle sits at the right edge, beside the page action. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginLeft: 'auto', marginBottom: 16 }}>
+          <ExerciseViewToggle value={view} onChange={setView} />
+          <button
+            type="button"
+            style={readOnlyStyle(primaryBtnStyle(), !canWrite)}
+            onClick={openInlineNew}
+            disabled={!canWrite || creating}
+            title={readOnlyTitle}
+          >
+            {kindLabel('add')}
+          </button>
+        </div>
       </div>
 
       {creating && (
