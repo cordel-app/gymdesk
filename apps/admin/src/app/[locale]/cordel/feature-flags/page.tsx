@@ -7,7 +7,7 @@ import { useGym } from '@/context/GymContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { Tabs, type TabDescriptor } from '@/components/Tabs';
-import { featureFlagLabelKey, featureFlagNavPosition, featureKeyShortName } from '@/lib/featureFlagLabels';
+import { compareFeatureFlagSiblings, featureFlagLabelKey, featureFlagNavPosition, featureKeyShortName } from '@/lib/featureFlagLabels';
 // #1070 §3: the app's one red, so an overridden permission is marked in the
 // colour a destructive menu item and a failed save already use rather than a
 // hue this page invents.
@@ -83,6 +83,13 @@ function buildTree(flags: FeatureFlag[]): FlagNode[] {
     }
     map.get(flag.feature_key)!.flag = flag;
   }
+
+  // #2155: siblings follow the sidebar's item order, not the alphabet.
+  const sortChildren = (nodes: FlagNode[]) => {
+    nodes.sort((a, b) => compareFeatureFlagSiblings(a.key, b.key));
+    nodes.forEach(n => sortChildren(n.children));
+  };
+  roots.forEach(r => sortChildren(r.children));
 
   return roots;
 }
