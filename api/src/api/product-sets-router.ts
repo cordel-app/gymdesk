@@ -10,7 +10,7 @@ import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
 import { productSetDraftRouter } from './product-set-draft-router';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
-import { activePlanConflictBody } from '../domain/oneActivePlan';
+import { activePlanConflictBody, parseConflictResolution } from '../domain/oneActivePlan';
 import {
   Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
@@ -158,7 +158,10 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
   // assignment that is *not* a conflict is the one this owner's own Active
   // version projects: a new version of their own chain replaces it by design.
   // No `confirm` exists here — replacing is a new version, never an overwrite.
-  if (planId !== null) {
+  // #2125: `on_conflict: 'add'` is the staff answer "keep what they have and add this
+  // beside it", so the check stands aside for it; anything else still answers the 409
+  // the Add-or-Replace modal is built from.
+  if (planId !== null && parseConflictResolution(req.body) !== 'add') {
     const { rows: own } = await db.query<{ user_membership_id: number | null }>(
       `SELECT user_membership_id FROM product_sets
         WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1`, [gymId, memberId]);

@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { activePlanConflict, conflictChoiceBody, type ActivePlanConflict, type ConflictChoice } from '@/lib/activePlanConflict';
 import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import {
   cardHintStyle,
@@ -123,7 +123,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
     };
   });
 
-  async function handleSubmit(confirmReplacement = false) {
+  async function handleSubmit(confirmReplacement: ConflictChoice = false) {
     setError(null);
     if (!planId) { setError(t('members.assign_new_plan_error_no_plan')); return; }
     if (!startsAt) { setError(t('members.assign_new_plan_error_no_start')); return; }
@@ -136,7 +136,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
           membership_plan_id: parseInt(planId, 10),
           starts_at: startsAt,
           promotion_ids: selectedPromotionIds,
-          ...(confirmReplacement ? { confirm: true } : {}),
+          ...conflictChoiceBody(confirmReplacement),
         }),
       });
       setConflict(null);
@@ -220,6 +220,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
         newPlanName={plans.find((p) => String(p.id) === planId)?.name ?? null}
         busy={saving}
         onConfirm={() => handleSubmit(true)}
+        onAdd={() => handleSubmit('add')}
         onCancel={() => setConflict(null)}
       />
     </div>

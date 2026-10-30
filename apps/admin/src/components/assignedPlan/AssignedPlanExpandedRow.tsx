@@ -34,7 +34,7 @@ import {
   formatExampleTimelineBilling,
 } from '@/lib/exampleTimeline';
 import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
-import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { activePlanConflict, conflictChoiceBody, type ActivePlanConflict, type ConflictChoice } from '@/lib/activePlanConflict';
 import {
   ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS,
   ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS,
@@ -211,12 +211,12 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
    * recognised by shape through `activePlanConflict()` rather than by status
    * code alone.
    */
-  async function saveAndPay(confirmReplacement = false) {
+  async function saveAndPay(confirmReplacement: ConflictChoice = false) {
     setActionBusy(true);
     try {
       await apiFetch(`/user-memberships/${assignedPlanId}/save-and-pay`, {
         method: 'POST',
-        body: JSON.stringify(confirmReplacement ? { confirm: true } : {}),
+        body: JSON.stringify(conflictChoiceBody(confirmReplacement)),
       });
       setReplacement(null);
       await loadDetail();
@@ -689,6 +689,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         newPlanName={detail.plan_name}
         busy={actionBusy}
         onConfirm={() => saveAndPay(true)}
+        onAdd={() => saveAndPay('add')}
         onCancel={() => setReplacement(null)}
       />
 

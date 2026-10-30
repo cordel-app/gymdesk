@@ -2041,7 +2041,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // card above is about can then never also appear in the history under it.
     // The limit is a declared constant written into the statement, never a bound
     // parameter — `db.query` is a prepared statement and MySQL refuses `LIMIT ?`.
-    const { current, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
+    const { current, also_live, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
     // #1108 stage 2 / #1122: a plan awaiting its first payment is not the
     // member's plan (it is filtered out above), but it is what *Pay now* is
     // for, so the page is told about it beside the current one.
@@ -2112,7 +2112,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const professional_service_sessions = (await resolveMemberProfessionalServices(gymId, memberId))
       .filter((b) => activeServiceIds.has(b.professional_service_id))
       .reduce((sum, b) => sum + b.sessions, 0);
-    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
+    if (!current) return res.json({ membership: null, other_memberships: [], past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.
@@ -2187,6 +2187,8 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     } = um as any;
     res.json({
       membership: { ...membership, membership_fee, benefits, upcoming_payments },
+      // #2125: the member's other live plans — `membership` stays the first, for compatibility.
+      other_memberships: also_live,
       past_memberships,
       pending_membership,
       active_products_count,

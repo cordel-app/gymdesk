@@ -50,13 +50,15 @@ interface Props {
   newPlanName?: string | null;
   /** The request is in flight: both buttons disable, exactly as elsewhere. */
   busy?: boolean;
-  /** Re-send the same assignment with `confirm: true`. */
+  /** Re-send the same assignment with `confirm: true` — the plan(s) in the way are cancelled. */
   onConfirm: () => void;
+  /** #2125: re-send with `on_conflict: 'add'` — the new plan lands beside the current one(s). */
+  onAdd?: () => void;
   /** Close and change nothing — no plan cancelled, no dates touched. */
   onCancel: () => void;
 }
 
-export function ReplacePlanDialog({ conflict, newPlanName, busy, onConfirm, onCancel }: Props) {
+export function ReplacePlanDialog({ conflict, newPlanName, busy, onConfirm, onAdd, onCancel }: Props) {
   const t = useTranslations('common');
   if (!conflict) return null;
 
@@ -86,8 +88,10 @@ export function ReplacePlanDialog({ conflict, newPlanName, busy, onConfirm, onCa
           <p style={noteStyle}>{many ? t('replace_plan_dates_many') : t('replace_plan_dates')}</p>
         </div>
       )}
-      confirmLabel={t('replace_plan_confirm')}
+      confirmLabel={onAdd ? t('replace_plan_replace') : t('replace_plan_confirm')}
       cancelLabel={t('replace_plan_cancel')}
+      secondaryLabel={onAdd ? t('replace_plan_add') : undefined}
+      onSecondary={onAdd}
       onConfirm={onConfirm}
       onCancel={onCancel}
       busy={busy}

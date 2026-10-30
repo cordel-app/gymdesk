@@ -32,6 +32,6 @@ describe('Assign plan inline, no Benefits checklist (#1460)', () => {
   it('the Plans editor keeps member search, start date and replace confirmation', () => {
     expect(plansEditor).toContain('MemberSearchInput');
     expect(plansEditor).toContain('starts_at: startsAt');
-    expect(plansEditor).toContain('...(confirmReplacement ? { confirm: true } : {})');
+    expect(plansEditor).toContain('...conflictChoiceBody(confirmReplacement)');
   });
 });

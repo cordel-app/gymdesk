@@ -527,17 +527,10 @@ export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: num
     const message = 'This Member is already covered by this Membership.';
     return { kind: 'conflict', error: message, message };
   }
-  // #956 Q4: a Member already on a plan of their own (or covered by another)
-  // cannot be added to a second one.
-  const { rows: held } = await tx.query(
-    `SELECT 1 FROM product_set_members psm
-       JOIN product_sets ps ON ps.root_product_set_id = psm.root_product_set_id AND ps.status = 'active'
-        AND ps.membership_plan_id IS NOT NULL
-      WHERE psm.gym_id = ? AND psm.member_id = ? AND psm.root_product_set_id <> ? LIMIT 1`,
-    [draft.gym_id, memberId, draft.root_product_set_id]);
-  if (held.length > 0) {
-    return { kind: 'conflict', error: 'active_plan_exists', message: 'This member already has an active Membership Plan. Close it before adding them to this one.' };
-  }
+  // #2125: a Member already on a plan of their own (or covered by another) may
+  // be covered by this one too — several active Membership Plans per member is
+  // the rule now (#956 reversed), and "already covered by *this* plan" above is
+  // the only duplicate a coverage change refuses.
   await tx.query(
     `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
     [draft.gym_id, draft.root_product_set_id, memberId]);
