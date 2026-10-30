@@ -726,8 +726,8 @@ export default function ThemesPage() {
               logoSymbol={!isNew && (
                 <ThemeLogoSymbolField
                   basePath="/platform/themes"
-                  themeId={theme.id}
-                  url={theme.logo_symbol_url}
+                  themeId={id}
+                  url={themes.find((th) => th.id === id)?.logo_symbol_url ?? null}
                   onChanged={refreshThemes}
                   t={t}
                 />
