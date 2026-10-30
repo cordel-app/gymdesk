@@ -77,7 +77,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     // reaches its column through the shared class map as well as carrying its
     // own typography. Same claim, one indirection later.
     expect(collapsedHeaderSrc).toMatch(
-      /className=\{CELL_CLASS\.name\}[^>]*style=\{nameCellStyle\}>\{plan\.name\}<\/span>[\s\S]*?className=\{CELL_CLASS\.member\}[^>]*style=\{memberCellStyle\}>\{plan\.member_name\}<\/span>/,
+      /className=\{CELL_CLASS\.name\}[^>]*style=\{nameCellStyle\}>\{displayNutritionPlanName\(plan\.name\)\}<\/span>[\s\S]*?className=\{CELL_CLASS\.member\}[^>]*style=\{memberCellStyle\}>\{plan\.member_name\}<\/span>/,
     );
     // …and the Member is what `Q1` keeps on a phone beside the plan's own name,
     // because this list is member-related.
