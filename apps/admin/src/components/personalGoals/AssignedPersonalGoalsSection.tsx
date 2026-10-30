@@ -419,6 +419,7 @@ export function AssignedPersonalGoalsSection({
         <AssignedGoalCard
           key={row.id}
           title={nameOfGoal(row)}
+          imageUrl={row.goal_image_thumbnail_url ?? row.goal_image_url ?? null}
           subtitle={row.member_name}
           summary={`${label('col_target')}: ${formatTarget(row)} · ${label('col_progress')}: ${formatProgress(row.progress_percent)}`}
           status={row.status}

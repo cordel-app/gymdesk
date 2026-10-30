@@ -72,6 +72,9 @@ export interface AssignedPersonalGoalRow extends GoalReadingSummaryFields {
   goal_slug: string | null;
   /** `null` = a System goal, administered from Cordel (#947 §5). */
   goal_gym_id: string | null;
+  /** The catalogue goal's own thumbnail (#2152); `null` when it has none. */
+  goal_image_url?: string | null;
+  goal_image_thumbnail_url?: string | null;
 }
 
 export interface AssignedPersonalGoalListResponse {

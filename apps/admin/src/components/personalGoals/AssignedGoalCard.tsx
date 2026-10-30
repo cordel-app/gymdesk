@@ -3,6 +3,7 @@
 import React from 'react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { innerCardStyle } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
 
 /**
  * #2133 item 4 — the one **collapsible card** an Assigned Personal Goal is drawn
@@ -20,9 +21,11 @@ import { innerCardStyle } from '@/components/formChrome';
  * The card declares no colour: surface and badge come from the shared chrome.
  */
 export function AssignedGoalCard({
-  title, subtitle, summary, status, statusLabel, open, onToggle, actions, children,
+  title, imageUrl, subtitle, summary, status, statusLabel, open, onToggle, actions, children,
 }: {
   title: string;
+  /** The goal's thumbnail (#2152); with none, nothing is drawn — no placeholder. */
+  imageUrl?: string | null;
   /** e.g. the Member's name on the gym-wide list; omitted on the Member card. */
   subtitle?: string;
   /** One already-formatted line: target and progress. */
@@ -45,6 +48,7 @@ export function AssignedGoalCard({
           style={toggleStyle}
         >
           <span aria-hidden style={{ width: 14, flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
+          {imageUrl && <MemberAvatar name={title} imageUrl={imageUrl} size={36} />}
           <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
             <strong style={ellipsis}>{title}{subtitle ? ` · ${subtitle}` : ''}</strong>
             <span style={{ ...ellipsis, fontSize: 12.5, opacity: 0.75 }}>{summary}</span>
