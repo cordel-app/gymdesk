@@ -98,7 +98,8 @@ const COLUMNS = `
   m.name AS member_name,
   COALESCE(mpg.goal_name, pg.name) AS goal_name,
   pg.slug AS goal_slug, pg.gym_id AS goal_gym_id,
-  pg.status AS goal_status
+  pg.status AS goal_status,
+  pg.image_url AS goal_image_url, pg.image_thumbnail_url AS goal_image_thumbnail_url
 `;
 
 /**
