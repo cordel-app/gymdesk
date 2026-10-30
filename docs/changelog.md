@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #2126 stage 3a (first reader moved to the Product snapshot tables: `GET /me/membership`'s `active_products_count` counts active rows of `product_session_snapshots` + `product_oneoff_snapshots` instead of the purchase record; same number, kept equal by stage 2's dual-write. Remaining readers of stage 3 are still open)
 - **Done**: #2155 (Feature Flags page: the flags under each section now list in the Admin sidebar's item order instead of alphabetically, through `compareFeatureFlagSiblings()` over the navigation config; sections were already in sidebar order (#1819). Ordering only: no key, permission, value or API change)
 - **Done**: #2123 stage 5 (the Family Owner pays on the request paths too: a staff-raised payment request and a Members App product purchase record the owner as `payer_member_id` (the checkout link goes to the payer), staff Retry charges the payer's stored card, and the hosted-page webhook stores a card under the payer. A family beneficiary's own Pay now answers `403 family_owner_pays`. The Members App has no family surface, so nothing further to hide there; `/me/*` keeps filtering on the member's own rows. Gate: `api/src/test/family-payer-routes.test.ts`)
 - **Done**: #2153 (Assigned Nutrition Plan names no longer show the `[start - end]` version suffix in the list or Details: the admin strips it for display only through `displayNutritionPlanName()`; stored names, dates, versioning and the edit form are unchanged)

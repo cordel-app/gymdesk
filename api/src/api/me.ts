@@ -2096,10 +2096,12 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       }
     }
     // #1197: the dashboard card's "N active products" — the member's own
-    // active `member_products_oneoff_snapshot` purchases (#1121 stage 2), nothing else.
+    // active purchases (#1121 stage 2), nothing else. #2126 stage 3: read from the Product
+    // snapshot tables (a purchase is in exactly one of the two), not the purchase record.
     const { rows: activeProductRows } = await db.query(
-      `SELECT COUNT(*) AS n FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND status = 'active'`,
-      [gymId, memberId],
+      `SELECT (SELECT COUNT(*) FROM product_session_snapshots WHERE gym_id = ? AND member_id = ? AND status = 'active')
+            + (SELECT COUNT(*) FROM product_oneoff_snapshots WHERE gym_id = ? AND member_id = ? AND status = 'active') AS n`,
+      [gymId, memberId, gymId, memberId],
     );
     const active_products_count = Number(activeProductRows[0]?.n ?? 0);
     // #1781: the card's session total — the staff Professional Services wallet's
