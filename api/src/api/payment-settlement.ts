@@ -3,6 +3,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import { classifyProviderStatus, normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
+import { recordedPayer } from '../domain/payerResolution';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import type { WebhookPayload } from '../payments/types';
@@ -53,6 +54,7 @@ interface RequestRow {
   gym_id: string;
   user_membership_id: number | null;
   member_id: number;
+  payer_member_id: number | null;
   charge_type_id: number | null;
   amount: string;
   status: string;
@@ -85,6 +87,7 @@ async function closeSiblingAttempts(
   );
 }
 
+/** #2123: the card belongs to whoever pays — the Family Owner for a family obligation. */
 async function storeCard(tx: Tx, pr: RequestRow, payload: WebhookPayload): Promise<void> {
   await tx.query(
     `INSERT INTO payment_methods
@@ -96,7 +99,7 @@ async function storeCard(tx: Tx, pr: RequestRow, payload: WebhookPayload): Promi
        card_last4    = VALUES(card_last4),
        card_brand    = VALUES(card_brand),
        updated_at    = UTC_TIMESTAMP()`,
-    [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
+    [pr.gym_id, recordedPayer(pr), payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
   );
 }
 
@@ -109,7 +112,7 @@ export async function settlePaymentRequest(
 
   return db.transaction(async (tx): Promise<SettleOutcome> => {
     const { rows } = await tx.query<RequestRow>(
-      `SELECT id, gym_id, user_membership_id, member_id, charge_type_id, amount, status, source, billing_event_id
+      `SELECT id, gym_id, user_membership_id, member_id, payer_member_id, charge_type_id, amount, status, source, billing_event_id
          FROM payment_requests WHERE provider_order = ? FOR UPDATE`,
       [payload.orderId],
     );

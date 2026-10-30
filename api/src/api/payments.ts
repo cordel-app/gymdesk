@@ -505,7 +505,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
        LEFT JOIN members m ON m.id = pr.member_id
        LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
-       LEFT JOIN payment_methods pm ON pm.member_id = pr.member_id AND pm.gym_id = pr.gym_id
+       LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
        WHERE pr.billing_event_id = ? AND pr.gym_id = ?
        ORDER BY pr.created_at DESC`,
       [billingEventId, gymId],

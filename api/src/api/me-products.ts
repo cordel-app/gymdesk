@@ -1,3 +1,4 @@
+import { resolvePayerFor } from './payer-resolution';
 import { originOf } from '../domain/itemOrigin';
 import { syncProductSnapshotForPurchase, syncProductSnapshotForPaymentRequest } from './product-snapshot-sync';
 import { DateTime } from 'luxon';
@@ -501,6 +502,9 @@ export async function startProductPurchase(
     notificationUrl: process.env.PAYMENT_NOTIFICATION_URL ?? '',
   });
 
+  // #2123: the Family Owner pays a family member's purchase (no card is stored from one).
+  const payer = await resolvePayerFor(db, input.gymId, input.memberId);
+
   try {
     const purchaseId = await db.transaction(async (tx) => {
       if (input.fromDraftId != null) {
@@ -523,12 +527,12 @@ export async function startProductPurchase(
         // through the hosted page's consent checkbox, exactly as a
         // customer-initiated fee payment does.
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+           (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
             consent_given_at, source, created_by)
-         VALUES (?, NULL, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+         VALUES (?, NULL, ?, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
         [
-          input.gymId, input.memberId, snapshot.amount.toFixed(2), snapshot.currency,
+          input.gymId, input.memberId, payer.payerMemberId, snapshot.amount.toFixed(2), snapshot.currency,
           row.charge_type_id ?? null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           PRODUCT_PURCHASE_SOURCE, actorName,
@@ -543,9 +547,9 @@ export async function startProductPurchase(
       // outside the version chain — so both keys stay NULL.
       const { insertId: billingEventId } = await tx.query(
         `INSERT INTO billing_events
-           (gym_id, member_id, event_type, amount, charge_type_id, source, created_by)
-         VALUES (?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
-        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
+           (gym_id, member_id, payer_member_id, event_type, amount, charge_type_id, source, created_by)
+         VALUES (?, ?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
+        [input.gymId, input.memberId, payer.payerMemberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
       );
       await tx.query(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,
