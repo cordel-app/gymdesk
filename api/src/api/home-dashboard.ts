@@ -125,11 +125,10 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
   const { rows } = await db.query<any>(
     `SELECT m.id, m.name,
             ${memberPaymentStatusSql('m')} AS payment_status,
-            (SELECT mp.name FROM user_memberships um
+            (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
                JOIN membership_plans mp ON mp.id = um.membership_plan_id
               WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')
-              ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS plan_name
+                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')) AS plan_name
        FROM members m
       WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.id IN (${top.map(() => '?').join(',')})`,
     [gymId, ...top.map((g) => g.member_id)],
@@ -309,11 +308,10 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
 
       const { rows: latest } = await db.query<any>(
         `SELECT m.id, m.name, m.image_url, m.created_at,
-                (SELECT mp.name FROM user_memberships um
+                (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
                    JOIN membership_plans mp ON mp.id = um.membership_plan_id
                   WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                    AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')
-                  ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS plan_name
+                    AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')) AS plan_name
            FROM members m
           WHERE m.gym_id = ? AND m.deleted_at IS NULL
           ORDER BY m.created_at DESC, m.id DESC
