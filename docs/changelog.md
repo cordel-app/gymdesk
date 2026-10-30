@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
+
 
 - **Done**: #2156 (Cordel → Jobs shows each job's purpose and a separate Success / Warning / Error result chip beside its status. The result is derived on read by `classifyJobRun()` in `api/src/domain/jobRuns.ts` from the run's status and stored counters — failed run = Error, completed with failed records / per-gym failures / a capped batch = Warning, completed with clean counters = Success, and no result for in-progress, skipped or counter-less historical runs. No migration.)
 - **Done**: #2159 (Assigned Training Plans show the original plan name: the `[start - end]` version suffix is stripped for display only by `displayTrainingPlanName()` in `apps/admin/src/lib/trainingPlanName.ts`; stored names, dates and versioning are unchanged)

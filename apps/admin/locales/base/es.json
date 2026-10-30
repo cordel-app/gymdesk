@@ -2446,7 +2446,7 @@
     "cloned": "Plantilla de plan de entrenamiento clonada al catálogo del gimnasio."
   },
   "training_plans": {
-    "version_confirm": "Al guardar, la versión actual de este plan termina hoy y se crea una nueva versión, con tus cambios, que empieza mañana. La versión anterior se conserva como histórico.",
+    "version_confirm": "Al guardar, la versión actual de este plan termina ayer y se crea una nueva versión, con tus cambios, que empieza hoy. La versión anterior se conserva como histórico.",
     "version_confirm_btn": "Guardar nueva versión",
     "title": "Planes de entrenamiento asignados",
     "new_plan": "+ Nuevo plan de entrenamiento",

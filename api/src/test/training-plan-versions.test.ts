@@ -74,6 +74,12 @@ describe('assigned training plan versions (#1969)', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
     expect(res.body.end_date).toBeNull();
+    const { rows: dates } = await db.query(
+      "SELECT DATE_FORMAT(start_date, '%Y-%m-%d') AS s, (SELECT DATE_FORMAT(end_date, '%Y-%m-%d') FROM training_plans WHERE id = ?) AS prev_end, DATE_FORMAT(CURRENT_DATE, '%Y-%m-%d') AS d, DATE_FORMAT(CURRENT_DATE - INTERVAL 1 DAY, '%Y-%m-%d') AS y FROM training_plans WHERE id = ?",
+      [planId, draftId],
+    );
+    expect(dates[0].s).toBe(dates[0].d);
+    expect(dates[0].prev_end).toBe(dates[0].y);
     expect(res.body.name).toMatch(/^Strength \[\d{4}-\d{2}-\d{2} - Open End\]$/);
     const orig = await auth(request.get(`${base()}/${planId}`));
     expect(orig.body.status).toBe('completed');

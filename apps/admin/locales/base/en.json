@@ -2460,7 +2460,7 @@
     "cloned": "Training plan template cloned to gym catalog."
   },
   "training_plans": {
-    "version_confirm": "Saving ends the current version of this plan today and creates a new version, with your changes, starting tomorrow. The previous version stays available as history.",
+    "version_confirm": "Saving ends the current version of this plan yesterday and creates a new version, with your changes, starting today. The previous version stays available as history.",
     "version_confirm_btn": "Save new version",
     "title": "Assigned Training Plans",
     "new_plan": "+ New Training Plan",
