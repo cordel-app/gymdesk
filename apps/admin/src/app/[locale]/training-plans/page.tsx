@@ -7,6 +7,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
+import { displayTrainingPlanName } from '@/lib/trainingPlanName';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -684,8 +685,8 @@ function PlanCard({
         <div onClick={onToggleExpand} className={LIST_GRID_ROW_CLASS} style={headerRowStyle} role="button" tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}>
           <span className={CELL_CLASS.expand} style={{ ...cellStyle, fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
-          <div className={CELL_CLASS.name} style={cellStyle} title={row.name}>
-            <div style={nameCellStyle}>{row.name}</div>
+          <div className={CELL_CLASS.name} style={cellStyle} title={displayTrainingPlanName(row.name)}>
+            <div style={nameCellStyle}>{displayTrainingPlanName(row.name)}</div>
             {row.description && <div style={subCellStyle}>{row.description}</div>}
           </div>
           <div className={CELL_CLASS.member} style={cellStyle} title={row.member_name}>
@@ -1020,7 +1021,7 @@ function DetailsDialog({ plan, locale, t, onClose }: {
       hideSave
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <DetailRow label={t('training_plans.label_name')} value={plan.name} />
+        <DetailRow label={t('training_plans.label_name')} value={displayTrainingPlanName(plan.name)} />
         <DetailRow label={t('training_plans.label_description')} value={plan.description ?? '—'} />
         <DetailRow label={t('training_plans.label_member')} value={plan.member_name} />
         <DetailRow label={t('training_plans.label_source')} value={plan.template_name ?? t('training_plans.custom')} />

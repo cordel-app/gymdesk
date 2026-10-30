@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2159 (Assigned Training Plans show the original plan name: the `[start - end]` version suffix is stripped for display only by `displayTrainingPlanName()` in `apps/admin/src/lib/trainingPlanName.ts`; stored names, dates and versioning are unchanged)
 
 - **Done**: #2155 (Feature Flags page: the flags under each section now list in the Admin sidebar's item order instead of alphabetically, through `compareFeatureFlagSiblings()` over the navigation config; sections were already in sidebar order (#1819). Ordering only: no key, permission, value or API change)
 - **Done**: #2123 stage 5 (the Family Owner pays on the request paths too: a staff-raised payment request and a Members App product purchase record the owner as `payer_member_id` (the checkout link goes to the payer), staff Retry charges the payer's stored card, and the hosted-page webhook stores a card under the payer. A family beneficiary's own Pay now answers `403 family_owner_pays`. The Members App has no family surface, so nothing further to hide there; `/me/*` keeps filtering on the member's own rows. Gate: `api/src/test/family-payer-routes.test.ts`)
