@@ -37,6 +37,15 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
+  const [pendingReplace] = await knex.raw(
+    `SELECT COUNT(*) AS n FROM ${TABLE} WHERE replace_on_activation = 1`,
+  );
+  if (Number(pendingReplace[0]?.n ?? 0) > 0) {
+    console.warn(
+      `Rolling back 349 drops replace_on_activation: ${pendingReplace[0].n} assignment(s) `
+      + 'carry a "replace" answer that a re-run will read as "add".',
+    );
+  }
   const [conflicts] = await knex.raw(
     `SELECT member_id, COUNT(*) AS n FROM ${TABLE}
      WHERE status = 'active' GROUP BY member_id HAVING n > 1`,

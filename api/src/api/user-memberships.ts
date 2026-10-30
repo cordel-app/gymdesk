@@ -665,12 +665,10 @@ export async function planAssignabilityError(gymId: string, planId: number):
   return null;
 }
 
-// #956 (migration 213): a Member holds at most one live Membership Plan, so a
-// duplicate key on `user_memberships_one_active` means a second active row was
-// inserted for the same Member concurrently — the application check below found
-// nothing to lock, and the index is what serialises that case. #634's
-// "several plans in parallel, but only one of each type" (migration 172) is
-// reversed, so this message no longer names the Plan.
+// #2125 (migration 349) dropped `user_memberships_one_active`: a Member may hold
+// several live plans, the same plan twice included, so no database key refuses a
+// concurrent second insert any more and none should. What is left for
+// `handleDupEntry()` to translate is any other unique key a future change adds.
 const DUPLICATE_ASSIGNMENT_ERROR = 'This member already has an active Membership Plan.';
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
