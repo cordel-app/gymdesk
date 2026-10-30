@@ -20,10 +20,13 @@ interface ConfirmDialogProps {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** #2125: an optional third answer, drawn between Cancel and the confirm button. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   busy?: boolean;
 }
 
-export function ConfirmDialog({ open, message, details, confirmLabel, cancelLabel, onConfirm, onCancel, busy }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, message, details, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
   if (!open) return null;
 
   return (
@@ -34,6 +37,9 @@ export function ConfirmDialog({ open, message, details, confirmLabel, cancelLabe
 
         <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={busy}>{cancelLabel}</button>
+          {secondaryLabel && onSecondary && (
+            <button onClick={onSecondary} style={btnStyle('#2c7be5')} disabled={busy}>{secondaryLabel}</button>
+          )}
           <button onClick={onConfirm} style={btnStyle('#c0392b')} disabled={busy}>{confirmLabel}</button>
         </div>
       </div>

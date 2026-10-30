@@ -289,26 +289,6 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     expect((await commit(draftId)).status).toBe(200);
   });
 
-  it('two concurrent commits for a member with no plan cannot both succeed', async () => {
-    // Nothing is live to lock, so this case is the restored UNIQUE index's
-    // (migration 213) rather than the FOR UPDATE read's — which is exactly why
-    // moving the check onto the commit did not give up the database guarantee.
-    const memberId = await createMember(gymId);
-    const first = await createPlan(gymId, 'Premium');
-    const second = await createPlan(gymId, 'Basic');
-    const a = await assignDraft(memberId, first, '2026-01-01');
-    const b = await legacyDraft(memberId, second, '2026-01-01');
-
-    const results = await Promise.all([commit(a), commit(b)]);
-    // At most one wins. Both may lose here: the legacy row's commit takes the
-    // unique index and then meets the other Draft's version in flight, which
-    // rolls it back — the invariant is that two plans are never live.
-    expect(results.filter((r) => r.status === 200).length).toBeLessThanOrEqual(1);
-    const rows = await assignmentsOf(memberId);
-    // Zero is a legal outcome (both rolled back), so the invariant is "never two".
-    expect(rows.filter((r: any) => r.status === 'active').length).toBeLessThanOrEqual(1);
-  });
-
   it('two concurrent confirmed replacements cannot leave two live plans', async () => {
     // Here the member *does* have a live plan, so both commits serialise on its
     // FOR UPDATE lock and the loser finds nothing live to supersede.
@@ -443,7 +423,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     }
   });
 
-  it('refuses to cover a member who already has a live plan, and offers no confirm', async () => {
+  it('covers a member who already has a live plan beside it (#2125)', async () => {
     const owner = await createMember(gymId, 'Cover Owner');
     const joiner = await createMember(gymId, 'Cover Joiner');
     const family = await createPlan(gymId, 'Cover Family', 'family');
@@ -455,25 +435,35 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect((await commit(assigned.body.id)).status).toBe(200);
     const joinersOwn = await assignLive(joiner, solo, '2026-02-01');
 
-    const refused = await post(`/user-memberships/${assigned.body.id}/members`, { member_id: joiner });
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe(ACTIVE_PLAN_EXISTS);
-    expect(refused.body.message).toMatch(/Close it before adding them/);
-    // Even confirmed: this path deliberately has no replacement, because there
-    // is no new `starts_at` to end their own plan on.
-    const refusedAgain = await post(
-      `/user-memberships/${assigned.body.id}/members`, { member_id: joiner, confirm: true },
-    );
-    expect(refusedAgain.status).toBe(409);
-    const { rows } = await db.query(
-      'SELECT status FROM user_memberships WHERE id = ?', [joinersOwn],
-    );
-    expect(rows[0].status).toBe('active');
-
-    // Closing their own plan is what makes the add go through.
-    await post(`/user-memberships/${joinersOwn}/close`, { confirm: true });
     const added = await post(`/user-memberships/${assigned.body.id}/members`, { member_id: joiner });
     expect(added.status).toBe(201);
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [joinersOwn]);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it("on_conflict: 'add' commits beside the live plan and cancels nothing (#2125)", async () => {
+    const memberId = await createMember(gymId, 'Add Alongside');
+    const first = await createPlan(gymId, 'Add First');
+    const second = await createPlan(gymId, 'Add Second');
+    const live = await assignLive(memberId, first, '2026-01-01');
+    const draft = await assignDraft(memberId, second, '2026-03-01');
+
+    expect((await commit(draft)).status).toBe(409);
+    expect((await commit(draft, { on_conflict: 'add' })).status).toBe(200);
+    const rows = await assignmentsOf(memberId);
+    expect(liveRows(rows)).toHaveLength(2);
+    const { rows: old } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [live]);
+    expect(old[0].status).toBe('active');
+  });
+
+  it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {
+    const memberId = await createMember(gymId, 'Replace Alias');
+    const first = await createPlan(gymId, 'Rep First');
+    const second = await createPlan(gymId, 'Rep Second');
+    await assignLive(memberId, first, '2026-01-01');
+    const draft = await assignDraft(memberId, second, '2026-03-01');
+    expect((await commit(draft, { on_conflict: 'replace' })).status).toBe(200);
+    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(1);
   });
 
   it('a covered member of a family plan already has a plan (#956 Q4)', async () => {

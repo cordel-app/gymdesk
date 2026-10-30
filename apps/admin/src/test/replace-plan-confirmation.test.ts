@@ -47,17 +47,17 @@ const ENTRY_POINTS: Array<{ name: string; src: string; confirmSpelling: string }
   {
     name: 'the Member card\'s Assign New Plan',
     src: read('app', '[locale]', 'members', 'AssignPlanInlineEditor.tsx'),
-    confirmSpelling: '...(confirmReplacement ? { confirm: true } : {})',
+    confirmSpelling: '...conflictChoiceBody(confirmReplacement)',
   },
   {
     name: 'the Memberships page\'s create modal',
     src: read('app', '[locale]', 'memberships', 'page.tsx'),
-    confirmSpelling: 'if (confirmReplacement) body.confirm = true;',
+    confirmSpelling: 'Object.assign(body, conflictChoiceBody(confirmReplacement));',
   },
   {
     name: 'the Plans page\'s inline Assign editor',
     src: read('app', '[locale]', 'plans', 'AssignPlanToMembersEditor.tsx'),
-    confirmSpelling: '...(confirmReplacement ? { confirm: true } : {})',
+    confirmSpelling: '...conflictChoiceBody(confirmReplacement)',
   },
 ];
 
@@ -190,6 +190,10 @@ describe('Every assignment path that can replace a plan confirms through the one
       expect(entry.src).toContain(entry.confirmSpelling);
       // The dialog's Continue is the only thing that confirms.
       expect(entry.src).toMatch(/onConfirm=\{\(\) => \w+\(true\)\}/);
+    });
+
+    it(`${entry.name} offers Add beside Replace, resending with on_conflict: 'add' (#2125)`, () => {
+      expect(entry.src).toMatch(/onAdd=\{\(\) => \w+\('add'\)\}/);
     });
 
     it(`${entry.name} never confirms on the first attempt`, () => {

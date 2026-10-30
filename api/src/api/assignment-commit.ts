@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
-import { LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
+import { ConflictResolution, LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
 
@@ -39,8 +39,13 @@ interface CommitInput {
   userMembershipId: number | string;
   /** The statuses the row may be in for this move; anything else is `not_committable`. */
   fromStatuses: readonly string[];
-  /** `true` supersedes the member's live plans; `false` answers `conflict` instead. */
-  confirm: boolean;
+  /**
+   * #2125: `'replace'` supersedes the member's live plans, `'add'` commits beside
+   * them, `null` answers `conflict` instead. A payment settling a Pending Payment
+   * row passes `null` and the row's own `replace_on_activation` — recorded at
+   * Save & Pay — says what staff chose then.
+   */
+  resolution: ConflictResolution | null;
   source: string;
   actorUserId: string | null;
   /**
@@ -59,8 +64,10 @@ export type CommitOutcome =
   | { kind: 'committed'; previousStatus: string; memberId: number; superseded: number[] };
 
 async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
-  const { rows } = await tx.query<{ id: number; member_id: number; status: string; starts_at: string }>(
-    `SELECT id, member_id, status, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
+  const { rows } = await tx.query<{
+    id: number; member_id: number; status: string; starts_at: string; replace_on_activation: number;
+  }>(
+    `SELECT id, member_id, status, replace_on_activation, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
        FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
   );
@@ -113,12 +120,19 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   if (!row) return { kind: 'not_found' };
   if (!input.fromStatuses.includes(row.status)) return { kind: 'not_committable', status: row.status };
 
-  const pending = await pendingConflicts(tx, input.gymId, row);
+  // #2125: a plan awaiting payment only stands in the way of a *replacement*; adding beside it is fine.
+  const pending = (input.resolution ?? (row.replace_on_activation ? 'replace' : null)) === 'replace'
+    ? await pendingConflicts(tx, input.gymId, row) : [];
   if (pending.length > 0) return { kind: 'pending_conflict', pendingIds: pending };
 
-  const conflicts = await liveConflicts(tx, input.gymId, row);
+  const found = await liveConflicts(tx, input.gymId, row);
+  const resolution = input.resolution ?? (Number(row.replace_on_activation) === 1 ? 'replace' : null);
+  if (found.length > 0 && !resolution && !(row.status === PENDING_PAYMENT_STATUS)) {
+    return { kind: 'conflict', conflicts: found };
+  }
+  // A Pending Payment row was asked at Save & Pay; with no recorded choice it was an add.
+  const conflicts = resolution === 'replace' ? found : [];
   if (conflicts.length > 0) {
-    if (!input.confirm) return { kind: 'conflict', conflicts };
     const dateError = supersedeStartsAtError(row.starts_at, conflicts);
     if (dateError) return { kind: 'bad_date', message: dateError };
     await supersedeLiveAssignments(tx, {
@@ -165,21 +179,23 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   if (!row) return { kind: 'not_found' };
   if (row.status !== DRAFT_STATUS) return { kind: 'not_committable', status: row.status };
 
-  const pending = await pendingConflicts(tx, input.gymId, row);
+  const pending = input.resolution === 'replace' ? await pendingConflicts(tx, input.gymId, row) : [];
   if (pending.length > 0) return { kind: 'pending_conflict', pendingIds: pending };
 
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {
-    if (!input.confirm) return { kind: 'conflict', conflicts };
-    const dateError = supersedeStartsAtError(row.starts_at, conflicts);
-    if (dateError) return { kind: 'bad_date', message: dateError };
+    if (!input.resolution) return { kind: 'conflict', conflicts };
+    if (input.resolution === 'replace') {
+      const dateError = supersedeStartsAtError(row.starts_at, conflicts);
+      if (dateError) return { kind: 'bad_date', message: dateError };
+    }
   }
 
   const { rowCount } = await tx.query(
     `UPDATE user_memberships
-        SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+        SET status = ?, replace_on_activation = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ? AND status = ?`,
-    [PENDING_PAYMENT_STATUS, input.actor, row.id, input.gymId, DRAFT_STATUS],
+    [PENDING_PAYMENT_STATUS, input.resolution === 'replace' ? 1 : 0, input.actor, row.id, input.gymId, DRAFT_STATUS],
   );
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   await recordStatusChange(tx, {

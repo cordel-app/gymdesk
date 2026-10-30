@@ -228,7 +228,7 @@ export async function settlePaymentRequest(
       if (pr.user_membership_id != null) {
         const committed = await commitAssignment(tx, {
           gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
-          fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
+          fromStatuses: [PENDING_PAYMENT_STATUS], resolution: null,
           source: 'provider', actorUserId: null, actor: SYSTEM_ACTOR,
         });
         if (committed.kind !== 'committed' && committed.kind !== 'not_committable') {

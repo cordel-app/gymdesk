@@ -59,6 +59,26 @@ export function isLiveAssignmentStatus(value: unknown): value is LiveAssignmentS
  */
 export const ACTIVE_PLAN_EXISTS = 'active_plan_exists';
 
+/**
+ * #2125 stage 3 — a member may now hold several Membership Plans, so a live
+ * plan no longer *refuses* a new assignment: it asks which of two things the
+ * caller means. `'replace'` is #956's supersede; `'add'` commits the new plan
+ * beside the live ones and touches none of them. `null` is "not asked yet",
+ * which answers the `409 active_plan_exists` the Admin and Members App turn
+ * into the Add-or-Replace modal.
+ *
+ * `confirm: true` is the pre-#2125 spelling of `'replace'` and keeps working, so
+ * no client written for #956 changes meaning.
+ */
+export type ConflictResolution = 'replace' | 'add';
+
+export function parseConflictResolution(body: unknown): ConflictResolution | null {
+  const b = (body ?? {}) as { confirm?: unknown; on_conflict?: unknown };
+  if (b.on_conflict === 'add') return 'add';
+  if (b.on_conflict === 'replace' || b.confirm === true) return 'replace';
+  return null;
+}
+
 /** One live assignment standing in the way of a new one. */
 export interface LiveAssignment {
   /** `user_memberships.id` — what a replacement supersedes. */
@@ -104,8 +124,8 @@ export function activePlanConflictBody(
   return {
     error: ACTIVE_PLAN_EXISTS,
     message:
-      `${subject}. Assigning ${newName} will cancel ${currentName}. `
-      + 'Resend with confirm: true to proceed.',
+      `${subject}. Assigning ${newName} can replace ${currentName} or be added beside it. `
+      + "Resend with on_conflict: 'replace' or 'add' to proceed.",
     current_plan: current,
     conflicts,
   };

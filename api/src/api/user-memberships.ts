@@ -56,6 +56,7 @@ import {
 import {
   LiveAssignment,
   activePlanConflictBody,
+  parseConflictResolution,
 } from '../domain/oneActivePlan';
 import {
   findLiveAssignmentsForMembers,
@@ -664,12 +665,10 @@ export async function planAssignabilityError(gymId: string, planId: number):
   return null;
 }
 
-// #956 (migration 213): a Member holds at most one live Membership Plan, so a
-// duplicate key on `user_memberships_one_active` means a second active row was
-// inserted for the same Member concurrently — the application check below found
-// nothing to lock, and the index is what serialises that case. #634's
-// "several plans in parallel, but only one of each type" (migration 172) is
-// reversed, so this message no longer names the Plan.
+// #2125 (migration 349) dropped `user_memberships_one_active`: a Member may hold
+// several live plans, the same plan twice included, so no database key refuses a
+// concurrent second insert any more and none should. What is left for
+// `handleDupEntry()` to translate is any other unique key a future change adds.
 const DUPLICATE_ASSIGNMENT_ERROR = 'This member already has an active Membership Plan.';
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
@@ -1063,14 +1062,14 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
  */
 userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const confirm = req.body?.confirm === true;
+  const resolution = parseConflictResolution(req.body);
   try {
     // #1108 stage 2: the transition itself lives in `assignment-commit.ts`,
     // shared with the two payment-confirmation callers; this route is the
     // commit with no payment around it — a free plan, or a staff shortcut.
     const outcome = await db.transaction((tx) => commitAssignment(tx, {
       gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
-      confirm, source: sourceForRole(role), actorUserId: userId,
+      resolution, source: sourceForRole(role), actorUserId: userId,
       actor: resolveRequestActor(getTenantContext(req)),
     }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1128,7 +1127,7 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
  */
 userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const confirm = req.body?.confirm === true;
+  const resolution = parseConflictResolution(req.body);
   try {
     const fee = await currentMembershipFee(gymId, Number(req.params.id));
     if (fee == null) return res.status(404).json({ error: 'Membership not found' });
@@ -1137,11 +1136,11 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
     const outcome: CommitOutcome | SubmitOutcome = await db.transaction(async (tx) => owesNothing
       ? commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
-        confirm, source: sourceForRole(role), actorUserId: userId,
+        resolution, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       })
       : submitForPayment(tx, {
-        gymId, userMembershipId: String(req.params.id), confirm, source: sourceForRole(role), actorUserId: userId,
+        gymId, userMembershipId: String(req.params.id), resolution, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1224,7 +1223,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
-        confirm: true, source: sourceForRole(role), actorUserId: userId,
+        resolution: null, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       });
       if (committed.kind !== 'committed') return committed;

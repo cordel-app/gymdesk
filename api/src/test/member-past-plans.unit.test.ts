@@ -67,8 +67,20 @@ describe('which plans are history', () => {
     expect(past).toHaveLength(2);
   });
 
+  it('keeps a second live plan out of the history (#2125)', () => {
+    const rows = [
+      row({ id: 5, status: 'active', ends_at: null }),
+      row({ id: 4, status: 'paused', ends_at: null }),
+      row({ id: 3 }),
+    ];
+    const { current, also_live, past } = splitMemberPlanHistory(rows);
+    expect(current?.id).toBe(5);
+    expect(also_live.map((p) => p.id)).toEqual([4]);
+    expect(past.map((p) => p.id)).toEqual([3]);
+  });
+
   it('answers nothing at all for a member with no assignment', () => {
-    expect(splitMemberPlanHistory([])).toEqual({ current: null, past: [] });
+    expect(splitMemberPlanHistory([])).toEqual({ current: null, also_live: [], past: [] });
   });
 
   it('leaves a member whose only plan is their current one with no history', () => {

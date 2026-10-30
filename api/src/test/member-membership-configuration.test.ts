@@ -417,16 +417,6 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
       .toHaveLength(1);
   });
 
-  it('rejects a second active assignment for the Member, on any Plan (migration 213)', async () => {
-    await expect(
-      createAssignment(gymId, memberId, standardPlan, { status: 'active', startsAt: '2026-06-01' }),
-    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
-    const otherPlan = await createPlan(gymId, `Parallel Rejected ${uniq()}`);
-    await expect(
-      createAssignment(gymId, memberId, otherPlan, { status: 'active', startsAt: '2026-07-01' }),
-    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
-  });
-
   it('returns both plans newest starts_at first, with only the current one live', async () => {
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
