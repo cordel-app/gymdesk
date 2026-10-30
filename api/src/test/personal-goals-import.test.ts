@@ -151,6 +151,11 @@ describe('Import System Personal Goals', () => {
     await request.post('/personal-goals/import').set(auth(gymId)).send({ base_personal_goal_ids: [baseA] });
     const { rows: after } = await db.query<any>('SELECT name, status FROM personal_goals WHERE id = ?', [goalId]);
     expect(after[0]).toMatchObject({ name: 'My renamed goal', status: 'active' });
+    const { rows: prov } = await db.query<any>('SELECT base_personal_goal_id FROM personal_goals WHERE id = ?', [goalId]);
+    expect(prov[0].base_personal_goal_id).toBe(baseA);
+    const { rows: otherCopies } = await db.query<any>(
+      'SELECT name FROM personal_goals WHERE gym_id = ? AND base_personal_goal_id = ?', [otherGym, baseA]);
+    expect(otherCopies).toHaveLength(0);
     const { rows: base } = await db.query<any>('SELECT name FROM base_personal_goals WHERE id = ?', [baseA]);
     expect(base[0].name).toBe(NAME_A);
 
