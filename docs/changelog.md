@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
+
 - **Done**: #2159 (Assigned Training Plans show the original plan name: the `[start - end]` version suffix is stripped for display only by `displayTrainingPlanName()` in `apps/admin/src/lib/trainingPlanName.ts`; stored names, dates and versioning are unchanged)
 
 - **Done**: #2126 stage 3a (first reader moved to the Product snapshot tables: `GET /me/membership`'s `active_products_count` counts active rows of `product_session_snapshots` + `product_oneoff_snapshots` instead of the purchase record; same number, kept equal by stage 2's dual-write. Remaining readers of stage 3 are still open)

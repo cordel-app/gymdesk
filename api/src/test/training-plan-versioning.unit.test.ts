@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseTrainingPlanName, nextDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
+import { baseTrainingPlanName, nextDay, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
 
 describe('training plan version names (#1969)', () => {
   it('names the previous and current versions', () => {
@@ -14,5 +14,10 @@ describe('training plan version names (#1969)', () => {
   it('computes tomorrow across month and year ends', () => {
     expect(nextDay('2026-12-31')).toBe('2027-01-01');
     expect(nextDay('2028-02-28')).toBe('2028-02-29');
+  });
+
+  it('computes yesterday across month and year starts', () => {
+    expect(previousDay('2027-01-01')).toBe('2026-12-31');
+    expect(previousDay('2028-03-01')).toBe('2028-02-29');
   });
 });

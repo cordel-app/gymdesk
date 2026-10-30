@@ -2446,7 +2446,7 @@
     "cloned": "Plantilla de pla d'entrenament clonada al catàleg del gimnàs."
   },
   "training_plans": {
-    "version_confirm": "En desar, la versió actual d'aquest pla acaba avui i es crea una versió nova, amb els teus canvis, que comença demà. La versió anterior es conserva com a històric.",
+    "version_confirm": "En desar, la versió actual d'aquest pla acaba ahir i es crea una versió nova, amb els teus canvis, que comença avui. La versió anterior es conserva com a històric.",
     "version_confirm_btn": "Desar nova versió",
     "title": "Plans d'entrenament assignats",
     "new_plan": "+ Nou pla d'entrenament",

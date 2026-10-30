@@ -25,3 +25,8 @@ export function versionedTrainingPlanName(name: string, start: string, end: stri
 export function nextDay(date: string): string {
   return DateTime.fromISO(date, { zone: 'UTC' }).plus({ days: 1 }).toISODate() as string;
 }
+
+/** The day before a YYYY-MM-DD date, in the same format. */
+export function previousDay(date: string): string {
+  return DateTime.fromISO(date, { zone: 'UTC' }).minus({ days: 1 }).toISODate() as string;
+}
