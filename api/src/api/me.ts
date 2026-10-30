@@ -1,3 +1,4 @@
+import { resolvePayerFor } from './payer-resolution';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
@@ -2475,6 +2476,12 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     if (!(fee > 0)) {
       return res.status(400).json({ error: 'This membership owes nothing for its current billing cycle' });
     }
+    // #2123: a family obligation is paid by the Family Owner and the card the payment
+    // stores is theirs, so a beneficiary cannot raise the payment themselves.
+    const payer = await resolvePayerFor(db, gymId, memberId);
+    if (payer.viaFamily) {
+      return res.status(403).json({ error: 'family_owner_pays', message: 'Your family owner pays for this membership' });
+    }
     const amount = toMinorUnits(fee);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
@@ -2502,11 +2509,11 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     const openEventId = um.status === 'pending_payment' ? (await openInitialEventForAssignment(db, gymId, um.id))?.eventId ?? null : null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+         (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source, created_by)
-       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
+       VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
+      [gymId, um.id, memberId, payer.payerMemberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
     const checkoutUrl = await payerCheckoutUrl({ gymId, memberId, pageToken, requestLocale: getRequestLocale(req) });
