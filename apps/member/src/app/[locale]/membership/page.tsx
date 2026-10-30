@@ -211,6 +211,8 @@ export default function MembershipPage() {
   // ordering that decides which assignment the card above is about, so this page
   // never filters a list by status for itself.
   const [pastPlans, setPastPlans] = useState<MemberPastPlan[]>([]);
+  // #2125: the member's other live plans, beside the one the page is about.
+  const [otherPlans, setOtherPlans] = useState<MemberPastPlan[]>([]);
   const [packages, setPackages] = useState<UserPackage[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
@@ -295,7 +297,7 @@ export default function MembershipPage() {
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes] = await Promise.all([
-          apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
+          apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
@@ -312,6 +314,7 @@ export default function MembershipPage() {
         if (cancelled) return;
         setMembership(mship.membership);
         setPastPlans(mship.past_memberships ?? []);
+        setOtherPlans(mship.other_memberships ?? []);
         setPendingMembership(mship.pending_membership ?? null);
         setEvents(ledger.items);
         setPackages(pkgs);
@@ -590,6 +593,25 @@ export default function MembershipPage() {
         meta: endedOn ? `${status} · ${endedOn}` : status,
       };
     });
+  }
+
+  /**
+   * #2125: the member's other live plans — absent for the usual one-plan member.
+   * A live plan reads as its status and the day it started, never as history.
+   */
+  function renderOtherPlans() {
+    if (otherPlans.length === 0) return null;
+    return (
+      <PastMembershipPlansCard
+        title={t('membership.other_plans_heading')}
+        summary={t('membership.other_plans_count', { count: otherPlans.length })}
+        items={otherPlans.map((plan) => {
+          const since = plan.starts_at ? formatPaymentDate(plan.starts_at, gymFmt) : null;
+          const status = t(pastPlanStatusKey(plan) as any);
+          return { key: String(plan.id), name: pastPlanName(plan), meta: since ? `${status} · ${since}` : status };
+        })}
+      />
+    );
   }
 
   /**
@@ -1380,6 +1402,7 @@ export default function MembershipPage() {
 
       {/* #1775 — Past Membership Plans close the page: secondary history,
           collapsed and muted, below everything the member acts on. */}
+      {renderOtherPlans()}
       {renderPastPlans()}
       </>)}
 

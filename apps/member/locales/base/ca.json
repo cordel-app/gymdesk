@@ -371,6 +371,8 @@
     "products_filtered_notice": "Mostrant els productes que desbloquegen la classe que vas intentar reservar.",
     "products_show_all": "Mostra tots els productes",
     "past_plans_heading": "Plans de Membresia Anteriors",
+    "other_plans_heading": "Els teus altres Plans de Membresia",
+    "other_plans_count": "{count, plural, one {# pla} other {# plans}}",
     "add_plan": "+ Afegir pla",
     "add_plan_title": "El meu nou pla de membresia",
     "add_plan_empty": "El teu gimnàs no té plans disponibles ara mateix.",

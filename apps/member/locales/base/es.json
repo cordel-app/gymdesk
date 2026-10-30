@@ -371,6 +371,8 @@
     "products_filtered_notice": "Mostrando los productos que desbloquean la clase que intentaste reservar.",
     "products_show_all": "Ver todos los productos",
     "past_plans_heading": "Planes de Membresía Anteriores",
+    "other_plans_heading": "Tus otros Planes de Membresía",
+    "other_plans_count": "{count, plural, one {# plan} other {# planes}}",
     "add_plan": "+ Añadir plan",
     "add_plan_title": "Mi nuevo plan de membresía",
     "add_plan_empty": "Tu gimnasio no tiene planes disponibles ahora mismo.",

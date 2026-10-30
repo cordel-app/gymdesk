@@ -89,7 +89,44 @@ export const MEMBER_CURRENT_ASSIGNMENT_FILTER = "AND um.status NOT IN ('draft', 
 const NO_ASSIGNMENT_REASON = 'This member holds no membership plan, so there is nothing to forecast.';
 
 /**
- * The Billing Event Forecast of the member's current plan.
+ * #2125: one forecast out of several plans' — dates falling on the same day
+ * are one group (lines side by side, totals summed), so the Payments card's
+ * *Next Payment* is everything the member is charged on that date. Each plan's
+ * own forecast is the engine's, untouched; nothing is re-priced here.
+ */
+export function mergeBillingEventForecasts(
+  results: AssignmentBillingEventSimulationResult[],
+): AssignmentBillingEventSimulationResult {
+  const available = results.filter((r) => r.available);
+  if (available.length === 0) return results[0] ?? emptyBillingEventSimulation(NO_ASSIGNMENT_REASON);
+  if (available.length === 1) return available[0];
+  const byDate = new Map<string, AssignmentBillingEventSimulationResult['dates'][number]>();
+  for (const r of available) {
+    for (const d of r.dates) {
+      const group = byDate.get(d.date);
+      if (!group) byDate.set(d.date, { ...d, lines: [...d.lines] });
+      else {
+        group.lines.push(...d.lines);
+        group.total = Math.round((group.total + d.total) * 100) / 100;
+      }
+    }
+  }
+  const dates = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const horizons = available.map((r) => r.horizon_date).filter((d): d is string => !!d);
+  return {
+    ...available[0],
+    anchor_date: available.map((r) => r.anchor_date).filter((d): d is string => !!d).sort()[0] ?? null,
+    horizon_date: horizons.sort().pop() ?? null,
+    truncated: available.some((r) => r.truncated),
+    dates,
+    total: Math.round(dates.reduce((sum, d) => sum + d.total, 0) * 100) / 100,
+    cycle: available[0].cycle,
+  };
+}
+
+/**
+ * The Billing Event Forecast of the member's current plans (#2125: every live
+ * one, merged by date; a member with none reads the most recent historical one).
  *
  * It always answers a projection: a member with no assignment reads as
  * `available: false` rather than a 404, so the Payments card renders its empty
@@ -99,15 +136,18 @@ const NO_ASSIGNMENT_REASON = 'This member holds no membership plan, so there is 
 export async function memberBillingEventForecast(
   gymId: string, memberId: number,
 ): Promise<AssignmentBillingEventSimulationResult> {
-  const { rows } = await db.query<{ id: number }>(
-    `SELECT um.id
+  const { rows } = await db.query<{ id: number; status: string }>(
+    `SELECT um.id, um.status
        FROM user_memberships um
       WHERE um.gym_id = ? AND um.member_id = ?
       ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
-      ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
-      LIMIT 1`,
+      ${MEMBER_CURRENT_ASSIGNMENT_ORDER}`,
     [gymId, memberId],
   );
-  if (!rows[0]) return emptyBillingEventSimulation(NO_ASSIGNMENT_REASON);
-  return assignedPlanBillingForecast(gymId, rows[0].id);
+  if (rows.length === 0) return emptyBillingEventSimulation(NO_ASSIGNMENT_REASON);
+  const live = rows.filter((r) => r.status === 'active' || r.status === 'paused');
+  const chosen = live.length > 0 ? live : [rows[0]];
+  return mergeBillingEventForecasts(
+    await Promise.all(chosen.map((r) => assignedPlanBillingForecast(gymId, r.id))),
+  );
 }
