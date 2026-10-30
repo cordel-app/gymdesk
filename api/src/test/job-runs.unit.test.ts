@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeJobRun, parseJobRunFilter, utcIso } from '../domain/jobRuns';
+import { classifyJobRun, normalizeJobRun, parseJobRunFilter, utcIso } from '../domain/jobRuns';
 
 describe('parseJobRunFilter (#1996)', () => {
   it('defaults to the first page with no filter', () => {
@@ -37,5 +37,26 @@ describe('normalizeJobRun (#1996)', () => {
     expect(normalizeJobRun({ ...base, details: null }).details).toEqual({});
     expect(normalizeJobRun({ ...base, details: '[1]' }).details).toEqual({});
     expect(normalizeJobRun({ ...base, details: '{bad' }).details).toEqual({});
+  });
+});
+
+describe('classifyJobRun (#2156)', () => {
+  it('a failed run is an Error whatever it stored', () => {
+    expect(classifyJobRun('billing_cleanup', 'failed', {})).toEqual({ result: 'error', issues: [] });
+  });
+  it('a completed run with clean counters is a Success', () => {
+    expect(classifyJobRun('billing_run', 'completed', { processed: 3, failed: 0 }).result).toBe('success');
+    expect(classifyJobRun('promotion_lifecycle', 'completed', { expired: 0 }).result).toBe('success');
+  });
+  it('failed records, per-gym failures and a capped batch are Warnings', () => {
+    expect(classifyJobRun('billing_run', 'completed', { processed: 3, failed: 1 }))
+      .toEqual({ result: 'warning', issues: ['failed_records'] });
+    expect(classifyJobRun('booking_reminders', 'completed', { created: 1, failures: [{ gym_id: 'g' }], capped: true }))
+      .toEqual({ result: 'warning', issues: ['partial_failures', 'capped'] });
+  });
+  it('does not invent a result for history without counters, or for unfinished runs', () => {
+    expect(classifyJobRun('billing_cleanup', 'completed', {}).result).toBeNull();
+    expect(classifyJobRun('billing_cleanup', 'in_progress', { a: 1 }).result).toBeNull();
+    expect(classifyJobRun('billing_cleanup', 'skipped', { a: 1 }).result).toBeNull();
   });
 });
