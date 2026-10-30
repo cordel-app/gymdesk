@@ -5420,6 +5420,21 @@
     "status_completed": "Completada",
     "status_failed": "Fallida",
     "status_skipped": "Omitida",
-    "status_unknown": "Desconocido"
+    "status_unknown": "Desconocido",
+    "job_desc_billing_run": "Cobra los eventos de facturación programados que vencen hoy.",
+    "job_desc_recurring_bookings": "Crea las reservas que los miembros han configurado para repetirse cada semana.",
+    "job_desc_billing_cleanup": "Caduca las solicitudes de pago abandonadas y los borradores sin terminar.",
+    "job_desc_promotion_lifecycle": "Marca las promociones como caducadas cuando pasa su fecha de fin.",
+    "job_desc_plan_allowance_renewals": "Renueva los consumos incluidos de los planes de membresía al llegar su fecha de renovación.",
+    "job_desc_booking_reminders": "Envía a los miembros un recordatorio poco antes de su clase reservada.",
+    "result_success": "Correcto",
+    "result_warning": "Aviso",
+    "result_error": "Error",
+    "field_purpose": "Finalidad",
+    "field_result": "Resultado",
+    "field_warning": "Aviso",
+    "issue_failed_records": "Algunos registros no se pudieron procesar.",
+    "issue_partial_failures": "Algunos gimnasios fallaron y se omitieron.",
+    "issue_capped": "Se alcanzó el límite del lote; el resto espera a la siguiente ejecución."
   }
 }

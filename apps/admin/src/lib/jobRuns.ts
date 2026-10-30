@@ -21,6 +21,10 @@ export type JobRunJob = (typeof JOB_RUN_JOBS)[number];
 export const JOB_RUN_STATUSES = ['in_progress', 'completed', 'failed', 'skipped'] as const;
 export type JobRunStatus = (typeof JOB_RUN_STATUSES)[number];
 
+export const JOB_RUN_RESULTS = ['success', 'warning', 'error'] as const;
+export type JobRunResult = (typeof JOB_RUN_RESULTS)[number];
+export type JobRunIssue = 'failed_records' | 'partial_failures' | 'capped';
+
 export interface JobRun {
   id: string;
   job: JobRunJob;
@@ -31,6 +35,9 @@ export interface JobRun {
   http_status: number | null;
   error_summary: string | null;
   details: Record<string, unknown>;
+  /** The API's derived outcome; `null` when it cannot be told (never invented here). */
+  result?: JobRunResult | null;
+  issues?: JobRunIssue[];
 }
 
 export interface JobRunsResponse {
@@ -92,6 +99,27 @@ export function statusTone(status: string): StatusTone {
   if (status === 'failed') return 'bad';
   if (status === 'in_progress') return 'progress';
   return 'neutral';
+}
+
+/** Locale key of a job's one-line purpose; an unknown job has none. */
+export function jobDescriptionKey(job: string): string | null {
+  return (JOB_RUN_JOBS as readonly string[]).includes(job) ? `job_desc_${job}` : null;
+}
+
+/** Locale key of the result chip; `null` renders no chip. */
+export function resultLabelKey(result: string | null | undefined): string | null {
+  return (JOB_RUN_RESULTS as readonly string[]).includes(result ?? '') ? `result_${result}` : null;
+}
+
+export function issueLabelKey(issue: string): string {
+  return `issue_${issue}`;
+}
+
+/** Chip colours: the app's status greens, ambers and reds. */
+export function resultChipColors(result: JobRunResult): { color: string; background: string } {
+  if (result === 'success') return { color: '#067647', background: '#ecfdf3' };
+  if (result === 'warning') return { color: '#93370d', background: '#fffaeb' };
+  return { color: '#b42318', background: '#fef3f2' };
 }
 
 /** `1m 05s`; `null` (still running, or no finish time) reads as an em dash. */

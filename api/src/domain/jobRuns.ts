@@ -36,6 +36,12 @@ export const JOB_RUN_SOURCES = {
   booking_reminders: 'job_run_log',
 } as const satisfies Record<JobRunJob, string>;
 
+export const JOB_RUN_RESULTS = ['success', 'warning', 'error'] as const;
+export type JobRunResult = (typeof JOB_RUN_RESULTS)[number];
+
+/** Why a run is a Warning; a locale key suffix in the Admin app. */
+export type JobRunIssue = 'failed_records' | 'partial_failures' | 'capped';
+
 export interface JobRun {
   /** Unique across sources: `<source table>:<row id>`. */
   id: string;
@@ -53,6 +59,14 @@ export interface JobRun {
   error_summary: string | null;
   /** The source's own counters, as stored. */
   details: Record<string, unknown>;
+  /**
+   * The outcome, derived from `status` and the stored counters (never from log text).
+   * `null` when it cannot be told: a run still in progress, one skipped, or a completed
+   * run that stored no counters (history written before they were kept).
+   */
+  result: JobRunResult | null;
+  /** What made a Warning one; empty for any other result. */
+  issues: JobRunIssue[];
 }
 
 export const DEFAULT_JOB_RUN_LIMIT = 25;
@@ -166,6 +180,35 @@ export interface JobRunRow {
   details: unknown;
 }
 
+function positive(value: unknown): boolean {
+  return typeof value === 'number' && value > 0;
+}
+
+/**
+ * The result of a run. Success / Warning / Error are judged from the run's own
+ * counters: a failed run is an Error; a completed one is a Warning when it reports
+ * failed records (billing run, recurring bookings), per-gym failures or a capped
+ * batch (booking reminders), and a Success when it reports counters and none of
+ * those. A completed run with no counters is not classified rather than invented.
+ */
+export function classifyJobRun(
+  job: string,
+  status: string,
+  details: Record<string, unknown>,
+): { result: JobRunResult | null; issues: JobRunIssue[] } {
+  if (status === 'failed') return { result: 'error', issues: [] };
+  if (status !== 'completed' || Object.keys(details).length === 0) return { result: null, issues: [] };
+  const issues: JobRunIssue[] = [];
+  if ((job === 'billing_run' || job === 'recurring_bookings') && positive(details.failed)) {
+    issues.push('failed_records');
+  }
+  if (job === 'booking_reminders') {
+    if (Array.isArray(details.failures) && details.failures.length > 0) issues.push('partial_failures');
+    if (details.capped === true) issues.push('capped');
+  }
+  return { result: issues.length > 0 ? 'warning' : 'success', issues };
+}
+
 /** One source row to the normalized run. Pure. */
 export function normalizeJobRun(row: JobRunRow): JobRun {
   const started = utcIso(row.started_at) ?? '';
@@ -173,6 +216,7 @@ export function normalizeJobRun(row: JobRunRow): JobRun {
   const duration = started && finished
     ? Math.max(0, Math.round((Date.parse(finished) - Date.parse(started)) / 1000))
     : null;
+  const details = parseDetails(row.details);
   return {
     id: `${row.source}:${row.source_id}`,
     job: row.job as JobRunJob,
@@ -182,6 +226,7 @@ export function normalizeJobRun(row: JobRunRow): JobRun {
     duration_seconds: duration,
     http_status: row.http_status === null || row.http_status === undefined ? null : Number(row.http_status),
     error_summary: row.error_summary ?? null,
-    details: parseDetails(row.details),
+    details,
+    ...classifyJobRun(row.job, row.status, details),
   };
 }

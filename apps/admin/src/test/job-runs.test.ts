@@ -57,3 +57,16 @@ describe('Jobs page decisions (#1996 stage 3)', () => {
     }
   });
 });
+
+import { jobDescriptionKey as _jd, resultLabelKey as _rl } from '@/lib/jobRuns';
+describe('job descriptions and result chip (#2156)', () => {
+  it('every job has a description key and unknown ones none', () => {
+    expect(_jd('billing_run')).toBe('job_desc_billing_run');
+    expect(_jd('nope')).toBeNull();
+  });
+  it('renders no chip for an undetermined result', () => {
+    expect(_rl('warning')).toBe('result_warning');
+    expect(_rl(null)).toBeNull();
+    expect(_rl(undefined)).toBeNull();
+  });
+});
