@@ -1,3 +1,4 @@
+import { resolvePayerFor } from '../api/payer-resolution';
 import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
@@ -209,18 +210,20 @@ async function insertTransaction(params: {
   actor: string | null;
   /** #1325: the provider's own status, verbatim (a manual payment has none). */
   providerStatus?: string | null;
+  /** #2123: who pays; NULL = the beneficiary (manual settlement). */
+  payerMemberId?: number | null;
 }): Promise<number> {
   const { insertId } = await (params.exec ?? db).query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
         billing_event_id, status, provider, provider_order, provider_ref,
         source, attempt, created_by, failure_code, failure_message, notes,
         method, provider_status,
         created_at, completed_at, modified_at, modified_by)
-     VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+     VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)`,
     [
-      params.ev.gym_id, params.ev.user_membership_id, params.ev.member_id,
+      params.ev.gym_id, params.ev.user_membership_id, params.ev.member_id, params.payerMemberId ?? null,
       params.amount.toFixed(2), params.chargeTypeId, params.ev.id,
       params.status, params.provider, params.providerOrder, params.providerRef,
       params.source, params.attempt, params.actor,
@@ -270,9 +273,13 @@ export async function retryBillingEventPayment(
     return { failure: { status: 409, error: `This charge cannot be retried (${guarded.reason}); reconcile the earlier attempt first.` } };
   }
 
+  // #2123: the card is the payer's — the Family Owner's for a family obligation.
+  const payer = event.member_id != null
+    ? await resolvePayerFor(db, gymId, event.member_id)
+    : { payerMemberId: null as number | null };
   const { rows: pmRows } = await db.query<{ payment_token: string | null; sequence_id: string | null; provider: string }>(
     'SELECT payment_token, sequence_id, provider FROM payment_methods WHERE member_id = ? AND gym_id = ? LIMIT 1',
-    [event.member_id, gymId],
+    [payer.payerMemberId, gymId],
   );
   const pm = pmRows[0];
   if (!pm?.payment_token || !pm?.sequence_id) {
@@ -327,7 +334,7 @@ export async function retryBillingEventPayment(
       ev: event, chargeTypeId, amount, status, source: 'retry', attempt,
       provider: pm.provider, providerOrder: orderId, providerRef,
       failureCode, failureMessage, notes: null, actor,
-      providerStatus: rawProviderStatus,
+      providerStatus: rawProviderStatus, payerMemberId: payer.payerMemberId,
     });
 
     attempts.push({
