@@ -90,9 +90,15 @@ export function toMemberPastPlan(row: MemberPlanHistoryRow): MemberPastPlan {
  */
 export function splitMemberPlanHistory<T extends MemberPlanHistoryRow>(
   rows: readonly T[],
-): { current: T | null; past: MemberPastPlan[] } {
-  if (rows.length === 0) return { current: null, past: [] };
-  const past = rows.slice(1).map(toMemberPastPlan);
+): { current: T | null; also_live: MemberPastPlan[]; past: MemberPastPlan[] } {
+  if (rows.length === 0) return { current: null, also_live: [], past: [] };
+  // #2125: a member may hold several live plans. The first row is "current" (the
+  // ordering puts a live one first), the other live ones are *not* history —
+  // `also_live` carries them so they are never drawn as a plan that ended.
+  const rest = rows.slice(1);
+  const isLive = (r: T) => r.status === 'active' || r.status === 'paused';
+  const alsoLive = isLive(rows[0]) ? rest.filter(isLive).map(toMemberPastPlan) : [];
+  const past = (isLive(rows[0]) ? rest.filter((r) => !isLive(r)) : rest).map(toMemberPastPlan);
   past.sort((a, b) => (b.starts_at ?? '').localeCompare(a.starts_at ?? '') || b.id - a.id);
-  return { current: rows[0], past };
+  return { current: rows[0], also_live: alsoLive, past };
 }

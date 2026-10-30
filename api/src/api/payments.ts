@@ -181,7 +181,7 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
       if (event_type === 'payment_recorded' && user_membership_id) {
         const outcome = await commitAssignment(tx, {
           gymId, userMembershipId: user_membership_id, fromStatuses: [PENDING_PAYMENT_STATUS],
-          confirm: true, source: sourceForRole(role), actorUserId: userId,
+          resolution: null, source: sourceForRole(role), actorUserId: userId,
           actor: resolveRequestActor(getTenantContext(req)),
         });
         if (outcome.kind !== 'committed' && outcome.kind !== 'not_committable' && outcome.kind !== 'not_found') {

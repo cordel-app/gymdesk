@@ -10,6 +10,7 @@ import {
   LIVE_ASSIGNMENT_STATUSES,
   LiveAssignment,
   activePlanConflictBody,
+  parseConflictResolution,
   isLiveAssignmentStatus,
   supersedeStartsAtError,
 } from '../domain/oneActivePlan';
@@ -142,5 +143,23 @@ describe('migration 213 and the rule agree on what "live" means', () => {
     for (const clause of inClauses) {
       expect(clause).toBe("status IN ('active', 'paused')");
     }
+  });
+});
+
+describe('parseConflictResolution (#2125)', () => {
+  it('reads the Add-or-Replace answer', () => {
+    expect(parseConflictResolution({ on_conflict: 'add' })).toBe('add');
+    expect(parseConflictResolution({ on_conflict: 'replace' })).toBe('replace');
+  });
+  it('keeps confirm: true as the old spelling of replace', () => {
+    expect(parseConflictResolution({ confirm: true })).toBe('replace');
+  });
+  it('lets an explicit add win over a stray confirm', () => {
+    expect(parseConflictResolution({ confirm: true, on_conflict: 'add' })).toBe('add');
+  });
+  it('is null when the caller has not been asked yet or sends junk', () => {
+    expect(parseConflictResolution({})).toBeNull();
+    expect(parseConflictResolution(undefined)).toBeNull();
+    expect(parseConflictResolution({ on_conflict: 'both', confirm: 'true' })).toBeNull();
   });
 });

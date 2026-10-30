@@ -20,6 +20,19 @@
 /** The error code stage 1 answers with. Mirrors `ACTIVE_PLAN_EXISTS` in the API. */
 export const ACTIVE_PLAN_EXISTS = 'active_plan_exists';
 
+/**
+ * #2125: the staff's answer to the Add-or-Replace modal. `true` is the pre-#2125
+ * "confirm the replacement" call and stays a replace; `'add'` keeps what the
+ * member already has and adds the new plan beside it.
+ */
+export type ConflictChoice = boolean | 'add';
+
+/** The request-body fields that carry `choice`; `{}` for the first, unasked attempt. */
+export function conflictChoiceBody(choice: ConflictChoice): { confirm?: true; on_conflict?: 'add' } {
+  if (choice === 'add') return { on_conflict: 'add' };
+  return choice ? { confirm: true } : {};
+}
+
 /** One live assignment standing in the way, as the 409 body reports it. */
 export interface ConflictingAssignment {
   /** `user_memberships.id` — the row a confirmed call cancels. */

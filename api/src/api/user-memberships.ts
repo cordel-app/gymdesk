@@ -56,6 +56,7 @@ import {
 import {
   LiveAssignment,
   activePlanConflictBody,
+  parseConflictResolution,
 } from '../domain/oneActivePlan';
 import {
   findLiveAssignmentsForMembers,
@@ -1063,14 +1064,14 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
  */
 userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const confirm = req.body?.confirm === true;
+  const resolution = parseConflictResolution(req.body);
   try {
     // #1108 stage 2: the transition itself lives in `assignment-commit.ts`,
     // shared with the two payment-confirmation callers; this route is the
     // commit with no payment around it — a free plan, or a staff shortcut.
     const outcome = await db.transaction((tx) => commitAssignment(tx, {
       gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
-      confirm, source: sourceForRole(role), actorUserId: userId,
+      resolution, source: sourceForRole(role), actorUserId: userId,
       actor: resolveRequestActor(getTenantContext(req)),
     }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1128,7 +1129,7 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
  */
 userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const confirm = req.body?.confirm === true;
+  const resolution = parseConflictResolution(req.body);
   try {
     const fee = await currentMembershipFee(gymId, Number(req.params.id));
     if (fee == null) return res.status(404).json({ error: 'Membership not found' });
@@ -1137,11 +1138,11 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
     const outcome: CommitOutcome | SubmitOutcome = await db.transaction(async (tx) => owesNothing
       ? commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
-        confirm, source: sourceForRole(role), actorUserId: userId,
+        resolution, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       })
       : submitForPayment(tx, {
-        gymId, userMembershipId: String(req.params.id), confirm, source: sourceForRole(role), actorUserId: userId,
+        gymId, userMembershipId: String(req.params.id), resolution, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1224,7 +1225,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
-        confirm: true, source: sourceForRole(role), actorUserId: userId,
+        resolution: null, source: sourceForRole(role), actorUserId: userId,
         actor: resolveRequestActor(getTenantContext(req)),
       });
       if (committed.kind !== 'committed') return committed;

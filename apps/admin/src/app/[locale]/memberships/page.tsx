@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { activePlanConflict, conflictChoiceBody, type ActivePlanConflict, type ConflictChoice } from '@/lib/activePlanConflict';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
@@ -202,7 +202,7 @@ export default function MembershipsPage() {
    * the warning in the shared `ReplacePlanDialog`, which is what the resend
    * answers.
    */
-  async function handleSave(confirmReplacement = false) {
+  async function handleSave(confirmReplacement: ConflictChoice = false) {
     if (!editing) {
       if (!form.member_id || !form.membership_plan_id || !form.starts_at) {
         setError(t('memberships.error_required'));
@@ -255,7 +255,7 @@ export default function MembershipsPage() {
           body.discount_reason = form.discount_reason.trim();
           if (form.discount_expires_at) body.discount_expires_at = form.discount_expires_at;
         }
-        if (confirmReplacement) body.confirm = true;
+        Object.assign(body, conflictChoiceBody(confirmReplacement));
         await apiFetch('/user-memberships', { method: 'POST', body: JSON.stringify(body) });
       }
       closeModal();
@@ -451,6 +451,7 @@ export default function MembershipsPage() {
         newPlanName={plans.find((p) => String(p.id) === form.membership_plan_id)?.name ?? null}
         busy={saving}
         onConfirm={() => handleSave(true)}
+        onAdd={() => handleSave('add')}
         onCancel={() => setConflict(null)}
       />
 
