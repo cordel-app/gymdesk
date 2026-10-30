@@ -21,6 +21,7 @@ import {
 } from '@/components/listChrome';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
 import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
+import { displayNutritionPlanName } from '@/lib/nutritionPlanName';
 
 interface MemberNutritionPlan {
   id: number;
@@ -516,7 +517,7 @@ function PlanCard({
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
         >
           <span className={CELL_CLASS.expand} style={{ fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
-          <span className={CELL_CLASS.name} title={`${plan.name} · ${plan.member_name}`} style={nameCellStyle}>{plan.name}</span>
+          <span className={CELL_CLASS.name} title={`${displayNutritionPlanName(plan.name)} · ${plan.member_name}`} style={nameCellStyle}>{displayNutritionPlanName(plan.name)}</span>
           {/* #810: the assigned member reads at the plan name's own size and weight. */}
           <span className={CELL_CLASS.member} title={plan.member_name} style={memberCellStyle}>{plan.member_name}</span>
           <span className={CELL_CLASS.days} style={metaCellStyle}>
@@ -602,7 +603,7 @@ function DetailsDialog({
       hideSave
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <DetailRow label={t('nutrition_plans.label_name')} value={plan.name} />
+        <DetailRow label={t('nutrition_plans.label_name')} value={displayNutritionPlanName(plan.name)} />
         <DetailRow label={t('nutrition_plans.label_description')} value={plan.description ?? '—'} />
         <DetailRow label={t('nutrition_plans.label_member')} value={plan.member_name} />
         <DetailRow label={t('nutrition_plans.label_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
