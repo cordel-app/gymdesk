@@ -728,7 +728,7 @@ export function MemberExpandedRow({
                         <button
                           type="button"
                           style={primaryBtnSmall()}
-                          onClick={() => router.push(`/${locale}/nutrition/nutrition-plans?member_id=${memberId}`)}
+                          onClick={() => router.push(`/${locale}/nutrition/nutrition-plans?member_id=${memberId}&open=${p.id}`)}
                         >
                           {t('members.edit')}
                         </button>

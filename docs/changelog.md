@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2175 (Members → Nutrition Plan → Edit now opens Assigned Nutrition Plans with `?open=<plan id>`; the page expands that plan and opens it in Edit mode once, through the existing `beginEdit()`, so an active plan still edits a Draft copy. No API or migration change)
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
 
 
