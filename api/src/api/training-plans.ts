@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
-import { baseTrainingPlanName, nextDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
+import { baseTrainingPlanName, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
@@ -954,8 +954,8 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
   }
 });
 
-// #1969: Save on the draft. One transaction ends the current version today (completed, renamed
-// with its date range) and activates the draft from tomorrow with no end date.
+// #1969: Save on the draft. One transaction ends the current version yesterday (completed, renamed
+// with its date range) and activates the draft from today with no end date.
 trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
@@ -964,7 +964,7 @@ trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAININ
   try {
     const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
     const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
-    const tomorrow = nextDay(today);
+    const yesterday = previousDay(today);
 
     const result = await db.transaction(async (tx) => {
       const { rows: draftRows } = await tx.query(
@@ -989,32 +989,32 @@ trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAININ
       await tx.query(
         `UPDATE training_plans SET status = 'completed', end_date = ?, name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ? AND gym_id = ?`,
-        [today, versionedTrainingPlanName(orig.name, origStart, today), actor, orig.id, gymId],
+        [yesterday, versionedTrainingPlanName(orig.name, origStart, yesterday), actor, orig.id, gymId],
       );
       await tx.query(
         "UPDATE member_training_plans SET status = 'completed', valid_to = ? WHERE training_plan_id = ? AND gym_id = ? AND status = 'active'",
-        [today, orig.id, gymId],
+        [yesterday, orig.id, gymId],
       );
-      const newName = versionedTrainingPlanName(draft.name, tomorrow, null);
+      const newName = versionedTrainingPlanName(draft.name, today, null);
       await tx.query(
         `UPDATE training_plans SET status = 'active', start_date = ?, end_date = NULL, draft_of_plan_id = NULL, name = ?,
                 modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ? AND gym_id = ?`,
-        [tomorrow, newName, actor, draft.id, gymId],
+        [today, newName, actor, draft.id, gymId],
       );
       const { insertId: mtpId } = await tx.query(
         `INSERT INTO member_training_plans
           (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, created_by)
          VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [gymId, memberId, draft.id, draft.template_id ?? null, newName, draft.description, tomorrow, actor],
+        [gymId, memberId, draft.id, draft.template_id ?? null, newName, draft.description, today, actor],
       );
       await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);
-      return { previousId: orig.id as number, previousName: versionedTrainingPlanName(orig.name, origStart, today) };
+      return { previousId: orig.id as number, previousName: versionedTrainingPlanName(orig.name, origStart, yesterday) };
     });
 
     const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
     recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
-      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: tomorrow } });
+      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: today } });
     res.json({ ...rows[0], previous_plan_id: result.previousId, previous_plan_name: result.previousName });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
