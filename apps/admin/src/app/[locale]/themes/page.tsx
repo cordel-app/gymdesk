@@ -18,6 +18,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
+import { ThemeLogoSymbolField } from '@/components/ThemeLogoSymbolField';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import { storageCauseSuggestsInitialize, storageFailureCause } from '@/lib/storageFailureCause';
@@ -72,6 +73,8 @@ interface Theme {
   logo_updated_at: string | null;
   /** #713: R2 URL when the logo is stored in the gym's Cloudflare folder. */
   logo_url: string | null;
+  /** #2157: the symbol-only logo, used as the favicon. */
+  logo_symbol_url: string | null;
   logo_contains_gym_name: boolean;
   /** #725: one nullable URL per Members App background slot; six, always. */
   members_images: MembersImages;
@@ -249,6 +252,16 @@ export default function GymThemesPage() {
   }, [gymLoading, isAdmin]);
 
   useEffect(() => { if (!gymLoading && isAdmin) load(); }, [statusFilter]);
+
+  // #2157: the logo symbol saves on its own; refresh the list quietly so the
+  // preview follows without collapsing the card or touching the edit draft.
+  async function refreshThemes() {
+    try {
+      setThemes(await apiFetch<Theme[]>(`/system/themes${statusFilter ? `?status=${statusFilter}` : ''}`));
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -854,6 +867,16 @@ export default function GymThemesPage() {
               readOnly={isBase}
               storageBlock={storageBlock}
               logoError={logoAssetFailed(assetFailures)}
+              logoSymbol={!isBase && (
+                <ThemeLogoSymbolField
+                  basePath="/system/themes"
+                  themeId={theme.id}
+                  url={theme.logo_symbol_url}
+                  disabledReason={storageBlock ? t(`logo_upload_${storageBlock}`) : null}
+                  onChanged={refreshThemes}
+                  t={t}
+                />
+              )}
             />
           ))}
 
