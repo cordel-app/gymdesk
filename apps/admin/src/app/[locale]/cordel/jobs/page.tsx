@@ -14,7 +14,7 @@ import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listC
 import {
   JOB_RUN_JOBS, JOB_RUN_STATUSES, JOB_RUNS_PAGE_SIZE, type JobRun, type JobRunFilters, type JobRunsResponse,
   defaultJobRunFilters, detailEntries, filtersError, formatDuration, formatHttpStatus, jobLabelKey,
-  jobRunsQuery, pageCount, statusLabelKey, statusTone,
+  issueLabelKey, jobDescriptionKey, jobRunsQuery, pageCount, resultChipColors, resultLabelKey, statusLabelKey, statusTone,
 } from '@/lib/jobRuns';
 
 /**
@@ -178,6 +178,8 @@ function RunCard({ run, expanded, onToggle, t, started }: {
   const tone = statusTone(run.status);
   const badge = tone === 'ok' || tone === 'progress' ? listNameBadgeAccentStyle : listNameBadgeStyle;
   const entries = detailEntries(run.details);
+  const descKey = jobDescriptionKey(run.job);
+  const resultKey = resultLabelKey(run.result);
   return (
     <div style={cardSurfaceStyle}>
       <button
@@ -190,14 +192,23 @@ function RunCard({ run, expanded, onToggle, t, started }: {
         }}
       >
         <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        <span style={{ fontWeight: 600 }}>{t(jobLabelKey(run.job))}</span>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontWeight: 600 }}>{t(jobLabelKey(run.job))}</span>
+          {descKey && <span style={{ color: '#888', fontSize: 12.5, fontWeight: 400 }}>{t(descKey)}</span>}
+        </span>
         <span style={{ ...badge, ...(tone === 'bad' ? { color: '#b42318' } : null) }}>{t(statusLabelKey(run.status))}</span>
+        {resultKey && run.result && (
+          <span style={{ ...listNameBadgeStyle, ...resultChipColors(run.result) }}>{t(resultKey)}</span>
+        )}
         <span style={{ color: '#666', fontSize: 13 }}>{started}</span>
         <span style={{ color: '#888', fontSize: 13 }}>{formatDuration(run.duration_seconds)}</span>
       </button>
       {expanded && (
         <div style={{ padding: '0 14px 14px 38px', fontSize: 13.5 }}>
           <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 14px', margin: 0 }}>
+            {descKey && (<><dt style={{ color: '#888' }}>{t('field_purpose')}</dt><dd style={{ margin: 0 }}>{t(descKey)}</dd></>)}
+            {resultKey && (<><dt style={{ color: '#888' }}>{t('field_result')}</dt><dd style={{ margin: 0 }}>{t(resultKey)}</dd></>)}
+            {(run.issues ?? []).map((i) => (<><dt key={`i-${i}`} style={{ color: '#888' }}>{t('field_warning')}</dt><dd key={`iv-${i}`} style={{ margin: 0, color: '#93370d' }}>{t(issueLabelKey(i))}</dd></>))}
             <dt style={{ color: '#888' }}>{t('field_started')}</dt><dd style={{ margin: 0 }}>{started}</dd>
             <dt style={{ color: '#888' }}>{t('field_duration')}</dt><dd style={{ margin: 0 }}>{formatDuration(run.duration_seconds)}</dd>
             <dt style={{ color: '#888' }}>{t('field_http_status')}</dt><dd style={{ margin: 0 }}>{formatHttpStatus(run.http_status)}</dd>

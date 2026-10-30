@@ -5447,6 +5447,21 @@
     "status_completed": "Completada",
     "status_failed": "Fallida",
     "status_skipped": "Omesa",
-    "status_unknown": "Desconegut"
+    "status_unknown": "Desconegut",
+    "job_desc_billing_run": "Cobra els esdeveniments de facturació programats que venen avui.",
+    "job_desc_recurring_bookings": "Crea les reserves que els membres han configurat per repetir-se cada setmana.",
+    "job_desc_billing_cleanup": "Caduca les sol·licituds de pagament abandonades i els esborranys sense acabar.",
+    "job_desc_promotion_lifecycle": "Marca les promocions com a caducades quan passa la seva data de fi.",
+    "job_desc_plan_allowance_renewals": "Renova els consums inclosos dels plans de membresia en arribar la seva data de renovació.",
+    "job_desc_booking_reminders": "Envia als membres un recordatori poc abans de la seva classe reservada.",
+    "result_success": "Correcte",
+    "result_warning": "Avís",
+    "result_error": "Error",
+    "field_purpose": "Finalitat",
+    "field_result": "Resultat",
+    "field_warning": "Avís",
+    "issue_failed_records": "Alguns registres no s'han pogut processar.",
+    "issue_partial_failures": "Alguns gimnasos han fallat i s'han omès.",
+    "issue_capped": "S'ha assolit el límit del lot; la resta espera a la propera execució."
   }
 }

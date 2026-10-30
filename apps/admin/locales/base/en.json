@@ -5434,6 +5434,21 @@
     "status_completed": "Completed",
     "status_failed": "Failed",
     "status_skipped": "Skipped",
-    "status_unknown": "Unknown"
+    "status_unknown": "Unknown",
+    "job_desc_billing_run": "Charges the scheduled billing events that are due today.",
+    "job_desc_recurring_bookings": "Creates the bookings members have set up to repeat every week.",
+    "job_desc_billing_cleanup": "Expires abandoned payment requests and drafts left unfinished.",
+    "job_desc_promotion_lifecycle": "Marks Promotions as expired once their end date has passed.",
+    "job_desc_plan_allowance_renewals": "Renews membership plan allowances when their renewal date is reached.",
+    "job_desc_booking_reminders": "Sends members a reminder shortly before their booked class.",
+    "result_success": "Success",
+    "result_warning": "Warning",
+    "result_error": "Error",
+    "field_purpose": "Purpose",
+    "field_result": "Result",
+    "field_warning": "Warning",
+    "issue_failed_records": "Some records failed to process.",
+    "issue_partial_failures": "Some gyms failed and were skipped.",
+    "issue_capped": "The batch limit was reached; remaining items wait for the next run."
   }
 }
