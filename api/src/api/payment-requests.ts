@@ -1,3 +1,4 @@
+import { resolvePayerFor } from './payer-resolution';
 import crypto from 'crypto';
 import { payerCheckoutUrl } from './checkout-url';
 import { Router, Request, Response, NextFunction } from 'express';
@@ -143,20 +144,21 @@ paymentRequestsRouter.post(
       const { rows: prevAttempt } = open
         ? await db.query<{ n: number }>('SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId])
         : { rows: [{ n: 0 }] };
+      const payer = await resolvePayerFor(db, gymId, Number(um.member_id));
       const { insertId } = await db.query(
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+           (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
             created_by, source, attempt)
-         VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
+         VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
         [
-          gymId, user_membership_id, um.member_id, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
+          gymId, user_membership_id, um.member_id, payer.viaFamily ? payer.payerMemberId : null, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           resolveRequestActor(getTenantContext(req)), Number(prevAttempt[0]?.n ?? 0) + 1,
         ],
       );
 
-      const checkoutUrl = await payerCheckoutUrl({ gymId, memberId: um.member_id, pageToken });
+      const checkoutUrl = await payerCheckoutUrl({ gymId, memberId: payer.payerMemberId, pageToken });
       res.status(201).json({ id: insertId, checkoutUrl });
     } catch (err) {
       req.log.error({ err: (err as Error).message }, 'Payment request creation failed');

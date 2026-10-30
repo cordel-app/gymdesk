@@ -1,3 +1,4 @@
+import { resolvePayerFor } from './payer-resolution';
 import { originOf } from '../domain/itemOrigin';
 import { syncProductSnapshotForPurchase, syncProductSnapshotForPaymentRequest } from './product-snapshot-sync';
 import { DateTime } from 'luxon';
@@ -502,6 +503,7 @@ export async function startProductPurchase(
   });
 
   try {
+    const payer = await resolvePayerFor(db, input.gymId, input.memberId);
     const purchaseId = await db.transaction(async (tx) => {
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
@@ -523,12 +525,12 @@ export async function startProductPurchase(
         // through the hosted page's consent checkbox, exactly as a
         // customer-initiated fee payment does.
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+           (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
             consent_given_at, source, created_by)
-         VALUES (?, NULL, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+         VALUES (?, NULL, ?, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
         [
-          input.gymId, input.memberId, snapshot.amount.toFixed(2), snapshot.currency,
+          input.gymId, input.memberId, payer.viaFamily ? payer.payerMemberId : null, snapshot.amount.toFixed(2), snapshot.currency,
           row.charge_type_id ?? null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           PRODUCT_PURCHASE_SOURCE, actorName,

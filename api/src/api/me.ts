@@ -1,3 +1,4 @@
+import { resolvePayerFor } from './payer-resolution';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
@@ -2500,13 +2501,14 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     // (written at Save & Pay); a retry links to it so the webhook settles that
     // one event instead of adding a second for the same charge.
     const openEventId = um.status === 'pending_payment' ? (await openInitialEventForAssignment(db, gymId, um.id))?.eventId ?? null : null;
+    const payer = await resolvePayerFor(db, gymId, memberId);
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+         (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source, created_by)
-       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
+       VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
+      [gymId, um.id, memberId, payer.viaFamily ? payer.payerMemberId : null, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
     const checkoutUrl = await payerCheckoutUrl({ gymId, memberId, pageToken, requestLocale: getRequestLocale(req) });
