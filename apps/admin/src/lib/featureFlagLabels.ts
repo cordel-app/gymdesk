@@ -67,3 +67,32 @@ export function featureFlagNavPosition(root: string): { order: number; parentLab
   const parentId = navigationGroups[index].parentId;
   return { order: index, parentLabelKey: parentId ? parentLabel.get(parentId) ?? null : null };
 }
+
+/**
+ * #2155 — the position of a flag among its siblings: the order the sidebar
+ * lists the item that gates it. The first item declaring a key wins (as in
+ * `featureFlagLabelKey`), so two items sharing one flag yield one position.
+ * A key no item gates has no position and sorts after the gated ones,
+ * alphabetically. Ordering only — nothing is renamed, re-keyed or moved
+ * between parents.
+ */
+const ITEM_ORDER: Map<string, number> = (() => {
+  const map = new Map<string, number>();
+  let index = 0;
+  for (const group of navigationGroups) {
+    for (const item of group.items) {
+      if (item.featureKey && !map.has(item.featureKey)) map.set(item.featureKey, index);
+      index += 1;
+    }
+  }
+  return map;
+})();
+
+export function featureFlagItemOrder(featureKey: string): number {
+  return ITEM_ORDER.get(featureKey) ?? Number.MAX_SAFE_INTEGER;
+}
+
+/** Comparator for sibling flags: sidebar order first, then the key. */
+export function compareFeatureFlagSiblings(a: string, b: string): number {
+  return featureFlagItemOrder(a) - featureFlagItemOrder(b) || a.localeCompare(b);
+}

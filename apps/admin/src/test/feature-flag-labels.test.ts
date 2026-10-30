@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { featureFlagLabelKey, featureKeyShortName } from '@/lib/featureFlagLabels';
+import { compareFeatureFlagSiblings, featureFlagLabelKey, featureKeyShortName } from '@/lib/featureFlagLabels';
 import { navigationGroups } from '@/config/navigationGroups';
 import { FEATURE_PERMISSION_OVERRIDES } from '@/config/permissions';
 
@@ -113,5 +113,21 @@ describe('an overridden permission is marked as one (#1070 §3)', () => {
     expect(FEATURE_PERMISSION_OVERRIDES).toEqual({
       'nutrition.personal_goals': { trainer_performance: 'RW' },
     });
+  });
+});
+
+describe('sibling flags follow the sidebar item order (#2155)', () => {
+  it('orders a group\'s flags as the sidebar lists its items', () => {
+    const keys = ['training.training_plans', 'training.exercises', 'training.training_plan_templates', 'training.workout_templates'];
+    expect([...keys].sort(compareFeatureFlagSiblings)).toEqual([
+      'training.exercises',
+      'training.workout_templates',
+      'training.training_plan_templates',
+      'training.training_plans',
+    ]);
+  });
+
+  it('puts keys the sidebar does not gate after the gated ones', () => {
+    expect(['training.zzz', 'training.exercises'].sort(compareFeatureFlagSiblings)).toEqual(['training.exercises', 'training.zzz']);
   });
 });
