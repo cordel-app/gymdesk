@@ -15,7 +15,7 @@ vi.mock('@clerk/backend', async (importOriginal) => {
     ...actual,
     verifyToken: vi.fn().mockResolvedValue({ sub: 'test-user-id' }),
     createClerkClient: vi.fn(() => ({
-      users: { getUser: vi.fn(), getUserList: clerk.getUserList },
+      users: { getUser: vi.fn().mockResolvedValue({ publicMetadata: {}, fullName: 'Test User', firstName: 'Test', lastName: 'User' }), getUserList: clerk.getUserList },
       invitations: { createInvitation: clerk.createInvitation, getInvitationList: clerk.getInvitationList, revokeInvitation: vi.fn() },
     })),
   };
@@ -43,7 +43,9 @@ const stored = async (id: number) =>
   (await db.query<any>('SELECT invitation_id, invited_at, clerk_user_id FROM members WHERE id = ?', [id])).rows[0];
 
 describe('POST /members/:id/invite conflict reconciliation', () => {
-  beforeAll(() => clerk.createInvitation.mockRejectedValue(Object.assign(new Error('exists'), { status: 422 })));
+  beforeAll(() => {
+    clerk.createInvitation.mockRejectedValue(Object.assign(new Error('exists'), { status: 422 }));
+  });
 
   it('stores the pending Clerk invitation, and a retry is stable', async () => {
     const m = await member();
