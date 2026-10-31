@@ -35,25 +35,31 @@ const SAMPLE_LIMIT = 5;
 const SERVICE_TASK_MEMBER_CAP = 200;
 
 /**
- * #2171: one random exercise of the gym that carries its own image, for the
- * welcome banner. Reads the exercise's own male/female master (the columns the
- * media routes write); `exclude` keeps a reload from repeating the last pick
- * when another candidate exists. Nothing is stored.
+ * #2171: the gym's exercise of the day for the welcome banner. Candidates are
+ * the gym's own active exercises carrying their own male/female master image
+ * (never a goal or muscle image), ordered by id; the gym-local day number picks
+ * one, so it changes every day, is the same for every load and viewer of that
+ * day, and needs no stored state or per-request randomness.
  */
-async function loadWelcomeImage(gymId: string, exclude: number | null): Promise<{ id: number; url: string } | null> {
-  const pick = async (skip: number | null) => {
-    const { rows } = await db.query<{ id: number; url: string }>(
-      `SELECT e.id, COALESCE(e.image_male_url, e.image_female_url) AS url
-         FROM exercises e
-        WHERE e.gym_id = ? AND e.status = 'active'
-          AND COALESCE(e.image_male_url, e.image_female_url) IS NOT NULL
-          ${skip != null ? 'AND e.id <> ?' : ''}
-        ORDER BY RAND() LIMIT 1`,
-      skip != null ? [gymId, skip] : [gymId],
-    );
-    return rows[0] ? { id: Number(rows[0].id), url: rows[0].url } : null;
-  };
-  return (exclude != null ? await pick(exclude) : null) ?? await pick(null);
+export function welcomeExerciseIndex(count: number, zone: string, now: Date = new Date()): number {
+  if (count <= 0) return 0;
+  const ymd = now.toLocaleDateString('en-CA', { timeZone: zone }); // YYYY-MM-DD
+  const [y, m, d] = ymd.split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86400000) % count;
+}
+
+async function loadWelcomeImage(gymId: string, zone: string): Promise<{ id: number; url: string } | null> {
+  const { rows } = await db.query<{ id: number; url: string }>(
+    `SELECT e.id, COALESCE(e.image_male_url, e.image_female_url) AS url
+       FROM exercises e
+      WHERE e.gym_id = ? AND e.status = 'active'
+        AND COALESCE(e.image_male_url, e.image_female_url) IS NOT NULL
+      ORDER BY e.id`,
+    [gymId],
+  );
+  if (!rows.length) return null;
+  const r = rows[welcomeExerciseIndex(rows.length, zone)];
+  return { id: Number(r.id), url: r.url };
 }
 
 const iso = (v: Date | string) => new Date(v).toISOString();
@@ -410,8 +416,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       out.pending_payment_members = await loadPendingPaymentMembers(gymId, p.outstanding);
     }
 
-    const excl = Number(req.query.welcome_exclude);
-    const welcomeImage = await loadWelcomeImage(gymId, Number.isInteger(excl) && excl > 0 ? excl : null);
+    const welcomeImage = await loadWelcomeImage(gymId, (await loadGymClock(gymId)).zone);
     out.welcome_image_url = welcomeImage?.url ?? null;
     out.welcome_exercise_id = welcomeImage?.id ?? null;
 
