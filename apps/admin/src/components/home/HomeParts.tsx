@@ -87,11 +87,13 @@ export function HomeHeader({ greeting, intro, sentence, imageUrl }: { greeting: 
       <h1 style={{ position: 'relative', margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.15 }}>{greeting}</h1>
       <p style={{ position: 'relative', margin: 0, fontSize: 14, color: image ? 'rgba(255,255,255,.85)' : 'var(--gd-text-muted, #6b7280)' }}>{intro}</p>
       {quote && (
-        <blockquote data-testid="home-motivation" style={{
-          position: 'relative', margin: '14px 0 0', padding: '8px 14px', borderLeft: `3px solid ${accent}`,
-          background: `color-mix(in srgb, ${accent} 8%, transparent)`, borderRadius: '0 8px 8px 0',
-          fontSize: 15, fontStyle: 'italic', maxWidth: 680,
-        }}>{quote}</blockquote>
+        <p data-testid="home-motivation" style={{
+          position: 'relative', margin: '12px 0 0', maxWidth: 720,
+          fontSize: 'clamp(18px, 2.4vw, 24px)', fontWeight: 700, lineHeight: 1.3, letterSpacing: -0.2,
+          color: image ? '#ffffff' : 'var(--gd-text, inherit)',
+          textShadow: image ? '0 1px 6px rgba(0,0,0,.45)' : 'none',
+          overflowWrap: 'anywhere',
+        }}>{quote}</p>
       )}
     </header>
   );
