@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2175 (Members → Nutrition Plan → Edit now opens Assigned Nutrition Plans with `?open=<plan id>`; the page expands that plan and opens it in Edit mode once, through the existing `beginEdit()`, so an active plan still edits a Draft copy. No API or migration change)
 
 - **Done**: #2178 (Members → Progress: Readings are compact aligned Date/Set/Reps/Weight rows, one date per day group; hovering or clicking a date highlights that day's chart point(s) via the existing `selectedX`. Presentation only — no API, data or calculation change.)
 

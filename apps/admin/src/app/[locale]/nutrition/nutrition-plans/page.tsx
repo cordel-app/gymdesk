@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
@@ -194,6 +194,17 @@ export default function NutritionPlansPage() {
       toast(err.message ?? t('nutrition_plans.error_generic'));
     }
   }
+
+  // #2175: ?open=<id> (from Members → Nutrition Plan → Edit) expands that plan and opens it in Edit mode, once.
+  const openHandled = useRef(false);
+  useEffect(() => {
+    const openId = Number(searchParams.get('open'));
+    if (openHandled.current || !openId || loading || !canWrite) return;
+    const target = rows.find((r) => r.id === openId);
+    if (!target) return;
+    openHandled.current = true;
+    beginEdit(target);
+  }, [rows, loading, canWrite]);
 
   function cancelEdit() {
     // #1970: Cancel on a version draft discards it; the original stays as it was.
