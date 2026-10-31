@@ -14,7 +14,7 @@ describe('member Account chips (#1326)', () => {
   });
   it('refetches clerk-status when the invitation changes', () => {
     expect(row).toMatch(/accountVersion[\s\S]*clerk-status/);
-    expect((page.match(/setAccountVersion\(\(v\) => v \+ 1\)/g) ?? []).length).toBe(3);
+    expect((page.match(/setAccountVersion\(\(v\) => v \+ 1\)/g) ?? []).length).toBe(4);
     expect(page).toContain('accountVersion={accountVersion}');
   });
 });

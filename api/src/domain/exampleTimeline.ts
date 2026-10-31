@@ -235,10 +235,14 @@ export function periodContaining(
 ): { startOn: string; firstPeriod: number } {
   const anchor = startsAt.slice(0, 10);
   if (!cadence) return { startOn: anchor, firstPeriod: 1 };
+  // Every boundary is `anchor` + N cadences, never the previous boundary + one:
+  // a month-end anchor (the 31st) would otherwise drift from where
+  // `classifyPlanDurationPeriod()` counts its periods (31 Oct + 1 month = 1 Dec,
+  // but 1 Dec + 1 month = 1 Jan, not 31 Dec).
   let cursor = anchor;
   let index = 0;
   while (index < MAX_ELAPSED_PERIODS) {
-    const next = advanceBillingDate(cursor, cadence.interval, cadence.unit);
+    const next = advanceBillingDate(anchor, (index + 1) * cadence.interval, cadence.unit);
     if (next > date.slice(0, 10)) break;
     cursor = next;
     index++;
@@ -335,7 +339,8 @@ export function walkExampleTimeline(input: ExampleTimelineWalkInput): ExampleTim
     && periods.length < MAX_TIMELINE_PERIODS
   ) {
     const startsOn = cursor;
-    const next = advanceBillingDate(startsOn, interval, cadence.unit);
+    // From the anchor, not from `startsOn`: see `periodContaining()`.
+    const next = advanceBillingDate(anchor, (firstPeriod + periods.length) * interval, cadence.unit);
     const priced = input.priceOn(startsOn, periods.length);
     if (priced.regular) regularShown++;
     periods.push({

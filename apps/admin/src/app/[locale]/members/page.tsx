@@ -584,6 +584,9 @@ export default function MembersPage() {
       load();
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'), 'error');
+      // #2183: a conflict may have reconciled the stored status server-side — refresh it.
+      setAccountVersion((v) => v + 1);
+      load();
     }
   }
 

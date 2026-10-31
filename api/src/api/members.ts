@@ -1,4 +1,5 @@
 import { memberInviteMetadata } from '../domain/memberInviteTarget';
+import { listItems, resolveInviteConflict } from '../domain/clerkInviteConflict';
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -596,12 +597,14 @@ membersRouter.post(
 membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
+  let memberEmail: string | null = null;
   try {
     const { rows } = await db.query(
       'SELECT email, clerk_user_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+    memberEmail = rows[0].email;
     if (rows[0].clerk_user_id) return res.status(409).json({ error: 'This member already has portal access.' });
     // #594: the row may predate a staff login on the same email — refuse to invite into a collision.
     if (await isStaffLoginEmail(gymId, rows[0].email)) return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
@@ -619,7 +622,35 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
     res.json({ ok: true });
   } catch (err: any) {
     // Clerk returns 422 when an invitation for this email already exists/user already exists
-    if (err.status === 422) return res.status(409).json({ error: 'An invitation or account already exists for this email.' });
+    if (err.status === 422) {
+      const conflict = { error: 'An invitation or account already exists for this email.' };
+      // #2183: reconcile the stored invitation with what Clerk actually holds. Read-only
+      // towards Clerk (nothing is created), idempotent, and a lookup failure leaves the
+      // plain 409 above. An existing account is reported, never auto-linked: linking is
+      // /me/link's job, on the account holder's own sign-in.
+      try {
+        const [invRes, userRes] = await Promise.all([
+          clerkClient.invitations.getInvitationList({ status: 'pending', query: memberEmail! } as any),
+          clerkClient.users.getUserList({ emailAddress: [memberEmail!] }),
+        ]);
+        const found = resolveInviteConflict(memberEmail!, listItems(invRes), listItems(userRes));
+        if (found.kind === 'pending_invitation') {
+          await db.query(
+            `UPDATE members SET invitation_id = ?, invited_at = COALESCE(invited_at, UTC_TIMESTAMP()),
+                    modified_at = UTC_TIMESTAMP(), modified_by = ?
+              WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND (invitation_id IS NULL OR invitation_id <> ?)`,
+            [found.invitationId, resolveRequestActor(getTenantContext(req)), req.params.id, gymId, found.invitationId],
+          );
+          return res.status(409).json({ ...conflict, reconciled: 'pending_invitation', has_pending_invitation: true });
+        }
+        if (found.kind === 'account_exists') {
+          return res.status(409).json({ ...conflict, reconciled: 'account_exists' });
+        }
+      } catch {
+        // fall through to the plain conflict
+      }
+      return res.status(409).json(conflict);
+    }
     next(err);
   }
 });
