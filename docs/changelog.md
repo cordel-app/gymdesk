@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2172 (Nutrition & Goals Dashboard: the Nutrition Plan cards no longer require the member's Membership enrollment to be Active (#809's condition made plans held by members with no active Membership read as unassigned) and use the date-aware current-plan rule of #1957; new `GET /nutrition/dashboard/summary` with plan metrics (members, assignments, plans in use) and Personal Goals usage (members, most popular goal, goals in use, average per member), grouping a gym copy with its System template). Tests: `nutrition-dashboard.test.ts`, `nutrition-dashboard-summary.test.ts`.)
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
 
 
