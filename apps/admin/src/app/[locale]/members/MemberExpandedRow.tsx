@@ -847,6 +847,7 @@ export function MemberExpandedRow({
                       open={trainingInactiveOpen}
                       onToggle={() => setTrainingInactiveOpen((o) => !o)}
                     />
+                    {/* #2200: an inactive assignment is read-only — no Edit button. */}
                     {trainingInactiveOpen && inactivePlans.map((p) => (
                       <PlanCard
                         key={p.id}
@@ -855,7 +856,6 @@ export function MemberExpandedRow({
                         status={p.status}
                         validFrom={p.valid_from}
                         validTo={p.valid_to}
-                        onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
                         editLabel={t('members.edit')}
                         dim
                       />
