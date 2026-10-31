@@ -94,10 +94,7 @@ export default function HomePage() {
     setLoading(true);
     setError(false);
     try {
-      let last: string | null = null;
-      try { last = window.sessionStorage.getItem('home_welcome_exercise'); } catch { /* storage unavailable */ }
-      const res = await apiFetch<HomeData>(`/dashboard/home${last ? `?welcome_exclude=${encodeURIComponent(last)}` : ''}`);
-      try { if (res.welcome_exercise_id) window.sessionStorage.setItem('home_welcome_exercise', String(res.welcome_exercise_id)); } catch { /* ignore */ }
+      const res = await apiFetch<HomeData>('/dashboard/home');
       setData(res);
     } catch {
       setError(true);
