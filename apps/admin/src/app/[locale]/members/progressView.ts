@@ -14,7 +14,13 @@ export interface ProgressSummary {
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;
   best_result: { slug: 'weight' | 'repetitions' | 'duration'; value: number } | null;
+  /** #2179 — one best result per metric the exercise's category supports. */
+  metrics: ProgressMetricBest[];
 }
+
+export type ProgressMetricSlug = 'weight' | 'repetitions';
+export interface ProgressMetricBest { slug: ProgressMetricSlug; value: number | null }
+export interface ProgressMetricDays { slug: ProgressMetricSlug; days: ProgressDay[] }
 
 export interface ProgressDay { logged_date: string; value: number | null }
 
@@ -27,7 +33,7 @@ export interface ProgressReading {
   sets: Required<Pick<ProgressSet, 'id' | 'set_number' | 'weight' | 'reps'>>[];
 }
 
-export interface ProgressDetail extends ProgressSummary { days: ProgressDay[]; readings: ProgressReading[] }
+export interface ProgressDetail extends ProgressSummary { days: ProgressDay[]; metric_days: ProgressMetricDays[]; readings: ProgressReading[] }
 
 /** Locale key of the unit a best result is shown with; `null` is a bare number. */
 export function resultUnitKey(slug: string | null | undefined): string | null {
@@ -35,6 +41,11 @@ export function resultUnitKey(slug: string | null | undefined): string | null {
   if (slug === 'repetitions') return 'members.progress_unit_reps';
   if (slug === 'duration') return 'members.progress_unit_seconds';
   return null;
+}
+
+/** Locale key of a metric's best-result label. */
+export function metricLabelKey(slug: ProgressMetricSlug): string {
+  return slug === 'weight' ? 'members.progress_best_weight' : 'members.progress_best_reps';
 }
 
 /** `—` for anything the logs hold no data for — never 0. */

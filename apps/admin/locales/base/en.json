@@ -673,6 +673,8 @@
     "progress_days": "Days exercised",
     "progress_max_weight": "Max weight",
     "progress_best_result": "Best result",
+    "progress_best_weight": "Best Result (Weight)",
+    "progress_best_reps": "Best Result (Repetitions)",
     "progress_unit_kg": "kg",
     "progress_unit_reps": "reps",
     "progress_unit_seconds": "s",
