@@ -19,6 +19,8 @@ import {
 } from '../domain/themeMemberImages';
 import { themeRootFolderKeys, themeStorageFolderKeys } from '../domain/themeFolders';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
+import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
+import { logoSymbolBodyParser, removeLogoSymbol, uploadLogoSymbol, type LogoSymbolScope } from './theme-logo-symbol';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import { storageCauseFromDetails } from '../domain/storageFailureCause';
 import { loadPlatformMemberImagesByTheme } from './theme-member-images';
@@ -54,7 +56,7 @@ const LOGO_MAX_BYTES = 512 * 1024; // 512 KB
  * so a list or a write that forgot the column would report a logo-less theme.
  */
 const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, status, logo_mime, '
-  + 'logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by';
+  + 'logo_updated_at, logo_object_key, logo_symbol_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by';
 
 /**
  * `memberImages` are this theme's `theme_member_images` rows (#732), passed in
@@ -63,7 +65,7 @@ const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, sta
  * explicitly not as six requests of its own.
  */
 function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
-  const { logo_bytes: _lb, logo_object_key: _lk, ...rest } = row;
+  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, ...rest } = row;
   return {
     ...rest,
     // #732: always all six fields; `null` is "this slot is not configured", and
@@ -78,6 +80,8 @@ function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
     // `logo_bytes` blob served by `GET /themes/:id/logo` — the fallback every
     // consumer keeps.
     logo_url: themeLogoUrl(row),
+    // #2157: the symbol-only logo, used as the favicon. Null when none is uploaded.
+    logo_symbol_url: themeLogoSymbolUrl(row),
     is_system_default: !!row.is_system_default,
     logo_contains_gym_name: !!row.logo_contains_gym_name,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
@@ -122,7 +126,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
+      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
@@ -146,7 +150,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
     `SELECT t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
+            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
             (
               SELECT COUNT(DISTINCT gg.id) FROM gyms gg
               LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
@@ -858,4 +862,41 @@ themesPublicRouter.get('/:id/logo', async (req, res) => {
   res.set('Content-Type', rows[0].logo_mime);
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
   res.send(rows[0].logo_bytes);
+});
+
+// ─── Logo symbol (#2157) ─────────────────────────────────────────────────────
+
+function baseLogoSymbolScope(req: express.Request, res: express.Response): LogoSymbolScope {
+  return {
+    themeWhere: { sql: 'AND gym_id IS NULL', params: [] },
+    // The platform root has no Gym Bucket Initialization: its markers are written on demand.
+    resolveRoot: async () => {
+      if (!isStorageConfigured()) {
+        const missingConfig = getMissingStorageConfigKeys();
+        res.status(503).json({
+          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+          stage: 'resolve_path',
+          cause: 'not_configured',
+          missingConfig,
+          diagnostics: getStorageDiagnostics(),
+        });
+        return null;
+      }
+      return { prefix: PLATFORM_STORAGE_ROOT, rootFolderKeys: themeRootFolderKeys(PLATFORM_STORAGE_ROOT) };
+    },
+    actor: () => resolvePlatformActor(req.superadminName),
+    respond: async (themeId) => {
+      const { rows } = await db.query(`SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`, [themeId]);
+      res.json(shapeTheme(rows[0], await loadThemeMemberImages(themeId)));
+    },
+    logContext: { actor: (req as any).auth?.userId ?? null },
+  };
+}
+
+themesRouter.post('/:id/logo-symbol', requireSuperadmin, logoSymbolBodyParser, async (req, res, next) => {
+  try { await uploadLogoSymbol(baseLogoSymbolScope(req, res), req, res); } catch (err) { next(err); }
+});
+
+themesRouter.delete('/:id/logo-symbol', requireSuperadmin, async (req, res, next) => {
+  try { await removeLogoSymbol(baseLogoSymbolScope(req, res), req, res); } catch (err) { next(err); }
 });

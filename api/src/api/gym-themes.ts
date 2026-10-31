@@ -7,6 +7,8 @@ import { resolveRequestActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
+import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
+import { logoSymbolBodyParser, removeLogoSymbol, uploadLogoSymbol, type LogoSymbolScope } from './theme-logo-symbol';
 import { themeStorageFolderKeys } from '../domain/themeFolders';
 import {
   assignedCenterIds,
@@ -69,7 +71,7 @@ const LOGO_MAX_BYTES = 512 * 1024;
  * explicitly not as six requests of its own.
  */
 function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: MemberImageRow[] = []) {
-  const { logo_bytes: _lb, logo_object_key: _lk, ...rest } = row;
+  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, ...rest } = row;
   return {
     ...rest,
     // A Base Theme is the platform's, so the superadmin who created or edited
@@ -95,13 +97,15 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
     // serves both, so a client can treat this as "load it straight from R2 when
     // you can" rather than as the only way to reach the logo.
     logo_url: themeLogoUrl(row),
+    // #2157: the symbol-only logo, used as the favicon. Null when none is uploaded.
+    logo_symbol_url: themeLogoSymbolUrl(row),
     logo_contains_gym_name: !!row.logo_contains_gym_name,
     is_gym_theme: gymThemeId !== null && row.id === gymThemeId,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_symbol_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by';
 
 /** The Members image rows of one theme, for the single-theme responses (#725). */
 async function loadThemeMemberImages(gymId: string, themeId: string): Promise<MemberImageRow[]> {
@@ -812,6 +816,38 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
     });
+  } catch (err) { next(err); }
+});
+
+// ─── Logo symbol (#2157) ─────────────────────────────────────────────────────
+
+function gymLogoSymbolScope(req: express.Request, res: express.Response, gymId: string): LogoSymbolScope {
+  return {
+    themeWhere: { sql: 'AND gym_id = ?', params: [gymId] },
+    resolveRoot: async () => {
+      const prefix = await resolveGymFolderPrefix(gymId, res);
+      return prefix ? { prefix, rootFolderKeys: [] } : null;
+    },
+    actor: () => resolveRequestActor(getTenantContext(req)),
+    respond: async (themeId) => {
+      const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [themeId]);
+      res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, themeId)));
+    },
+    logContext: { actor: (req as any).auth?.userId ?? null, gymId },
+  };
+}
+
+gymThemesRouter.post('/:id/logo-symbol', logoSymbolBodyParser, async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, () => uploadLogoSymbol(gymLogoSymbolScope(req, res, gymId), req, res));
+  } catch (err) { next(err); }
+});
+
+gymThemesRouter.delete('/:id/logo-symbol', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, () => removeLogoSymbol(gymLogoSymbolScope(req, res, gymId), req, res));
   } catch (err) { next(err); }
 });
 

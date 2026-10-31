@@ -1,5 +1,6 @@
 /**
- * #2094 — the browser-tab icon is the active gym's logo, resolved from the
+ * #2094 — the browser-tab icon is the active gym's logo symbol (#2157) when it
+ * has one, else its logo, resolved from the
  * theme's own logo fields (no separate favicon setting). The logo is probed
  * first so an unreachable or undecodable URL leaves the default icon in place
  * rather than a broken one. Same module in the Members App (the two apps share
@@ -16,6 +17,8 @@ const PARKED_REL = 'gd-parked-icon';
 export interface FaviconTheme {
   id: number | string;
   logo_url: string | null;
+  /** #2157: the symbol-only logo; wins over the full logo as the tab icon. */
+  logo_symbol_url?: string | null;
   has_logo: boolean;
   logo_updated_at: string | null;
 }
@@ -23,6 +26,7 @@ export interface FaviconTheme {
 /** The logo's URL as the headers resolve it: the gym's Cloudflare copy, else the API route. */
 export function faviconHref(theme: FaviconTheme | null | undefined): string | null {
   if (!theme) return null;
+  if (theme.logo_symbol_url) return theme.logo_symbol_url;
   if (theme.logo_url) return theme.logo_url;
   if (!theme.has_logo) return null;
   const v = theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : '';
