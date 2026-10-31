@@ -5446,5 +5446,21 @@
     "issue_failed_records": "Algunos registros no se pudieron procesar.",
     "issue_partial_failures": "Algunos gimnasios fallaron y se omitieron.",
     "issue_capped": "Se alcanzó el límite del lote; el resto espera a la siguiente ejecución."
+  },
+  "training_dashboard": {
+    "title": "Panel de entrenamiento",
+    "subtitle": "Resumen y métricas de programas de entrenamiento y ejercicios.",
+    "loading": "Cargando…",
+    "error_generic": "No se pudo cargar el panel.",
+    "overview": "Resumen de entrenamiento",
+    "adoption": "Miembros activos con planes de entrenamiento",
+    "adoption_detail": "{count} de {total} miembros activos",
+    "members_with_plans": "Miembros con planes de entrenamiento activos",
+    "active_assignments": "Asignaciones de plan activas",
+    "plans_in_use": "Planes de entrenamiento en uso",
+    "avg_exercises": "Ejercicios medios por plan",
+    "top_exercises": "Los 5 ejercicios más usados",
+    "top_empty": "No hay ejercicios en planes de entrenamiento activos.",
+    "uses": "{count} planes · {percent}%"
   }
 }

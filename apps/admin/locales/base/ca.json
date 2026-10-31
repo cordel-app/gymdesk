@@ -5473,5 +5473,21 @@
     "issue_failed_records": "Alguns registres no s'han pogut processar.",
     "issue_partial_failures": "Alguns gimnasos han fallat i s'han omès.",
     "issue_capped": "S'ha assolit el límit del lot; la resta espera a la propera execució."
+  },
+  "training_dashboard": {
+    "title": "Tauler d'entrenament",
+    "subtitle": "Resum i mètriques de programes d'entrenament i exercicis.",
+    "loading": "Carregant…",
+    "error_generic": "No s'ha pogut carregar el tauler.",
+    "overview": "Resum d'entrenament",
+    "adoption": "Membres actius amb plans d'entrenament",
+    "adoption_detail": "{count} de {total} membres actius",
+    "members_with_plans": "Membres amb plans d'entrenament actius",
+    "active_assignments": "Assignacions de pla actives",
+    "plans_in_use": "Plans d'entrenament en ús",
+    "avg_exercises": "Exercicis mitjans per pla",
+    "top_exercises": "Els 5 exercicis més usats",
+    "top_empty": "No hi ha exercicis en plans d'entrenament actius.",
+    "uses": "{count} plans · {percent}%"
   }
 }

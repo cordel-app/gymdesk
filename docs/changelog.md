@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #2173 (Training Dashboard replaces its placeholder: `GET /training/dashboard/summary` aggregates in SQL the adoption % of active members with an active Assigned Training Plan, members with active plans, active assignments, distinct plans in use, average distinct exercises per plan and the Top 5 exercises with thumbnails and per-plan percentages; admin page with a circular adoption indicator and Theme-token progress bars; no migration)
 - **Done**: #2171 (Admin Home welcome header shows a random image of one of the gym's own exercises behind a Theme-tinted dark gradient; `GET /dashboard/home` reports `welcome_image_url`/`welcome_exercise_id`, the last pick is excluded on reload, no image falls back to the plain header)
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
 
