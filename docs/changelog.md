@@ -6,6 +6,9 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2175 (Members → Nutrition Plan → Edit now opens Assigned Nutrition Plans with `?open=<plan id>`; the page expands that plan and opens it in Edit mode once, through the existing `beginEdit()`, so an active plan still edits a Draft copy. No API or migration change)
+
+- **Done**: #2178 (Members → Progress: Readings are compact aligned Date/Set/Reps/Weight rows, one date per day group; hovering or clicking a date highlights that day's chart point(s) via the existing `selectedX`. Presentation only — no API, data or calculation change.)
 
 - **Done**: #2179 (Member Progress shows one best result and one chart line per metric the exercise's category supports — Weight and Repetitions independently, `—` when a supported metric has no values; `metrics` / `metric_days` on the staff progress reads, `domain/exerciseProgress.ts`)
 - **Done**: #2125 stage 4 (interim guard: `on_conflict: 'add'` is refused with `409 add_plan_unsupported` when the plan's owner already holds a live plan, because activation still supersedes the owner's active ProductSet version and would end the first plan's future billing events; `addSharesOwnerChain()` in `domain/oneActivePlan.ts`, enforced in `commitAssignment()`, `submitForPayment()` and `POST /product-sets`; a plan owned by another member (family) still adds. Lifted when a ProductSet version holds N plan snapshots)

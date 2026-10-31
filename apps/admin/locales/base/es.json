@@ -681,6 +681,7 @@
     "progress_chart_aria": "Gráfico de progreso de {name}",
     "progress_readings": "Registros",
     "progress_set": "Serie {n}",
+    "progress_col_date": "Fecha",
     "progress_col_set": "Serie",
     "progress_weight": "Peso",
     "progress_reps": "Repeticiones",

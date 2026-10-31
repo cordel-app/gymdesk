@@ -681,6 +681,7 @@
     "progress_chart_aria": "{name} progress chart",
     "progress_readings": "Readings",
     "progress_set": "Set {n}",
+    "progress_col_date": "Date",
     "progress_col_set": "Set",
     "progress_weight": "Weight",
     "progress_reps": "Reps",
