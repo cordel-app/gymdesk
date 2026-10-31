@@ -18,6 +18,7 @@ import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
 import { loadMemberPurchases } from './member-product-promotions';
+import { loadMemberTabCounts } from './member-tab-counts';
 // A Member's profile image (#1374): the key and the bytes are
 // `domain/memberImages.ts`'s, the upload, the clear, the sweep and the rename
 // migration are `member-image-storage.ts`'s, shared with the Member's own
@@ -204,6 +205,16 @@ async function loadMemberDetail(gymId: string, id: number | string): Promise<Rec
     access_rights: deriveAccessRights(rows[0].access_rights, paymentStatus),
   };
 }
+
+// GET /:id/tab-counts — #2182: the badges beside the Member card's tabs.
+membersRouter.get('/:id/tab-counts', async (req, res, next) => {
+  const { gymId, role, isSuperadmin } = getTenantContext(req);
+  try {
+    const { rows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [req.params.id, gymId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Member not found' });
+    res.json(await loadMemberTabCounts(gymId, Number(req.params.id), role, isSuperadmin));
+  } catch (err) { next(err); }
+});
 
 membersRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);

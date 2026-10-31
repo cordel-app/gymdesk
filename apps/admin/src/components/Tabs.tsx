@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef } from 'react';
+import { tabBadgeText } from '@/lib/memberTabBadges';
 
 /**
  * The admin app's tab strip — one component, for every screen that has tabs.
@@ -33,12 +34,14 @@ export interface TabDescriptor<Id extends string> {
   labelKey: string;
 }
 
-export function Tabs<Id extends string>({ tabs, active, onChange, label, ariaLabel }: {
+export function Tabs<Id extends string>({ tabs, active, onChange, label, ariaLabel, counts }: {
   tabs: readonly TabDescriptor<Id>[];
   active: Id;
   onChange: (tab: Id) => void;
   label: (key: string) => string;
   ariaLabel?: string;
+  /** #2182 — optional count beside a tab; zero or absent draws nothing. */
+  counts?: Partial<Record<Id, number>>;
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +78,9 @@ export function Tabs<Id extends string>({ tabs, active, onChange, label, ariaLab
             style={selected ? { ...tabStyle, ...activeTabStyle } : tabStyle}
           >
             {label(tab.labelKey)}
+            {tabBadgeText(counts?.[tab.id]) && (
+              <span style={badgeStyle} aria-label={String(counts?.[tab.id])}>{tabBadgeText(counts?.[tab.id])}</span>
+            )}
           </button>
         );
       })}
@@ -116,4 +122,21 @@ const activeTabStyle: React.CSSProperties = {
   // Follows the navigation's own accent rather than a colour of its own, so a
   // Theme's palette reaches it (#912).
   borderBottomColor: 'var(--brand, #4b45c6)',
+};
+
+/** Small circle following the Theme's accent; never a colour of its own (#912). */
+const badgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginLeft: 6,
+  minWidth: 18,
+  height: 18,
+  padding: '0 5px',
+  borderRadius: 9,
+  boxSizing: 'border-box',
+  fontSize: 11,
+  fontWeight: 600,
+  lineHeight: '18px',
+  textAlign: 'center',
+  background: 'var(--brand, #4b45c6)',
+  color: 'var(--gd-sidebar-selected-text, #ffffff)',
 };
