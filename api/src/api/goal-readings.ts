@@ -241,7 +241,7 @@ export async function updateGoalReadingValue(
      WHERE id = ? AND member_personal_goal_id = ? AND gym_id = ?`,
     [value, readingId, assignmentId, gymId],
   );
-  return (res as any).affectedRows > 0;
+  return res.rowCount > 0;
 }
 
 /**
