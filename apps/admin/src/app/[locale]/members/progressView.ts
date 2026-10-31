@@ -46,12 +46,28 @@ export function formatValue(value: number | null, unit: string | null, gym: GymF
 
 export function progressChartPoints(days: ProgressDay[], unit: string | null, gym: GymFormatSettings = DEFAULT_GYM_FORMAT): ChartPoint[] {
   return days.map((d) => ({
-    x: Date.parse(`${d.logged_date}T00:00:00Z`),
+    x: readingChartX(d.logged_date),
     y: d.value,
     group: 0,
     label: formatGymDayMonth(d.logged_date, gym),
     valueLabel: d.value === null ? undefined : formatValue(d.value, unit, gym),
   }));
+}
+
+/** The chart's x for a reading's day — the very value `progressChartPoints()` gives that day's point. */
+export function readingChartX(loggedDate: string): number {
+  return Date.parse(`${loggedDate}T00:00:00Z`);
+}
+
+/** Readings of the same day, kept together in the order the API sent them (#2178). */
+export function groupReadingsByDate(readings: ProgressReading[]): Array<{ date: string; readings: ProgressReading[] }> {
+  const groups: Array<{ date: string; readings: ProgressReading[] }> = [];
+  for (const r of readings) {
+    const last = groups[groups.length - 1];
+    if (last && last.date === r.logged_date) last.readings.push(r);
+    else groups.push({ date: r.logged_date, readings: [r] });
+  }
+  return groups;
 }
 
 export interface ReadingDraft {
