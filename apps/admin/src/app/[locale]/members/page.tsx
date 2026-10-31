@@ -174,6 +174,21 @@ export default function MembersPage() {
       : {}),
   );
 
+  // #2182 — badge counts per expanded Member, refetched when a card opens and
+  // whenever its tab changes (leaving a tab is when its edits become counts).
+  const [tabCounts, setTabCounts] = useState<Record<number, Partial<Record<MemberTabId, number>>>>({});
+  const countsKey = [...expandedMemberIds].map((id) => `${id}:${memberTabs[id] ?? ''}`).join(',');
+  useEffect(() => {
+    let cancelled = false;
+    for (const id of expandedMemberIds) {
+      apiFetch<Partial<Record<MemberTabId, number>>>(`/members/${id}/tab-counts`)
+        .then((c) => { if (!cancelled) setTabCounts((prev) => ({ ...prev, [id]: c })); })
+        .catch(() => { /* a badge is a courtesy: no count is no badge */ });
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countsKey]);
+
   const showCenters = centers.length > 1;
   const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
@@ -730,6 +745,7 @@ export default function MembersPage() {
                 tabs={MEMBER_TABS.filter((tb) => tb.id !== 'payments' || canReadPayments)}
                 active={activeTab}
                 onChange={(tab) => selectTab(m.id, tab)}
+                counts={tabCounts[m.id]}
                 label={(key) => t(`members.${key}`)}
                 ariaLabel={`${t('members.title')} — ${m.name}`}
               />

@@ -431,7 +431,7 @@ export interface FailedPaymentsAttention {
  * run pauses it. A rejected *first* payment writes no Billing Event (the
  * webhook inserts `payment_recorded` only on `completed`), so it is not counted.
  */
-export async function loadFailedPaymentsAttention(gymId: string): Promise<FailedPaymentsAttention> {
+export async function loadFailedPaymentsAttention(gymId: string, memberId?: number): Promise<FailedPaymentsAttention> {
   const { rows } = await db.query<{
     event_type: string; latest_tx_status: string | null; cnt: number | string; oldest: Date | string;
   }>(
@@ -443,7 +443,7 @@ export async function loadFailedPaymentsAttention(gymId: string): Promise<Failed
                   ORDER BY pr.created_at DESC, pr.id DESC
                   LIMIT 1) AS latest_tx_status
            FROM billing_events be
-          WHERE be.gym_id = ?
+          WHERE be.gym_id = ?${memberId === undefined ? '' : ' AND be.member_id = ?'}
             AND be.event_type NOT IN ('product_purchase', 'card_verification')
             AND (be.event_type = 'failed_billing'
                  OR EXISTS (SELECT 1 FROM payment_requests pf
@@ -451,7 +451,7 @@ export async function loadFailedPaymentsAttention(gymId: string): Promise<Failed
                                AND pf.status IN ('failed', 'expired')))
        ) e
       GROUP BY e.event_type, e.latest_tx_status`,
-    [gymId],
+    memberId === undefined ? [gymId] : [gymId, memberId],
   );
 
   let count = 0;
