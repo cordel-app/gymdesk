@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
+- **Done**: #2170 (Calendar: weekday header and hour column drawn as detached Theme-token bands, weekdays with no opening shift marked closed in the header and grid in Admin and Members App; closed hours keep the existing non-business overlay; no API, migration or schema change; visual check not done in this environment)
 
 
 - **Done**: #2157 (A Theme, Base or Custom, can carry a **logo symbol**: a symbol-only logo that is its favicon. Migration 350 adds the nullable `themes.logo_symbol_object_key`; `POST`/`DELETE /system/themes/:id/logo-symbol` and `/platform/themes/:id/logo-symbol` (shared handler `api/src/api/theme-logo-symbol.ts`) convert the upload server-side to `logo_symbol.webp` beside the logo (alpha kept, proportional, at most 512 px wide, never upscaled) and report `logo_symbol_url` on every theme payload including `/me/gym` and `/gyms`. The Themes editors get an independent upload/remove control, and `faviconHref()` in both apps prefers the symbol over the full logo. The full logo, `logo_url` and its storage are unchanged)
