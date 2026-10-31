@@ -414,21 +414,48 @@ describe('goal readings — the member\'s own', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Append-only (§34)
+// Edit and delete (#2181, reversing §34)
 // ---------------------------------------------------------------------------
 
-describe('goal readings — append-only', () => {
-  it('offers no edit and no delete on either surface', async () => {
-    const assignment = await assign({ member_id: await createMember(gymId, `Readings Immutable ${RUN}`), initial_reading: 80 });
-    const { rows } = await db.query<{ id: number }>(
-      'SELECT id FROM member_personal_goal_readings WHERE member_personal_goal_id = ?',
-      [assignment.id],
+describe('goal readings — edit and delete (#2181)', () => {
+  async function readingIds(assignmentId: number) {
+    const { rows } = await db.query<{ id: number; is_initial: number; value: string }>(
+      'SELECT id, is_initial, value FROM member_personal_goal_readings WHERE member_personal_goal_id = ? ORDER BY recorded_at ASC, id ASC',
+      [assignmentId],
     );
-    const readingId = rows[0].id;
+    return rows;
+  }
 
-    expect((await staff('put', `${STAFF}/${assignment.id}/readings/${readingId}`).send({ value: 70 })).status).toBe(404);
-    expect((await staff('delete', `${STAFF}/${assignment.id}/readings/${readingId}`)).status).toBe(404);
-    expect((await me('delete', `${ME}/${assignment.id}/readings/${readingId}`)).status).toBe(404);
+  it('edits the value only, on both surfaces', async () => {
+    const assignment = await assign({ member_id: await createMember(gymId, `Readings Edit ${RUN}`), initial_reading: 80 });
+    const [first] = await readingIds(assignment.id);
+    const res = await staff('put', `${STAFF}/${assignment.id}/readings/${first.id}`).send({ value: 70, recorded_at: '2001-01-01' });
+    expect(res.status).toBe(200);
+    const [after] = await readingIds(assignment.id);
+    expect(Number(after.value)).toBe(70);
+    expect((await staff('put', `${STAFF}/${assignment.id}/readings/${first.id}`).send({ value: 'x' })).status).toBe(400);
+    expect((await staff('put', `${STAFF}/${assignment.id}/readings/999999999`).send({ value: 70 })).status).toBe(404);
+  });
+
+  it('hard-deletes a reading; deleting the initial one promotes the oldest remaining', async () => {
+    const assignment = await assign({ member_id: await createMember(gymId, `Readings Delete ${RUN}`), initial_reading: 80 });
+    await addReading(assignment.id, { value: 75 });
+    const before = await readingIds(assignment.id);
+    expect(before).toHaveLength(2);
+    expect((await staff('delete', `${STAFF}/${assignment.id}/readings/${before[0].id}`)).status).toBe(200);
+    const after = await readingIds(assignment.id);
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe(before[1].id);
+    expect(Number(after[0].is_initial)).toBe(1);
+    expect((await staff('delete', `${STAFF}/${assignment.id}/readings/${before[0].id}`)).status).toBe(404);
+  });
+
+  it('keeps a reading of another assignment out of reach', async () => {
+    const a = await assign({ member_id: await createMember(gymId, `Readings A ${RUN}`), initial_reading: 80 });
+    const b = await assign({ member_id: await createMember(gymId, `Readings B ${RUN}`), initial_reading: 60 });
+    const [rb] = await readingIds(b.id);
+    expect((await staff('delete', `${STAFF}/${a.id}/readings/${rb.id}`)).status).toBe(404);
+    expect(await readingIds(b.id)).toHaveLength(1);
   });
 
   it('keeps a removed assignment\'s readings, which a soft delete never touches', async () => {

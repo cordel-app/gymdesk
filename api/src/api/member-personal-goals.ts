@@ -30,6 +30,8 @@ import {
 } from '../domain/goalReadings';
 import {
   insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
+  updateGoalReadingValue,
+  deleteGoalReading,
 } from './goal-readings';
 
 /**
@@ -575,6 +577,41 @@ memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req,
       next: { reading_id: readingId, value: value.value, recorded_at: recordedAt.value ?? null },
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
+  } catch (err) { next(err); }
+});
+
+/** #2181 — edit a reading's value (not its date) / hard-delete a reading. */
+memberPersonalGoalsRouter.put('/:id/readings/:readingId', requireWrite, async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  try {
+    const assignment = await requireAssignment(req.params.id, gymId, res);
+    if (!assignment) return;
+    const ok = await updateGoalReadingValue(assignment.id, Number(req.params.readingId), gymId, value.value);
+    if (!ok) return res.status(404).json({ error: 'Reading not found' });
+    recordAudit(req, {
+      action: 'edit_reading', entityType: 'member_personal_goal', entityId: assignment.id,
+      next: { reading_id: Number(req.params.readingId), value: value.value },
+    });
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
+  } catch (err) { next(err); }
+});
+
+memberPersonalGoalsRouter.delete('/:id/readings/:readingId', requireWrite, async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const assignment = await requireAssignment(req.params.id, gymId, res);
+    if (!assignment) return;
+    const removed = await deleteGoalReading(assignment.id, Number(req.params.readingId), gymId);
+    if (!removed) return res.status(404).json({ error: 'Reading not found' });
+    recordAudit(req, {
+      action: 'delete_reading', entityType: 'member_personal_goal', entityId: assignment.id,
+      previous: { reading_id: Number(req.params.readingId), value: removed.value, was_initial: removed.was_initial },
+    });
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 

@@ -326,6 +326,11 @@ export function AssignedPersonalGoalsSection({
           unit={row.target_unit}
           locale={locale}
           label={label}
+          assignmentId={row.id}
+          goalName={nameOfGoal(row)}
+          canWrite={canWrite}
+          readOnlyTitle={readOnlyTitle}
+          onChanged={() => readingSaved(row.id)}
         />
       </div>
     );

@@ -23,6 +23,8 @@ import {
 } from '../domain/goalReadings';
 import {
   insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
+  updateGoalReadingValue,
+  deleteGoalReading,
 } from './goal-readings';
 
 /**
@@ -477,6 +479,35 @@ mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
       actor: readingActor(ctx),
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
+  } catch (err) { next(err); }
+});
+
+/** #2181 — the member's own reading edit (value only) and hard delete. */
+mePersonalGoalsRouter.put('/:id/readings/:readingId', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const assignment = await requireOwn(req.params.id, gymId, memberId, res);
+    if (!assignment) return;
+    const ok = await updateGoalReadingValue(assignment.id, Number(req.params.readingId), gymId, value.value);
+    if (!ok) return res.status(404).json({ error: 'Reading not found' });
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
+  } catch (err) { next(err); }
+});
+
+mePersonalGoalsRouter.delete('/:id/readings/:readingId', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const assignment = await requireOwn(req.params.id, gymId, memberId, res);
+    if (!assignment) return;
+    const removed = await deleteGoalReading(assignment.id, Number(req.params.readingId), gymId);
+    if (!removed) return res.status(404).json({ error: 'Reading not found' });
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 

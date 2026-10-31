@@ -42,9 +42,9 @@ describe('#1826 a goal card has its own Add reading action and no menu or add bu
     expect(pageSrc).toContain("openReading(goal, 'reading')");
   });
 
-  /** The only overlay left is the Add reading dialog. */
-  it('keeps exactly one dialog, the reading one', () => {
-    expect(pageSrc.match(/<MemberDialog/g) ?? []).toHaveLength(1);
+  /** The overlays left are the reading dialog and, since #2181, the reading-delete confirmation. */
+  it('keeps exactly two dialogs, the reading one and the delete confirmation', () => {
+    expect(pageSrc.match(/<MemberDialog/g) ?? []).toHaveLength(2);
     expect(pageSrc).toContain('labelledBy="goal-reading-title"');
   });
 

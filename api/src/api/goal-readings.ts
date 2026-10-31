@@ -224,3 +224,61 @@ export async function insertGoalReading(
   );
   return insertId;
 }
+
+/**
+ * #2181 — edits one reading's **value** (never its date or its initial flag).
+ * Scoped to the assignment and the gym, so a reading id from another
+ * assignment is simply not found. Returns false when nothing matched.
+ */
+export async function updateGoalReadingValue(
+  assignmentId: number,
+  readingId: number,
+  gymId: string,
+  value: number,
+): Promise<boolean> {
+  const res = await db.query(
+    `UPDATE ${TABLE} SET value = ?
+     WHERE id = ? AND member_personal_goal_id = ? AND gym_id = ?`,
+    [value, readingId, assignmentId, gymId],
+  );
+  return res.rowCount > 0;
+}
+
+/**
+ * #2181 — hard-deletes one reading. Deleting the initial reading must not
+ * leave the goal without a baseline: when no flagged reading remains, the
+ * oldest remaining one becomes the initial reading (same transaction).
+ * Returns the deleted row's summary, or null when nothing matched.
+ */
+export async function deleteGoalReading(
+  assignmentId: number,
+  readingId: number,
+  gymId: string,
+): Promise<{ value: number | null; was_initial: boolean } | null> {
+  return db.transaction(async (tx) => {
+    const { rows } = await tx.query<StoredReading>(
+      `SELECT ${COLUMNS} FROM ${TABLE} r
+       WHERE r.id = ? AND r.member_personal_goal_id = ? AND r.gym_id = ? FOR UPDATE`,
+      [readingId, assignmentId, gymId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const wasInitial = row.is_initial === 1 || row.is_initial === true || row.is_initial === '1';
+    await tx.query(`DELETE FROM ${TABLE} WHERE id = ? AND gym_id = ?`, [readingId, gymId]);
+    if (wasInitial) {
+      const { rows: flagged } = await tx.query<{ id: number }>(
+        `SELECT id FROM ${TABLE} WHERE member_personal_goal_id = ? AND gym_id = ? AND is_initial = 1 LIMIT 1`,
+        [assignmentId, gymId],
+      );
+      if (flagged.length === 0) {
+        await tx.query(
+          `UPDATE ${TABLE} SET is_initial = 1
+           WHERE member_personal_goal_id = ? AND gym_id = ?
+           ORDER BY recorded_at ASC, id ASC LIMIT 1`,
+          [assignmentId, gymId],
+        );
+      }
+    }
+    return { value: toNumberOrNull(row.value), was_initial: wasInitial };
+  });
+}
