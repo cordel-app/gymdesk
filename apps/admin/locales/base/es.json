@@ -4845,7 +4845,18 @@
     "no_template": "Sin plantilla base de plan de nutrición",
     "loading": "Cargando…",
     "empty": "Ningún plan de nutrición está asignado actualmente a miembros activos.",
-    "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
+    "error_generic": "Algo ha salido mal. Inténtalo de nuevo.",
+    "personal_goals": "Objetivos personales",
+    "nutrition_plans_by_template": "Planes nutricionales por plantilla",
+    "metric_members_with_plans": "Miembros con planes nutricionales activos",
+    "metric_active_assignments": "Asignaciones de planes nutricionales activas",
+    "metric_plans_in_use": "Planes nutricionales distintos en uso",
+    "metric_members_using_goals": "Miembros que usan objetivos personales",
+    "metric_most_popular_goal": "Objetivo personal más popular",
+    "metric_members_count": "{count, plural, one {# miembro} other {# miembros}}",
+    "metric_no_goals": "Ningún objetivo personal en uso",
+    "metric_goals_in_use": "Objetivos personales en uso",
+    "metric_avg_goals": "Media de objetivos por miembro"
   },
   "professional_services": {
     "delete_blocked_title": "Este Servicio Profesional no se puede eliminar porque todavía está en uso.",

@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2172 (Nutrition & Goals Dashboard: the Nutrition Plan cards no longer require the member's Membership enrollment to be Active (#809's condition made plans held by members with no active Membership read as unassigned) and use the date-aware current-plan rule of #1957; new `GET /nutrition/dashboard/summary` with plan metrics (members, assignments, plans in use) and Personal Goals usage (members, most popular goal, goals in use, average per member), grouping a gym copy with its System template). Tests: `nutrition-dashboard.test.ts`, `nutrition-dashboard-summary.test.ts`.)
 - **Done**: #2175 (Members → Nutrition Plan → Edit now opens Assigned Nutrition Plans with `?open=<plan id>`; the page expands that plan and opens it in Edit mode once, through the existing `beginEdit()`, so an active plan still edits a Draft copy. No API or migration change)
 
 - **Done**: #2173 (Training Dashboard replaces its placeholder: `GET /training/dashboard/summary` aggregates in SQL the adoption % of active members with an active Assigned Training Plan, members with active plans, active assignments, distinct plans in use, average distinct exercises per plan and the Top 5 exercises with thumbnails and per-plan percentages; admin page with a circular adoption indicator and Theme-token progress bars; no migration)

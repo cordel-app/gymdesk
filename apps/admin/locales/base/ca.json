@@ -4872,7 +4872,18 @@
     "no_template": "Sense plantilla base de pla de nutrició",
     "loading": "Carregant…",
     "empty": "Cap pla de nutrició està assignat actualment a membres actius.",
-    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar.",
+    "personal_goals": "Objectius personals",
+    "nutrition_plans_by_template": "Plans nutricionals per plantilla",
+    "metric_members_with_plans": "Membres amb plans nutricionals actius",
+    "metric_active_assignments": "Assignacions de plans nutricionals actives",
+    "metric_plans_in_use": "Plans nutricionals diferents en ús",
+    "metric_members_using_goals": "Membres que fan servir objectius personals",
+    "metric_most_popular_goal": "Objectiu personal més popular",
+    "metric_members_count": "{count, plural, one {# membre} other {# membres}}",
+    "metric_no_goals": "Cap objectiu personal en ús",
+    "metric_goals_in_use": "Objectius personals en ús",
+    "metric_avg_goals": "Mitjana d'objectius per membre"
   },
   "professional_services": {
     "delete_blocked_title": "Aquest Servei Professional no es pot eliminar perquè encara està en ús.",

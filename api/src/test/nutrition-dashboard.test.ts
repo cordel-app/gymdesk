@@ -428,18 +428,16 @@ describe('GET /nutrition/dashboard/nutrition-plans — counting active members',
     expect(list[0].active_members).toBe(1);
   });
 
-  // "Active member" is the Members page's `enrollment_status = 'active'`, so a
-  // card's count and a filter on that page have to agree.
-  it('counts only members whose enrollment is active', async () => {
+  // #2172: the card counts members who currently hold a plan; the member's
+  // Membership enrollment is not a condition (#809 required it, so a plan held
+  // by a member with no Active Membership Plan was reported as unassigned).
+  it('counts a member holding a plan whatever their membership enrollment is', async () => {
     const gym = await createTestGym('ND Counting Gym 2');
     await createTestMembership(gym, 'admin');
     const templateId = await createTemplate(gym, 'ND Enrollment Template');
 
-    const active = await createMember(gym, 'ND Enrolled');
-    await enroll(gym, active, 'active');
-    await assignNutritionPlan(gym, active, templateId);
-
-    for (const status of ['paused', 'cancelled', 'expired'] as const) {
+    await assignNutritionPlan(gym, await createMember(gym, 'ND Never Enrolled'), templateId);
+    for (const status of ['active', 'paused', 'cancelled', 'expired'] as const) {
       const memberId = await createMember(gym, `ND ${status}`);
       await enroll(gym, memberId, status);
       await assignNutritionPlan(gym, memberId, templateId);
@@ -447,44 +445,18 @@ describe('GET /nutrition/dashboard/nutrition-plans — counting active members',
 
     const list = await cards(gym);
     expect(list).toHaveLength(1);
-    expect(list[0].active_members).toBe(1);
+    expect(list[0].active_members).toBe(5);
   });
 
-  // No `user_memberships` row means no enrollment status at all — the subquery
-  // is NULL, which `= 'active'` is not.
-  it('does not count a member with no membership row at all', async () => {
+  it('does not count a plan that starts in the future or already ended', async () => {
     const gym = await createTestGym('ND Counting Gym 3');
     await createTestMembership(gym, 'admin');
-    const templateId = await createTemplate(gym, 'ND Never Enrolled Template');
-    await assignNutritionPlan(gym, await createMember(gym, 'ND Never Enrolled'), templateId);
-
-    expect(await cards(gym)).toHaveLength(0);
-  });
-
-  // The *latest* row decides, not "has any active row": an older `active` row
-  // plus a newer `cancelled` one is a member who has left.
-  it("takes the member's latest membership row, not any active one", async () => {
-    const gym = await createTestGym('ND Counting Gym 4');
-    await createTestMembership(gym, 'admin');
-    const templateId = await createTemplate(gym, 'ND Latest Row Template');
-    const memberId = await createMember(gym, 'ND Left The Gym');
-    await enroll(gym, memberId, 'active', '2024-01-01 00:00:00');
-    await enroll(gym, memberId, 'cancelled', '2025-01-01 00:00:00');
-    await assignNutritionPlan(gym, memberId, templateId);
-
-    expect(await cards(gym)).toHaveLength(0);
-  });
-
-  // ...and the mirror image, so the case above cannot pass because *no* row is
-  // ever read: the same two rows in the other order do count.
-  it('counts a member whose latest membership row is the active one', async () => {
-    const gym = await createTestGym('ND Counting Gym 5');
-    await createTestMembership(gym, 'admin');
-    const templateId = await createTemplate(gym, 'ND Rejoined Template');
-    const memberId = await createMember(gym, 'ND Rejoined');
-    await enroll(gym, memberId, 'cancelled', '2024-01-01 00:00:00');
-    await enroll(gym, memberId, 'active', '2025-01-01 00:00:00');
-    await assignNutritionPlan(gym, memberId, templateId);
+    const templateId = await createTemplate(gym, 'ND Dates Template');
+    const future = await assignNutritionPlan(gym, await createMember(gym, 'ND Future'), templateId);
+    await db.query('UPDATE member_nutrition_plans SET start_date = DATE_ADD(UTC_DATE(), INTERVAL 5 DAY) WHERE id = ?', [future]);
+    const ended = await assignNutritionPlan(gym, await createMember(gym, 'ND Ended'), templateId);
+    await db.query('UPDATE member_nutrition_plans SET end_date = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE id = ?', [ended]);
+    await assignNutritionPlan(gym, await createMember(gym, 'ND Current'), templateId);
 
     const list = await cards(gym);
     expect(list).toHaveLength(1);
