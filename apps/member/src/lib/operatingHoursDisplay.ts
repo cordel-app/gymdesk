@@ -110,3 +110,17 @@ export function holidayBackgroundEvents(holidays: HolidayDTO[], rangeStart: Date
   }
   return events;
 }
+
+/** #2170: weekdays (0=Sun..6=Sat) with no opening shift. Empty when no weekly schedule is configured at all, since an unconfigured gym is not "closed". */
+export function closedWeekdays(weekly: WeeklyShiftDTO[]): Set<number> {
+  const closed = new Set<number>();
+  if (weekly.length === 0) return closed;
+  const open = new Set(weekly.map((s) => s.weekday));
+  for (let d = 0; d < 7; d++) if (!open.has(d)) closed.add(d);
+  return closed;
+}
+
+/** FullCalendar `dayHeaderClassNames` / `dayCellClassNames` callback body: marks a closed weekday. */
+export function closedDayClassNames(closed: Set<number>, date: Date): string[] {
+  return closed.has(date.getDay()) ? ['gd-day-closed'] : [];
+}

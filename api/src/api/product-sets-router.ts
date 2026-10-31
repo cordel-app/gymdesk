@@ -10,7 +10,7 @@ import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
 import { productSetDraftRouter } from './product-set-draft-router';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
-import { activePlanConflictBody, parseConflictResolution } from '../domain/oneActivePlan';
+import { activePlanConflictBody, addPlanUnsupportedBody, parseConflictResolution } from '../domain/oneActivePlan';
 import {
   Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
@@ -161,6 +161,13 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
   // #2125: `on_conflict: 'add'` is the staff answer "keep what they have and add this
   // beside it", so the check stands aside for it; anything else still answers the 409
   // the Add-or-Replace modal is built from.
+  if (planId !== null && parseConflictResolution(req.body) === 'add') {
+    // #2125 stage 4: this route versions the owner's own chain, so 'add' beside its plan is refused.
+    const { rows: ownPlan } = await db.query(
+      `SELECT 1 FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'
+          AND membership_plan_id IS NOT NULL LIMIT 1`, [gymId, memberId]);
+    if (ownPlan.length > 0) return res.status(409).json(addPlanUnsupportedBody());
+  }
   if (planId !== null && parseConflictResolution(req.body) !== 'add') {
     const { rows: own } = await db.query<{ user_membership_id: number | null }>(
       `SELECT user_membership_id FROM product_sets
