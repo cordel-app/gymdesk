@@ -16,6 +16,7 @@ import {
   StorageOperationError,
 } from '../infra/storage';
 import { themeLogoUrl } from '../domain/themeLogo';
+import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
 import { seedDefaultGymProducts } from './gym-default-products';
 import { seedDefaultGymPersonalGoals } from './gym-default-personal-goals';
 import { logger } from '../lib/logger';
@@ -31,6 +32,7 @@ const THEME_SELECT = `
   , t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
     t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
     t.logo_object_key AS theme_logo_object_key,
+  t.logo_symbol_object_key AS theme_logo_symbol_object_key, t.modified_at AS theme_modified_at,
     t.logo_contains_gym_name AS theme_logo_contains_gym_name,
     t.tokens AS theme_tokens
 `;
@@ -62,7 +64,7 @@ function stripGymSecrets<T extends Record<string, any>>(row: T): Omit<T, 'websit
 function attachTheme(row: any) {
   const {
     theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at,
-    theme_logo_object_key, theme_logo_contains_gym_name, theme_tokens,
+    theme_logo_object_key, theme_logo_symbol_object_key, theme_modified_at, theme_logo_contains_gym_name, theme_tokens,
     payment_provider_id_val, payment_provider_name, payment_provider_key,
     payment_provider_status, payment_provider_is_default,
     ...rest
@@ -88,6 +90,7 @@ function attachTheme(row: any) {
     // #713: set when the logo lives in the gym's R2 folder; null for a blob-backed
     // one, which `GET /themes/:id/logo` still serves.
     logo_url: themeLogoUrl({ logo_object_key: theme_logo_object_key, logo_updated_at: theme_logo_updated_at }),
+    logo_symbol_url: themeLogoSymbolUrl({ logo_symbol_object_key: theme_logo_symbol_object_key, modified_at: theme_modified_at }),
     logo_contains_gym_name: !!theme_logo_contains_gym_name,
     tokens: typeof theme_tokens === 'string' ? JSON.parse(theme_tokens) : (theme_tokens ?? null),
   } : null;

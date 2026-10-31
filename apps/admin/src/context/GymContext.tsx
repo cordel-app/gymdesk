@@ -15,6 +15,8 @@ export interface GymTheme {
   logo_updated_at: string | null;
   /** #713: R2 URL of the logo when it is stored in the gym's Cloudflare folder. */
   logo_url: string | null;
+  /** #2157: the symbol-only logo, used as the favicon. */
+  logo_symbol_url?: string | null;
   logo_contains_gym_name: boolean;
   tokens: Record<string, any> | null;
 }

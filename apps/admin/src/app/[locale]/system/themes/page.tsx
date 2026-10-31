@@ -34,6 +34,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
+import { ThemeLogoSymbolField } from '@/components/ThemeLogoSymbolField';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
@@ -58,6 +59,8 @@ interface Theme {
   type: 'system' | 'custom';
   has_logo: boolean;
   logo_updated_at: string | null;
+  /** #2157: the symbol-only logo, used as the favicon. */
+  logo_symbol_url: string | null;
   logo_contains_gym_name: boolean;
   /** #732: one nullable URL per Members App background slot; six, always. */
   members_images: MembersImages;
@@ -212,6 +215,16 @@ export default function ThemesPage() {
   }, [gymLoading, isSuperadmin]);
 
   useEffect(() => { if (!gymLoading && isSuperadmin) load(); }, [statusFilter]);
+
+  // #2157: the logo symbol saves on its own; refresh the list quietly so the
+  // preview follows without collapsing the card or touching the edit draft.
+  async function refreshThemes() {
+    try {
+      setThemes(await apiFetch<Theme[]>(`/platform/themes${statusFilter ? `?status=${statusFilter}` : ''}`));
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -710,6 +723,15 @@ export default function ThemesPage() {
               // the logo controls appear once it has been created (unchanged).
               showLogo={!isNew}
               logoError={logoAssetFailed(assetFailures)}
+              logoSymbol={!isNew && (
+                <ThemeLogoSymbolField
+                  basePath="/platform/themes"
+                  themeId={id}
+                  url={themes.find((th) => th.id === id)?.logo_symbol_url ?? null}
+                  onChanged={refreshThemes}
+                  t={t}
+                />
+              )}
               autoFocusName={isNew}
             >
               {/* Status is platform-only: on the Custom Themes screen a theme's
@@ -795,6 +817,7 @@ export default function ThemesPage() {
     type: 'system',
     has_logo: false,
     logo_updated_at: null,
+    logo_symbol_url: null,
     logo_contains_gym_name: false,
     members_images: emptyMembersImages(),
     tokens: DEFAULT_TOKENS,

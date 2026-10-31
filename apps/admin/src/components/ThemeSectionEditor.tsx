@@ -91,6 +91,8 @@ interface ThemeBrandingEditorProps {
   onMotivationalSentenceChange?: (next: string) => void;
   /** Extra controls rendered under Name — the Base editor's Status select. */
   children?: React.ReactNode;
+  /** #2157: the logo-symbol (favicon) control, rendered right after the full logo. */
+  logoSymbol?: React.ReactNode;
 }
 
 /** Name / description / logo — the Branding section of both theme editors. */
@@ -109,6 +111,7 @@ export function ThemeBrandingEditor({
   motivationalSentence = '',
   onMotivationalSentenceChange,
   children,
+  logoSymbol,
 }: ThemeBrandingEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // #830: the preview `<img>` that cannot load says so instead of rendering the
@@ -217,6 +220,7 @@ export function ThemeBrandingEditor({
             />
             {t('logo_contains_gym_name')}
           </label>
+          {logoSymbol}
         </>
       )}
     </div>

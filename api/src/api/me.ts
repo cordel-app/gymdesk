@@ -46,6 +46,7 @@ import { getRequestLocale } from '../infra/locale';
 import { parseMemberPreferredLocaleInput, toMemberPreferredLocale } from '../domain/memberPreferredLocale';
 import { parseDeviceRegistration } from '../domain/deviceTokens';
 import { themeLogoUrl } from '../domain/themeLogo';
+import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
@@ -216,6 +217,7 @@ const GYM_THEME_SELECT = `
   t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
   t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
   t.logo_object_key AS theme_logo_object_key,
+  t.logo_symbol_object_key AS theme_logo_symbol_object_key, t.modified_at AS theme_modified_at,
   t.logo_contains_gym_name AS theme_logo_contains_gym_name,
   t.tokens AS theme_tokens
 `;
@@ -230,6 +232,7 @@ function mapGymRow(row: any, memberImages: Map<string, MemberImageRow[]> = new M
     // #713: set when the logo lives in the gym's R2 folder; null for a
     // blob-backed one, which `GET /themes/:id/logo` still serves.
     logo_url: themeLogoUrl({ logo_object_key: row.theme_logo_object_key, logo_updated_at: row.theme_logo_updated_at }),
+    logo_symbol_url: themeLogoSymbolUrl({ logo_symbol_object_key: row.theme_logo_symbol_object_key, modified_at: row.theme_modified_at }),
     logo_contains_gym_name: !!row.theme_logo_contains_gym_name,
     // #725: the six Members App backgrounds, resolved to URLs here so the
     // Members App consumes URLs only — it never sees a storage path, a theme
@@ -276,6 +279,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
                 t.logo_object_key AS theme_logo_object_key,
+  t.logo_symbol_object_key AS theme_logo_symbol_object_key, t.modified_at AS theme_modified_at,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m
@@ -294,6 +298,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
                 t.logo_object_key AS theme_logo_object_key,
+  t.logo_symbol_object_key AS theme_logo_symbol_object_key, t.modified_at AS theme_modified_at,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM gym_memberships gm
@@ -311,6 +316,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
                 t.logo_object_key AS theme_logo_object_key,
+  t.logo_symbol_object_key AS theme_logo_symbol_object_key, t.modified_at AS theme_modified_at,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m
