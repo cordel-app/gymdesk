@@ -14,8 +14,9 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
 import {
-  draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
+  combinedChartSeries, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
   type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
@@ -33,7 +34,26 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   const [items, setItems] = useState<ProgressSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
+  const [detailsFor, setDetailsFor] = useState<ProgressSummary | null>(null);
+  const [deletingExercise, setDeletingExercise] = useState<ProgressSummary | null>(null);
+  const [deleteError, setDeleteError] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const base = `/members/${memberId}/progress`;
+
+  async function deleteExercise(item: ProgressSummary) {
+    setDeleteBusy(true);
+    try {
+      await apiFetch(`${base}/exercises/${item.exercise_id}`, { method: 'DELETE' });
+      setDeletingExercise(null);
+      setDeleteError(false);
+      if (open === item.exercise_id) setOpen(null);
+      load();
+    } catch {
+      setDeleteError(true);
+      setOpen(item.exercise_id);
+      setDeletingExercise(null);
+    } finally { setDeleteBusy(false); }
+  }
 
   const load = useCallback(() => {
     apiFetch<ProgressSummary[]>(`${base}/exercises`)
@@ -48,16 +68,28 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   if (items.length === 0) return <p style={cardMutedTextStyle}>{t('members.progress_empty')}</p>;
 
   return (
+    <>
+    <ProgressExerciseDetailsModal exercise={detailsFor} onClose={() => setDetailsFor(null)} />
+    <ConfirmDialog
+      open={deletingExercise !== null}
+      message={t('members.progress_delete_exercise_confirm')}
+      confirmLabel={t('members.progress_delete_exercise')}
+      cancelLabel={t('members.progress_cancel')}
+      busy={deleteBusy}
+      onConfirm={() => deletingExercise && deleteExercise(deletingExercise)}
+      onCancel={() => setDeletingExercise(null)}
+    />
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {items.map((item) => {
         const isOpen = open === item.exercise_id;
         return (
           <div key={item.exercise_id} style={innerCardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               type="button"
               aria-expanded={isOpen}
               onClick={() => setOpen(isOpen ? null : item.exercise_id)}
-              style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', width: '100%' }}
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', flex: 1, minWidth: 0 }}
             >
               <ExerciseAvatar src={item.image_thumbnail_url ?? item.image_url ?? null} name={item.exercise_name} />
               <strong style={{ flex: '1 1 160px' }}>{item.exercise_name}</strong>
@@ -66,6 +98,16 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
                 <Stat key={m.slug} label={t(metricLabelKey(m.slug))} value={formatValue(m.value, t(resultUnitKey(m.slug)!), gym)} />
               ))}
             </button>
+            <ContextMenu
+              ariaLabel={t('members.progress_exercise_actions')}
+              items={[
+                { label: t('members.progress_details'), onClick: () => setDetailsFor(item) },
+                { label: t('members.progress_delete_exercise'), danger: true, disabled: !canWrite,
+                  title: canWrite ? undefined : t('common.read_only_hint'), onClick: () => { setDeleteError(false); setDeletingExercise(item); } },
+              ]}
+            />
+            </div>
+            {deleteError && deletingExercise === null && open === item.exercise_id && <p style={formErrorStyle}>{t('members.progress_delete_exercise_error')}</p>}
             {isOpen && (
               <ExerciseDetail
                 base={base}
@@ -78,6 +120,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
         );
       })}
     </div>
+    </>
   );
 }
 
@@ -137,10 +180,12 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, item.exercise_id]);
 
-  const series = useMemo(() => (detail?.metric_days ?? []).map((m) => ({
-    slug: m.slug,
-    points: progressChartPoints(m.days, t(resultUnitKey(m.slug)!), gym),
-  })), [detail, gym, t]);
+  const chartSeries = useMemo(() => combinedChartSeries(
+    detail?.metric_days ?? [],
+    (slug) => t(metricLabelKey(slug)),
+    (slug) => t(resultUnitKey(slug)!),
+    gym,
+  ), [detail, gym, t]);
   if (!detail) return null;
 
   async function save(r: ProgressReading) {
@@ -234,18 +279,15 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   }
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {series.filter((s) => s.points.some((p) => p.y !== null)).map((s) => (
-        <div key={s.slug}>
-          <span style={cardSectionLabelStyle}>{t(metricLabelKey(s.slug))}</span>
-          <LineChart
-            points={s.points}
-            height={200}
-            selectedX={hoverX ?? pinnedX}
-            ariaLabel={t('members.progress_chart_aria', { name: `${item.exercise_name} (${t(metricLabelKey(s.slug))})` })}
-            axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
-          />
-        </div>
-      ))}
+      {chartSeries.length > 0 && (
+        <LineChart
+          series={chartSeries}
+          height={220}
+          selectedX={hoverX ?? pinnedX}
+          ariaLabel={t('members.progress_chart_aria', { name: item.exercise_name })}
+          axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
+        />
+      )}
       <div style={innerCardStyle}>
         <span style={cardSectionLabelStyle}>{t('members.progress_readings')}</span>
         {error && <p style={formErrorStyle}>{error}</p>}
