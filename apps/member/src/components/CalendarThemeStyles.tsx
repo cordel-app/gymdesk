@@ -530,6 +530,36 @@ export const CALENDAR_THEME_CSS = `
   margin: 4px;
   padding: 2px 8px;
 }
+/* Detached header and time axis, closed days (#2170). Visual only, Theme
+   tokens throughout. The weekday header and the hour column are their own
+   rounded bands with a gap to the grid; a weekday with no opening shift gets a
+   hatched closed-day treatment in the header and a closed fill in the grid,
+   distinct from today's solid capsule. Hours closed within an open day stay the
+   non-business overlay (--fc-non-business-color) the schedule already drives. */
+.gd-calendar .fc .fc-timegrid-axis,
+.gd-calendar .fc .fc-timegrid-slot-label {
+  background-color: var(--gd-calendar-time-axis-bg, #ffffff);
+  border-right-color: transparent;
+}
+.gd-calendar .fc .fc-timegrid-slots .fc-timegrid-slot-label {
+  border-radius: 8px 0 0 8px;
+  border-right: 6px solid var(--gd-calendar-bg, #ffffff);
+}
+.gd-calendar .fc .fc-col-header-cell.gd-day-closed {
+  background-color: var(--gd-calendar-disabled-slot-bg, #f7f7f7);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--gd-calendar-muted-day-text, #6b7280) 18%, transparent) 6px 7px
+  );
+}
+.gd-calendar .fc .fc-col-header-cell.gd-day-closed .fc-col-header-cell-cushion {
+  color: var(--gd-calendar-muted-day-text, #6b7280);
+}
+.gd-calendar .fc .fc-daygrid-day.gd-day-closed:not(.fc-day-today),
+.gd-calendar .fc .fc-timegrid-col.gd-day-closed:not(.fc-day-today) {
+  background-color: var(--gd-calendar-disabled-slot-bg, #f7f7f7);
+}
 `;
 
 export function CalendarThemeStyles() {
