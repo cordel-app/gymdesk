@@ -2683,6 +2683,7 @@
     "open": "Veure detalls de {name}"
   },
   "exercise_media": {
+    "close_video": "Tanca",
     "image": "Imatge de l'exercici",
     "image_alt": "Imatge de {name}",
     "play_video": "Reproduir el vídeo de l'exercici",
