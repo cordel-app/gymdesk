@@ -480,7 +480,8 @@ function PlanCard({
     { label: t('nutrition_plans.details'), onClick: onDetails },
     { label: t('nutrition_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
     ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
-    { label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
+    // #2201: a completed plan is read-only — no Edit, no Delete.
+    ...(plan.status !== 'completed' ? [{ label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle }] : []),
   ];
 
   return (
