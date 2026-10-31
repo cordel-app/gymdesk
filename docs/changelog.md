@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## October 2026
+- **Done**: #2158 (Six dark Base Themes — Midnight, Obsidian, Forest, Ember, Solaris and Crimson — seeded by migration 351 as `gym_id IS NULL` rows with a complete, independent colour palette each (every `defaultTokens()` colour key; contrast checked in `dark-base-themes.unit.test.ts`), active and listed in Base Theme management. Idempotent by name, existing Base and Gym Themes untouched, no schema change. No logo or symbol is seeded, per the issue's follow-up: the themes use the default favicon until assets are uploaded; `membersApp` is left to inherit so both apps follow the palette)
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
 
 
