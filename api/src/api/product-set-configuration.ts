@@ -257,7 +257,7 @@ export async function loadProductSetSimulationAssignment(
             sch.cadence_interval, sch.cadence_unit
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+       LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id
        LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
       WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId],

@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #2125 stage 5 (the read-only joins of a version's plan configuration now read `plan_snapshots` instead of `product_set_plan_snapshots`: `ASSIGNMENT_CONFIG_JOIN`, the projection, `loadProductSetConfiguration`, `GET /me/membership`'s pending plan and the Promotion re-apply checks; write paths and their in-transaction reads stay on the legacy table until the writes move; test fixtures that write the legacy row re-derive the snapshot with `syncPlanSnapshot()`)
 - **Done**: #2171 (Admin Home welcome header shows a random image of one of the gym's own exercises behind a Theme-tinted dark gradient; `GET /dashboard/home` reports `welcome_image_url`/`welcome_exercise_id`, the last pick is excluded on reload, no image falls back to the plain header)
 - **Done**: #2174 (Publishing an edited Assigned Training Plan version now starts the new version today and ends the previous one yesterday, instead of tomorrow/today: `previousDay()` in `domain/trainingPlanVersioning.ts`, `POST /members/:id/training-plans/:planId/publish-version`; the confirmation copy follows. Nutrition plan versioning (#1970) is unchanged)
 

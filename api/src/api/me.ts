@@ -2085,7 +2085,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
                 COALESCE(pss.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit
            FROM product_sets ps
            LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-           LEFT JOIN product_set_plan_snapshots pss ON pss.product_set_id = ps.id
+           LEFT JOIN plan_snapshots pss ON pss.product_set_id = ps.id
            LEFT JOIN billing_policies bp ON bp.membership_plan_id = ps.membership_plan_id AND bp.gym_id = ps.gym_id
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
           ORDER BY ps.id DESC LIMIT 1`,

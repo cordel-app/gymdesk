@@ -40,7 +40,7 @@ export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
         SELECT p9.id FROM product_sets p9
          WHERE p9.gym_id = ${um}.gym_id AND p9.user_membership_id = ${um}.id
          ORDER BY p9.version DESC, p9.id DESC LIMIT 1)
-  LEFT JOIN product_set_plan_snapshots cfg ON cfg.product_set_id = cfg_ps.id`;
+  LEFT JOIN plan_snapshots cfg ON cfg.product_set_id = cfg_ps.id`;
 
 /** The version's value when the assignment has one, its own cached value otherwise. */
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
