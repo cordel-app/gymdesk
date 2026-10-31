@@ -100,6 +100,7 @@ import { memberProgressRouter } from './api/member-progress';
 import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
+import { trainingDashboardRouter } from './api/training-dashboard';
 import { homeDashboardRouter } from './api/home-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
@@ -406,6 +407,8 @@ app.use('/member-personal-goals', requireAuth(), tenantContext, requireFeatureAc
 // #1367: Home dashboard — any staff role; the router omits sections the role's modules do not allow.
 app.use('/dashboard', requireAuth(), tenantContext, homeDashboardRouter);
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
+// #2173: Training dashboard, read-only analytics over Assigned Training Plans.
+app.use('/training/dashboard', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), trainingDashboardRouter);
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
 app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.plans'), membershipPlansRouter);

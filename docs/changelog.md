@@ -8,6 +8,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 ## October 2026
 - **Done**: #2175 (Members → Nutrition Plan → Edit now opens Assigned Nutrition Plans with `?open=<plan id>`; the page expands that plan and opens it in Edit mode once, through the existing `beginEdit()`, so an active plan still edits a Draft copy. No API or migration change)
 
+- **Done**: #2173 (Training Dashboard replaces its placeholder: `GET /training/dashboard/summary` aggregates in SQL the adoption % of active members with an active Assigned Training Plan, members with active plans, active assignments, distinct plans in use, average distinct exercises per plan and the Top 5 exercises with thumbnails and per-plan percentages; admin page with a circular adoption indicator and Theme-token progress bars; no migration)
 - **Done**: #2178 (Members → Progress: Readings are compact aligned Date/Set/Reps/Weight rows, one date per day group; hovering or clicking a date highlights that day's chart point(s) via the existing `selectedX`. Presentation only — no API, data or calculation change.)
 
 - **Done**: #2176 (Members → Training Plan: each assigned plan expands read-only, rendering the Assigned Training Plans tree through the shared `PlanWorkoutTree` with `canWrite` false; no API, migration or locale change)
