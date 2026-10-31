@@ -15,7 +15,7 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import {
-  draftFromReading, formatValue, progressChartPoints, readingPayload, resultUnitKey,
+  draftFromReading, formatValue, groupReadingsByDate, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
   type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
@@ -118,6 +118,9 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   const [deleting, setDeleting] = useState<ProgressReading | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // #2178 — a hovered day wins over the day a click pinned; a second click unpins it.
+  const [hoverX, setHoverX] = useState<number | null>(null);
+  const [pinnedX, setPinnedX] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -160,6 +163,74 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   }
 
   const input = { ...formControlStyle, width: 90 };
+  const cell: React.CSSProperties = { padding: '2px 12px 2px 0', fontSize: 13 };
+  const rowGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: '36px 56px 90px minmax(0, 1fr) auto', alignItems: 'center' };
+
+  function renderReading(r: ProgressReading, divider: boolean) {
+    const editing = editingId === r.id && draft;
+    const wrap: React.CSSProperties = divider ? { borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: 2 } : {};
+    const menu = (
+      <ContextMenu
+        ariaLabel={t('members.progress_reading_actions')}
+        items={[
+          { label: t('members.progress_edit'), disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
+            onClick: () => { setEditingId(r.id); setDraft(draftFromReading(r)); setError(null); } },
+          { label: t('members.progress_delete'), danger: true, disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
+            onClick: () => setDeleting(r) },
+        ]}
+      />
+    );
+    if (editing) {
+      return (
+        <div key={r.id} style={{ ...wrap, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          {draft.sets.map((s, i) => (
+            <span key={s.id} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <span>{t('members.progress_set', { n: r.sets[i].set_number })}</span>
+              <input aria-label={t('members.progress_weight')} style={input} value={s.weight} inputMode="decimal"
+                onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, weight: e.target.value } : x)) })} />
+              <input aria-label={t('members.progress_reps')} style={input} value={s.reps} inputMode="numeric"
+                onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, reps: e.target.value } : x)) })} />
+            </span>
+          ))}
+          <input aria-label={t('members.progress_duration')} style={input} value={draft.duration} inputMode="numeric"
+            onChange={(e) => setDraft({ ...draft, duration: e.target.value })} />
+          <input aria-label={t('members.progress_notes')} style={{ ...formControlStyle, flex: '1 1 160px' }} value={draft.notes}
+            onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+          <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={() => save(r)}>{t('members.progress_save')}</button>
+          <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => { setEditingId(null); setDraft(null); setError(null); }}>{t('members.progress_cancel')}</button>
+        </div>
+      );
+    }
+    const sets = [...r.sets].sort((a, b) => a.set_number - b.set_number);
+    const extra = (
+      <span style={{ ...cell, minWidth: 0 }}>
+        {r.skipped ? t('members.progress_skipped') : null}
+        {!r.skipped && r.duration_seconds !== null ? formatValue(r.duration_seconds, t('members.progress_unit_seconds'), gym) : null}
+        {!r.skipped && sets.length === 0 && r.duration_seconds === null ? '—' : null}
+        {r.notes ? <em style={{ display: 'block' }}>{r.notes}</em> : null}
+      </span>
+    );
+    const rows = r.skipped ? [] : sets;
+    return (
+      <div key={r.id} style={wrap}>
+        {rows.length === 0 ? (
+          <div style={rowGrid}>
+            <span /><span /><span />
+            {extra}
+            {menu}
+          </div>
+        ) : rows.map((s, i) => (
+          <div key={s.id} style={rowGrid}>
+            <span style={cell}>{s.set_number}</span>
+            <span style={cell}>{formatValue(s.reps, null, gym)}</span>
+            <span style={cell}>{formatValue(s.weight, t('members.progress_unit_kg'), gym)}</span>
+            {i === 0 ? extra : <span />}
+            {i === 0 ? menu : <span />}
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {points.some((p) => p.y !== null) && (
@@ -167,77 +238,42 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
           points={points}
           height={200}
           ariaLabel={t('members.progress_chart_aria', { name: item.exercise_name })}
+          selectedX={hoverX ?? pinnedX}
           axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
         />
       )}
       <div style={innerCardStyle}>
         <span style={cardSectionLabelStyle}>{t('members.progress_readings')}</span>
         {error && <p style={formErrorStyle}>{error}</p>}
-        {detail.readings.map((r) => {
-          const editing = editingId === r.id && draft;
+        <div style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
+          <span style={{ width: 70, flexShrink: 0, ...cardSectionLabelStyle }}>{t('members.progress_col_date')}</span>
+          <div style={{ ...rowGrid, flex: 1 }}>
+            {['progress_col_set', 'progress_reps', 'progress_weight'].map((k) => (
+              <span key={k} style={{ ...cardSectionLabelStyle, padding: '2px 12px 2px 0' }}>{t(`members.${k}`)}</span>
+            ))}
+            <span /><span />
+          </div>
+        </div>
+        {groupReadingsByDate(detail.readings).map((group) => {
+          const x = readingChartX(group.date);
+          const active = (hoverX ?? pinnedX) === x;
           return (
-            <div key={r.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', padding: '6px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
-              <span style={{ width: 70 }}>{formatGymDayMonth(r.logged_date, gym)}</span>
-              {editing ? (
-                <>
-                  {draft.sets.map((s, i) => (
-                    <span key={s.id} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <span>{t('members.progress_set', { n: r.sets[i].set_number })}</span>
-                      <input aria-label={t('members.progress_weight')} style={input} value={s.weight} inputMode="decimal"
-                        onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, weight: e.target.value } : x)) })} />
-                      <input aria-label={t('members.progress_reps')} style={input} value={s.reps} inputMode="numeric"
-                        onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, reps: e.target.value } : x)) })} />
-                    </span>
-                  ))}
-                  <input aria-label={t('members.progress_duration')} style={input} value={draft.duration} inputMode="numeric"
-                    onChange={(e) => setDraft({ ...draft, duration: e.target.value })} />
-                  <input aria-label={t('members.progress_notes')} style={{ ...formControlStyle, flex: '1 1 160px' }} value={draft.notes}
-                    onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
-                  <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={() => save(r)}>{t('members.progress_save')}</button>
-                  <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => { setEditingId(null); setDraft(null); setError(null); }}>{t('members.progress_cancel')}</button>
-                </>
-              ) : (
-                <>
-                  <span style={{ flex: '1 1 200px' }}>
-                    {r.skipped ? t('members.progress_skipped') : (
-                      <>
-                        {r.sets.length > 0 && (
-                          <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
-                            <thead>
-                              <tr>
-                                {['progress_col_set', 'progress_reps', 'progress_weight'].map((k) => (
-                                  <th key={k} style={{ ...cardSectionLabelStyle, textAlign: 'left', padding: '2px 12px 2px 0' }}>{t(`members.${k}`)}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {[...r.sets].sort((a, b) => a.set_number - b.set_number).map((s) => (
-                                <tr key={s.id}>
-                                  <td style={{ padding: '2px 12px 2px 0' }}>{s.set_number}</td>
-                                  <td style={{ padding: '2px 12px 2px 0' }}>{formatValue(s.reps, null, gym)}</td>
-                                  <td style={{ padding: '2px 12px 2px 0' }}>{formatValue(s.weight, t('members.progress_unit_kg'), gym)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-                        {r.duration_seconds !== null && <div>{formatValue(r.duration_seconds, t('members.progress_unit_seconds'), gym)}</div>}
-                        {r.sets.length === 0 && r.duration_seconds === null && '—'}
-                      </>
-                    )}
-                    {r.notes ? <em style={{ display: 'block' }}>{r.notes}</em> : null}
-                  </span>
-                  <ContextMenu
-                    ariaLabel={t('members.progress_reading_actions')}
-                    items={[
-                      { label: t('members.progress_edit'), disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
-                        onClick: () => { setEditingId(r.id); setDraft(draftFromReading(r)); setError(null); } },
-                      { label: t('members.progress_delete'), danger: true, disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
-                        onClick: () => setDeleting(r) },
-                    ]}
-                  />
-                </>
-              )}
+            <div key={group.date} style={{ display: 'flex', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+              <button
+                type="button"
+                aria-pressed={pinnedX === x}
+                onMouseEnter={() => setHoverX(x)}
+                onMouseLeave={() => setHoverX(null)}
+                onFocus={() => setHoverX(x)}
+                onBlur={() => setHoverX(null)}
+                onClick={() => setPinnedX(pinnedX === x ? null : x)}
+                style={{ all: 'unset', cursor: 'pointer', width: 70, flexShrink: 0, fontWeight: active ? 700 : 400, color: active ? 'var(--brand, inherit)' : 'inherit' }}
+              >
+                {formatGymDayMonth(group.date, gym)}
+              </button>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                {group.readings.map((r, ri) => renderReading(r, ri > 0))}
+              </div>
             </div>
           );
         })}
