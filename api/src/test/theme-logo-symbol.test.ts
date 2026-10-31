@@ -124,7 +124,7 @@ describe('Custom Theme logo symbol', () => {
     expect(res.status).toBe(401);
   });
 
-  it('converts to WebP, keeps alpha and aspect ratio, resizes to 512 px wide and stores logo_symbol.webp', async () => {
+  it('converts to WebP, keeps alpha, fits a 512 square with transparent padding and stores logo_symbol.webp', async () => {
     const res = await uploadGym(gymThemeId, gymId, await png(1024, 256));
     expect(res.status).toBe(200);
     const key = `gyms/${gymId}-LogoSymbolGym/themes/${gymThemeId}-LogoSymbolCustom/logo/logo_symbol.webp`;
@@ -134,9 +134,13 @@ describe('Custom Theme logo symbol', () => {
     expect(put.input.ContentType).toBe('image/webp');
     const meta = await sharp(put.input.Body).metadata();
     expect(meta.format).toBe('webp');
-    expect(meta.width).toBe(512);
-    expect(meta.height).toBe(128);
+    expect([meta.width, meta.height]).toEqual([512, 512]);
     expect(meta.hasAlpha).toBe(true);
+    // The 512x128 symbol sits centred: top padding transparent, middle band opaque-ish.
+    const raw = await sharp(put.input.Body).raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (y: number) => raw.data[(y * 512 + 256) * raw.info.channels + 3];
+    expect(alphaAt(10)).toBe(0);
+    expect(alphaAt(256)).toBeGreaterThan(100);
 
     expect(res.body.logo_symbol_url).toContain(key);
     expect(res.body.logo_symbol_object_key).toBeUndefined();
@@ -151,7 +155,7 @@ describe('Custom Theme logo symbol', () => {
     expect(res.status).toBe(200);
     const put = putCommands().find((c: any) => String(c.input.Key).endsWith('logo_symbol.webp')) as any;
     const meta = await sharp(put.input.Body).metadata();
-    expect([meta.width, meta.height]).toEqual([64, 32]);
+    expect([meta.width, meta.height]).toEqual([64, 64]);
   });
 
   it('rejects a non-image body from its decoded bytes', async () => {

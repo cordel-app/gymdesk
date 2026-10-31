@@ -18,8 +18,8 @@ export function buildThemeLogoSymbolKey(folderPrefix: string, themeId: string, t
 
 /**
  * Server-side conversion: decoded-bytes format check, EXIF orientation, WebP with
- * the alpha channel kept, proportional resize to at most 512 px wide, never
- * upscaled, never cropped.
+ * the alpha channel kept, proportional resize to fit within 512 x 512, never
+ * upscaled, never cropped, centred on a transparent square canvas (#2205).
  */
 export async function processLogoSymbol(
   input: Buffer,
@@ -32,9 +32,23 @@ export async function processLogoSymbol(
         return { rejection: 'unsupported_format' as const };
       }
       if (!meta.width || !meta.height) return { rejection: 'unreadable' as const };
-      const image = await sharp(input, { limitInputPixels: MEMBER_IMAGE_MAX_PIXELS, failOn: 'error' })
+      // #2205: fit inside the square, then centre on a transparent square canvas
+      // (a browser squashes a non-square favicon to a square).
+      const fitted = await sharp(input, { limitInputPixels: MEMBER_IMAGE_MAX_PIXELS, failOn: 'error' })
         .rotate()
-        .resize({ width: LOGO_SYMBOL_MAX_WIDTH, withoutEnlargement: true, fit: 'inside' })
+        .resize({ width: LOGO_SYMBOL_MAX_WIDTH, height: LOGO_SYMBOL_MAX_WIDTH, withoutEnlargement: true, fit: 'inside' })
+        .toBuffer({ resolveWithObject: true });
+      const side = Math.max(fitted.info.width, fitted.info.height);
+      const padX = side - fitted.info.width;
+      const padY = side - fitted.info.height;
+      const image = await sharp(fitted.data)
+        .extend({
+          top: Math.floor(padY / 2),
+          bottom: padY - Math.floor(padY / 2),
+          left: Math.floor(padX / 2),
+          right: padX - Math.floor(padX / 2),
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
         .webp({ quality: WEBP_QUALITY })
         .toBuffer();
       return { image };
