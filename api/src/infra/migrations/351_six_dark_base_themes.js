@@ -143,7 +143,8 @@ exports.down = async (knex) => {
     await knex.raw(
       `DELETE FROM themes WHERE gym_id IS NULL AND name = ? AND created_by = ?
          AND modified_by IS NULL
-         AND id NOT IN (SELECT theme_id FROM gyms WHERE theme_id IS NOT NULL)`,
+         AND id NOT IN (SELECT theme_id FROM gyms WHERE theme_id IS NOT NULL)
+         AND id NOT IN (SELECT theme_id FROM centers WHERE theme_id IS NOT NULL)`,
       [t.name, ACTOR],
     );
   }
