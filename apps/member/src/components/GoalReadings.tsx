@@ -67,9 +67,16 @@ export function GoalHeaderFields({ fields, trailing }: {
   );
 }
 
-export function GoalReadingHistory({ readings, unit, labels }: {
+export function GoalReadingHistory({ readings, unit, labels, actions }: {
   readings: GoalReading[];
   unit: string | null;
+  /** #2181 — per-row edit (value only) and delete, already translated. */
+  actions?: {
+    editLabel: string;
+    deleteLabel: string;
+    onEdit: (reading: GoalReading) => void;
+    onDelete: (reading: GoalReading) => void;
+  };
   labels: {
     title: string;
     empty: string;
@@ -107,6 +114,12 @@ export function GoalReadingHistory({ readings, unit, labels }: {
                 {reading.marker && (
                   <span style={styles.marker}>{labels.markers[READING_MARKER_KEYS[reading.marker]]}</span>
                 )}
+                {actions && (
+                  <span style={styles.rowActions}>
+                    <button type="button" style={styles.rowAction} onClick={() => actions.onEdit(reading)}>{actions.editLabel}</button>
+                    <button type="button" style={styles.rowAction} onClick={() => actions.onDelete(reading)}>{actions.deleteLabel}</button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -134,5 +147,7 @@ const styles: Record<string, CSSProperties> = {
   // The app's own neutral pill: where a member started is not a status, so it
   // takes no tone of its own (#983's one status-tone map stays for statuses).
   marker:       { ...statusPillStyle('neutral'), fontSize: 11 },
+  rowActions:   { display: 'flex', gap: 10, flexShrink: 0 },
+  rowAction:    { background: 'none', border: 'none', padding: 0, font: 'inherit', fontSize: 12, color: memberTheme.textSecondary, textDecoration: 'underline', cursor: 'pointer' },
   empty:        { margin: '8px 0 0', fontSize: 13, color: memberTheme.textMuted },
 };

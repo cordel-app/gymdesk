@@ -485,10 +485,10 @@ describe('#1037 the reading history (§18–§20)', () => {
     expect(readingHistoryRows([])).toEqual([]);
   });
 
-  it('is append-only on screen: no remove, no edit, no second accordion look (§34)', () => {
+  it('offers edit and delete through a row menu, with no second accordion look (#2181 reverses §34)', () => {
     expect(historySrc).not.toContain('rowRemoveBtnStyle');
-    expect(historySrc).not.toMatch(/method: 'DELETE'/);
-    expect(historySrc).not.toMatch(/method: 'PUT'/);
+    expect(historySrc).toMatch(/method: 'DELETE'/);
+    expect(historySrc).toContain('<ContextMenu');
     expect(historySrc).toContain('cardExpandToggleStyle');
     expect(historySrc).toContain('aria-expanded');
     expect(historySrc).not.toMatch(/#[0-9a-fA-F]{3,6}/);
