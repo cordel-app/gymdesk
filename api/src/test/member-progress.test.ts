@@ -91,3 +91,40 @@ describe('/members/:memberId/progress (#1231)', () => {
     expect(list.body).toEqual([]);
   });
 });
+
+describe('DELETE /members/:memberId/progress/exercises/:exerciseId (#2198)', () => {
+  let ex2: number;
+  let keepLog: number;
+  beforeAll(async () => {
+    ex2 = (await db.query(`INSERT INTO exercises (gym_id, name) VALUES (?, 'Staff Bench')`, [gymId])).insertId;
+    const { rows: rt } = await db.query<{ id: number }>(`SELECT id FROM result_types WHERE slug = 'weight'`);
+    await db.query('INSERT INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [ex2, rt[0].id]);
+    await logFor(gymId, memberId, ex2, '2026-10-05', 40, 8);
+    await logFor(gymId, memberId, ex2, '2026-10-06', 45, 8);
+    keepLog = await logFor(gymId, otherMemberId, ex2, '2026-10-06', 100, 1);
+  });
+
+  it('reports audit fields on the list row', async () => {
+    const list = await staff(request.get(`/members/${memberId}/progress/exercises`)).expect(200);
+    const row = list.body.find((r: any) => r.exercise_id === ex2);
+    expect(row.created_by).toBe('Staff View Member');
+    expect(row.created_at).toBeTruthy();
+  });
+
+  it('requires auth and stays inside the gym', async () => {
+    await request.delete(`/members/${memberId}/progress/exercises/${ex2}`).set('x-gym-id', gymId).expect(401);
+    await staff(request.delete(`/members/${memberId}/progress/exercises/${ex2}`), otherGymId).expect(403);
+  });
+
+  it('hard-deletes every reading of that exercise for that member only', async () => {
+    const res = await staff(request.delete(`/members/${memberId}/progress/exercises/${ex2}`)).expect(200);
+    expect(res.body.readings_deleted).toBe(2);
+    const { rows } = await db.query('SELECT id FROM exercise_logs WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
+    expect(rows).toHaveLength(0);
+    const { rows: other } = await db.query('SELECT id FROM exercise_logs WHERE id = ?', [keepLog]);
+    expect(other).toHaveLength(1);
+    const list = await staff(request.get(`/members/${memberId}/progress/exercises`)).expect(200);
+    expect(list.body).toEqual([]);
+    await staff(request.delete(`/members/${memberId}/progress/exercises/${ex2}`)).expect(404);
+  });
+});

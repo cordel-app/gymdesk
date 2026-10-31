@@ -26,8 +26,8 @@ export const memberProgressRouter = Router({ mergeParams: true });
 async function loadMember(gymId: string, raw: string) {
   const memberId = Number(raw);
   if (!Number.isInteger(memberId) || memberId < 1) return null;
-  const { rows } = await db.query('SELECT id, gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
-  return rows[0] ? { id: memberId, gender: rows[0].gender } : null;
+  const { rows } = await db.query('SELECT id, gender, name FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
+  return rows[0] ? { id: memberId, gender: rows[0].gender, name: rows[0].name as string } : null;
 }
 
 const asAllowed = (v: unknown): AllowedResultType[] =>
@@ -59,8 +59,21 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
+    // #2198 — Details audit: the logs are member-authored (`exercise_logs` has no staff actor),
+    // so the author is the member and the dates are the earliest creation / latest edit.
+    const { rows: auditRows } = await db.query(
+      `SELECT COALESCE(base_exercise_id, exercise_id) AS exercise_id, MIN(created_at) AS created_at,
+              MAX(modified_at) AS modified_at, MAX(modified_by_member_id IS NOT NULL) AS member_edited
+       FROM exercise_logs WHERE gym_id = ? AND member_id = ? GROUP BY COALESCE(base_exercise_id, exercise_id)`,
+      [gymId, member.id],
+    );
+    const audit = new Map<number, any>(auditRows.map((a: any) => [Number(a.exercise_id), a]));
     const out = exRows.map((ex: any) => ({
       exercise_id: Number(ex.id),
+      created_at: audit.get(Number(ex.id))?.created_at ?? null,
+      created_by: member.name,
+      modified_at: audit.get(Number(ex.id))?.modified_at ?? null,
+      modified_by: audit.get(Number(ex.id))?.member_edited ? member.name : null,
       exercise_name: ex.exercise_name,
       image_url: ex.image_url ?? null,
       image_thumbnail_url: ex.image_thumbnail_url ?? null,
@@ -212,5 +225,26 @@ memberProgressRouter.delete('/readings/:logId', requireModuleWrite('TRAINING'), 
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Reading not found' });
     res.json({ id: logId, deleted: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2198 — hard-deletes **all** of a member's readings of one exercise (sets cascade), which
+ * removes the exercise from their Progress list. Like the single-reading delete it writes no
+ * audit row (#1231). `member_standalone_exercises` is an addition to a day, not progress, and stays.
+ */
+memberProgressRouter.delete('/exercises/:exerciseId', requireModuleWrite('TRAINING'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!Number.isInteger(exerciseId) || exerciseId < 1) return res.status(400).json({ error: 'Invalid exercise id' });
+  try {
+    const member = await loadMember(gymId, (req.params as any).memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    const result = await db.query(
+      'DELETE FROM exercise_logs WHERE gym_id = ? AND member_id = ? AND COALESCE(base_exercise_id, exercise_id) = ?',
+      [gymId, member.id, exerciseId],
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'No progress for this exercise' });
+    res.json({ exercise_id: exerciseId, deleted: true, readings_deleted: result.rowCount });
   } catch (err) { next(err); }
 });

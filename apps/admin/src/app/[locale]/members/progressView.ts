@@ -1,6 +1,6 @@
 // #1231 — the staff Progress tab's pure decisions: types, chart points and the edit payload.
 // The figures are the API's (`domain/exerciseProgress.ts`); nothing here computes one.
-import type { ChartPoint } from '@gymdesk/charts';
+import type { ChartPoint, ChartSeries } from '@gymdesk/charts';
 import { DEFAULT_GYM_FORMAT, formatGymDayMonth, formatGymNumber, type GymFormatSettings } from '@/lib/gymFormat';
 
 export interface ProgressSet { id?: number; set_number: number; weight: number | null; reps: number | null; rpe?: number | null }
@@ -16,6 +16,11 @@ export interface ProgressSummary {
   best_result: { slug: 'weight' | 'repetitions' | 'duration'; value: number } | null;
   /** #2179 — one best result per metric the exercise's category supports. */
   metrics: ProgressMetricBest[];
+  /** #2198 — the logs are member-authored: the author, the first log's creation and the latest edit. */
+  created_at?: string | null;
+  created_by?: string | null;
+  modified_at?: string | null;
+  modified_by?: string | null;
 }
 
 export type ProgressMetricSlug = 'weight' | 'repetitions';
@@ -114,4 +119,26 @@ export function readingPayload(d: ReadingDraft): Record<string, unknown> | null 
     sets.push({ id: s.id, weight, reps });
   }
   return { notes: d.notes, duration_seconds: duration, sets };
+}
+
+/**
+ * #2198 — every supported metric in one chart. The first metric reads the left axis and the
+ * next the right one, so kg and reps stay readable together; each series is named with its
+ * label and unit for the legend. A metric with no reading at all is left out.
+ */
+export function combinedChartSeries(
+  metrics: ProgressMetricDays[],
+  label: (slug: ProgressMetricSlug) => string,
+  unit: (slug: ProgressMetricSlug) => string,
+  gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): ChartSeries[] {
+  return metrics
+    .filter((m) => m.days.some((d) => d.value !== null))
+    .map((m, index) => ({
+      id: `metric-${m.slug}`,
+      name: `${label(m.slug)} (${unit(m.slug)})`,
+      colorIndex: index,
+      axis: (index === 0 ? 0 : 1) as 0 | 1,
+      points: progressChartPoints(m.days, unit(m.slug), gym),
+    }));
 }
