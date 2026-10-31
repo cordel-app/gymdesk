@@ -55,6 +55,7 @@ import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberIm
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
+import { PlanWorkoutTree, type Workout } from '../training-plans/PlanWorkoutTree';
 
 interface Plan {
   id: number;
@@ -828,6 +829,7 @@ export function MemberExpandedRow({
                     {activePlans.map((p) => (
                       <PlanCard
                         key={p.id}
+                        planId={p.training_plan_id}
                         name={p.training_plan_name}
                         status={p.status}
                         validFrom={p.valid_from}
@@ -848,6 +850,7 @@ export function MemberExpandedRow({
                     {trainingInactiveOpen && inactivePlans.map((p) => (
                       <PlanCard
                         key={p.id}
+                        planId={p.training_plan_id}
                         name={p.training_plan_name}
                         status={p.status}
                         validFrom={p.valid_from}
@@ -945,8 +948,9 @@ function Field({ label, children, multiline }: { label: string; children: React.
 }
 
 function PlanCard({
-  name, status, validFrom, validTo, onEdit, editLabel, dim: isDim,
+  planId, name, status, validFrom, validTo, onEdit, editLabel, dim: isDim,
 }: {
+  planId: number;
   name: string;
   status: string;
   validFrom: string | null;
@@ -955,27 +959,64 @@ function PlanCard({
   editLabel: string;
   dim?: boolean;
 }) {
+  const t = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { toast } = useToast();
   const gymFmt = useGymFormatSettings();
+  // Expanding reads: the plan's tree is the Assigned Training Plans page's own
+  // component with `canWrite` fixed to false, so no editing control exists here.
+  const [open, setOpen] = useState(false);
+  const [plan, setPlan] = useState<{ id: number; member_id: number; workouts?: Workout[] | null } | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState(false);
+
+  async function loadPlan() {
+    setLoadingPlan(true);
+    try { setPlan(await apiFetch(`/training-plans/${planId}`)); }
+    catch (err: any) { toast(err.message ?? t('training_plans.error_generic')); }
+    finally { setLoadingPlan(false); }
+  }
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next) loadPlan();
+  }
+
   return (
     <div style={{ ...card, opacity: isDim ? 0.75 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>{name}</div>
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <StatusBadge status={status} label={status} />
-            {(validFrom || validTo) && (
-              <span style={{ fontSize: 12, color: '#888' }}>
-                {validFrom ? formatGymDateOnly(validFrom, gymFmt) : ''}
-                {validFrom && validTo ? ' — ' : ''}
-                {validTo ? formatGymDateOnly(validTo, gymFmt) : ''}
-              </span>
-            )}
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          style={{ all: 'unset', cursor: 'pointer', minWidth: 0, flex: 1, display: 'flex', gap: 8, alignItems: 'flex-start' }}
+        >
+          <span aria-hidden style={{ fontSize: 12, color: '#aaa', marginTop: 3 }}>{open ? '▼' : '▶'}</span>
+          <span style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>{name}</div>
+            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <StatusBadge status={status} label={status} />
+              {(validFrom || validTo) && (
+                <span style={{ fontSize: 12, color: '#888' }}>
+                  {validFrom ? formatGymDateOnly(validFrom, gymFmt) : ''}
+                  {validFrom && validTo ? ' — ' : ''}
+                  {validTo ? formatGymDateOnly(validTo, gymFmt) : ''}
+                </span>
+              )}
+            </div>
+          </span>
+        </button>
         {onEdit && (
           <button type="button" onClick={onEdit} style={primaryBtnSmall()}>{editLabel}</button>
         )}
       </div>
+      {open && (
+        loadingPlan || !plan ? (
+          <p style={{ color: '#888', fontSize: 14, margin: '10px 0 0' }}>{t('training_plans.loading')}</p>
+        ) : (
+          <PlanWorkoutTree plan={plan} canWrite={false} apiFetch={apiFetch} toast={toast} onChanged={() => {}} />
+        )
+      )}
     </div>
   );
 }
