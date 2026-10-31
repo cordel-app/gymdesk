@@ -12,9 +12,14 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
-import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
+import { planEffectiveOnSql } from '../domain/nutritionPlanDates';
 
 export const nutritionDashboardRouter = Router();
+
+/** The UTC date `planEffectiveOnSql()` is asked about (`YYYY-MM-DD`). */
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export interface NutritionPlanCard {
   /** The Nutrition Plan Template the assignments were created from; null = the no-template bucket. */
@@ -49,12 +54,16 @@ export interface NutritionPlanCard {
  *   no Template and falls into the bucket, so no other gym's Template name can
  *   be read off this endpoint.
  *
- * "Active member" is the Members page's `enrollment_status = 'active'` — the
- * member's latest `user_memberships` row — via `latestEnrollmentStatusSql()`,
- * plus `members.deleted_at IS NULL`. Only `active` Nutrition Plans count:
- * a `completed` one is no longer currently assigned (§3) and a `deleted` one is
- * gone from every other screen. The count is of **members**, so a member
- * holding two plans from the same Template counts once — the card's own label.
+ * #2172: a plan counts when it is **currently assigned** — `planEffectiveOnSql()`
+ * (#1957) for today: status `active`, started, not ended — held by a member who
+ * is not soft-deleted. The member's Membership enrollment is deliberately NOT a
+ * condition any more: #809 required `enrollment_status = 'active'`, so a member
+ * with a plan but no Active Membership Plan (a staff-assigned plan, a lapsed or
+ * pending membership) made the Dashboard claim nothing was assigned while the
+ * Assigned Nutrition Plans page listed them. A `completed` plan is no longer
+ * currently assigned and a `deleted` one is gone from every other screen. The
+ * count is of **members**, so a member holding two plans from the same Template
+ * counts once — the card's own label.
  */
 nutritionDashboardRouter.get('/nutrition-plans', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -78,11 +87,10 @@ nutritionDashboardRouter.get('/nutrition-plans', async (req, res) => {
          ON npt.id = mnp.template_id
         AND (npt.gym_id = mnp.gym_id OR npt.gym_id IS NULL)
       WHERE mnp.gym_id = ?
-        AND mnp.status = 'active'
-        AND ${latestEnrollmentStatusSql('m')} = 'active'
+        AND ${planEffectiveOnSql('mnp')}
       GROUP BY npt.id, npt.name, npt.status
       ORDER BY (npt.id IS NULL) ASC, npt.name ASC`,
-    [gymId],
+    [gymId, todayUtc(), todayUtc()],
   );
 
   res.json(rows.map((r) => ({
@@ -91,4 +99,97 @@ nutritionDashboardRouter.get('/nutrition-plans', async (req, res) => {
     status: r.status ?? null,
     active_members: Number(r.active_members),
   })));
+});
+
+/**
+ * GET /nutrition/dashboard/summary  (#2172)
+ *
+ * The headline numbers of both halves of the Nutrition & Goals Dashboard, all
+ * aggregated in SQL. "Current" is one rule per half and the same one the rest of
+ * the product uses: a Nutrition Plan is current through `planEffectiveOnSql()`
+ * (#1957); a Personal Goal assignment is current through `isLiveAssignment()`'s
+ * predicate (not deleted, `status = 'in_progress'`). A soft-deleted member holds
+ * nothing. Nothing is stored and no status is introduced.
+ *
+ * Goal identity: a gym's imported copy records its System template in
+ * `personal_goals.base_personal_goal_id` (#1850), so the copy and the template
+ * are one goal — `COALESCE(base_personal_goal_id, id)`, safe because Base ids are
+ * drawn from the gym-owned sequence and the two id spaces never overlap. A
+ * custom gym goal is its own identity. The most popular goal is the one held by
+ * the most distinct members; a tie goes to the lowest identity, so the answer is
+ * deterministic.
+ */
+nutritionDashboardRouter.get('/summary', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const today = todayUtc();
+
+  const { rows: planRows } = await db.query<{
+    members: number | string; assignments: number | string; plans_in_use: number | string;
+  }>(
+    `SELECT COUNT(DISTINCT mnp.member_id) AS members,
+            COUNT(*) AS assignments,
+            COUNT(DISTINCT mnp.template_id) AS plans_in_use
+       FROM member_nutrition_plans mnp
+       JOIN members m
+         ON m.id = mnp.member_id AND m.gym_id = mnp.gym_id AND m.deleted_at IS NULL
+      WHERE mnp.gym_id = ?
+        AND ${planEffectiveOnSql('mnp')}`,
+    [gymId, today, today],
+  );
+
+  const goalIdentity = 'COALESCE(pg.base_personal_goal_id, pg.id)';
+  const goalFrom = `
+       FROM member_personal_goals mpg
+       JOIN members m
+         ON m.id = mpg.member_id AND m.gym_id = mpg.gym_id AND m.deleted_at IS NULL
+       JOIN personal_goal_catalogue pg
+         ON pg.id = COALESCE(mpg.base_personal_goal_id, mpg.personal_goal_id)
+        AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
+      WHERE mpg.gym_id = ?
+        AND mpg.deleted_at IS NULL
+        AND mpg.status = 'in_progress'`;
+
+  const { rows: goalTotals } = await db.query<{
+    members: number | string; assignments: number | string; goals_in_use: number | string;
+  }>(
+    `SELECT COUNT(DISTINCT mpg.member_id) AS members,
+            COUNT(*) AS assignments,
+            COUNT(DISTINCT ${goalIdentity}) AS goals_in_use
+       ${goalFrom}`,
+    [gymId],
+  );
+
+  const { rows: top } = await db.query<{
+    goal_id: number; name: string; slug: string | null; members: number | string;
+  }>(
+    `SELECT ${goalIdentity} AS goal_id,
+            COALESCE(MAX(bpg.name), MAX(pg.name)) AS name,
+            COALESCE(MAX(bpg.slug), MAX(pg.slug)) AS slug,
+            COUNT(DISTINCT mpg.member_id) AS members
+       ${goalFrom.replace('WHERE mpg.gym_id', `LEFT JOIN base_personal_goals bpg ON bpg.id = ${goalIdentity}
+      WHERE mpg.gym_id`)}
+      GROUP BY ${goalIdentity}
+      ORDER BY members DESC, goal_id ASC
+      LIMIT 1`,
+    [gymId],
+  );
+
+  const goalMembers = Number(goalTotals[0]?.members ?? 0);
+  const goalAssignments = Number(goalTotals[0]?.assignments ?? 0);
+
+  res.json({
+    nutrition_plans: {
+      members: Number(planRows[0]?.members ?? 0),
+      assignments: Number(planRows[0]?.assignments ?? 0),
+      plans_in_use: Number(planRows[0]?.plans_in_use ?? 0),
+    },
+    personal_goals: {
+      members: goalMembers,
+      goals_in_use: Number(goalTotals[0]?.goals_in_use ?? 0),
+      average_per_member: goalMembers > 0 ? Math.round((goalAssignments / goalMembers) * 10) / 10 : 0,
+      most_popular: top[0]
+        ? { goal_id: Number(top[0].goal_id), name: top[0].name, slug: top[0].slug ?? null, members: Number(top[0].members) }
+        : null,
+    },
+  });
 });

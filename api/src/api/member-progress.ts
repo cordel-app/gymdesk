@@ -5,7 +5,7 @@ import { getRequestLocale } from '../infra/locale';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import {
-  defaultResultType, progressDays, summarizeExercise,
+  defaultResultType, metricBests, metricDays, progressDays, summarizeExercise,
   type AllowedResultType, type ProgressLog,
 } from '../domain/exerciseProgress';
 import { allowedTypesSql, json, LOG_SELECT, toLog } from './me-progress';
@@ -65,6 +65,7 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
       image_url: ex.image_url ?? null,
       image_thumbnail_url: ex.image_thumbnail_url ?? null,
       ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], asAllowed(ex.allowed_result_types)),
+      metrics: metricBests(byExercise.get(Number(ex.id)) ?? [], asAllowed(ex.allowed_result_types)),
     })).filter((ex: any) => ex.days_exercised > 0)
       .sort((a: any, b: any) => String(a.exercise_name).localeCompare(String(b.exercise_name)));
     res.json(out);
@@ -113,6 +114,8 @@ async function exerciseDetail(gymId: string, memberId: number, exerciseId: numbe
     exercise_id: exerciseId,
     exercise_name: exRows[0].exercise_name,
     ...summarizeExercise(logs, allowed),
+    metrics: metricBests(logs, allowed),
+    metric_days: metricDays(logs, allowed),
     days: progressDays(logs, defaultResultType(allowed)),
     readings,
   };

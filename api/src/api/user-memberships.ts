@@ -57,6 +57,7 @@ import {
   LiveAssignment,
   activePlanConflictBody,
   parseConflictResolution,
+  addPlanUnsupportedBody,
 } from '../domain/oneActivePlan';
 import {
   findLiveAssignmentsForMembers,
@@ -1079,6 +1080,7 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'add_unsupported') return res.status(409).json(addPlanUnsupportedBody());
     if (outcome.kind === 'pending_conflict') {
       return res.status(409).json({
         error: 'plan_pending_payment',
@@ -1150,6 +1152,7 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'add_unsupported') return res.status(409).json(addPlanUnsupportedBody());
     if (outcome.kind === 'pending_conflict') {
       return res.status(409).json({
         error: 'plan_pending_payment',
@@ -1250,6 +1253,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'add_unsupported') return res.status(409).json(addPlanUnsupportedBody());
     if (outcome.kind === 'pending_conflict') {
       return res.status(409).json({
         error: 'plan_pending_payment',

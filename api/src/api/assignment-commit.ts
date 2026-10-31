@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
-import { ConflictResolution, LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
+import { ConflictResolution, LiveAssignment, addSharesOwnerChain, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
 
@@ -61,6 +61,7 @@ export type CommitOutcome =
   | { kind: 'conflict'; conflicts: LiveAssignment[] }
   | { kind: 'pending_conflict'; pendingIds: number[] }
   | { kind: 'bad_date'; message: string }
+  | { kind: 'add_unsupported' }
   | { kind: 'committed'; previousStatus: string; memberId: number; superseded: number[] };
 
 async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
@@ -130,6 +131,8 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   if (found.length > 0 && !resolution && !(row.status === PENDING_PAYMENT_STATUS)) {
     return { kind: 'conflict', conflicts: found };
   }
+  // #2125 stage 4: an explicit 'add' beside the owner's own live plan would end its billing.
+  if (input.resolution === 'add' && addSharesOwnerChain(found, row.member_id)) return { kind: 'add_unsupported' };
   // A Pending Payment row was asked at Save & Pay; with no recorded choice it was an add.
   const conflicts = resolution === 'replace' ? found : [];
   if (conflicts.length > 0) {
@@ -167,6 +170,7 @@ export type SubmitOutcome =
   | { kind: 'conflict'; conflicts: LiveAssignment[] }
   | { kind: 'pending_conflict'; pendingIds: number[] }
   | { kind: 'bad_date'; message: string }
+  | { kind: 'add_unsupported' }
   | { kind: 'submitted'; memberId: number };
 
 /**
@@ -185,6 +189,7 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {
     if (!input.resolution) return { kind: 'conflict', conflicts };
+    if (input.resolution === 'add' && addSharesOwnerChain(conflicts, row.member_id)) return { kind: 'add_unsupported' };
     if (input.resolution === 'replace') {
       const dateError = supersedeStartsAtError(row.starts_at, conflicts);
       if (dateError) return { kind: 'bad_date', message: dateError };

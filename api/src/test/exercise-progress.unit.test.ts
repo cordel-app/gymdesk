@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bestResult, daysExercised, defaultResultType, maxWeight, progressDays, summarizeExercise,
+  bestResult, daysExercised, defaultResultType, maxWeight, metricBests, metricDays, progressDays, summarizeExercise, supportedMetrics,
   type ProgressLog,
 } from '../domain/exerciseProgress';
 
@@ -66,5 +66,40 @@ describe('exercise progress (#1224)', () => {
     ], WEIGHT);
     expect(days[0].sets.map((s) => s.set_number)).toEqual([1, 2, 3]);
     expect(days[1].sets.map((s) => s.set_number)).toEqual([1]);
+  });
+});
+
+describe('per-metric bests (#2179)', () => {
+  const logs = [
+    log('2026-10-01', [[60, 10], [65, 8]]),
+    log('2026-10-05', [[null, 12]]),
+    log('2026-10-07', [[200, 50]], { skipped: true }),
+  ];
+
+  it('shows weight and repetitions independently when the category supports both', () => {
+    const allowed = [REPS, WEIGHT];
+    expect(supportedMetrics(allowed)).toEqual(['weight', 'repetitions']);
+    expect(metricBests(logs, allowed)).toEqual([
+      { slug: 'weight', value: 65 }, { slug: 'repetitions', value: 12 },
+    ]);
+  });
+
+  it('shows only the supported metric', () => {
+    expect(metricBests(logs, [WEIGHT])).toEqual([{ slug: 'weight', value: 65 }]);
+    expect(metricBests(logs, [REPS])).toEqual([{ slug: 'repetitions', value: 12 }]);
+    expect(metricBests(logs, [DURATION])).toEqual([]);
+    expect(metricDays(logs, [REPS]).map((m) => m.slug)).toEqual(['repetitions']);
+  });
+
+  it('keeps a supported metric with no values as null and the other intact; skipped logs never count', () => {
+    const onlyReps = [log('2026-10-01', [[null, 9]])];
+    expect(metricBests(onlyReps, [REPS, WEIGHT])).toEqual([
+      { slug: 'weight', value: null }, { slug: 'repetitions', value: 9 },
+    ]);
+    const days = metricDays(logs, [REPS, WEIGHT]);
+    expect(days.find((m) => m.slug === 'weight')!.days).toEqual([
+      { logged_date: '2026-10-01', value: 65 }, { logged_date: '2026-10-05', value: null },
+    ]);
+    expect(days.find((m) => m.slug === 'repetitions')!.days.map((d) => d.value)).toEqual([10, 12]);
   });
 });
