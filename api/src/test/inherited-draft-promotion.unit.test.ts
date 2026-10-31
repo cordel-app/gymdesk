@@ -15,7 +15,7 @@ describe('Promotions only on lines added in the Draft (#1863)', () => {
 
   it('refuses a Plan Promotion on an inherited plan in the one writer', () => {
     const src = read('../api/membership-promotions.ts');
-    expect(src).toMatch(/SELECT is_inherited FROM product_set_plan_snapshots/);
+    expect(src).toMatch(/SELECT is_inherited FROM plan_snapshots/);
     expect(src).toMatch(/inherited from the previous version/);
   });
 
