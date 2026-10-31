@@ -18,7 +18,7 @@ import { nextHalfHour } from '@/lib/homeDashboard';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventImageInfo, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
-import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
+import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
@@ -163,6 +163,7 @@ export default function CalendarPage() {
   }, [activeGymId, gymLoading]);
 
   const businessHours = weeklyToBusinessHours(weeklyHours);
+  const closedDays = closedWeekdays(weeklyHours);
 
   const fetchEvents = useCallback(
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
@@ -567,6 +568,8 @@ export default function CalendarPage() {
             }}
             events={fetchEvents}
             businessHours={businessHours}
+            dayHeaderClassNames={(arg: any) => closedDayClassNames(closedDays, arg.date)}
+            dayCellClassNames={(arg: any) => closedDayClassNames(closedDays, arg.date)}
             selectable={canWrite}
             editable={canWrite}
             eventResizableFromStart={canWrite}

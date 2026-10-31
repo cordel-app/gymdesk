@@ -20,6 +20,7 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { cardSurfaceStyle } from '@/components/ui';
+import { goalDisplayName } from '@/components/goalLibrary/goalProfile';
 
 interface NutritionPlanCard {
   template_id: number | null;
@@ -28,8 +29,19 @@ interface NutritionPlanCard {
   active_members: number;
 }
 
+interface DashboardSummary {
+  nutrition_plans: { members: number; assignments: number; plans_in_use: number };
+  personal_goals: {
+    members: number;
+    goals_in_use: number;
+    average_per_member: number;
+    most_popular: { goal_id: number; name: string; slug: string | null; members: number } | null;
+  };
+}
+
 export default function NutritionDashboard() {
   const t = useTranslations('nutrition_dashboard');
+  const tGoals = useTranslations('goal_library');
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
@@ -39,6 +51,7 @@ export default function NutritionDashboard() {
   const { toast } = useToast();
 
   const [cards, setCards] = useState<NutritionPlanCard[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,7 +67,12 @@ export default function NutritionDashboard() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      setCards(await apiFetch<NutritionPlanCard[]>('/nutrition/dashboard/nutrition-plans'));
+      const [list, totals] = await Promise.all([
+        apiFetch<NutritionPlanCard[]>('/nutrition/dashboard/nutrition-plans'),
+        apiFetch<DashboardSummary>('/nutrition/dashboard/summary'),
+      ]);
+      setCards(list);
+      setSummary(totals);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -67,7 +85,36 @@ export default function NutritionDashboard() {
       <h1 style={{ margin: '0 0 4px' }}>{t('title')}</h1>
       <p style={{ margin: '0 0 24px', color: 'var(--gd-text-muted, #6b7280)', fontSize: 14 }}>{t('subtitle')}</p>
 
-      <h2 style={sectionTitleStyle}>{t('nutrition_plans')}</h2>
+      {summary && (
+        <>
+          <h2 style={sectionTitleStyle}>{t('nutrition_plans')}</h2>
+          <div style={{ ...gridStyle, marginBottom: 24 }}>
+            <Metric label={t('metric_members_with_plans')} value={summary.nutrition_plans.members} />
+            <Metric label={t('metric_active_assignments')} value={summary.nutrition_plans.assignments} />
+            <Metric label={t('metric_plans_in_use')} value={summary.nutrition_plans.plans_in_use} />
+          </div>
+          <h2 style={sectionTitleStyle}>{t('personal_goals')}</h2>
+          <div style={{ ...gridStyle, marginBottom: 24 }}>
+            <Metric label={t('metric_members_using_goals')} value={summary.personal_goals.members} />
+            <Metric
+              label={t('metric_most_popular_goal')}
+              value={summary.personal_goals.most_popular
+                ? goalDisplayName(
+                    { slug: summary.personal_goals.most_popular.slug, name: summary.personal_goals.most_popular.name },
+                    'personal', (key) => tGoals(key))
+                : '—'}
+              detail={summary.personal_goals.most_popular
+                ? t('metric_members_count', { count: summary.personal_goals.most_popular.members })
+                : t('metric_no_goals')}
+              small
+            />
+            <Metric label={t('metric_goals_in_use')} value={summary.personal_goals.goals_in_use} />
+            <Metric label={t('metric_avg_goals')} value={summary.personal_goals.average_per_member} />
+          </div>
+        </>
+      )}
+
+      <h2 style={sectionTitleStyle}>{t('nutrition_plans_by_template')}</h2>
 
       {loading ? (
         <p style={{ color: 'var(--gd-text-muted, #6b7280)', fontSize: 14 }}>{t('loading')}</p>
@@ -95,6 +142,18 @@ export default function NutritionDashboard() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function Metric({ label, value, detail, small }: { label: string; value: number | string; detail?: string; small?: boolean }) {
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)' }}>{label}</div>
+      <div style={{ fontSize: small ? 22 : 36, fontWeight: 700, color: 'var(--gd-text, #1a1a2e)', marginTop: 12, lineHeight: 1.1, wordBreak: 'break-word' }}>
+        {value}
+      </div>
+      {detail && <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginTop: 4 }}>{detail}</div>}
     </div>
   );
 }

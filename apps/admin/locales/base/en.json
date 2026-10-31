@@ -673,12 +673,15 @@
     "progress_days": "Days exercised",
     "progress_max_weight": "Max weight",
     "progress_best_result": "Best result",
+    "progress_best_weight": "Best Result (Weight)",
+    "progress_best_reps": "Best Result (Repetitions)",
     "progress_unit_kg": "kg",
     "progress_unit_reps": "reps",
     "progress_unit_seconds": "s",
     "progress_chart_aria": "{name} progress chart",
     "progress_readings": "Readings",
     "progress_set": "Set {n}",
+    "progress_col_date": "Date",
     "progress_col_set": "Set",
     "progress_weight": "Weight",
     "progress_reps": "Reps",
@@ -4856,7 +4859,18 @@
     "no_template": "No base nutrition template plan",
     "loading": "Loading…",
     "empty": "No Nutrition Plans are currently assigned to active members.",
-    "error_generic": "Something went wrong. Please try again."
+    "error_generic": "Something went wrong. Please try again.",
+    "personal_goals": "Personal Goals",
+    "nutrition_plans_by_template": "Nutrition Plans by template",
+    "metric_members_with_plans": "Members with Active Nutrition Plans",
+    "metric_active_assignments": "Active Nutrition Plan Assignments",
+    "metric_plans_in_use": "Different Nutrition Plans in Use",
+    "metric_members_using_goals": "Members Using Personal Goals",
+    "metric_most_popular_goal": "Most Popular Personal Goal",
+    "metric_members_count": "{count, plural, one {# member} other {# members}}",
+    "metric_no_goals": "No Personal Goals in use",
+    "metric_goals_in_use": "Personal Goals in Use",
+    "metric_avg_goals": "Avg. Goals per Member"
   },
   "professional_services": {
     "delete_blocked_title": "This Professional Service cannot be deleted because it is still in use.",
@@ -5460,5 +5474,21 @@
     "issue_failed_records": "Some records failed to process.",
     "issue_partial_failures": "Some gyms failed and were skipped.",
     "issue_capped": "The batch limit was reached; remaining items wait for the next run."
+  },
+  "training_dashboard": {
+    "title": "Training Dashboard",
+    "subtitle": "Overview and metrics for training programs and exercises.",
+    "loading": "Loading…",
+    "error_generic": "Could not load the dashboard.",
+    "overview": "Training Overview",
+    "adoption": "Active Members with Training Plans",
+    "adoption_detail": "{count} of {total} active members",
+    "members_with_plans": "Members with Active Training Plans",
+    "active_assignments": "Active Plan Assignments",
+    "plans_in_use": "Training Plans in Use",
+    "avg_exercises": "Avg. Exercises per Plan",
+    "top_exercises": "Top 5 Most Used Exercises",
+    "top_empty": "No exercises found in active training plans.",
+    "uses": "{count} plans · {percent}%"
   }
 }

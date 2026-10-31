@@ -94,7 +94,10 @@ export default function HomePage() {
     setLoading(true);
     setError(false);
     try {
-      const res = await apiFetch<HomeData>('/dashboard/home');
+      let last: string | null = null;
+      try { last = window.sessionStorage.getItem('home_welcome_exercise'); } catch { /* storage unavailable */ }
+      const res = await apiFetch<HomeData>(`/dashboard/home${last ? `?welcome_exclude=${encodeURIComponent(last)}` : ''}`);
+      try { if (res.welcome_exercise_id) window.sessionStorage.setItem('home_welcome_exercise', String(res.welcome_exercise_id)); } catch { /* ignore */ }
       setData(res);
     } catch {
       setError(true);
@@ -125,6 +128,7 @@ export default function HomePage() {
         greeting={name ? t('greeting', { name }) : t('greeting_anonymous')}
         intro={t('intro')}
         sentence={sentence}
+        imageUrl={data?.welcome_image_url ?? null}
       />
 
       {error && <p style={mutedTextStyle}>{t('error')}</p>}

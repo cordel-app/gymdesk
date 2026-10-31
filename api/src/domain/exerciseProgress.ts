@@ -137,3 +137,35 @@ export function summarizeExercise(logs: ProgressLog[], allowed: AllowedResultTyp
     best_result: bestResult(logs, resultType),
   };
 }
+
+/**
+ * #2179 — the metrics a staff Progress card shows, one best result and one chart
+ * line each. Which exist is the exercise's category (through its allowed result
+ * types, derived from it, #1360): weight and repetitions are read independently
+ * from the sets and never combined or chosen between.
+ */
+export type ProgressMetric = 'weight' | 'repetitions';
+const PROGRESS_METRICS: readonly ProgressMetric[] = ['weight', 'repetitions'];
+
+export function supportedMetrics(allowed: AllowedResultType[]): ProgressMetric[] {
+  return PROGRESS_METRICS.filter((m) => allowed.some((a) => a.slug === m));
+}
+
+export interface MetricBest { slug: ProgressMetric; value: number | null }
+
+export function metricBests(logs: ProgressLog[], allowed: AllowedResultType[]): MetricBest[] {
+  return supportedMetrics(allowed).map((slug) => ({
+    slug,
+    value: maxOf(performedLogs(logs).map((l) => logValue(l, slug))),
+  }));
+}
+
+export interface MetricDays { slug: ProgressMetric; days: Array<{ logged_date: string; value: number | null }> }
+
+/** One series per supported metric over every performed date, `null` where the day holds no value. */
+export function metricDays(logs: ProgressLog[], allowed: AllowedResultType[]): MetricDays[] {
+  return supportedMetrics(allowed).map((slug) => ({
+    slug,
+    days: progressDays(logs, { id: 0, slug }).map((d) => ({ logged_date: d.logged_date, value: d.value })),
+  }));
+}
