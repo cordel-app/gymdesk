@@ -4856,7 +4856,18 @@
     "no_template": "No base nutrition template plan",
     "loading": "Loading…",
     "empty": "No Nutrition Plans are currently assigned to active members.",
-    "error_generic": "Something went wrong. Please try again."
+    "error_generic": "Something went wrong. Please try again.",
+    "personal_goals": "Personal Goals",
+    "nutrition_plans_by_template": "Nutrition Plans by template",
+    "metric_members_with_plans": "Members with Active Nutrition Plans",
+    "metric_active_assignments": "Active Nutrition Plan Assignments",
+    "metric_plans_in_use": "Different Nutrition Plans in Use",
+    "metric_members_using_goals": "Members Using Personal Goals",
+    "metric_most_popular_goal": "Most Popular Personal Goal",
+    "metric_members_count": "{count, plural, one {# member} other {# members}}",
+    "metric_no_goals": "No Personal Goals in use",
+    "metric_goals_in_use": "Personal Goals in Use",
+    "metric_avg_goals": "Avg. Goals per Member"
   },
   "professional_services": {
     "delete_blocked_title": "This Professional Service cannot be deleted because it is still in use.",
