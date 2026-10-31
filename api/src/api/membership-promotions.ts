@@ -687,7 +687,7 @@ export async function applyPromotionToProductSet(
     // eligible; only one added in this Draft is. Enforced here, so no route can
     // bypass what the Admin hides.
     const { rows: inheritedRows } = await tx.query(
-      'SELECT is_inherited FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      'SELECT is_inherited FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
       [productSetId, gymId],
     );
     if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
@@ -957,7 +957,7 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   const { rows: versionRows } = await db.query<any>(
     `SELECT ps.status, snap.is_inherited
        FROM product_sets ps
-       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id AND snap.gym_id = ps.gym_id
+       LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id AND snap.gym_id = ps.gym_id
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );

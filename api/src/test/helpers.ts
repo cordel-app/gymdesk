@@ -1,6 +1,7 @@
 import supertest from 'supertest';
 import { app } from '../app';
 import { db } from '../infra/db';
+import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 
 export const request = supertest(app);
 
@@ -160,6 +161,13 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   await db.query(
     'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by = ?',
     [umId, setId, FIXTURE_HOLDER]);
+  await syncFixtureSnapshot(setId);
+}
+
+/** #2125 stage 5: readers use `plan_snapshots`, so a fixture writing the legacy row re-derives it as the routes do. */
+async function syncFixtureSnapshot(setId: number): Promise<void> {
+  const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM product_sets WHERE id = ?', [setId]);
+  if (rows[0]) await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
 }
 
 /** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */
@@ -202,6 +210,7 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
   await db.query(
     `UPDATE product_set_plan_snapshots SET ${defined.map((k) => `${k} = ?`).join(', ')} WHERE product_set_id = ?`,
     [...defined.map((k) => patch[k] ?? (k === 'personal_fee_benefit_action' ? 'no_benefit' : k === 'auto_renew' ? 0 : null)), setId]);
+  await syncFixtureSnapshot(setId);
 }
 
 function splitTopLevel(text: string): string[] {
