@@ -2668,6 +2668,20 @@
     "save_changes": "Guardar cambios",
     "close": "Cerrar"
   },
+  "exercise_info": {
+    "title": "Detalles del ejercicio",
+    "close": "Cerrar",
+    "short_description": "Descripción breve",
+    "description": "Descripción",
+    "muscles": "Músculos afectados",
+    "categories": "Categorías",
+    "principal": "Principal",
+    "secondary": "Secundario",
+    "loading": "Cargando…",
+    "load_error": "No se pudieron cargar los detalles del ejercicio.",
+    "no_image": "Sin imagen",
+    "open": "Ver detalles de {name}"
+  },
   "exercise_media": {
     "image": "Imagen del ejercicio",
     "image_alt": "Imagen de {name}",
