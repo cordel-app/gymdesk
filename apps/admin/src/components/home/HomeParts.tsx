@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { cardSurfaceStyle } from '@/components/ui';
 import { cardMutedTextStyle } from '@/components/formChrome';
 import { DumbbellIcon } from '@/components/icons/NavIcons';
@@ -55,7 +55,9 @@ a.gd-home-card:focus-visible,.gd-home-link:focus-visible{outline:2px solid var(-
 @media (prefers-reduced-motion: reduce){.gd-home-card{transition:none}a.gd-home-card:hover{transform:none}}
 `;
 
-export function HomeHeader({ greeting, intro, sentence }: { greeting: string; intro: string; sentence?: string }) {
+export function HomeHeader({ greeting, intro, sentence, imageUrl }: { greeting: string; intro: string; sentence?: string; imageUrl?: string | null }) {
+  const [imageOk, setImageOk] = useState(true);
+  const image = imageUrl && imageOk ? imageUrl : null;
   const quote = sentence?.trim();
   const accent = 'var(--gd-primary-btn, #2563eb)';
   return (
@@ -64,13 +66,29 @@ export function HomeHeader({ greeting, intro, sentence }: { greeting: string; in
       position: 'relative', overflow: 'hidden', padding: '24px 28px 24px 32px', marginBottom: 24,
       display: 'flex', flexDirection: 'column', gap: 6,
       background: `linear-gradient(100deg, color-mix(in srgb, ${accent} 14%, var(--gd-card-bg, #ffffff)) 0%, var(--gd-card-bg, #ffffff) 70%)`,
+      ...(image ? { minHeight: 180, justifyContent: 'center', color: '#ffffff' } : {}),
     }}>
+      {image && (
+        <>
+          {/* Probe load: a broken image drops back to the plain header. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={image} alt="" onError={() => setImageOk(false)} style={{ display: 'none' }} />
+          <span aria-hidden data-testid="home-header-image" style={{
+            position: 'absolute', inset: 0, backgroundImage: `url("${image}")`,
+            backgroundSize: 'cover', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat',
+          }} />
+          <span aria-hidden style={{
+            position: 'absolute', inset: 0,
+            background: `linear-gradient(100deg, color-mix(in srgb, ${accent} 35%, #000000) 0%, rgba(0,0,0,.72) 40%, rgba(0,0,0,.15) 100%)`,
+          }} />
+        </>
+      )}
       <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: accent }} />
-      <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.15 }}>{greeting}</h1>
-      <p style={{ margin: 0, fontSize: 14, color: 'var(--gd-text-muted, #6b7280)' }}>{intro}</p>
+      <h1 style={{ position: 'relative', margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.15 }}>{greeting}</h1>
+      <p style={{ position: 'relative', margin: 0, fontSize: 14, color: image ? 'rgba(255,255,255,.85)' : 'var(--gd-text-muted, #6b7280)' }}>{intro}</p>
       {quote && (
         <blockquote data-testid="home-motivation" style={{
-          margin: '14px 0 0', padding: '8px 14px', borderLeft: `3px solid ${accent}`,
+          position: 'relative', margin: '14px 0 0', padding: '8px 14px', borderLeft: `3px solid ${accent}`,
           background: `color-mix(in srgb, ${accent} 8%, transparent)`, borderRadius: '0 8px 8px 0',
           fontSize: 15, fontStyle: 'italic', maxWidth: 680,
         }}>{quote}</blockquote>

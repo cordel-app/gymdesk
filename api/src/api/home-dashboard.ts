@@ -34,6 +34,28 @@ const SAMPLE_LIMIT = 5;
 /** Bound on members evaluated for task D: each needs a balance read. */
 const SERVICE_TASK_MEMBER_CAP = 200;
 
+/**
+ * #2171: one random exercise of the gym that carries its own image, for the
+ * welcome banner. Reads the exercise's own male/female master (the columns the
+ * media routes write); `exclude` keeps a reload from repeating the last pick
+ * when another candidate exists. Nothing is stored.
+ */
+async function loadWelcomeImage(gymId: string, exclude: number | null): Promise<{ id: number; url: string } | null> {
+  const pick = async (skip: number | null) => {
+    const { rows } = await db.query<{ id: number; url: string }>(
+      `SELECT e.id, COALESCE(e.image_male_url, e.image_female_url) AS url
+         FROM exercises e
+        WHERE e.gym_id = ? AND e.status = 'active'
+          AND COALESCE(e.image_male_url, e.image_female_url) IS NOT NULL
+          ${skip != null ? 'AND e.id <> ?' : ''}
+        ORDER BY RAND() LIMIT 1`,
+      skip != null ? [gymId, skip] : [gymId],
+    );
+    return rows[0] ? { id: Number(rows[0].id), url: rows[0].url } : null;
+  };
+  return (exclude != null ? await pick(exclude) : null) ?? await pick(null);
+}
+
 const iso = (v: Date | string) => new Date(v).toISOString();
 
 async function loadGymClock(gymId: string): Promise<{ zone: string; firstDay: number }> {
@@ -387,6 +409,11 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       tasks.push({ key: 'payments_with_issues', count: p.outstandingCount });
       out.pending_payment_members = await loadPendingPaymentMembers(gymId, p.outstanding);
     }
+
+    const excl = Number(req.query.welcome_exclude);
+    const welcomeImage = await loadWelcomeImage(gymId, Number.isInteger(excl) && excl > 0 ? excl : null);
+    out.welcome_image_url = welcomeImage?.url ?? null;
+    out.welcome_exercise_id = welcomeImage?.id ?? null;
 
     out.cards = cards;
     out.tasks = visibleTasks(tasks);

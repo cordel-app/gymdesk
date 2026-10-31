@@ -109,6 +109,9 @@ export function orderedTasks(tasks: HomeTask[]): HomeTask[] {
 }
 
 export interface HomeData {
+  /** #2171: a random gym exercise image for the welcome banner, null when none. */
+  welcome_image_url?: string | null;
+  welcome_exercise_id?: number | null;
   /** Always today in the gym's zone (#1754: no date navigation). */
   date: string;
   today: string;
