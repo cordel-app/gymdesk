@@ -725,7 +725,7 @@ export function MemberExpandedRow({
                           </div>
                         )}
                       </button>
-                      {canManageNutrition && (
+                      {canManageNutrition && p.status !== 'completed' && (
                         <button
                           type="button"
                           style={primaryBtnSmall()}
