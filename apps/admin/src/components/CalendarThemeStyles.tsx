@@ -556,6 +556,59 @@ export const CALENDAR_THEME_CSS = `
 .gd-calendar .fc .fc-timegrid-col.gd-day-closed:not(.fc-day-today) {
   background-color: var(--gd-calendar-disabled-slot-bg, #f7f7f7);
 }
+/* Detached bands, follow-up (#2170). The header cells and the hour labels no
+   longer share borders with the grid: cells keep their full column width (so
+   alignment is exact) but draw nothing themselves; the visible pill / band is
+   the cushion, inset from the cell edges, so a real gap shows between each
+   weekday and its neighbours and between the header and the grid. The hour
+   labels lose their row hairlines so they read as one band beside the grid
+   instead of as squares of it. */
+.gd-calendar .fc .fc-scrollgrid-section-header > th,
+.gd-calendar .fc .fc-scrollgrid-section-header .fc-scroller-harness {
+  box-shadow: none;
+  border-color: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+.gd-calendar .fc .fc-scrollgrid-section-header .fc-scroller {
+  overflow: visible !important;
+}
+.gd-calendar .fc .fc-col-header-cell,
+.gd-calendar .fc .fc-timegrid-axis {
+  background: transparent;
+  border-color: transparent;
+}
+.gd-calendar .fc .fc-col-header-cell.gd-day-closed {
+  background: transparent;
+}
+.gd-calendar .fc .fc-col-header-cell-cushion {
+  display: block;
+  margin: 0 3px 4px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background-color: var(--gd-calendar-header-bg, #ffffff);
+  box-shadow: 0 0 0 1px var(--gd-calendar-grid-border, #dddddd);
+}
+.gd-calendar .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  background-color: var(--gd-calendar-nav-btn-bg, #2c3e50);
+  color: var(--gd-calendar-nav-btn-text, #ffffff);
+}
+.gd-calendar .fc .fc-col-header-cell.gd-day-closed .fc-col-header-cell-cushion {
+  background-color: var(--gd-calendar-disabled-slot-bg, #f7f7f7);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--gd-calendar-muted-day-text, #6b7280) 18%, transparent) 6px 7px
+  );
+  color: var(--gd-calendar-muted-day-text, #6b7280);
+}
+.gd-calendar .fc .fc-timegrid-slots .fc-timegrid-slot-label {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 8px;
+  border-right: 8px solid var(--gd-calendar-bg, #ffffff);
+  background-clip: padding-box;
+}
 `;
 
 export function CalendarThemeStyles() {
