@@ -15,7 +15,7 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import {
-  draftFromReading, formatValue, progressChartPoints, readingPayload, resultUnitKey,
+  draftFromReading, formatValue, metricLabelKey, progressChartPoints, readingPayload, resultUnitKey,
   type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
@@ -50,7 +50,6 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {items.map((item) => {
-        const unitKey = resultUnitKey(item.best_result?.slug);
         const isOpen = open === item.exercise_id;
         return (
           <div key={item.exercise_id} style={innerCardStyle}>
@@ -63,8 +62,9 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
               <ExerciseAvatar src={item.image_thumbnail_url ?? item.image_url ?? null} name={item.exercise_name} />
               <strong style={{ flex: '1 1 160px' }}>{item.exercise_name}</strong>
               <Stat label={t('members.progress_days')} value={String(item.days_exercised)} />
-              <Stat label={t('members.progress_max_weight')} value={formatValue(item.max_weight, t('members.progress_unit_kg'), gym)} />
-              <Stat label={t('members.progress_best_result')} value={formatValue(item.best_result?.value ?? null, unitKey ? t(unitKey) : null, gym)} />
+              {item.metrics.map((m) => (
+                <Stat key={m.slug} label={t(metricLabelKey(m.slug))} value={formatValue(m.value, t(resultUnitKey(m.slug)!), gym)} />
+              ))}
             </button>
             {isOpen && (
               <ExerciseDetail
@@ -134,9 +134,10 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, item.exercise_id]);
 
-  const unitKey = resultUnitKey(item.result_kind?.slug);
-  const unit = unitKey ? t(unitKey) : null;
-  const points = useMemo(() => (detail ? progressChartPoints(detail.days, unit, gym) : []), [detail, unit, gym]);
+  const series = useMemo(() => (detail?.metric_days ?? []).map((m) => ({
+    slug: m.slug,
+    points: progressChartPoints(m.days, t(resultUnitKey(m.slug)!), gym),
+  })), [detail, gym, t]);
   if (!detail) return null;
 
   async function save(r: ProgressReading) {
@@ -162,14 +163,17 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   const input = { ...formControlStyle, width: 90 };
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {points.some((p) => p.y !== null) && (
-        <LineChart
-          points={points}
-          height={200}
-          ariaLabel={t('members.progress_chart_aria', { name: item.exercise_name })}
-          axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
-        />
-      )}
+      {series.filter((s) => s.points.some((p) => p.y !== null)).map((s) => (
+        <div key={s.slug}>
+          <span style={cardSectionLabelStyle}>{t(metricLabelKey(s.slug))}</span>
+          <LineChart
+            points={s.points}
+            height={200}
+            ariaLabel={t('members.progress_chart_aria', { name: `${item.exercise_name} (${t(metricLabelKey(s.slug))})` })}
+            axisLabelFormatter={(value) => formatGymDayMonth(new Date(value).toISOString().slice(0, 10), gym)}
+          />
+        </div>
+      ))}
       <div style={innerCardStyle}>
         <span style={cardSectionLabelStyle}>{t('members.progress_readings')}</span>
         {error && <p style={formErrorStyle}>{error}</p>}

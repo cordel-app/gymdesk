@@ -674,6 +674,8 @@
     "progress_days": "Dies entrenats",
     "progress_max_weight": "Pes màxim",
     "progress_best_result": "Millor resultat",
+    "progress_best_weight": "Millor resultat (pes)",
+    "progress_best_reps": "Millor resultat (repeticions)",
     "progress_unit_kg": "kg",
     "progress_unit_reps": "reps",
     "progress_unit_seconds": "s",
