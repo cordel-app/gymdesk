@@ -51,8 +51,10 @@ import {
  * is offered at all is the calling screen's decision (#806) — `⋮ → Add reading`
  * on the gym-wide list, and a button inside Edit mode on the Member card.
  */
-export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onClose, onSaved }: {
+export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onClose, onSaved, editReading }: {
   assignmentId: number;
+  /** #2181: edit an existing reading's value (its date is not editable). */
+  editReading?: { id: number; value: number | null; recorded_at: string | null };
   kind: ReadingKind;
   /** Already resolved (#947), so the dialog says which goal it is about. */
   goalName: string;
@@ -63,23 +65,41 @@ export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onC
   onSaved: () => void;
 }) {
   const { apiFetch } = useApiClient();
-  const [form, setForm] = useState<ReadingFormValues>(() => emptyReadingForm());
+  const [form, setForm] = useState<ReadingFormValues>(() => seed());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  function seed(): ReadingFormValues {
+    const empty = emptyReadingForm();
+    if (!editReading) return empty;
+    return {
+      ...empty,
+      value: editReading.value === null ? '' : String(editReading.value),
+      recorded_at: editReading.recorded_at ? editReading.recorded_at.slice(0, 10) : empty.recorded_at,
+    };
+  }
+
   // Re-seeded when the action is launched again, so yesterday's half-typed
   // number never reappears on another goal's dialog.
-  useEffect(() => { setForm(emptyReadingForm()); setError(null); }, [assignmentId, kind]);
+  useEffect(() => { setForm(seed()); setError(null); }, [assignmentId, kind, editReading?.id]);
 
   async function save() {
     const invalid = readingFormError(form);
     if (invalid) { setError(label(invalid)); return; }
     setSaving(true); setError(null);
     try {
+      if (editReading) {
+        // #2181 — the value only; the date is never sent.
+        await apiFetch(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${assignmentId}/readings/${editReading.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ value: toReadingPayload(form).value }),
+        });
+      } else {
       await apiFetch(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${assignmentId}/${READING_ENDPOINTS[kind]}`, {
         method: 'POST',
         body: JSON.stringify(toReadingPayload(form)),
       });
+      }
       onSaved();
     } catch (e: any) {
       setError(e.message ?? label('error_generic'));
@@ -89,7 +109,7 @@ export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onC
   return (
     <CrudModal
       open
-      title={label(kind === 'initial' ? 'set_initial_reading' : 'add_reading')}
+      title={label(editReading ? 'edit_reading' : kind === 'initial' ? 'set_initial_reading' : 'add_reading')}
       error={error}
       saving={saving}
       cancelLabel={label('cancel')}
@@ -105,7 +125,7 @@ export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onC
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <Field
             label={label('label_reading')}
-            help={kind === 'initial' ? label('help_initial_reading') : undefined}
+            help={editReading ? label('help_edit_reading') : kind === 'initial' ? label('help_initial_reading') : undefined}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -127,6 +147,7 @@ export function AddReadingModal({ assignmentId, kind, goalName, unit, label, onC
               value={form.recorded_at}
               max={form.recorded_at > today() ? form.recorded_at : today()}
               onChange={(e) => setForm({ ...form, recorded_at: e.target.value })}
+              disabled={!!editReading}
               style={formControlStyle}
             />
           </Field>

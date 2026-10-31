@@ -23,6 +23,7 @@ import {
   GOAL_HEADER_FIELDS,
   GoalReadingsResponse,
   MemberGoal,
+  GoalReading,
   READING_ENDPOINTS,
   READING_MARKER_KEYS,
   ReadingFormValues,
@@ -61,7 +62,7 @@ type Editing =
   // a flag: nothing the browser submits says which, so a member cannot
   // re-baseline a goal by passing a field through. #1826: it is opened from the
   // card of the goal it belongs to.
-  | { kind: 'reading'; goal: MemberGoal; reading: ReadingKind }
+  | { kind: 'reading'; goal: MemberGoal; reading: ReadingKind; edit?: GoalReading }
   | null;
 
 export default function GoalsPage() {
@@ -88,6 +89,8 @@ export default function GoalsPage() {
   // fields are already on the row (the API derives them on every read), so this
   // is only the list §18 unfolds.
   const [readings, setReadings] = useState<Record<number, GoalReadingsResponse>>({});
+  // #2181 — the reading a member is about to delete.
+  const [deleting, setDeleting] = useState<{ goal: MemberGoal; reading: GoalReading } | null>(null);
   const [readingForm, setReadingForm] = useState<ReadingFormValues>(() => emptyReadingForm());
 
   const loadReadings = useCallback(async (ids: number[]) => {
@@ -150,6 +153,33 @@ export default function GoalsPage() {
     setEditing({ kind: 'reading', goal, reading });
   }
 
+  /** #2181 — edit a reading's value (the date is kept). */
+  function openEditReading(goal: MemberGoal, reading: GoalReading) {
+    setReadingForm({
+      value: reading.value === null ? '' : String(reading.value),
+      recorded_at: reading.recorded_at ? reading.recorded_at.slice(0, 10) : emptyReadingForm().recorded_at,
+    });
+    setFormError(null);
+    setNotice(null);
+    setEditing({ kind: 'reading', goal, reading: 'reading', edit: reading });
+  }
+
+  async function confirmDeleteReading() {
+    if (!deleting) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await apiFetch(`/me/personal-goals/${deleting.goal.id}/readings/${deleting.reading.id}`, { method: 'DELETE' });
+      await load();
+      setDeleting(null);
+      setNotice(t('goals.reading_deleted'));
+    } catch (err: any) {
+      setFormError(err?.message ?? t('goals.error'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   /**
    * §2/§3 — Cancel. A draft card disappears with its unsaved values; an edited
    * card goes back to the state it was displayed in, with the stored values
@@ -169,19 +199,26 @@ export default function GoalsPage() {
    * no manual refresh: the goals read re-derives the five fields and the history
    * read re-lists the rows.
    */
-  async function submitReading(goal: MemberGoal, kind: ReadingKind) {
+  async function submitReading(goal: MemberGoal, kind: ReadingKind, edit?: GoalReading) {
     const invalid = readingFormError(readingForm);
     if (invalid) { setFormError(t(invalid as any)); return; }
     setSaving(true);
     setFormError(null);
     try {
-      await apiFetch(`/me/personal-goals/${goal.id}/${READING_ENDPOINTS[kind]}`, {
-        method: 'POST',
-        body: JSON.stringify(toReadingPayload(readingForm)),
-      });
+      if (edit) {
+        await apiFetch(`/me/personal-goals/${goal.id}/readings/${edit.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ value: toReadingPayload(readingForm).value }),
+        });
+      } else {
+        await apiFetch(`/me/personal-goals/${goal.id}/${READING_ENDPOINTS[kind]}`, {
+          method: 'POST',
+          body: JSON.stringify(toReadingPayload(readingForm)),
+        });
+      }
       await load();
       setEditing(null);
-      setNotice(t(kind === 'initial' ? 'goals.initial_reading_saved' : 'goals.reading_added'));
+      setNotice(t(edit ? 'goals.reading_updated' : kind === 'initial' ? 'goals.initial_reading_saved' : 'goals.reading_added'));
     } catch (err: any) {
       // The dialog stays open with the number intact, so the server's message is
       // read beside the field that caused it.
@@ -317,6 +354,12 @@ export default function GoalsPage() {
                   readings={readings[goal.id]?.readings ?? []}
                   unit={goal.target_unit}
                   labels={historyLabels}
+                  actions={{
+                    editLabel: t('goals.edit_reading'),
+                    deleteLabel: t('goals.delete_reading'),
+                    onEdit: (reading) => openEditReading(goal, reading),
+                    onDelete: (reading) => { setFormError(null); setDeleting({ goal, reading }); },
+                  }}
                 />
               </MemberGoalCard>
             ))}
@@ -336,7 +379,7 @@ export default function GoalsPage() {
       {editing && editing.kind === 'reading' && (
         <MemberDialog
           labelledBy="goal-reading-title"
-          title={t(editing.reading === 'initial' ? 'goals.set_initial_reading' : 'goals.add_reading')}
+          title={t(editing.edit ? 'goals.edit_reading' : editing.reading === 'initial' ? 'goals.set_initial_reading' : 'goals.add_reading')}
           onClose={saving ? () => {} : closeEditing}
           actions={(
             <>
@@ -346,7 +389,7 @@ export default function GoalsPage() {
               <button
                 type="button"
                 style={styles.dialogPrimary}
-                onClick={() => submitReading(editing.goal, editing.reading)}
+                onClick={() => submitReading(editing.goal, editing.reading, editing.edit)}
                 disabled={saving}
               >
                 {saving ? t('goals.saving') : t('goals.save')}
@@ -359,7 +402,8 @@ export default function GoalsPage() {
             <p style={styles.readOnlyValue}>{nameOf(editing.goal)}</p>
           </div>
 
-          {editing.reading === 'initial' && (
+          {editing.edit && <p style={styles.help}>{t('goals.help_edit_reading')}</p>}
+          {editing.reading === 'initial' && !editing.edit && (
             <p style={styles.help}>{t('goals.help_initial_reading')}</p>
           )}
 
@@ -386,11 +430,34 @@ export default function GoalsPage() {
                 style={styles.control}
                 type="date"
                 value={readingForm.recorded_at}
+                disabled={!!editing.edit}
                 onChange={(e) => setReadingForm({ ...readingForm, recorded_at: e.target.value })}
               />
             </label>
           </div>
 
+          {formError && <p style={styles.error}>{formError}</p>}
+        </MemberDialog>
+      )}
+
+      {deleting && (
+        <MemberDialog
+          labelledBy="goal-reading-delete-title"
+          title={t('goals.delete_reading')}
+          onClose={saving ? () => {} : () => setDeleting(null)}
+          actions={(
+            <>
+              <button type="button" style={styles.dialogSecondary} onClick={() => setDeleting(null)} disabled={saving}>
+                {t('goals.cancel')}
+              </button>
+              <button type="button" style={styles.dialogPrimary} onClick={confirmDeleteReading} disabled={saving}>
+                {saving ? t('goals.saving') : t('goals.delete_reading')}
+              </button>
+            </>
+          )}
+        >
+          <p style={styles.readOnlyValue}>{t('goals.delete_reading_confirm')}</p>
+          {deleting.reading.is_initial && <p style={styles.help}>{t('goals.delete_reading_confirm_initial')}</p>}
           {formError && <p style={styles.error}>{formError}</p>}
         </MemberDialog>
       )}

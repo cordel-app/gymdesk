@@ -306,6 +306,10 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                   unit={row.target_unit}
                   locale={locale}
                   label={(key) => t(key as any)}
+                  assignmentId={row.id}
+                  goalName={nameOfGoal(row)}
+                  canWrite={canEdit}
+                  onChanged={async () => { await Promise.all([load(), loadReadings([row.id])]); }}
                 />
               </div>
               {/* Both actions belong to Edit mode: absent outside it, not disabled. */}

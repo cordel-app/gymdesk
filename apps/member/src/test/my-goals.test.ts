@@ -319,7 +319,7 @@ describe('what the member may and may not do (§4, §6, §14, §15)', () => {
     expect(pageSrc).not.toContain("kind: 'remove'");
     expect(pageSrc).not.toContain("goals.add'");
     expect(pageSrc).not.toContain('cardMenu');
-    expect(pageSrc).not.toMatch(/method: '(PUT|DELETE)'/);
+    expect(pageSrc).not.toMatch(/\/me\/personal-goals\/\$\{goal\.id\}`, \{ method: '(PUT|DELETE)'/);
   });
 });
 
@@ -502,7 +502,7 @@ describe('#1037 the reading history (§18–§20)', () => {
     }
   });
 
-  it('is append-only on screen and takes every colour from the theme (§34, #983)', () => {
+  it('takes every colour from the theme (#983); edit/delete are the page\'s requests (#2181)', () => {
     expect(readingsSrc).not.toMatch(/method: 'DELETE'/);
     expect(readingsSrc).not.toMatch(/method: 'PUT'/);
     expect(readingsSrc).toContain('aria-expanded');
