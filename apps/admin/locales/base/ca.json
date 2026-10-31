@@ -2668,6 +2668,20 @@
     "save_changes": "Desa els canvis",
     "close": "Tanca"
   },
+  "exercise_info": {
+    "title": "Detalls de l'exercici",
+    "close": "Tanca",
+    "short_description": "Descripció breu",
+    "description": "Descripció",
+    "muscles": "Músculs afectats",
+    "categories": "Categories",
+    "principal": "Principal",
+    "secondary": "Secundari",
+    "loading": "Carregant…",
+    "load_error": "No s'han pogut carregar els detalls de l'exercici.",
+    "no_image": "Sense imatge",
+    "open": "Veure detalls de {name}"
+  },
   "exercise_media": {
     "image": "Imatge de l'exercici",
     "image_alt": "Imatge de {name}",

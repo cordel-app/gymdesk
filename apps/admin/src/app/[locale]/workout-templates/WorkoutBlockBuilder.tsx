@@ -16,6 +16,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
+import { ExerciseInfoModal } from '@/components/exercises/ExerciseInfoModal';
 import {
   treeAddBtnStyle, treeBlockCardStyle, treeCellInputStyle,
   treeControlLabelStyle, treeControlUnitStyle, treeDragHandleStyle, treeDraftRemoveBtnStyle,
@@ -382,6 +383,7 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
 
   const slug = exercise.result_type_slug;
   const [exerciseId, setExerciseId] = useState(exercise.exercise_id);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [sets, setSets] = useState(exercise.sets != null ? String(exercise.sets) : '');
   const [minReps, setMinReps] = useState(exercise.min_reps != null ? String(exercise.min_reps) : '');
   const [maxReps, setMaxReps] = useState(exercise.max_reps != null ? String(exercise.max_reps) : '');
@@ -480,9 +482,16 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
         {/* #1647 — the exercise image leads the name as a circle; the slot is
             reserved so rows without an image keep the same alignment. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 28, height: 28, flex: '0 0 auto', display: 'inline-flex' }}>
+          {/* #2203 — clicking the image (or the read-only name) opens the exercise details. */}
+          <button
+            type="button"
+            data-testid="exercise-info-open-image"
+            onClick={() => setInfoOpen(true)}
+            aria-label={t('exercise_info.open', { name: exercise.exercise_name ?? '' })}
+            style={{ width: 28, height: 28, flex: '0 0 auto', display: 'inline-flex', padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
+          >
             <ExerciseMediaThumbnails exercise={exercise} part="image" />
-          </span>
+          </button>
         {canWrite ? (
           <ExerciseCombobox
             value={exerciseId}
@@ -491,9 +500,24 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
             onChange={handleSelectExercise}
           />
         ) : (
-          <span style={{ fontSize: 13.5 }}>{exercise.exercise_name}</span>
+          <button
+            type="button"
+            data-testid="exercise-info-open-name"
+            onClick={() => setInfoOpen(true)}
+            style={{ fontSize: 13.5, padding: 0, border: 0, background: 'none', cursor: 'pointer', textAlign: 'left', color: 'inherit' }}
+          >
+            {exercise.exercise_name}
+          </button>
         )}
         </div>
+        {infoOpen && (
+          <ExerciseInfoModal
+            exerciseId={exercise.exercise_id}
+            fallbackName={exercise.exercise_name}
+            fallbackImageUrl={exercise.exercise_image_thumbnail_url || exercise.exercise_image_url || null}
+            onClose={() => setInfoOpen(false)}
+          />
+        )}
       </td>
 
       <td style={treeTdStyle}>{numInput(sets, setSets, () => persist(buildBody({ sets: sets ? parseInt(sets, 10) : null })))}</td>
