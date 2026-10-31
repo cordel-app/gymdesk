@@ -14,7 +14,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
-import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
+import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import {
   memberTheme,
@@ -185,6 +185,7 @@ export default function MemberCalendarPage() {
   }, [activeCenterId, centerDefaultApplied]);
 
   const businessHours = weeklyToBusinessHours(weeklyHours);
+  const closedDays = closedWeekdays(weeklyHours);
   const filtersActive = !!filterCenterId || !!filterTrainerId || !!filterAtId;
 
   const fetchEvents = useCallback(
@@ -484,6 +485,8 @@ export default function MemberCalendarPage() {
           height="100%"
           events={fetchEvents}
           businessHours={businessHours}
+          dayHeaderClassNames={(arg: any) => closedDayClassNames(closedDays, arg.date)}
+          dayCellClassNames={(arg: any) => closedDayClassNames(closedDays, arg.date)}
           eventClick={handleEventClick}
           dateClick={handleDateClick}
           eventContent={(arg: any) => {
