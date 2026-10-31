@@ -61,6 +61,18 @@ describe('POST /members/:id/invite conflict reconciliation', () => {
     expect(row.invited_at).not.toBeNull();
   });
 
+  it('finds the member\'s invitation beyond the first page of pending invitations', async () => {
+    const m = await member();
+    const others = Array.from({ length: 500 }, (_, i) => ({ id: `inv_o${i}`, emailAddress: `o${i}@x.test`, status: 'pending' }));
+    clerk.getInvitationList.mockImplementation(async (q: any) =>
+      ({ data: q.offset ? [{ id: 'inv_late', emailAddress: m.email, status: 'pending' }] : others }));
+    clerk.getUserList.mockResolvedValue({ data: [] });
+    const res = await invite(m.id);
+    expect(res.body.reconciled).toBe('pending_invitation');
+    expect((await stored(m.id)).invitation_id).toBe('inv_late');
+    clerk.getInvitationList.mockReset();
+  });
+
   it('reports an existing account without linking it', async () => {
     const m = await member();
     clerk.getInvitationList.mockResolvedValue({ data: [] });
