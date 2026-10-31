@@ -5463,5 +5463,21 @@
     "issue_failed_records": "Some records failed to process.",
     "issue_partial_failures": "Some gyms failed and were skipped.",
     "issue_capped": "The batch limit was reached; remaining items wait for the next run."
+  },
+  "training_dashboard": {
+    "title": "Training Dashboard",
+    "subtitle": "Overview and metrics for training programs and exercises.",
+    "loading": "Loading…",
+    "error_generic": "Could not load the dashboard.",
+    "overview": "Training Overview",
+    "adoption": "Active Members with Training Plans",
+    "adoption_detail": "{count} of {total} active members",
+    "members_with_plans": "Members with Active Training Plans",
+    "active_assignments": "Active Plan Assignments",
+    "plans_in_use": "Training Plans in Use",
+    "avg_exercises": "Avg. Exercises per Plan",
+    "top_exercises": "Top 5 Most Used Exercises",
+    "top_empty": "No exercises found in active training plans.",
+    "uses": "{count} plans · {percent}%"
   }
 }
