@@ -2697,6 +2697,7 @@
     "open": "Show details of {name}"
   },
   "exercise_media": {
+    "close_video": "Close",
     "image": "Exercise image",
     "image_alt": "Image of {name}",
     "play_video": "Play the exercise video",

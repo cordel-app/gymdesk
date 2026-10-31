@@ -107,6 +107,15 @@ describe('ExerciseMediaThumbnails (#720)', () => {
     expect(src.match(/loading="lazy"/g)).toHaveLength(2);
   });
 
+  it('opens the video in a modal instead of a new tab (#2199)', () => {
+    expect(src).not.toContain('target="_blank"');
+    expect(src).toContain('<ExerciseVideoModal');
+    const modal = read(join(SRC, 'components', 'ExerciseVideoModal.tsx'));
+    expect(modal).toContain('controls');
+    expect(modal).toContain('youtubeVideoId(url)');
+    expect(modal).toContain('Escape');
+  });
+
   it('marks the video tile with a play indicator', () => {
     expect(src).toContain('▶');
   });
@@ -151,7 +160,7 @@ describe('exercise media locales (#720)', () => {
   it.each(LOCALE_CODES)('%s defines the accessible labels', (code) => {
     const messages = JSON.parse(readRaw(join(LOCALES_DIR, `${code}.json`)));
     expect(Object.keys(messages.exercise_media).sort())
-      .toEqual(['image', 'image_alt', 'play_video', 'play_video_of']);
+      .toEqual(['close_video', 'image', 'image_alt', 'play_video', 'play_video_of']);
     expect(messages.exercise_media.image_alt).toContain('{name}');
     expect(messages.exercise_media.play_video_of).toContain('{name}');
   });

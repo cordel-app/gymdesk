@@ -2683,6 +2683,7 @@
     "open": "Ver detalles de {name}"
   },
   "exercise_media": {
+    "close_video": "Cerrar",
     "image": "Imagen del ejercicio",
     "image_alt": "Imagen de {name}",
     "play_video": "Reproducir el vídeo del ejercicio",
