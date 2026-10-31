@@ -54,7 +54,7 @@ export function ThemeLogoSymbolField({ basePath, themeId, url, readOnly = false,
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div>
       <FormLabel>{t('label_logo_symbol')}</FormLabel>
       <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_symbol_hint')}</p>
       {url && brokenSrc !== url && (

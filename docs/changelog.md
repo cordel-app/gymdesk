@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #2206 (theme Branding: the Logo and Logo symbol / favicon controls sit side by side on wide screens and stack on narrow ones; layout only, same controls and copy)
 - **Done**: #2199 (an exercise video tile in the training plan views now plays in a modal over the current page — YouTube embedded, other URLs in a native `<video>` with controls — instead of opening a new tab; `ExerciseVideoModal`, opened by `ExerciseMediaThumbnails`)
 - **Done**: #2183 follow-up (the invite-conflict reconciliation now walks every page of Clerk's pending invitations (500 per page) instead of reading only the first, default-sized page, so a member whose invitation sat beyond it was still left as "None". Regression test added; API only, no migration)
 - **Done**: #2170 follow-up (Calendar: the weekday header cells and hour labels no longer share borders with the grid; each weekday is an inset rounded pill with a gap to its neighbours and to the grid, closed and today states live on the pill, and the hour column is one borderless band; CSS only in both apps, Theme tokens only; visual check not done in this environment)
