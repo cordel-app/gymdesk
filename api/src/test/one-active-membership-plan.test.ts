@@ -441,7 +441,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(rows[0].status).toBe('active');
   });
 
-  it("on_conflict: 'add' commits beside the live plan and cancels nothing (#2125)", async () => {
+  it("on_conflict: 'add' for the owner's own live plan is refused until billing holds N plans (#2125 stage 4)", async () => {
     const memberId = await createMember(gymId, 'Add Alongside');
     const first = await createPlan(gymId, 'Add First');
     const second = await createPlan(gymId, 'Add Second');
@@ -449,11 +449,18 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const draft = await assignDraft(memberId, second, '2026-03-01');
 
     expect((await commit(draft)).status).toBe(409);
-    expect((await commit(draft, { on_conflict: 'add' })).status).toBe(200);
-    const rows = await assignmentsOf(memberId);
-    expect(liveRows(rows)).toHaveLength(2);
+    const refused = await commit(draft, { on_conflict: 'add' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('add_plan_unsupported');
+    // Nothing moved: the live plan and its ProductSet version are exactly as they were.
+    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(1);
     const { rows: old } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [live]);
     expect(old[0].status).toBe('active');
+    const { rows: sets } = await db.query(
+      "SELECT status FROM product_sets WHERE user_membership_id = ?", [live]);
+    expect(sets.map((r: any) => r.status)).toEqual(['active']);
+    const { rows: still } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [draft]);
+    expect(still[0].status).toBe('draft');
   });
 
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {

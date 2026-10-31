@@ -79,6 +79,27 @@ export function parseConflictResolution(body: unknown): ConflictResolution | nul
   return null;
 }
 
+/**
+ * #2125 stage 4 (interim guard). Billing still keeps one ProductSet chain per owner and an
+ * activation supersedes the owner's active version, so adding a second plan **for the same
+ * owner** would silently end the first plan's future billing events. Until a ProductSet version
+ * can hold N plan snapshots, `'add'` is refused for that case; a plan owned by someone else
+ * (a family plan) lives on another chain and is unaffected.
+ */
+export const ADD_PLAN_UNSUPPORTED = 'add_plan_unsupported';
+
+export function addSharesOwnerChain(conflicts: Array<{ owner_member_id: number }>, ownerMemberId: number): boolean {
+  return conflicts.some((c) => Number(c.owner_member_id) === Number(ownerMemberId));
+}
+
+export function addPlanUnsupportedBody() {
+  return {
+    error: ADD_PLAN_UNSUPPORTED,
+    message: 'Adding a second Membership Plan for the same owner is not available yet. '
+      + "Resend with on_conflict: 'replace' to replace the current plan.",
+  };
+}
+
 /** One live assignment standing in the way of a new one. */
 export interface LiveAssignment {
   /** `user_memberships.id` — what a replacement supersedes. */
