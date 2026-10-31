@@ -91,6 +91,20 @@ export type ChartOption = Record<string, unknown>;
 
 export function lineChartOption(input: LineChartInput, theme: ChartTheme): ChartOption {
   const axisType = input.xAxisType ?? 'time';
+  const dualAxis = input.series.some((entry) => entry.axis === 1);
+  const legendNames = input.series.map((entry) => entry.name).filter((n): n is string => !!n);
+  const yAxis = (right: boolean) => ({
+    type: 'value',
+    // Readings sit in a narrow band (80 → 75 kg), so a zero-based axis would
+    // flatten the whole history into one line.
+    scale: true,
+    position: right ? 'right' : 'left',
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: { color: theme.textMuted, fontSize: 11 },
+    // Only the left axis draws grid lines, so two scales never double the grid.
+    splitLine: { show: !right, lineStyle: { color: theme.axisLine, type: 'solid' } },
+  });
 
   const series = input.series.map((entry, index) => {
     const color = seriesColor(theme, entry.colorIndex ?? index);
@@ -99,6 +113,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       id: entry.id,
       name: entry.name,
       type: 'line',
+      yAxisIndex: entry.axis ?? 0,
       // §14 — smooth, and monotone so the curve invents no reading.
       smooth: true,
       smoothMonotone: 'x',
@@ -146,7 +161,11 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
     backgroundColor: 'transparent',
     animation: true,
     textStyle: { color: theme.text },
-    grid: { left: 8, right: 14, top: 18, bottom: 6, containLabel: true },
+    // #2198 — a legend only where several named series share the chart.
+    legend: legendNames.length > 1
+      ? { show: true, top: 0, textStyle: { color: theme.textMuted, fontSize: 11 }, data: legendNames }
+      : undefined,
+    grid: { left: 8, right: 14, top: legendNames.length > 1 ? 34 : 18, bottom: 6, containLabel: true },
     tooltip: {
       trigger: 'item',
       // A tap is a click: the same tooltip serves desktop, tablet and phone (§16).
@@ -174,16 +193,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       },
       splitLine: { show: false },
     },
-    yAxis: {
-      type: 'value',
-      // Readings sit in a narrow band (80 → 75 kg), so a zero-based axis would
-      // flatten the whole history into one line.
-      scale: true,
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: theme.textMuted, fontSize: 11 },
-      splitLine: { lineStyle: { color: theme.axisLine, type: 'solid' } },
-    },
+    yAxis: dualAxis ? [yAxis(false), yAxis(true)] : yAxis(false),
     // ECharts' own interaction rather than a hand-rolled one. The wheel is left
     // to the page: a chart inside a scrolling card that swallowed the wheel
     // would trap the reader on it.

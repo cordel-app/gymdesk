@@ -40,6 +40,11 @@ export interface ChartSeries {
    */
   colorIndex?: number;
   /**
+   * #2198 — which value axis the series reads: 0 (left, default) or 1 (right). A chart that
+   * combines metrics in different units (kg and reps) puts the second on the right axis.
+   */
+  axis?: 0 | 1;
+  /**
    * Points that exist only to join this series to the previous one, by `x`.
    * They are drawn by the line and carry no symbol and no tooltip, because a
    * bridge is not a measurement (§14's "do not create fake readings" is why they
