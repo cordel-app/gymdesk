@@ -647,7 +647,7 @@ function MealRow({
     <div ref={setNodeRef} style={mealStyle}>
       {/* Header — always visible; clicking the row toggles expand */}
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', userSelect: 'none' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '9px 12px', cursor: 'pointer', userSelect: 'none' }}
         onClick={() => { if (!editing) setExpanded((e) => !e); }}
       >
         {canWrite && (
@@ -1073,7 +1073,7 @@ function MealItemsEditor({
               </div>
             ) : (
               /* Read row */
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
                 {canWrite && <ItemDragHandle />}
                 <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
                 {libItem && (libItem.quality_slugs ?? []).map((slug) => (
@@ -1359,7 +1359,7 @@ function GoalsSection({
       )}
       {canWrite && addOpen && (
         <div style={{ marginTop: 8, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_item_name')}</span>
               <select
