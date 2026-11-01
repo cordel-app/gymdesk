@@ -32,6 +32,13 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
     expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
       clerk_user_id: 'u' }, 'en').key).toBe('clerk_invitation_accepted');
   });
+  // #2183: an existing, unlinked Clerk account is not "None".
+  it('an existing unlinked account is reported, never over an enrolled member', () => {
+    expect(m.clerkInvitationLine({ has_pending_invitation: false, account_exists: true }, 'en').key)
+      .toBe('clerk_invitation_account_exists');
+    expect(m.clerkInvitationLine({ account_exists: true, enrolled: true }, 'en').key)
+      .toBe('clerk_invitation_none');
+  });
   it('a revoked invitation reads Cancelled', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
       enrolled: false }, 'en')).toEqual({ key: 'clerk_invitation_cancelled', date: null });
