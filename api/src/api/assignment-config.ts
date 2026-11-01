@@ -34,13 +34,20 @@ export type AssignmentConfigColumn =
 export const assignmentVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
 
-/** Joins the latest linked version and its plan snapshot as `cfg_ps` / `cfg`. */
+/**
+ * #2125 stage 10 — SQL for the id of the plan snapshot an assignment is the contract of: the
+ * latest `plan_snapshots` row naming it (`source_user_membership_id`), whichever version holds it.
+ * A version holds several plans now, so "the version linked to the assignment" no longer says
+ * which plan is meant; the snapshot does. Draft and closed included, as before.
+ */
+export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
+  `(SELECT s9.id FROM plan_snapshots s9 JOIN product_sets p9 ON p9.id = s9.product_set_id
+     WHERE s9.source_user_membership_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
+     ORDER BY p9.version DESC, s9.id DESC LIMIT 1)`;
+
+/** Joins the assignment's plan snapshot as `cfg`. */
 export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
-  LEFT JOIN product_sets cfg_ps ON cfg_ps.id = (
-        SELECT p9.id FROM product_sets p9
-         WHERE p9.gym_id = ${um}.gym_id AND p9.user_membership_id = ${um}.id
-         ORDER BY p9.version DESC, p9.id DESC LIMIT 1)
-  LEFT JOIN plan_snapshots cfg ON cfg.product_set_id = cfg_ps.id`;
+  LEFT JOIN plan_snapshots cfg ON cfg.id = ${assignmentPlanSnapshotId(`${um}.id`, `${um}.gym_id`)}`;
 
 /** The version's value when the assignment has one, its own cached value otherwise. */
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
