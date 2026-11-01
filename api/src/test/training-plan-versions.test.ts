@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { gymToday } from '../domain/workoutProgress';
+import { previousDay } from '../domain/trainingPlanVersioning';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 afterAll(async () => {
@@ -75,11 +77,14 @@ describe('assigned training plan versions (#1969)', () => {
     expect(res.body.status).toBe('active');
     expect(res.body.end_date).toBeNull();
     const { rows: dates } = await db.query(
-      "SELECT DATE_FORMAT(start_date, '%Y-%m-%d') AS s, (SELECT DATE_FORMAT(end_date, '%Y-%m-%d') FROM training_plans WHERE id = ?) AS prev_end, DATE_FORMAT(CURRENT_DATE, '%Y-%m-%d') AS d, DATE_FORMAT(CURRENT_DATE - INTERVAL 1 DAY, '%Y-%m-%d') AS y FROM training_plans WHERE id = ?",
+      "SELECT DATE_FORMAT(start_date, '%Y-%m-%d') AS s, (SELECT DATE_FORMAT(end_date, '%Y-%m-%d') FROM training_plans WHERE id = ?) AS prev_end FROM training_plans WHERE id = ?",
       [planId, draftId],
     );
-    expect(dates[0].s).toBe(dates[0].d);
-    expect(dates[0].prev_end).toBe(dates[0].y);
+    // "Today" is the gym's day (Europe/Madrid by default), not the database's: between 23:00 and
+    // 24:00 UTC the two differ, which made this assertion fail for an hour every night.
+    const today = gymToday(new Date(), 'Europe/Madrid');
+    expect(dates[0].s).toBe(today);
+    expect(dates[0].prev_end).toBe(previousDay(today));
     expect(res.body.name).toMatch(/^Strength \[\d{4}-\d{2}-\d{2} - Open End\]$/);
     const orig = await auth(request.get(`${base()}/${planId}`));
     expect(orig.body.status).toBe('completed');
