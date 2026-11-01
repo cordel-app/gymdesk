@@ -88,12 +88,22 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await copyNativePlanSnapshots(tx, gymId, fromSetId, toSetId);
 }
 
+/** #2125 stage 13: only the Promotions about a Product (a plan's own live on its plan snapshot). */
+export async function copyProductTargetApplications(tx: Tx, gymId: string, fromSetId: number, toSetId: number): Promise<void> {
+  await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId }, { onlyProductTarget: true });
+}
+
 /** Copies applied Promotions (and the grants each froze) between two versions. */
-async function copyApplications(tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number }) {
+async function copyApplications(
+  tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number },
+  opts: { onlyProductTarget?: boolean } = {},
+) {
   const { rows } = await tx.query<any>(
     `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
             modified_at, modified_by, recurrent_snapshot_id
-       FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?`, [gymId, from.productSetId]);
+       FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ?
+        ${opts.onlyProductTarget ? "AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')" : ''}`,
+    [gymId, from.productSetId]);
   for (const app of rows) {
     // #1991 stage 3: a Product-target application follows its line into the new
     // version (a clone keeps `line_ref`), so the copy is owned by the copy.
