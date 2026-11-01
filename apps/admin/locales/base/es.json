@@ -3926,6 +3926,7 @@
     "label_description": "Descripción",
     "label_translations": "Traducciones",
     "label_media": "Multimedia",
+    "food_details_title": "Detalles del alimento",
     "image_after_create": "Crea primero el alimento y después sube su imagen desde Editar.",
     "no_image": "Sin imagen",
     "section_audit": "Auditoría",

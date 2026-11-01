@@ -5,6 +5,10 @@ One entry per ticket, written by the ticket's own PR at merge time and never edi
 What the product does today and what is still open is `docs/roadmap.md`; this file is the record of how it got there. A ticket's entry goes under the month its issue was closed in, as a `- **Done**: #1970 stage 2 (Admin UI for versioned Assigned Nutrition Plan edits, mirroring #1969 stage 2: ⋮ → Edit on an active plan calls `POST /member-nutrition-plans/:id/edit-draft` and edits the draft; Save asks a confirmation (current version ends today, new one starts tomorrow, previous kept as history) then updates name/description and calls `publish-version`; Cancel deletes the draft and leaves the original untouched. No API or migration change; closes #1970)
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
+## November 2026
+
+- **Done**: #2204 (Food details from Assigned Nutrition Plans: clicking a food's image or name in a meal item or restriction — in the Member card's Nutrition Plan and the standalone Assigned Nutrition Plans page, which share `NutritionPlanTree` — opens `FoodDetailsModal`: large image plus the Nutrition Library's description, categories, qualities, status and translations, each with a monochrome `currentColor` icon; a missing image or field reads as a placeholder / `—`. Admin-only, no API or schema change.)
+
 ## October 2026
 
 - **Done**: #2206 (theme Branding: the Logo and Logo symbol / favicon controls sit side by side on wide screens and stack on narrow ones; layout only, same controls and copy)
