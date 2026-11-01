@@ -29,23 +29,15 @@ function stripComments(src: string): string {
 const tree = stripComments(treeSrc);
 
 describe('A block header is one line (#1032)', () => {
-  it('nests the summary inside the name element rather than stacking two blocks', () => {
-    // The name element and the summary span, in that order, with no element
-    // boundary between them that would force a line break.
-    expect(tree).toMatch(
-      /<div style=\{\{ fontWeight: 600, fontSize: 14 \}\}>\s*\{block\.name \|\| t\(`workout_template_blocks\.type_\$\{block\.type\.toLowerCase\(\)\}`\)\}\s*<span style=\{treeSummaryTextStyle\}>\{blockSummary\(block, t\)\}<\/span>\s*<\/div>/,
-    );
+  it('draws its blocks through the shared builder, whose header is one line (#2226)', () => {
+    // The Training Plan Templates tree's own two-element block header is gone:
+    // the one shared renderer draws it, with the summary inline beside the name.
+    expect(tree).toContain('<WorkoutBlockBuilder');
+    expect(tree).not.toMatch(/function BlockRow\(/);
   });
 
   it('no longer renders the summary as its own block element', () => {
     expect(tree).not.toMatch(/<div style=\{\{ color: '#888', fontSize: 12\.5 \}\}>\{blockSummary/);
-  });
-
-  it('takes the summary style from the shared chrome, not a literal of its own', () => {
-    expect(tree).toMatch(/import \{[^}]*\btreeSummaryTextStyle\b[^}]*\} from '@\/components\/workoutChrome'/);
-    // The summary's own literal is gone; the page's remaining greys belong to
-    // its empty-state paragraphs, which this ticket does not touch.
-    expect(tree).not.toMatch(/color: '#888', fontSize: 12\.5/);
   });
 
   it('keeps the summary visually secondary to the name', () => {

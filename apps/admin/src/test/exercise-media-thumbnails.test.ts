@@ -23,8 +23,6 @@ const COMPONENT = join(SRC, 'components', 'ExerciseMediaThumbnails.tsx');
 // Every admin view that renders an exercise inside a workout (§6).
 const WORKOUT_VIEWS = {
   'Workouts / Training Plan builder': join(APP_DIR, 'workout-templates', 'WorkoutBlockBuilder.tsx'),
-  'Workout Templates tree': join(APP_DIR, 'workout-templates', 'WorkoutTemplateTree.tsx'),
-  'Training Plan Templates tree': join(APP_DIR, 'training-plan-templates', 'TrainingPlanTree.tsx'),
   'member Training Plan block exercises': join(APP_DIR, 'members', 'PlanBlockExercisesModal.tsx'),
 } as const;
 
