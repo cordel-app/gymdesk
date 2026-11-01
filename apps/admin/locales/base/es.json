@@ -2289,7 +2289,9 @@
     "gender_media_error_frame_failed": "No se pudo capturar un fotograma de vista previa, así que no se subió nada y el vídeo actual no cambia.",
     "gender_media_error_upload_failed": "No se pudo subir el archivo.",
     "gender_media_error_remove_failed": "No se pudo quitar el archivo.",
-    "gender_media_created_upload_failed": "El ejercicio se creó, pero no se pudo subir parte del contenido multimedia. Reinténtalo desde el editor."
+    "gender_media_created_upload_failed": "El ejercicio se creó, pero no se pudo subir parte del contenido multimedia. Reinténtalo desde el editor.",
+    "close_image": "Cerrar imagen",
+    "image_unavailable": "Imagen no disponible"
   },
   "muscles": {
     "chest": "Pecho",

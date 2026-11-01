@@ -2289,7 +2289,9 @@
     "gender_media_error_frame_failed": "No s'ha pogut capturar un fotograma de vista prèvia, així que no s'ha pujat res i el vídeo actual no canvia.",
     "gender_media_error_upload_failed": "No s'ha pogut pujar el fitxer.",
     "gender_media_error_remove_failed": "No s'ha pogut treure el fitxer.",
-    "gender_media_created_upload_failed": "L'exercici s'ha creat, però no s'ha pogut pujar part del contingut multimèdia. Torna-ho a provar des de l'editor."
+    "gender_media_created_upload_failed": "L'exercici s'ha creat, però no s'ha pogut pujar part del contingut multimèdia. Torna-ho a provar des de l'editor.",
+    "close_image": "Tanca la imatge",
+    "image_unavailable": "Imatge no disponible"
   },
   "muscles": {
     "chest": "Pit",
