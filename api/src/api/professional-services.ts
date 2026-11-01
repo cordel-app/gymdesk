@@ -316,6 +316,87 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
   }
 });
 
+// ─── POST /:id/update-system-data — sync name, description and image from the Base service (#2256) ──
+// Only name, description (+ their translations) and an *absent* image move; capacity,
+// status and every other field of the gym's copy are untouched, as is the Base row.
+
+professionalServicesRouter.post('/:id/update-system-data', requireRole('admin'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  try {
+    const { rows: own } = await db.query<any>(
+      `SELECT id, name, description, image_url, base_professional_service_id
+         FROM professional_services WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+      [req.params.id, gymId],
+    );
+    if (own.length === 0) return res.status(404).json({ error: 'Not found' });
+    const copy = own[0];
+    if (!copy.base_professional_service_id) {
+      return res.status(400).json({ code: 'no_base_service', error: 'This Professional Service was not imported from the System catalogue.' });
+    }
+    const { rows: baseRows } = await db.query<any>(
+      `SELECT id, name, description, image_url, image_thumbnail_url FROM professional_services
+        WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
+      [copy.base_professional_service_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ code: 'base_unavailable', error: 'The originating System Professional Service no longer exists.' });
+    }
+    const base = baseRows[0];
+    const { rows: taken } = await db.query(
+      'SELECT id FROM professional_services WHERE gym_id = ? AND deleted_at IS NULL AND name = ? AND id <> ? LIMIT 1',
+      [gymId, base.name, copy.id],
+    );
+    if (taken.length > 0) {
+      return res.status(409).json({ code: 'name_taken', error: 'Another Professional Service in this gym already uses the System name.' });
+    }
+
+    const { rows: baseTr } = await db.query<any>(
+      'SELECT locale, name, description FROM professional_service_translations WHERE professional_service_id = ? ORDER BY locale',
+      [base.id],
+    );
+    const { rows: ownTr } = await db.query<any>(
+      'SELECT locale, name, description FROM professional_service_translations WHERE professional_service_id = ? ORDER BY locale',
+      [copy.id],
+    );
+    const sig = (r: any[]) => JSON.stringify(r.map((x) => [x.locale, x.name, x.description ?? null]));
+    const textChanged = copy.name !== base.name || (copy.description ?? null) !== (base.description ?? null)
+      || sig(baseTr) !== sig(ownTr);
+    const wantsImage = !copy.image_url && !!base.image_url;
+    if (!textChanged && !wantsImage) return res.json({ updated: [], message: 'up_to_date' });
+
+    const updated: string[] = [];
+    if (textChanged) {
+      await db.transaction(async (tx) => {
+        await tx.query(
+          `UPDATE professional_services SET name = ?, description = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+          [base.name, base.description, actor, copy.id, gymId],
+        );
+        await tx.query('DELETE FROM professional_service_translations WHERE professional_service_id = ?', [copy.id]);
+        await copyTranslations(tx, base.id, copy.id);
+      });
+      updated.push('name', 'description');
+    }
+    if (wantsImage) {
+      const ok = await copyBaseProfessionalServiceImage({
+        gymId, prefix: await gymStorageFolderPrefix(gymId), base, service: { id: copy.id, name: base.name },
+      });
+      if (ok) updated.push('image');
+    }
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'professional_service',
+      entityId: String(copy.id),
+      entityName: base.name,
+      next: { update_system_data: updated },
+    });
+    const { rows } = await db.query(`${SELECT} WHERE ps.id = ? AND ps.gym_id = ?`, [gymId, copy.id, gymId]);
+    res.json({ updated, service: await shapeOne(req, rows[0]) });
+  } catch (err) { next(err); }
+});
+
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
 professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
