@@ -99,6 +99,9 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     await db.query(
       `INSERT INTO user_membership_oneoff (gym_id, product_id, quantity, item_name, item_type, unit_price, product_set_id)
        VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, ?)`, [gymId, productId, setId]);
+    // A fixture writing the legacy row re-derives the plan snapshot too (CLAUDE.md, #2125 stage 2).
+    const { syncPlanSnapshot: resync } = await import('../api/plan-snapshot-sync');
+    await db.transaction((tx) => resync(tx, gymId, setId));
     const draft = await auth(request.post('/product-sets/draft')).send({ member_id: owner });
     expect(draft.status).toBeLessThan(300);
     const newSet = Number(draft.body.product_set_id ?? draft.body.id);
