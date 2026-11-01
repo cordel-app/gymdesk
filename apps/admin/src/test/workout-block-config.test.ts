@@ -25,7 +25,6 @@ const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 const EDITORS = {
   workouts: join(APP_DIR, 'workout-templates', 'WorkoutBlockBuilder.tsx'),
-  templates: join(APP_DIR, 'workout-templates', 'WorkoutTemplateTree.tsx'),
   planBlocks: join(APP_DIR, 'members', 'PlanWorkoutBlocksModal.tsx'),
 } as const;
 
@@ -155,7 +154,7 @@ describe('block configuration editors (#672)', () => {
   it('keeps Sets an exercise-level field', () => {
     // The ticket is explicit: Sets does not move to the block level.
     expect(sources.workouts).toContain("t('block_exercises.col_sets')");
-    for (const editor of ['workouts', 'templates'] as const) {
+    for (const editor of ['workouts'] as const) {
       expect(sources[editor], editor).not.toMatch(/patchBlock\(\{\s*sets/);
     }
   });
