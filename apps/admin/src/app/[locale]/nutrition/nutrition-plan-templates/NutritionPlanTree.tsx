@@ -18,6 +18,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { inlineActionsRowStyle } from '@/components/formChrome';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
+import { FoodDetailsModal, type FoodDetailsRow } from '@/components/nutritionLibrary/FoodDetailsModal';
 
 /**
  * A Nutrition Library food as the food pickers need it. `categories` is a list
@@ -94,6 +95,28 @@ function foodTypeLabel(slug: string, translate: (key: string) => string): string
   return (FOOD_TYPE_LABEL_SLUGS as readonly string[]).includes(slug)
     ? translate(`nutrition_plan_templates.tree_component_type_${slug}`)
     : slug;
+}
+
+/**
+ * #2204: opening a food's details from any food in the tree. The tree provides the
+ * opener once, so the three lists that show foods (meal items read and edit rows,
+ * restrictions) need no prop threading.
+ */
+const FoodDetailsContext = React.createContext<(food: { id: number; name: string; imageUrl?: string | null }) => void>(() => {});
+
+/** The food's picture and name, both opening its details. */
+function FoodLink({ id, name, imageUrl, nameStyle }: { id: number; name: string; imageUrl?: string | null; nameStyle: React.CSSProperties }) {
+  const open = React.useContext(FoodDetailsContext);
+  return (
+    <button
+      type="button"
+      onClick={() => open({ id, name, imageUrl })}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', minWidth: 0 }}
+    >
+      <FoodThumbnail imageUrl={imageUrl ?? null} size={TREE_AVATAR_SIZE} />
+      <span style={nameStyle}>{name}</span>
+    </button>
+  );
 }
 
 export interface MealItem {
@@ -202,12 +225,23 @@ export function NutritionPlanTree({
   useEffect(() => { setDays(hierarchy.days ?? []); }, [hierarchy]);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  // The full rows, kept for the food details modal (#2204).
+  const [libraryRows, setLibraryRows] = useState<FoodDetailsRow[]>([]);
+  const [detailsFood, setDetailsFood] = useState<FoodDetailsRow | null>(null);
   useEffect(() => {
     // limit=200 is the API max; the picker needs the full catalog, not one page.
     apiFetch<LibraryListResponse>('/nutrition-library?limit=200')
-      .then((data) => setLibraryItems(normalizeLibraryItems(data)))
-      .catch(() => setLibraryItems([]));
+      .then((data) => {
+        setLibraryItems(normalizeLibraryItems(data));
+        const rows = Array.isArray(data) ? data : (data as LibraryListResponse | undefined)?.items;
+        setLibraryRows(Array.isArray(rows) ? (rows as unknown as FoodDetailsRow[]) : []);
+      })
+      .catch(() => { setLibraryItems([]); setLibraryRows([]); });
   }, [apiFetch]);
+  const openFood = React.useCallback((food: { id: number; name: string; imageUrl?: string | null }) => {
+    const row = libraryRows.find((r) => r.id === food.id);
+    setDetailsFood(row ?? { id: food.id, name: food.name, image_url: food.imageUrl ?? null });
+  }, [libraryRows]);
 
   // The Food Type options this surface accepts (#812). An assigned Nutrition
   // Plan's meal items take a narrower set than a template's, so the list comes
@@ -274,7 +308,9 @@ export function NutritionPlanTree({
   const availableWeekdays = ALL_WEEKDAYS.filter((w) => !usedWeekdays.has(w));
 
   return (
+    <FoodDetailsContext.Provider value={openFood}>
     <div style={{ padding: '12px 20px 18px 44px' }}>
+      {detailsFood && <FoodDetailsModal item={detailsFood} onClose={() => setDetailsFood(null)} />}
       {canWrite && availableWeekdays.length > 0 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
           <select value={addDayWeekday} onChange={(e) => setAddDayWeekday(e.target.value)} style={selectStyle}>
@@ -338,6 +374,7 @@ export function NutritionPlanTree({
         onCancel={() => setRemovingDay(null)}
       />
     </div>
+    </FoodDetailsContext.Provider>
   );
 }
 
@@ -734,8 +771,7 @@ function ItemsReadView({
         return (
           <React.Fragment key={item.id}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
-              <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
+              <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
               {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                 <QualityBadge key={slug} slug={slug} t={t} />
               ))}
@@ -1039,8 +1075,7 @@ function MealItemsEditor({
               /* Read row */
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
                 {canWrite && <ItemDragHandle />}
-                <FoodThumbnail imageUrl={item.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
+                <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
                 {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                   <QualityBadge key={slug} slug={slug} t={t as any} />
                 ))}
@@ -1203,8 +1238,7 @@ function RestrictionsSection({
       )}
       {restrictions.map((r) => (
         <div key={r.id} style={{ ...tagRowStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FoodThumbnail imageUrl={r.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
-          <span style={{ fontSize: 13.5, fontWeight: 500 }}>{r.item_name}</span>
+          <FoodLink id={r.nutrition_library_item_id} name={r.item_name} imageUrl={r.item_image_url} nameStyle={{ fontSize: 13.5, fontWeight: 500 }} />
           <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 6 }}>{r.item_category}</span>
           {canWrite && (
             <button onClick={() => setRemovingId(r.id)} style={removeBtnStyle}>×</button>

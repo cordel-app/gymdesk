@@ -3940,6 +3940,7 @@
     "label_description": "Description",
     "label_translations": "Translations",
     "label_media": "Media",
+    "food_details_title": "Food details",
     "image_after_create": "Create the food first, then upload its image from Edit.",
     "no_image": "No image",
     "section_audit": "Audit",
