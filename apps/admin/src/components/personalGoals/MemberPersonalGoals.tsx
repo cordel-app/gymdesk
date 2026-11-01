@@ -16,6 +16,7 @@ import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
 import { GoalReadingHeader } from './GoalReadingHeader';
 import { GoalReadingChart } from './GoalReadingChart';
+import { GoalReadingHoverProvider } from './GoalReadingHover';
 import { GoalReadingHistory } from './GoalReadingHistory';
 import { GoalReadingsResponse, ReadingKind, formatProgress } from './goalReadings';
 import {
@@ -282,6 +283,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
               {row.notes && <CardDetailRow label={t('label_notes')} value={row.notes} />}
               {/* §12 — the chart between the header and the history. */}
+              <GoalReadingHoverProvider>
               <div style={{ marginTop: 8 }}>
                 <GoalReadingChart
                   readings={readings[row.id]?.readings ?? []}
@@ -296,6 +298,8 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                     target: row.target_value === null
                       ? null
                       : t('chart_target', { value: formatTarget(row) }),
+                    legendReading: t('chart_legend_reading'),
+                    legendTarget: t('chart_legend_target'),
                   }}
                 />
               </div>
@@ -312,6 +316,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                   onChanged={async () => { await Promise.all([load(), loadReadings([row.id])]); }}
                 />
               </div>
+              </GoalReadingHoverProvider>
               {/* Both actions belong to Edit mode: absent outside it, not disabled. */}
               {canEdit && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

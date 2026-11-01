@@ -313,3 +313,26 @@ export function readingAxisLabel(
   // `YYYY-MM-DD` → `MM-DD`; `DD/MM/YYYY` / `MM/DD/YYYY` → `DD/MM` / `MM/DD`.
   return settings.date_format === 'YYYY-MM-DD' ? full.slice(5) : full.slice(0, 5);
 }
+
+
+/** The calendar day (UTC date part) of a reading — the key the history and the chart share (#2224). */
+export function readingDayKey(recordedAt: string | null): string | null {
+  if (!recordedAt) return null;
+  const at = new Date(recordedAt);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 10);
+}
+
+/**
+ * #2224 — the chart point a hovered day selects: where several readings share the day, the
+ * one with the highest value (the day's maximum, never the history's). `null` when the day
+ * has no plotted reading.
+ */
+export function selectedReadingX(readings: GoalReadingRow[], day: string | null): number | null {
+  if (!day) return null;
+  let best: GoalReadingRow | null = null;
+  for (const reading of readings) {
+    if (reading.value === null || readingDayKey(reading.recorded_at) !== day) continue;
+    if (best === null || Number(reading.value) > Number(best.value)) best = reading;
+  }
+  return best ? timeOf(best) : null;
+}
