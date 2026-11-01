@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2241 (the expanded Professional Service, Base and gym-based alike, now follows the Edit form's order: name and description per language, Max capacity, then a Media section showing the image or `—`; frontend only, no API or data change)
 - **Done**: #2125 stage 8 (a Membership Plan joining a schedule that was already running is prorated: `SimulationAssignment.alignTo` is the shared schedule's anchor, `buildMembershipFeeStream()` bills `prorate()` days to the schedule's next date on the plan's start date and then follows the schedule, as a recurring Product line does (#1867); the plan snapshot loader sets it only for a non-inherited snapshot whose schedule anchor precedes its start. The #2194 guard stays until the clone-and-add write path lands)
 - **Done**: #2183 follow-up (a member with no stored invitation whose email already has a Clerk account read Clerk Invitation "None" after Invite answered "already exists": `GET /members/:id/clerk-status` now reports `account_exists` from a read-only Clerk lookup and the Profile reads "Account exists (not linked)"; nothing is created or linked, a lookup failure reports nothing)
 - **Done**: #2171 follow-up (the Home welcome banner's exercise of the day now takes the exercise's effective image: its own master, else its primary muscle's image, via `effectiveImageUrlSql()`, so exercises without their own picture are candidates too; no migration, no API shape change)
