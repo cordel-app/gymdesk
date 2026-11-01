@@ -44,7 +44,8 @@ export function formatClerkDate(
 
 export function clerkStatusLine(f: ClerkAccountFields, locale: string, settings: GymFormatSettings = DEFAULT_GYM_FORMAT): ClerkAccountLine {
   const enrolled = f.enrolled ?? !!f.clerk_user_id;
-  if (!enrolled) return { key: 'clerk_status_not_enrolled', date: null };
+  // #2183: an existing unlinked Clerk account is a fact about the link, not the invitation.
+  if (!enrolled) return { key: f.account_exists ? 'clerk_status_account_exists' : 'clerk_status_not_enrolled', date: null };
   const date = formatClerkDate(f.enrolled_at, locale, settings);
   return { key: date ? 'clerk_status_enrolled_on' : 'clerk_status_enrolled', date };
 }
@@ -67,6 +68,5 @@ export function clerkInvitationLine(f: ClerkAccountFields, locale: string, setti
     }
     return { key: 'clerk_invitation_cancelled', date: null };
   }
-  if (f.account_exists && !(f.enrolled ?? !!f.clerk_user_id)) return { key: 'clerk_invitation_account_exists', date: null };
   return { key: 'clerk_invitation_none', date: null };
 }
