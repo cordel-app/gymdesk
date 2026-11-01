@@ -41,14 +41,19 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
     [productSetId, gymId]);
 
   if (!legacy[0]) {
-    // A plan-less version (or one whose plan was removed) has no snapshot; children cascade.
-    await tx.query('DELETE FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?', [gymId, productSetId]);
+    // A plan-less version (or one whose plan was removed) has no legacy-backed snapshot; children
+    // cascade. A native snapshot (#2125 stage 9: a plan added beside the first, with no legacy row)
+    // is not derived from anything here and stays.
+    await tx.query('DELETE FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_plan_snapshot_id IS NOT NULL',
+      [gymId, productSetId]);
+    await syncNativeSnapshotStatus(tx, gymId, productSetId);
     return;
   }
 
   // A version whose configuration row was replaced keeps one snapshot, never two.
   await tx.query('DELETE FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_plan_snapshot_id <> ?',
     [gymId, productSetId, legacy[0].id]);
+  await syncNativeSnapshotStatus(tx, gymId, productSetId);
 
   await tx.query(
     `INSERT INTO plan_snapshots
@@ -193,4 +198,17 @@ export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, user
   const { rows } = await tx.query<{ id: number }>(
     'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, userMembershipId]);
   for (const r of rows) await syncPlanSnapshot(tx, gymId, Number(r.id));
+}
+
+/**
+ * #2125 stage 9 — a native snapshot (a plan added beside the first one, `source_plan_snapshot_id`
+ * NULL) has no legacy row to be derived from, but it lives and dies with its version: its status
+ * follows the version's (draft, pending_payment, active, superseded).
+ */
+async function syncNativeSnapshotStatus(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  await tx.query(
+    `UPDATE plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
+        SET s.status = ps.status, s.modified_at = UTC_TIMESTAMP()
+      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_plan_snapshot_id IS NULL AND s.status <> ps.status`,
+    [gymId, productSetId]);
 }

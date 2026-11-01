@@ -1,4 +1,5 @@
 import { loadPaidThrough } from './cancellation-entitlement';
+import { copyNativePlanSnapshots } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
@@ -83,6 +84,8 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
   await syncPlanSnapshot(tx, gymId, toSetId);
+  // #2125 stage 9: plans added beside the first have no legacy row; they ride onto the successor as copies.
+  await copyNativePlanSnapshots(tx, gymId, fromSetId, toSetId);
 }
 
 /** Copies applied Promotions (and the grants each froze) between two versions. */
