@@ -15,6 +15,7 @@ export interface PsRow {
   description: string | null;
   max_capacity: number | null;
   image_url?: string | null;
+  base_professional_service_id?: number | null;
   image_thumbnail_url?: string | null;
   display_name: string;
   display_description: string | null;

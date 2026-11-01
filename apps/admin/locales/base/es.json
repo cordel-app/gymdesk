@@ -4906,6 +4906,10 @@
     "metric_avg_goals": "Media de objetivos por miembro"
   },
   "professional_services": {
+    "update_system_data": "Actualizar datos del sistema",
+    "update_system_data_done": "Datos del sistema actualizados.",
+    "update_system_data_up_to_date": "Ya está al día con el servicio del sistema.",
+    "update_system_data_base_gone": "El servicio profesional del sistema de origen ya no existe.",
     "delete_blocked_title": "Este Servicio Profesional no se puede eliminar porque todavía está en uso.",
     "delete_blocked_activities": "Actividades: {count}",
     "delete_blocked_calendar_events": "Eventos de calendario: {count}",

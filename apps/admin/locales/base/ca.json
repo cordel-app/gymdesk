@@ -4933,6 +4933,10 @@
     "metric_avg_goals": "Mitjana d'objectius per membre"
   },
   "professional_services": {
+    "update_system_data": "Actualitza les dades del sistema",
+    "update_system_data_done": "Dades del sistema actualitzades.",
+    "update_system_data_up_to_date": "Ja està al dia amb el servei del sistema.",
+    "update_system_data_base_gone": "El servei professional del sistema d'origen ja no existeix.",
     "delete_blocked_title": "Aquest Servei Professional no es pot eliminar perquè encara està en ús.",
     "delete_blocked_activities": "Activitats: {count}",
     "delete_blocked_calendar_events": "Esdeveniments de calendari: {count}",
