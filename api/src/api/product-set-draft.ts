@@ -8,6 +8,7 @@ import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 
@@ -23,11 +24,6 @@ import { loadPaidThroughForSchedule } from './cancellation-entitlement';
  * through `loadProductSetSimulationAssignment()`.
  */
 
-export const BENEFIT_TABLE: Record<ProductBenefitCategory, string> = {
-  session: 'user_membership_session',
-  oneoff: 'user_membership_oneoff',
-  periodical: 'user_membership_periodical',
-};
 
 export type DraftRefusal =
   | { kind: 'not_found' }
@@ -83,13 +79,14 @@ export async function syncMandatoryQuantities(
     'SELECT COUNT(*) AS n FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ?',
     [gymId, rootProductSetId]);
   const count = Math.max(1, Number(rows[0]?.n ?? 0));
-  for (const table of ['user_membership_session', 'user_membership_oneoff', 'user_membership_periodical']) {
+  for (const category of PLAN_LINE_CATEGORIES) {
     await tx.query(
-      `UPDATE ${table} b
+      `UPDATE ${PLAN_LINE_TABLE[category]} b
          JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           SET b.quantity = ?
-        WHERE b.product_set_id = ? AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
-      [count, productSetId, gymId, count]);
+        WHERE b.plan_snapshot_id IN (SELECT id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?)
+          AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
+      [count, productSetId, gymId, gymId, count]);
   }
 }
 
@@ -105,11 +102,13 @@ const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
 /* ── Benefit sections ────────────────────────────────────────────────────── */
 
 export async function loadBenefitSection(gymId: string, productSetId: number, category: ProductBenefitCategory) {
+  const snapshotId = await primaryPlanSnapshotId(db, gymId, productSetId);
+  if (snapshotId == null) return [];
   const { rows } = await db.query<any>(
     `SELECT product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency,
             \`action\`, \`value\`, mandatory${category === 'session' ? ', frequency' : ''}
-       FROM ${BENEFIT_TABLE[category]} WHERE gym_id = ? AND product_set_id = ? ORDER BY id`,
-    [gymId, productSetId]);
+       FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ? ORDER BY id`,
+    [gymId, snapshotId]);
   return rows;
 }
 
@@ -154,9 +153,11 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     });
   }
 
-  const table = BENEFIT_TABLE[category];
+  const table = PLAN_LINE_TABLE[category];
+  const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
   const { rows: current } = await tx.query<{ product_id: number }>(
-    `SELECT product_id FROM ${table} WHERE gym_id = ? AND product_set_id = ?`, [draft.gym_id, draft.id]);
+    `SELECT product_id FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, snapshotId]);
   const attached = new Set(current.map((r) => Number(r.product_id)));
   const added = parsed.filter((p) => !attached.has(p.product_id)).map((p) => p.product_id);
   if (added.length > 0) {
@@ -172,11 +173,11 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   }
 
   if (parsed.length === 0) {
-    await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND product_set_id = ?`, [draft.gym_id, draft.id]);
+    await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, snapshotId]);
   } else {
     await tx.query(
-      `DELETE FROM ${table} WHERE gym_id = ? AND product_set_id = ? AND product_id NOT IN (${parsed.map(() => '?').join(',')})`,
-      [draft.gym_id, draft.id, ...parsed.map((p) => p.product_id)]);
+      `DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id NOT IN (${parsed.map(() => '?').join(',')})`,
+      [draft.gym_id, snapshotId, ...parsed.map((p) => p.product_id)]);
   }
   for (const p of parsed) {
     // Columns this line's request named; everything else is left as stored.
@@ -188,20 +189,20 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (attached.has(p.product_id)) {
       await tx.query(
         `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''}
-          WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
-        [p.quantity, ...extraParams, draft.gym_id, draft.id, p.product_id]);
+          WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
+        [p.quantity, ...extraParams, draft.gym_id, snapshotId, p.product_id]);
     } else {
       await tx.query(
         `INSERT INTO ${table}
-           (gym_id, product_set_id, product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency)
+           (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency)
          SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
            FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
           WHERE gc.id = ? AND gc.gym_id = ?`,
-        [draft.gym_id, draft.id, p.quantity, p.product_id, draft.gym_id]);
+        [draft.gym_id, snapshotId, p.quantity, p.product_id, draft.gym_id]);
       if (extra.length) {
         await tx.query(
-          `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
-          [...extraParams, draft.gym_id, draft.id, p.product_id]);
+          `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
+          [...extraParams, draft.gym_id, snapshotId, p.product_id]);
       }
     }
   }

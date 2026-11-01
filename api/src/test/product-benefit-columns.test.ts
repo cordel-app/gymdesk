@@ -43,9 +43,9 @@ const PLAN_TABLES = [
   'membership_plan_session',
   'membership_plan_oneoff',
   'membership_plan_periodical',
-  'user_membership_session',
-  'user_membership_oneoff',
-  'user_membership_periodical',
+  'plan_session_snapshots',
+  'plan_oneoff_snapshots',
+  'plan_periodical_snapshots',
 ];
 
 async function columnInfo(table: string, column: string) {
@@ -59,6 +59,12 @@ async function columnInfo(table: string, column: string) {
     | { COLUMN_NAME: string; IS_NULLABLE: string; COLUMN_DEFAULT: string | null; DATA_TYPE: string }
     | undefined;
 }
+
+// The plan snapshot tables name their CHECKs after an abbreviation (migration 347), not the table.
+const CHECK_PREFIX: Record<string, string> = {
+  plan_session_snapshots: 'plsess', plan_oneoff_snapshots: 'ploneoff', plan_periodical_snapshots: 'plperiod',
+};
+const checkName = (table: string, suffix: string) => `chk_${CHECK_PREFIX[table] ?? table}_${suffix}`;
 
 async function checkClause(table: string, name: string): Promise<string | null> {
   const { rows } = await db.query(
@@ -89,7 +95,7 @@ describe('#896 — the pair reaches all twelve relationship tables', () => {
   });
 
   it.each(PROMOTION_TABLES)('%s permits the five Promotion actions', async (table) => {
-    const clause = await checkClause(table, `chk_${table}_action`);
+    const clause = await checkClause(table, checkName(table, 'action'));
     expect(clause).not.toBeNull();
     // MySQL renders the literals with a charset introducer and escaped quotes
     // (`_utf8mb4\\'waive\\'`), so the assertion is on the value itself.
@@ -99,7 +105,7 @@ describe('#896 — the pair reaches all twelve relationship tables', () => {
   });
 
   it.each(PLAN_TABLES)('%s permits three and refuses the two monetary ones (§16)', async (table) => {
-    const clause = await checkClause(table, `chk_${table}_action`);
+    const clause = await checkClause(table, checkName(table, 'action'));
     expect(clause).not.toBeNull();
     for (const action of ['no_benefit', 'waive', 'percentage_discount']) {
       expect(clause).toContain(action);
@@ -109,7 +115,7 @@ describe('#896 — the pair reaches all twelve relationship tables', () => {
   });
 
   it.each([...PROMOTION_TABLES, ...PLAN_TABLES])('%s constrains the value', async (table) => {
-    expect(await checkClause(table, `chk_${table}_value`)).not.toBeNull();
+    expect(await checkClause(table, checkName(table, 'value'))).not.toBeNull();
   });
 
   it('adds nothing to the global Product (§12)', async () => {

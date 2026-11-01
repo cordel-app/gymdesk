@@ -499,7 +499,7 @@ async function countProfessionalServiceReferences(
   let productSnapshots = 0;
   for (const table of [
     'member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
-    'user_membership_session', 'user_membership_oneoff', 'user_membership_periodical',
+    'plan_session_snapshots', 'plan_oneoff_snapshots', 'plan_periodical_snapshots',
   ]) {
     productSnapshots += await count(
       `SELECT COUNT(*) AS n FROM ${table} WHERE product_id IN (${linked})`, [id],

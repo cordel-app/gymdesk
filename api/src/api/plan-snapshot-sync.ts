@@ -17,12 +17,6 @@ import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 const STATUS_SQL = `CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
                          ELSE ps.status END`;
 
-const INCLUDED: Array<{ target: string; source: string; extra: string | null }> = [
-  { target: 'plan_session_snapshots', source: 'user_membership_session', extra: 'frequency' },
-  { target: 'plan_oneoff_snapshots', source: 'user_membership_oneoff', extra: null },
-  { target: 'plan_periodical_snapshots', source: 'user_membership_periodical', extra: 'schedule_id' },
-];
-
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
   { target: 'plan_promotion_oneoff_product_snapshots', source: 'user_membership_promotion_oneoff_snapshot' },
@@ -112,30 +106,7 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
       WHERE psm.gym_id = ? AND psm.root_product_set_id = ? AND psm.member_id <> ?`,
     [gymId, snapshotId, gymId, snap[0].root_product_set_id, snap[0].member_id]);
 
-  // Included Products: removed legacy rows first (the (snapshot, product) key must be free), then upsert.
-  for (const { target, source, extra } of INCLUDED) {
-    await tx.query(
-      `DELETE FROM ${target}
-        WHERE plan_snapshot_id = ?
-          AND (source_id IS NULL OR source_id NOT IN (SELECT id FROM ${source} WHERE gym_id = ? AND product_set_id = ?))`,
-      [snapshotId, gymId, productSetId]);
-    const extraCol = extra ? `, ${extra}` : '';
-    const extraSel = extra ? `, u.${extra}` : '';
-    const extraUpd = extra ? `, ${extra} = VALUES(${extra})` : '';
-    await tx.query(
-      `INSERT INTO ${target}
-         (gym_id, plan_snapshot_id, source_id, product_id, quantity, item_name, item_type, unit_price,
-          item_billing_frequency, currency, \`action\`, \`value\`, mandatory${extraCol}, created_at)
-       SELECT u.gym_id, ?, u.id, u.product_id, u.quantity, u.item_name, u.item_type, u.unit_price,
-              u.item_billing_frequency, u.currency, u.action, u.value, u.mandatory${extraSel}, u.created_at
-         FROM ${source} u WHERE u.gym_id = ? AND u.product_set_id = ?
-       ON DUPLICATE KEY UPDATE
-         product_id = VALUES(product_id), quantity = VALUES(quantity), item_name = VALUES(item_name),
-         item_type = VALUES(item_type), unit_price = VALUES(unit_price),
-         item_billing_frequency = VALUES(item_billing_frequency), currency = VALUES(currency),
-         \`action\` = VALUES(\`action\`), \`value\` = VALUES(\`value\`), mandatory = VALUES(mandatory)${extraUpd}`,
-      [snapshotId, gymId, productSetId]);
-  }
+  // #2125 stage 16: the included Products are the snapshot's own lines; nothing derives them here.
 
   // Membership Plan Promotion applications of this version (Product-target ones are not plan snapshots).
   await tx.query(

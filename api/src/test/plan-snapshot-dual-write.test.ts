@@ -98,10 +98,9 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
 
   it('a successor version is inherited, and activating it supersedes the predecessor snapshot', async () => {
     await db.query(
-      `INSERT INTO user_membership_oneoff (gym_id, product_id, quantity, item_name, item_type, unit_price, product_set_id)
-       VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, ?)`, [gymId, productId, setId]);
-    // Readers use the plan snapshot tables (#2125 stages 5-7): a fixture writing the legacy row re-derives them.
-    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, setId));
+      `INSERT INTO plan_oneoff_snapshots (gym_id, product_id, quantity, item_name, item_type, unit_price, plan_snapshot_id)
+       VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, (SELECT id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1))`,
+      [gymId, productId, setId]);
     const draft = await auth(request.post('/product-sets/draft')).send({ member_id: owner });
     expect(draft.status).toBeLessThan(300);
     const newSet = Number(draft.body.product_set_id ?? draft.body.id);

@@ -17,6 +17,7 @@ import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
 import { projectActiveProductSet } from './product-set-projection';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 
 /**
@@ -34,11 +35,6 @@ import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductS
  */
 
 const CATEGORIES: ProductBenefitCategory[] = ['session', 'oneoff', 'periodical'];
-const BENEFIT_TABLE: Record<ProductBenefitCategory, string> = {
-  session: 'user_membership_session',
-  oneoff: 'user_membership_oneoff',
-  periodical: 'user_membership_periodical',
-};
 
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
@@ -136,8 +132,13 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     ],
   );
 
+  // #2125 stage 16: the plan's included Products are the snapshot's own lines, so the snapshot row
+  // is derived from the plan configuration first and the lines are written under it.
+  await syncPlanSnapshot(tx, gymId, productSetId);
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) throw new Error('The plan snapshot was not derived');
   for (const category of CATEGORIES) {
-    const target = BENEFIT_TABLE[category];
+    const target = PLAN_LINE_TABLE[category];
     const source = planBenefitTableForCategory(category);
     const sessionFrequency = category === 'session';
     const declined = (input.declinedBenefits ?? [])
@@ -150,7 +151,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     // generator treats a NULL as the plan schedule.
     await tx.query(
       `INSERT INTO ${target}
-         (gym_id, product_set_id, product_id, quantity,
+         (gym_id, plan_snapshot_id, product_id, quantity,
           item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
           mandatory${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.product_id, b.quantity,
@@ -161,7 +162,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
          JOIN products gc ON gc.id = b.product_id
          LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
         WHERE b.membership_plan_id = ? AND b.gym_id = ? ${declinedClause}`,
-      [gymId, productSetId, membershipPlanId, gymId, ...declined],
+      [gymId, snapshotId, membershipPlanId, gymId, ...declined],
     );
   }
   await allocateItemSchedules(tx, gymId, productSetId);
@@ -191,11 +192,15 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
   }));
 
-  for (const table of ['user_membership_periodical', 'member_products_recurrent_snapshot'] as const) {
+  for (const table of ['plan_periodical_snapshots', 'member_products_recurrent_snapshot'] as const) {
+    // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
+    const scope = table === 'plan_periodical_snapshots'
+      ? 'plan_snapshot_id IN (SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?)'
+      : 'product_set_id = ?';
     const { rows } = await tx.query<any>(
       `SELECT id, item_billing_frequency${table === 'member_products_recurrent_snapshot' ? ', starts_at' : ''}
-         FROM ${table} WHERE gym_id = ? AND product_set_id = ? AND schedule_id IS NULL`,
-      [gymId, productSetId]);
+         FROM ${table} WHERE gym_id = ? AND ${scope} AND schedule_id IS NULL`,
+      table === 'plan_periodical_snapshots' ? [gymId, gymId, productSetId] : [gymId, productSetId]);
     for (const row of rows) {
       const cadence = cadenceForFrequency(row.item_billing_frequency);
       if (!cadence) continue;
@@ -273,13 +278,14 @@ export async function loadProductSetSimulationAssignment(
   const cadence = toPlanDurationCadence(row.cadence_interval, row.cadence_unit);
   const startsAt = toDateOnly(row.starts_at);
 
+  const primarySnapshot = await primaryPlanSnapshotId(exec, gymId, productSetId);
   const { rows: benefitRows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, product_id, quantity, item_name, item_billing_frequency,
              unit_price, \`action\`, \`value\`,
              ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
-        FROM ${BENEFIT_TABLE[category]} WHERE gym_id = ? AND product_set_id = ?`).join(' UNION ALL '),
-    CATEGORIES.flatMap(() => [gymId, productSetId]),
+        FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ?`).join(' UNION ALL '),
+    CATEGORIES.flatMap(() => [gymId, primarySnapshot ?? 0]),
   );
   const planBenefits: SimulationPlanBenefit[] = (benefitRows as any[]).map((b) => ({
     productId: b.product_id,
@@ -402,8 +408,9 @@ export async function planScheduledEvents(
       WHERE s.gym_id = ? AND s.product_set_id = ?
      UNION
      SELECT p.product_id, sch.schedule_key
-       FROM user_membership_periodical p JOIN product_set_schedules sch ON sch.id = p.schedule_id
-      WHERE p.gym_id = ? AND p.product_set_id = ?`,
+       FROM plan_periodical_snapshots p JOIN product_set_schedules sch ON sch.id = p.schedule_id
+       JOIN plan_snapshots ps2 ON ps2.id = p.plan_snapshot_id
+      WHERE p.gym_id = ? AND ps2.product_set_id = ?`,
     [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));
