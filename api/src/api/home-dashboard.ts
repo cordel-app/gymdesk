@@ -11,6 +11,7 @@
  * Mounted with auth + tenantContext only (any staff role may open Home); the
  * response simply omits what the caller may not read.
  */
+import { effectiveImageUrlSql } from '../domain/effectiveExerciseImage';
 import { assignmentVersionId } from './assignment-config';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -36,8 +37,9 @@ const SERVICE_TASK_MEMBER_CAP = 200;
 
 /**
  * #2171: the gym's exercise of the day for the welcome banner. Candidates are
- * the gym's own active exercises carrying their own male/female master image
- * (never a goal or muscle image), ordered by id; the gym-local day number picks
+ * the gym's own active exercises that have an effective image: their own
+ * master, else their primary muscle's image (#2171 follow-up; never a goal
+ * image), ordered by id; the gym-local day number picks
  * one, so it changes every day, is the same for every load and viewer of that
  * day, and needs no stored state or per-request randomness.
  */
@@ -50,11 +52,13 @@ export function welcomeExerciseIndex(count: number, zone: string, now: Date = ne
 
 async function loadWelcomeImage(gymId: string, zone: string): Promise<{ id: number; url: string } | null> {
   const { rows } = await db.query<{ id: number; url: string }>(
-    `SELECT e.id, COALESCE(e.image_male_url, e.image_female_url) AS url
-       FROM exercises e
-      WHERE e.gym_id = ? AND e.status = 'active'
-        AND COALESCE(e.image_male_url, e.image_female_url) IS NOT NULL
-      ORDER BY e.id`,
+    `SELECT x.id, x.url FROM (
+       SELECT e.id, ${effectiveImageUrlSql('e')} AS url
+         FROM exercises e
+        WHERE e.gym_id = ? AND e.status = 'active'
+     ) x
+      WHERE x.url IS NOT NULL
+      ORDER BY x.id`,
     [gymId],
   );
   if (!rows.length) return null;
