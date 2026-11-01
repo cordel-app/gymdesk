@@ -102,6 +102,8 @@ interface Product {
   id: number;
   gym_id: string;
   charge_type_id: number | null;
+  /** #2253: set when the Product was imported from a System Base Product. */
+  base_product_id?: number | null;
   charge_type_code: string | null;
   charge_type_name: string | null;
   name: string;
@@ -451,6 +453,18 @@ export default function ProductsPage() {
     try {
       await apiFetch(`/products/${item.id}/duplicate`, { method: 'POST' });
       load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  // ─── Resync with System (#2253) ─────────────────────────────────────────────
+
+  async function handleResync(item: Product) {
+    try {
+      const res = await apiFetch<{ updated: boolean }>(`/products/${item.id}/resync`, { method: 'POST' });
+      toast(res?.updated ? t('resync_success') : t('resync_no_change'));
+      if (res?.updated) load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     }
@@ -895,6 +909,7 @@ export default function ProductsPage() {
     const menuItems: ContextMenuItem[] = [
       { label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(item), disabled: !canWrite, title: readOnlyTitle },
+      ...(item.base_product_id != null ? [{ label: t('resync_system'), onClick: () => handleResync(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item), disabled: !canWrite, title: readOnlyTitle }
         : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
