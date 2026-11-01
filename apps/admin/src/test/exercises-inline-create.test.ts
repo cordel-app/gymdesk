@@ -171,9 +171,9 @@ describe('Exercises: inline creation (#805)', () => {
     });
   });
 
-  describe('AC5 — Recorded Metrics are read-only chips (#1360)', () => {
-    it('renders no checkbox for result types', () => {
-      expect(editorSrc).not.toContain('resultTypeIds');
+  describe('AC5 — Recorded Metrics are editable checkboxes (#2225, reverses #1360)', () => {
+    it('the editor binds the metric selection', () => {
+      expect(editorSrc).toContain('resultTypeIds');
     });
   });
 

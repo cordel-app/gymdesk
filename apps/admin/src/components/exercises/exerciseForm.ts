@@ -169,8 +169,10 @@ const textOrNull = (v: string) => (v.trim() || null);
 
 interface PayloadExtras {
   muscles: Map<string, MuscleRole>;
-  /** Unused since #1360 stage 2: Recorded Metrics are derived from the category by the API. */
+  /** #2225: the selected Recorded Metrics. Empty = not sent (create: the category's default; edit: keep). */
   resultTypeIds?: Set<number>;
+  /** #2225: the administrator confirmed deleting the recordings of removed metrics. */
+  confirmMetricRemoval?: boolean;
 }
 
 /**
@@ -205,8 +207,12 @@ export function trimmedDescriptionTranslations(
   return out;
 }
 
-function sharedPayload(form: ExerciseFormValues, { muscles }: PayloadExtras) {
+function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds, confirmMetricRemoval }: PayloadExtras) {
   return {
+    ...(resultTypeIds && resultTypeIds.size > 0
+      ? { allowed_result_type_ids: Array.from(resultTypeIds).sort((a, b) => a - b) }
+      : {}),
+    ...(confirmMetricRemoval ? { confirm_metric_removal: true } : {}),
     name: form.name.trim(),
     translations: trimmedTranslations(form.translations),
     description: textOrNull(form.description),
