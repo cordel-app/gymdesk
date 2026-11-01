@@ -1,5 +1,6 @@
 import { loadPaidThrough } from './cancellation-entitlement';
 import { copyNativePlanSnapshots } from './plan-snapshot-add';
+import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
@@ -59,20 +60,6 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
        FROM product_set_plan_snapshots WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 
-  for (const [table, extra] of [
-    ['user_membership_session', ', frequency'],
-    ['user_membership_oneoff', ''],
-    ['user_membership_periodical', ', schedule_id'],
-  ] as const) {
-    await tx.query(
-      `INSERT INTO ${table}
-         (gym_id, product_set_id, product_id, quantity, item_name, item_type, item_billing_frequency,
-          unit_price, currency, \`action\`, \`value\`, mandatory${extra})
-       SELECT gym_id, ?, product_id, quantity, item_name, item_type, item_billing_frequency,
-              unit_price, currency, \`action\`, \`value\`, mandatory${extra}
-         FROM ${table} WHERE gym_id = ? AND product_set_id = ?`,
-      [toSetId, gymId, fromSetId]);
-  }
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
@@ -84,6 +71,26 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
   await syncPlanSnapshot(tx, gymId, toSetId);
+  // #2125 stage 16: the included Products are the plan snapshot's lines — the successor's primary
+  // snapshot (just derived) takes a copy of the predecessor's primary snapshot's.
+  const fromSnapshot = await primaryPlanSnapshotId(tx, gymId, fromSetId);
+  const toSnapshot = await primaryPlanSnapshotId(tx, gymId, toSetId);
+  if (fromSnapshot != null && toSnapshot != null) {
+    for (const [table, extra] of [
+      [PLAN_LINE_TABLE.session, ', frequency'],
+      [PLAN_LINE_TABLE.oneoff, ''],
+      [PLAN_LINE_TABLE.periodical, ', schedule_id'],
+    ] as const) {
+      await tx.query(
+        `INSERT INTO ${table}
+           (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency,
+            unit_price, currency, \`action\`, \`value\`, mandatory${extra})
+         SELECT gym_id, ?, product_id, quantity, item_name, item_type, item_billing_frequency,
+                unit_price, currency, \`action\`, \`value\`, mandatory${extra}
+           FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`,
+        [toSnapshot, gymId, fromSnapshot]);
+    }
+  }
   // #2125 stage 9: plans added beside the first have no legacy row; they ride onto the successor as copies.
   await copyNativePlanSnapshots(tx, gymId, fromSetId, toSetId);
 }

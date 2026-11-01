@@ -77,11 +77,6 @@ const PLAN_SNAPSHOT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> = 
   periodical: 'plan_periodical_snapshots',
 };
 
-export const BENEFIT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> = {
-  session: 'user_membership_session',
-  oneoff: 'user_membership_oneoff',
-  periodical: 'user_membership_periodical',
-};
 
 /**
  * One snapshotted benefit row, as the API serves it.

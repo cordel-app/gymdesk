@@ -36,15 +36,6 @@ export async function validatePlanSnapshots(): Promise<{ checks: Check[]; gaps: 
   await add('plan_snapshot_beneficiaries (owner of every snapshot)',
     'SELECT COUNT(*) n FROM plan_snapshots',
     'SELECT COUNT(*) n FROM plan_snapshot_beneficiaries WHERE is_owner = 1');
-  for (const [target, source] of [
-    ['plan_session_snapshots', 'user_membership_session'],
-    ['plan_oneoff_snapshots', 'user_membership_oneoff'],
-    ['plan_periodical_snapshots', 'user_membership_periodical'],
-  ]) {
-    await add(`${target} (rows of versions that carry a plan)`,
-      `SELECT COUNT(*) n FROM ${source} u JOIN plan_snapshots s ON s.product_set_id = u.product_set_id`,
-      `SELECT COUNT(*) n FROM ${target}`);
-  }
   await add('plan_promotion_snapshots (Membership Plan applications with a snapshot to hang on)',
     `SELECT COUNT(*) n FROM user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'

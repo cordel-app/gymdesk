@@ -61,9 +61,6 @@ beforeAll(async () => {
     `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`, [gymId, `PS-Prod-${uniq()}`]);
   productId = prod;
-  await db.query(
-    `INSERT INTO user_membership_session (gym_id, product_id, quantity, item_name, item_type, unit_price, frequency, product_set_id)
-     VALUES (?, ?, 2, 'Frozen PT', 'sessions', 15.00, 'week', ?)`, [gymId, productId, setA]);
   const { insertId: promo } = await db.query(
     `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
        only_applicable_for_new_members, free_months, paid_months, bonus_months)
@@ -106,12 +103,8 @@ describe('plan snapshots backfill (#2125 stage 1)', () => {
     expect(rows.map((r) => [r.member_id, r.is_owner])).toEqual([[owner, 1], [kid, 0]].sort((x, y) => x[0] - y[0]));
   });
 
-  it('copies included products and promotion applications under their snapshot', async () => {
-    const { rows: sess } = await db.query<any>(
-      `SELECT x.* FROM plan_session_snapshots x JOIN plan_snapshots s ON s.id = x.plan_snapshot_id WHERE s.product_set_id = ?`, [setA]);
-    expect(sess).toHaveLength(1);
-    expect(sess[0].item_name).toBe('Frozen PT');
-    expect(sess[0].frequency).toBe('week');
+  // The included Products are the snapshot's own lines since migration 355 (no legacy table to backfill from).
+  it('copies promotion applications under their snapshot', async () => {
     const { rows: promo } = await db.query<any>(
       `SELECT p.*, s.product_set_id FROM plan_promotion_snapshots p JOIN plan_snapshots s ON s.id = p.plan_snapshot_id WHERE p.gym_id = ?`, [gymId]);
     expect(promo).toHaveLength(1);

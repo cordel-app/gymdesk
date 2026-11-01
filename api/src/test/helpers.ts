@@ -261,8 +261,19 @@ async function versionOfAssignment(userMembershipId: number): Promise<number> {
   return id;
 }
 
-export async function legacyChildQuery(sql: string, params: unknown[] = []): Promise<any> {
+const PRIMARY_SNAPSHOT_OF_VERSION = (versionExpr: string) =>
+  `(SELECT s9.id FROM plan_snapshots s9 WHERE s9.product_set_id = ${versionExpr} ORDER BY s9.id LIMIT 1)`;
+
+export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): Promise<any> {
   const queue = [...params];
+  // #2125 stage 16: the included Products are the plan snapshot's own lines. A fixture written against
+  // `user_membership_session|oneoff|periodical` is re-pointed at `plan_*_snapshots`, keyed by the
+  // primary plan snapshot of the assignment's version (derived first when it does not exist yet).
+  let isLineTable = false;
+  const sql = sqlIn.replace(/\buser_membership_(session|oneoff|periodical)\b/g, (_m, kind) => {
+    isLineTable = true;
+    return `plan_${kind}_snapshots`;
+  });
   // Coverage is the chain's (`product_set_members`): an INSERT naming an
   // assignment's covered Members is written on that assignment's chain.
   const cover = sql.match(/^\s*INSERT INTO user_membership_members\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i);
@@ -297,8 +308,18 @@ export async function legacyChildQuery(sql: string, params: unknown[] = []): Pro
     for (let i = 0; i < at; i++) placeholders += (tokens[i].match(/\?/g) ?? []).length;
     if (tokens[at].trim() !== '?') throw new Error('legacy child fixture: user_membership_id must be a placeholder');
     const assignmentId = Number(queue[placeholders]);
-    queue[placeholders] = await versionOfAssignment(assignmentId);
-    columns[at] = 'product_set_id';
+    const versionId = await versionOfAssignment(assignmentId);
+    if (isLineTable) {
+      await syncFixtureSnapshot(versionId);
+      const { rows: snap } = await db.query<{ id: number }>(
+        'SELECT id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [versionId]);
+      if (!snap[0]) throw new Error(`legacy child fixture: version ${versionId} has no plan snapshot`);
+      queue[placeholders] = snap[0].id;
+      columns[at] = 'plan_snapshot_id';
+    } else {
+      queue[placeholders] = versionId;
+      columns[at] = 'product_set_id';
+    }
     // A Membership Plan application is the assignment's too (#1995 stage 3).
     if (/^\s*INSERT INTO user_membership_promotions\b/i.test(insert[1])) {
       columns.push('user_membership_id');
@@ -307,14 +328,18 @@ export async function legacyChildQuery(sql: string, params: unknown[] = []): Pro
     }
     const written = await db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
     // #2125 stage 11: readers use the plan snapshot tables, so a fixture writing the legacy row re-derives them.
-    await syncFixtureSnapshot(Number(queue[placeholders]));
+    if (!isLineTable) await syncFixtureSnapshot(Number(queue[placeholders]));
     return written;
   }
-  // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version.
+  // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version (or, for the
+  // plan lines, through the version's primary plan snapshot).
+  const keyColumn = isLineTable ? 'plan_snapshot_id' : 'product_set_id';
+  const keyExpr = (idExpr: string) => isLineTable
+    ? PRIMARY_SNAPSHOT_OF_VERSION(LATEST_VERSION(idExpr)) : LATEST_VERSION(idExpr);
   let out = sql.replace(/\b((?:\w+\.)?)user_membership_id\s*=\s*\?/g,
-    (_m, alias) => `${alias}product_set_id = ${LATEST_VERSION('?')}`);
+    (_m, alias) => `${alias}${keyColumn} = ${keyExpr('?')}`);
   out = out.replace(/\b((?:\w+\.)?)user_membership_id\s+IN\s*\(([^)]*)\)/g,
-    (_m, alias, list) => `${alias}product_set_id IN (${list.split(',').map(() => LATEST_VERSION('?')).join(', ')})`);
+    (_m, alias, list) => `${alias}${keyColumn} IN (${list.split(',').map(() => keyExpr('?')).join(', ')})`);
   return db.query(out, queue);
 }
 
@@ -614,9 +639,9 @@ export async function cleanupTestGyms() {
   // *without* ON DELETE CASCADE (the snapshot must outlive a retired item), so
   // unlike the Plan-side tables above these genuinely have to go before
   // products — same reason as `member_products_recurrent_snapshot` further up.
-  await db.query(`DELETE FROM user_membership_session WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_oneoff WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_periodical WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM plan_session_snapshots WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM plan_oneoff_snapshots WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM plan_periodical_snapshots WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_professional_services WHERE gym_id IN (${marks})`, ids);

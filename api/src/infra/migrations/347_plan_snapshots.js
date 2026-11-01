@@ -305,6 +305,8 @@ async function backfillPlanSnapshots(knex) {
     ['plan_periodical_snapshots', 'user_membership_periodical', 'schedule_id'],
   ];
   for (const [target, source, extra] of included) {
+    // Migration 355 drops the legacy benefit tables; once gone there is nothing left to copy.
+    if (!(await knex.schema.hasTable(source))) { counts[target] = 0; continue; }
     const extraCol = extra ? `, ${extra}` : '';
     const extraSel = extra ? `, u.${extra}` : '';
     counts[target] = await run(`
