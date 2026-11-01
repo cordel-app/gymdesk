@@ -1,6 +1,6 @@
 import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
-import { allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
+import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { toPlanDurationRepeats } from '../domain/planDuration';
 
 /**
