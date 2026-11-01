@@ -1,3 +1,4 @@
+import { assignmentPlanSnapshotId } from './assignment-config';
 import { Tx } from '../infra/db';
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
@@ -30,9 +31,9 @@ async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: numbe
 
 async function writePrice(tx: Tx, gymId: string, setId: number, price: number, planPriceId: number | null) {
   await tx.query(
-    `UPDATE product_set_plan_snapshots
+    `UPDATE plan_snapshots
         SET membership_fee_price = ?, base_price = ?, plan_price_id = ?
-      WHERE product_set_id = ? AND gym_id = ?`,
+      WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [price, price, planPriceId, setId, gymId],
   );
 }
@@ -73,13 +74,12 @@ export async function repriceOnVersion(tx: Tx, input: {
 export async function refreshPlanPriceReference(tx: Tx, input: {
   gymId: string; userMembershipId: number; price: number; planPriceId: number | null;
 }): Promise<void> {
+  // MySQL cannot update a table through a subquery on itself: resolve the snapshot first.
+  const { rows } = await tx.query<{ id: number | null }>(
+    `SELECT ${assignmentPlanSnapshotId('?')} AS id`, [input.userMembershipId]);
+  if (rows[0]?.id == null) return;
   await tx.query(
-    `UPDATE product_set_plan_snapshots snap
-       JOIN product_sets ps ON ps.id = snap.product_set_id
-        SET snap.base_price = ?, snap.plan_price_id = ?
-      WHERE ps.gym_id = ? AND ps.user_membership_id = ?
-        AND ps.version = (SELECT MAX(p2.version) FROM product_sets p2
-                           WHERE p2.gym_id = ps.gym_id AND p2.user_membership_id = ps.user_membership_id)`,
-    [input.price, input.planPriceId, input.gymId, input.userMembershipId],
+    `UPDATE plan_snapshots SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?`,
+    [input.price, input.planPriceId, rows[0].id, input.gymId],
   );
 }

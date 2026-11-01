@@ -184,7 +184,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(ps[0].status).toBe('pending_payment');
     expect(ps[0].membership_plan_id).toBe(planId);
     const { rows: snap } = await db.query<any>(
-      'SELECT membership_fee_price FROM product_set_plan_snapshots WHERE product_set_id = ?', [res.body.id]);
+      'SELECT membership_fee_price FROM plan_snapshots WHERE product_set_id = ?', [res.body.id]);
     expect(Number(snap[0].membership_fee_price)).toBe(40);
     const { rows: apps } = await db.query<any>(
       "SELECT promotion_id, status, snapshot FROM user_membership_promotions WHERE product_set_id = ? AND status = 'applied'", [res.body.id],

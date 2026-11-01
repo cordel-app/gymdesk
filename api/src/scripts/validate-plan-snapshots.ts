@@ -29,10 +29,6 @@ export async function validatePlanSnapshots(): Promise<{ checks: Check[]; gaps: 
   const add = async (name: string, expected: string, actual: string) =>
     checks.push({ name, expected: await count(expected), actual: await count(actual) });
 
-  await add('plan_snapshots (one per Product Set version carrying a plan)',
-    `SELECT COUNT(*) n FROM product_set_plan_snapshots psps JOIN product_sets ps ON ps.id = psps.product_set_id
-      WHERE ps.membership_plan_id IS NOT NULL`,
-    'SELECT COUNT(*) n FROM plan_snapshots WHERE source_plan_snapshot_id IS NOT NULL');
   await add('plan_snapshot_beneficiaries (owner of every snapshot)',
     'SELECT COUNT(*) n FROM plan_snapshots',
     'SELECT COUNT(*) n FROM plan_snapshot_beneficiaries WHERE is_owner = 1');

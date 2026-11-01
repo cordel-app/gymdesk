@@ -307,7 +307,7 @@ export async function loadAssignedPlanBenefitSection(
  * site: a Plan whose policy was deleted still bills its existing assignments.
  */
 export const ASSIGNMENT_CADENCE = {
-  // #1325 PR 3e-3: the pair is the version's own (`product_set_plan_snapshots`,
+  // #1325 PR 3e-3: the pair is the version's own (`plan_snapshots`,
   // frozen from its Plan when the version was created), joined as `cfg` by
   // `ASSIGNMENT_CONFIG_JOIN`; the first argument is kept for the callers that
   // pass it.

@@ -145,17 +145,20 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
         SET membership_plan_id = COALESCE(membership_plan_id,
               (SELECT membership_plan_id FROM user_memberships WHERE id = ?))
       WHERE id = ?`, [umId, setId]);
-  const { rows: own } = await db.query('SELECT id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
+  const { rows: own } = await db.query('SELECT id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
   if (own.length > 0) return;
   const { rows: holder } = await db.query<{ id: number }>(
-    `SELECT ps.id FROM product_sets ps
-       JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
-      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId, setId]);
+    `SELECT s.id FROM plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
+      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, s.id DESC LIMIT 1`, [umId, setId]);
   if (!holder[0]) return;
   const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
+  const scols = ASSIGNMENT_CONFIG_COLUMNS.map((c) => `s.${c}`).join(', ');
   await db.query(
-    `INSERT INTO product_set_plan_snapshots (gym_id, product_set_id, ${cols})
-     SELECT gym_id, ?, ${cols} FROM product_set_plan_snapshots WHERE product_set_id = ?`, [setId, holder[0].id]);
+    `INSERT INTO plan_snapshots
+       (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id, ${cols})
+     SELECT s.gym_id, ps.id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at,
+            ps.user_membership_id, ${scols}
+       FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [setId, holder[0].id]);
   // The Active version is the assignment's now: a holder only existed to carry
   // what the fixture wrote before one did.
   await db.query(
@@ -175,7 +178,7 @@ export async function getAssignmentConfig(umId: number): Promise<Record<string, 
   const { rows } = await db.query<any>(
     `SELECT snap.*, ps.id AS product_set_id, ps.status AS product_set_status
        FROM product_sets ps
-       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+       LEFT JOIN plan_snapshots snap ON snap.id = (SELECT MIN(s2.id) FROM plan_snapshots s2 WHERE s2.product_set_id = ps.id)
       WHERE ps.user_membership_id = ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId]);
   return rows[0] ?? {};
 }
@@ -200,16 +203,21 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     setId = Number(insertId);
   }
-  const { rows: snap } = await db.query('SELECT id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
-  if (snap.length === 0) {
-    await db.query(
-      'INSERT INTO product_set_plan_snapshots (gym_id, product_set_id) SELECT gym_id, id FROM product_sets WHERE id = ?',
-      [setId]);
+  const { rows: snap } = await db.query<{ id: number }>(
+    'SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+  let snapshotId = snap[0]?.id != null ? Number(snap[0].id) : null;
+  if (snapshotId == null) {
+    const { insertId } = await db.query(
+      `INSERT INTO plan_snapshots
+         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id)
+       SELECT ps.gym_id, ps.id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ps.user_membership_id
+         FROM product_sets ps WHERE ps.id = ?`, [setId]);
+    snapshotId = Number(insertId);
   }
   const defined = keys.filter((k) => patch[k] !== undefined);
   await db.query(
-    `UPDATE product_set_plan_snapshots SET ${defined.map((k) => `${k} = ?`).join(', ')} WHERE product_set_id = ?`,
-    [...defined.map((k) => patch[k] ?? (k === 'personal_fee_benefit_action' ? 'no_benefit' : k === 'auto_renew' ? 0 : null)), setId]);
+    `UPDATE plan_snapshots SET ${defined.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
+    [...defined.map((k) => patch[k] ?? (k === 'personal_fee_benefit_action' ? 'no_benefit' : k === 'auto_renew' ? 0 : null)), snapshotId]);
   await syncFixtureSnapshot(setId);
 }
 
