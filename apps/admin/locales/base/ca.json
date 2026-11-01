@@ -645,6 +645,7 @@
     "family_add_placeholder": "Cerca un membre per afegir…",
     "family_make_owner": "Fer titular",
     "family_remove": "Treure",
+    "family_view": "Veure",
     "family_dissolve": "Dissoldre família",
     "family_confirm_remove": "Vols treure {name} de la família?",
     "family_confirm_dissolve": "Vols dissoldre aquesta família? Els membres conserven els seus propis plans i productes.",
