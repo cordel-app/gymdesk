@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2125 stage 7 (`planScheduledEvents()` generates a version's obligations from **every** plan snapshot: each plan runs through the engine on its own and its lines take the schedule its snapshot is linked to, the shared `plan` schedule when the cadence matches, so the events of N plans land on the same dates in one event; a single-plan version generates exactly what it did. The interim guard of #2194 stays until a plan joining mid-cycle is prorated to the shared schedule)
 - **Done**: #2125 stage 6 (`loadProductSetSimulationAssignments()` in `api/src/api/plan-snapshot-assignments.ts` builds the engine's input for a ProductSet version as one `SimulationAssignment` per `plan_snapshots` row, reading only the plan snapshot tables, with a plan's Promotions and included Products on its snapshot and the version-level recurring lines and Product-target Promotions on the first assignment; with one plan the first element equals the version-keyed loader's output. Additive: no caller uses it yet)
 - **Done**: #2221 (Spanish and Catalan names for all 876 Base Exercises, written with gym terminology rather than literally and bundled in `api/src/data/base-exercise-names.json`; `npm run exercises:backfill-names` loads them into `base_exercise_translations`, dry run by default, filling only missing locales and never touching the English name or an existing translation. Run from the VPS as the compiled script. Gate: `base-exercise-names.unit.test.ts`)
 

@@ -8,6 +8,7 @@ import {
   materialiseScheduledEvents, snapshotProductSetFromPlan,
 } from '../api/product-set-configuration';
 import { allocateSchedule, cadenceForFrequency } from '../domain/scheduleAllocation';
+import { planScheduledEvents } from '../api/product-set-configuration';
 import { computeBillingSimulation } from '../domain/billingSimulation';
 import { loadProductSetSimulationAssignments } from '../api/plan-snapshot-assignments';
 
@@ -152,5 +153,35 @@ describe('a plan Promotion belongs to its plan snapshot', () => {
     expect(list[0].promotions).toHaveLength(1);
     expect(list[0].promotions[0].membershipFeeBenefits[0]).toMatchObject({ action: 'percentage_discount', value: 10 });
     expect(list[0]).toEqual(legacy);
+  });
+});
+
+describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
+  it('bills every plan of the version on the shared schedule, and one plan exactly as before', async () => {
+    const first = await plan({ price: 50 });
+    const second = await plan({ price: 30 });
+    const owner = await member();
+    const set = await newVersion(owner, first, TODAY, 50);
+
+    const alone = await planScheduledEvents(gymId, set.id, TODAY, 2);
+    const aloneFees = alone.map((e) => e.lines.filter((l) => l.kind === 'membership_fee').length);
+    expect(aloneFees.every((n) => n === 1)).toBe(true);
+
+    const { rows: snap } = await db.query<any>('SELECT schedule_id FROM plan_snapshots WHERE product_set_id = ?', [set.id]);
+    await db.query(
+      `INSERT INTO plan_snapshots
+         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+          membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
+       VALUES (?, ?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
+      [gymId, set.id, owner, second, TODAY, snap[0].schedule_id]);
+
+    const both = await planScheduledEvents(gymId, set.id, TODAY, 2);
+    expect(both.map((e) => e.date)).toEqual(alone.map((e) => e.date));
+    for (const e of both) {
+      expect(e.scheduleKey).toBe(alone[0].scheduleKey);
+      expect(e.lines.filter((l) => l.kind === 'membership_fee')).toHaveLength(2);
+    }
+    const total = (events: typeof both) => events[0].lines.reduce((sum, l) => sum + l.actual_charge, 0);
+    expect(Math.round(total(both) * 100) / 100).toBe(Math.round((total(alone) + 30) * 100) / 100);
   });
 });
