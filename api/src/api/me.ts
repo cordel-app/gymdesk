@@ -1239,7 +1239,7 @@ meRouter.delete('/shared-training-requests/:id', requireRole('member'), requireF
  * active plans at once), each with its full clone tree (workouts -> blocks
  * -> exercises).
  */
-meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('training.training_plans'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('training.training_plans'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -1271,7 +1271,7 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
 });
 
 /** #1370: Day / Last 7 Days / Last 30 Days completed-over-scheduled workouts, in the gym's zone. */
-meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -1662,7 +1662,7 @@ async function gymTimeZone(gymId: string): Promise<string> {
  * #55: log a performed exercise + its sets. Member can only log against a
  * WorkoutExercise that belongs to one of their own (non-deleted) TrainingPlans.
  */
-meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { logged_date, notes, duration_seconds, skipped, sets } = req.body;
@@ -1742,7 +1742,7 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
 });
 
 /** #55: member edits their own log (ownership-checked). No DELETE route. */
-meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { notes, duration_seconds, skipped, sets } = req.body;
@@ -1786,7 +1786,7 @@ meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled(
 });
 
 /** #55: history for progress charts — filter by exercise id. */
-meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const exerciseId = req.query.exercise as string | undefined;
@@ -1833,7 +1833,7 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
  * `result_value` stays free text the member typed for the block; typed,
  * per-set results are the exercise instance's, in `exercise_logs`.
  */
-meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { workout_block_id, logged_date, started_at, finished_at, result_value, notes } = req.body;
@@ -1872,7 +1872,7 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
 });
 
 /** #55: member edits their own block log (ownership-checked). No DELETE route. */
-meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { started_at, finished_at, result_value, notes } = req.body;
@@ -1918,7 +1918,7 @@ meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEna
 });
 
 /** #55: history list. */
-meRouter.get('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_products'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {

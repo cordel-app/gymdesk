@@ -4991,6 +4991,7 @@
     "col_modified_by": "Modificado por",
     "tab_admin": "Funciones de administración",
     "tab_member_web": "Web de miembros",
+    "flag_member_web_my_products": "Mis productos",
     "role_access_hint": "Acceso por rol: - ninguno, R lectura, RW lectura + escritura. Solo informativo; no cambia los permisos.",
     "title": "Flags de características",
     "description": "Controla qué secciones de navegación son visibles para los usuarios del gimnasio. Desactivar una sección también oculta todos sus subelementos.",

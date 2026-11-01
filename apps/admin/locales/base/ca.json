@@ -5018,6 +5018,7 @@
     "col_modified_by": "Modificat per",
     "tab_admin": "Funcions d'administració",
     "tab_member_web": "Web de membres",
+    "flag_member_web_my_products": "Els meus productes",
     "role_access_hint": "Accés per rol: - cap, R lectura, RW lectura + escriptura. Només informatiu; no canvia els permisos.",
     "title": "Flags de funcionalitats",
     "description": "Controla quines seccions de navegació són visibles per als usuaris del gimnàs. Desactivar una secció també amaga tots els seus subelements.",
