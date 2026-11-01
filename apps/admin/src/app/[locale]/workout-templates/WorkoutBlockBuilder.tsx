@@ -42,6 +42,25 @@ interface ExerciseOption {
 const mkBlockId = (key: string | number, blockId: number) => `wbb:${key}:block:${blockId}`;
 const mkExId = (key: string | number, blockId: number, exId: number) => `wbb:${key}:ex:${blockId}:${exId}`;
 
+/**
+ * #2226: the builder normally owns its DndContext and its own id scheme. The
+ * Workout Templates page instead drags blocks *between* templates inside one
+ * page-level DndContext, with ids `block:<tpl>:<id>` / `ex:<tpl>:<block>:<id>`
+ * — the 'page' scheme. It is a mode of this one renderer, not a second one.
+ */
+export type WorkoutDragScheme = 'builder' | 'page';
+const DragSchemeContext = React.createContext<WorkoutDragScheme>('builder');
+const useBlockDragId = () => {
+  const scheme = React.useContext(DragSchemeContext);
+  return (key: string | number, blockId: number) =>
+    scheme === 'page' ? `block:${key}:${blockId}` : mkBlockId(key, blockId);
+};
+const useExDragId = () => {
+  const scheme = React.useContext(DragSchemeContext);
+  return (key: string | number, blockId: number, exId: number) =>
+    scheme === 'page' ? `ex:${key}:${blockId}:${exId}` : mkExId(key, blockId, exId);
+};
+
 /* ---- Block row ---- */
 function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplicate, onDelete, onDeleteExercise, onChanged }: {
   workoutKey: string | number;
@@ -54,11 +73,12 @@ function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplica
   onDeleteExercise: (ex: HierExercise) => void;
   onChanged: () => void | Promise<void>;
 }) {
+  const blockDragId = useBlockDragId();
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: mkBlockId(workoutKey, block.id),
+    id: blockDragId(workoutKey, block.id),
   });
 
   const [name, setName] = useState(block.name ?? '');
@@ -234,6 +254,7 @@ function ExerciseTable({ workoutKey, blocksUrl, block, canWrite, exercises, atLi
   onDeleteExercise: (ex: HierExercise) => void;
   onChanged: () => void | Promise<void>;
 }) {
+  const exDragId = useExDragId();
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -299,7 +320,7 @@ function ExerciseTable({ workoutKey, blocksUrl, block, canWrite, exercises, atLi
         </thead>
         <tbody>
           <SortableContext
-            items={blockExercises.map((ex) => mkExId(workoutKey, block.id, ex.id))}
+            items={blockExercises.map((ex) => exDragId(workoutKey, block.id, ex.id))}
             strategy={verticalListSortingStrategy}
           >
             {blockExercises.map((ex) => (
@@ -374,11 +395,12 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
   onDuplicate: () => void;
   onChanged: () => void | Promise<void>;
 }) {
+  const exDragId = useExDragId();
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: mkExId(workoutKey, block.id, exercise.id),
+    id: exDragId(workoutKey, block.id, exercise.id),
   });
 
   const slug = exercise.result_type_slug;
@@ -575,7 +597,9 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
 }
 
 /* ---- Main builder ---- */
-export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, onChanged }: {
+export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, onChanged, dragScheme = 'builder' }: {
+  /** 'page' = drag-and-drop is handled by an enclosing DndContext (no context of its own). */
+  dragScheme?: WorkoutDragScheme;
   workoutKey: number | string;
   blocksUrl: string;
   blocks: HierBlock[];
@@ -593,8 +617,9 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
 
   useEffect(() => { setLocalBlocks(blocks); }, [blocks]);
   useEffect(() => {
+    if (!canWrite) return; // read-only: no exercise picker, nothing to fetch
     apiFetch<ExerciseOption[]>('/exercises?status=active').then(setExercises).catch(() => {});
-  }, []);
+  }, [canWrite]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -717,8 +742,8 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
     }
   }
 
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+  const body = (
+    <>
       {canWrite && (
         <button onClick={addBlock} style={treeAddBtnStyle}>
           {t('workout_templates.tree_add_block')}
@@ -729,7 +754,7 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
         <p style={{ color: '#888', fontSize: 14, margin: '8px 0 4px' }}>{t('workout_templates.tree_no_blocks')}</p>
       ) : (
         <SortableContext
-          items={localBlocks.map((b) => mkBlockId(workoutKey, b.id))}
+          items={localBlocks.map((b) => (dragScheme === 'page' ? `block:${workoutKey}:${b.id}` : mkBlockId(workoutKey, b.id)))}
           strategy={verticalListSortingStrategy}
         >
           {localBlocks.map((b) => (
@@ -765,6 +790,14 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
         onConfirm={deleteExercise}
         onCancel={() => setDeletingExercise(null)}
       />
-    </DndContext>
+    </>
+  );
+
+  return (
+    <DragSchemeContext.Provider value={dragScheme}>
+      {dragScheme === 'page' ? body : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>{body}</DndContext>
+      )}
+    </DragSchemeContext.Provider>
   );
 }

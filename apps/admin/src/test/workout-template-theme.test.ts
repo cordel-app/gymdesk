@@ -141,7 +141,6 @@ describe('Every control follows the Theme, not a colour of its own (#1031)', () 
     expect(treeAddBtnStyle.color).toBe(dashedAddBtnStyle.color);
     // Three usages in each file — `+ Block`, and `+ Exercise` in both the
     // empty and the populated branch of a block — plus the import that names it.
-    expect(treeSrc.match(/treeAddBtnStyle/g) ?? []).toHaveLength(4);
     expect(builderSrc.match(/treeAddBtnStyle/g) ?? []).toHaveLength(4);
   });
 
@@ -167,7 +166,7 @@ describe('Every control follows the Theme, not a colour of its own (#1031)', () 
 
   it('marks the picker\'s selected option with the app background', () => {
     expect(TREE_COMBO_ITEM_SELECTED_BG).toBe('var(--gd-app-bg, #f0f0f0)');
-    for (const src of [treeSrc, builderSrc]) {
+    for (const src of [builderSrc]) {
       expect(src).toContain('TREE_COMBO_ITEM_SELECTED_BG');
     }
     expect(treeComboDropdownStyle.background).toBe('var(--gd-card-bg, #ffffff)');
@@ -245,10 +244,13 @@ describe('The Workout Templates page\'s own form is formChrome (#1031)', () => {
     for (const endpoint of [
       '/blocks', '/exercises?status=active',
     ]) {
-      expect(treeSrc, `the tree stopped calling ${endpoint}`).toContain(endpoint);
+      expect(endpoint === '/blocks' ? treeSrc : builderSrc, `the tree stopped calling ${endpoint}`).toContain(endpoint);
     }
     // Both trees keep every action they had, including drag-and-drop.
-    for (const src of [treeSrc, builderSrc]) {
+    // #2226: the templates tree is a wrapper over the one shared builder.
+    expect(treeSrc).toContain('<WorkoutBlockBuilder');
+    expect(treeSrc).toContain('dragScheme="page"');
+    for (const src of [builderSrc]) {
       expect(src).toContain('useSortable');
       expect(src).toContain('ContextMenu');
       expect(src).toContain('ConfirmDialog');
@@ -259,7 +261,7 @@ describe('The Workout Templates page\'s own form is formChrome (#1031)', () => {
     // A glyph has no text of its own (#1029's rule for `rowRemoveBtnStyle`),
     // and this one abandons an unsaved row rather than removing a saved one, so
     // it stays the tree's neutral affordance and gains the missing label.
-    for (const src of [treeSrc, builderSrc]) {
+    for (const src of [builderSrc]) {
       expect(src).toContain('style={treeDraftRemoveBtnStyle} aria-label={cancelLabel}');
       expect(src).toContain("cancelLabel={t('block_exercises.cancel')}");
     }
@@ -315,6 +317,28 @@ describe('A Theme change reaches every control the editor draws (#1031)', () => 
       }
     } finally {
       delete (globalThis as any).document;
+    }
+  });
+});
+
+describe('One workout renderer in all three contexts (#2226)', () => {
+  const APPDIR = join(__dirname, '..', 'app', '[locale]');
+  const planTreeSrc = readFileSync(join(APPDIR, 'training-plans', 'PlanWorkoutTree.tsx'), 'utf-8');
+  const tptSrc = readFileSync(join(APPDIR, 'training-plan-templates', 'TrainingPlanTree.tsx'), 'utf-8');
+
+  it('renders Assigned Training Plans, Workout Templates and Training Plan Templates through WorkoutBlockBuilder', () => {
+    for (const src of [planTreeSrc, treeSrc, tptSrc]) {
+      expect(src).toContain('<WorkoutBlockBuilder');
+    }
+  });
+
+  it('shows a Training Plan Template workout read-only, as the blocks belong to its Workout Template', () => {
+    expect(tptSrc).toContain('canWrite={false}');
+  });
+
+  it('keeps no second copy of the block or exercise rows', () => {
+    for (const src of [planTreeSrc, treeSrc, tptSrc]) {
+      expect(src).not.toMatch(/function (BlockRow|ExerciseRow|ExerciseTable)\(/);
     }
   });
 });

@@ -187,7 +187,6 @@ describe('a picker searches every translation (§7)', () => {
 
   it('is what the comboboxes filter with, rather than a second copy', () => {
     for (const path of [
-      join(SRC, 'app', '[locale]', 'workout-templates', 'WorkoutTemplateTree.tsx'),
       join(SRC, 'app', '[locale]', 'workout-templates', 'WorkoutBlockBuilder.tsx'),
       join(SRC, 'app', '[locale]', 'members', 'PlanBlockExercisesModal.tsx'),
     ]) {

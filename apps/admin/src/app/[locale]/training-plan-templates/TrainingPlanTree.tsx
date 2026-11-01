@@ -16,10 +16,10 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
-import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { primaryBtnStyle } from '@/components/ui';
-import { treeSummaryTextStyle, weekdayChipStyle } from '@/components/workoutChrome';
-import { HierBlock, blockSummary, exerciseSummary } from '../workout-templates/summaries';
+import { weekdayChipStyle } from '@/components/workoutChrome';
+import type { HierBlock } from '../workout-templates/summaries';
+import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 
 /* Shapes returned by GET /training-plan-templates/:id/hierarchy */
 export type { HierExercise, HierBlock } from '../workout-templates/summaries';
@@ -258,41 +258,15 @@ function WorkoutRow({
         {blocks.length === 0 ? (
           <p style={{ color: '#aaa', fontSize: 13, margin: '2px 0' }}>{t('training_plan_templates.tree_no_blocks')}</p>
         ) : (
-          blocks.map((b) => <BlockRow key={b.id} block={b} />)
-        )}
-      </div>
-    </div>
-  );
-}
-
-function BlockRow({ block }: { block: HierBlock }) {
-  const t = useTranslations();
-  const exercises = block.exercises ?? [];
-  return (
-    <div style={{ marginBottom: 10 }}>
-      {/* #1032: the block's name and its execution summary share one line, as
-        * they already do in both Workout Template trees — two stacked lines per
-        * block is what made a plan with a handful of workouts so tall. They are
-        * inline spans rather than a flex row so a narrow viewport wraps the
-        * summary under the name by itself, with no horizontal overflow. */}
-      <div style={{ fontWeight: 600, fontSize: 14 }}>
-        {block.name || t(`workout_template_blocks.type_${block.type.toLowerCase()}`)}
-        <span style={treeSummaryTextStyle}>{blockSummary(block, t)}</span>
-      </div>
-      <div style={{ marginTop: 4, paddingLeft: 16 }}>
-        {exercises.length === 0 ? (
-          <p style={{ color: '#bbb', fontSize: 12.5, margin: '2px 0' }}>{t('training_plan_templates.tree_no_exercises')}</p>
-        ) : (
-          exercises.map((ex) => (
-            <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-              <span style={{ fontSize: 13.5 }}>{ex.exercise_name}</span>
-              {exerciseSummary(ex, t) && (
-                <span style={{ color: '#999', fontSize: 12.5 }}>{exerciseSummary(ex, t)}</span>
-              )}
-              {/* Media (#720) — pushed to the right of the line. */}
-              <span style={{ marginLeft: 'auto' }}><ExerciseMediaThumbnails exercise={ex} size={24} /></span>
-            </div>
-          ))
+          /* #2226: the one shared workout renderer, read-only — the blocks belong to
+           * the Workout Template this plan links to, edited from its own page. */
+          <WorkoutBlockBuilder
+            workoutKey={`tpt-${workout.id}`}
+            blocksUrl={`/workout-templates/${workout.workout_template_id}/blocks`}
+            blocks={blocks}
+            canWrite={false}
+            onChanged={() => {}}
+          />
         )}
       </div>
     </div>
