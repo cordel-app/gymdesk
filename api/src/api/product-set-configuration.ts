@@ -425,6 +425,9 @@ export async function planScheduledEvents(
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     .filter((e) => {
       if (e.scheduleKey === null) return true;
+      // #2125 stage 9: the prorated stub of a plan joining mid-cycle is a stretch, not a cycle of
+      // the schedule, so it must not use up the cover the schedule's regular dates need.
+      if (e.lines.length > 0 && e.lines.every((l) => l.proration)) return true;
       const n = (perKey.get(e.scheduleKey) ?? 0) + 1;
       perKey.set(e.scheduleKey, n);
       return n <= cycles;
