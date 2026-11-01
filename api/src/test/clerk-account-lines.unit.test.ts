@@ -33,11 +33,13 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
       clerk_user_id: 'u' }, 'en').key).toBe('clerk_invitation_accepted');
   });
   // #2183: an existing, unlinked Clerk account is not "None".
-  it('an existing unlinked account is reported, never over an enrolled member', () => {
+  it('an existing unlinked account is a Clerk Status fact; the invitation line stays about the invitation', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: false, account_exists: true }, 'en').key)
-      .toBe('clerk_invitation_account_exists');
-    expect(m.clerkInvitationLine({ account_exists: true, enrolled: true }, 'en').key)
       .toBe('clerk_invitation_none');
+    expect(m.clerkStatusLine({ account_exists: true, enrolled: false }, 'en').key)
+      .toBe('clerk_status_account_exists');
+    expect(m.clerkStatusLine({ account_exists: true, enrolled: true }, 'en').key)
+      .toBe('clerk_status_enrolled');
   });
   it('a revoked invitation reads Cancelled', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
@@ -51,7 +53,7 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
 
 describe('locale keys and writers', () => {
   const keys = ['label_clerk_status', 'label_clerk_invitation', 'clerk_status_enrolled_on', 'clerk_status_enrolled',
-    'clerk_status_not_enrolled', 'clerk_invitation_invited_on', 'clerk_invitation_invited', 'clerk_invitation_none', 'clerk_invitation_accepted_on',
+    'clerk_status_not_enrolled', 'clerk_status_account_exists', 'clerk_invitation_invited_on', 'clerk_invitation_invited', 'clerk_invitation_none', 'clerk_invitation_accepted_on',
     'clerk_invitation_accepted', 'clerk_invitation_cancelled'];
   it.each(['en', 'es', 'ca'])('both apps carry the keys in %s', (l) => {
     for (const [app, ns] of [['admin', 'members'], ['member', 'profile']] as const) {
