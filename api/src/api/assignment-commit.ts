@@ -215,7 +215,11 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {
     if (!input.resolution) return { kind: 'conflict', conflicts };
-    if (input.resolution === 'add' && addSharesOwnerChain(conflicts, row.member_id)) return { kind: 'add_unsupported' };
+    // #2125 stage 14: an add merges the active version into the Draft before it is submitted, so the
+    // initial charge it writes is the added plan's alone and the payment activates the merged version.
+    if (input.resolution === 'add' && addSharesOwnerChain(conflicts, row.member_id)) {
+      if (!(await mergeOwnerVersionForAdd(tx, input.gymId, row))) return { kind: 'add_unsupported' };
+    }
     if (input.resolution === 'replace') {
       const dateError = supersedeStartsAtError(row.starts_at, conflicts);
       if (dateError) return { kind: 'bad_date', message: dateError };

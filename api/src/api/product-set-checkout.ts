@@ -56,6 +56,13 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
   return blockingEvents(events, today);
 }
 
+async function carriesInheritedNativePlans(gymId: string, productSetId: number, exec: Exec): Promise<boolean> {
+  const { rows } = await exec.query(
+    `SELECT 1 FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?
+        AND source_plan_snapshot_id IS NULL AND is_inherited = 1 LIMIT 1`, [gymId, productSetId]);
+  return rows.length > 0;
+}
+
 export interface InitialCharge {
   amount: number;
   /** The same lines in the simulation's own shape (#1867), for the Draft forecast. */
@@ -76,7 +83,10 @@ export async function initialCharge(
    */
   opts: { previousProductSetId?: number | null } = {},
 ): Promise<InitialCharge | null> {
-  const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec);
+  // #2125 stage 14: a version that adds a plan beside the running ones carries them as inherited
+  // native snapshots; what it owes now is the added plan alone, never the plans already paid.
+  const addsAPlan = opts.previousProductSetId == null && await carriesInheritedNativePlans(gymId, productSetId, exec);
+  const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: addsAPlan });
   let first = planned.filter((e) => e.date === startsAt);
 
   if (opts.previousProductSetId != null) {
