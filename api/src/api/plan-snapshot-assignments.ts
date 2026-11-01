@@ -182,3 +182,22 @@ export async function loadProductSetSimulationAssignments(
   }
   return out;
 }
+
+/**
+ * The schedule key each plan snapshot of the version is linked to, in the same order as
+ * `loadProductSetSimulationAssignments()` answers (`NULL` where the snapshot has no schedule).
+ * Empty for a version with no plan snapshot.
+ */
+export async function loadPlanSnapshotScheduleKeys(
+  gymId: string, productSetId: number, exec: Exec = db,
+): Promise<Array<string | null>> {
+  const { rows } = await exec.query(
+    `SELECT sch.schedule_key
+       FROM plan_snapshots s
+       LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
+      WHERE s.gym_id = ? AND s.product_set_id = ?
+      ORDER BY s.id`,
+    [gymId, productSetId],
+  );
+  return (rows as any[]).map((r) => (r.schedule_key != null ? String(r.schedule_key) : null));
+}

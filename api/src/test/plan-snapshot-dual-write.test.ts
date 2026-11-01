@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
+import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment, createTestGym,
   createTestMembership, request,
@@ -99,6 +100,8 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     await db.query(
       `INSERT INTO user_membership_oneoff (gym_id, product_id, quantity, item_name, item_type, unit_price, product_set_id)
        VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, ?)`, [gymId, productId, setId]);
+    // Readers use the plan snapshot tables (#2125 stages 5-7): a fixture writing the legacy row re-derives them.
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, setId));
     const draft = await auth(request.post('/product-sets/draft')).send({ member_id: owner });
     expect(draft.status).toBeLessThan(300);
     const newSet = Number(draft.body.product_set_id ?? draft.body.id);

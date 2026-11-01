@@ -17,6 +17,7 @@ import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
 import { projectActiveProductSet } from './product-set-projection';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -368,10 +369,20 @@ export async function planScheduledEvents(
   gymId: string, productSetId: number, from: string, cycles: number = MAX_COVERED_CYCLES,
   exec: Exec = db,
 ): Promise<PlannedEvent[]> {
-  const assignment = await loadProductSetSimulationAssignment(gymId, productSetId, exec);
-  if (!assignment) return [];
-  const result = computeBillingSimulation({ assignments: [assignment], horizonFrom: from, minimumCycles: cycles });
-  if (!result.available) return [];
+  // #2125 stage 7: a version holds N Membership Plans. Each plan is run through the engine on its
+  // own and its lines take the schedule its snapshot is linked to (the shared `plan` schedule when
+  // the cadence matches), so a plan added later bills on the dates the first one already does.
+  const assignments = await loadProductSetSimulationAssignments(gymId, productSetId, exec);
+  if (assignments.length === 0) return [];
+  const planScheduleKeys = await loadPlanSnapshotScheduleKeys(gymId, productSetId, exec);
+  const runs = assignments
+    .map((assignment, index) => ({
+      assignment,
+      scheduleKey: planScheduleKeys[index] ?? PLAN_SCHEDULE_KEY,
+      result: computeBillingSimulation({ assignments: [assignment], horizonFrom: from, minimumCycles: cycles }),
+    }))
+    .filter((r) => r.result.available);
+  if (runs.length === 0) return [];
 
   const { rows: scheduled } = await exec.query(
     `SELECT s.product_id, sch.schedule_key
@@ -384,27 +395,26 @@ export async function planScheduledEvents(
     [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));
-  const planCadence = assignment.recurringInterval != null && assignment.recurringUnit != null
-    ? { interval: assignment.recurringInterval, unit: assignment.recurringUnit } : null;
-  const hasPlanSchedule = planCadence != null;
-
   const buckets = new Map<string, PlannedEvent>();
-  for (const section of result.sections) {
-    for (const event of section.events) {
-      if (event.date < from) continue;
-      for (const line of event.lines) {
-        let key: string | null;
-        if (line.kind === 'membership_fee') key = hasPlanSchedule ? PLAN_SCHEDULE_KEY : null;
-        else if (line.product_id != null && keyByProduct.has(line.product_id)) key = keyByProduct.get(line.product_id)!;
-        else if (section.section === 'one_off' || section.section === 'session' || section.section === 'other') key = null;
-        else key = hasPlanSchedule && cadenceForFrequency(section.section) != null ? PLAN_SCHEDULE_KEY : null;
-        const bucketKey = `${key ?? '~'}|${event.date}`;
-        let bucket = buckets.get(bucketKey);
-        if (!bucket) {
-          bucket = { scheduleKey: key, date: event.date, periodEnd: event.period_end, lines: [] };
-          buckets.set(bucketKey, bucket);
+  for (const { assignment, scheduleKey, result } of runs) {
+    const hasPlanSchedule = assignment.recurringInterval != null && assignment.recurringUnit != null;
+    for (const section of result.sections) {
+      for (const event of section.events) {
+        if (event.date < from) continue;
+        for (const line of event.lines) {
+          let key: string | null;
+          if (line.kind === 'membership_fee') key = hasPlanSchedule ? scheduleKey : null;
+          else if (line.product_id != null && keyByProduct.has(line.product_id)) key = keyByProduct.get(line.product_id)!;
+          else if (section.section === 'one_off' || section.section === 'session' || section.section === 'other') key = null;
+          else key = hasPlanSchedule && cadenceForFrequency(section.section) != null ? scheduleKey : null;
+          const bucketKey = `${key ?? '~'}|${event.date}`;
+          let bucket = buckets.get(bucketKey);
+          if (!bucket) {
+            bucket = { scheduleKey: key, date: event.date, periodEnd: event.period_end, lines: [] };
+            buckets.set(bucketKey, bucket);
+          }
+          bucket.lines.push(line);
         }
-        bucket.lines.push(line);
       }
     }
   }
