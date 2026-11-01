@@ -2302,7 +2302,9 @@
     "gender_media_error_frame_failed": "A preview frame could not be captured, so nothing was uploaded and the current video is unchanged.",
     "gender_media_error_upload_failed": "The file could not be uploaded.",
     "gender_media_error_remove_failed": "The file could not be removed.",
-    "gender_media_created_upload_failed": "The exercise was created, but some media could not be uploaded. Retry it from the editor."
+    "gender_media_created_upload_failed": "The exercise was created, but some media could not be uploaded. Retry it from the editor.",
+    "close_image": "Close image",
+    "image_unavailable": "Image not available"
   },
   "muscles": {
     "chest": "Chest",
