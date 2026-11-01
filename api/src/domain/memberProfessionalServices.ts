@@ -1,4 +1,4 @@
-import { assignmentVersionId } from '../api/assignment-config';
+import { assignmentPlanSnapshotId, assignmentVersionId } from '../api/assignment-config';
 import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
@@ -260,10 +260,10 @@ export async function loadMemberProfessionalServiceGrants(
             gc.id             AS product_id,
             gc.name           AS product_name,
             umss.quantity + COALESCE((SELECT SUM(par.quantity) FROM plan_allowance_renewals par
-                                      WHERE par.user_membership_session_id = umss.id), 0) AS sessions
+                                      WHERE par.plan_session_snapshot_id = umss.id), 0) AS sessions
      FROM user_memberships um
-     JOIN user_membership_session umss
-       ON umss.product_set_id = ${assignmentVersionId('um.id')} AND umss.gym_id = um.gym_id
+     JOIN plan_session_snapshots umss
+       ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id
      JOIN products gc ON gc.id = umss.product_id
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = um.gym_id

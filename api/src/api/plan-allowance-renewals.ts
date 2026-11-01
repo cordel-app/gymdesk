@@ -1,5 +1,5 @@
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { assignmentVersionId } from './assignment-config';
+import { assignmentPlanSnapshotId } from './assignment-config';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { dueRenewals, type RenewalLine } from '../domain/planAllowanceRenewals';
@@ -15,7 +15,7 @@ import { finishJobRun, startJobRun } from '../infra/job-run-log';
  * `promotion-lifecycle.ts`, and for the same reasons it shares
  * `BILLING_INTERNAL_SECRET` (it is a step of `billing-run.yml`) and claims **no
  * run-log slot**: every insert is `INSERT IGNORE` under
- * `UNIQUE (user_membership_session_id, renewal_date)`, so a second run the same
+ * `UNIQUE (plan_session_snapshot_id, renewal_date)`, so a second run the same
  * day, the 10:00 UTC safety net or an overlapping pair writes nothing twice.
  * No audit rows (no tenant actor); the renewal rows are the record.
  */
@@ -41,10 +41,10 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
             DATE_FORMAT(um.ends_at, '%Y-%m-%d')   AS ends_at,
             (SELECT DATE_FORMAT(MAX(par.renewal_date), '%Y-%m-%d')
                FROM plan_allowance_renewals par
-              WHERE par.user_membership_session_id = umss.id) AS last_renewal_date
+              WHERE par.plan_session_snapshot_id = umss.id) AS last_renewal_date
        FROM user_memberships um
-       JOIN user_membership_session umss
-         ON umss.product_set_id = ${assignmentVersionId('um.id')} AND umss.gym_id = um.gym_id
+       JOIN plan_session_snapshots umss
+         ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id
       WHERE um.status = 'active'
         AND umss.frequency IS NOT NULL AND umss.frequency <> 'once'
         AND umss.quantity > 0
@@ -65,7 +65,7 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
     for (const due of dueRenewals(line, today)) {
       const { rowCount } = await db.query(
         `INSERT IGNORE INTO plan_allowance_renewals
-           (gym_id, user_membership_session_id, renewal_date, quantity, created_by)
+           (gym_id, plan_session_snapshot_id, renewal_date, quantity, created_by)
          VALUES (?, ?, ?, ?, ?)`,
         [r.gym_id, due.line_id, due.renewal_date, due.quantity, SYSTEM_ACTOR],
       );
