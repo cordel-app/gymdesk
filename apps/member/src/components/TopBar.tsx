@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveHeaderLogo } from '@/lib/headerLogo';
 import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
@@ -54,6 +55,12 @@ export function TopBar() {
     ?? (theme?.has_logo
       ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
       : null);
+  // #2240: the header shows the asset the theme selected ("Use this in header").
+  const headerLogo = resolveHeaderLogo({
+    logoSrc,
+    logoSymbolSrc: theme?.logo_symbol_url,
+    fullLogoSelected: theme?.logo_contains_gym_name ?? true,
+  });
 
   return (
     <div style={{
@@ -93,11 +100,11 @@ export function TopBar() {
     }}>
       {isHome ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {logoSrc && (
+          {headerLogo.src && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoSrc} alt={gymName ?? ''} style={{ height: 24, width: 'auto', objectFit: 'contain' }} />
+            <img src={headerLogo.src} alt={gymName ?? ''} style={{ height: 24, width: 'auto', objectFit: 'contain' }} />
           )}
-          {(!logoSrc || !theme?.logo_contains_gym_name) && gymName && (
+          {headerLogo.showName && gymName && (
             <strong style={{ fontSize: 15, color: 'inherit' }}>{gymName}</strong>
           )}
         </div>

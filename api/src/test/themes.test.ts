@@ -242,13 +242,13 @@ describe('POST /platform/themes', () => {
     expect(res.status).toBe(400);
   });
 
-  it('defaults logo_contains_gym_name to false when omitted', async () => {
+  it('defaults logo_contains_gym_name to true when omitted', async () => {
     const res = await request
       .post('/platform/themes')
       .set('Authorization', TEST_AUTH_HEADER)
       .send({ name: 'Test Base Theme Logo Flag Default' });
     expect(res.status).toBe(201);
-    expect(res.body.logo_contains_gym_name).toBe(false);
+    expect(res.body.logo_contains_gym_name).toBe(true);
   });
 
   it('accepts logo_contains_gym_name: true on creation', async () => {

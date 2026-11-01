@@ -129,7 +129,7 @@ describe('Custom Themes: uploads are disabled while storage is unavailable (#823
   it('leaves the rest of both sections alone', () => {
     // §"No changes are made to the existing logo display, the gym-name option,
     // or the supported formats/size limits": the block gates the upload only.
-    expect(brandingEditor).toContain("t('logo_contains_gym_name')");
+    expect(brandingEditor).toContain("t('use_in_header')");
     expect(brandingEditor).toContain('accept="image/png,image/svg+xml,image/jpeg,image/webp"');
     expect(brandingEditor).toMatch(/onClick=\{onLogoRemove\} style=\{btnSmall\('#c0392b'\)\}/);
     expect(membersEditor).toContain("t('members_image_remove')");
