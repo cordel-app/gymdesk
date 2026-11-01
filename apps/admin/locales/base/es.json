@@ -568,6 +568,7 @@
     "clerk_invitation_accepted_on": "Aceptada · {date}",
     "clerk_invitation_accepted": "Aceptada",
     "clerk_invitation_cancelled": "Cancelada",
+    "clerk_invitation_account_exists": "Cuenta existente (sin vincular)",
     "label_welcomed": "Bienvenida realizada",
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
