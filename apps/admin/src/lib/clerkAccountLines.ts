@@ -14,6 +14,8 @@ export interface ClerkAccountFields {
   clerk_user_id?: string | null;
   enrolled?: boolean;
   has_pending_invitation?: boolean;
+  /** #2183: an unlinked member whose email already has a Clerk account. */
+  account_exists?: boolean;
   /** #1574: a reusable payment token is stored (the boolean only, never the token). */
   has_payment_token?: boolean;
   invited_at?: string | null;
@@ -65,5 +67,6 @@ export function clerkInvitationLine(f: ClerkAccountFields, locale: string, setti
     }
     return { key: 'clerk_invitation_cancelled', date: null };
   }
+  if (f.account_exists && !(f.enrolled ?? !!f.clerk_user_id)) return { key: 'clerk_invitation_account_exists', date: null };
   return { key: 'clerk_invitation_none', date: null };
 }

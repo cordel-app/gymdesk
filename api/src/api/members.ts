@@ -300,6 +300,21 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
   if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
 
   const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
+  // #2183: an unlinked member whose email already has a Clerk account (the invite is
+  // refused with "account already exists") read "None". Report the fact, read-only;
+  // linking stays /me/link's job. A lookup failure reports nothing.
+  let accountExists = false;
+  if (!clerk_user_id && !invitation_id) {
+    try {
+      const { rows: er } = await db.query<any>(
+        'SELECT email FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      const email = er[0]?.email;
+      if (email) {
+        const found = resolveInviteConflict(email, [], listItems(await clerkClient.users.getUserList({ emailAddress: [email] })));
+        accountExists = found.kind === 'account_exists';
+      }
+    } catch { /* leave false */ }
+  }
   // #1234: the dates are history, reported as stored and independent of the status.
   // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
   // every branch below because the card passes this whole response to
@@ -318,6 +333,7 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
     enrolled_at: enrolled_at ?? null,
     has_pending_invitation: !!invitation_id,
     enrolled: !!clerk_user_id,
+    account_exists: accountExists,
   };
 
   if (!clerk_user_id) {
