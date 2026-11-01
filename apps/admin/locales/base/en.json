@@ -5005,6 +5005,7 @@
     "col_modified_by": "Modified by",
     "tab_admin": "Admin Features",
     "tab_member_web": "Member Web",
+    "flag_member_web_my_products": "My Products",
     "role_access_hint": "Role access: - none, R read, RW read + write. Informational only; it does not change permissions.",
     "title": "Feature Flags",
     "description": "Control which navigation sections are visible to gym users. Disabling a section also hides all its sub-items.",

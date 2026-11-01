@@ -112,8 +112,8 @@ describe('member_web.* flags gate /me/* routes for regular members', () => {
     expect(res.status).toBe(200);
   });
 
-  it('returns 403 on GET /me/training-plans when member_web.my_training_plan is disabled', async () => {
-    await setFlag('member_web.my_training_plan', false);
+  it('returns 403 on GET /me/training-plans when member_web.my_products is disabled', async () => {
+    await setFlag('member_web.my_products', false);
 
     asRegularMember();
     const res = await request
@@ -122,7 +122,7 @@ describe('member_web.* flags gate /me/* routes for regular members', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(403);
 
-    await setFlag('member_web.my_training_plan', true);
+    await setFlag('member_web.my_products', true);
   });
 
   it('returns 403 on GET /me/bookings when member_web.my_bookings is disabled', async () => {

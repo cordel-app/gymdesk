@@ -131,7 +131,7 @@ export default function TrainingPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_training_plan')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_products')) { router.replace(`/${locale}`); return; }
     loadPlans();
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
