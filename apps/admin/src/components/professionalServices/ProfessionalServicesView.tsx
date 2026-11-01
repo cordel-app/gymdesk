@@ -276,11 +276,6 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   function renderExpanded(item: PsRow) {
     return (
       <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-        {item.image_url && (
-          <div style={{ width: 160, marginBottom: 12 }}>
-            <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
-          </div>
-        )}
         {PS_LOCALES.map((l) => {
           const name = l === 'en' ? item.name : item.translations?.[l]?.name;
           const description = l === 'en' ? item.description : item.translations?.[l]?.description;
@@ -292,6 +287,15 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
           );
         })}
         <DetailRow label={t('label_max_capacity')} value={capacityText(item)} />
+        {/* Same order as the editor: texts, capacity, then Media (#2241). */}
+        <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
+        {item.image_url ? (
+          <div style={{ width: 160 }}>
+            <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: '#111' }}>{dash}</div>
+        )}
       </div>
     );
   }

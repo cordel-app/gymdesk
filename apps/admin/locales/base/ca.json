@@ -569,6 +569,7 @@
     "clerk_invitation_accepted_on": "Acceptada · {date}",
     "clerk_invitation_accepted": "Acceptada",
     "clerk_invitation_cancelled": "Cancel·lada",
+    "clerk_invitation_account_exists": "Compte existent (sense vincular)",
     "label_welcomed": "Benvinguda feta",
     "welcomed_yes": "Sí",
     "welcomed_no": "No",

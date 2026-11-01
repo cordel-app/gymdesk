@@ -107,7 +107,7 @@ describe('GET /members/:id/clerk-status', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'not_enrolled', userId: null, invited_at: null, enrolled_at: null, has_pending_invitation: false, has_payment_token: false, enrolled: false });
+    expect(res.body).toEqual({ status: 'not_enrolled', userId: null, invited_at: null, enrolled_at: null, has_pending_invitation: false, has_payment_token: false, enrolled: false, account_exists: false });
   });
 
   it('returns { status: "invited", userId: null } when invitation_id is set but clerk_user_id is null', async () => {
@@ -120,7 +120,7 @@ describe('GET /members/:id/clerk-status', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'invited', userId: null, invited_at: null, enrolled_at: null, has_pending_invitation: true, has_payment_token: false, enrolled: false });
+    expect(res.body).toEqual({ status: 'invited', userId: null, invited_at: null, enrolled_at: null, has_pending_invitation: true, has_payment_token: false, enrolled: false, account_exists: false });
   });
 
   it('returns 404 for a soft-deleted member', async () => {
