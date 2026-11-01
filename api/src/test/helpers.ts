@@ -305,7 +305,10 @@ export async function legacyChildQuery(sql: string, params: unknown[] = []): Pro
       tokens.push('?');
       queue.push(assignmentId);
     }
-    return db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
+    const written = await db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
+    // #2125 stage 11: readers use the plan snapshot tables, so a fixture writing the legacy row re-derives them.
+    await syncFixtureSnapshot(Number(queue[placeholders]));
+    return written;
   }
   // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version.
   let out = sql.replace(/\b((?:\w+\.)?)user_membership_id\s*=\s*\?/g,
