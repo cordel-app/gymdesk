@@ -16,7 +16,7 @@ import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
 import {
-  combinedChartSeries, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
+  combinedChartSeries, dayFlagLines, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
   type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
@@ -185,6 +185,11 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
     (slug) => t(metricLabelKey(slug)),
     (slug) => t(resultUnitKey(slug)!),
     gym,
+    (date) => dayFlagLines(date, detail?.readings ?? [], {
+      sets: (n) => t('members.progress_flag_sets', { n }),
+      maxWeight: (v) => t('members.progress_flag_max_weight', { v }),
+      maxReps: (v) => t('members.progress_flag_max_reps', { v }),
+    }, gym, { kg: t('members.progress_unit_kg'), reps: t('members.progress_unit_reps') }),
   ), [detail, gym, t]);
   if (!detail) return null;
 

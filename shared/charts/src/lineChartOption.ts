@@ -149,7 +149,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
           ? {
               show: true,
               position: 'top',
-              formatter: [point.label, point.valueLabel].filter(Boolean).join('\n'),
+              formatter: (point.flagLines && point.flagLines.length > 0 ? point.flagLines : [point.label, point.valueLabel]).filter(Boolean).join('\n'),
               color: theme.text,
               fontSize: 11,
               backgroundColor: theme.surface,
