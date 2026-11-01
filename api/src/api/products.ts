@@ -231,6 +231,69 @@ productsRouter.post('/import', requireRole('admin'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ─── POST /:id/resync — Resync with System (#2253) ────────────────────────────
+// Selectively refreshes name, description and (only when missing) the image of
+// an imported Product from its originating Base Product. Everything else is the
+// gym's own and is never written. Products have no translation junction, so
+// name and description are the base columns.
+
+productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const actor = resolveRequestActor(ctx);
+  try {
+    const { rows } = await db.query(
+      'SELECT id, name, description, image_url, base_product_id FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, ctx.gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const prod = rows[0];
+    if (prod.base_product_id == null) {
+      return res.status(409).json({ error: 'not_imported', message: 'This Product was not imported from a System Product' });
+    }
+    const { rows: baseRows } = await db.query(
+      'SELECT name, description, image_url, image_thumbnail_url FROM base_products WHERE id = ? AND deleted_at IS NULL',
+      [prod.base_product_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ error: 'base_product_unavailable', message: 'The originating System Product is no longer available' });
+    }
+    const base = baseRows[0];
+    const changed: Record<string, { previous: unknown; next: unknown }> = {};
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if ((base.name ?? null) !== null && base.name !== prod.name) {
+      sets.push('name = ?'); params.push(base.name);
+      changed.name = { previous: prod.name, next: base.name };
+    }
+    if ((base.description ?? null) !== (prod.description ?? null)) {
+      sets.push('description = ?'); params.push(base.description ?? null);
+      changed.description = { previous: prod.description ?? null, next: base.description ?? null };
+    }
+    // Image: copied by reference (as Import and Duplicate do) and only when the
+    // gym's Product has none — a gym-customised image is never overwritten.
+    if (!prod.image_url && base.image_url) {
+      sets.push('image_url = ?', 'image_thumbnail_url = ?');
+      params.push(base.image_url, base.image_thumbnail_url ?? null);
+      changed.image_url = { previous: null, next: base.image_url };
+    }
+    if (sets.length === 0) return res.json({ updated: false, changed: [] });
+    await db.query(
+      `UPDATE products SET ${sets.join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+       WHERE id = ? AND gym_id = ?`,
+      [...params, actor, prod.id, ctx.gymId],
+    );
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'product',
+      entityId: String(prod.id),
+      entityName: 'Resync with System',
+      previous: Object.fromEntries(Object.entries(changed).map(([k, v]) => [k, v.previous])),
+      next: Object.fromEntries(Object.entries(changed).map(([k, v]) => [k, v.next])),
+    });
+    res.json({ updated: true, changed: Object.keys(changed) });
+  } catch (err) { next(err); }
+});
+
 // ─── GET /:id ─────────────────────────────────────────────────────────────────
 
 productsRouter.get('/:id', async (req, res, next) => {

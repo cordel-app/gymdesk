@@ -4516,6 +4516,9 @@
     "details": "Details",
     "edit": "Edit",
     "duplicate": "Duplicate",
+    "resync_system": "Resync with System",
+    "resync_success": "Product resynced with System.",
+    "resync_no_change": "Nothing to update: this Product already matches the System Product.",
     "activate": "Activate",
     "deactivate": "Deactivate",
     "delete": "Delete",
@@ -4920,6 +4923,10 @@
     "metric_avg_goals": "Avg. Goals per Member"
   },
   "professional_services": {
+    "update_system_data": "Update System Data",
+    "update_system_data_done": "System data updated.",
+    "update_system_data_up_to_date": "Already up to date with the System service.",
+    "update_system_data_base_gone": "The originating System Professional Service no longer exists.",
     "delete_blocked_title": "This Professional Service cannot be deleted because it is still in use.",
     "delete_blocked_activities": "Activities: {count}",
     "delete_blocked_calendar_events": "Calendar events: {count}",

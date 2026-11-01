@@ -174,6 +174,17 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
     } catch (err: any) { toast(err.message ?? t('error_generic')); }
   }
 
+  // #2256: syncs name, description (+ translations) and an absent image from the Base service.
+  async function handleUpdateSystemData(item: PsRow) {
+    try {
+      const res: any = await apiFetch(`${cfg.apiRoot}/${item.id}/update-system-data`, { method: 'POST' });
+      toast(res?.updated?.length ? t('update_system_data_done') : t('update_system_data_up_to_date'));
+      load();
+    } catch (err: any) {
+      toast(err?.body?.code === 'base_unavailable' ? t('update_system_data_base_gone') : (err.message ?? t('error_generic')));
+    }
+  }
+
   const handleActivate = (item: PsRow) => action(item, 'activate');
   const handleDeactivate = (item: PsRow) => action(item, 'deactivate');
   const handleDuplicate = (item: PsRow) => action(item, 'duplicate');
@@ -347,6 +358,8 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
       ...(cfg.hasStatus ? [item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item), danger: true, disabled: !canWrite, title: readOnlyTitle }
         : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle }] : []),
+      ...(cfg.hasStatus && item.base_professional_service_id
+        ? [{ label: t('update_system_data'), onClick: () => handleUpdateSystemData(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
       { label: t('details'), onClick: () => setDetails(item) },
