@@ -1,4 +1,4 @@
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
@@ -66,6 +66,16 @@ import type {
  */
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
+
+/**
+ * #2125 stage 11 — the plan snapshot tables an assignment's included Products are read from
+ * (keyed by the plan snapshot, so a version holding several plans keeps each one's own lines).
+ */
+const PLAN_SNAPSHOT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> = {
+  session: 'plan_session_snapshots',
+  oneoff: 'plan_oneoff_snapshots',
+  periodical: 'plan_periodical_snapshots',
+};
 
 export const BENEFIT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> = {
   session: 'user_membership_session',
@@ -182,7 +192,7 @@ function selectSnapshotSection(table: string): string {
           FROM ${table} b
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
-          WHERE b.product_set_id = ${assignmentVersionId('?')} AND b.gym_id = ?
+          WHERE b.plan_snapshot_id = ${assignmentPlanSnapshotId('?')} AND b.gym_id = ?
           ORDER BY b.item_name ASC, b.id ASC`;
 }
 
@@ -246,7 +256,7 @@ export async function loadAssignedPlanSnapshot(
       [umId, gymId],
     ),
     ...CATEGORIES.map((category) => db.query(
-      selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]),
+      selectSnapshotSection(PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]),
       [umId, gymId],
     )),
   ]);
@@ -284,7 +294,7 @@ export async function loadAssignedPlanBenefitSection(
   gymId: string, umId: number, category: ProductBenefitCategory,
 ): Promise<AssignedPlanBenefitRow[]> {
   const { rows } = await db.query(
-    selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]), [umId, gymId],
+    selectSnapshotSection(PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]), [umId, gymId],
   );
   return rows.map((row: any) => shapeBenefit({ ...row, user_membership_id: umId }));
 }
@@ -360,8 +370,8 @@ export async function loadPlanBenefitsForSimulation(
              b.item_name, b.item_billing_frequency, b.unit_price, b.\`action\`, b.\`value\`,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM user_memberships um
-      JOIN ${BENEFIT_TABLE_BY_CATEGORY[category]} b
-        ON b.product_set_id = ${assignmentVersionId('um.id')} AND b.gym_id = um.gym_id
+      JOIN ${PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]} b
+        ON b.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND b.gym_id = um.gym_id
       WHERE um.gym_id = ? AND um.id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
   );
