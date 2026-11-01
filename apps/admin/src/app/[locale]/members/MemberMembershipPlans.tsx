@@ -130,12 +130,10 @@ export function MemberMembershipPlans({
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
   const history = plans.filter((p) => !p.is_live);
-  // The Plan the Member already holds is left out of the picker: re-assigning
-  // it would be a replacement with nothing to replace it with. Every *other*
-  // Plan stays offered — under #956 picking one replaces the live plan, which
-  // is what the confirmation dialog is for.
-  const activePlanIds = new Set(live.map((p) => p.membership_plan_id).filter((id): id is number => id != null));
-  const selectable = options.filter((o) => !activePlanIds.has(o.id));
+  // #2125: a Member may hold several plans — the same plan twice included — so the picker offers
+  // every assignable Plan; whether the new one is added beside the live ones or replaces them is
+  // the Add-or-Replace dialog's question.
+  const selectable = options;
 
   // #1538 stage 3: `⋮ → Edit` on the running plan. Editing never touches the
   // Active version: it starts a Draft that is a copy of the Active version's own
@@ -220,9 +218,9 @@ export function MemberMembershipPlans({
           in. Only the plan being superseded renders anything. */}
       {live.map((m) => <React.Fragment key={m.id}>{renderAssignEditor(m)}</React.Fragment>)}
 
-      {/* #958: no generic add while the Member holds a plan — replacing it is
-          `Assign New Plan` on the row of the plan being replaced. */}
-      {canWrite && live.length === 0 && !adding && (
+      {/* #2125: adding is always possible — a Member may hold several plans. When one is already
+          live, the assignment answers the Add-or-Replace dialog instead of refusing. */}
+      {canWrite && !adding && (
         <button onClick={startAdding} style={addBtn}>{t('add_membership_plan')}</button>
       )}
 
