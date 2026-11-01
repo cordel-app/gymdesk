@@ -103,7 +103,7 @@ function emptyEditForm(theme?: Theme) {
     name: theme?.name ?? '',
     description: theme?.description ?? '',
     status: (theme?.status ?? 'active') as string,
-    logoContainsGymName: theme?.logo_contains_gym_name ?? false,
+    logoContainsGymName: theme?.logo_contains_gym_name ?? true,
     // Merge with defaults so themes saved before #489 stage 2 (missing the newer
     // semantic color fields) still populate every color picker with a sensible value.
     tokens: {
@@ -723,6 +723,7 @@ export default function ThemesPage() {
               // the logo controls appear once it has been created (unchanged).
               showLogo={!isNew}
               logoError={logoAssetFailed(assetFailures)}
+              hasLogoSymbol={!!(themes.find((th) => th.id === id)?.logo_symbol_url)}
               logoSymbol={!isNew && (
                 <ThemeLogoSymbolField
                   basePath="/platform/themes"
@@ -818,7 +819,7 @@ export default function ThemesPage() {
     has_logo: false,
     logo_updated_at: null,
     logo_symbol_url: null,
-    logo_contains_gym_name: false,
+    logo_contains_gym_name: true,
     members_images: emptyMembersImages(),
     tokens: DEFAULT_TOKENS,
     created_at: '',

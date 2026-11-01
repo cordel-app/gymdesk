@@ -199,7 +199,7 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
   const id = randomUUID();
   await db.query(
     'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, logo_contains_gym_name, tokens, created_at, created_by) VALUES (?, NULL, 0, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-    [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? false, JSON.stringify(mergedTokens), resolvePlatformActor(req.superadminName)],
+    [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? true, JSON.stringify(mergedTokens), resolvePlatformActor(req.superadminName)],
   );
   const { rows } = await db.query(
     `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,

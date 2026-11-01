@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveHeaderLogo } from '@/lib/headerLogo';
 import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
@@ -31,6 +32,12 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
     ?? (theme?.has_logo
       ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
       : null);
+  // #2240: the header shows the asset the theme selected ("Use this in header").
+  const headerLogo = resolveHeaderLogo({
+    logoSrc,
+    logoSymbolSrc: theme?.logo_symbol_url,
+    fullLogoSelected: theme?.logo_contains_gym_name ?? true,
+  });
 
   return (
     <header style={{
@@ -63,11 +70,11 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
           <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
         </button>
-        {logoSrc && (
+        {headerLogo.src && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt={activeGym?.name ?? publicAppTitle()} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
+          <img src={headerLogo.src} alt={activeGym?.name ?? publicAppTitle()} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
         )}
-        {(!logoSrc || !theme?.logo_contains_gym_name) && (
+        {headerLogo.showName && (
           <strong style={{ fontSize: 18 }}>
             {/* #1114 — the slot is the gym's name; what stands in for it until
                 one is resolved is the application's own name, from the one

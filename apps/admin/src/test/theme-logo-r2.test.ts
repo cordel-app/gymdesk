@@ -73,10 +73,11 @@ describe('theme logo resolution (#713)', () => {
 // shows its name.
 describe('header rendering states (logo_contains_gym_name, #488 + #713)', () => {
   it.each(headers)('$name renders the logo only when logo_contains_gym_name is true', ({ src, nameExpr }) => {
-    expect(src).toMatch(/\{logoSrc && \(/);
-    // The gym name is suppressed for a logo that already contains it — and
-    // rendered whenever there is no logo at all.
-    expect(src).toContain('(!logoSrc || !theme?.logo_contains_gym_name)');
+    // #2240: the header shows the asset the theme selected; the gym name is
+    // suppressed for the full logo and rendered with the symbol or no image.
+    expect(src).toMatch(/\{headerLogo\.src && \(/);
+    expect(src).toContain('resolveHeaderLogo(');
+    expect(src).toContain('headerLogo.showName');
     expect(src).toContain(nameExpr);
   });
 });

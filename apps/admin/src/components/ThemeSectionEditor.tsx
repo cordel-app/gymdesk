@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveHeaderLogo } from '@/lib/headerLogo';
 import { useRef, useState } from 'react';
 import { FormLabel, FormInput } from '@/components/CrudModal';
 import { btnSmall, readOnlyStyle } from '@/components/ui';
@@ -93,6 +94,8 @@ interface ThemeBrandingEditorProps {
   children?: React.ReactNode;
   /** #2157: the logo-symbol (favicon) control, rendered right after the full logo. */
   logoSymbol?: React.ReactNode;
+  /** #2240: whether the theme has a logo symbol uploaded (for "Use this in header"). */
+  hasLogoSymbol?: boolean;
 }
 
 /** Name / description / logo — the Branding section of both theme editors. */
@@ -112,6 +115,7 @@ export function ThemeBrandingEditor({
   onMotivationalSentenceChange,
   children,
   logoSymbol,
+  hasLogoSymbol,
 }: ThemeBrandingEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // #830: the preview `<img>` that cannot load says so instead of rendering the
@@ -124,6 +128,29 @@ export function ThemeBrandingEditor({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) onLogoPick(file);
+  }
+
+  // #2240: "Use this in header" — one mutually exclusive choice across both
+  // assets. The shown selection is the effective one (a lone asset is selected
+  // automatically); picking writes the stored flag (true = full logo).
+  const effectiveChoice = resolveHeaderLogo({
+    logoSrc: logoPreview,
+    logoSymbolSrc: hasLogoSymbol ? 'symbol' : null,
+    fullLogoSelected: values.logoContainsGymName,
+  }).choice;
+  function headerRadio(kind: 'logo' | 'symbol', assetExists: boolean) {
+    return (
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: readOnly || !assetExists ? 'default' : 'pointer' }}>
+        <input
+          type="radio"
+          name="theme_header_logo"
+          checked={effectiveChoice === kind}
+          disabled={readOnly || !assetExists}
+          onChange={() => onChange({ logoContainsGymName: kind === 'logo' })}
+        />
+        {t('use_in_header')}
+      </label>
+    );
   }
 
   return (
@@ -212,17 +239,14 @@ export function ThemeBrandingEditor({
               <input ref={fileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} disabled={storageBlock !== null} onChange={handleFileChange} />
             </>
           )}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: readOnly ? 'default' : 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={values.logoContainsGymName}
-              disabled={readOnly}
-              onChange={(e) => onChange({ logoContainsGymName: e.target.checked })}
-            />
-            {t('logo_contains_gym_name')}
-          </label>
+          {headerRadio('logo', !!logoPreview)}
          </div>
-         {logoSymbol && <div style={{ flex: '1 1 280px', minWidth: 0 }}>{logoSymbol}</div>}
+         {logoSymbol && (
+           <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+             {logoSymbol}
+             {headerRadio('symbol', !!hasLogoSymbol)}
+           </div>
+         )}
         </div>
       )}
     </div>

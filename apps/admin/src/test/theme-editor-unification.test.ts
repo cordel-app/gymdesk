@@ -50,7 +50,7 @@ const locales = Object.fromEntries(
 const SHARED_KEYS = [
   'section_branding', 'section_colors', 'section_typography',
   'label_name', 'label_description', 'label_logo',
-  'logo_hint', 'logo_upload', 'logo_clear', 'logo_contains_gym_name', 'logo_no_preview',
+  'logo_hint', 'logo_upload', 'logo_clear', 'use_in_header', 'logo_no_preview',
 ];
 
 describe('Base Theme editor unified with the Custom Theme editor (#678)', () => {

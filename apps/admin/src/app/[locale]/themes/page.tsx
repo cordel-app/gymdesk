@@ -108,7 +108,7 @@ const SETTINGS_TABS: { id: SettingsTab; labelKey: string }[] = [
 ];
 const ALL_SECTIONS: SectionKey[] = ['branding', 'typography', 'colors', 'assignments', 'members_app'];
 
-const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
+const emptyForm = { name: '', description: '', logoContainsGymName: true, tokens: DEFAULT_TOKENS };
 
 /** One entry per Members image slot — the draft's shape for all three maps. */
 function bySlot<T>(value: T): Record<MemberImageSlot, T> {
@@ -867,6 +867,7 @@ export default function GymThemesPage() {
               readOnly={isBase}
               storageBlock={storageBlock}
               logoError={logoAssetFailed(assetFailures)}
+              hasLogoSymbol={!!(theme.logo_symbol_url)}
               logoSymbol={!isBase && (
                 <ThemeLogoSymbolField
                   basePath="/system/themes"
