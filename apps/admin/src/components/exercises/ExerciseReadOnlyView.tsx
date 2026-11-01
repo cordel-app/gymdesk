@@ -149,7 +149,7 @@ export function ExerciseReadOnlyView({
       </div>
 
       <div style={exerciseSubSectionStyle}>
-        <RecordedMetrics category={exercise.category} stored={exercise.allowed_result_types} />
+        <RecordedMetrics stored={exercise.allowed_result_types} />
       </div>
 
       <div style={exerciseSubSectionStyle}>

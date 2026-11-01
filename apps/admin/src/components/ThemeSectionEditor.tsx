@@ -164,7 +164,8 @@ export function ThemeBrandingEditor({
       )}
 
       {showLogo && (
-        <>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 32px', alignItems: 'flex-start' }}>
+         <div style={{ flex: '1 1 280px', minWidth: 0 }}>
           <FormLabel>{t('label_logo')}</FormLabel>
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
           {logoPreview ? (
@@ -220,8 +221,9 @@ export function ThemeBrandingEditor({
             />
             {t('logo_contains_gym_name')}
           </label>
-          {logoSymbol}
-        </>
+         </div>
+         {logoSymbol && <div style={{ flex: '1 1 280px', minWidth: 0 }}>{logoSymbol}</div>}
+        </div>
       )}
     </div>
   );

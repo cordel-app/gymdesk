@@ -3,6 +3,7 @@
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
 // #968: the form's own actions wear the platform's chrome — the left-aligned
@@ -227,7 +228,17 @@ export function ExerciseEditor({
       </div>
 
       <div style={subSectionSt}>
-        <RecordedMetrics category={form.category} stored={null} />
+        <RecordedMetrics
+          editable
+          isNew={mode === 'create'}
+          catalogue={resultTypes}
+          selected={state.resultTypeIds}
+          onToggle={(rtId) => {
+            const next = new Set(state.resultTypeIds);
+            if (next.has(rtId)) next.delete(rtId); else next.add(rtId);
+            state.setResultTypeIds(next);
+          }}
+        />
       </div>
 
       <div style={subSectionSt}>
@@ -274,6 +285,28 @@ export function ExerciseEditor({
           {state.saving ? t('saving') : primaryLabel}
         </button>
       </div>
+      {/* #2225: removing a metric that holds recordings deletes them for good. */}
+      <ConfirmDialog
+        open={!!state.pendingMetricRemoval}
+        message={t('metric_removal_title')}
+        details={(
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 8px' }}>{t('metric_removal_body')}</p>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {(state.pendingMetricRemoval ?? []).map((m) => (
+                <li key={m.id}>{t('metric_removal_item', {
+                  metric: resultTypeLabel({ id: m.id, slug: m.slug, name: m.slug }, (key) => t(key as any)),
+                  count: m.count,
+                })}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        confirmLabel={t('metric_removal_confirm')}
+        cancelLabel={t('cancel')}
+        onCancel={state.dismissMetricRemoval}
+        onConfirm={() => { state.confirmMetricRemoval(); onSave(); }}
+      />
     </>
   );
 }

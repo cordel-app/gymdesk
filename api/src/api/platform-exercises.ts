@@ -1,5 +1,5 @@
 import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
-import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
+import { applyRecordedMetrics, parseRecordedMetricsRequest, respondMetricRemoval, syncExerciseResultTypes } from './exercise-result-types';
 import { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -232,8 +232,9 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
-  const allowedResultTypeIds: number[] | undefined =
-    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  let metricsRequest;
+  try { metricsRequest = parseRecordedMetricsRequest(req.body); }
+  catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
   // #967: the same `translations` contract the gym-facing router takes — one
   // mechanism for both kinds of exercise (§8, §10).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
@@ -266,8 +267,8 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
           await insertExerciseMuscle(tx, null, newId, m.key, m.role, { tables: B });
         }
       }
-      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
-      await syncExerciseResultTypes(tx, newId, categoryInput.value, B);
+      if (metricsRequest.ids) await applyRecordedMetrics(tx, newId, null, metricsRequest, B);
+      else await syncExerciseResultTypes(tx, newId, categoryInput.value, B);
       if (translations) await replaceExerciseTranslations(tx, newId, translations, B);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, newId, descriptionTranslations, B);
       return newId;
@@ -294,8 +295,9 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
-  const allowedResultTypeIds: number[] | undefined =
-    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  let metricsRequest;
+  try { metricsRequest = parseRecordedMetricsRequest(req.body); }
+  catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
   // #967: replace-all when the field is sent, untouched when it is not — the
   // gym-side rule, for the same reason (a client editing another field must not
   // clear the catalogue's translations).
@@ -352,9 +354,8 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           await insertExerciseMuscle(tx, null, id, m.key, m.role, { tables: B });
         }
       }
-      const category = await effectiveCategory(tx, id, categoryInput, B);
-      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
-      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category, B);
+      // #2225: a category change never rewrites the configured Recorded Metrics.
+      await applyRecordedMetrics(tx, id, null, metricsRequest, B);
       if (translations) await replaceExerciseTranslations(tx, id, translations, B);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations, B);
     });
@@ -362,7 +363,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
     const updated = shapeExercise(rows[0]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
-  } catch (err) { next(err); }
+  } catch (err) { if (respondMetricRemoval(err, res)) return; next(err); }
 });
 
 /* The Base Exercise media routes (`POST`/`DELETE /:id/(image|video)/:gender`) live in

@@ -23,7 +23,7 @@ export const meStandaloneExercisesRouter = Router();
 meStandaloneExercisesRouter.use(
   requireRole('member'),
   requireFeatureEnabled('training'),
-  requireFeatureEnabled('member_web.my_training_plan'),
+  requireFeatureEnabled('member_web.my_products'),
 );
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

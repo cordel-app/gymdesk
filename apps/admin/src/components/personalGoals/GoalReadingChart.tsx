@@ -4,8 +4,9 @@ import React, { useMemo } from 'react';
 import { LineChart } from '@gymdesk/charts';
 import { cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
 import {
-  GoalReadingRow, readingAxisLabel, readingChartPoints,
+  GoalReadingRow, readingAxisLabel, readingChartPoints, selectedReadingX,
 } from './goalReadings';
+import { useGoalReadingHover } from './GoalReadingHover';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
@@ -47,6 +48,9 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
     ariaLabel: string;
     /** Already interpolated, e.g. `Target 70 kg`. `null` labels the line not at all. */
     target: string | null;
+    /** #2224 — the legend's entries; omit both for no legend. */
+    legendReading?: string;
+    legendTarget?: string;
   };
 }) {
   const gymFmt = useGymFormatSettings();
@@ -55,6 +59,16 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
     [readings, unit, locale, gymFmt],
   );
 
+  const { day } = useGoalReadingHover();
+  const selectedX = useMemo(() => selectedReadingX(readings, day), [readings, day]);
+  // Only elements actually in the chart get a legend entry.
+  const legend = useMemo(() => {
+    const entries: { name: string; kind: 'primary' | 'reference' }[] = [];
+    if (labels.legendReading) entries.push({ name: labels.legendReading, kind: 'primary' });
+    if (target !== null && labels.legendTarget) entries.push({ name: labels.legendTarget, kind: 'reference' });
+    return entries.length > 0 ? entries : undefined;
+  }, [labels.legendReading, labels.legendTarget, target]);
+
   if (points.length === 0) return null;
 
   return (
@@ -62,7 +76,9 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
       <span style={cardSectionLabelStyle}>{labels.title}</span>
       <LineChart
         points={points}
-        height={200}
+        height={220}
+        selectedX={selectedX}
+        legend={legend}
         ariaLabel={labels.ariaLabel}
         axisLabelFormatter={(value) => readingAxisLabel(value, locale, gymFmt)}
         reference={target === null ? null : { value: target, label: labels.target ?? undefined }}

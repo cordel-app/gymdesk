@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import {
   ExerciseMedia, exerciseImageSrc, exerciseVideoPosterUrl, hasExerciseMedia,
 } from './exerciseMedia';
+import { ExerciseVideoModal } from './ExerciseVideoModal';
 
 /**
  * #720 — the media thumbnails shown at the right of every workout exercise row.
@@ -31,6 +32,7 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
   const t = useTranslations();
   const [imageBroken, setImageBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
 
   if (!hasExerciseMedia(exercise)) return null;
 
@@ -61,13 +63,12 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
       )}
 
       {videoUrl && (
-        <a
-          href={videoUrl}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => setVideoOpen(true)}
           aria-label={name ? t('exercise_media.play_video_of', { name }) : t('exercise_media.play_video')}
           title={name}
-          style={{ position: 'relative', display: 'inline-flex', lineHeight: 0, textDecoration: 'none' }}
+          style={{ position: 'relative', display: 'inline-flex', lineHeight: 0, padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
         >
           {posterSrc && !posterBroken ? (
             <img
@@ -91,7 +92,10 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
           >
             ▶
           </span>
-        </a>
+        </button>
+      )}
+      {videoUrl && videoOpen && (
+        <ExerciseVideoModal url={videoUrl} title={name || undefined} onClose={() => setVideoOpen(false)} />
       )}
     </span>
   );

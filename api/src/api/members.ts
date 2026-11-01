@@ -594,6 +594,22 @@ membersRouter.post(
   },
 );
 
+// #2183 follow-up: Clerk's list is paged (10 by default) and the email filter is not
+// guaranteed, so a tenant with many pending invitations never saw the member's own.
+// Walk the pages; the match on email is made by resolveInviteConflict().
+async function listPendingInvitations(email: string) {
+  const out: any[] = [];
+  const limit = 500;
+  for (let offset = 0; offset < 5000; offset += limit) {
+    const page = listItems<any>(
+      await clerkClient.invitations.getInvitationList({ status: 'pending', query: email, limit, offset } as any),
+    );
+    out.push(...page);
+    if (page.length < limit) break;
+  }
+  return out;
+}
+
 membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
@@ -630,10 +646,10 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
       // /me/link's job, on the account holder's own sign-in.
       try {
         const [invRes, userRes] = await Promise.all([
-          clerkClient.invitations.getInvitationList({ status: 'pending', query: memberEmail! } as any),
+          listPendingInvitations(memberEmail!),
           clerkClient.users.getUserList({ emailAddress: [memberEmail!] }),
         ]);
-        const found = resolveInviteConflict(memberEmail!, listItems(invRes), listItems(userRes));
+        const found = resolveInviteConflict(memberEmail!, invRes, listItems(userRes));
         if (found.kind === 'pending_invitation') {
           await db.query(
             `UPDATE members SET invitation_id = ?, invited_at = COALESCE(invited_at, UTC_TIMESTAMP()),

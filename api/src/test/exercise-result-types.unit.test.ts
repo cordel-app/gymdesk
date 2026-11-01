@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  assertRequestedResultTypesMatch, derivedResultTypeIds, effectiveCategory, syncExerciseResultTypes,
+  applyRecordedMetrics, derivedResultTypeIds, effectiveCategory, parseRecordedMetricsRequest, syncExerciseResultTypes,
 } from '../api/exercise-result-types';
 import { CATEGORY_RESULT_TYPE_SLUGS, EXERCISE_CATEGORIES } from '../domain/exerciseCategories';
 
@@ -44,22 +44,59 @@ describe('exercise Recorded Metrics derivation (#1360 stage 2)', () => {
     expect(await derivedResultTypeIds(fakeTx().tx, 'yoga')).toBeNull();
   });
 
-  it('accepts a request that matches the derived set, in any order, and one that omits it', async () => {
-    const { tx } = fakeTx();
-    await expect(assertRequestedResultTypesMatch(tx, 'strength', [2, 1])).resolves.toBeUndefined();
-    await expect(assertRequestedResultTypesMatch(tx, 'strength', undefined)).resolves.toBeUndefined();
+  it('parses the requested metrics: absent keeps, ids are deduped and sorted, junk or empty is a 400', () => {
+    expect(parseRecordedMetricsRequest({}).ids).toBeUndefined();
+    expect(parseRecordedMetricsRequest({ allowed_result_type_ids: [4, 2, 2] })).toEqual({ ids: [2, 4], confirm: false });
+    expect(parseRecordedMetricsRequest({ allowed_result_type_ids: [1], confirm_metric_removal: true }).confirm).toBe(true);
+    expect(() => parseRecordedMetricsRequest({ allowed_result_type_ids: [] })).toThrow();
+    expect(() => parseRecordedMetricsRequest({ allowed_result_type_ids: ['x'] })).toThrow();
+    expect(() => parseRecordedMetricsRequest({ allowed_result_type_ids: 3 })).toThrow();
   });
 
-  it('refuses a contradicting selection with a 400', async () => {
-    const { tx } = fakeTx();
-    await expect(assertRequestedResultTypesMatch(tx, 'strength', [1, 2, 3])).rejects.toMatchObject({ status: 400 });
-    await expect(assertRequestedResultTypesMatch(tx, 'stretching', [1])).rejects.toMatchObject({ status: 400 });
+  function metricsTx(current: { id: number; slug: string }[], counts: Record<string, number>) {
+    const calls: string[] = [];
+    const tx: any = {
+      query: vi.fn(async (sql: string, params: any[] = []) => {
+        calls.push(sql);
+        if (sql.includes('WHERE id IN')) return { rows: params.map((id: number) => ({ id, slug: SLUGS[id - 1] })), rowCount: params.length };
+        if (sql.includes('JOIN result_types rt')) return { rows: current, rowCount: current.length };
+        if (sql.includes('COUNT(*)')) {
+          const slug = sql.includes('s.weight') ? 'weight' : sql.includes('s.reps') ? 'repetitions' : 'duration';
+          return { rows: [{ n: counts[slug] ?? 0 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      }),
+    };
+    return { tx, calls };
+  }
+
+  it('removing a metric that holds recordings needs confirmation and changes nothing without it', async () => {
+    const { tx, calls } = metricsTx([{ id: 1, slug: 'repetitions' }, { id: 2, slug: 'weight' }], { weight: 5 });
+    await expect(applyRecordedMetrics(tx, 7, 'g', { ids: [1], confirm: false }))
+      .rejects.toMatchObject({ status: 409, code: 'metric_removal_requires_confirmation', metrics: [{ slug: 'weight', count: 5 }] });
+    expect(calls.some((c) => /^(DELETE|UPDATE)/.test(c))).toBe(false);
   });
 
-  it('refuses a manual selection when there is no supported category', async () => {
-    const { tx } = fakeTx();
-    await expect(assertRequestedResultTypesMatch(tx, null, [1])).rejects.toMatchObject({ status: 400 });
-    await expect(assertRequestedResultTypesMatch(tx, 'yoga', [1])).rejects.toMatchObject({ status: 400 });
+  it('with confirmation it deletes only the removed metric\'s recordings, scoped to the gym, then replaces the rows', async () => {
+    const { tx, calls } = metricsTx([{ id: 1, slug: 'repetitions' }, { id: 2, slug: 'weight' }], { weight: 5, repetitions: 9 });
+    const r = await applyRecordedMetrics(tx, 7, 'g', { ids: [1], confirm: true });
+    expect(r.removed.map((m) => m.slug)).toEqual(['weight']);
+    const updates = calls.filter((c) => c.startsWith('UPDATE'));
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toContain('s.weight = NULL');
+    expect(updates[0]).toContain('l.gym_id = ?');
+    expect(calls.some((c) => c.startsWith('DELETE FROM exercise_allowed_result_types'))).toBe(true);
+  });
+
+  it('removing a metric with no recordings, or a metric with no stored data, needs no confirmation', async () => {
+    const { tx } = metricsTx([{ id: 1, slug: 'repetitions' }, { id: 3, slug: 'distance' }], {});
+    await expect(applyRecordedMetrics(tx, 7, 'g', { ids: [2], confirm: false })).resolves.toEqual({ removed: [] });
+  });
+
+  it('a request that does not mention metrics touches nothing', async () => {
+    const { tx, calls } = metricsTx([], {});
+    await applyRecordedMetrics(tx, 7, 'g', { ids: undefined, confirm: false });
+    expect(calls).toHaveLength(0);
   });
 
   it('uses the stored category when the request does not mention one', async () => {
@@ -77,7 +114,7 @@ describe('exercise Recorded Metrics derivation (#1360 stage 2)', () => {
     }
   });
 
-  it('the write routes persist the join table only through the helper', () => {
+  it('the write routes persist the join table only through the helpers', () => {
     for (const f of ['exercises.ts', 'platform-exercises.ts']) {
       const src = readFileSync(join(__dirname, '../api', f), 'utf-8');
       expect(src, f).toContain('syncExerciseResultTypes');

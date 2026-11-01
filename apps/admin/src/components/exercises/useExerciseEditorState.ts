@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   emptyExerciseForm,
@@ -33,7 +33,12 @@ export interface ExerciseEditorState {
   resultTypeIds: Set<number>;
   setResultTypeIds: (next: Set<number>) => void;
   /** What `toExerciseCreatePayload()` / `toExerciseUpdatePayload()` take beside the form. */
-  extras: { muscles: Map<string, MuscleRole>; resultTypeIds: Set<number> };
+  extras: { muscles: Map<string, MuscleRole>; resultTypeIds: Set<number>; confirmMetricRemoval: boolean };
+  /** #2225: removed metrics that hold recordings, awaiting the administrator's confirmation. */
+  pendingMetricRemoval: { id: number; slug: string; count: number }[] | null;
+  dismissMetricRemoval: () => void;
+  /** Marks the removal confirmed; the caller then saves again. */
+  confirmMetricRemoval: () => void;
   error: string | null;
   setError: (next: string | null) => void;
   saving: boolean;
@@ -64,6 +69,8 @@ export function useExerciseEditorState(): ExerciseEditorState {
   const [resultTypeIds, setResultTypeIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pendingMetricRemoval, setPendingMetricRemoval] = useState<{ id: number; slug: string; count: number }[] | null>(null);
+  const confirmRef = useRef(false);
 
   const reset = useCallback((row?: ExerciseSeed | null) => {
     setForm(row ? exerciseFormFromRow(row) : emptyExerciseForm());
@@ -73,6 +80,8 @@ export function useExerciseEditorState(): ExerciseEditorState {
     setResultTypeIds(new Set((row?.allowed_result_types ?? []).map((rt) => rt.id)));
     setError(null);
     setSaving(false);
+    setPendingMetricRemoval(null);
+    confirmRef.current = false;
   }, []);
 
   const submit = useCallback(async (persist: () => Promise<void>): Promise<boolean> => {
@@ -83,6 +92,11 @@ export function useExerciseEditorState(): ExerciseEditorState {
       await persist();
       return true;
     } catch (err: any) {
+      if (err?.status === 409 && err?.body?.code === 'metric_removal_requires_confirmation') {
+        setPendingMetricRemoval(err.body.metrics ?? []);
+        confirmRef.current = false;
+        return false;
+      }
       setError(err?.message ?? t('error_generic'));
       return false;
     } finally {
@@ -92,7 +106,14 @@ export function useExerciseEditorState(): ExerciseEditorState {
 
   return {
     form, setForm, muscles, setMuscles, resultTypeIds, setResultTypeIds,
-    extras: { muscles, resultTypeIds },
+    extras: {
+      muscles,
+      resultTypeIds,
+      get confirmMetricRemoval() { return confirmRef.current; },
+    },
+    pendingMetricRemoval,
+    dismissMetricRemoval: () => { confirmRef.current = false; setPendingMetricRemoval(null); },
+    confirmMetricRemoval: () => { confirmRef.current = true; setPendingMetricRemoval(null); },
     error, setError, saving, reset, submit,
   };
 }

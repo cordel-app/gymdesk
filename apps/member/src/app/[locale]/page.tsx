@@ -364,7 +364,7 @@ export default function HomePage() {
           its own. */}
       <section style={styles.tileGrid}>
         <NavTile slot="calendar" icon="📅" label={t('nav.calendar')} onClick={() => router.push(`/${locale}/calendar`)} />
-        {featureEnabled('member_web.my_training_plan') && (
+        {featureEnabled('member_web.my_products') && (
           <NavTile slot="training" icon="🏋️" label={t('nav.training')} onClick={() => router.push(`/${locale}/training`)} />
         )}
         {featureEnabled('member_web.my_bookings') && (

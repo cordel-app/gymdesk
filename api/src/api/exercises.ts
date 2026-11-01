@@ -1,6 +1,6 @@
 import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
 import { resolveRequestActor } from '../domain/auditActor';
-import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
+import { applyRecordedMetrics, parseRecordedMetricsRequest, respondMetricRemoval, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -431,8 +431,9 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
-  const allowedResultTypeIds: number[] | undefined =
-    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  let metricsRequest;
+  try { metricsRequest = parseRecordedMetricsRequest(req.body); }
+  catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
   // #967: the name in every other supported language. A request that omits the
   // field creates an exercise with its base name alone — a translation is never
   // invented for it (§5, §9).
@@ -459,8 +460,8 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
          sets_default ?? null, status ?? 'active', actor],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
-      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
-      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
+      if (metricsRequest.ids) await applyRecordedMetrics(tx, insertId, gymId, metricsRequest);
+      else await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, insertId, descriptionTranslations);
       return insertId;
@@ -494,8 +495,9 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
-  const allowedResultTypeIds: number[] | undefined =
-    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  let metricsRequest;
+  try { metricsRequest = parseRecordedMetricsRequest(req.body); }
+  catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
   // #967: replace-all, like every other collection this PUT carries — the
   // payload is the complete set, so a locale left blank loses its row and falls
   // back to the base name. A request that does not mention `translations` at all
@@ -544,9 +546,8 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       );
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
       if (muscles) await replaceMuscles(tx, gymId, id, muscles);
-      const category = await effectiveCategory(tx, id, categoryInput);
-      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
-      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
+      // #2225: a category change never rewrites the configured Recorded Metrics.
+      await applyRecordedMetrics(tx, id, gymId, metricsRequest);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
       if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations);
     });
@@ -555,6 +556,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
   } catch (e: any) {
+    if (respondMetricRemoval(e, res)) return;
     if (e.status) return res.status(e.status).json({ error: e.message });
     handleDupEntry(e, res, next, 'Exercise with this name already exists.');
   }
