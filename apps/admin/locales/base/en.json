@@ -644,6 +644,7 @@
     "family_add_placeholder": "Search a member to add…",
     "family_make_owner": "Make owner",
     "family_remove": "Remove",
+    "family_view": "View",
     "family_dissolve": "Dissolve family",
     "family_confirm_remove": "Remove {name} from the family?",
     "family_confirm_dissolve": "Dissolve this family? Members keep their own plans and products.",
