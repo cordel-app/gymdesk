@@ -213,9 +213,10 @@ describe('#958: Details reuses the existing modal', () => {
   });
 });
 
-describe('#958: no generic add while a plan is held (#956)', () => {
-  it('gates + Add Membership Plan on the Member having no live plan', () => {
-    expect(sectionSrc).toContain('{canWrite && live.length === 0 && !adding && (');
+describe('+ Add Membership Plan is always offered (#2125, reversing #958)', () => {
+  it('no longer gates + Add Membership Plan on the Member having no live plan', () => {
+    expect(sectionSrc).toContain('{canWrite && !adding && (');
+    expect(sectionSrc).not.toContain('live.length === 0 && !adding');
   });
 
   it('shows the server\'s refusal as its own sentence — there is no replacement to confirm (#1325 PR 3b)', () => {
