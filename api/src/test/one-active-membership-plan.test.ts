@@ -483,6 +483,45 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, '')).sort()).toEqual(['Add First', 'Add Second']);
   });
 
+  it("Save & Pay with 'add' asks only for the added plan, and the payment activates both (#2125 stage 14)", async () => {
+    const memberId = await createMember(gymId, 'Add Pay');
+    const first = await createPlan(gymId, 'Pay First');
+    const second = await createPlan(gymId, 'Pay Second');
+    for (const [planId, price] of [[first, 50], [second, 30]] as const) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, ?, '2020-01-01', 'active')`, [gymId, planId, price]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    const live = await assignLive(memberId, first, '2026-01-01');
+    // The second plan starts on a date the first one also bills on, which is where a naive charge doubles up.
+    const draft = await assignDraft(memberId, second, '2026-03-01');
+
+    const submitted = await post(`/user-memberships/${draft}/save-and-pay`, { on_conflict: 'add' });
+    expect(submitted.status).toBe(200);
+    const { rows: pending } = await db.query<any>("SELECT status FROM user_memberships WHERE id = ?", [draft]);
+    expect(pending[0].status).toBe('pending_payment');
+    const { rows: initial } = await db.query<any>(
+      `SELECT be.amount, be.product_set_id FROM billing_events be
+        JOIN product_sets ps ON ps.id = be.product_set_id
+       WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`, [draft]);
+    expect(initial).toHaveLength(1);
+    expect(Number(initial[0].amount)).toBe(30);
+
+    // The first plan is untouched while the payment is outstanding.
+    const { rows: still } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [live]);
+    expect(still[0].status).toBe('active');
+
+    const paid = await post(`/user-memberships/${draft}/record-payment`, {});
+    expect(paid.status).toBeLessThan(300);
+    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(2);
+    const { rows: sets } = await db.query<any>(
+      "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
+    expect(sets).toHaveLength(1);
+    const { rows: snaps } = await db.query<any>('SELECT COUNT(*) AS n FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    expect(Number(snaps[0].n)).toBe(2);
+  });
+
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {
     const memberId = await createMember(gymId, 'Replace Alias');
     const first = await createPlan(gymId, 'Rep First');

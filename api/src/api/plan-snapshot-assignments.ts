@@ -205,3 +205,12 @@ export async function loadPlanSnapshotScheduleKeys(
   );
   return (rows as any[]).map((r) => (r.schedule_key != null ? String(r.schedule_key) : null));
 }
+
+/** Whether each plan snapshot of the version is an inherited copy, in the loader's order (#2125 stage 14). */
+export async function loadPlanSnapshotInheritance(
+  gymId: string, productSetId: number, exec: Exec = db,
+): Promise<boolean[]> {
+  const { rows } = await exec.query(
+    'SELECT is_inherited FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, productSetId]);
+  return (rows as any[]).map((r) => Number(r.is_inherited) === 1);
+}

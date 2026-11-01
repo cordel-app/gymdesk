@@ -17,7 +17,7 @@ import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
 import { projectActiveProductSet } from './product-set-projection';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -368,6 +368,12 @@ interface PlannedEvent {
 export async function planScheduledEvents(
   gymId: string, productSetId: number, from: string, cycles: number = MAX_COVERED_CYCLES,
   exec: Exec = db,
+  /**
+   * #2125 stage 14 — `newPlansOnly`: the obligations of the plans a version *adds* to a running one,
+   * not of the ones it inherits (those were paid for by the version it supersedes). Used for the
+   * initial charge of an added plan, which must not ask again for a plan already paid.
+   */
+  opts: { newPlansOnly?: boolean } = {},
 ): Promise<PlannedEvent[]> {
   // #2125 stage 7: a version holds N Membership Plans. Each plan is run through the engine on its
   // own and its lines take the schedule its snapshot is linked to (the shared `plan` schedule when
@@ -375,13 +381,19 @@ export async function planScheduledEvents(
   const assignments = await loadProductSetSimulationAssignments(gymId, productSetId, exec);
   if (assignments.length === 0) return [];
   const planScheduleKeys = await loadPlanSnapshotScheduleKeys(gymId, productSetId, exec);
+  const inherited = opts.newPlansOnly ? await loadPlanSnapshotInheritance(gymId, productSetId, exec) : [];
   const runs = assignments
     .map((assignment, index) => ({
       assignment,
       scheduleKey: planScheduleKeys[index] ?? PLAN_SCHEDULE_KEY,
-      result: computeBillingSimulation({ assignments: [assignment], horizonFrom: from, minimumCycles: cycles }),
+      inherited: inherited[index] ?? false,
+      // The recurring lines of an added-plan version are the running version's, already paid.
+      result: computeBillingSimulation({
+        assignments: [opts.newPlansOnly ? { ...assignment, services: [] } : assignment],
+        horizonFrom: from, minimumCycles: cycles,
+      }),
     }))
-    .filter((r) => r.result.available);
+    .filter((r) => r.result.available && !(opts.newPlansOnly && r.inherited));
   if (runs.length === 0) return [];
 
   const { rows: scheduled } = await exec.query(
