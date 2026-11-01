@@ -185,3 +185,35 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
     expect(Math.round(total(both) * 100) / 100).toBe(Math.round((total(alone) + 30) * 100) / 100);
   });
 });
+
+describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
+  it('pays a prorated first stretch on its start date, then bills on the schedule\'s dates', async () => {
+    const first = await plan({ price: 50 });
+    const second = await plan({ price: 31 });
+    const owner = await member();
+    const set = await newVersion(owner, first, TODAY, 50);
+    const { rows: snap } = await db.query<any>(
+      'SELECT s.schedule_id, sch.anchor_date FROM plan_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id WHERE s.product_set_id = ?',
+      [set.id]);
+    const joinStart = day(10);
+    await db.query(
+      `INSERT INTO plan_snapshots
+         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+          membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew, is_inherited)
+       VALUES (?, ?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0, 0)`,
+      [gymId, set.id, owner, second, joinStart, snap[0].schedule_id]);
+
+    const events = await planScheduledEvents(gymId, set.id, TODAY, 3);
+    const secondLines = events.flatMap((e) => e.lines
+      .filter((l) => l.kind === 'membership_fee' && l.regular_price === 31)
+      .map((l) => ({ date: e.date, line: l })));
+    expect(secondLines[0].date).toBe(joinStart);
+    expect(secondLines[0].line.proration).toBeTruthy();
+    expect(secondLines[0].line.actual_charge).toBeLessThan(31);
+    expect(secondLines[0].line.actual_charge).toBeGreaterThan(0);
+    // After the prorated stretch the plan bills on the first plan's dates, in full.
+    const firstDates = events.flatMap((e) => e.lines.filter((l) => l.regular_price === 50).map(() => e.date));
+    expect(secondLines[1].date).toBe(firstDates[1]);
+    expect(secondLines[1].line.actual_charge).toBe(31);
+  });
+});
