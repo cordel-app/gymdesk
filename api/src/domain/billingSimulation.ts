@@ -267,6 +267,13 @@ export interface SimulationAssignment {
   planDuration: PlanDuration;
   /** #772 — the assignment's own Personal Membership Fee Benefit. */
   personalFeeBenefit: PersonalFeeBenefit;
+  /**
+   * #2125 stage 8 — the anchor date of the shared schedule this plan's fee bills on, when the
+   * plan joins a schedule that was already running. A plan starting between two dates of it pays
+   * a prorated first stretch on its start date and then follows the schedule (`prorate()`), the
+   * way a recurring Product line does (#1867). `null`/absent: the plan sets the dates itself.
+   */
+  alignTo?: string | null;
 }
 
 /**
@@ -908,13 +915,25 @@ interface SingleCharge {
 function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   if (a.membershipFeePrice == null || a.recurringInterval == null || a.recurringUnit == null) return null;
   const regular = round2(a.membershipFeePrice);
-  const cadence = cadenceForBillingPolicy(a.recurringInterval, a.recurringUnit);
+  const base = cadenceForBillingPolicy(a.recurringInterval, a.recurringUnit);
+  // #2125 stage 8 — a plan joining a running schedule: prorated first stretch, then the schedule's dates.
+  const joinDate = a.alignTo ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
+  const proration = joinDate
+    ? prorate(1, { interval: a.recurringInterval, unit: a.recurringUnit }, a.startsAt, joinDate)
+    : null;
+  const cadence: Cadence = joinDate
+    ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
+    : base;
   return {
     cadence,
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date) => resolveMembershipFee(regular, date, a),
+    resolve: (date, occurrence) => {
+      const resolved = resolveMembershipFee(regular, date, a);
+      if (!proration || occurrence !== 0) return resolved;
+      return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
+    },
     line: (date, resolved) => {
       // #946 — one Membership Fee charge covers more than one period exactly
       // once: when it collects the Plan's Pre-paid Duration up front. The
@@ -935,6 +954,8 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
         actual_charge: resolved.amount,
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
         prepaid_periods: resolved.prepaidPeriods ?? null,
+        proration: proration && date === a.startsAt
+          ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
       };
     },
   };

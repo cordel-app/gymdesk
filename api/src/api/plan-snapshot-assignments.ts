@@ -145,7 +145,7 @@ export async function loadProductSetSimulationAssignments(
     `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
-            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit
+            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date, s.is_inherited
        FROM plan_snapshots s
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
@@ -178,6 +178,10 @@ export async function loadProductSetSimulationAssignments(
         cadence, row.auto_renew,
       ),
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+      // A plan added to a schedule that was already running (its anchor precedes the plan's own
+      // start) pays a prorated first stretch; an inherited plan keeps the dates it already had.
+      ...(!row.is_inherited && row.anchor_date != null && toDateOnly(row.anchor_date) < toDateOnly(row.starts_at)
+        ? { alignTo: toDateOnly(row.anchor_date) } : {}),
     });
   }
   return out;
