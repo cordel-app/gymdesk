@@ -41,6 +41,8 @@ const LABEL_KEYS: Map<string, string> = (() => {
 
 /** The locale key a feature flag's display name resolves through, or `null`. */
 export function featureFlagLabelKey(featureKey: string): string | null {
+  // #2227: a Members App flag named after the section it gates.
+  if (featureKey === 'member_web.my_products') return 'feature_flags.flag_member_web_my_products';
   return LABEL_KEYS.get(featureKey) ?? null;
 }
 

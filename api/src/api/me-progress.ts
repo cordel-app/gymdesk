@@ -26,7 +26,7 @@ export const meProgressRouter = Router();
 meProgressRouter.use(
   requireRole('member'),
   requireFeatureEnabled('training'),
-  requireFeatureEnabled('member_web.my_training_plan'),
+  requireFeatureEnabled('member_web.my_products'),
 );
 
 export const json = (v: unknown): any => {
