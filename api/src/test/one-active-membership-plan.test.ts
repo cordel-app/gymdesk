@@ -441,26 +441,46 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(rows[0].status).toBe('active');
   });
 
-  it("on_conflict: 'add' for the owner's own live plan is refused until billing holds N plans (#2125 stage 4)", async () => {
+  it("on_conflict: 'add' commits the second plan beside the first and keeps both billing (#2125 stage 13)", async () => {
     const memberId = await createMember(gymId, 'Add Alongside');
     const first = await createPlan(gymId, 'Add First');
     const second = await createPlan(gymId, 'Add Second');
+    for (const [planId, price] of [[first, 50], [second, 30]] as const) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, ?, '2020-01-01', 'active')`, [gymId, planId, price]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
     const live = await assignLive(memberId, first, '2026-01-01');
     const draft = await assignDraft(memberId, second, '2026-03-01');
 
     expect((await commit(draft)).status).toBe(409);
-    const refused = await commit(draft, { on_conflict: 'add' });
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('add_plan_unsupported');
-    // Nothing moved: the live plan and its ProductSet version are exactly as they were.
-    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(1);
+    const added = await commit(draft, { on_conflict: 'add' });
+    expect(added.status).toBe(200);
+
+    // Both assignments stay live: nothing was cancelled.
+    const rows = await assignmentsOf(memberId);
+    expect(liveRows(rows)).toHaveLength(2);
     const { rows: old } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [live]);
     expect(old[0].status).toBe('active');
-    const { rows: sets } = await db.query(
-      "SELECT status FROM product_sets WHERE user_membership_id = ?", [live]);
-    expect(sets.map((r: any) => r.status)).toEqual(['active']);
-    const { rows: still } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [draft]);
-    expect(still[0].status).toBe('draft');
+
+    // One active version holds both plans; the first one is carried as an inherited copy.
+    const { rows: sets } = await db.query<any>(
+      "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
+    expect(sets).toHaveLength(1);
+    const { rows: snaps } = await db.query<any>(
+      'SELECT membership_plan_id, is_inherited, source_user_membership_id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id',
+      [sets[0].id]);
+    expect(snaps.map((r: any) => Number(r.membership_plan_id)).sort()).toEqual([first, second].sort());
+    const carried = snaps.find((r: any) => Number(r.membership_plan_id) === first);
+    expect(carried.is_inherited).toBe(1);
+    expect(Number(carried.source_user_membership_id)).toBe(live);
+
+    // The superseded version's future charges were regenerated for both plans, not lost.
+    const { rows: billed } = await db.query<any>(
+      `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
+        WHERE be.product_set_id = ? AND be.is_scheduled = 1 AND bl.kind = 'membership_fee'`, [sets[0].id]);
+    expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, '')).sort()).toEqual(['Add First', 'Add Second']);
   });
 
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {

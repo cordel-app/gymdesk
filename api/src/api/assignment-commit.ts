@@ -3,6 +3,7 @@ import { recordStatusChange } from './billing-events';
 import { ConflictResolution, LiveAssignment, addSharesOwnerChain, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
+import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -115,6 +116,26 @@ async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member
   return rows.map((r) => Number(r.id));
 }
 
+/**
+ * "Add" (#2125 stage 13): finds the owner's active version and the Draft this assignment is linked
+ * to — both in one chain — and merges the first into the second. `false` when the shape is not that
+ * (no Draft, a Draft outside the owner's chain, no active plan version): the caller refuses the add.
+ */
+async function mergeOwnerVersionForAdd(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<boolean> {
+  const { rows: drafts } = await tx.query<any>(
+    `SELECT id, root_product_set_id FROM product_sets
+      WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft' ORDER BY version DESC, id DESC LIMIT 1 FOR UPDATE`,
+    [gymId, row.id]);
+  const { rows: actives } = await tx.query<any>(
+    `SELECT id, root_product_set_id FROM product_sets
+      WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' AND membership_plan_id IS NOT NULL FOR UPDATE`,
+    [gymId, row.member_id]);
+  const draft = drafts[0]; const active = actives[0];
+  if (!draft || !active || Number(draft.root_product_set_id) !== Number(active.root_product_set_id)) return false;
+  await mergeActiveVersionIntoDraft(tx, gymId, Number(active.id), Number(draft.id));
+  return true;
+}
+
 /** `draft → active` or `pending_payment → active`, superseding on `confirm`. */
 export async function commitAssignment(tx: Tx, input: CommitInput): Promise<CommitOutcome> {
   const row = await lockAssignment(tx, input.gymId, input.userMembershipId);
@@ -131,8 +152,13 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   if (found.length > 0 && !resolution && !(row.status === PENDING_PAYMENT_STATUS)) {
     return { kind: 'conflict', conflicts: found };
   }
-  // #2125 stage 4: an explicit 'add' beside the owner's own live plan would end its billing.
-  if (input.resolution === 'add' && addSharesOwnerChain(found, row.member_id)) return { kind: 'add_unsupported' };
+  // #2125 stage 13: an explicit 'add' beside the owner's own live plan merges the active version
+  // into this assignment's Draft, so activating it supersedes the version without ending any
+  // billing it carried (stage 4 refused this).
+  if (input.resolution === 'add' && addSharesOwnerChain(found, row.member_id)) {
+    const merged = await mergeOwnerVersionForAdd(tx, input.gymId, row);
+    if (!merged) return { kind: 'add_unsupported' };
+  }
   // A Pending Payment row was asked at Save & Pay; with no recorded choice it was an add.
   const conflicts = resolution === 'replace' ? found : [];
   if (conflicts.length > 0) {
