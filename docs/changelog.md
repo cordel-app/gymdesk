@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2221 (Spanish and Catalan names for all 876 Base Exercises, written with gym terminology rather than literally and bundled in `api/src/data/base-exercise-names.json`; `npm run exercises:backfill-names` loads them into `base_exercise_translations`, dry run by default, filling only missing locales and never touching the English name or an existing translation. Run from the VPS as the compiled script. Gate: `base-exercise-names.unit.test.ts`)
+
 - **Done**: #2223 (Members → Progress chart: the selected day's flag now shows its sets and its own Max weight / Max repetitions; "Best result" labels on the exercise summary read "Max result". Series colours and the legend were already Theme-derived (#2198/#2224).)
 
 - **Done**: #2224 (Admin Personal Goals chart aligned with the Progress tab's: hovering or focusing a day in the Reading History highlights that day's point and draws a flag with its date, value and unit (the day's maximum when several readings share it), a compact Reading / Target legend, Theme colours only. `LineChart` gains an optional `legend` and its selected point a flag; no API, data or calculation change. Touch: tapping a history row selects the day)

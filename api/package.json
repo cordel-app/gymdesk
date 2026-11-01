@@ -15,6 +15,7 @@
     "exercises:recrop-images": "tsx src/scripts/recrop-exercise-images.ts",
     "exercises:audit-categories": "tsx src/scripts/audit-exercise-categories.ts",
     "exercises:backfill-result-types": "tsx src/scripts/backfill-exercise-result-types.ts",
+    "exercises:backfill-names": "tsx src/scripts/backfill-base-exercise-names.ts",
     "exercises:backfill-descriptions": "tsx src/scripts/backfill-exercise-descriptions.ts",
     "exercises:audit-base-links": "tsx src/scripts/audit-base-exercise-links.ts",
     "foods:audit-base-links": "tsx src/scripts/audit-base-food-links.ts",

@@ -1,0 +1,3506 @@
+{
+  "3-4-sit-up": {
+    "es": "Abdominal 3/4",
+    "ca": "Abdominal 3/4"
+  },
+  "90-90-hamstring": {
+    "es": "Estiramiento de isquiotibiales 90/90",
+    "ca": "Estirament d'isquiotibials 90/90"
+  },
+  "ab-crunch-machine": {
+    "es": "Máquina de crunch abdominal",
+    "ca": "Màquina de crunch abdominal"
+  },
+  "ab-roller": {
+    "es": "Rueda abdominal",
+    "ca": "Roda abdominal"
+  },
+  "adductor": {
+    "es": "Máquina de aductores",
+    "ca": "Màquina d'adductors"
+  },
+  "adductor-groin": {
+    "es": "Aductores/ingle",
+    "ca": "Adductors/engonal"
+  },
+  "advanced-kettlebell-windmill": {
+    "es": "Molino de viento con pesa rusa avanzado",
+    "ca": "Molí de vent amb kettlebell avançat"
+  },
+  "air-bike": {
+    "es": "Bicicleta de aire (Air Bike)",
+    "ca": "Bicicleta d'aire (Air Bike)"
+  },
+  "all-fours-quad-stretch": {
+    "es": "Estiramiento de cuádriceps a cuatro apoyos",
+    "ca": "Estirament de quàdriceps a quatre grapes"
+  },
+  "alternate-hammer-curl": {
+    "es": "Curl martillo alterno",
+    "ca": "Curl martell alterns"
+  },
+  "alternate-heel-touchers": {
+    "es": "Toques de talón alternos",
+    "ca": "Tocs de taló alterns"
+  },
+  "alternate-incline-dumbbell-curl": {
+    "es": "Curl alterno con mancuernas en banco inclinado",
+    "ca": "Curl alterns amb manuelles en banc inclinat"
+  },
+  "alternate-leg-diagonal-bound": {
+    "es": "Salto diagonal alterno con una pierna",
+    "ca": "Salt diagonal alternat amb una cama"
+  },
+  "alternating-cable-shoulder-press": {
+    "es": "Press de hombros alterno en polea",
+    "ca": "Press d'espatlles alternat en politja"
+  },
+  "alternating-deltoid-raise": {
+    "es": "Elevación de deltoides alterna",
+    "ca": "Elevació de deltoides alterna"
+  },
+  "alternating-floor-press": {
+    "es": "Press de suelo alterno",
+    "ca": "Press de terra alternat"
+  },
+  "alternating-hang-clean": {
+    "es": "Clean colgado alterno",
+    "ca": "Clean penjat alternat"
+  },
+  "alternating-kettlebell-press": {
+    "es": "Press alterno con pesa rusa",
+    "ca": "Press alternat amb kettlebell"
+  },
+  "alternating-kettlebell-row": {
+    "es": "Remo alterno con pesa rusa",
+    "ca": "Rem alternat amb kettlebell"
+  },
+  "alternating-renegade-row": {
+    "es": "Remo renegado alterno",
+    "ca": "Rem renegat alternat"
+  },
+  "ankle-circles": {
+    "es": "Círculos de tobillo",
+    "ca": "Cercles de turmell"
+  },
+  "ankle-on-the-knee": {
+    "es": "Tobillo sobre la rodilla",
+    "ca": "Turmell sobre el genoll"
+  },
+  "anterior-tibialis-smr": {
+    "es": "Liberación miofascial del tibial anterior",
+    "ca": "Alliberament miofascial del tibial anterior"
+  },
+  "anti-gravity-press": {
+    "es": "Press antigravedad",
+    "ca": "Press antigravetat"
+  },
+  "arm-circles": {
+    "es": "Círculos de brazos",
+    "ca": "Cercles de braços"
+  },
+  "arnold-dumbbell-press": {
+    "es": "Press Arnold con mancuernas",
+    "ca": "Press Arnold amb manuelles"
+  },
+  "around-the-worlds": {
+    "es": "Around the World",
+    "ca": "Around the World"
+  },
+  "atlas-stone-trainer": {
+    "es": "Entrenador con piedra Atlas",
+    "ca": "Entrenador amb pedra Atlas"
+  },
+  "atlas-stones": {
+    "es": "Piedras Atlas",
+    "ca": "Pedres Atlas"
+  },
+  "axle-deadlift": {
+    "es": "Peso muerto con barra gruesa (axle)",
+    "ca": "Pes mort amb barra gruixuda (axle)"
+  },
+  "back-flyes-with-bands": {
+    "es": "Aperturas posteriores con bandas",
+    "ca": "Obertures posteriors amb bandes"
+  },
+  "backward-drag": {
+    "es": "Arrastre hacia atrás",
+    "ca": "Arrossegament cap enrere"
+  },
+  "backward-medicine-ball-throw": {
+    "es": "Lanzamiento de balón medicinal hacia atrás",
+    "ca": "Llançament de pilota medicinal cap enrere"
+  },
+  "balance-board": {
+    "es": "Tabla de equilibrio",
+    "ca": "Tauler d'equilibri"
+  },
+  "ball-leg-curl": {
+    "es": "Curl femoral con balón",
+    "ca": "Curl femoral amb pilota"
+  },
+  "band-assisted-pull-up": {
+    "es": "Dominada asistida con banda",
+    "ca": "Tracció assistida amb banda"
+  },
+  "band-good-morning": {
+    "es": "Buenos días con banda",
+    "ca": "Bon dia amb banda"
+  },
+  "band-good-morning-pull-through": {
+    "es": "Buenos días con banda (pull through)",
+    "ca": "Bon dia amb banda (pull through)"
+  },
+  "band-hip-adductions": {
+    "es": "Aducción de cadera con banda",
+    "ca": "Adducció de maluc amb banda"
+  },
+  "band-pull-apart": {
+    "es": "Apertura de banda (Band Pull Apart)",
+    "ca": "Obertura de banda (Band Pull Apart)"
+  },
+  "band-skull-crusher": {
+    "es": "Rompecráneos con banda",
+    "ca": "Rompecranis amb banda"
+  },
+  "barbell-ab-rollout": {
+    "es": "Rueda abdominal con barra",
+    "ca": "Roda abdominal amb barra"
+  },
+  "barbell-ab-rollout-on-knees": {
+    "es": "Rueda abdominal con barra de rodillas",
+    "ca": "Roda abdominal amb barra de genolls"
+  },
+  "barbell-bench-press-medium-grip": {
+    "es": "Press de banca con agarre medio",
+    "ca": "Press de banca amb agafada mitjana"
+  },
+  "barbell-curl": {
+    "es": "Curl con barra",
+    "ca": "Curl amb barra"
+  },
+  "barbell-curls-lying-against-an-incline": {
+    "es": "Curl con barra tumbado en banco inclinado",
+    "ca": "Curl amb barra estirat en banc inclinat"
+  },
+  "barbell-deadlift": {
+    "es": "Peso muerto con barra",
+    "ca": "Pes mort amb barra"
+  },
+  "barbell-full-squat": {
+    "es": "Sentadilla completa con barra",
+    "ca": "Esquat complet amb barra"
+  },
+  "barbell-glute-bridge": {
+    "es": "Puente de glúteos con barra",
+    "ca": "Pont de glutis amb barra"
+  },
+  "barbell-guillotine-bench-press": {
+    "es": "Press guillotina con barra",
+    "ca": "Press guillotina amb barra"
+  },
+  "barbell-hack-squat": {
+    "es": "Hack squat con barra",
+    "ca": "Hack squat amb barra"
+  },
+  "barbell-hip-thrust": {
+    "es": "Hip thrust con barra",
+    "ca": "Hip thrust amb barra"
+  },
+  "barbell-incline-bench-press-medium-grip": {
+    "es": "Press inclinado con barra, agarre medio",
+    "ca": "Press inclinat amb barra, agafada mitjana"
+  },
+  "barbell-incline-shoulder-raise": {
+    "es": "Elevación de hombros inclinada con barra",
+    "ca": "Elevació d'espatlles inclinada amb barra"
+  },
+  "barbell-lunge": {
+    "es": "Zancada con barra",
+    "ca": "Gambada amb barra"
+  },
+  "barbell-rear-delt-row": {
+    "es": "Remo para deltoides posterior con barra",
+    "ca": "Rem per a deltoides posterior amb barra"
+  },
+  "barbell-rollout-from-bench": {
+    "es": "Rollout con barra desde banco",
+    "ca": "Rollout amb barra des de banc"
+  },
+  "barbell-seated-calf-raise": {
+    "es": "Elevación de talones sentado con barra",
+    "ca": "Elevació de talons assegut amb barra"
+  },
+  "barbell-shoulder-press": {
+    "es": "Press de hombros con barra",
+    "ca": "Press d'espatlles amb barra"
+  },
+  "barbell-shrug": {
+    "es": "Encogimientos con barra",
+    "ca": "Encongiments amb barra"
+  },
+  "barbell-shrug-behind-the-back": {
+    "es": "Encogimientos con barra tras la espalda",
+    "ca": "Encongiments amb barra darrere l'esquena"
+  },
+  "barbell-side-bend": {
+    "es": "Flexión lateral con barra",
+    "ca": "Flexió lateral amb barra"
+  },
+  "barbell-side-split-squat": {
+    "es": "Sentadilla dividida lateral con barra",
+    "ca": "Esquat dividit lateral amb barra"
+  },
+  "barbell-squat": {
+    "es": "Sentadilla con barra",
+    "ca": "Esquat amb barra"
+  },
+  "barbell-squat-to-a-bench": {
+    "es": "Sentadilla con barra a un banco",
+    "ca": "Esquat amb barra a un banc"
+  },
+  "barbell-step-ups": {
+    "es": "Subidas al cajón con barra",
+    "ca": "Pujades al calaix amb barra"
+  },
+  "barbell-walking-lunge": {
+    "es": "Zancada caminando con barra",
+    "ca": "Gambada caminant amb barra"
+  },
+  "battling-ropes": {
+    "es": "Cuerdas de batalla",
+    "ca": "Cordes de batalla"
+  },
+  "bear-crawl-sled-drags": {
+    "es": "Arrastre de trineo a cuatro patas",
+    "ca": "Arrossegament de trineu a quatre grapes"
+  },
+  "behind-head-chest-stretch": {
+    "es": "Estiramiento de pecho con manos tras la cabeza",
+    "ca": "Estirament de pit amb mans darrere el cap"
+  },
+  "bench-dips": {
+    "es": "Fondos en banco",
+    "ca": "Fons en banc"
+  },
+  "bench-jump": {
+    "es": "Salto al banco",
+    "ca": "Salt al banc"
+  },
+  "bench-press-powerlifting": {
+    "es": "Press de banca - Powerlifting",
+    "ca": "Press de banca - Powerlifting"
+  },
+  "bench-press-with-bands": {
+    "es": "Press de banca con bandas",
+    "ca": "Press de banca amb bandes"
+  },
+  "bench-press-with-chains": {
+    "es": "Press de banca con cadenas",
+    "ca": "Press de banca amb cadenes"
+  },
+  "bench-sprint": {
+    "es": "Sprint en banco",
+    "ca": "Sprint en banc"
+  },
+  "bent-arm-barbell-pullover": {
+    "es": "Pullover con barra y brazos flexionados",
+    "ca": "Pullover amb barra i braços flexionats"
+  },
+  "bent-arm-dumbbell-pullover": {
+    "es": "Pullover con mancuerna y brazos flexionados",
+    "ca": "Pullover amb manuella i braços flexionats"
+  },
+  "bent-knee-hip-raise": {
+    "es": "Elevación de cadera con rodillas flexionadas",
+    "ca": "Elevació de maluc amb genolls flexionats"
+  },
+  "bent-over-barbell-row": {
+    "es": "Remo con barra inclinado",
+    "ca": "Rem amb barra inclinat"
+  },
+  "bent-over-dumbbell-rear-delt-raise-with-head-on-bench": {
+    "es": "Elevación posterior con mancuernas inclinado con cabeza en banco",
+    "ca": "Elevació posterior amb manuelles inclinat amb el cap al banc"
+  },
+  "bent-over-low-pulley-side-lateral": {
+    "es": "Elevación lateral inclinada en polea baja",
+    "ca": "Elevació lateral inclinada en politja baixa"
+  },
+  "bent-over-one-arm-long-bar-row": {
+    "es": "Remo a un brazo con barra larga inclinado",
+    "ca": "Rem a un braç amb barra llarga inclinat"
+  },
+  "bent-over-two-arm-long-bar-row": {
+    "es": "Remo a dos brazos con barra larga inclinado",
+    "ca": "Rem a dos braços amb barra llarga inclinat"
+  },
+  "bent-over-two-dumbbell-row": {
+    "es": "Remo inclinado con dos mancuernas",
+    "ca": "Rem inclinat amb dues manuelles"
+  },
+  "bent-over-two-dumbbell-row-with-palms-in": {
+    "es": "Remo inclinado con dos mancuernas con palmas hacia dentro",
+    "ca": "Rem inclinat amb dues manuelles amb palmells cap endins"
+  },
+  "bent-press": {
+    "es": "Bent Press",
+    "ca": "Bent Press"
+  },
+  "bicycling": {
+    "es": "Ciclismo",
+    "ca": "Ciclisme"
+  },
+  "bicycling-stationary": {
+    "es": "Bicicleta estática",
+    "ca": "Bicicleta estàtica"
+  },
+  "board-press": {
+    "es": "Press en tabla",
+    "ca": "Press en tauler"
+  },
+  "body-up": {
+    "es": "Body-Up",
+    "ca": "Body-Up"
+  },
+  "body-tricep-press": {
+    "es": "Press de tríceps con peso corporal",
+    "ca": "Press de tríceps amb pes corporal"
+  },
+  "bodyweight-flyes": {
+    "es": "Aperturas con peso corporal",
+    "ca": "Obertures amb pes corporal"
+  },
+  "bodyweight-mid-row": {
+    "es": "Remo medio con peso corporal",
+    "ca": "Rem mitjà amb pes corporal"
+  },
+  "bodyweight-squat": {
+    "es": "Sentadilla con peso corporal",
+    "ca": "Esquat amb pes corporal"
+  },
+  "bodyweight-walking-lunge": {
+    "es": "Zancada caminando con peso corporal",
+    "ca": "Gambada caminant amb pes corporal"
+  },
+  "bosu-ball-cable-crunch-with-side-bends": {
+    "es": "Crunch en polea con Bosu y flexión lateral",
+    "ca": "Crunch en politja amb Bosu i flexió lateral"
+  },
+  "bottoms-up-clean-from-the-hang-position": {
+    "es": "Clean invertido desde posición colgado",
+    "ca": "Clean invertit des de posició penjat"
+  },
+  "bottoms-up": {
+    "es": "Bottoms Up",
+    "ca": "Bottoms Up"
+  },
+  "box-jump-multiple-response": {
+    "es": "Salto al cajón (respuesta múltiple)",
+    "ca": "Salt al calaix (resposta múltiple)"
+  },
+  "box-skip": {
+    "es": "Salto con skip al cajón",
+    "ca": "Salt amb skip al calaix"
+  },
+  "box-squat": {
+    "es": "Sentadilla al cajón",
+    "ca": "Esquat al calaix"
+  },
+  "box-squat-with-bands": {
+    "es": "Sentadilla al cajón con bandas",
+    "ca": "Esquat al calaix amb bandes"
+  },
+  "box-squat-with-chains": {
+    "es": "Sentadilla al cajón con cadenas",
+    "ca": "Esquat al calaix amb cadenes"
+  },
+  "brachialis-smr": {
+    "es": "Liberación miofascial del braquial",
+    "ca": "Alliberament miofascial del braquial"
+  },
+  "bradford-rocky-presses": {
+    "es": "Press Bradford/Rocky",
+    "ca": "Press Bradford/Rocky"
+  },
+  "butt-ups": {
+    "es": "Butt-Ups",
+    "ca": "Butt-Ups"
+  },
+  "butt-lift-bridge": {
+    "es": "Elevación de glúteos (puente)",
+    "ca": "Elevació de glutis (pont)"
+  },
+  "butterfly": {
+    "es": "Mariposa (máquina)",
+    "ca": "Papallona (màquina)"
+  },
+  "cable-chest-press": {
+    "es": "Press de pecho en polea",
+    "ca": "Press de pit en politja"
+  },
+  "cable-crossover": {
+    "es": "Cruces en polea",
+    "ca": "Creuaments en politja"
+  },
+  "cable-crunch": {
+    "es": "Crunch en polea",
+    "ca": "Crunch en politja"
+  },
+  "cable-deadlifts": {
+    "es": "Peso muerto en polea",
+    "ca": "Pes mort en politja"
+  },
+  "cable-hammer-curls-rope-attachment": {
+    "es": "Curl martillo en polea con cuerda",
+    "ca": "Curl martell en politja amb corda"
+  },
+  "cable-hip-adduction": {
+    "es": "Aducción de cadera en polea",
+    "ca": "Adducció de maluc en politja"
+  },
+  "cable-incline-pushdown": {
+    "es": "Press-down inclinado en polea",
+    "ca": "Press-down inclinat en politja"
+  },
+  "cable-incline-triceps-extension": {
+    "es": "Extensión de tríceps inclinado en polea",
+    "ca": "Extensió de tríceps inclinat en politja"
+  },
+  "cable-internal-rotation": {
+    "es": "Rotación interna en polea",
+    "ca": "Rotació interna en politja"
+  },
+  "cable-iron-cross": {
+    "es": "Cruz de hierro en polea",
+    "ca": "Creu de ferro en politja"
+  },
+  "cable-judo-flip": {
+    "es": "Judo flip en polea",
+    "ca": "Judo flip en politja"
+  },
+  "cable-lying-triceps-extension": {
+    "es": "Extensión de tríceps tumbado en polea",
+    "ca": "Extensió de tríceps estirat en politja"
+  },
+  "cable-one-arm-tricep-extension": {
+    "es": "Extensión de tríceps a un brazo en polea",
+    "ca": "Extensió de tríceps a un braç en politja"
+  },
+  "cable-preacher-curl": {
+    "es": "Curl predicador en polea",
+    "ca": "Curl predicador en politja"
+  },
+  "cable-rear-delt-fly": {
+    "es": "Aperturas posteriores en polea",
+    "ca": "Obertures posteriors en politja"
+  },
+  "cable-reverse-crunch": {
+    "es": "Crunch inverso en polea",
+    "ca": "Crunch invers en politja"
+  },
+  "cable-rope-overhead-triceps-extension": {
+    "es": "Extensión de tríceps sobre la cabeza con cuerda en polea",
+    "ca": "Extensió de tríceps per sobre el cap amb corda en politja"
+  },
+  "cable-rope-rear-delt-rows": {
+    "es": "Remo para deltoides posterior con cuerda en polea",
+    "ca": "Rem per a deltoides posterior amb corda en politja"
+  },
+  "cable-russian-twists": {
+    "es": "Giros rusos en polea",
+    "ca": "Girs russos en politja"
+  },
+  "cable-seated-crunch": {
+    "es": "Crunch sentado en polea",
+    "ca": "Crunch assegut en politja"
+  },
+  "cable-seated-lateral-raise": {
+    "es": "Elevación lateral sentado en polea",
+    "ca": "Elevació lateral assegut en politja"
+  },
+  "cable-shoulder-press": {
+    "es": "Press de hombros en polea",
+    "ca": "Press d'espatlles en politja"
+  },
+  "cable-shrugs": {
+    "es": "Encogimientos en polea",
+    "ca": "Encongiments en politja"
+  },
+  "cable-wrist-curl": {
+    "es": "Curl de muñeca en polea",
+    "ca": "Curl de canell en politja"
+  },
+  "calf-machine-shoulder-shrug": {
+    "es": "Encogimientos de hombros en máquina de gemelos",
+    "ca": "Encongiments d'espatlles en màquina de bessons"
+  },
+  "calf-press": {
+    "es": "Press de gemelos",
+    "ca": "Press de bessons"
+  },
+  "calf-press-on-the-leg-press-machine": {
+    "es": "Press de gemelos en prensa de piernas",
+    "ca": "Press de bessons en premsa de cames"
+  },
+  "calf-raise-on-a-dumbbell": {
+    "es": "Elevación de talones sobre mancuerna",
+    "ca": "Elevació de talons sobre manuella"
+  },
+  "calf-raises-with-bands": {
+    "es": "Elevación de talones con bandas",
+    "ca": "Elevació de talons amb bandes"
+  },
+  "calf-stretch-elbows-against-wall": {
+    "es": "Estiramiento de gemelos con codos contra la pared",
+    "ca": "Estirament de bessons amb colzes contra la paret"
+  },
+  "calf-stretch-hands-against-wall": {
+    "es": "Estiramiento de gemelos con manos contra la pared",
+    "ca": "Estirament de bessons amb mans contra la paret"
+  },
+  "calves-smr": {
+    "es": "Liberación miofascial de gemelos",
+    "ca": "Alliberament miofascial de bessons"
+  },
+  "car-deadlift": {
+    "es": "Peso muerto de coche",
+    "ca": "Pes mort de cotxe"
+  },
+  "car-drivers": {
+    "es": "Car Drivers",
+    "ca": "Car Drivers"
+  },
+  "carioca-quick-step": {
+    "es": "Paso rápido carioca",
+    "ca": "Pas ràpid carioca"
+  },
+  "cat-stretch": {
+    "es": "Estiramiento del gato",
+    "ca": "Estirament del gat"
+  },
+  "catch-and-overhead-throw": {
+    "es": "Recepción y lanzamiento por encima de la cabeza",
+    "ca": "Recepció i llançament per sobre el cap"
+  },
+  "chain-handle-extension": {
+    "es": "Extensión con asa de cadena",
+    "ca": "Extensió amb nansa de cadena"
+  },
+  "chain-press": {
+    "es": "Press con cadenas",
+    "ca": "Press amb cadenes"
+  },
+  "chair-leg-extended-stretch": {
+    "es": "Estiramiento con pierna extendida en silla",
+    "ca": "Estirament amb cama estesa en cadira"
+  },
+  "chair-lower-back-stretch": {
+    "es": "Estiramiento lumbar en silla",
+    "ca": "Estirament lumbar en cadira"
+  },
+  "chair-squat": {
+    "es": "Sentadilla en silla",
+    "ca": "Esquat en cadira"
+  },
+  "chair-upper-body-stretch": {
+    "es": "Estiramiento de tren superior en silla",
+    "ca": "Estirament de tren superior en cadira"
+  },
+  "chest-and-front-of-shoulder-stretch": {
+    "es": "Estiramiento de pecho y parte frontal del hombro",
+    "ca": "Estirament de pit i part frontal de l'espatlla"
+  },
+  "chest-push-from-3-point-stance": {
+    "es": "Empuje de pecho desde posición de 3 apoyos",
+    "ca": "Empenta de pit des de posició de 3 punts"
+  },
+  "chest-push-multiple-response": {
+    "es": "Empuje de pecho (respuesta múltiple)",
+    "ca": "Empenta de pit (resposta múltiple)"
+  },
+  "chest-push-single-response": {
+    "es": "Empuje de pecho (respuesta única)",
+    "ca": "Empenta de pit (resposta única)"
+  },
+  "chest-push-with-run-release": {
+    "es": "Empuje de pecho con carrera",
+    "ca": "Empenta de pit amb cursa"
+  },
+  "chest-stretch-on-stability-ball": {
+    "es": "Estiramiento de pecho en fitball",
+    "ca": "Estirament de pit en fitball"
+  },
+  "child-s-pose": {
+    "es": "Postura del niño",
+    "ca": "Postura del nen"
+  },
+  "chin-up": {
+    "es": "Dominada supina",
+    "ca": "Tracció supina"
+  },
+  "chin-to-chest-stretch": {
+    "es": "Estiramiento de barbilla al pecho",
+    "ca": "Estirament de barbeta al pit"
+  },
+  "circus-bell": {
+    "es": "Circus Bell",
+    "ca": "Circus Bell"
+  },
+  "clean": {
+    "es": "Clean",
+    "ca": "Clean"
+  },
+  "clean-deadlift": {
+    "es": "Peso muerto clean",
+    "ca": "Pes mort clean"
+  },
+  "clean-pull": {
+    "es": "Clean pull",
+    "ca": "Clean pull"
+  },
+  "clean-shrug": {
+    "es": "Encogimientos clean",
+    "ca": "Encongiments clean"
+  },
+  "clean-and-jerk": {
+    "es": "Clean y jerk",
+    "ca": "Clean i jerk"
+  },
+  "clean-and-press": {
+    "es": "Clean y press",
+    "ca": "Clean i press"
+  },
+  "clean-from-blocks": {
+    "es": "Clean desde bloques",
+    "ca": "Clean des de blocs"
+  },
+  "clock-push-up": {
+    "es": "Flexión de reloj",
+    "ca": "Flexió de rellotge"
+  },
+  "close-grip-barbell-bench-press": {
+    "es": "Press de banca con barra y agarre cerrado",
+    "ca": "Press de banca amb barra i agafada tancada"
+  },
+  "close-grip-dumbbell-press": {
+    "es": "Press con mancuernas y agarre cerrado",
+    "ca": "Press amb manuelles i agafada tancada"
+  },
+  "close-grip-ez-bar-curl-with-band": {
+    "es": "Curl con barra Z y banda, agarre cerrado",
+    "ca": "Curl amb barra Z i banda, agafada tancada"
+  },
+  "close-grip-ez-bar-press": {
+    "es": "Press con barra Z y agarre cerrado",
+    "ca": "Press amb barra Z i agafada tancada"
+  },
+  "close-grip-ez-bar-curl": {
+    "es": "Curl con barra Z y agarre cerrado",
+    "ca": "Curl amb barra Z i agafada tancada"
+  },
+  "close-grip-front-lat-pulldown": {
+    "es": "Jalón al pecho con agarre cerrado",
+    "ca": "Estirada al pit amb agafada tancada"
+  },
+  "close-grip-push-up-off-of-a-dumbbell": {
+    "es": "Flexión de agarre cerrado sobre mancuerna",
+    "ca": "Flexió d'agafada tancada sobre manuella"
+  },
+  "close-grip-standing-barbell-curl": {
+    "es": "Curl de pie con barra y agarre cerrado",
+    "ca": "Curl de peu amb barra i agafada tancada"
+  },
+  "cocoons": {
+    "es": "Cocoons",
+    "ca": "Cocoons"
+  },
+  "conan-s-wheel": {
+    "es": "Rueda de Conan",
+    "ca": "Roda de Conan"
+  },
+  "concentration-curls": {
+    "es": "Curl concentrado",
+    "ca": "Curl concentrat"
+  },
+  "cross-body-crunch": {
+    "es": "Crunch cruzado",
+    "ca": "Crunch creuat"
+  },
+  "cross-body-hammer-curl": {
+    "es": "Curl martillo cruzado",
+    "ca": "Curl martell creuat"
+  },
+  "cross-over-with-bands": {
+    "es": "Cruces con bandas",
+    "ca": "Creuaments amb bandes"
+  },
+  "crossover-reverse-lunge": {
+    "es": "Zancada inversa cruzada",
+    "ca": "Gambada inversa creuada"
+  },
+  "crucifix": {
+    "es": "Crucifijo",
+    "ca": "Crucifix"
+  },
+  "crunch-hands-overhead": {
+    "es": "Crunch con manos sobre la cabeza",
+    "ca": "Crunch amb mans sobre el cap"
+  },
+  "crunch-legs-on-exercise-ball": {
+    "es": "Crunch con piernas sobre fitball",
+    "ca": "Crunch amb cames sobre fitball"
+  },
+  "crunches": {
+    "es": "Crunch abdominal",
+    "ca": "Crunch abdominal"
+  },
+  "cuban-press": {
+    "es": "Press cubano",
+    "ca": "Press cubà"
+  },
+  "dancer-s-stretch": {
+    "es": "Estiramiento del bailarín",
+    "ca": "Estirament del ballarí"
+  },
+  "dead-bug": {
+    "es": "Dead bug",
+    "ca": "Dead bug"
+  },
+  "deadlift-with-bands": {
+    "es": "Peso muerto con bandas",
+    "ca": "Pes mort amb bandes"
+  },
+  "deadlift-with-chains": {
+    "es": "Peso muerto con cadenas",
+    "ca": "Pes mort amb cadenes"
+  },
+  "decline-barbell-bench-press": {
+    "es": "Press de banca declinado con barra",
+    "ca": "Press de banca declinat amb barra"
+  },
+  "decline-close-grip-bench-to-skull-crusher": {
+    "es": "Press cerrado declinado a rompecráneos",
+    "ca": "Press tancat declinat a rompecranis"
+  },
+  "decline-crunch": {
+    "es": "Crunch declinado",
+    "ca": "Crunch declinat"
+  },
+  "decline-dumbbell-bench-press": {
+    "es": "Press de banca declinado con mancuernas",
+    "ca": "Press de banca declinat amb manuelles"
+  },
+  "decline-dumbbell-flyes": {
+    "es": "Aperturas declinadas con mancuernas",
+    "ca": "Obertures declinades amb manuelles"
+  },
+  "decline-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps declinada con mancuerna",
+    "ca": "Extensió de tríceps declinada amb manuella"
+  },
+  "decline-ez-bar-triceps-extension": {
+    "es": "Extensión de tríceps declinada con barra Z",
+    "ca": "Extensió de tríceps declinada amb barra Z"
+  },
+  "decline-oblique-crunch": {
+    "es": "Crunch oblicuo declinado",
+    "ca": "Crunch oblic declinat"
+  },
+  "decline-push-up": {
+    "es": "Flexión declinada",
+    "ca": "Flexió declinada"
+  },
+  "decline-reverse-crunch": {
+    "es": "Crunch inverso declinado",
+    "ca": "Crunch invers declinat"
+  },
+  "decline-smith-press": {
+    "es": "Press declinado en multipower",
+    "ca": "Press declinat en multipower"
+  },
+  "deficit-deadlift": {
+    "es": "Peso muerto con déficit",
+    "ca": "Pes mort amb dèficit"
+  },
+  "depth-jump-leap": {
+    "es": "Salto en profundidad (Depth Jump)",
+    "ca": "Salt en profunditat (Depth Jump)"
+  },
+  "dip-machine": {
+    "es": "Máquina de fondos",
+    "ca": "Màquina de fons"
+  },
+  "dips-chest-version": {
+    "es": "Fondos - Versión pecho",
+    "ca": "Fons - Versió pit"
+  },
+  "dips-triceps-version": {
+    "es": "Fondos - Versión tríceps",
+    "ca": "Fons - Versió tríceps"
+  },
+  "donkey-calf-raises": {
+    "es": "Elevación de gemelos tipo burro",
+    "ca": "Elevació de bessons tipus ase"
+  },
+  "double-kettlebell-alternating-hang-clean": {
+    "es": "Clean colgado alterno con dos pesas rusas",
+    "ca": "Clean penjat alternat amb dues kettlebells"
+  },
+  "double-kettlebell-jerk": {
+    "es": "Jerk con dos pesas rusas",
+    "ca": "Jerk amb dues kettlebells"
+  },
+  "double-kettlebell-push-press": {
+    "es": "Push press con dos pesas rusas",
+    "ca": "Push press amb dues kettlebells"
+  },
+  "double-kettlebell-snatch": {
+    "es": "Arrancada con dos pesas rusas",
+    "ca": "Arrencada amb dues kettlebells"
+  },
+  "double-kettlebell-windmill": {
+    "es": "Molino de viento con dos pesas rusas",
+    "ca": "Molí de vent amb dues kettlebells"
+  },
+  "double-leg-butt-kick": {
+    "es": "Patada de glúteo con dos piernas",
+    "ca": "Cop de peu al glute amb dues cames"
+  },
+  "downward-facing-balance": {
+    "es": "Equilibrio boca abajo",
+    "ca": "Equilibri cap per avall"
+  },
+  "drag-curl": {
+    "es": "Drag curl",
+    "ca": "Drag curl"
+  },
+  "drop-push": {
+    "es": "Drop Push",
+    "ca": "Drop Push"
+  },
+  "dumbbell-alternate-bicep-curl": {
+    "es": "Curl de bíceps alterno con mancuernas",
+    "ca": "Curl de bíceps alterns amb manuelles"
+  },
+  "dumbbell-bench-press": {
+    "es": "Press de banca con mancuernas",
+    "ca": "Press de banca amb manuelles"
+  },
+  "dumbbell-bench-press-with-neutral-grip": {
+    "es": "Press de banca con mancuernas y agarre neutro",
+    "ca": "Press de banca amb manuelles i agafada neutra"
+  },
+  "dumbbell-bicep-curl": {
+    "es": "Curl de bíceps con mancuernas",
+    "ca": "Curl de bíceps amb manuelles"
+  },
+  "dumbbell-clean": {
+    "es": "Clean con mancuerna",
+    "ca": "Clean amb manuella"
+  },
+  "dumbbell-floor-press": {
+    "es": "Press de suelo con mancuernas",
+    "ca": "Press de terra amb manuelles"
+  },
+  "dumbbell-flyes": {
+    "es": "Aperturas con mancuernas",
+    "ca": "Obertures amb manuelles"
+  },
+  "dumbbell-incline-row": {
+    "es": "Remo inclinado con mancuernas",
+    "ca": "Rem inclinat amb manuelles"
+  },
+  "dumbbell-incline-shoulder-raise": {
+    "es": "Elevación de hombros inclinada con mancuernas",
+    "ca": "Elevació d'espatlles inclinada amb manuelles"
+  },
+  "dumbbell-lunges": {
+    "es": "Zancadas con mancuernas",
+    "ca": "Gambades amb manuelles"
+  },
+  "dumbbell-lying-one-arm-rear-lateral-raise": {
+    "es": "Elevación posterior a un brazo tumbado con mancuerna",
+    "ca": "Elevació posterior a un braç estirat amb manuella"
+  },
+  "dumbbell-lying-pronation": {
+    "es": "Pronación tumbado con mancuerna",
+    "ca": "Pronació estirat amb manuella"
+  },
+  "dumbbell-lying-rear-lateral-raise": {
+    "es": "Elevación posterior tumbado con mancuernas",
+    "ca": "Elevació posterior estirat amb manuelles"
+  },
+  "dumbbell-lying-supination": {
+    "es": "Supinación tumbado con mancuerna",
+    "ca": "Supinació estirat amb manuella"
+  },
+  "dumbbell-one-arm-shoulder-press": {
+    "es": "Press de hombros a un brazo con mancuerna",
+    "ca": "Press d'espatlles a un braç amb manuella"
+  },
+  "dumbbell-one-arm-triceps-extension": {
+    "es": "Extensión de tríceps a un brazo con mancuerna",
+    "ca": "Extensió de tríceps a un braç amb manuella"
+  },
+  "dumbbell-one-arm-upright-row": {
+    "es": "Remo al mentón a un brazo con mancuerna",
+    "ca": "Rem al mentó a un braç amb manuella"
+  },
+  "dumbbell-prone-incline-curl": {
+    "es": "Curl inclinado en prono con mancuernas",
+    "ca": "Curl inclinat en pron amb manuelles"
+  },
+  "dumbbell-raise": {
+    "es": "Elevación con mancuernas",
+    "ca": "Elevació amb manuelles"
+  },
+  "dumbbell-rear-lunge": {
+    "es": "Zancada trasera con mancuernas",
+    "ca": "Gambada enrere amb manuelles"
+  },
+  "dumbbell-scaption": {
+    "es": "Scaption con mancuernas",
+    "ca": "Scaption amb manuelles"
+  },
+  "dumbbell-seated-box-jump": {
+    "es": "Salto al cajón sentado con mancuernas",
+    "ca": "Salt al calaix assegut amb manuelles"
+  },
+  "dumbbell-seated-one-leg-calf-raise": {
+    "es": "Elevación de talones a una pierna sentado con mancuerna",
+    "ca": "Elevació de talons a una cama assegut amb manuella"
+  },
+  "dumbbell-shoulder-press": {
+    "es": "Press de hombros con mancuernas",
+    "ca": "Press d'espatlles amb manuelles"
+  },
+  "dumbbell-shrug": {
+    "es": "Encogimientos con mancuernas",
+    "ca": "Encongiments amb manuelles"
+  },
+  "dumbbell-side-bend": {
+    "es": "Flexión lateral con mancuerna",
+    "ca": "Flexió lateral amb manuella"
+  },
+  "dumbbell-squat": {
+    "es": "Sentadilla con mancuerna",
+    "ca": "Esquat amb manuella"
+  },
+  "dumbbell-squat-to-a-bench": {
+    "es": "Sentadilla con mancuerna a un banco",
+    "ca": "Esquat amb manuella a un banc"
+  },
+  "dumbbell-step-ups": {
+    "es": "Subidas al cajón con mancuernas",
+    "ca": "Pujades al calaix amb manuelles"
+  },
+  "dumbbell-tricep-extension-pronated-grip": {
+    "es": "Extensión de tríceps con mancuerna y agarre pronado",
+    "ca": "Extensió de tríceps amb manuella i agafada pronada"
+  },
+  "dynamic-back-stretch": {
+    "es": "Estiramiento dinámico de espalda",
+    "ca": "Estirament dinàmic d'esquena"
+  },
+  "dynamic-chest-stretch": {
+    "es": "Estiramiento dinámico de pecho",
+    "ca": "Estirament dinàmic de pit"
+  },
+  "ez-bar-curl": {
+    "es": "Curl con barra Z",
+    "ca": "Curl amb barra Z"
+  },
+  "ez-bar-skullcrusher": {
+    "es": "Rompecráneos con barra Z",
+    "ca": "Rompecranis amb barra Z"
+  },
+  "elbow-circles": {
+    "es": "Círculos de codo",
+    "ca": "Cercles de colze"
+  },
+  "elbow-to-knee": {
+    "es": "Codo a rodilla",
+    "ca": "Colze a genoll"
+  },
+  "elbows-back": {
+    "es": "Codos atrás",
+    "ca": "Colzes enrere"
+  },
+  "elevated-back-lunge": {
+    "es": "Zancada trasera elevada",
+    "ca": "Gambada enrere elevada"
+  },
+  "elevated-cable-rows": {
+    "es": "Remo en polea elevado",
+    "ca": "Rem en politja elevat"
+  },
+  "elliptical-trainer": {
+    "es": "Elíptica",
+    "ca": "El·líptica"
+  },
+  "exercise-ball-crunch": {
+    "es": "Crunch en fitball",
+    "ca": "Crunch en fitball"
+  },
+  "exercise-ball-pull-in": {
+    "es": "Pull-in en fitball",
+    "ca": "Pull-in en fitball"
+  },
+  "extended-range-one-arm-kettlebell-floor-press": {
+    "es": "Press de suelo a un brazo con pesa rusa y rango extendido",
+    "ca": "Press de terra a un braç amb kettlebell i rang estès"
+  },
+  "external-rotation": {
+    "es": "Rotación externa",
+    "ca": "Rotació externa"
+  },
+  "external-rotation-with-band": {
+    "es": "Rotación externa con banda",
+    "ca": "Rotació externa amb banda"
+  },
+  "external-rotation-with-cable": {
+    "es": "Rotación externa con polea",
+    "ca": "Rotació externa amb politja"
+  },
+  "face-pull": {
+    "es": "Face pull",
+    "ca": "Face pull"
+  },
+  "farmer-s-walk": {
+    "es": "Paseo del granjero",
+    "ca": "Passeig del pagès"
+  },
+  "fast-skipping": {
+    "es": "Skipping rápido",
+    "ca": "Skipping ràpid"
+  },
+  "finger-curls": {
+    "es": "Curl de dedos",
+    "ca": "Curl de dits"
+  },
+  "flat-bench-cable-flyes": {
+    "es": "Aperturas en polea en banco plano",
+    "ca": "Obertures en politja en banc pla"
+  },
+  "flat-bench-leg-pull-in": {
+    "es": "Recogida de piernas en banco plano",
+    "ca": "Recollida de cames en banc pla"
+  },
+  "flat-bench-lying-leg-raise": {
+    "es": "Elevación de piernas tumbado en banco plano",
+    "ca": "Elevació de cames estirat en banc pla"
+  },
+  "flexor-incline-dumbbell-curls": {
+    "es": "Curl inclinado con mancuernas para flexores",
+    "ca": "Curl inclinat amb manuelles per a flexors"
+  },
+  "floor-glute-ham-raise": {
+    "es": "Elevación de glúteos e isquiotibiales en suelo",
+    "ca": "Elevació de glutis i isquiotibials a terra"
+  },
+  "floor-press": {
+    "es": "Press de suelo",
+    "ca": "Press de terra"
+  },
+  "floor-press-with-chains": {
+    "es": "Press de suelo con cadenas",
+    "ca": "Press de terra amb cadenes"
+  },
+  "flutter-kicks": {
+    "es": "Patadas de aleteo",
+    "ca": "Cops de peu alterns (flutter kicks)"
+  },
+  "foot-smr": {
+    "es": "Liberación miofascial del pie",
+    "ca": "Alliberament miofascial del peu"
+  },
+  "forward-drag-with-press": {
+    "es": "Arrastre hacia delante con press",
+    "ca": "Arrossegament cap endavant amb press"
+  },
+  "frankenstein-squat": {
+    "es": "Sentadilla Frankenstein",
+    "ca": "Esquat Frankenstein"
+  },
+  "freehand-jump-squat": {
+    "es": "Sentadilla con salto sin carga",
+    "ca": "Esquat amb salt sense càrrega"
+  },
+  "frog-hops": {
+    "es": "Saltos de rana",
+    "ca": "Salts de granota"
+  },
+  "frog-sit-ups": {
+    "es": "Abdominales de rana",
+    "ca": "Abdominals de granota"
+  },
+  "front-barbell-squat": {
+    "es": "Sentadilla frontal con barra",
+    "ca": "Esquat frontal amb barra"
+  },
+  "front-barbell-squat-to-a-bench": {
+    "es": "Sentadilla frontal con barra a un banco",
+    "ca": "Esquat frontal amb barra a un banc"
+  },
+  "front-box-jump": {
+    "es": "Salto frontal al cajón",
+    "ca": "Salt frontal al calaix"
+  },
+  "front-cable-raise": {
+    "es": "Elevación frontal en polea",
+    "ca": "Elevació frontal en politja"
+  },
+  "front-cone-hops-or-hurdle-hops": {
+    "es": "Saltos frontales sobre conos (o vallas)",
+    "ca": "Salts frontals sobre cons (o tanques)"
+  },
+  "front-dumbbell-raise": {
+    "es": "Elevación frontal con mancuernas",
+    "ca": "Elevació frontal amb manuelles"
+  },
+  "front-incline-dumbbell-raise": {
+    "es": "Elevación frontal inclinada con mancuernas",
+    "ca": "Elevació frontal inclinada amb manuelles"
+  },
+  "front-leg-raises": {
+    "es": "Elevaciones frontales de pierna",
+    "ca": "Elevacions frontals de cama"
+  },
+  "front-plate-raise": {
+    "es": "Elevación frontal con disco",
+    "ca": "Elevació frontal amb disc"
+  },
+  "front-raise-and-pullover": {
+    "es": "Elevación frontal y pullover",
+    "ca": "Elevació frontal i pullover"
+  },
+  "front-squat-clean-grip": {
+    "es": "Sentadilla frontal (agarre clean)",
+    "ca": "Esquat frontal (agafada clean)"
+  },
+  "front-squats-with-two-kettlebells": {
+    "es": "Sentadilla frontal con dos pesas rusas",
+    "ca": "Esquat frontal amb dues kettlebells"
+  },
+  "front-two-dumbbell-raise": {
+    "es": "Elevación frontal con dos mancuernas",
+    "ca": "Elevació frontal amb dues manuelles"
+  },
+  "full-range-of-motion-lat-pulldown": {
+    "es": "Jalón al pecho con rango completo",
+    "ca": "Estirada al pit amb rang complet"
+  },
+  "gironda-sternum-chins": {
+    "es": "Gironda Sternum Chins",
+    "ca": "Gironda Sternum Chins"
+  },
+  "glute-ham-raise": {
+    "es": "Elevación de glúteos e isquiotibiales",
+    "ca": "Elevació de glutis i isquiotibials"
+  },
+  "glute-kickback": {
+    "es": "Patada de glúteo",
+    "ca": "Cop de peu de glutis"
+  },
+  "goblet-squat": {
+    "es": "Sentadilla goblet",
+    "ca": "Esquat goblet"
+  },
+  "good-morning": {
+    "es": "Buenos días",
+    "ca": "Bon dia"
+  },
+  "good-morning-off-pins": {
+    "es": "Buenos días desde pines",
+    "ca": "Bon dia des de pins"
+  },
+  "gorilla-chin-crunch": {
+    "es": "Gorilla Chin/Crunch",
+    "ca": "Gorilla Chin/Crunch"
+  },
+  "groin-and-back-stretch": {
+    "es": "Estiramiento de ingle y espalda",
+    "ca": "Estirament d'engonal i esquena"
+  },
+  "groiners": {
+    "es": "Groiners",
+    "ca": "Groiners"
+  },
+  "hack-squat": {
+    "es": "Hack squat",
+    "ca": "Hack squat"
+  },
+  "hammer-curls": {
+    "es": "Curl martillo",
+    "ca": "Curl martell"
+  },
+  "hammer-grip-incline-db-bench-press": {
+    "es": "Press inclinado con mancuernas y agarre martillo",
+    "ca": "Press inclinat amb manuelles i agafada martell"
+  },
+  "hamstring-smr": {
+    "es": "Liberación miofascial de isquiotibiales",
+    "ca": "Alliberament miofascial d'isquiotibials"
+  },
+  "hamstring-stretch": {
+    "es": "Estiramiento de isquiotibiales",
+    "ca": "Estirament d'isquiotibials"
+  },
+  "handstand-push-ups": {
+    "es": "Flexiones en parada de manos",
+    "ca": "Flexions en vertical"
+  },
+  "hang-clean": {
+    "es": "Clean colgado",
+    "ca": "Clean penjat"
+  },
+  "hang-clean-below-the-knees": {
+    "es": "Clean colgado por debajo de las rodillas",
+    "ca": "Clean penjat per sota dels genolls"
+  },
+  "hang-snatch": {
+    "es": "Arrancada colgada",
+    "ca": "Arrencada penjada"
+  },
+  "hang-snatch-below-knees": {
+    "es": "Arrancada colgada por debajo de las rodillas",
+    "ca": "Arrencada penjada per sota dels genolls"
+  },
+  "hanging-bar-good-morning": {
+    "es": "Buenos días con barra colgada",
+    "ca": "Bon dia amb barra penjada"
+  },
+  "hanging-leg-raise": {
+    "es": "Elevación de piernas colgado",
+    "ca": "Elevació de cames penjat"
+  },
+  "hanging-pike": {
+    "es": "Pike colgado",
+    "ca": "Pike penjat"
+  },
+  "heaving-snatch-balance": {
+    "es": "Heaving Snatch Balance",
+    "ca": "Heaving Snatch Balance"
+  },
+  "heavy-bag-thrust": {
+    "es": "Heavy Bag Thrust",
+    "ca": "Heavy Bag Thrust"
+  },
+  "high-cable-curls": {
+    "es": "Curl en polea alta",
+    "ca": "Curl en politja alta"
+  },
+  "hip-circles-prone": {
+    "es": "Círculos de cadera (prono)",
+    "ca": "Cercles de maluc (pron)"
+  },
+  "hip-extension-with-bands": {
+    "es": "Extensión de cadera con bandas",
+    "ca": "Extensió de maluc amb bandes"
+  },
+  "hip-flexion-with-band": {
+    "es": "Flexión de cadera con banda",
+    "ca": "Flexió de maluc amb banda"
+  },
+  "hip-lift-with-band": {
+    "es": "Elevación de cadera con banda",
+    "ca": "Elevació de maluc amb banda"
+  },
+  "hug-a-ball": {
+    "es": "Abrazar un balón",
+    "ca": "Abraçar una pilota"
+  },
+  "hug-knees-to-chest": {
+    "es": "Abrazar las rodillas al pecho",
+    "ca": "Abraçar els genolls al pit"
+  },
+  "hurdle-hops": {
+    "es": "Saltos de valla",
+    "ca": "Salts de tanca"
+  },
+  "hyperextensions-back-extensions": {
+    "es": "Hiperextensiones (extensiones de espalda)",
+    "ca": "Hiperextensions (extensions d'esquena)"
+  },
+  "hyperextensions-with-no-hyperextension-bench": {
+    "es": "Hiperextensiones sin banco de hiperextensiones",
+    "ca": "Hiperextensions sense banc d'hiperextensions"
+  },
+  "it-band-and-glute-stretch": {
+    "es": "Estiramiento de banda iliotibial y glúteo",
+    "ca": "Estirament de banda iliotibial i glutis"
+  },
+  "iliotibial-tract-smr": {
+    "es": "Liberación miofascial del tracto iliotibial",
+    "ca": "Alliberament miofascial del tracte iliotibial"
+  },
+  "inchworm": {
+    "es": "Gusano (Inchworm)",
+    "ca": "Cuc (Inchworm)"
+  },
+  "incline-barbell-triceps-extension": {
+    "es": "Extensión de tríceps inclinada con barra",
+    "ca": "Extensió de tríceps inclinada amb barra"
+  },
+  "incline-bench-pull": {
+    "es": "Remo en banco inclinado",
+    "ca": "Rem en banc inclinat"
+  },
+  "incline-cable-chest-press": {
+    "es": "Press de pecho inclinado en polea",
+    "ca": "Press de pit inclinat en politja"
+  },
+  "incline-cable-flye": {
+    "es": "Apertura inclinada en polea",
+    "ca": "Obertura inclinada en politja"
+  },
+  "incline-dumbbell-bench-with-palms-facing-in": {
+    "es": "Press inclinado con mancuernas y palmas hacia dentro",
+    "ca": "Press inclinat amb manuelles i palmells cap endins"
+  },
+  "incline-dumbbell-curl": {
+    "es": "Curl inclinado con mancuernas",
+    "ca": "Curl inclinat amb manuelles"
+  },
+  "incline-dumbbell-flyes": {
+    "es": "Aperturas inclinadas con mancuernas",
+    "ca": "Obertures inclinades amb manuelles"
+  },
+  "incline-dumbbell-flyes-with-a-twist": {
+    "es": "Aperturas inclinadas con mancuernas y giro",
+    "ca": "Obertures inclinades amb manuelles i gir"
+  },
+  "incline-dumbbell-press": {
+    "es": "Press inclinado con mancuernas",
+    "ca": "Press inclinat amb manuelles"
+  },
+  "incline-hammer-curls": {
+    "es": "Curl martillo inclinado",
+    "ca": "Curl martell inclinat"
+  },
+  "incline-inner-biceps-curl": {
+    "es": "Curl de bíceps interno inclinado",
+    "ca": "Curl de bíceps intern inclinat"
+  },
+  "incline-push-up": {
+    "es": "Flexión inclinada",
+    "ca": "Flexió inclinada"
+  },
+  "incline-push-up-close-grip": {
+    "es": "Flexión inclinada con agarre cerrado",
+    "ca": "Flexió inclinada amb agafada tancada"
+  },
+  "incline-push-up-depth-jump": {
+    "es": "Flexión inclinada con salto en profundidad",
+    "ca": "Flexió inclinada amb salt en profunditat"
+  },
+  "incline-push-up-medium": {
+    "es": "Flexión inclinada con agarre medio",
+    "ca": "Flexió inclinada amb agafada mitjana"
+  },
+  "incline-push-up-reverse-grip": {
+    "es": "Flexión inclinada con agarre invertido",
+    "ca": "Flexió inclinada amb agafada invertida"
+  },
+  "incline-push-up-wide": {
+    "es": "Flexión inclinada con agarre ancho",
+    "ca": "Flexió inclinada amb agafada ampla"
+  },
+  "intermediate-groin-stretch": {
+    "es": "Estiramiento de ingle intermedio",
+    "ca": "Estirament d'engonal intermedi"
+  },
+  "intermediate-hip-flexor-and-quad-stretch": {
+    "es": "Estiramiento intermedio de flexor de cadera y cuádriceps",
+    "ca": "Estirament intermedi de flexor de maluc i quàdriceps"
+  },
+  "internal-rotation-with-band": {
+    "es": "Rotación interna con banda",
+    "ca": "Rotació interna amb banda"
+  },
+  "inverted-row": {
+    "es": "Remo invertido",
+    "ca": "Rem invertit"
+  },
+  "inverted-row-with-straps": {
+    "es": "Remo invertido con correas",
+    "ca": "Rem invertit amb corretges"
+  },
+  "iron-cross": {
+    "es": "Cruz de hierro",
+    "ca": "Creu de ferro"
+  },
+  "iron-crosses-stretch": {
+    "es": "Cruces de hierro (estiramiento)",
+    "ca": "Creus de ferro (estirament)"
+  },
+  "isometric-chest-squeezes": {
+    "es": "Apretones isométricos de pecho",
+    "ca": "Estrenyiments isomètrics de pit"
+  },
+  "isometric-neck-exercise-front-and-back": {
+    "es": "Ejercicio isométrico de cuello - Delante y detrás",
+    "ca": "Exercici isomètric de coll - Davant i darrere"
+  },
+  "isometric-neck-exercise-sides": {
+    "es": "Ejercicio isométrico de cuello - Laterales",
+    "ca": "Exercici isomètric de coll - Laterals"
+  },
+  "isometric-wipers": {
+    "es": "Limpiaparabrisas isométricos",
+    "ca": "Eixugaparabrises isomètrics"
+  },
+  "jm-press": {
+    "es": "Press JM",
+    "ca": "Press JM"
+  },
+  "jackknife-sit-up": {
+    "es": "Abdominal jackknife",
+    "ca": "Abdominal jackknife"
+  },
+  "janda-sit-up": {
+    "es": "Abdominal Janda",
+    "ca": "Abdominal Janda"
+  },
+  "jefferson-squats": {
+    "es": "Sentadillas Jefferson",
+    "ca": "Esquats Jefferson"
+  },
+  "jerk-balance": {
+    "es": "Jerk Balance",
+    "ca": "Jerk Balance"
+  },
+  "jerk-dip-squat": {
+    "es": "Jerk Dip Squat",
+    "ca": "Jerk Dip Squat"
+  },
+  "jogging-treadmill": {
+    "es": "Trote en cinta",
+    "ca": "Trot en cinta"
+  },
+  "keg-load": {
+    "es": "Keg Load",
+    "ca": "Keg Load"
+  },
+  "kettlebell-arnold-press": {
+    "es": "Press Arnold con pesa rusa",
+    "ca": "Press Arnold amb kettlebell"
+  },
+  "kettlebell-dead-clean": {
+    "es": "Dead clean con pesa rusa",
+    "ca": "Dead clean amb kettlebell"
+  },
+  "kettlebell-figure-8": {
+    "es": "Ocho con pesa rusa",
+    "ca": "Vuit amb kettlebell"
+  },
+  "kettlebell-halo": {
+    "es": "Halo con pesa rusa",
+    "ca": "Halo amb kettlebell"
+  },
+  "kettlebell-halo-with-overhead-extension": {
+    "es": "Halo con pesa rusa y extensión sobre la cabeza",
+    "ca": "Halo amb kettlebell i extensió per sobre el cap"
+  },
+  "kettlebell-hang-clean": {
+    "es": "Clean colgado con pesa rusa",
+    "ca": "Clean penjat amb kettlebell"
+  },
+  "kettlebell-one-legged-deadlift": {
+    "es": "Peso muerto a una pierna con pesa rusa",
+    "ca": "Pes mort a una cama amb kettlebell"
+  },
+  "kettlebell-overhead-triceps-extension": {
+    "es": "Extensión de tríceps sobre la cabeza con pesa rusa",
+    "ca": "Extensió de tríceps per sobre el cap amb kettlebell"
+  },
+  "kettlebell-pass-between-the-legs": {
+    "es": "Pase de pesa rusa entre las piernas",
+    "ca": "Passada de kettlebell entre les cames"
+  },
+  "kettlebell-pirate-ships": {
+    "es": "Barcos piratas con pesa rusa",
+    "ca": "Vaixells pirates amb kettlebell"
+  },
+  "kettlebell-pistol-squat": {
+    "es": "Sentadilla pistol con pesa rusa",
+    "ca": "Esquat pistol amb kettlebell"
+  },
+  "kettlebell-seated-press": {
+    "es": "Press sentado con pesa rusa",
+    "ca": "Press assegut amb kettlebell"
+  },
+  "kettlebell-seesaw-press": {
+    "es": "Press de balancín con pesa rusa",
+    "ca": "Press de balancí amb kettlebell"
+  },
+  "kettlebell-sumo-high-pull": {
+    "es": "Remo alto sumo con pesa rusa",
+    "ca": "Rem alt sumo amb kettlebell"
+  },
+  "kettlebell-thruster": {
+    "es": "Thruster con pesa rusa",
+    "ca": "Thruster amb kettlebell"
+  },
+  "kettlebell-turkish-get-up-lunge-style": {
+    "es": "Turkish get-up con pesa rusa (estilo zancada)",
+    "ca": "Turkish get-up amb kettlebell (estil gambada)"
+  },
+  "kettlebell-turkish-get-up-squat-style": {
+    "es": "Turkish get-up con pesa rusa (estilo sentadilla)",
+    "ca": "Turkish get-up amb kettlebell (estil esquat)"
+  },
+  "kettlebell-windmill": {
+    "es": "Molino de viento con pesa rusa",
+    "ca": "Molí de vent amb kettlebell"
+  },
+  "kipping-muscle-up": {
+    "es": "Muscle up con kipping",
+    "ca": "Muscle up amb kipping"
+  },
+  "knee-across-the-body": {
+    "es": "Rodilla cruzada sobre el cuerpo",
+    "ca": "Genoll creuat sobre el cos"
+  },
+  "knee-circles": {
+    "es": "Círculos de rodilla",
+    "ca": "Cercles de genoll"
+  },
+  "knee-hip-raise-on-parallel-bars": {
+    "es": "Elevación de rodillas/cadera en paralelas",
+    "ca": "Elevació de genolls/maluc en paral·leles"
+  },
+  "knee-tuck-jump": {
+    "es": "Salto con rodillas al pecho",
+    "ca": "Salt amb genolls al pit"
+  },
+  "kneeling-arm-drill": {
+    "es": "Ejercicio de brazos de rodillas",
+    "ca": "Exercici de braços de genolls"
+  },
+  "kneeling-cable-crunch-with-alternating-oblique-twists": {
+    "es": "Crunch en polea de rodillas con giros oblicuos alternos",
+    "ca": "Crunch en politja de genolls amb girs oblics alterns"
+  },
+  "kneeling-cable-triceps-extension": {
+    "es": "Extensión de tríceps en polea de rodillas",
+    "ca": "Extensió de tríceps en politja de genolls"
+  },
+  "kneeling-forearm-stretch": {
+    "es": "Estiramiento de antebrazo de rodillas",
+    "ca": "Estirament d'avantbraç de genolls"
+  },
+  "kneeling-high-pulley-row": {
+    "es": "Remo en polea alta de rodillas",
+    "ca": "Rem en politja alta de genolls"
+  },
+  "kneeling-hip-flexor": {
+    "es": "Estiramiento de flexor de cadera de rodillas",
+    "ca": "Estirament de flexor de maluc de genolls"
+  },
+  "kneeling-jump-squat": {
+    "es": "Sentadilla con salto de rodillas",
+    "ca": "Esquat amb salt de genolls"
+  },
+  "kneeling-single-arm-high-pulley-row": {
+    "es": "Remo en polea alta a un brazo de rodillas",
+    "ca": "Rem en politja alta a un braç de genolls"
+  },
+  "kneeling-squat": {
+    "es": "Sentadilla de rodillas",
+    "ca": "Esquat de genolls"
+  },
+  "landmine-180-s": {
+    "es": "Landmine 180",
+    "ca": "Landmine 180"
+  },
+  "landmine-linear-jammer": {
+    "es": "Landmine Linear Jammer",
+    "ca": "Landmine Linear Jammer"
+  },
+  "lateral-bound": {
+    "es": "Salto lateral",
+    "ca": "Salt lateral"
+  },
+  "lateral-box-jump": {
+    "es": "Salto lateral al cajón",
+    "ca": "Salt lateral al calaix"
+  },
+  "lateral-cone-hops": {
+    "es": "Saltos laterales sobre conos",
+    "ca": "Salts laterals sobre cons"
+  },
+  "lateral-raise-with-bands": {
+    "es": "Elevación lateral con bandas",
+    "ca": "Elevació lateral amb bandes"
+  },
+  "latissimus-dorsi-smr": {
+    "es": "Liberación miofascial del dorsal ancho",
+    "ca": "Alliberament miofascial del dorsal ample"
+  },
+  "leg-over-floor-press": {
+    "es": "Press de suelo con pierna cruzada",
+    "ca": "Press de terra amb cama creuada"
+  },
+  "leg-up-hamstring-stretch": {
+    "es": "Estiramiento de isquiotibiales con pierna elevada",
+    "ca": "Estirament d'isquiotibials amb cama elevada"
+  },
+  "leg-extensions": {
+    "es": "Extensiones de pierna",
+    "ca": "Extensions de cama"
+  },
+  "leg-lift": {
+    "es": "Elevación de pierna",
+    "ca": "Elevació de cama"
+  },
+  "leg-press": {
+    "es": "Prensa de piernas",
+    "ca": "Premsa de cames"
+  },
+  "leg-pull-in": {
+    "es": "Recogida de piernas",
+    "ca": "Recollida de cames"
+  },
+  "leverage-chest-press": {
+    "es": "Press de pecho en máquina de palanca",
+    "ca": "Press de pit en màquina de palanca"
+  },
+  "leverage-deadlift": {
+    "es": "Peso muerto en máquina de palanca",
+    "ca": "Pes mort en màquina de palanca"
+  },
+  "leverage-decline-chest-press": {
+    "es": "Press de pecho declinado en máquina de palanca",
+    "ca": "Press de pit declinat en màquina de palanca"
+  },
+  "leverage-high-row": {
+    "es": "Remo alto en máquina de palanca",
+    "ca": "Rem alt en màquina de palanca"
+  },
+  "leverage-incline-chest-press": {
+    "es": "Press de pecho inclinado en máquina de palanca",
+    "ca": "Press de pit inclinat en màquina de palanca"
+  },
+  "leverage-iso-row": {
+    "es": "Remo isométrico en máquina de palanca",
+    "ca": "Rem isomètric en màquina de palanca"
+  },
+  "leverage-shoulder-press": {
+    "es": "Press de hombros en máquina de palanca",
+    "ca": "Press d'espatlles en màquina de palanca"
+  },
+  "leverage-shrug": {
+    "es": "Encogimientos en máquina de palanca",
+    "ca": "Encongiments en màquina de palanca"
+  },
+  "linear-3-part-start-technique": {
+    "es": "Técnica de salida lineal en 3 fases",
+    "ca": "Tècnica de sortida lineal en 3 fases"
+  },
+  "linear-acceleration-wall-drill": {
+    "es": "Ejercicio lineal de aceleración contra la pared",
+    "ca": "Exercici lineal d'acceleració contra la paret"
+  },
+  "linear-depth-jump": {
+    "es": "Salto lineal en profundidad",
+    "ca": "Salt lineal en profunditat"
+  },
+  "log-lift": {
+    "es": "Levantamiento de tronco (Log Lift)",
+    "ca": "Aixecament de tronc (Log Lift)"
+  },
+  "london-bridges": {
+    "es": "London Bridges",
+    "ca": "London Bridges"
+  },
+  "looking-at-ceiling": {
+    "es": "Mirar al techo",
+    "ca": "Mirar al sostre"
+  },
+  "low-cable-crossover": {
+    "es": "Cruces en polea baja",
+    "ca": "Creuaments en politja baixa"
+  },
+  "low-cable-triceps-extension": {
+    "es": "Extensión de tríceps en polea baja",
+    "ca": "Extensió de tríceps en politja baixa"
+  },
+  "low-pulley-row-to-neck": {
+    "es": "Remo en polea baja al cuello",
+    "ca": "Rem en politja baixa al coll"
+  },
+  "lower-back-smr": {
+    "es": "Liberación miofascial de la zona lumbar",
+    "ca": "Alliberament miofascial de la zona lumbar"
+  },
+  "lower-back-curl": {
+    "es": "Curl lumbar",
+    "ca": "Curl lumbar"
+  },
+  "lunge-pass-through": {
+    "es": "Zancada con pase",
+    "ca": "Gambada amb passada"
+  },
+  "lunge-sprint": {
+    "es": "Sprint con zancada",
+    "ca": "Esprint amb gambada"
+  },
+  "lying-bent-leg-groin": {
+    "es": "Estiramiento de ingle tumbado con pierna flexionada",
+    "ca": "Estirament d'engonal estirat amb cama flexionada"
+  },
+  "lying-cable-curl": {
+    "es": "Curl en polea tumbado",
+    "ca": "Curl en politja estirat"
+  },
+  "lying-cambered-barbell-row": {
+    "es": "Remo con barra curva tumbado",
+    "ca": "Rem amb barra corbada estirat"
+  },
+  "lying-close-grip-bar-curl-on-high-pulley": {
+    "es": "Curl con barra de agarre cerrado tumbado en polea alta",
+    "ca": "Curl amb barra d'agafada tancada estirat en politja alta"
+  },
+  "lying-close-grip-barbell-triceps-extension-behind-the-head": {
+    "es": "Extensión de tríceps con barra de agarre cerrado tumbado tras la cabeza",
+    "ca": "Extensió de tríceps amb barra d'agafada tancada estirat darrere el cap"
+  },
+  "lying-close-grip-barbell-triceps-press-to-chin": {
+    "es": "Press de tríceps con barra de agarre cerrado tumbado hacia la barbilla",
+    "ca": "Press de tríceps amb barra d'agafada tancada estirat cap a la barbeta"
+  },
+  "lying-crossover": {
+    "es": "Cruce tumbado",
+    "ca": "Creuament estirat"
+  },
+  "lying-dumbbell-tricep-extension": {
+    "es": "Extensión de tríceps con mancuerna tumbado",
+    "ca": "Extensió de tríceps amb manuella estirat"
+  },
+  "lying-face-down-plate-neck-resistance": {
+    "es": "Resistencia de cuello con disco boca abajo",
+    "ca": "Resistència de coll amb disc cap per avall"
+  },
+  "lying-face-up-plate-neck-resistance": {
+    "es": "Resistencia de cuello con disco boca arriba",
+    "ca": "Resistència de coll amb disc cap amunt"
+  },
+  "lying-glute": {
+    "es": "Estiramiento de glúteo tumbado",
+    "ca": "Estirament de glutis estirat"
+  },
+  "lying-hamstring": {
+    "es": "Estiramiento de isquiotibiales tumbado",
+    "ca": "Estirament d'isquiotibials estirat"
+  },
+  "lying-high-bench-barbell-curl": {
+    "es": "Curl con barra en banco alto tumbado",
+    "ca": "Curl amb barra en banc alt estirat"
+  },
+  "lying-leg-curls": {
+    "es": "Curl femoral tumbado",
+    "ca": "Curl femoral estirat"
+  },
+  "lying-machine-squat": {
+    "es": "Sentadilla en máquina tumbado",
+    "ca": "Esquat en màquina estirat"
+  },
+  "lying-one-arm-lateral-raise": {
+    "es": "Elevación lateral a un brazo tumbado",
+    "ca": "Elevació lateral a un braç estirat"
+  },
+  "lying-prone-quadriceps": {
+    "es": "Estiramiento de cuádriceps tumbado boca abajo",
+    "ca": "Estirament de quàdriceps estirat cap per avall"
+  },
+  "lying-rear-delt-raise": {
+    "es": "Elevación posterior de deltoides tumbado",
+    "ca": "Elevació posterior de deltoides estirat"
+  },
+  "lying-supine-dumbbell-curl": {
+    "es": "Curl con mancuernas tumbado boca arriba",
+    "ca": "Curl amb manuelles estirat cap amunt"
+  },
+  "lying-t-bar-row": {
+    "es": "Remo en T tumbado",
+    "ca": "Rem en T estirat"
+  },
+  "lying-triceps-press": {
+    "es": "Press de tríceps tumbado",
+    "ca": "Press de tríceps estirat"
+  },
+  "machine-bench-press": {
+    "es": "Press de banca en máquina",
+    "ca": "Press de banca en màquina"
+  },
+  "machine-bicep-curl": {
+    "es": "Curl de bíceps en máquina",
+    "ca": "Curl de bíceps en màquina"
+  },
+  "machine-preacher-curls": {
+    "es": "Curl predicador en máquina",
+    "ca": "Curl predicador en màquina"
+  },
+  "machine-shoulder-military-press": {
+    "es": "Press de hombros (militar) en máquina",
+    "ca": "Press d'espatlles (militar) en màquina"
+  },
+  "machine-triceps-extension": {
+    "es": "Extensión de tríceps en máquina",
+    "ca": "Extensió de tríceps en màquina"
+  },
+  "medicine-ball-chest-pass": {
+    "es": "Pase de pecho con balón medicinal",
+    "ca": "Passada de pit amb pilota medicinal"
+  },
+  "medicine-ball-full-twist": {
+    "es": "Giro completo con balón medicinal",
+    "ca": "Gir complet amb pilota medicinal"
+  },
+  "medicine-ball-scoop-throw": {
+    "es": "Lanzamiento en cuchara con balón medicinal",
+    "ca": "Llançament en cullera amb pilota medicinal"
+  },
+  "middle-back-shrug": {
+    "es": "Encogimientos de espalda media",
+    "ca": "Encongiments d'esquena mitjana"
+  },
+  "middle-back-stretch": {
+    "es": "Estiramiento de espalda media",
+    "ca": "Estirament d'esquena mitjana"
+  },
+  "mixed-grip-chin": {
+    "es": "Dominada con agarre mixto",
+    "ca": "Tracció amb agafada mixta"
+  },
+  "monster-walk": {
+    "es": "Monster walk",
+    "ca": "Monster walk"
+  },
+  "mountain-climbers": {
+    "es": "Escaladores (Mountain Climbers)",
+    "ca": "Escaladors (Mountain Climbers)"
+  },
+  "moving-claw-series": {
+    "es": "Serie Moving Claw",
+    "ca": "Sèrie Moving Claw"
+  },
+  "muscle-snatch": {
+    "es": "Muscle snatch",
+    "ca": "Muscle snatch"
+  },
+  "muscle-up": {
+    "es": "Muscle up",
+    "ca": "Muscle up"
+  },
+  "narrow-stance-hack-squats": {
+    "es": "Hack squat con postura estrecha",
+    "ca": "Hack squat amb postura estreta"
+  },
+  "narrow-stance-leg-press": {
+    "es": "Prensa de piernas con postura estrecha",
+    "ca": "Premsa de cames amb postura estreta"
+  },
+  "narrow-stance-squats": {
+    "es": "Sentadilla con postura estrecha",
+    "ca": "Esquat amb postura estreta"
+  },
+  "natural-glute-ham-raise": {
+    "es": "Elevación natural de glúteos e isquiotibiales",
+    "ca": "Elevació natural de glutis i isquiotibials"
+  },
+  "neck-smr": {
+    "es": "Liberación miofascial del cuello",
+    "ca": "Alliberament miofascial del coll"
+  },
+  "neck-press": {
+    "es": "Press de cuello",
+    "ca": "Press de coll"
+  },
+  "oblique-crunches": {
+    "es": "Crunch oblicuo",
+    "ca": "Crunch oblic"
+  },
+  "oblique-crunches-on-the-floor": {
+    "es": "Crunch oblicuo en el suelo",
+    "ca": "Crunch oblic a terra"
+  },
+  "olympic-squat": {
+    "es": "Sentadilla olímpica",
+    "ca": "Esquat olímpic"
+  },
+  "on-your-back-quad-stretch": {
+    "es": "Estiramiento de cuádriceps boca arriba",
+    "ca": "Estirament de quàdriceps cap amunt"
+  },
+  "on-your-side-quad-stretch": {
+    "es": "Estiramiento de cuádriceps de lado",
+    "ca": "Estirament de quàdriceps de costat"
+  },
+  "one-arm-dumbbell-row": {
+    "es": "Remo con mancuerna a un brazo",
+    "ca": "Rem amb manuella a un braç"
+  },
+  "one-arm-flat-bench-dumbbell-flye": {
+    "es": "Apertura con mancuerna a un brazo en banco plano",
+    "ca": "Obertura amb manuella a un braç en banc pla"
+  },
+  "one-arm-high-pulley-cable-side-bends": {
+    "es": "Flexión lateral a un brazo en polea alta",
+    "ca": "Flexió lateral a un braç en politja alta"
+  },
+  "one-arm-incline-lateral-raise": {
+    "es": "Elevación lateral inclinada a un brazo",
+    "ca": "Elevació lateral inclinada a un braç"
+  },
+  "one-arm-kettlebell-clean": {
+    "es": "Clean con pesa rusa a un brazo",
+    "ca": "Clean amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-clean-and-jerk": {
+    "es": "Clean y jerk con pesa rusa a un brazo",
+    "ca": "Clean i jerk amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-floor-press": {
+    "es": "Press de suelo con pesa rusa a un brazo",
+    "ca": "Press de terra amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-jerk": {
+    "es": "Jerk con pesa rusa a un brazo",
+    "ca": "Jerk amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-military-press-to-the-side": {
+    "es": "Press militar lateral con pesa rusa a un brazo",
+    "ca": "Press militar lateral amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-para-press": {
+    "es": "Para press con pesa rusa a un brazo",
+    "ca": "Para press amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-push-press": {
+    "es": "Push press con pesa rusa a un brazo",
+    "ca": "Push press amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-row": {
+    "es": "Remo con pesa rusa a un brazo",
+    "ca": "Rem amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-snatch": {
+    "es": "Arrancada con pesa rusa a un brazo",
+    "ca": "Arrencada amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-split-jerk": {
+    "es": "Split jerk con pesa rusa a un brazo",
+    "ca": "Split jerk amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-split-snatch": {
+    "es": "Split snatch con pesa rusa a un brazo",
+    "ca": "Split snatch amb kettlebell a un braç"
+  },
+  "one-arm-kettlebell-swings": {
+    "es": "Swing con pesa rusa a un brazo",
+    "ca": "Swing amb kettlebell a un braç"
+  },
+  "one-arm-long-bar-row": {
+    "es": "Remo con barra larga a un brazo",
+    "ca": "Rem amb barra llarga a un braç"
+  },
+  "one-arm-medicine-ball-slam": {
+    "es": "Slam con balón medicinal a un brazo",
+    "ca": "Slam amb pilota medicinal a un braç"
+  },
+  "one-arm-open-palm-kettlebell-clean": {
+    "es": "Clean con pesa rusa a un brazo y palma abierta",
+    "ca": "Clean amb kettlebell a un braç i palmell obert"
+  },
+  "one-arm-overhead-kettlebell-squats": {
+    "es": "Sentadillas con pesa rusa a un brazo sobre la cabeza",
+    "ca": "Esquats amb kettlebell a un braç per sobre el cap"
+  },
+  "one-arm-side-deadlift": {
+    "es": "Peso muerto lateral a un brazo",
+    "ca": "Pes mort lateral a un braç"
+  },
+  "one-arm-side-laterals": {
+    "es": "Elevaciones laterales a un brazo",
+    "ca": "Elevacions laterals a un braç"
+  },
+  "one-legged-cable-kickback": {
+    "es": "Patada trasera en polea a una pierna",
+    "ca": "Cop de peu enrere en politja a una cama"
+  },
+  "one-arm-against-wall": {
+    "es": "Un brazo contra la pared",
+    "ca": "Un braç contra la paret"
+  },
+  "one-arm-chin-up": {
+    "es": "Dominada a un brazo",
+    "ca": "Tracció a un braç"
+  },
+  "one-arm-dumbbell-bench-press": {
+    "es": "Press de banca con mancuerna a un brazo",
+    "ca": "Press de banca amb manuella a un braç"
+  },
+  "one-arm-dumbbell-preacher-curl": {
+    "es": "Curl predicador con mancuerna a un brazo",
+    "ca": "Curl predicador amb manuella a un braç"
+  },
+  "one-arm-floor-press": {
+    "es": "Press de suelo a un brazo",
+    "ca": "Press de terra a un braç"
+  },
+  "one-arm-lat-pulldown": {
+    "es": "Jalón al pecho a un brazo",
+    "ca": "Estirada al pit a un braç"
+  },
+  "one-arm-pronated-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps con mancuerna a un brazo y agarre pronado",
+    "ca": "Extensió de tríceps amb manuella a un braç i agafada pronada"
+  },
+  "one-arm-supinated-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps con mancuerna a un brazo y agarre supino",
+    "ca": "Extensió de tríceps amb manuella a un braç i agafada supina"
+  },
+  "one-half-locust": {
+    "es": "Media langosta (One Half Locust)",
+    "ca": "Mitja llagosta (One Half Locust)"
+  },
+  "one-handed-hang": {
+    "es": "Colgarse con una mano",
+    "ca": "Penjar-se amb una mà"
+  },
+  "one-knee-to-chest": {
+    "es": "Una rodilla al pecho",
+    "ca": "Un genoll al pit"
+  },
+  "one-leg-barbell-squat": {
+    "es": "Sentadilla con barra a una pierna",
+    "ca": "Esquat amb barra a una cama"
+  },
+  "open-palm-kettlebell-clean": {
+    "es": "Clean con pesa rusa y palma abierta",
+    "ca": "Clean amb kettlebell i palmell obert"
+  },
+  "otis-up": {
+    "es": "Otis-Up",
+    "ca": "Otis-Up"
+  },
+  "overhead-cable-curl": {
+    "es": "Curl en polea sobre la cabeza",
+    "ca": "Curl en politja per sobre el cap"
+  },
+  "overhead-lat": {
+    "es": "Dorsal sobre la cabeza",
+    "ca": "Dorsal per sobre el cap"
+  },
+  "overhead-slam": {
+    "es": "Slam sobre la cabeza",
+    "ca": "Slam per sobre el cap"
+  },
+  "overhead-squat": {
+    "es": "Sentadilla overhead",
+    "ca": "Esquat overhead"
+  },
+  "overhead-stretch": {
+    "es": "Estiramiento sobre la cabeza",
+    "ca": "Estirament per sobre el cap"
+  },
+  "overhead-triceps": {
+    "es": "Tríceps sobre la cabeza",
+    "ca": "Tríceps per sobre el cap"
+  },
+  "pallof-press": {
+    "es": "Press Pallof",
+    "ca": "Press Pallof"
+  },
+  "pallof-press-with-rotation": {
+    "es": "Press Pallof con rotación",
+    "ca": "Press Pallof amb rotació"
+  },
+  "palms-down-dumbbell-wrist-curl-over-a-bench": {
+    "es": "Curl de muñeca con mancuerna, palmas abajo, sobre banco",
+    "ca": "Curl de canell amb manuella, palmells avall, sobre banc"
+  },
+  "palms-down-wrist-curl-over-a-bench": {
+    "es": "Curl de muñeca, palmas abajo, sobre banco",
+    "ca": "Curl de canell, palmells avall, sobre banc"
+  },
+  "palms-up-barbell-wrist-curl-over-a-bench": {
+    "es": "Curl de muñeca con barra, palmas arriba, sobre banco",
+    "ca": "Curl de canell amb barra, palmells amunt, sobre banc"
+  },
+  "palms-up-dumbbell-wrist-curl-over-a-bench": {
+    "es": "Curl de muñeca con mancuerna, palmas arriba, sobre banco",
+    "ca": "Curl de canell amb manuella, palmells amunt, sobre banc"
+  },
+  "parallel-bar-dip": {
+    "es": "Fondos en paralelas",
+    "ca": "Fons en paral·leles"
+  },
+  "pelvic-tilt-into-bridge": {
+    "es": "Inclinación pélvica hacia puente",
+    "ca": "Inclinació pèlvica cap al pont"
+  },
+  "peroneals-smr": {
+    "es": "Liberación miofascial de peroneos",
+    "ca": "Alliberament miofascial de peronis"
+  },
+  "peroneals-stretch": {
+    "es": "Estiramiento de peroneos",
+    "ca": "Estirament de peronis"
+  },
+  "physioball-hip-bridge": {
+    "es": "Puente de cadera en fitball",
+    "ca": "Pont de maluc en fitball"
+  },
+  "pin-presses": {
+    "es": "Press con pines",
+    "ca": "Press amb pins"
+  },
+  "piriformis-smr": {
+    "es": "Liberación miofascial del piriforme",
+    "ca": "Alliberament miofascial del piriforme"
+  },
+  "plank": {
+    "es": "Plancha",
+    "ca": "Planxa"
+  },
+  "plate-pinch": {
+    "es": "Pinza con discos",
+    "ca": "Pinça amb discos"
+  },
+  "plate-twist": {
+    "es": "Giro con disco",
+    "ca": "Gir amb disc"
+  },
+  "platform-hamstring-slides": {
+    "es": "Deslizamientos de isquiotibiales en plataforma",
+    "ca": "Lliscaments d'isquiotibials en plataforma"
+  },
+  "plie-dumbbell-squat": {
+    "es": "Sentadilla plié con mancuerna",
+    "ca": "Esquat plié amb manuella"
+  },
+  "plyo-kettlebell-pushups": {
+    "es": "Flexiones pliométricas con pesa rusa",
+    "ca": "Flexions pliomètriques amb kettlebell"
+  },
+  "plyo-push-up": {
+    "es": "Flexión pliométrica",
+    "ca": "Flexió pliomètrica"
+  },
+  "posterior-tibialis-stretch": {
+    "es": "Estiramiento del tibial posterior",
+    "ca": "Estirament del tibial posterior"
+  },
+  "power-clean": {
+    "es": "Power clean",
+    "ca": "Power clean"
+  },
+  "power-clean-from-blocks": {
+    "es": "Power clean desde bloques",
+    "ca": "Power clean des de blocs"
+  },
+  "power-jerk": {
+    "es": "Power jerk",
+    "ca": "Power jerk"
+  },
+  "power-partials": {
+    "es": "Power partials",
+    "ca": "Power partials"
+  },
+  "power-snatch": {
+    "es": "Power snatch",
+    "ca": "Power snatch"
+  },
+  "power-snatch-from-blocks": {
+    "es": "Power snatch desde bloques",
+    "ca": "Power snatch des de blocs"
+  },
+  "power-stairs": {
+    "es": "Power stairs",
+    "ca": "Power stairs"
+  },
+  "preacher-curl": {
+    "es": "Curl predicador",
+    "ca": "Curl predicador"
+  },
+  "preacher-hammer-dumbbell-curl": {
+    "es": "Curl predicador martillo con mancuernas",
+    "ca": "Curl predicador martell amb manuelles"
+  },
+  "press-sit-up": {
+    "es": "Abdominal con press",
+    "ca": "Abdominal amb press"
+  },
+  "prone-manual-hamstring": {
+    "es": "Isquiotibiales manual en prono",
+    "ca": "Isquiotibials manual en pron"
+  },
+  "prowler-sprint": {
+    "es": "Sprint con Prowler",
+    "ca": "Esprint amb Prowler"
+  },
+  "pull-through": {
+    "es": "Pull through",
+    "ca": "Pull through"
+  },
+  "pullups": {
+    "es": "Dominadas",
+    "ca": "Traccions"
+  },
+  "push-up-wide": {
+    "es": "Flexión con agarre ancho",
+    "ca": "Flexió amb agafada ampla"
+  },
+  "push-ups-close-triceps-position": {
+    "es": "Flexiones con posición de tríceps cerrada",
+    "ca": "Flexions amb posició de tríceps tancada"
+  },
+  "push-ups-with-feet-elevated": {
+    "es": "Flexiones con pies elevados",
+    "ca": "Flexions amb peus elevats"
+  },
+  "push-ups-with-feet-on-an-exercise-ball": {
+    "es": "Flexiones con pies sobre fitball",
+    "ca": "Flexions amb peus sobre fitball"
+  },
+  "push-press": {
+    "es": "Push press",
+    "ca": "Push press"
+  },
+  "push-press-behind-the-neck": {
+    "es": "Push press tras nuca",
+    "ca": "Push press darrere el clatell"
+  },
+  "push-up-to-side-plank": {
+    "es": "Flexión a plancha lateral",
+    "ca": "Flexió a planxa lateral"
+  },
+  "pushups": {
+    "es": "Flexiones",
+    "ca": "Flexions"
+  },
+  "pushups-close-and-wide-hand-positions": {
+    "es": "Flexiones (manos juntas y separadas)",
+    "ca": "Flexions (mans juntes i separades)"
+  },
+  "pyramid": {
+    "es": "Pirámide",
+    "ca": "Piràmide"
+  },
+  "quad-stretch": {
+    "es": "Estiramiento de cuádriceps",
+    "ca": "Estirament de quàdriceps"
+  },
+  "quadriceps-smr": {
+    "es": "Liberación miofascial de cuádriceps",
+    "ca": "Alliberament miofascial de quàdriceps"
+  },
+  "quick-leap": {
+    "es": "Salto rápido",
+    "ca": "Salt ràpid"
+  },
+  "rack-delivery": {
+    "es": "Rack Delivery",
+    "ca": "Rack Delivery"
+  },
+  "rack-pull-with-bands": {
+    "es": "Rack pull con bandas",
+    "ca": "Rack pull amb bandes"
+  },
+  "rack-pulls": {
+    "es": "Rack pull",
+    "ca": "Rack pull"
+  },
+  "rear-leg-raises": {
+    "es": "Elevaciones de pierna hacia atrás",
+    "ca": "Elevacions de cama enrere"
+  },
+  "recumbent-bike": {
+    "es": "Bicicleta reclinada",
+    "ca": "Bicicleta reclinada"
+  },
+  "return-push-from-stance": {
+    "es": "Empuje de retorno desde posición de pie",
+    "ca": "Empenta de retorn des de posició dempeus"
+  },
+  "reverse-band-bench-press": {
+    "es": "Press de banca con bandas invertidas",
+    "ca": "Press de banca amb bandes invertides"
+  },
+  "reverse-band-box-squat": {
+    "es": "Sentadilla al cajón con bandas invertidas",
+    "ca": "Esquat al calaix amb bandes invertides"
+  },
+  "reverse-band-deadlift": {
+    "es": "Peso muerto con bandas invertidas",
+    "ca": "Pes mort amb bandes invertides"
+  },
+  "reverse-band-power-squat": {
+    "es": "Power squat con bandas invertidas",
+    "ca": "Power squat amb bandes invertides"
+  },
+  "reverse-band-sumo-deadlift": {
+    "es": "Peso muerto sumo con bandas invertidas",
+    "ca": "Pes mort sumo amb bandes invertides"
+  },
+  "reverse-barbell-curl": {
+    "es": "Curl inverso con barra",
+    "ca": "Curl invers amb barra"
+  },
+  "reverse-barbell-preacher-curls": {
+    "es": "Curl predicador inverso con barra",
+    "ca": "Curl predicador invers amb barra"
+  },
+  "reverse-cable-curl": {
+    "es": "Curl inverso en polea",
+    "ca": "Curl invers en politja"
+  },
+  "reverse-crunch": {
+    "es": "Crunch inverso",
+    "ca": "Crunch invers"
+  },
+  "reverse-flyes": {
+    "es": "Aperturas posteriores",
+    "ca": "Obertures posteriors"
+  },
+  "reverse-flyes-with-external-rotation": {
+    "es": "Aperturas posteriores con rotación externa",
+    "ca": "Obertures posteriors amb rotació externa"
+  },
+  "reverse-grip-bent-over-rows": {
+    "es": "Remo inclinado con agarre invertido",
+    "ca": "Rem inclinat amb agafada invertida"
+  },
+  "reverse-grip-triceps-pushdown": {
+    "es": "Extensión de tríceps en polea con agarre invertido",
+    "ca": "Extensió de tríceps en politja amb agafada invertida"
+  },
+  "reverse-hyperextension": {
+    "es": "Hiperextensión inversa",
+    "ca": "Hiperextensió inversa"
+  },
+  "reverse-machine-flyes": {
+    "es": "Aperturas posteriores en máquina",
+    "ca": "Obertures posteriors en màquina"
+  },
+  "reverse-plate-curls": {
+    "es": "Curl inverso con disco",
+    "ca": "Curl invers amb disc"
+  },
+  "reverse-triceps-bench-press": {
+    "es": "Press de banca de tríceps inverso",
+    "ca": "Press de banca de tríceps invers"
+  },
+  "rhomboids-smr": {
+    "es": "Liberación miofascial de romboides",
+    "ca": "Alliberament miofascial de romboides"
+  },
+  "rickshaw-carry": {
+    "es": "Paseo con rickshaw",
+    "ca": "Passeig amb rickshaw"
+  },
+  "rickshaw-deadlift": {
+    "es": "Peso muerto con rickshaw",
+    "ca": "Pes mort amb rickshaw"
+  },
+  "ring-dips": {
+    "es": "Fondos en anillas",
+    "ca": "Fons en anelles"
+  },
+  "rocket-jump": {
+    "es": "Salto cohete",
+    "ca": "Salt coet"
+  },
+  "rocking-standing-calf-raise": {
+    "es": "Elevación de talones de pie con balanceo",
+    "ca": "Elevació de talons dempeus amb balanceig"
+  },
+  "rocky-pull-ups-pulldowns": {
+    "es": "Dominadas/jalones Rocky",
+    "ca": "Traccions/estirades Rocky"
+  },
+  "romanian-deadlift": {
+    "es": "Peso muerto rumano",
+    "ca": "Pes mort romanès"
+  },
+  "romanian-deadlift-from-deficit": {
+    "es": "Peso muerto rumano con déficit",
+    "ca": "Pes mort romanès amb dèficit"
+  },
+  "rope-climb": {
+    "es": "Trepa de cuerda",
+    "ca": "Pujada de corda"
+  },
+  "rope-crunch": {
+    "es": "Crunch con cuerda",
+    "ca": "Crunch amb corda"
+  },
+  "rope-jumping": {
+    "es": "Salto a la comba",
+    "ca": "Salt a la corda"
+  },
+  "rope-straight-arm-pulldown": {
+    "es": "Jalón con cuerda y brazos rectos",
+    "ca": "Estirada amb corda i braços recte"
+  },
+  "round-the-world-shoulder-stretch": {
+    "es": "Estiramiento de hombro alrededor del mundo",
+    "ca": "Estirament d'espatlla al voltant del món"
+  },
+  "rowing-stationary": {
+    "es": "Remo estático (ergómetro)",
+    "ca": "Rem estàtic (ergòmetre)"
+  },
+  "runner-s-stretch": {
+    "es": "Estiramiento del corredor",
+    "ca": "Estirament del corredor"
+  },
+  "running-treadmill": {
+    "es": "Carrera en cinta",
+    "ca": "Cursa en cinta"
+  },
+  "russian-twist": {
+    "es": "Giro ruso",
+    "ca": "Gir rus"
+  },
+  "sandbag-load": {
+    "es": "Carga con saco de arena",
+    "ca": "Càrrega amb sac de sorra"
+  },
+  "scapular-pull-up": {
+    "es": "Dominada escapular",
+    "ca": "Tracció escapular"
+  },
+  "scissor-kick": {
+    "es": "Patada de tijera",
+    "ca": "Cop de peu de tisora"
+  },
+  "scissors-jump": {
+    "es": "Salto de tijera",
+    "ca": "Salt de tisora"
+  },
+  "seated-band-hamstring-curl": {
+    "es": "Curl femoral sentado con banda",
+    "ca": "Curl femoral assegut amb banda"
+  },
+  "seated-barbell-military-press": {
+    "es": "Press militar sentado con barra",
+    "ca": "Press militar assegut amb barra"
+  },
+  "seated-barbell-twist": {
+    "es": "Giro sentado con barra",
+    "ca": "Gir assegut amb barra"
+  },
+  "seated-bent-over-one-arm-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps sentado e inclinado con mancuerna a un brazo",
+    "ca": "Extensió de tríceps assegut i inclinat amb manuella a un braç"
+  },
+  "seated-bent-over-rear-delt-raise": {
+    "es": "Elevación posterior de deltoides sentado e inclinado",
+    "ca": "Elevació posterior de deltoides assegut i inclinat"
+  },
+  "seated-bent-over-two-arm-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps sentado e inclinado con mancuernas a dos brazos",
+    "ca": "Extensió de tríceps assegut i inclinat amb manuelles a dos braços"
+  },
+  "seated-biceps": {
+    "es": "Bíceps sentado",
+    "ca": "Bíceps assegut"
+  },
+  "seated-cable-rows": {
+    "es": "Remo sentado en polea",
+    "ca": "Rem assegut en politja"
+  },
+  "seated-cable-shoulder-press": {
+    "es": "Press de hombros sentado en polea",
+    "ca": "Press d'espatlles assegut en politja"
+  },
+  "seated-calf-raise": {
+    "es": "Elevación de talones sentado",
+    "ca": "Elevació de talons assegut"
+  },
+  "seated-calf-stretch": {
+    "es": "Estiramiento de gemelos sentado",
+    "ca": "Estirament de bessons assegut"
+  },
+  "seated-close-grip-concentration-barbell-curl": {
+    "es": "Curl concentrado sentado con barra y agarre cerrado",
+    "ca": "Curl concentrat assegut amb barra i agafada tancada"
+  },
+  "seated-dumbbell-curl": {
+    "es": "Curl sentado con mancuernas",
+    "ca": "Curl assegut amb manuelles"
+  },
+  "seated-dumbbell-inner-biceps-curl": {
+    "es": "Curl de bíceps interno sentado con mancuernas",
+    "ca": "Curl de bíceps intern assegut amb manuelles"
+  },
+  "seated-dumbbell-palms-down-wrist-curl": {
+    "es": "Curl de muñeca sentado con mancuernas, palmas abajo",
+    "ca": "Curl de canell assegut amb manuelles, palmells avall"
+  },
+  "seated-dumbbell-palms-up-wrist-curl": {
+    "es": "Curl de muñeca sentado con mancuernas, palmas arriba",
+    "ca": "Curl de canell assegut amb manuelles, palmells amunt"
+  },
+  "seated-dumbbell-press": {
+    "es": "Press sentado con mancuernas",
+    "ca": "Press assegut amb manuelles"
+  },
+  "seated-flat-bench-leg-pull-in": {
+    "es": "Recogida de piernas sentado en banco plano",
+    "ca": "Recollida de cames assegut en banc pla"
+  },
+  "seated-floor-hamstring-stretch": {
+    "es": "Estiramiento de isquiotibiales sentado en el suelo",
+    "ca": "Estirament d'isquiotibials assegut a terra"
+  },
+  "seated-front-deltoid": {
+    "es": "Deltoides frontal sentado",
+    "ca": "Deltoides frontal assegut"
+  },
+  "seated-glute": {
+    "es": "Glúteo sentado",
+    "ca": "Glutis assegut"
+  },
+  "seated-good-mornings": {
+    "es": "Buenos días sentado",
+    "ca": "Bon dia assegut"
+  },
+  "seated-hamstring": {
+    "es": "Isquiotibiales sentado",
+    "ca": "Isquiotibials assegut"
+  },
+  "seated-hamstring-and-calf-stretch": {
+    "es": "Estiramiento de isquiotibiales y gemelos sentado",
+    "ca": "Estirament d'isquiotibials i bessons assegut"
+  },
+  "seated-head-harness-neck-resistance": {
+    "es": "Resistencia de cuello sentado con arnés",
+    "ca": "Resistència de coll assegut amb arnès"
+  },
+  "seated-leg-curl": {
+    "es": "Curl femoral sentado",
+    "ca": "Curl femoral assegut"
+  },
+  "seated-leg-tucks": {
+    "es": "Recogida de piernas sentado",
+    "ca": "Recollida de cames assegut"
+  },
+  "seated-one-arm-dumbbell-palms-down-wrist-curl": {
+    "es": "Curl de muñeca sentado a un brazo con mancuerna, palma abajo",
+    "ca": "Curl de canell assegut a un braç amb manuella, palmell avall"
+  },
+  "seated-one-arm-dumbbell-palms-up-wrist-curl": {
+    "es": "Curl de muñeca sentado a un brazo con mancuerna, palma arriba",
+    "ca": "Curl de canell assegut a un braç amb manuella, palmell amunt"
+  },
+  "seated-one-arm-cable-pulley-rows": {
+    "es": "Remo sentado a un brazo en polea",
+    "ca": "Rem assegut a un braç en politja"
+  },
+  "seated-overhead-stretch": {
+    "es": "Estiramiento sentado sobre la cabeza",
+    "ca": "Estirament assegut per sobre el cap"
+  },
+  "seated-palm-up-barbell-wrist-curl": {
+    "es": "Curl de muñeca sentado con barra, palmas arriba",
+    "ca": "Curl de canell assegut amb barra, palmells amunt"
+  },
+  "seated-palms-down-barbell-wrist-curl": {
+    "es": "Curl de muñeca sentado con barra, palmas abajo",
+    "ca": "Curl de canell assegut amb barra, palmells avall"
+  },
+  "seated-side-lateral-raise": {
+    "es": "Elevación lateral sentado",
+    "ca": "Elevació lateral assegut"
+  },
+  "seated-triceps-press": {
+    "es": "Press de tríceps sentado",
+    "ca": "Press de tríceps assegut"
+  },
+  "seated-two-arm-palms-up-low-pulley-wrist-curl": {
+    "es": "Curl de muñeca sentado en polea baja a dos brazos, palmas arriba",
+    "ca": "Curl de canell assegut en politja baixa a dos braços, palmells amunt"
+  },
+  "see-saw-press-alternating-side-press": {
+    "es": "Press de balancín (press lateral alterno)",
+    "ca": "Press de balancí (press lateral alternat)"
+  },
+  "shotgun-row": {
+    "es": "Remo Shotgun",
+    "ca": "Rem Shotgun"
+  },
+  "shoulder-circles": {
+    "es": "Círculos de hombro",
+    "ca": "Cercles d'espatlla"
+  },
+  "shoulder-press-with-bands": {
+    "es": "Press de hombros con bandas",
+    "ca": "Press d'espatlles amb bandes"
+  },
+  "shoulder-raise": {
+    "es": "Elevación de hombros",
+    "ca": "Elevació d'espatlles"
+  },
+  "shoulder-stretch": {
+    "es": "Estiramiento de hombro",
+    "ca": "Estirament d'espatlla"
+  },
+  "side-lying-floor-stretch": {
+    "es": "Estiramiento en el suelo tumbado de lado",
+    "ca": "Estirament a terra estirat de costat"
+  },
+  "side-bridge": {
+    "es": "Puente lateral",
+    "ca": "Pont lateral"
+  },
+  "side-hop-sprint": {
+    "es": "Sprint con salto lateral",
+    "ca": "Esprint amb salt lateral"
+  },
+  "side-jackknife": {
+    "es": "Jackknife lateral",
+    "ca": "Jackknife lateral"
+  },
+  "side-lateral-raise": {
+    "es": "Elevación lateral",
+    "ca": "Elevació lateral"
+  },
+  "side-laterals-to-front-raise": {
+    "es": "Elevaciones laterales a frontales",
+    "ca": "Elevacions laterals a frontals"
+  },
+  "side-leg-raises": {
+    "es": "Elevaciones laterales de pierna",
+    "ca": "Elevacions laterals de cama"
+  },
+  "side-lying-groin-stretch": {
+    "es": "Estiramiento de ingle tumbado de lado",
+    "ca": "Estirament d'engonal estirat de costat"
+  },
+  "side-neck-stretch": {
+    "es": "Estiramiento lateral de cuello",
+    "ca": "Estirament lateral de coll"
+  },
+  "side-standing-long-jump": {
+    "es": "Salto largo lateral de pie",
+    "ca": "Salt de longitud lateral dempeus"
+  },
+  "side-to-side-chins": {
+    "es": "Dominadas de lado a lado",
+    "ca": "Traccions d'un costat a l'altre"
+  },
+  "side-wrist-pull": {
+    "es": "Tirón lateral de muñeca",
+    "ca": "Estirada lateral de canell"
+  },
+  "side-to-side-box-shuffle": {
+    "es": "Desplazamientos laterales sobre el cajón",
+    "ca": "Desplaçaments laterals sobre el calaix"
+  },
+  "single-arm-cable-crossover": {
+    "es": "Cruce en polea a un brazo",
+    "ca": "Creuament en politja a un braç"
+  },
+  "single-arm-linear-jammer": {
+    "es": "Linear Jammer a un brazo",
+    "ca": "Linear Jammer a un braç"
+  },
+  "single-arm-push-up": {
+    "es": "Flexión a un brazo",
+    "ca": "Flexió a un braç"
+  },
+  "single-cone-sprint-drill": {
+    "es": "Ejercicio de sprint con un cono",
+    "ca": "Exercici d'esprint amb un con"
+  },
+  "single-leg-high-box-squat": {
+    "es": "Sentadilla a una pierna en cajón alto",
+    "ca": "Esquat a una cama en calaix alt"
+  },
+  "single-leg-hop-progression": {
+    "es": "Progresión de saltos a una pierna",
+    "ca": "Progressió de salts a una cama"
+  },
+  "single-leg-lateral-hop": {
+    "es": "Salto lateral a una pierna",
+    "ca": "Salt lateral a una cama"
+  },
+  "single-leg-leg-extension": {
+    "es": "Extensión de pierna a una pierna",
+    "ca": "Extensió de cama a una cama"
+  },
+  "single-leg-stride-jump": {
+    "es": "Salto de zancada a una pierna",
+    "ca": "Salt de gambada a una cama"
+  },
+  "single-dumbbell-raise": {
+    "es": "Elevación con una mancuerna",
+    "ca": "Elevació amb una manuella"
+  },
+  "single-leg-butt-kick": {
+    "es": "Patada de glúteo a una pierna",
+    "ca": "Cop de peu al glute a una cama"
+  },
+  "single-leg-glute-bridge": {
+    "es": "Puente de glúteos a una pierna",
+    "ca": "Pont de glutis a una cama"
+  },
+  "single-leg-push-off": {
+    "es": "Impulso a una pierna",
+    "ca": "Impuls a una cama"
+  },
+  "sit-up": {
+    "es": "Abdominal (sit-up)",
+    "ca": "Abdominal (sit-up)"
+  },
+  "sit-squats": {
+    "es": "Sit squats",
+    "ca": "Sit squats"
+  },
+  "skating": {
+    "es": "Patinaje",
+    "ca": "Patinatge"
+  },
+  "sled-drag-harness": {
+    "es": "Arrastre de trineo con arnés",
+    "ca": "Arrossegament de trineu amb arnès"
+  },
+  "sled-overhead-backward-walk": {
+    "es": "Marcha atrás con trineo sobre la cabeza",
+    "ca": "Marxa enrere amb trineu per sobre el cap"
+  },
+  "sled-overhead-triceps-extension": {
+    "es": "Extensión de tríceps con trineo sobre la cabeza",
+    "ca": "Extensió de tríceps amb trineu per sobre el cap"
+  },
+  "sled-push": {
+    "es": "Empuje de trineo",
+    "ca": "Empenta de trineu"
+  },
+  "sled-reverse-flye": {
+    "es": "Aperturas posteriores con trineo",
+    "ca": "Obertures posteriors amb trineu"
+  },
+  "sled-row": {
+    "es": "Remo con trineo",
+    "ca": "Rem amb trineu"
+  },
+  "sledgehammer-swings": {
+    "es": "Golpes con mazo",
+    "ca": "Cops amb maça"
+  },
+  "smith-incline-shoulder-raise": {
+    "es": "Elevación de hombros inclinada en multipower",
+    "ca": "Elevació d'espatlles inclinada en multipower"
+  },
+  "smith-machine-behind-the-back-shrug": {
+    "es": "Encogimientos tras la espalda en multipower",
+    "ca": "Encongiments darrere l'esquena en multipower"
+  },
+  "smith-machine-bench-press": {
+    "es": "Press de banca en multipower",
+    "ca": "Press de banca en multipower"
+  },
+  "smith-machine-bent-over-row": {
+    "es": "Remo inclinado en multipower",
+    "ca": "Rem inclinat en multipower"
+  },
+  "smith-machine-calf-raise": {
+    "es": "Elevación de talones en multipower",
+    "ca": "Elevació de talons en multipower"
+  },
+  "smith-machine-close-grip-bench-press": {
+    "es": "Press de banca con agarre cerrado en multipower",
+    "ca": "Press de banca amb agafada tancada en multipower"
+  },
+  "smith-machine-decline-press": {
+    "es": "Press declinado en multipower",
+    "ca": "Press declinat en multipower"
+  },
+  "smith-machine-hang-power-clean": {
+    "es": "Power clean colgado en multipower",
+    "ca": "Power clean penjat en multipower"
+  },
+  "smith-machine-hip-raise": {
+    "es": "Elevación de cadera en multipower",
+    "ca": "Elevació de maluc en multipower"
+  },
+  "smith-machine-incline-bench-press": {
+    "es": "Press de banca inclinado en multipower",
+    "ca": "Press de banca inclinat en multipower"
+  },
+  "smith-machine-leg-press": {
+    "es": "Prensa de piernas en multipower",
+    "ca": "Premsa de cames en multipower"
+  },
+  "smith-machine-one-arm-upright-row": {
+    "es": "Remo al mentón a un brazo en multipower",
+    "ca": "Rem al mentó a un braç en multipower"
+  },
+  "smith-machine-overhead-shoulder-press": {
+    "es": "Press de hombros sobre la cabeza en multipower",
+    "ca": "Press d'espatlles per sobre el cap en multipower"
+  },
+  "smith-machine-pistol-squat": {
+    "es": "Sentadilla pistol en multipower",
+    "ca": "Esquat pistol en multipower"
+  },
+  "smith-machine-reverse-calf-raises": {
+    "es": "Elevación inversa de talones en multipower",
+    "ca": "Elevació inversa de talons en multipower"
+  },
+  "smith-machine-squat": {
+    "es": "Sentadilla en multipower",
+    "ca": "Esquat en multipower"
+  },
+  "smith-machine-stiff-legged-deadlift": {
+    "es": "Peso muerto con piernas rígidas en multipower",
+    "ca": "Pes mort amb cames rígides en multipower"
+  },
+  "smith-machine-upright-row": {
+    "es": "Remo al mentón en multipower",
+    "ca": "Rem al mentó en multipower"
+  },
+  "smith-single-leg-split-squat": {
+    "es": "Sentadilla dividida a una pierna en multipower",
+    "ca": "Esquat dividit a una cama en multipower"
+  },
+  "snatch": {
+    "es": "Arrancada (Snatch)",
+    "ca": "Arrencada (Snatch)"
+  },
+  "snatch-balance": {
+    "es": "Snatch balance",
+    "ca": "Snatch balance"
+  },
+  "snatch-deadlift": {
+    "es": "Peso muerto de arrancada (snatch)",
+    "ca": "Pes mort d'arrencada (snatch)"
+  },
+  "snatch-pull": {
+    "es": "Snatch pull",
+    "ca": "Snatch pull"
+  },
+  "snatch-shrug": {
+    "es": "Encogimientos de arrancada (snatch)",
+    "ca": "Encongiments d'arrencada (snatch)"
+  },
+  "snatch-from-blocks": {
+    "es": "Arrancada desde bloques",
+    "ca": "Arrencada des de blocs"
+  },
+  "speed-band-overhead-triceps": {
+    "es": "Tríceps sobre la cabeza con banda de velocidad",
+    "ca": "Tríceps per sobre el cap amb banda de velocitat"
+  },
+  "speed-box-squat": {
+    "es": "Sentadilla al cajón de velocidad",
+    "ca": "Esquat al calaix de velocitat"
+  },
+  "speed-squats": {
+    "es": "Sentadillas de velocidad",
+    "ca": "Esquats de velocitat"
+  },
+  "spell-caster": {
+    "es": "Spell Caster",
+    "ca": "Spell Caster"
+  },
+  "spider-crawl": {
+    "es": "Gateo de araña",
+    "ca": "Gatejada d'aranya"
+  },
+  "spider-curl": {
+    "es": "Spider curl",
+    "ca": "Spider curl"
+  },
+  "spinal-stretch": {
+    "es": "Estiramiento de columna",
+    "ca": "Estirament de columna"
+  },
+  "split-clean": {
+    "es": "Split clean",
+    "ca": "Split clean"
+  },
+  "split-jerk": {
+    "es": "Split jerk",
+    "ca": "Split jerk"
+  },
+  "split-jump": {
+    "es": "Salto en tijera (split jump)",
+    "ca": "Salt en tisora (split jump)"
+  },
+  "split-snatch": {
+    "es": "Split snatch",
+    "ca": "Split snatch"
+  },
+  "split-squat-with-dumbbells": {
+    "es": "Sentadilla dividida con mancuernas",
+    "ca": "Esquat dividit amb manuelles"
+  },
+  "split-squats": {
+    "es": "Sentadillas divididas",
+    "ca": "Esquats dividits"
+  },
+  "squat-jerk": {
+    "es": "Squat jerk",
+    "ca": "Squat jerk"
+  },
+  "squat-with-bands": {
+    "es": "Sentadilla con bandas",
+    "ca": "Esquat amb bandes"
+  },
+  "squat-with-chains": {
+    "es": "Sentadilla con cadenas",
+    "ca": "Esquat amb cadenes"
+  },
+  "squat-with-plate-movers": {
+    "es": "Sentadilla con Plate Movers",
+    "ca": "Esquat amb Plate Movers"
+  },
+  "squats-with-bands": {
+    "es": "Sentadillas con bandas",
+    "ca": "Esquats amb bandes"
+  },
+  "stairmaster": {
+    "es": "Escaladora (Stairmaster)",
+    "ca": "Escaladora (Stairmaster)"
+  },
+  "standing-alternating-dumbbell-press": {
+    "es": "Press alterno con mancuernas de pie",
+    "ca": "Press alternat amb manuelles de peu"
+  },
+  "standing-barbell-calf-raise": {
+    "es": "Elevación de talones de pie con barra",
+    "ca": "Elevació de talons de peu amb barra"
+  },
+  "standing-barbell-press-behind-neck": {
+    "es": "Press tras nuca con barra de pie",
+    "ca": "Press darrere el clatell amb barra de peu"
+  },
+  "standing-bent-over-one-arm-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps de pie e inclinado con mancuerna a un brazo",
+    "ca": "Extensió de tríceps de peu i inclinat amb manuella a un braç"
+  },
+  "standing-bent-over-two-arm-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps de pie e inclinado con mancuernas a dos brazos",
+    "ca": "Extensió de tríceps de peu i inclinat amb manuelles a dos braços"
+  },
+  "standing-biceps-cable-curl": {
+    "es": "Curl de bíceps en polea de pie",
+    "ca": "Curl de bíceps en politja de peu"
+  },
+  "standing-biceps-stretch": {
+    "es": "Estiramiento de bíceps de pie",
+    "ca": "Estirament de bíceps de peu"
+  },
+  "standing-bradford-press": {
+    "es": "Press Bradford de pie",
+    "ca": "Press Bradford de peu"
+  },
+  "standing-cable-chest-press": {
+    "es": "Press de pecho en polea de pie",
+    "ca": "Press de pit en politja de peu"
+  },
+  "standing-cable-lift": {
+    "es": "Elevación en polea de pie",
+    "ca": "Elevació en politja de peu"
+  },
+  "standing-cable-wood-chop": {
+    "es": "Leñador en polea de pie (wood chop)",
+    "ca": "Llenyataire en politja de peu (wood chop)"
+  },
+  "standing-calf-raises": {
+    "es": "Elevación de talones de pie",
+    "ca": "Elevació de talons de peu"
+  },
+  "standing-concentration-curl": {
+    "es": "Curl concentrado de pie",
+    "ca": "Curl concentrat de peu"
+  },
+  "standing-dumbbell-calf-raise": {
+    "es": "Elevación de talones de pie con mancuerna",
+    "ca": "Elevació de talons de peu amb manuella"
+  },
+  "standing-dumbbell-press": {
+    "es": "Press de pie con mancuernas",
+    "ca": "Press de peu amb manuelles"
+  },
+  "standing-dumbbell-reverse-curl": {
+    "es": "Curl inverso de pie con mancuernas",
+    "ca": "Curl invers de peu amb manuelles"
+  },
+  "standing-dumbbell-straight-arm-front-delt-raise-above-head": {
+    "es": "Elevación frontal de deltoides con mancuernas sobre la cabeza con brazos rectos, de pie",
+    "ca": "Elevació frontal de deltoides amb manuelles per sobre el cap amb braços recte, de peu"
+  },
+  "standing-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps de pie con mancuerna",
+    "ca": "Extensió de tríceps de peu amb manuella"
+  },
+  "standing-dumbbell-upright-row": {
+    "es": "Remo al mentón de pie con mancuernas",
+    "ca": "Rem al mentó de peu amb manuelles"
+  },
+  "standing-elevated-quad-stretch": {
+    "es": "Estiramiento de cuádriceps de pie con pierna elevada",
+    "ca": "Estirament de quàdriceps de peu amb cama elevada"
+  },
+  "standing-front-barbell-raise-over-head": {
+    "es": "Elevación frontal de pie con barra sobre la cabeza",
+    "ca": "Elevació frontal de peu amb barra per sobre el cap"
+  },
+  "standing-gastrocnemius-calf-stretch": {
+    "es": "Estiramiento de gemelo (gastrocnemio) de pie",
+    "ca": "Estirament de bessó (gastrocnemi) de peu"
+  },
+  "standing-hamstring-and-calf-stretch": {
+    "es": "Estiramiento de isquiotibiales y gemelos de pie",
+    "ca": "Estirament d'isquiotibials i bessons de peu"
+  },
+  "standing-hip-circles": {
+    "es": "Círculos de cadera de pie",
+    "ca": "Cercles de maluc de peu"
+  },
+  "standing-hip-flexors": {
+    "es": "Flexores de cadera de pie",
+    "ca": "Flexors de maluc de peu"
+  },
+  "standing-inner-biceps-curl": {
+    "es": "Curl de bíceps interno de pie",
+    "ca": "Curl de bíceps intern de peu"
+  },
+  "standing-lateral-stretch": {
+    "es": "Estiramiento lateral de pie",
+    "ca": "Estirament lateral de peu"
+  },
+  "standing-leg-curl": {
+    "es": "Curl femoral de pie",
+    "ca": "Curl femoral de peu"
+  },
+  "standing-long-jump": {
+    "es": "Salto de longitud a pies juntos",
+    "ca": "Salt de longitud a peus junts"
+  },
+  "standing-low-pulley-deltoid-raise": {
+    "es": "Elevación de deltoides de pie en polea baja",
+    "ca": "Elevació de deltoides de peu en politja baixa"
+  },
+  "standing-low-pulley-one-arm-triceps-extension": {
+    "es": "Extensión de tríceps de pie a un brazo en polea baja",
+    "ca": "Extensió de tríceps de peu a un braç en politja baixa"
+  },
+  "standing-military-press": {
+    "es": "Press militar de pie",
+    "ca": "Press militar de peu"
+  },
+  "standing-olympic-plate-hand-squeeze": {
+    "es": "Apretón de disco olímpico con la mano, de pie",
+    "ca": "Estrenyiment de disc olímpic amb la mà, de peu"
+  },
+  "standing-one-arm-cable-curl": {
+    "es": "Curl en polea de pie a un brazo",
+    "ca": "Curl en politja de peu a un braç"
+  },
+  "standing-one-arm-dumbbell-curl-over-incline-bench": {
+    "es": "Curl con mancuerna de pie a un brazo sobre banco inclinado",
+    "ca": "Curl amb manuella de peu a un braç sobre banc inclinat"
+  },
+  "standing-one-arm-dumbbell-triceps-extension": {
+    "es": "Extensión de tríceps de pie a un brazo con mancuerna",
+    "ca": "Extensió de tríceps de peu a un braç amb manuella"
+  },
+  "standing-overhead-barbell-triceps-extension": {
+    "es": "Extensión de tríceps de pie con barra sobre la cabeza",
+    "ca": "Extensió de tríceps de peu amb barra per sobre el cap"
+  },
+  "standing-palm-in-one-arm-dumbbell-press": {
+    "es": "Press de pie a un brazo con mancuerna y palma hacia dentro",
+    "ca": "Press de peu a un braç amb manuella i palmell cap endins"
+  },
+  "standing-palms-in-dumbbell-press": {
+    "es": "Press de pie con mancuernas y palmas hacia dentro",
+    "ca": "Press de peu amb manuelles i palmells cap endins"
+  },
+  "standing-palms-up-barbell-behind-the-back-wrist-curl": {
+    "es": "Curl de muñeca de pie con barra tras la espalda, palmas arriba",
+    "ca": "Curl de canell de peu amb barra darrere l'esquena, palmells amunt"
+  },
+  "standing-pelvic-tilt": {
+    "es": "Inclinación pélvica de pie",
+    "ca": "Inclinació pèlvica de peu"
+  },
+  "standing-rope-crunch": {
+    "es": "Crunch con cuerda de pie",
+    "ca": "Crunch amb corda de peu"
+  },
+  "standing-soleus-and-achilles-stretch": {
+    "es": "Estiramiento de sóleo y tendón de Aquiles de pie",
+    "ca": "Estirament de sòleus i tendó d'Aquil·les de peu"
+  },
+  "standing-toe-touches": {
+    "es": "Toques de punta de pie desde posición de pie",
+    "ca": "Tocs de punta de peu des de posició dempeus"
+  },
+  "standing-towel-triceps-extension": {
+    "es": "Extensión de tríceps con toalla de pie",
+    "ca": "Extensió de tríceps amb tovallola de peu"
+  },
+  "standing-two-arm-overhead-throw": {
+    "es": "Lanzamiento sobre la cabeza a dos brazos de pie",
+    "ca": "Llançament per sobre el cap a dos braços de peu"
+  },
+  "star-jump": {
+    "es": "Salto estrella",
+    "ca": "Salt estrella"
+  },
+  "step-up-with-knee-raise": {
+    "es": "Subida al cajón con elevación de rodilla",
+    "ca": "Pujada al calaix amb elevació de genoll"
+  },
+  "step-mill": {
+    "es": "Step Mill",
+    "ca": "Step Mill"
+  },
+  "stiff-legged-barbell-deadlift": {
+    "es": "Peso muerto con piernas rígidas con barra",
+    "ca": "Pes mort amb cames rígides amb barra"
+  },
+  "stiff-legged-dumbbell-deadlift": {
+    "es": "Peso muerto con piernas rígidas con mancuernas",
+    "ca": "Pes mort amb cames rígides amb manuelles"
+  },
+  "stiff-leg-barbell-good-morning": {
+    "es": "Buenos días con barra y piernas rígidas",
+    "ca": "Bon dia amb barra i cames rígides"
+  },
+  "stomach-vacuum": {
+    "es": "Vacío abdominal",
+    "ca": "Buit abdominal"
+  },
+  "straight-arm-dumbbell-pullover": {
+    "es": "Pullover con mancuerna y brazos rectos",
+    "ca": "Pullover amb manuella i braços recte"
+  },
+  "straight-arm-pulldown": {
+    "es": "Jalón con brazos rectos",
+    "ca": "Estirada amb braços recte"
+  },
+  "straight-bar-bench-mid-rows": {
+    "es": "Remo medio en banco con barra recta",
+    "ca": "Rem mitjà en banc amb barra recta"
+  },
+  "straight-raises-on-incline-bench": {
+    "es": "Elevaciones rectas en banco inclinado",
+    "ca": "Elevacions rectes en banc inclinat"
+  },
+  "stride-jump-crossover": {
+    "es": "Salto de zancada cruzado",
+    "ca": "Salt de gambada creuat"
+  },
+  "sumo-deadlift": {
+    "es": "Peso muerto sumo",
+    "ca": "Pes mort sumo"
+  },
+  "sumo-deadlift-with-bands": {
+    "es": "Peso muerto sumo con bandas",
+    "ca": "Pes mort sumo amb bandes"
+  },
+  "sumo-deadlift-with-chains": {
+    "es": "Peso muerto sumo con cadenas",
+    "ca": "Pes mort sumo amb cadenes"
+  },
+  "superman": {
+    "es": "Superman",
+    "ca": "Superman"
+  },
+  "supine-chest-throw": {
+    "es": "Lanzamiento de pecho tumbado boca arriba",
+    "ca": "Llançament de pit estirat cap amunt"
+  },
+  "supine-one-arm-overhead-throw": {
+    "es": "Lanzamiento sobre la cabeza a un brazo tumbado boca arriba",
+    "ca": "Llançament per sobre el cap a un braç estirat cap amunt"
+  },
+  "supine-two-arm-overhead-throw": {
+    "es": "Lanzamiento sobre la cabeza a dos brazos tumbado boca arriba",
+    "ca": "Llançament per sobre el cap a dos braços estirat cap amunt"
+  },
+  "suspended-fallout": {
+    "es": "Fallout en suspensión",
+    "ca": "Fallout en suspensió"
+  },
+  "suspended-push-up": {
+    "es": "Flexión en suspensión",
+    "ca": "Flexió en suspensió"
+  },
+  "suspended-reverse-crunch": {
+    "es": "Crunch inverso en suspensión",
+    "ca": "Crunch invers en suspensió"
+  },
+  "suspended-row": {
+    "es": "Remo en suspensión",
+    "ca": "Rem en suspensió"
+  },
+  "suspended-split-squat": {
+    "es": "Sentadilla dividida en suspensión",
+    "ca": "Esquat dividit en suspensió"
+  },
+  "svend-press": {
+    "es": "Press Svend",
+    "ca": "Press Svend"
+  },
+  "t-bar-row-with-handle": {
+    "es": "Remo en T con agarre",
+    "ca": "Rem en T amb agafador"
+  },
+  "tate-press": {
+    "es": "Press Tate",
+    "ca": "Press Tate"
+  },
+  "the-straddle": {
+    "es": "The Straddle",
+    "ca": "The Straddle"
+  },
+  "thigh-abductor": {
+    "es": "Máquina de abductores",
+    "ca": "Màquina d'abductors"
+  },
+  "thigh-adductor": {
+    "es": "Máquina de aductores de muslo",
+    "ca": "Màquina d'adductors de cuixa"
+  },
+  "tire-flip": {
+    "es": "Volteo de neumático",
+    "ca": "Volteig de pneumàtic"
+  },
+  "toe-touchers": {
+    "es": "Toques de pies (Toe Touchers)",
+    "ca": "Tocs de peus (Toe Touchers)"
+  },
+  "torso-rotation": {
+    "es": "Rotación de torso",
+    "ca": "Rotació de tors"
+  },
+  "trail-running-walking": {
+    "es": "Carrera/marcha por senda",
+    "ca": "Cursa/marxa per sender"
+  },
+  "trap-bar-deadlift": {
+    "es": "Peso muerto con barra hexagonal",
+    "ca": "Pes mort amb barra hexagonal"
+  },
+  "tricep-dumbbell-kickback": {
+    "es": "Patada de tríceps con mancuerna",
+    "ca": "Cop de peu de tríceps amb manuella"
+  },
+  "tricep-side-stretch": {
+    "es": "Estiramiento lateral de tríceps",
+    "ca": "Estirament lateral de tríceps"
+  },
+  "triceps-overhead-extension-with-rope": {
+    "es": "Extensión de tríceps sobre la cabeza con cuerda",
+    "ca": "Extensió de tríceps per sobre el cap amb corda"
+  },
+  "triceps-pushdown": {
+    "es": "Extensión de tríceps en polea (pushdown)",
+    "ca": "Extensió de tríceps en politja (pushdown)"
+  },
+  "triceps-pushdown-rope-attachment": {
+    "es": "Extensión de tríceps en polea con cuerda",
+    "ca": "Extensió de tríceps en politja amb corda"
+  },
+  "triceps-pushdown-v-bar-attachment": {
+    "es": "Extensión de tríceps en polea con barra en V",
+    "ca": "Extensió de tríceps en politja amb barra en V"
+  },
+  "triceps-stretch": {
+    "es": "Estiramiento de tríceps",
+    "ca": "Estirament de tríceps"
+  },
+  "tuck-crunch": {
+    "es": "Crunch con rodillas al pecho",
+    "ca": "Crunch amb genolls al pit"
+  },
+  "two-arm-dumbbell-preacher-curl": {
+    "es": "Curl predicador con mancuernas a dos brazos",
+    "ca": "Curl predicador amb manuelles a dos braços"
+  },
+  "two-arm-kettlebell-clean": {
+    "es": "Clean con pesa rusa a dos brazos",
+    "ca": "Clean amb kettlebell a dos braços"
+  },
+  "two-arm-kettlebell-jerk": {
+    "es": "Jerk con pesa rusa a dos brazos",
+    "ca": "Jerk amb kettlebell a dos braços"
+  },
+  "two-arm-kettlebell-military-press": {
+    "es": "Press militar con pesa rusa a dos brazos",
+    "ca": "Press militar amb kettlebell a dos braços"
+  },
+  "two-arm-kettlebell-row": {
+    "es": "Remo con pesa rusa a dos brazos",
+    "ca": "Rem amb kettlebell a dos braços"
+  },
+  "underhand-cable-pulldowns": {
+    "es": "Jalones en polea con agarre supino",
+    "ca": "Estirades en politja amb agafada supina"
+  },
+  "upper-back-leg-grab": {
+    "es": "Agarre de pierna para espalda alta",
+    "ca": "Agafada de cama per a esquena alta"
+  },
+  "upper-back-stretch": {
+    "es": "Estiramiento de espalda alta",
+    "ca": "Estirament d'esquena alta"
+  },
+  "upright-barbell-row": {
+    "es": "Remo al mentón con barra",
+    "ca": "Rem al mentó amb barra"
+  },
+  "upright-cable-row": {
+    "es": "Remo al mentón en polea",
+    "ca": "Rem al mentó en politja"
+  },
+  "upright-row-with-bands": {
+    "es": "Remo al mentón con bandas",
+    "ca": "Rem al mentó amb bandes"
+  },
+  "upward-stretch": {
+    "es": "Estiramiento hacia arriba",
+    "ca": "Estirament cap amunt"
+  },
+  "v-bar-pulldown": {
+    "es": "Jalón con barra en V",
+    "ca": "Estirada amb barra en V"
+  },
+  "v-bar-pullup": {
+    "es": "Dominada con barra en V",
+    "ca": "Tracció amb barra en V"
+  },
+  "vertical-swing": {
+    "es": "Swing vertical",
+    "ca": "Swing vertical"
+  },
+  "walking-treadmill": {
+    "es": "Caminata en cinta",
+    "ca": "Caminada en cinta"
+  },
+  "weighted-ball-hyperextension": {
+    "es": "Hiperextensión con balón lastrado",
+    "ca": "Hiperextensió amb pilota llastrada"
+  },
+  "weighted-ball-side-bend": {
+    "es": "Flexión lateral con balón lastrado",
+    "ca": "Flexió lateral amb pilota llastrada"
+  },
+  "weighted-bench-dip": {
+    "es": "Fondos en banco con lastre",
+    "ca": "Fons en banc amb llast"
+  },
+  "weighted-crunches": {
+    "es": "Crunches con lastre",
+    "ca": "Crunches amb llast"
+  },
+  "weighted-jump-squat": {
+    "es": "Sentadilla con salto y lastre",
+    "ca": "Esquat amb salt i llast"
+  },
+  "weighted-pull-ups": {
+    "es": "Dominadas con lastre",
+    "ca": "Traccions amb llast"
+  },
+  "weighted-sissy-squat": {
+    "es": "Sentadilla sissy con lastre",
+    "ca": "Esquat sissy amb llast"
+  },
+  "weighted-sit-ups-with-bands": {
+    "es": "Abdominales con lastre y bandas",
+    "ca": "Abdominals amb llast i bandes"
+  },
+  "weighted-squat": {
+    "es": "Sentadilla con lastre",
+    "ca": "Esquat amb llast"
+  },
+  "wide-grip-barbell-bench-press": {
+    "es": "Press de banca con agarre ancho",
+    "ca": "Press de banca amb agafada ampla"
+  },
+  "wide-grip-decline-barbell-bench-press": {
+    "es": "Press de banca declinado con agarre ancho",
+    "ca": "Press de banca declinat amb agafada ampla"
+  },
+  "wide-grip-decline-barbell-pullover": {
+    "es": "Pullover declinado con barra y agarre ancho",
+    "ca": "Pullover declinat amb barra i agafada ampla"
+  },
+  "wide-grip-lat-pulldown": {
+    "es": "Jalón al pecho con agarre ancho",
+    "ca": "Estirada al pit amb agafada ampla"
+  },
+  "wide-grip-pulldown-behind-the-neck": {
+    "es": "Jalón tras nuca con agarre ancho",
+    "ca": "Estirada darrere el clatell amb agafada ampla"
+  },
+  "wide-grip-rear-pull-up": {
+    "es": "Dominada con agarre ancho (tras nuca)",
+    "ca": "Tracció amb agafada ampla (darrere el clatell)"
+  },
+  "wide-grip-standing-barbell-curl": {
+    "es": "Curl de pie con barra y agarre ancho",
+    "ca": "Curl de peu amb barra i agafada ampla"
+  },
+  "wide-stance-barbell-squat": {
+    "es": "Sentadilla con barra y postura ancha",
+    "ca": "Esquat amb barra i postura ampla"
+  },
+  "wide-stance-stiff-legs": {
+    "es": "Peso muerto con piernas rígidas y postura ancha",
+    "ca": "Pes mort amb cames rígides i postura ampla"
+  },
+  "wind-sprints": {
+    "es": "Sprints de viento (Wind Sprints)",
+    "ca": "Esprints de vent (Wind Sprints)"
+  },
+  "windmills": {
+    "es": "Molinos de viento",
+    "ca": "Molins de vent"
+  },
+  "world-s-greatest-stretch": {
+    "es": "El mejor estiramiento del mundo",
+    "ca": "El millor estirament del món"
+  },
+  "wrist-circles": {
+    "es": "Círculos de muñeca",
+    "ca": "Cercles de canell"
+  },
+  "wrist-roller": {
+    "es": "Rodillo de muñeca (Wrist Roller)",
+    "ca": "Corró de canell (Wrist Roller)"
+  },
+  "wrist-rotations-with-straight-bar": {
+    "es": "Rotaciones de muñeca con barra recta",
+    "ca": "Rotacions de canell amb barra recta"
+  },
+  "yoke-walk": {
+    "es": "Paseo con yugo (Yoke Walk)",
+    "ca": "Passeig amb jou (Yoke Walk)"
+  },
+  "zercher-squats": {
+    "es": "Sentadillas Zercher",
+    "ca": "Esquats Zercher"
+  },
+  "zottman-curl": {
+    "es": "Curl Zottman",
+    "ca": "Curl Zottman"
+  },
+  "zottman-preacher-curl": {
+    "es": "Curl predicador Zottman",
+    "ca": "Curl predicador Zottman"
+  }
+}
