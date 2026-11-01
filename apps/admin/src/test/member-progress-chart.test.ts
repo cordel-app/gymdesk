@@ -22,3 +22,20 @@ describe('combinedChartSeries', () => {
     expect(out).toHaveLength(1);
   });
 });
+
+// #2223 — the hovered day's flag: sets and that day's own Max, never the overall one.
+import { dayFlagLines } from '../app/[locale]/members/progressView';
+describe('dayFlagLines', () => {
+  const labels = { sets: (n: number) => `Sets: ${n}`, maxWeight: (v: string) => `Max Weight: ${v}`, maxReps: (v: string) => `Max Repetitions: ${v}` };
+  const reading = (date: string, sets: Array<[number, number]>) => ({
+    id: 1, logged_date: date, notes: null, duration_seconds: null, skipped: false,
+    sets: sets.map(([reps, weight], i) => ({ id: i, set_number: i + 1, reps, weight })),
+  });
+  it('counts sets and takes the day maxima', () => {
+    const lines = dayFlagLines('2026-10-01', [reading('2026-10-01', [[9, 6], [6, 3], [6, 2]]), reading('2026-10-02', [[20, 100]])], labels);
+    expect(lines.slice(1)).toEqual(['Sets: 3', 'Max Weight: 6 kg', 'Max Repetitions: 9 reps']);
+  });
+  it('is empty for a day without sets', () => {
+    expect(dayFlagLines('2026-10-01', [], labels)).toEqual([]);
+  });
+});

@@ -50,7 +50,7 @@ export function resultUnitKey(slug: string | null | undefined): string | null {
 
 /** Locale key of a metric's best-result label. */
 export function metricLabelKey(slug: ProgressMetricSlug): string {
-  return slug === 'weight' ? 'members.progress_best_weight' : 'members.progress_best_reps';
+  return slug === 'weight' ? 'members.progress_max_weight_result' : 'members.progress_max_reps_result';
 }
 
 /** `—` for anything the logs hold no data for — never 0. */
@@ -84,6 +84,31 @@ export function groupReadingsByDate(readings: ProgressReading[]): Array<{ date: 
     else groups.push({ date: r.logged_date, readings: [r] });
   }
   return groups;
+}
+
+/**
+ * #2223 — the flag of one day: its date, the number of sets and the day's own Max per
+ * metric. Computed from that day's readings only; the exercise's overall Max is the API's.
+ */
+export function dayFlagLines(
+  date: string,
+  readings: ProgressReading[],
+  labels: { sets: (n: number) => string; maxWeight: (v: string) => string; maxReps: (v: string) => string },
+  gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
+  units: { kg: string; reps: string } = { kg: 'kg', reps: 'reps' },
+): string[] {
+  const sets = readings.filter((r) => r.logged_date === date && !r.skipped).flatMap((r) => r.sets);
+  if (sets.length === 0) return [];
+  const max = (values: Array<number | null>) => {
+    const nums = values.filter((v): v is number => v !== null);
+    return nums.length > 0 ? Math.max(...nums) : null;
+  };
+  const lines = [formatGymDayMonth(date, gym), labels.sets(sets.length)];
+  const w = max(sets.map((s) => s.weight));
+  const r = max(sets.map((s) => s.reps));
+  if (w !== null) lines.push(labels.maxWeight(formatValue(w, units.kg, gym)));
+  if (r !== null) lines.push(labels.maxReps(formatValue(r, units.reps, gym)));
+  return lines;
 }
 
 export interface ReadingDraft {
@@ -131,6 +156,7 @@ export function combinedChartSeries(
   label: (slug: ProgressMetricSlug) => string,
   unit: (slug: ProgressMetricSlug) => string,
   gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
+  flagFor?: (loggedDate: string) => string[],
 ): ChartSeries[] {
   return metrics
     .filter((m) => m.days.some((d) => d.value !== null))
@@ -139,6 +165,10 @@ export function combinedChartSeries(
       name: `${label(m.slug)} (${unit(m.slug)})`,
       colorIndex: index,
       axis: (index === 0 ? 0 : 1) as 0 | 1,
-      points: progressChartPoints(m.days, unit(m.slug), gym),
+      // The flag is drawn from the first series only, so two series never stack two flags on one day.
+      points: progressChartPoints(m.days, unit(m.slug), gym).map((p, i) => {
+        const lines = index === 0 && flagFor ? flagFor(m.days[i].logged_date) : [];
+        return lines.length > 0 ? { ...p, flagLines: lines } : p;
+      }),
     }));
 }

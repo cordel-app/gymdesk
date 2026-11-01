@@ -25,6 +25,8 @@ export interface ChartPoint {
   valueLabel?: string;
   /** Extra tooltip lines between the first line and the value — already formatted (#1808: one per billing item). */
   detailLines?: string[];
+  /** Lines of the selected day's flag drawn on the chart (#2223) — already formatted. Defaults to label + value. */
+  flagLines?: string[];
 }
 
 export interface ChartSeries {
