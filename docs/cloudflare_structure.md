@@ -67,6 +67,10 @@
         │   ├── {food_id}-{food_name}.webp                                    — 1080 × 1080 px
         │   └── {food_id}-{food_name}-thumbnail.webp                          — 256 × 256 px
         │        
+        ├── staff
+        │   ├── {staff_id}-{staff_name}.webp                                  — 1080 × 1080 px
+        │   └── {staff_id}-{staff_name}-thumbnail.webp                        — 256 × 256 px        
+        │        
         ├── center
         │   ├── {center_id}-{center_name}.webp                                  — 1080 × 1080 px
         │   └── {center_id}-{center_name}-thumbnail.webp                        — 256 × 256 px
