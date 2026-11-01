@@ -100,7 +100,6 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "plan_promotion_session_product_snapshots": ["parent", "plan_promotion_snapshots"],
   "plan_promotion_oneoff_product_snapshots": ["parent", "plan_promotion_snapshots"],
   "plan_promotion_periodical_product_snapshots": ["parent", "plan_promotion_snapshots"],
-  "product_set_plan_snapshots": ["parent", "product_sets (frozen configuration of a version)"],
   "product_set_schedules": ["parent", "product_sets (the chain's schedule)"],
   "promotion_membership_fee_benefits": ["parent", "promotions"],
   "promotion_membership_plans": ["parent", "promotions"],

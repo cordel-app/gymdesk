@@ -95,7 +95,7 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     expect((await auth(request.put(`/product-sets/${id}/fee-benefit`)).send({ action: 'percentage_discount', value: 10 })).status).toBe(200);
 
     const { rows } = await db.query<any>(
-      'SELECT membership_fee_price, free_periods, paid_periods, pay_beforehand_periods, auto_renew, personal_fee_benefit_value FROM product_set_plan_snapshots WHERE product_set_id = ?', [id]);
+      'SELECT membership_fee_price, free_periods, paid_periods, pay_beforehand_periods, auto_renew, personal_fee_benefit_value FROM plan_snapshots WHERE product_set_id = ?', [id]);
     expect(rows[0]).toMatchObject({ free_periods: 1, paid_periods: 4, pay_beforehand_periods: 2, auto_renew: 1 });
     expect(Number(rows[0].membership_fee_price)).toBe(25);
     expect(Number(rows[0].personal_fee_benefit_value)).toBe(10);

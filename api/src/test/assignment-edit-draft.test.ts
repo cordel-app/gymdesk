@@ -40,7 +40,7 @@ describe('POST /user-memberships/:id/edit-draft', () => {
     const { memberId, umId } = await activeAssignment();
     // The Active version's frozen fee differs from anything the catalogue holds.
     await db.query(
-      `UPDATE product_set_plan_snapshots snap JOIN product_sets ps ON ps.id = snap.product_set_id
+      `UPDATE plan_snapshots snap JOIN product_sets ps ON ps.id = snap.product_set_id
           SET snap.membership_fee_price = 77.5
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active'`, [gymId, memberId]);
 
@@ -50,7 +50,7 @@ describe('POST /user-memberships/:id/edit-draft', () => {
 
     const { rows: sets } = await db.query<any>(
       `SELECT ps.status, ps.user_membership_id, snap.membership_fee_price
-         FROM product_sets ps JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+         FROM product_sets ps JOIN plan_snapshots snap ON snap.product_set_id = ps.id
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.version`, [gymId, memberId]);
     expect(sets.map((s: any) => s.status)).toEqual(['active', 'draft']);
     expect(Number(sets[1].membership_fee_price)).toBe(77.5);

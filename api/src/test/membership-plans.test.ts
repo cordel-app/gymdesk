@@ -1930,7 +1930,7 @@ describe('Membership Plan Pricing (#547)', () => {
     // A second version, active, at the new fee; the first superseded.
     const { rows: versions } = await db.query(
       `SELECT ps.status, snap.membership_fee_price FROM product_sets ps
-         JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+         JOIN plan_snapshots snap ON snap.product_set_id = ps.id
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.version`, [gymId, memberId]);
     expect(versions.map((v: any) => v.status)).toEqual(['superseded', 'active']);
     expect(Number(versions[1].membership_fee_price)).toBeCloseTo(90, 2);

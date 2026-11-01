@@ -1,7 +1,9 @@
-// #2125 stage 1: the plan snapshot tables and their repeatable backfill, against real MySQL.
+// #2125 stage 1: the plan snapshot tables and their repeatable backfill, against real MySQL
+// (since stage 17 the snapshots are written by the real writers; the backfill only has promotions left to copy).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
+import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership } from './helpers';
 
 const require = createRequire(import.meta.url);
@@ -73,12 +75,15 @@ beforeAll(async () => {
   await db.query(
     `INSERT INTO user_membership_promotion_session_snapshot (gym_id, user_membership_promotion_id, product_id, product_name, quantity, action, value)
      VALUES (?, ?, ?, 'Frozen grant', 3, 'fixed_price', 5.00)`, [gymId, ump, productId]);
-  // The dual-write (stage 2) already wrote snapshots at creation; this suite tests the backfill itself.
-  await db.query('DELETE FROM plan_snapshots WHERE gym_id = ?', [gymId]);
-  await migration.backfillPlanSnapshots(knex);
+  // The snapshots exist from creation (the legacy table the stage 1 backfill copied from is gone,
+  // migration 356); the fixture's direct inserts (coverage, application, status) are re-derived.
+  await db.transaction(async (tx) => {
+    await syncPlanSnapshot(tx, gymId, setA);
+    await syncPlanSnapshot(tx, gymId, setB);
+  });
 });
 
-describe('plan snapshots backfill (#2125 stage 1)', () => {
+describe('plan snapshots (#2125)', () => {
   it('copies one snapshot per version with the frozen commercial values and owner as member', async () => {
     const { rows } = await db.query<any>('SELECT * FROM plan_snapshots WHERE gym_id = ? ORDER BY product_set_id', [gymId]);
     expect(rows).toHaveLength(2);

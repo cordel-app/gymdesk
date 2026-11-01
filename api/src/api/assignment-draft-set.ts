@@ -1,3 +1,4 @@
+import { assignmentPlanSnapshotId } from './assignment-config';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
@@ -85,9 +86,9 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     declinedBenefits: input.declinedBenefits, origin: 'admin',
   });
   await tx.query(
-    `UPDATE product_set_plan_snapshots
+    `UPDATE plan_snapshots
         SET plan_price_id = ?, base_price = ?, discount_reason = ?, discount_expires_at = ?
-      WHERE product_set_id = ? AND gym_id = ?`,
+      WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [input.planPriceId, input.basePrice, input.discountReason, input.discountExpiresAt, setId, input.gymId],
   );
   await tx.query(
@@ -134,16 +135,17 @@ export async function writeDiscountOnVersion(tx: Tx, gymId: string, userMembersh
   reason: { value: string | null } | null; expires: { value: string | null } | null;
 }): Promise<void> {
   if (!input.reason && !input.expires) return;
+  // MySQL cannot update a table through a subquery on itself: resolve the snapshot first.
+  const { rows } = await tx.query<{ id: number | null }>(
+    `SELECT ${assignmentPlanSnapshotId('?')} AS id`, [userMembershipId]);
+  if (rows[0]?.id == null) return;
   await tx.query(
-    `UPDATE product_set_plan_snapshots snap
-       JOIN product_sets ps ON ps.id = snap.product_set_id
-        SET snap.discount_reason = IF(?, ?, snap.discount_reason),
-            snap.discount_expires_at = IF(?, ?, snap.discount_expires_at)
-      WHERE ps.gym_id = ? AND ps.user_membership_id = ?
-        AND ps.version = (SELECT MAX(p2.version) FROM product_sets p2
-                           WHERE p2.gym_id = ps.gym_id AND p2.user_membership_id = ps.user_membership_id)`,
+    `UPDATE plan_snapshots
+        SET discount_reason = IF(?, ?, discount_reason),
+            discount_expires_at = IF(?, ?, discount_expires_at)
+      WHERE id = ? AND gym_id = ?`,
     [input.reason ? 1 : 0, input.reason?.value ?? null, input.expires ? 1 : 0, input.expires?.value ?? null,
-      gymId, userMembershipId]);
+      rows[0].id, gymId]);
 }
 
 /**

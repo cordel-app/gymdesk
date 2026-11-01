@@ -24,7 +24,7 @@ describe('Draft ProductSet billing cadence (#1949)', () => {
   });
 
   it('moves the snapshot and its own schedule together', () => {
-    expect(draft).toMatch(/UPDATE product_set_plan_snapshots SET recurring_billing_interval/);
+    expect(draft).toMatch(/UPDATE plan_snapshots SET recurring_billing_interval/);
     expect(draft).toMatch(/UPDATE product_set_schedules SET cadence_interval/);
   });
 

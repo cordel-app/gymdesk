@@ -109,7 +109,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     const draft = await draftFrom(owner);
     const heldByDraft = await rowsHeldBy(draft);
     // The Draft is a complete, independent copy: plan snapshot and application included.
-    expect(heldByDraft['product_set_plan_snapshots']).toBeGreaterThan(0);
+    expect(heldByDraft['plan_snapshots']).toBeGreaterThan(0);
     expect(heldByDraft['user_membership_promotions']).toBeGreaterThan(0);
     expect(await statusOf('product_sets', draft)).toBe('draft');
 
@@ -155,7 +155,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(await statusOf('user_memberships', umV1)).toBe('superseded');
     const { rows: apps } = await db.query<any>('SELECT status FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
     expect(apps.map((a: any) => a.status)).toEqual(['superseded']);
-    expect((await rowsHeldBy(v1))['product_set_plan_snapshots']).toBeGreaterThan(0);
+    expect((await rowsHeldBy(v1))['plan_snapshots']).toBeGreaterThan(0);
     // Billing history of the previous version that was already due is kept.
     const { rows: dueAfter } = await db.query<any>(
       'SELECT id FROM billing_events WHERE product_set_id = ? AND (billing_date IS NULL OR billing_date <= ?) ORDER BY id', [v1, TODAY]);
