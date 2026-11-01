@@ -96,11 +96,14 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {family.members.map((m) => (
           <div key={m.member_id} style={{ ...innerCardStyle, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <a href={`/${locale}/members?member=${m.member_id}`} style={{ fontWeight: 500 }}>{m.name}</a>
+            <span style={{ fontWeight: 500 }}>{m.name}</span>
             {m.is_owner && <span style={listNameBadgeAccentStyle}>{t('members.family_owner_badge')}</span>}
             <span style={cardMutedTextStyle}>{m.email}</span>
-            {canWrite && (
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <a href={`/${locale}/members?member=${m.member_id}`} style={{ ...secondaryBtnSmall, textDecoration: 'none', display: 'inline-block' }}>
+                {t('members.family_view')}
+              </a>
+              {canWrite && (<>
                 {!m.is_owner && (
                   <button style={secondaryBtnSmall} disabled={busy}
                     onClick={() => run(() => apiFetch(`${base}/owner`, { method: 'PUT', body: JSON.stringify({ member_id: m.member_id }) }))}>
@@ -110,8 +113,8 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
                 <button style={secondaryBtnSmall} disabled={busy} onClick={() => setPending({ kind: 'remove', member: m })}>
                   {t('members.family_remove')}
                 </button>
-              </span>
-            )}
+              </>)}
+            </span>
           </div>
         ))}
       </div>

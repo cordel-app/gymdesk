@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2222 (Member card → Family: member names are plain text instead of blue links, and each row has an explicit View button opening the same member detail route; admin-only, no API change)
 - **Done**: #2207 (Assigned Nutrition Plans on mobile: the shared `NutritionPlanTree` meal header and food rows wrap instead of overflowing, and the goal form grid is fluid. Admin-only, no API or schema change.)
 - **Done**: #2204 (Food details from Assigned Nutrition Plans: clicking a food's image or name in a meal item or restriction — in the Member card's Nutrition Plan and the standalone Assigned Nutrition Plans page, which share `NutritionPlanTree` — opens `FoodDetailsModal`: large image plus the Nutrition Library's description, categories, qualities, status and translations, each with a monochrome `currentColor` icon; a missing image or field reads as a placeholder / `—`. Admin-only, no API or schema change.)
 

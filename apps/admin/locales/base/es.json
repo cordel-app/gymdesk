@@ -644,6 +644,7 @@
     "family_add_placeholder": "Busca un miembro para añadir…",
     "family_make_owner": "Hacer titular",
     "family_remove": "Quitar",
+    "family_view": "Ver",
     "family_dissolve": "Disolver familia",
     "family_confirm_remove": "¿Quitar a {name} de la familia?",
     "family_confirm_dissolve": "¿Disolver esta familia? Los miembros conservan sus propios planes y productos.",
