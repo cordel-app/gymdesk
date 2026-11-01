@@ -4176,6 +4176,8 @@
     "section_progress_chart": "Gràfic de progrés",
     "chart_aria_label": "Gràfic de les mesures d’aquest objectiu al llarg del temps",
     "chart_target": "Objectiu {value}",
+    "chart_legend_reading": "Lectura",
+    "chart_legend_target": "Objectiu",
     "readings_empty": "Encara no hi ha mesures registrades.",
     "marker_initial": "Inicial",
     "marker_new_initial": "Nova mesura inicial",

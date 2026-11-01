@@ -17,6 +17,7 @@ import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
 import { GoalReadingHeader } from './GoalReadingHeader';
 import { GoalReadingChart } from './GoalReadingChart';
+import { GoalReadingHoverProvider } from './GoalReadingHover';
 import { GoalReadingHistory } from './GoalReadingHistory';
 import { GoalReadingsResponse, ReadingKind, formatProgress } from './goalReadings';
 import { AssignedPersonalGoalForm, GoalOption, MemberOption } from './AssignedPersonalGoalForm';
@@ -283,6 +284,8 @@ export function AssignedPersonalGoalsSection({
       target: row.target_value === null
         ? null
         : label('chart_target', { value: formatTarget(row) }),
+      legendReading: label('chart_legend_reading'),
+      legendTarget: label('chart_legend_target'),
     };
   }
 
@@ -314,6 +317,7 @@ export function AssignedPersonalGoalsSection({
           </div>
         </div>
         {/* §12 — header, chart, history, in that order. */}
+        <GoalReadingHoverProvider>
         <GoalReadingChart
           readings={readings[row.id]?.readings ?? []}
           unit={row.target_unit}
@@ -332,6 +336,7 @@ export function AssignedPersonalGoalsSection({
           readOnlyTitle={readOnlyTitle}
           onChanged={() => readingSaved(row.id)}
         />
+        </GoalReadingHoverProvider>
       </div>
     );
   }

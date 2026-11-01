@@ -50,6 +50,12 @@ export interface LineChartInput {
   axisLabelFormatter?: (value: number) => string;
   /** The x of the point a page has selected; it is drawn larger so the selection reads on the chart. */
   selectedX?: number | null;
+  /**
+   * A compact legend of hand-named entries (#2224). A reference line is not a series, so a
+   * chart that wants it identified declares the entries itself: `primary` takes the first
+   * palette colour, `reference` the reference line's muted dashed style.
+   */
+  legend?: { name: string; kind: 'primary' | 'reference' }[];
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
@@ -92,7 +98,10 @@ export type ChartOption = Record<string, unknown>;
 export function lineChartOption(input: LineChartInput, theme: ChartTheme): ChartOption {
   const axisType = input.xAxisType ?? 'time';
   const dualAxis = input.series.some((entry) => entry.axis === 1);
-  const legendNames = input.series.map((entry) => entry.name).filter((n): n is string => !!n);
+  const customLegend = input.legend && input.legend.length > 0 ? input.legend : null;
+  const legendNames = customLegend
+    ? customLegend.map((entry) => entry.name)
+    : input.series.map((entry) => entry.name).filter((n): n is string => !!n);
   const yAxis = (right: boolean) => ({
     type: 'value',
     // Readings sit in a narrow band (80 → 75 kg), so a zero-based axis would
@@ -126,7 +135,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       emphasis: { scale: 1.4, focus: 'none' },
       data: entry.points.map((point, pointIndex) => ({
         value: [point.x, point.y],
-        label: point.label,
+        tipLabel: point.label,
         valueLabel: point.valueLabel,
         detailLines: point.detailLines,
         // A bridge carries no symbol, so it cannot be hovered and cannot
@@ -135,6 +144,21 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
           ? 0
           : (input.selectedX != null && point.x === input.selectedX ? SELECTED_SYMBOL_SIZE : SYMBOL_SIZE),
         x: point.x,
+        // #2224 — the selected day's informative flag: its date and value, drawn on the point.
+        label: input.selectedX != null && point.x === input.selectedX && pointIndex >= bridges
+          ? {
+              show: true,
+              position: 'top',
+              formatter: [point.label, point.valueLabel].filter(Boolean).join('\n'),
+              color: theme.text,
+              fontSize: 11,
+              backgroundColor: theme.surface,
+              borderColor: theme.surfaceBorder,
+              borderWidth: 1,
+              borderRadius: 4,
+              padding: [3, 6],
+            }
+          : undefined,
       })),
       markLine: index === 0 && input.reference
         ? {
@@ -154,6 +178,20 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
     };
   });
 
+  // Legend-only series: no data, they exist so the legend can draw the line style of the
+  // element it names (a markLine has no legend entry of its own).
+  const legendSeries = (customLegend ?? []).map((entry) => ({
+    name: entry.name,
+    type: 'line',
+    data: [],
+    silent: true,
+    showSymbol: false,
+    itemStyle: { color: entry.kind === 'reference' ? theme.textMuted : seriesColor(theme, 0) },
+    lineStyle: entry.kind === 'reference'
+      ? { color: theme.textMuted, type: 'dashed', width: 1 }
+      : { color: seriesColor(theme, 0), width: LINE_WIDTH },
+  }));
+
   return {
     // ECharts' own palette is replaced rather than merged: the first entry is
     // what a series with no colour of its own would take.
@@ -162,10 +200,13 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
     animation: true,
     textStyle: { color: theme.text },
     // #2198 — a legend only where several named series share the chart.
-    legend: legendNames.length > 1
-      ? { show: true, top: 0, textStyle: { color: theme.textMuted, fontSize: 11 }, data: legendNames }
+    legend: legendNames.length > 1 || customLegend
+      ? {
+          show: true, top: 0, itemWidth: 16, itemHeight: 8, itemGap: 12,
+          textStyle: { color: theme.textMuted, fontSize: 11 }, data: legendNames,
+        }
       : undefined,
-    grid: { left: 8, right: 14, top: legendNames.length > 1 ? 34 : 18, bottom: 6, containLabel: true },
+    grid: { left: 8, right: 14, top: legendNames.length > 1 || customLegend ? 34 : 18, bottom: 6, containLabel: true },
     tooltip: {
       trigger: 'item',
       // A tap is a click: the same tooltip serves desktop, tablet and phone (§16).
@@ -175,8 +216,8 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       borderColor: theme.surfaceBorder,
       textStyle: { color: theme.text, fontSize: 12 },
       formatter: (params: unknown) => {
-        const data = (params as { data?: { label?: string; valueLabel?: string; detailLines?: string[] } }).data;
-        return data ? tooltipHtml(data) : '';
+        const data = (params as { data?: { tipLabel?: string; valueLabel?: string; detailLines?: string[] } }).data;
+        return data ? tooltipHtml({ label: data.tipLabel, valueLabel: data.valueLabel, detailLines: data.detailLines }) : '';
       },
     },
     xAxis: {
@@ -206,6 +247,6 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
           preventDefaultMouseMove: false,
         }]
       : undefined,
-    series,
+    series: [...series, ...legendSeries],
   };
 }

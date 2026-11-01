@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   readingAxisLabel as adminAxisLabel,
   readingChartPoints as adminPoints,
+  selectedReadingX,
 } from '../../../apps/admin/src/components/personalGoals/goalReadings';
 import {
   readingAxisLabel as memberAxisLabel,
@@ -105,5 +106,18 @@ describe('the segmented line a changed initial reading produces (§21–§24)', 
     const points = memberPoints(READINGS, 'kg', 'en-GB');
     const drawn = segmentPoints(points).flatMap((s) => s.points.slice(s.bridgeCount ?? 0));
     expect(drawn.map((p) => p.y)).toEqual([80, 78, 76]);
+  });
+});
+
+describe('selectedReadingX (#2224)', () => {
+  it("selects the day's highest reading, not the history's", () => {
+    const rows = [
+      { id: 1, value: 80, recorded_at: '2026-09-01T08:00:00.000Z', is_initial: true, period: 0 },
+      { id: 2, value: 82, recorded_at: '2026-09-08T08:00:00.000Z', is_initial: false, period: 0 },
+      { id: 3, value: 78, recorded_at: '2026-09-08T18:00:00.000Z', is_initial: false, period: 0 },
+    ] as any;
+    expect(selectedReadingX(rows, '2026-09-08')).toBe(new Date('2026-09-08T08:00:00.000Z').getTime());
+    expect(selectedReadingX(rows, '2026-09-09')).toBeNull();
+    expect(selectedReadingX(rows, null)).toBeNull();
   });
 });

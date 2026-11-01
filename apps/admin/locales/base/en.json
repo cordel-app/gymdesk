@@ -4163,6 +4163,8 @@
     "section_progress_chart": "Progress chart",
     "chart_aria_label": "Chart of this goal’s readings over time",
     "chart_target": "Target {value}",
+    "chart_legend_reading": "Reading",
+    "chart_legend_target": "Target",
     "readings_empty": "No readings recorded yet.",
     "marker_initial": "Initial",
     "marker_new_initial": "New initial reading",

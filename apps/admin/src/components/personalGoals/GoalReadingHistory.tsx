@@ -8,8 +8,9 @@ import {
 import { listNameBadgeStyle } from '@/components/listChrome';
 import {
   GoalReadingRow, READING_MARKER_KEYS, formatReadingTimestamp, formatReadingValue,
-  readingHistoryRows,
+  readingDayKey, readingHistoryRows,
 } from './goalReadings';
+import { useGoalReadingHover } from './GoalReadingHover';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -64,6 +65,7 @@ export function GoalReadingHistory({
   initiallyOpen?: boolean;
 }) {
   const gymFmt = useGymFormatSettings();
+  const hover = useGoalReadingHover();
   const [open, setOpen] = useState(initiallyOpen);
   const rows = readingHistoryRows(readings);
   const { apiFetch } = useApiClient();
@@ -105,7 +107,16 @@ export function GoalReadingHistory({
           : (
             <ul style={listStyle}>
               {rows.map((reading) => (
-                <li key={reading.id} style={cardDetailRowStyle}>
+                <li
+                  key={reading.id}
+                  style={{ ...cardDetailRowStyle, fontWeight: hover.day !== null && hover.day === readingDayKey(reading.recorded_at) ? 700 : undefined }}
+                  tabIndex={0}
+                  onMouseEnter={() => hover.setDay(readingDayKey(reading.recorded_at))}
+                  onMouseLeave={() => hover.setDay(null)}
+                  onFocus={() => hover.setDay(readingDayKey(reading.recorded_at))}
+                  onBlur={() => hover.setDay(null)}
+                  onTouchStart={() => hover.setDay(readingDayKey(reading.recorded_at))}
+                >
                   <span style={dateStyle}>{formatReadingTimestamp(reading.recorded_at, locale, gymFmt)}</span>
                   <span style={valueStyle}>{formatReadingValue(reading.value, unit)}</span>
                   <span style={markerCellStyle}>

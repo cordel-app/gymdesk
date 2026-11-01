@@ -201,9 +201,23 @@ describe('the line chart option', () => {
     expect(option({ area: true }).series[0].areaStyle.color).toBe(THEME.series[0]);
   });
 
+  it('draws a compact legend and the selected point\'s flag when asked (#2224)', () => {
+    const o = option({
+      selectedX: 20,
+      legend: [{ name: 'Reading', kind: 'primary' }, { name: 'Target', kind: 'reference' }],
+    });
+    expect(o.legend.data).toEqual(['Reading', 'Target']);
+    const target = o.series.find((x: any) => x.name === 'Target');
+    expect(target.lineStyle.type).toBe('dashed');
+    const flagged = o.series.flatMap((x: any) => x.data).filter((d: any) => d.label?.show);
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0].label.formatter).toBe('22 Sep\n76 kg');
+    expect(option().legend).toBeUndefined();
+  });
+
   it('prints the labels the page formatted, and escapes them', () => {
     const formatter = option().tooltip.formatter;
-    expect(formatter({ data: { label: '01 Sep', valueLabel: '80 kg' } }))
+    expect(formatter({ data: { tipLabel: '01 Sep', valueLabel: '80 kg' } }))
       .toBe('<span>01 Sep</span><br/><strong>80 kg</strong>');
     expect(formatter({})).toBe('');
     expect(tooltipHtml({ label: '<b>x</b>' })).toBe('<span>&lt;b&gt;x&lt;/b&gt;</span>');
