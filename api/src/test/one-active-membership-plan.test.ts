@@ -26,6 +26,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -520,6 +521,71 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(sets).toHaveLength(1);
     const { rows: snaps } = await db.query<any>('SELECT COUNT(*) AS n FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
     expect(Number(snaps[0].n)).toBe(2);
+  });
+
+  it("a recurring service of the running plan is counted once after an Add (#2125 stage 15)", async () => {
+    const memberId = await createMember(gymId, 'Add Service Once');
+    const first = await createPlan(gymId, 'Svc First');
+    const second = await createPlan(gymId, 'Svc Second');
+    for (const planId of [first, second]) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, 40, '2020-01-01', 'active')`, [gymId, planId]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    const { insertId: serviceId } = await db.query(
+      'INSERT INTO professional_services (gym_id, name, is_system) VALUES (?, ?, 0)', [gymId, `PS-${Date.now()}`]);
+    await db.query(`INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`, [gymId, serviceId]);
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system, units)
+       VALUES (?, ?, 'sessions', 10, 'EUR', 'month', 'active', 'available', 0, 5)`, [gymId, `Pack-${Date.now()}`]);
+    await db.query('INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)', [gymId, productId, serviceId]);
+
+    await assignLive(memberId, first, '2026-01-01');
+    const { rows: active } = await db.query<any>("SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
+    await db.query(
+      `INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at,
+         item_name, item_type, unit_price, item_billing_frequency, currency)
+       VALUES (?, ?, ?, 1, '2026-01-01', 'Pack', 'sessions', 10, 'month', 'EUR')`, [gymId, active[0].id, productId]);
+    const before = (await loadMemberProfessionalServiceGrants(gymId, memberId)).filter((g) => g.kind === 'membership_service');
+    expect(before).toHaveLength(1);
+
+    const draft = await assignDraft(memberId, second, '2026-03-01');
+    expect((await commit(draft, { on_conflict: 'add' })).status).toBe(200);
+
+    const after = (await loadMemberProfessionalServiceGrants(gymId, memberId)).filter((g) => g.kind === 'membership_service');
+    expect(after).toHaveLength(1);
+    expect(Number(after[0].sessions)).toBe(5);
+  });
+
+  it("Replace after an Add replaces every live plan, and only the new one keeps billing (#2125 stage 15)", async () => {
+    const memberId = await createMember(gymId, 'Replace After Add');
+    const [a, b, c] = [await createPlan(gymId, 'Rep A'), await createPlan(gymId, 'Rep B'), await createPlan(gymId, 'Rep C')];
+    for (const planId of [a, b, c]) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, 20, '2020-01-01', 'active')`, [gymId, planId]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    await assignLive(memberId, a, '2026-01-01');
+    expect((await commit(await assignDraft(memberId, b, '2026-02-01'), { on_conflict: 'add' })).status).toBe(200);
+    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(2);
+
+    const third = await assignDraft(memberId, c, '2026-04-01');
+    expect((await commit(third)).status).toBe(409);
+    expect((await commit(third, { on_conflict: 'replace' })).status).toBe(200);
+
+    const live = liveRows(await assignmentsOf(memberId));
+    expect(live).toHaveLength(1);
+    const { rows: sets } = await db.query<any>(
+      "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
+    expect(sets).toHaveLength(1);
+    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    expect(snaps.map((r: any) => Number(r.membership_plan_id))).toEqual([c]);
+    const { rows: billed } = await db.query<any>(
+      `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
+        WHERE be.product_set_id = ? AND be.is_scheduled = 1 AND bl.kind = 'membership_fee'`, [sets[0].id]);
+    expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, ''))).toEqual(['Rep C']);
   });
 
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {
