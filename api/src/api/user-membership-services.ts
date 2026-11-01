@@ -1,4 +1,4 @@
-import { assignmentVersionId } from './assignment-config';
+import { assignmentLineVersionId } from './assignment-config';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { addService as psAddService, removeService as psRemoveService } from './product-set-draft';
 import { Router } from 'express';
@@ -64,7 +64,7 @@ const SELECT = `
          gc.currency
   FROM user_memberships um
   JOIN member_products_recurrent_snapshot ums
-    ON ums.product_set_id = ${assignmentVersionId('um.id')} AND ums.gym_id = um.gym_id
+    ON ums.product_set_id = ${assignmentLineVersionId('um.id')} AND ums.gym_id = um.gym_id
   JOIN products gc ON gc.id = ums.product_id
 `;
 

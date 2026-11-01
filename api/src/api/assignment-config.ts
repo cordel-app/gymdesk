@@ -35,6 +35,19 @@ export const assignmentVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
 
 /**
+ * #2125 stage 15 — the version whose **version-level** lines (recurring Products and services) an
+ * assignment reads: `assignmentVersionId()`, except that a still-active assignment whose version
+ * was superseded reads none. That is what an assignment looks like after an Add: its plan moved
+ * into the successor version, whose own assignment now carries the lines, so reading them from
+ * both would count each line (and its sessions) twice. A closed assignment keeps its own version's
+ * lines, as the record of what it billed.
+ */
+export const assignmentLineVersionId = (idExpr: string) =>
+  `(SELECT p9.id FROM product_sets p9 JOIN user_memberships u9 ON u9.id = p9.user_membership_id
+     WHERE p9.user_membership_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
+     ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+
+/**
  * #2125 stage 10 — SQL for the id of the plan snapshot an assignment is the contract of: the
  * latest `plan_snapshots` row naming it (`source_user_membership_id`), whichever version holds it.
  * A version holds several plans now, so "the version linked to the assignment" no longer says

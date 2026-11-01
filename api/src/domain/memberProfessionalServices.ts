@@ -1,4 +1,4 @@
-import { assignmentPlanSnapshotId, assignmentVersionId } from '../api/assignment-config';
+import { assignmentLineVersionId, assignmentPlanSnapshotId } from '../api/assignment-config';
 import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
@@ -238,7 +238,7 @@ export async function loadMemberProfessionalServiceGrants(
             umsv.quantity * COALESCE(gc.units, 1) AS sessions
      FROM user_memberships um
      JOIN member_products_recurrent_snapshot umsv
-       ON umsv.product_set_id = ${assignmentVersionId('um.id')} AND umsv.gym_id = um.gym_id
+       ON umsv.product_set_id = ${assignmentLineVersionId('um.id')} AND umsv.gym_id = um.gym_id
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
