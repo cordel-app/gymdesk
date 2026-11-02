@@ -10,6 +10,8 @@ import {
   validateProfessionalServiceIds,
 } from '../domain/productProfessionalServices';
 import { classifyProduct } from '../domain/productClassification';
+import { getRequestLocale } from '../infra/locale';
+import { attachProductTranslations, clearedLocales, copyProductTranslations, parseProductTranslations, writeProductTranslations } from './product-translations';
 import { productFrequencyWriteError } from '../domain/productFrequency';
 import { importBaseProducts, listBaseProductsForGym } from './gym-default-products';
 import {
@@ -139,6 +141,12 @@ function attachProfessionalServices(row: any, map: Record<number, { id: number; 
   return { ...row, professional_services: map[row.id] ?? [] };
 }
 
+/** Shapes product rows for a response, with translations and the request locale's display values (#2254). */
+async function shapeRows(req: Request, rows: any[], psMap: Record<number, { id: number; name: string; is_system: number }[]>) {
+  const shaped = rows.map((r) => attachBenefitCategory(attachProfessionalServices(attachPriceFields(r), psMap)));
+  return attachProductTranslations('product', shaped, getRequestLocale(req));
+}
+
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
 productsRouter.get('/', async (req, res, next) => {
@@ -170,11 +178,16 @@ productsRouter.get('/', async (req, res, next) => {
       const mapped = availability === 'available' ? 'active' : 'inactive';
       sql += ' AND gc.status = ?'; params.push(mapped);
     }
-    if (q) { sql += ' AND (gc.name LIKE ? OR gc.description LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+    if (q) {
+      // Matches the base text or any stored translation (#2254).
+      sql += ` AND (gc.name LIKE ? OR gc.description LIKE ? OR EXISTS (
+        SELECT 1 FROM product_translations pts WHERE pts.product_id = gc.id AND (pts.name LIKE ? OR pts.description LIKE ?)))`;
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    }
     sql += ' ORDER BY gc.is_system DESC, gc.name ASC';
     const { rows } = await db.query(sql, params);
     const psMap = await loadProfessionalServicesMap(rows.map((r: any) => r.id));
-    res.json(rows.map((r: any) => attachBenefitCategory(attachProfessionalServices(attachPriceFields(r), psMap))));
+    res.json(await shapeRows(req, rows, psMap));
   } catch (err) { next(err); }
 });
 
@@ -186,8 +199,12 @@ productsRouter.get('/base', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   try {
-    const rows = await listBaseProductsForGym(gymId, q || undefined);
+    const listed = (await listBaseProductsForGym(gymId, q || undefined)).map((r) => ({ ...r, description: r.description ?? null }));
+    const rows = await attachProductTranslations('base', listed, getRequestLocale(req));
     res.json(rows.map((r) => ({
+      translations: r.translations,
+      display_name: r.display_name,
+      display_description: r.display_description,
       id: r.id,
       charge_type_code: r.charge_type_code,
       name: r.name,
@@ -276,12 +293,34 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
       params.push(base.image_url, base.image_thumbnail_url ?? null);
       changed.image_url = { previous: null, next: base.image_url };
     }
-    if (sets.length === 0) return res.json({ updated: false, changed: [] });
-    await db.query(
-      `UPDATE products SET ${sets.join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
-       WHERE id = ? AND gym_id = ?`,
-      [...params, actor, prod.id, ctx.gymId],
+    // #2254: the Base Product's current translations replace the Product's own
+    // (name and description move together, as the base columns do above).
+    const baseTr = await db.query<any>(
+      'SELECT locale, name, description FROM base_product_translations WHERE base_product_id = ? ORDER BY locale',
+      [prod.base_product_id],
     );
+    const ownTr = await db.query<any>(
+      'SELECT locale, name, description FROM product_translations WHERE product_id = ? ORDER BY locale',
+      [prod.id],
+    );
+    const norm = (r: any[]) => JSON.stringify(r.map((t) => [t.locale, t.name, t.description ?? null]));
+    const translationsChanged = norm(baseTr.rows) !== norm(ownTr.rows);
+    if (translationsChanged) {
+      changed.translations = { previous: ownTr.rows, next: baseTr.rows };
+    }
+    if (sets.length === 0 && !translationsChanged) return res.json({ updated: false, changed: [] });
+    await db.transaction(async (tx) => {
+      if (sets.length > 0) {
+        await tx.query(
+          `UPDATE products SET ${sets.join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+           WHERE id = ? AND gym_id = ?`,
+          [...params, actor, prod.id, ctx.gymId],
+        );
+      }
+      if (translationsChanged) {
+        await copyProductTranslations('base', 'product', tx, prod.base_product_id, prod.id, true);
+      }
+    });
     recordAudit(req, {
       action: 'update',
       entityType: 'product',
@@ -305,7 +344,7 @@ productsRouter.get('/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
-    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err) { next(err); }
 });
 
@@ -337,6 +376,12 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (unitsErr) return res.status(400).json({ error: unitsErr });
   const mandatoryErr = validateMandatory(mandatory);
   if (mandatoryErr) return res.status(400).json({ error: mandatoryErr });
+  let translations: Record<string, { name: string; description: string | null }> = {};
+  if (req.body.translations !== undefined) {
+    const p = parseProductTranslations(req.body.translations);
+    if ('error' in p) return res.status(400).json({ error: p.error });
+    translations = p.value;
+  }
 
   try {
     const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
@@ -383,6 +428,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         type === SESSION_TYPE && Array.isArray(professional_service_ids) ? professional_service_ids : [],
         gymMembershipId,
       );
+      await writeProductTranslations('product', tx, insertId, translations);
       return { insertId };
     });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ?`, [insertId]);
@@ -394,7 +440,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       entityName: name.trim(),
       next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids, mandatory: mandatory ? 1 : 0 },
     });
-    res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.status(201).json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
@@ -470,6 +516,8 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
       if (linkedServiceIds.length > 0) {
         await replaceProfessionalServices(tx, gymId, insertId, linkedServiceIds, gymMembershipId);
       }
+      // #2254: the copy keeps the source's translations.
+      await copyProductTranslations('product', 'product', tx, orig.id, insertId);
       return { insertId };
     });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ?`, [insertId]);
@@ -481,7 +529,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
       entityName: name,
       next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds, mandatory: orig.mandatory },
     });
-    res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.status(201).json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
@@ -520,6 +568,15 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   // column moves is whether the request supplied the field, not its truthiness
   // (a COALESCE on the value itself could never persist an unchecked box).
   const mandatoryProvided = mandatory !== undefined && mandatory !== null;
+  // #2254: absent keeps the stored translations; a locale given blank clears it.
+  let translations: Record<string, { name: string; description: string | null }> | null = null;
+  let cleared: string[] = [];
+  if (req.body.translations !== undefined) {
+    const p = parseProductTranslations(req.body.translations);
+    if ('error' in p) return res.status(400).json({ error: p.error });
+    translations = p.value;
+    cleared = clearedLocales(req.body.translations, p.value);
+  }
 
   try {
     const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
@@ -623,6 +680,9 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       if (professionalServiceIdsToPersist !== undefined) {
         await replaceProfessionalServices(tx, gymId, Number(req.params.id), professionalServiceIdsToPersist, gymMembershipId);
       }
+      if (translations && (rowCount ?? 0) > 0) {
+        await writeProductTranslations('product', tx, Number(req.params.id), translations, cleared);
+      }
       return { rowCount };
     });
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
@@ -645,9 +705,9 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       entityType: 'product',
       entityId: String(req.params.id),
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
-      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist, mandatory: mandatoryProvided ? (mandatory ? 1 : 0) : undefined },
+      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, ...(translations ? { translations } : {}), professional_service_ids: professionalServiceIdsToPersist, mandatory: mandatoryProvided ? (mandatory ? 1 : 0) : undefined },
     });
-    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
@@ -671,7 +731,7 @@ productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'activate', entityType: 'product', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err) { next(err); }
 });
 
@@ -693,7 +753,7 @@ productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, ne
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'deactivate', entityType: 'product', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+    res.json((await shapeRows(req, [rows[0]], psMap))[0]);
   } catch (err) { next(err); }
 });
 
