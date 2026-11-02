@@ -89,7 +89,7 @@ let noBucketSpaceId: number;
 let readOnlySpaceId: number;
 
 async function createSpace(gym: string, name: string): Promise<number> {
-  const { insertId } = await db.query('INSERT INTO spaces (gym_id, name, created_by) VALUES (?, ?, ?)', [gym, name, 'test']);
+  const { insertId } = await db.query('INSERT INTO spaces (gym_id, name, capacity, created_by) VALUES (?, ?, 10, ?)', [gym, name, 'test']);
   return insertId as number;
 }
 const url = (key: string) => `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;

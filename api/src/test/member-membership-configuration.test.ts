@@ -696,10 +696,12 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
     const second = await createPlan(gymId, `NME Current ${uniq()}`);
     // Since #956 a Member cannot hold both at once; the replaced one is
     // cancelled where the current one starts, which is still inside the window.
+    // Relative to today: fixed dates age out of the 6-month new-member window.
+    const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
     const firstUm = await createAssignment(gymId, memberId, first, {
-      status: 'cancelled', startsAt: '2026-03-01', endsAt: '2026-05-01',
+      status: 'cancelled', startsAt: day(-60), endsAt: day(-30),
     });
-    const secondUm = await createAssignment(gymId, memberId, second, { startsAt: '2026-05-01' });
+    const secondUm = await createAssignment(gymId, memberId, second, { startsAt: day(-30) });
 
     const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
     expect(eligibility.get(firstUm)).toBe(false);

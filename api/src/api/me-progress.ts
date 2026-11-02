@@ -10,6 +10,7 @@ import {
   type AllowedResultType, type ProgressLog,
 } from '../domain/exerciseProgress';
 import { resolveMemberId } from './me';
+import { MUSCLE_SLUG_SQL } from './exercise-muscles';
 
 /**
  * #1224 — the Members App's **My Progress** tab, mounted at `/me/progress`.
@@ -85,17 +86,23 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
       `SELECT e.id, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
-              ${allowedTypesSql}
+              ${allowedTypesSql},
+              (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
     const out = exRows.map((ex: any) => {
       const allowed: AllowedResultType[] = (json(ex.allowed_result_types) ?? []).map((a: any) => ({ id: Number(a.id), slug: a.slug }));
+      const exLogs = byExercise.get(Number(ex.id)) ?? [];
+      // #2284 — the most recent *performed* date (a skipped log is not a day).
+      const performed = exLogs.filter((l) => !l.skipped).map((l) => l.logged_date).sort();
       return {
         exercise_id: Number(ex.id),
         exercise_name: ex.exercise_name,
         image_url: ex.image_url ?? null,
         image_thumbnail_url: ex.image_thumbnail_url ?? null,
+        last_logged_date: performed.length ? performed[performed.length - 1] : null,
+        muscles: ((json(ex.muscles) ?? []) as string[]).slice().sort(),
         ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], allowed),
       };
     }).filter((ex: any) => ex.days_exercised > 0)
