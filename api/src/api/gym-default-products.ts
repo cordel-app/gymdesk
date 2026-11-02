@@ -113,6 +113,17 @@ const UNDECLARED: ReturnType<typeof configurationValues> = [
  *
  * Returns whether a Product was created.
  */
+/** #2254: an imported/seeded Product starts with the template's translations (its own copies). */
+async function copyTemplateTranslations(gymId: string, baseProductId: number): Promise<void> {
+  await db.query(
+    `INSERT IGNORE INTO product_translations (product_id, locale, name, description)
+     SELECT p.id, t.locale, t.name, t.description
+       FROM products p JOIN base_product_translations t ON t.base_product_id = p.base_product_id
+      WHERE p.gym_id = ? AND p.base_product_id = ?`,
+    [gymId, baseProductId],
+  );
+}
+
 export async function insertProductFromTemplate(
   gymId: string,
   template: BaseProductRow,
@@ -131,6 +142,7 @@ export async function insertProductFromTemplate(
        FROM charge_types ct WHERE ct.code = ?`,
       [gymId, template.id, declared.type, ...configurationValues(declared), ...templateExtras(template), gymId, taxBehaviorOf(template), actor, declared.chargeTypeCode],
     );
+    if (rowCount > 0) await copyTemplateTranslations(gymId, template.id);
     return rowCount > 0;
   }
   const { rowCount } = await db.query(
@@ -148,6 +160,7 @@ export async function insertProductFromTemplate(
      )`,
     [gymId, template.id, declared.name, declared.type, ...configurationValues(declared), ...templateExtras(template), gymId, taxBehaviorOf(template), actor, gymId, declared.name],
   );
+  if (rowCount > 0) await copyTemplateTranslations(gymId, template.id);
   return rowCount > 0;
 }
 

@@ -54,6 +54,7 @@ export type ProductFieldKey =
   | 'name'
   | 'type'
   | 'description'
+  | 'translations'
   | 'units'
   | 'status'
   | 'enrollment_status'
@@ -129,6 +130,8 @@ export const PRODUCT_SECTIONS: readonly ProductSectionSpec[] = [
       { key: 'name', labelKey: 'label_name', required: true, frozenWhenSystem: true },
       { key: 'type', labelKey: 'label_type', frozenWhenSystem: true },
       { key: 'description', labelKey: 'label_description', fullWidth: true },
+      // #2254: Spanish and Catalan name + description; English is the fields above.
+      { key: 'translations', labelKey: 'label_translations', fullWidth: true },
       { key: 'units', labelKey: 'label_units', frozenWhenSystem: true },
       { key: 'status', labelKey: 'label_status' },
       { key: 'enrollment_status', labelKey: 'label_enrollment_status' },
@@ -207,6 +210,17 @@ export function visibleProductSections(
     .filter((section) => section.fields.length > 0);
 }
 
+/** #2254: the non-base languages a Product's name and description are translated into. */
+export const PRODUCT_TRANSLATION_LOCALES = ['es', 'ca'] as const;
+export type ProductTranslationLocale = typeof PRODUCT_TRANSLATION_LOCALES[number];
+
+/** The `translations` payload of a save: a blank name clears that language. */
+export function toTranslationsPayload(tr: ProductFormValues['tr']) {
+  return Object.fromEntries(PRODUCT_TRANSLATION_LOCALES.map((l) => [
+    l, { name: tr[l].name.trim(), description: tr[l].description.trim() || null },
+  ]));
+}
+
 /** How an unset value reads. One spelling, so no cell invents its own. */
 export const EMPTY_VALUE = '—';
 
@@ -216,6 +230,7 @@ export interface ProductFormRow {
   type: ProductType;
   units: number | null;
   description: string | null;
+  translations?: Partial<Record<ProductTranslationLocale, { name: string; description: string | null }>>;
   amount: string | null;
   billing_frequency: string | null;
   status: ProductStatus;
@@ -234,6 +249,7 @@ export interface ProductFormValues {
   type: ProductType;
   units: string;
   description: string;
+  tr: Record<ProductTranslationLocale, { name: string; description: string }>;
   amount: string;
   billing_frequency: string;
   status: ProductStatus;
@@ -257,6 +273,10 @@ export function toProductFormValues(item: ProductFormRow): ProductFormValues {
     type: item.type,
     units: item.units != null ? String(item.units) : '',
     description: item.description ?? '',
+    tr: {
+      es: { name: item.translations?.es?.name ?? '', description: item.translations?.es?.description ?? '' },
+      ca: { name: item.translations?.ca?.name ?? '', description: item.translations?.ca?.description ?? '' },
+    },
     amount: item.amount != null ? parseFloat(item.amount).toString() : '',
     billing_frequency: item.billing_frequency ?? '',
     status: item.status,
