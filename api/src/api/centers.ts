@@ -1,10 +1,18 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+
+import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import {
+  CENTER_IMAGE_COLUMNS, clearCenterImage, migrateCenterImageOnRename, storeCenterImage,
+} from './center-image-storage';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -170,12 +178,78 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Center not found' });
+    // #2261: the image key carries the Center's name, so a rename moves it.
+    {
+      const { rows: imgRows } = await db.query(
+        `SELECT ${CENTER_IMAGE_COLUMNS} FROM centers WHERE id = ? AND gym_id = ?`, [req.params.id, gymId]);
+      if (imgRows[0]?.image_url) {
+        await migrateCenterImageOnRename(gymId, await gymStorageFolderPrefix(gymId), imgRows[0]);
+      }
+    }
     const { rows } = await db.query('SELECT * FROM centers WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
     recordAudit(req, { action: 'update', entityType: 'center', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A center with this name already exists.');
   }
+});
+
+// ─── Image (#2261) ────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `centers.image_url` /
+// `image_thumbnail_url`. Processing and limits are the Member photo's.
+
+async function loadCenterForImage(req: Request, res: Response, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${CENTER_IMAGE_COLUMNS} FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  if (rows.length === 0) { res.status(404).json({ error: 'Center not found' }); return null; }
+  const prefix = await gymStorageFolderPrefix(gymId);
+  if (!prefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return { gymId, prefix, center: rows[0] };
+}
+
+async function readCenterForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query('SELECT * FROM centers WHERE id = ? AND gym_id = ?', [id, gymId]);
+  return rows[0];
+}
+
+centersRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadCenterForImage(req, res, true);
+    if (!context) return;
+    const { gymId, center } = context;
+    const stored = await storeCenterImage({
+      gymId, prefix: context.prefix as string, center, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'center', entityId: String(center.id), entityName: center.name,
+      previous: { image_url: center.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readCenterForImageAnswer(gymId, center.id));
+  } catch (err) { next(err); }
+});
+
+centersRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadCenterForImage(req, res, false);
+    if (!context) return;
+    const { gymId, prefix, center } = context;
+    await clearCenterImage({ gymId, prefix, center, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'center', entityId: String(center.id), entityName: center.name,
+      previous: { image_url: center.image_url }, next: { image_url: null },
+    });
+    res.json(await readCenterForImageAnswer(gymId, center.id));
+  } catch (err) { next(err); }
 });
 
 centersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
