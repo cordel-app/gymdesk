@@ -66,6 +66,7 @@ describe('GET /nutrition/dashboard/summary', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       nutrition_plans: { members: 0, assignments: 0, plans_in_use: 0 },
+      top_foods: [],
       personal_goals: { members: 0, goals_in_use: 0, average_per_member: 0, most_popular: null },
     });
   });
@@ -114,5 +115,51 @@ describe('GET /nutrition/dashboard/summary', () => {
     await assignGoal(other, await member(other), await goal(other, `Other ${unique()}`));
     const res = await get(gymId);
     expect(res.body.personal_goals.members).toBe(0);
+  });
+});
+
+describe('GET /nutrition/dashboard/summary — top foods (#2265)', () => {
+  async function food(gym: string, name: string): Promise<number> {
+    const { insertId } = await db.query(
+      "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')", [gym, name]);
+    return insertId;
+  }
+
+  async function planWith(gym: string, memberId: number, foodIds: number[], status = 'active') {
+    const { insertId: planId } = await db.query(
+      'INSERT INTO member_nutrition_plans (gym_id, member_id, name, status) VALUES (?, ?, ?, ?)',
+      [gym, memberId, `TF ${unique()}`, status]);
+    const { insertId: dayId } = await db.query(
+      'INSERT INTO member_nutrition_plan_days (gym_id, member_nutrition_plan_id, weekday, position) VALUES (?, ?, 1, 1)', [gym, planId]);
+    const { insertId: mealId } = await db.query(
+      "INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, position) VALUES (?, ?, 'lunch', 'Lunch', 1)", [gym, dayId]);
+    let pos = 1;
+    for (const f of foodIds) {
+      await db.query(
+        `INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position)
+         VALUES (?, ?, ?, 'main_dish', 100, 'g', ?)`, [gym, mealId, f, pos++]);
+    }
+  }
+
+  it('ranks foods by distinct active plans (repeats in one plan count once), ignoring inactive plans', async () => {
+    const gym = await createTestGym('NDS Top Foods Gym');
+    await createTestMembership(gym, 'admin');
+    const a = await food(gym, 'Alpha'), b = await food(gym, 'Beta'), c = await food(gym, 'Gamma');
+    const m1 = await member(gym), m2 = await member(gym), m3 = await member(gym);
+    await planWith(gym, m1, [a, a, b]);   // Alpha repeated: still one plan
+    await planWith(gym, m2, [a, c]);
+    await planWith(gym, m3, [c], 'draft'); // not currently assigned
+    const res = await get(gym);
+    expect(res.status).toBe(200);
+    const top = res.body.top_foods;
+    expect(top.map((f: any) => [f.rank, f.name, f.uses, f.percent])).toEqual([
+      [1, 'Alpha', 2, 100], [2, 'Beta', 1, 50], [3, 'Gamma', 1, 50],
+    ]);
+  });
+
+  it('is tenant-scoped', async () => {
+    const other = await createTestGym('NDS Top Foods Other');
+    await createTestMembership(other, 'admin');
+    expect((await get(other)).body.top_foods).toEqual([]);
   });
 });
