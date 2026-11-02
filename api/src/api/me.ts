@@ -43,6 +43,7 @@ import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary'
 import { localizedDescriptionSql } from '../domain/nutritionDescriptionTranslations';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
+import { attachProductTranslations } from './product-translations';
 import { parseMemberPreferredLocaleInput, toMemberPreferredLocale } from '../domain/memberPreferredLocale';
 import { parseDeviceRegistration } from '../domain/deviceTokens';
 import { themeLogoUrl } from '../domain/themeLogo';
@@ -2831,7 +2832,16 @@ meRouter.get(
       const memberId = await resolveMemberId(gymId, ctx);
       const filter = parseProfessionalServiceFilter(req.query.professional_service_ids);
       if (!filter.ok) return res.status(400).json({ error: filter.error });
-      res.json({ items: await memberProductCatalogue(gymId, memberId, filter.ids) });
+      // #2254: names and descriptions in the member's language (base text as fallback).
+      const items = await memberProductCatalogue(gymId, memberId, filter.ids);
+      const localized = await attachProductTranslations('product', items as any[], getRequestLocale(req));
+      res.json({
+        items: items.map((item, i) => ({
+          ...item,
+          name: localized[i].display_name,
+          description: localized[i].display_description,
+        })),
+      });
     } catch (err) {
       next(err);
     }

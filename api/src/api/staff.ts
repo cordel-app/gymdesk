@@ -1,5 +1,12 @@
 import { resolveRequestActor } from '../domain/auditActor';
 import { Router, Request, Response, NextFunction } from 'express';
+import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import {
+  STAFF_IMAGE_COLUMNS, clearStaffImage, migrateStaffImageOnRename, storeStaffImage,
+} from './staff-image-storage';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
@@ -134,6 +141,8 @@ const STAFF_SELECT = `
   s.email,
   s.mobile_phone,
   s.profile_photo_url,
+  s.image_url,
+  s.image_thumbnail_url,
   s.date_of_birth,
   s.national_id,
   s.profile,
@@ -451,6 +460,14 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       }
     }
 
+    // #2262: the image key carries the Staff member's name, so a rename moves it.
+    if (prev.image_url) {
+      const { rows: imgRows } = await db.query(
+        `SELECT ${STAFF_IMAGE_COLUMNS} FROM staff WHERE id = ? AND gym_id = ?`, [req.params.id, gymId]);
+      if (imgRows[0]?.image_url) {
+        await migrateStaffImageOnRename(gymId, await gymStorageFolderPrefix(gymId), imgRows[0]);
+      }
+    }
     const { rows } = await db.query(
       `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
       [req.params.id],
@@ -578,6 +595,66 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
   } catch (err: any) {
     next(err);
   }
+});
+
+// ─── Image (#2262) ────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `staff.image_url` /
+// `image_thumbnail_url`. Processing and limits are the Member photo's.
+
+async function loadStaffForImage(req: Request, res: Response, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${STAFF_IMAGE_COLUMNS} FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  if (rows.length === 0) { res.status(404).json({ error: 'Staff member not found' }); return null; }
+  const prefix = await gymStorageFolderPrefix(gymId);
+  if (!prefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return { gymId, prefix, staff: rows[0] };
+}
+
+async function readStaffForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query(`SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ? AND s.gym_id = ?`, [id, gymId]);
+  return rows[0];
+}
+
+staffRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadStaffForImage(req, res, true);
+    if (!context) return;
+    const { gymId, staff } = context;
+    const stored = await storeStaffImage({
+      gymId, prefix: context.prefix as string, staff, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'staff', entityId: Number(staff.id),
+      entityName: `${staff.first_name} ${staff.last_name}`,
+      previous: { image_url: staff.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readStaffForImageAnswer(gymId, staff.id));
+  } catch (err) { next(err); }
+});
+
+staffRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadStaffForImage(req, res, false);
+    if (!context) return;
+    const { gymId, prefix, staff } = context;
+    await clearStaffImage({ gymId, prefix, staff, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'staff', entityId: Number(staff.id),
+      entityName: `${staff.first_name} ${staff.last_name}`,
+      previous: { image_url: staff.image_url }, next: { image_url: null },
+    });
+    res.json(await readStaffForImageAnswer(gymId, staff.id));
+  } catch (err) { next(err); }
 });
 
 staffRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {

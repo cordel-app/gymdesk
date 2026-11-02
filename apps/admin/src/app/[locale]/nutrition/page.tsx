@@ -29,8 +29,18 @@ interface NutritionPlanCard {
   active_members: number;
 }
 
+interface TopFood {
+  rank: number;
+  food_id: number;
+  name: string;
+  image_url: string | null;
+  uses: number;
+  percent: number;
+}
+
 interface DashboardSummary {
   nutrition_plans: { members: number; assignments: number; plans_in_use: number };
+  top_foods: TopFood[];
   personal_goals: {
     members: number;
     goals_in_use: number;
@@ -92,6 +102,36 @@ export default function NutritionDashboard() {
             <Metric label={t('metric_members_with_plans')} value={summary.nutrition_plans.members} />
             <Metric label={t('metric_active_assignments')} value={summary.nutrition_plans.assignments} />
             <Metric label={t('metric_plans_in_use')} value={summary.nutrition_plans.plans_in_use} />
+          </div>
+          <h2 style={sectionTitleStyle}>{t('top_foods')}</h2>
+          <div style={{ ...cardStyle, maxWidth: 760, marginBottom: 24 }}>
+            {summary.top_foods.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--gd-text-muted, #6b7280)', fontSize: 14 }}>{t('top_foods_empty')}</p>
+            ) : (
+              <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 14 }}>
+                {summary.top_foods.map((f) => (
+                  <li key={f.food_id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ width: 22, textAlign: 'center', fontWeight: f.rank <= 3 ? 700 : 500, color: f.rank <= 3 ? accent : 'var(--gd-text-muted, #6b7280)' }}>
+                      {f.rank}
+                    </span>
+                    {f.image_url ? (
+                      <img src={f.image_url} alt="" width={40} height={40} style={thumbStyle} />
+                    ) : (
+                      <span style={{ ...thumbStyle, display: 'inline-block', background: 'var(--gd-input-border, #e5e7eb)' }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 14 }}>
+                        <span style={{ color: 'var(--gd-text, #1a1a2e)', fontWeight: f.rank <= 3 ? 600 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                        <span style={{ color: 'var(--gd-text-muted, #6b7280)', whiteSpace: 'nowrap' }}>{t('top_foods_uses', { count: f.uses, percent: f.percent })}</span>
+                      </div>
+                      <div style={{ height: 8, borderRadius: 4, background: 'var(--gd-input-border, #e5e7eb)', marginTop: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(100, f.percent)}%`, height: '100%', borderRadius: 4, background: accent, opacity: f.rank <= 3 ? 1 : 0.7, transition: 'width 0.4s ease' }} />
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
           <h2 style={sectionTitleStyle}>{t('personal_goals')}</h2>
           <div style={{ ...gridStyle, marginBottom: 24 }}>
@@ -171,3 +211,5 @@ const gridStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, padding: '20px 22px' };
+const accent = 'var(--gd-primary-btn, var(--brand, #6c63ff))';
+const thumbStyle: React.CSSProperties = { width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 };
