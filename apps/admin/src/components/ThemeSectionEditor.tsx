@@ -96,6 +96,8 @@ interface ThemeBrandingEditorProps {
   logoSymbol?: React.ReactNode;
   /** #2240: whether the theme has a logo symbol uploaded (for "Use this in header"). */
   hasLogoSymbol?: boolean;
+  /** #2287: the Home Image control, rendered right after the logo symbol. */
+  homeImage?: React.ReactNode;
 }
 
 /** Name / description / logo — the Branding section of both theme editors. */
@@ -116,6 +118,7 @@ export function ThemeBrandingEditor({
   children,
   logoSymbol,
   hasLogoSymbol,
+  homeImage,
 }: ThemeBrandingEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // #830: the preview `<img>` that cannot load says so instead of rendering the
@@ -245,6 +248,11 @@ export function ThemeBrandingEditor({
            <div style={{ flex: '1 1 280px', minWidth: 0 }}>
              {logoSymbol}
              {headerRadio('symbol', !!hasLogoSymbol)}
+           </div>
+         )}
+         {homeImage && (
+           <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+             {homeImage}
            </div>
          )}
         </div>

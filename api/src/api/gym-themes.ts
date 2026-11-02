@@ -8,6 +8,8 @@ import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
 import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
+import { themeHomeImageUrl } from '../domain/themeHomeImage';
+import { homeImageBodyParser, removeHomeImage, uploadHomeImage } from './theme-home-image';
 import { logoSymbolBodyParser, removeLogoSymbol, uploadLogoSymbol, type LogoSymbolScope } from './theme-logo-symbol';
 import { themeStorageFolderKeys } from '../domain/themeFolders';
 import {
@@ -71,7 +73,7 @@ const LOGO_MAX_BYTES = 512 * 1024;
  * explicitly not as six requests of its own.
  */
 function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: MemberImageRow[] = []) {
-  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, ...rest } = row;
+  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, home_image_object_key: _hk, ...rest } = row;
   return {
     ...rest,
     // A Base Theme is the platform's, so the superadmin who created or edited
@@ -99,13 +101,14 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
     logo_url: themeLogoUrl(row),
     // #2157: the symbol-only logo, used as the favicon. Null when none is uploaded.
     logo_symbol_url: themeLogoSymbolUrl(row),
+    home_image_url: themeHomeImageUrl(row),
     logo_contains_gym_name: !!row.logo_contains_gym_name,
     is_gym_theme: gymThemeId !== null && row.id === gymThemeId,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_symbol_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_symbol_object_key, home_image_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by';
 
 /** The Members image rows of one theme, for the single-theme responses (#725). */
 async function loadThemeMemberImages(gymId: string, themeId: string): Promise<MemberImageRow[]> {
@@ -848,6 +851,20 @@ gymThemesRouter.delete('/:id/logo-symbol', async (req, res, next) => {
   try {
     const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, () => removeLogoSymbol(gymLogoSymbolScope(req, res, gymId), req, res));
+  } catch (err) { next(err); }
+});
+
+gymThemesRouter.post('/:id/home-image', homeImageBodyParser, async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, () => uploadHomeImage(gymLogoSymbolScope(req, res, gymId), req, res));
+  } catch (err) { next(err); }
+});
+
+gymThemesRouter.delete('/:id/home-image', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, () => removeHomeImage(gymLogoSymbolScope(req, res, gymId), req, res));
   } catch (err) { next(err); }
 });
 
