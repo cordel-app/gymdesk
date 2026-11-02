@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2256 follow-up (the imported Professional Service's contextual action is labelled *Resync with System* / *Resincronizar con el sistema* / *Resincronitza amb el sistema*, matching Products and Personal Goals; label only, no behaviour change)
 - **Done**: #2267 (Recycle Bin follows the active Theme: Recover buttons in the list and the detail modal use `primaryBtnSmall()`/`primaryBtnStyle()`, the active sort header takes the Theme link/primary colour, and the per-type pastel entity badges are one neutral `listNameBadgeStyle` badge; no lilac literal remains, no behaviour change)
 - **Done**: #2259 (Removed the Make Owner action from non-owner rows of the Member card's Family section; View, Remove and the Owner badge are unchanged. UI only: `PUT /members/:id/family/owner` and the family data are untouched, and the now-unused `members.family_make_owner` locale key stays)
 - **Done**: #2125 stage 20 (migration 357 adds `user_memberships.replaces_user_membership_id`: `POST /user-memberships/:id/assign-new-plan` records which plan the new Draft replaces, and `commitAssignment()` / `submitForPayment()` then supersede only that plan, merging the member's other live plans into the Draft so they keep billing; a Draft that names none still replaces every live plan, and the Add-or-Replace dialog lists just the plan it would cancel)

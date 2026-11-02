@@ -4925,7 +4925,7 @@
     "metric_avg_goals": "Avg. Goals per Member"
   },
   "professional_services": {
-    "update_system_data": "Update System Data",
+    "update_system_data": "Resync with System",
     "update_system_data_done": "System data updated.",
     "update_system_data_up_to_date": "Already up to date with the System service.",
     "update_system_data_base_gone": "The originating System Professional Service no longer exists.",
