@@ -39,7 +39,7 @@ async function commit(owner: number, planId: number | null, fee = 30) {
     if (planId != null) {
       await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: fee, startsAt: TODAY });
     }
-    await addCoverage(tx, { gymId, rootProductSetId: Number(d.productSet.root_product_set_id), memberId: owner, isOwner: true });
+    await addCoverage(tx, { gymId, productSetId: d.productSet.id, memberId: owner, isOwner: true });
     const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;

@@ -282,8 +282,8 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     isLineTable = true;
     return `plan_${kind}_snapshots`;
   });
-  // Coverage is the chain's (`product_set_members`): an INSERT naming an
-  // assignment's covered Members is written on that assignment's chain.
+  // Coverage is the plan snapshot's own: an INSERT naming an assignment's
+  // covered Members is written on that assignment's snapshot.
   const cover = sql.match(/^\s*INSERT INTO user_membership_members\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i);
   if (cover) {
     const columns = cover[1].split(',').map((c) => c.trim());
@@ -298,11 +298,22 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       const resolved: Record<string, any> = {};
       for (const c of columns) resolved[c] = value(c);
       const versionId = await versionOfAssignment(Number(resolved.user_membership_id));
-      const { rows } = await db.query<{ root_product_set_id: number }>(
-        'SELECT root_product_set_id FROM product_sets WHERE id = ?', [versionId]);
+      const { rows } = await db.query<{ id: number }>(
+        `SELECT id FROM plan_snapshots WHERE product_set_id = ?
+          ORDER BY (source_user_membership_id = ?) DESC, id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
+      if (!rows[0]) {
+        // A version with no plan snapshot yet (a bare fixture): give it the assignment's own.
+        const { rows: um } = await db.query<any>(
+          'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
+        const { insertId } = await db.query(
+          `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, origin, source_user_membership_id)
+           VALUES (?, ?, ?, ?, 'draft', 0, ?, 'admin', ?)`,
+          [resolved.gym_id, versionId, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
+        rows.push({ id: Number(insertId) });
+      }
       last = await db.query(
-        `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, ?)`,
-        [resolved.gym_id, rows[0].root_product_set_id, Number(resolved.member_id), Number(resolved.is_owner)]);
+        `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, ?)`,
+        [resolved.gym_id, rows[0].id, Number(resolved.member_id), Number(resolved.is_owner)]);
     }
     return last;
   }

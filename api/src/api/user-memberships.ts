@@ -1901,7 +1901,7 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
   const { gymId } = getTenantContext(req);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { add_member: req.body?.member_id },
-    mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id)),
+    mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id), { userMembershipId: Number(req.params.id) }),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 201,
   })) return;
@@ -1916,7 +1916,7 @@ userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYME
   const { gymId } = getTenantContext(req);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { remove_member: req.params.memberId },
-    mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId)),
+    mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId), { userMembershipId: Number(req.params.id) }),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 204,
   })) return;

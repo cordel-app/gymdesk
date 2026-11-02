@@ -1,5 +1,4 @@
 import { db, Tx } from '../infra/db';
-import { syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
@@ -8,7 +7,7 @@ import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 
@@ -73,20 +72,22 @@ export const isRefusal = (v: LockedDraft | DraftRefusal): v is DraftRefusal => '
  * (a section save, a coverage change), so no writer can leave it stale.
  */
 export async function syncMandatoryQuantities(
-  tx: Tx, gymId: string, productSetId: number, rootProductSetId: number,
+  tx: Tx, gymId: string, productSetId: number, _rootProductSetId?: number,
 ): Promise<void> {
-  const { rows } = await tx.query<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ?',
-    [gymId, rootProductSetId]);
-  const count = Math.max(1, Number(rows[0]?.n ?? 0));
-  for (const category of PLAN_LINE_CATEGORIES) {
-    await tx.query(
-      `UPDATE ${PLAN_LINE_TABLE[category]} b
-         JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
-          SET b.quantity = ?
-        WHERE b.plan_snapshot_id IN (SELECT id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?)
-          AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
-      [count, productSetId, gymId, gymId, count]);
+  // #2125 stage 21: the number of Members is each plan snapshot's own beneficiaries.
+  const { rows: snaps } = await tx.query<{ id: number; n: number }>(
+    `SELECT s.id, (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id AND b.gym_id = s.gym_id) AS n
+       FROM plan_snapshots s WHERE s.product_set_id = ? AND s.gym_id = ?`, [productSetId, gymId]);
+  for (const snap of snaps) {
+    const count = Math.max(1, Number(snap.n ?? 0));
+    for (const category of PLAN_LINE_CATEGORIES) {
+      await tx.query(
+        `UPDATE ${PLAN_LINE_TABLE[category]} b
+           JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
+            SET b.quantity = ?
+          WHERE b.plan_snapshot_id = ? AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
+        [count, snap.id, gymId, count]);
+    }
   }
 }
 
@@ -506,47 +507,53 @@ export async function setServiceQuantity(
 const memberLimit = (limit: string | null | undefined): number =>
   limit === 'family' ? Infinity : Math.max(1, parseInt(limit ?? '1', 10) || 1);
 
-export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: number): Promise<{ ok: true } | DraftRefusal> {
+export async function addCoveredMember(
+  tx: Tx, draft: LockedDraft, memberId: number, opts: { userMembershipId?: number | null } = {},
+): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan covers no one' };
   if (!Number.isInteger(memberId) || memberId <= 0) return { kind: 'invalid', message: 'member_id must be a positive integer' };
   const { rows: m } = await tx.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, draft.gym_id]);
   if (m.length === 0) return { kind: 'not_found' };
+  // #2125 stage 21: coverage is the plan snapshot's own, so the limit and the duplicate check are per plan.
+  const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, opts.userMembershipId ?? null);
+  if (snapshotId == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan covers no one' };
   const { rows: plan } = await tx.query<{ member_limit: string | null }>(
-    'SELECT member_limit FROM membership_plans WHERE id = ? AND gym_id = ?', [draft.membership_plan_id, draft.gym_id]);
+    `SELECT mp.member_limit FROM plan_snapshots s JOIN membership_plans mp ON mp.id = s.membership_plan_id
+      WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, draft.gym_id]);
   // The owner always counts as one covered Member, whether or not their own row
   // has been written yet (the projection inserts it at activation).
   const { rows: count } = await tx.query<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND is_owner = 0',
-    [draft.gym_id, draft.root_product_set_id]);
+    'SELECT COUNT(*) AS n FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND is_owner = 0',
+    [draft.gym_id, snapshotId]);
   if (Number(count[0].n) + 1 >= memberLimit(plan[0]?.member_limit)) {
     return { kind: 'invalid', message: 'This membership has reached its member limit.' };
   }
   const { rows: already } = await tx.query(
-    'SELECT 1 FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND member_id = ? LIMIT 1',
-    [draft.gym_id, draft.root_product_set_id, memberId]);
+    'SELECT 1 FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? LIMIT 1',
+    [draft.gym_id, snapshotId, memberId]);
   if (already.length > 0) {
     const message = 'This Member is already covered by this Membership.';
     return { kind: 'conflict', error: message, message };
   }
-  // #2125: a Member already on a plan of their own (or covered by another) may
-  // be covered by this one too — several active Membership Plans per member is
-  // the rule now (#956 reversed), and "already covered by *this* plan" above is
-  // the only duplicate a coverage change refuses.
+  // #2125: a Member already on a plan of their own (or covered by another) may be covered by this one
+  // too; "already covered by *this* plan" above is the only duplicate a coverage change refuses.
   await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
-    [draft.gym_id, draft.root_product_set_id, memberId]);
-  await syncPlanSnapshotsOfChain(tx, draft.gym_id, draft.root_product_set_id);
+    `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
+    [draft.gym_id, snapshotId, memberId]);
   await touch(tx, draft);
   return { ok: true };
 }
 
-export async function removeCoveredMember(tx: Tx, draft: LockedDraft, memberId: number): Promise<{ ok: true } | DraftRefusal> {
+export async function removeCoveredMember(
+  tx: Tx, draft: LockedDraft, memberId: number, opts: { userMembershipId?: number | null } = {},
+): Promise<{ ok: true } | DraftRefusal> {
   if (memberId === draft.owner_member_id) return { kind: 'invalid', message: 'The owner cannot be removed' };
+  const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, opts.userMembershipId ?? null);
+  if (snapshotId == null) return { kind: 'not_found' };
   const { rowCount } = await tx.query(
-    'DELETE FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND member_id = ? AND is_owner = 0',
-    [draft.gym_id, draft.root_product_set_id, memberId]);
+    'DELETE FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? AND is_owner = 0',
+    [draft.gym_id, snapshotId, memberId]);
   if (rowCount === 0) return { kind: 'not_found' };
-  await syncPlanSnapshotsOfChain(tx, draft.gym_id, draft.root_product_set_id);
   await touch(tx, draft);
   return { ok: true };
 }

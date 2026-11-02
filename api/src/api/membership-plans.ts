@@ -1,4 +1,5 @@
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { addCoverage } from './product-sets';
 import { refreshPlanPriceReference, repriceOnVersion } from './assignment-reprice';
 import { createDraftSetForAssignment } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
@@ -895,11 +896,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       });
       for (const memberId of uniqueMemberIds) {
         if (memberId === ownerId) continue;
-        await tx.query(
-          `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-           SELECT gym_id, root_product_set_id, ?, 0 FROM product_sets WHERE id = ?`,
-          [memberId, setId],
-        );
+        await addCoverage(tx, { gymId, productSetId: setId, memberId, isOwner: false });
       }
       await syncDraftAssignment(tx, gymId, setId);
       return { kind: 'created' as const, insertId };

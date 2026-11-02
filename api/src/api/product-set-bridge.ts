@@ -321,6 +321,29 @@ export async function projectedSetFor(tx: Tx, gymId: string, userMembershipId: n
 }
 
 /**
+ * The Active set an edit of this assignment is a new version of (#2125 stage 21): the one it projects, else the
+ * one holding a plan snapshot that names it as its contract (a plan added beside the version's linked one).
+ * `linked` is the assignment the set projects, which the next version keeps projecting.
+ */
+async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
+  const direct = await projectedSetFor(tx, gymId, userMembershipId);
+  if (direct) return { ...direct, linked: userMembershipId };
+  const { rows } = await tx.query<any>(
+    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.user_membership_id
+       FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.status = 'active'
+        AND EXISTS (SELECT 1 FROM plan_snapshots s WHERE s.product_set_id = ps.id AND s.gym_id = ps.gym_id
+                      AND s.source_user_membership_id = ?)
+      FOR UPDATE`, [gymId, userMembershipId]);
+  if (!rows[0]) return null;
+  return {
+    id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id),
+    membership_plan_id: rows[0].membership_plan_id != null ? Number(rows[0].membership_plan_id) : null,
+    linked: rows[0].user_membership_id != null ? Number(rows[0].user_membership_id) : userMembershipId,
+  };
+}
+
+/**
  * Applies `mutate` as a new version of the Active set an assignment projects:
  * clone its configuration into the next Draft, edit the Draft, activate it (the
  * previous version is superseded, its obsolete future events replaced and the
@@ -346,7 +369,7 @@ export async function reconfigureProjected(
     return { kind: 'ok', productSetId: locked.id };
   }
 
-  const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
+  const set = await editableSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
   // A closed assignment is not a live projection whatever its set says: the
   // legacy route refuses the edit with the reason it always gave.
@@ -374,7 +397,7 @@ export async function reconfigureProjected(
   if ('kind' in edited) return edited;
 
   // The new version takes over the same assignment (it is the same contract).
-  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [input.userMembershipId, draftId]);
+  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [set.linked, draftId]);
   await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [set.id]);
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };

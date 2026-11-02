@@ -1,6 +1,7 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
+import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -328,14 +329,15 @@ export async function expireDrafts(): Promise<number> {
   return rowCount;
 }
 
-/** Covers a member by the chain — never by a copy of a ProductSet (#1325 B1). */
+/** Covers a member on one plan snapshot of a version (#2125 stage 21): the version's primary one by default. */
 export async function addCoverage(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; memberId: number; isOwner: boolean;
+  gymId: string; productSetId: number; memberId: number; isOwner: boolean; planSnapshotId?: number;
 }): Promise<void> {
+  const snapshotId = input.planSnapshotId ?? await primaryPlanSnapshotId(tx, input.gymId, input.productSetId);
+  if (snapshotId == null) return;
   await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-     VALUES (?, ?, ?, ?)`,
-    [input.gymId, input.rootProductSetId, input.memberId, input.isOwner ? 1 : 0],
+    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
+     VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE is_owner = GREATEST(is_owner, VALUES(is_owner))`,
+    [input.gymId, snapshotId, input.memberId, input.isOwner ? 1 : 0],
   );
-  await syncPlanSnapshotsOfChain(tx, input.gymId, input.rootProductSetId);
 }

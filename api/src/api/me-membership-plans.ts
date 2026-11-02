@@ -258,7 +258,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
         startsAt, declinedBenefits: declinedResult.declined, origin: 'members_app',
       });
       await addCoverage(tx, {
-        gymId, rootProductSetId: Number(draft.productSet.root_product_set_id), memberId, isOwner: true,
+        gymId, productSetId: draft.productSet.id, memberId, isOwner: true,
       });
       for (const promotionId of promotionIds) {
         await applyPromotionToProductSet(tx, gymId, actor.name, draft.productSet.id, promotionId);
