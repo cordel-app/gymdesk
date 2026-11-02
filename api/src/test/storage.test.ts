@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(16);
+    expect(sendMock).toHaveBeenCalledTimes(18);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -154,6 +154,10 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/calendar_events/',
       // #2010, appended last for the same reason: a Professional Service's image.
       'gym_123-GymName/professional_services/',
+      // #2260, appended last for the same reason: a Space's image.
+      'gym_123-GymName/spaces/',
+      // #2262, appended last for the same reason: a Staff member's image.
+      'gym_123-GymName/staff/',
       // #2261, appended last for the same reason: a Center's image.
       'gym_123-GymName/centers/',
     ]);
@@ -191,7 +195,7 @@ describe('initializeGymBucket()', () => {
     // #1374 appended `members/` the same way: a Member's profile image is its
     // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions', 'products', 'calendar_events', 'professional_services', 'centers']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions', 'products', 'calendar_events', 'professional_services', 'spaces', 'staff', 'centers']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
@@ -254,7 +258,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-6)).toBe('nutrition_goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-8)).toBe('nutrition_goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/nutrition_goals/')))
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);
@@ -266,7 +270,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-5)).toBe('promotions');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-7)).toBe('promotions');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/promotions/')))
       .toEqual(['gyms/gym_123-GymName/promotions/']);
@@ -278,13 +282,13 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-4)).toBe('products');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-6)).toBe('products');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/products/')))
       .toEqual(['gyms/gym_123-GymName/products/']);
   });
 
-  // #2010: `professional_services/` holds a Professional Service's image, no leaf (#2261 appended `centers/` after it).
+  // #2010: `professional_services/` holds a Professional Service's image, appended last, no leaf.
   it('creates professional_services/ with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
@@ -293,6 +297,30 @@ describe('initializeGymBucket()', () => {
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/professional_services/')))
       .toEqual(['gyms/gym_123-GymName/professional_services/']);
+  });
+
+  // #2260: `spaces/` holds a Space's image, appended last, no leaf.
+  it('creates spaces/ last, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-3)).toBe('spaces');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/spaces/')))
+      .toEqual(['gyms/gym_123-GymName/spaces/']);
+  });
+
+  // #2262: `staff/` holds a Staff member's image, appended last, no leaf.
+  it('creates staff/ last, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('staff');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/staff/')))
+      .toEqual(['gyms/gym_123-GymName/staff/']);
   });
 
   // #2261: `centers/` holds a Center's image, appended last, no leaf.

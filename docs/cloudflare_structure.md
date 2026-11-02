@@ -16,6 +16,13 @@
 │   │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
 │   │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
 │   │
+│   ├── spaces/
+│   │   ├── {space_id}-{space_name}.webp                              — 1080 × 1080 px
+│   │   └── {space_id}-{space_name}-thumbnail.webp                    — 256 × 256 px
+│   ├── staff/
+│   │   ├── {staff_id}-{staff_name}.webp                              — 1080 × 1080 px
+│   │   └── {staff_id}-{staff_name}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── centers/
 │   │   ├── {center_id}-{center_name}.webp                              — 1080 × 1080 px
 │   │   └── {center_id}-{center_name}-thumbnail.webp                    — 256 × 256 px
