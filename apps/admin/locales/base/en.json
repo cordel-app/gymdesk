@@ -4905,6 +4905,9 @@
   "nutrition_dashboard": {
     "title": "Nutrition Dashboard",
     "subtitle": "Overview and metrics for nutrition management.",
+    "top_foods": "Top 5 Most Used Foods",
+    "top_foods_empty": "No foods are assigned in active Nutrition Plans.",
+    "top_foods_uses": "{count} plans · {percent}%",
     "nutrition_plans": "Nutrition Plans",
     "active_members": "Active members",
     "template_status": "Template status",

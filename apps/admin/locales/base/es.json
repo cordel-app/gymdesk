@@ -4891,6 +4891,9 @@
   "nutrition_dashboard": {
     "title": "Panel de nutrición",
     "subtitle": "Resumen y métricas de la gestión de nutrición.",
+    "top_foods": "Los 5 alimentos más usados",
+    "top_foods_empty": "No hay alimentos en planes de nutrición activos.",
+    "top_foods_uses": "{count} planes · {percent}%",
     "nutrition_plans": "Planes de nutrición",
     "active_members": "Miembros activos",
     "template_status": "Estado de la plantilla",
