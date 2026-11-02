@@ -16,6 +16,10 @@
 │   │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
 │   │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
 │   │
+│   ├── spaces/
+│   │   ├── {space_id}-{space_name}.webp                              — 1080 × 1080 px
+│   │   └── {space_id}-{space_name}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
 │   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
