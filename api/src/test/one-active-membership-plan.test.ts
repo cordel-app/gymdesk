@@ -588,6 +588,57 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, ''))).toEqual(['Rep C']);
   });
 
+  it("Assign New Plan from one row replaces only that plan, and the others keep billing (#2125 stage 20)", async () => {
+    const memberId = await createMember(gymId, 'Replace One');
+    const [a, b, c] = [await createPlan(gymId, 'One A'), await createPlan(gymId, 'One B'), await createPlan(gymId, 'One C')];
+    for (const planId of [a, b, c]) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, 20, '2020-01-01', 'active')`, [gymId, planId]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    const umA = await assignLive(memberId, a, '2026-01-01');
+    const umB = await (async () => {
+      const draft = await assignDraft(memberId, b, '2026-02-01');
+      expect((await commit(draft, { on_conflict: 'add' })).status).toBe(200);
+      return draft;
+    })();
+    expect(liveRows(await assignmentsOf(memberId))).toHaveLength(2);
+
+    // "Assign New Plan" raised from B's row: its successor remembers it replaces B.
+    const created = await post(`/user-memberships/${umB}/assign-new-plan`, { membership_plan_id: c, starts_at: '2026-04-01' });
+    expect(created.status).toBe(201);
+    const { rows: remembered } = await db.query<any>(
+      'SELECT replaces_user_membership_id AS r FROM user_memberships WHERE id = ?', [created.body.id]);
+    expect(Number(remembered[0].r)).toBe(umB);
+
+    // The dialog names only the plan it would cancel.
+    const asked = await commit(created.body.id);
+    expect(asked.status).toBe(409);
+    expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);
+
+    expect((await commit(created.body.id, { on_conflict: 'replace' })).status).toBe(200);
+
+    const rows = await assignmentsOf(memberId);
+    const { rows: statuses } = await db.query<any>(
+      'SELECT id, status FROM user_memberships WHERE id IN (?, ?, ?)', [umA, umB, created.body.id]);
+    const byId = Object.fromEntries(statuses.map((r: any) => [r.id, r.status]));
+    expect(byId[umA]).toBe('active');
+    expect(byId[umB]).toBe('superseded');
+    expect(byId[created.body.id]).toBe('active');
+    expect(liveRows(rows)).toHaveLength(2);
+
+    const { rows: sets } = await db.query<any>(
+      "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
+    expect(sets).toHaveLength(1);
+    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    expect(snaps.map((r: any) => Number(r.membership_plan_id)).sort()).toEqual([a, c].sort());
+    const { rows: billed } = await db.query<any>(
+      `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
+        WHERE be.product_set_id = ? AND be.is_scheduled = 1 AND bl.kind = 'membership_fee'`, [sets[0].id]);
+    expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, '')).sort()).toEqual(['One A', 'One C']);
+  });
+
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {
     const memberId = await createMember(gymId, 'Replace Alias');
     const first = await createPlan(gymId, 'Rep First');

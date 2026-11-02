@@ -1390,12 +1390,14 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, starts_at, ends_at, status,
-          created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          replaces_user_membership_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           prev.member_id, gymId, membership_plan_id,
           starts_at, ends_at ?? null,
           ASSIGNMENT_CREATION_STATUS,
+          // #2125 stage 20: the plan whose row this was raised from is the one a Replace cancels.
+          Number(req.params.id),
           // #958 — the successor is a new Assigned Plan, so it records who
           // assigned *it*; the superseded row keeps its own.
           actorText,

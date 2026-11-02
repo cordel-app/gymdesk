@@ -175,10 +175,19 @@ export async function copyPlanSnapshotToVersion(
  * recurring Product lines and Product Promotions ride along, so activating D supersedes A without
  * losing anything A was billing. D's own plan stays what it is: the one being added.
  */
-export async function mergeActiveVersionIntoDraft(tx: Tx, gymId: string, activeSetId: number, draftSetId: number): Promise<void> {
+export async function mergeActiveVersionIntoDraft(
+  tx: Tx, gymId: string, activeSetId: number, draftSetId: number,
+  /** #2125 stage 20: plans being replaced — the assignments whose snapshots are not carried over. */
+  opts: { excludeUserMembershipIds?: readonly number[] } = {},
+): Promise<void> {
+  const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
-    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, activeSetId]);
-  for (const plan of plans) await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
+    'SELECT id, source_user_membership_id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id',
+    [gymId, activeSetId]);
+  for (const plan of plans) {
+    if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;
+    await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
+  }
 
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
