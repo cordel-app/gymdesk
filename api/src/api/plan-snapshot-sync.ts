@@ -54,22 +54,12 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
       WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, gymId]);
 
-  // Beneficiaries: the owner always, plus whoever the chain covers.
-  await tx.query(
-    `DELETE FROM plan_snapshot_beneficiaries
-      WHERE plan_snapshot_id = ? AND member_id <> ?
-        AND member_id NOT IN (SELECT member_id FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ?)`,
-    [snapshotId, snap[0].member_id, gymId, snap[0].root_product_set_id]);
+  // Beneficiaries (#2125 stage 21): each snapshot's own; the sync only guarantees the owner's row.
   await tx.query(
     `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
      SELECT ?, ?, ?, 1
      ON DUPLICATE KEY UPDATE is_owner = 1`,
     [gymId, snapshotId, snap[0].member_id]);
-  await tx.query(
-    `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
-     SELECT ?, ?, psm.member_id, 0 FROM product_set_members psm
-      WHERE psm.gym_id = ? AND psm.root_product_set_id = ? AND psm.member_id <> ?`,
-    [gymId, snapshotId, gymId, snap[0].root_product_set_id, snap[0].member_id]);
 
   // #2125 stage 16: the included Products are the snapshot's own lines; nothing derives them here.
 

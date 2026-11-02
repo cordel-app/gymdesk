@@ -173,31 +173,3 @@ describe('Draft expiry (#1325)', () => {
     expect(await status(pending.insertId)).toBe('pending_payment');
   });
 });
-
-describe('family coverage follows the chain (#1325 B1)', () => {
-  it('a covered member references the chain root, once, never a copy', async () => {
-    const owner = await member(`ps-f-${Date.now()}@example.com`);
-    const covered = await member(`ps-g-${Date.now()}@example.com`);
-    const d = await db.transaction(async (tx) => {
-      const out = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor });
-      if (out.kind !== 'created') throw new Error('expected created');
-      await activate(tx, gymId, out.productSet.id);
-      await addCoverage(tx, { gymId, rootProductSetId: out.productSet.id, memberId: owner, isOwner: true });
-      await addCoverage(tx, { gymId, rootProductSetId: out.productSet.id, memberId: covered, isOwner: false });
-      await addCoverage(tx, { gymId, rootProductSetId: out.productSet.id, memberId: covered, isOwner: false });
-      return out.productSet;
-    });
-    const { rows } = await db.query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM product_set_members WHERE root_product_set_id = ?', [d.id]);
-    expect(Number(rows[0].n)).toBe(2);
-
-    // The next version shares the root, so the coverage rows need no change.
-    const next = await db.transaction((tx) => createDraft(tx, {
-      gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor }));
-    if (next.kind !== 'created') throw new Error('expected created');
-    expect(Number(next.productSet.root_product_set_id)).toBe(Number(d.id));
-    const { rows: sets } = await db.query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM product_sets WHERE root_product_set_id = ?', [d.id]);
-    expect(Number(sets[0].n)).toBe(2);
-  });
-});

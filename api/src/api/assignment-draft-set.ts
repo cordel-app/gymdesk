@@ -91,11 +91,6 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
       WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [input.planPriceId, input.basePrice, input.discountReason, input.discountExpiresAt, setId, input.gymId],
   );
-  await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-     VALUES (?, ?, ?, 1)`,
-    [input.gymId, created.productSet.root_product_set_id, input.ownerMemberId],
-  );
   await syncMandatoryQuantities(tx, input.gymId, setId, created.productSet.root_product_set_id ?? setId);
   await syncDraftAssignment(tx, input.gymId, setId);
   return setId;

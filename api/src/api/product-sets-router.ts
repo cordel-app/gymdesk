@@ -618,7 +618,11 @@ meProductSetsRouter.get('/', async (req, res) => {
     `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-         OR ps.root_product_set_id IN (SELECT root_product_set_id FROM product_set_members WHERE gym_id = ? AND member_id = ?)
+         OR ps.root_product_set_id IN (
+              SELECT ps2.root_product_set_id FROM plan_snapshot_beneficiaries b
+                JOIN plan_snapshots s ON s.id = b.plan_snapshot_id
+                JOIN product_sets ps2 ON ps2.id = s.product_set_id
+               WHERE b.gym_id = ? AND b.member_id = ?)
       ORDER BY ps.root_product_set_id, ps.version DESC`,
     [ctx.gymId, memberId, ctx.gymId, memberId]);
   res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId).map(shape));

@@ -68,7 +68,6 @@ export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'user_membership_promotions', reason: 'applied promotions of the assignments' },
   { table: 'member_products_recurrent_snapshot', reason: 'assignment service rows' },
   { table: 'user_memberships', reason: 'the assigned Membership Plans' },
-  { table: 'product_set_members', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_set_schedules', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_sets', reason: 'ProductSet rows created since PR 1', optional: true, uncascaded: true },
 ];

@@ -22,7 +22,7 @@ import { supersedeApplications } from './one-active-plan';
  *    the predecessor and its Promotion applications stay as history;
  *  - a **plan-less** version has no assignment at all, and a previous one is
  *    closed;
- *  - family coverage is copied from `product_set_members`.
+ *  - coverage is each plan snapshot's own beneficiaries (#2125 stage 21).
  *
  * The projection is removed with the legacy commercial columns in the final
  * stage; nothing may start reading it as the commercial owner.

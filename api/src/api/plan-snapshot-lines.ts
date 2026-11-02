@@ -25,3 +25,19 @@ export async function primaryPlanSnapshotId(exec: Exec, gymId: string, productSe
     'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id LIMIT 1', [gymId, productSetId]);
   return rows[0] ? Number(rows[0].id) : null;
 }
+
+/**
+ * The plan snapshot of `userMembershipId` inside one version (#2125 stage 21): the copy that names the
+ * assignment as its contract, else the version's primary snapshot (a Draft not yet linked).
+ */
+export async function planSnapshotOfAssignment(
+  exec: Exec, gymId: string, productSetId: number, userMembershipId: number | null,
+): Promise<number | null> {
+  if (userMembershipId != null) {
+    const { rows } = await exec.query<{ id: number }>(
+      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_user_membership_id = ?
+        ORDER BY id LIMIT 1`, [gymId, productSetId, userMembershipId]);
+    if (rows[0]) return Number(rows[0].id);
+  }
+  return primaryPlanSnapshotId(exec, gymId, productSetId);
+}

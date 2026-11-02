@@ -290,7 +290,8 @@ async function backfillPlanSnapshots(knex) {
     SELECT s.gym_id, s.id, s.member_id, 1 FROM plan_snapshots s
      WHERE NOT EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries b
                         WHERE b.plan_snapshot_id = s.id AND b.member_id = s.member_id)`);
-  counts.plan_snapshot_beneficiaries += await run(`
+  // Migration 358 drops `product_set_members` (coverage is the snapshots' own).
+  if (await knex.schema.hasTable('product_set_members')) counts.plan_snapshot_beneficiaries += await run(`
     INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
     SELECT s.gym_id, s.id, psm.member_id, 0
       FROM plan_snapshots s
