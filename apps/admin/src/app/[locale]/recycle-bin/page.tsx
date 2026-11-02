@@ -11,6 +11,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { canWriteModule } from '@/config/permissions';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
+import { primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
+import { listNameBadgeStyle } from '@/components/listChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -316,7 +318,7 @@ export default function RecycleBinPage() {
                   {canWrite && (
                     <button
                       onClick={() => setRecovering(item)}
-                      style={{ padding: '4px 12px', border: '1px solid #4b45c6', borderRadius: 5, background: '#fff', color: '#4b45c6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      style={primaryBtnSmall()}
                     >
                       {t('action_recover')}
                     </button>
@@ -360,7 +362,7 @@ export default function RecycleBinPage() {
           canWrite && detailItem ? (
             <button
               onClick={() => { setRecovering(detailItem); setDetailItem(null); setDetail(null); }}
-              style={{ padding: '8px 18px', border: 'none', borderRadius: 6, background: '#4b45c6', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+              style={primaryBtnStyle()}
             >
               {t('action_recover')}
             </button>
@@ -512,7 +514,7 @@ function SortHeader({
     <th style={thStyle}>
       <button
         onClick={() => onToggle(key)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, fontWeight: 700, color: active ? '#4b45c6' : '#aaa', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, fontWeight: 700, color: active ? 'var(--gd-link, var(--gd-primary-btn, #6c63ff))' : '#aaa', letterSpacing: '0.05em', textTransform: 'uppercase' }}
       >
         {label} {active ? (dir === 'asc' ? '↑' : '↓') : ''}
       </button>
@@ -520,46 +522,12 @@ function SortHeader({
   );
 }
 
-const ENTITY_COLORS: Record<EntityType, string> = {
-  member: '#fdf0e8',
-  membership_plan: '#e8f4fd',
-  promotion: '#fdf3e8',
-  center: '#e8fdf0',
-  space: '#f3e8fd',
-  product: '#fdeaea',
-  exercise: '#e8f0fd',
-  workout_template: '#fdf9e8',
-  training_plan_template: '#e8fdfc',
-  nutrition_plan_template: '#f0fde8',
-  theme: '#fde8f4',
-};
 
-const ENTITY_TEXT_COLORS: Record<EntityType, string> = {
-  member: '#a8531a',
-  membership_plan: '#1a6ea8',
-  promotion: '#a8721a',
-  center: '#1a8a4a',
-  space: '#721aa8',
-  product: '#a81a1a',
-  exercise: '#1a4ea8',
-  workout_template: '#8a7a1a',
-  training_plan_template: '#1a8a88',
-  nutrition_plan_template: '#4a8a1a',
-  theme: '#a81a72',
-};
 
-function EntityTypeBadge({ entityType, label }: { entityType: EntityType; label: string }) {
+function EntityTypeBadge({ entityType: _entityType, label }: { entityType: EntityType; label: string }) {
+  // #2267: one neutral badge look shared with the lists; no per-type hues.
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: 4,
-      fontSize: 11,
-      fontWeight: 600,
-      letterSpacing: '0.03em',
-      background: ENTITY_COLORS[entityType] ?? '#f0f0f0',
-      color: ENTITY_TEXT_COLORS[entityType] ?? '#666',
-    }}>
+    <span style={{ ...listNameBadgeStyle, marginLeft: 0, display: 'inline-block', padding: '2px 8px', fontWeight: 600 }}>
       {label}
     </span>
   );
