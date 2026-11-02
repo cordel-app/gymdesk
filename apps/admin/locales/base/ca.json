@@ -4918,6 +4918,9 @@
   "nutrition_dashboard": {
     "title": "Tauler de nutrició",
     "subtitle": "Resum i mètriques de la gestió de nutrició.",
+    "top_foods": "Els 5 aliments més usats",
+    "top_foods_empty": "No hi ha aliments en plans de nutrició actius.",
+    "top_foods_uses": "{count} plans · {percent}%",
     "nutrition_plans": "Plans de nutrició",
     "active_members": "Membres actius",
     "template_status": "Estat de la plantilla",
