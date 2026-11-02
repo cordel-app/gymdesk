@@ -47,6 +47,10 @@ describe('#1613 products workflow', () => {
   it('maps only known statuses to a label key', () => {
     expect(psStatusKey(set('active'))).toBe('active');
     expect(psStatusKey(set('weird'))).toBeNull();
+    // #2264 — an Active version with no plan and no Products is None.
+    expect(psStatusKey({ ...set('active'), plan_name: null } as any, true)).toBeNull();
+    expect(psStatusKey({ ...set('active'), plan_name: 'Gold' } as any, true)).toBe('active');
+    expect(psStatusKey({ ...set('active'), plan_name: null } as any, false)).toBe('active');
     expect(psStatusKey(null)).toBeNull();
   });
 });

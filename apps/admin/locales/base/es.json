@@ -513,7 +513,7 @@
     "section_membership_plan": "Plan de membresía",
     "section_billing_event_simulation": "Simulación de eventos de facturación",
     "ps_status_label": "Estado PS",
-    "ps_status_none": "Sin conjunto de productos",
+    "ps_status_none": "Ninguno",
     "ps_status_draft": "Borrador",
     "ps_status_pending_payment": "Pendiente de pago",
     "ps_status_active": "Activo",
@@ -4914,7 +4914,7 @@
     "metric_avg_goals": "Media de objetivos por miembro"
   },
   "professional_services": {
-    "update_system_data": "Actualizar datos del sistema",
+    "update_system_data": "Resincronizar con el sistema",
     "update_system_data_done": "Datos del sistema actualizados.",
     "update_system_data_up_to_date": "Ya está al día con el servicio del sistema.",
     "update_system_data_base_gone": "El servicio profesional del sistema de origen ya no existe.",

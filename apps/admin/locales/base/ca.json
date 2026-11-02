@@ -514,7 +514,7 @@
     "section_membership_plan": "Pla de membresia",
     "section_billing_event_simulation": "Simulació d'esdeveniments de facturació",
     "ps_status_label": "Estat PS",
-    "ps_status_none": "Sense conjunt de productes",
+    "ps_status_none": "Cap",
     "ps_status_draft": "Esborrany",
     "ps_status_pending_payment": "Pendent de pagament",
     "ps_status_active": "Actiu",
@@ -4941,7 +4941,7 @@
     "metric_avg_goals": "Mitjana d'objectius per membre"
   },
   "professional_services": {
-    "update_system_data": "Actualitza les dades del sistema",
+    "update_system_data": "Resincronitza amb el sistema",
     "update_system_data_done": "Dades del sistema actualitzades.",
     "update_system_data_up_to_date": "Ja està al dia amb el servei del sistema.",
     "update_system_data_base_gone": "El servei professional del sistema d'origen ja no existeix.",
