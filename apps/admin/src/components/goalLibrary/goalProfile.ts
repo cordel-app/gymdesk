@@ -184,6 +184,8 @@ export interface GoalRow {
   gym_id: string | null;
   /** #1850: a System row, or a gym's own copy of a Base Personal Goal (the API derives it). */
   is_system?: boolean;
+  /** #2258: the Base Personal Goal a gym copy was imported from; `null` for a goal the gym created. */
+  base_personal_goal_id?: number | null;
   /**
    * A seeded System row's stable handle, `null` for everything else — a gym's own
    * goal and a System goal Cordel added later both carry only a name. It is what
