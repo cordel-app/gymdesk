@@ -16,7 +16,7 @@ import {
   ProductListFrame, ProductListRow, productCardStyle, type ProductListText, type ProductRowData,
 } from '@/components/products/ProductListChrome';
 import {
-  formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
+  formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
@@ -53,6 +53,7 @@ interface BaseProduct {
   notes: string | null;
   package_information: string | null;
   tax_behavior: (typeof TAX_BEHAVIORS)[number];
+  translations?: Partial<Record<'es' | 'ca', { name: string; description: string | null }>>;
   image_url: string | null;
   image_thumbnail_url: string | null;
   created_at: string | null;
@@ -78,6 +79,7 @@ interface Form {
   notes: string;
   package_information: string;
   tax_behavior: (typeof TAX_BEHAVIORS)[number];
+  tr: Record<'es' | 'ca', { name: string; description: string }>;
 }
 
 function formFor(p: BaseProduct | null): Form {
@@ -98,6 +100,10 @@ function formFor(p: BaseProduct | null): Form {
     notes: p?.notes ?? '',
     package_information: p?.package_information ?? '',
     tax_behavior: p?.tax_behavior ?? 'inclusive',
+    tr: {
+      es: { name: p?.translations?.es?.name ?? '', description: p?.translations?.es?.description ?? '' },
+      ca: { name: p?.translations?.ca?.name ?? '', description: p?.translations?.ca?.description ?? '' },
+    },
   };
 }
 
@@ -118,6 +124,11 @@ function payloadFor(f: Form) {
     notes: f.notes.trim() || null,
     package_information: f.package_information.trim() || null,
     tax_behavior: f.tax_behavior,
+    // #2254: a blank name clears that language (English is the fallback).
+    translations: {
+      es: { name: f.tr.es.name.trim(), description: f.tr.es.description.trim() || null },
+      ca: { name: f.tr.ca.name.trim(), description: f.tr.ca.description.trim() || null },
+    },
   };
 }
 
@@ -254,6 +265,21 @@ export default function BaseProductsPage() {
       </select>
       <label style={formFieldLabelStyle}>{t('description')}</label>
       <textarea style={formControlStyle} rows={2} value={form.description} onChange={(e) => set('description', e.target.value)} />
+      <div style={formHelpTextStyle}>{t('translations_help')}</div>
+      {(['es', 'ca'] as const).map((l) => (
+        <div key={l}>
+          <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
+          <input
+            style={formControlStyle} value={form.tr[l].name} maxLength={150}
+            onChange={(e) => set('tr', { ...form.tr, [l]: { ...form.tr[l], name: e.target.value } })}
+          />
+          <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
+          <textarea
+            style={formControlStyle} rows={2} value={form.tr[l].description}
+            onChange={(e) => set('tr', { ...form.tr, [l]: { ...form.tr[l], description: e.target.value } })}
+          />
+        </div>
+      ))}
       {form.type === 'sessions' && (
         <>
           <label style={formFieldLabelStyle}>{t('package_information')}</label>

@@ -50,6 +50,8 @@ import {
   type ProductType,
   type VisibleProductField,
   toProductFormValues,
+  toTranslationsPayload,
+  PRODUCT_TRANSLATION_LOCALES,
   visibleProductSections,
 } from './productProfile';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
@@ -117,6 +119,8 @@ interface Product {
   /** #1349: 0/1 from MySQL; a badge only, never derived from billing_frequency. */
   one_time_purchase?: number;
   description: string | null;
+  translations?: Partial<Record<'es' | 'ca', { name: string; description: string | null }>>;
+  display_name?: string;
   amount: string | null;
   currency: string;
   billing_frequency: Frequency | null;
@@ -425,6 +429,7 @@ export default function ProductsPage() {
           type: editForm.type || undefined,
           units: editForm.units !== '' ? parseInt(editForm.units, 10) : null,
           description: editForm.description.trim() || null,
+          translations: toTranslationsPayload(editForm.tr),
           amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,
           billing_frequency: editForm.billing_frequency || null,
           status: editForm.status,
@@ -668,6 +673,19 @@ export default function ProductsPage() {
           return <div style={productValueStyle}>{t(`type_${item.type}` as any)}</div>;
         case 'description':
           return <div style={productValueStyle}>{item.description ?? EMPTY_VALUE}</div>;
+        case 'translations':
+          return (
+            <div style={productValueStyle}>
+              {PRODUCT_TRANSLATION_LOCALES.map((l) => (
+                <div key={l}>
+                  <strong>{l.toUpperCase()}:</strong>{' '}
+                  {item.translations?.[l]?.name
+                    ? `${item.translations[l]!.name}${item.translations[l]!.description ? ` — ${item.translations[l]!.description}` : ''}`
+                    : EMPTY_VALUE}
+                </div>
+              ))}
+            </div>
+          );
         case 'units':
           return (
             <div style={productValueStyle}>
@@ -767,6 +785,25 @@ export default function ProductsPage() {
               rows={2}
               style={productTextareaStyle}
             />
+          );
+        case 'translations':
+          return (
+            <div>
+              {PRODUCT_TRANSLATION_LOCALES.map((l) => (
+                <div key={l}>
+                  <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
+                  <input
+                    style={formControlStyle} maxLength={150} value={editForm.tr[l].name}
+                    onChange={(e) => setEditForm({ ...editForm, tr: { ...editForm.tr, [l]: { ...editForm.tr[l], name: e.target.value } } })}
+                  />
+                  <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
+                  <textarea
+                    rows={2} style={productTextareaStyle} value={editForm.tr[l].description}
+                    onChange={(e) => setEditForm({ ...editForm, tr: { ...editForm.tr, [l]: { ...editForm.tr[l], description: e.target.value } } })}
+                  />
+                </div>
+              ))}
+            </div>
           );
         case 'units':
           return (

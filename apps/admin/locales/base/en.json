@@ -4575,7 +4575,11 @@
     "image_error_too_large": "The image is too large.",
     "image_error_upload_failed": "Failed to upload the image.",
     "image_error_remove_failed": "Failed to remove the image.",
-    "section_media": "Media"
+    "section_media": "Media",
+    "name_in": "Name ({locale})",
+    "description_in": "Description ({locale})",
+    "translations_help": "Translations (optional — English is used when a language is left empty)",
+    "label_translations": "Translations"
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Discount (%)",
@@ -5399,7 +5403,10 @@
     "image_error_unreadable": "The image could not be read.",
     "image_error_too_large": "The image is too large.",
     "image_error_upload_failed": "Failed to upload the image.",
-    "image_error_remove_failed": "Failed to remove the image."
+    "image_error_remove_failed": "Failed to remove the image.",
+    "name_in": "Name ({locale})",
+    "description_in": "Description ({locale})",
+    "translations_help": "Translations (optional — English is used when a language is left empty)"
   },
   "base_payment_methods": {
     "title": "Payment Methods",

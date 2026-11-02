@@ -4561,7 +4561,11 @@
     "image_error_too_large": "La imagen es demasiado grande.",
     "image_error_upload_failed": "No se pudo subir la imagen.",
     "image_error_remove_failed": "No se pudo quitar la imagen.",
-    "section_media": "Multimedia"
+    "section_media": "Multimedia",
+    "name_in": "Nombre ({locale})",
+    "description_in": "Descripción ({locale})",
+    "translations_help": "Traducciones (opcional — si un idioma queda vacío se usa el inglés)",
+    "label_translations": "Traducciones"
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descuento (%)",
@@ -5385,7 +5389,10 @@
     "image_error_unreadable": "No se pudo leer la imagen.",
     "image_error_too_large": "La imagen es demasiado grande.",
     "image_error_upload_failed": "No se pudo subir la imagen.",
-    "image_error_remove_failed": "No se pudo quitar la imagen."
+    "image_error_remove_failed": "No se pudo quitar la imagen.",
+    "name_in": "Nombre ({locale})",
+    "description_in": "Descripción ({locale})",
+    "translations_help": "Traducciones (opcional — si un idioma queda vacío se usa el inglés)"
   },
   "base_payment_methods": {
     "title": "Métodos de pago",

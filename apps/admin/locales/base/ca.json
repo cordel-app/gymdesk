@@ -4588,7 +4588,11 @@
     "image_error_too_large": "La imatge és massa gran.",
     "image_error_upload_failed": "No s'ha pogut pujar la imatge.",
     "image_error_remove_failed": "No s'ha pogut treure la imatge.",
-    "section_media": "Multimèdia"
+    "section_media": "Multimèdia",
+    "name_in": "Nom ({locale})",
+    "description_in": "Descripció ({locale})",
+    "translations_help": "Traduccions (opcional — si un idioma queda buit s'usa l'anglès)",
+    "label_translations": "Traduccions"
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descompte (%)",
@@ -5412,7 +5416,10 @@
     "image_error_unreadable": "No s'ha pogut llegir la imatge.",
     "image_error_too_large": "La imatge és massa gran.",
     "image_error_upload_failed": "No s'ha pogut pujar la imatge.",
-    "image_error_remove_failed": "No s'ha pogut treure la imatge."
+    "image_error_remove_failed": "No s'ha pogut treure la imatge.",
+    "name_in": "Nom ({locale})",
+    "description_in": "Descripció ({locale})",
+    "translations_help": "Traduccions (opcional — si un idioma queda buit s'usa l'anglès)"
   },
   "base_payment_methods": {
     "title": "Mètodes de pagament",
