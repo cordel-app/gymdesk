@@ -13,6 +13,16 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
 import { planEffectiveOnSql } from '../domain/nutritionPlanDates';
+import { getRequestLocale } from '../infra/locale';
+import { localizedNameSql } from '../domain/nutritionLibrary';
+
+export const TOP_FOODS_LIMIT = 5;
+
+/** `part / total` as a percentage rounded to one decimal; 0 when there is nothing to divide by. */
+export function percentOf(part: number, total: number): number {
+  if (!(total > 0)) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
 
 export const nutritionDashboardRouter = Router();
 
@@ -174,6 +184,35 @@ nutritionDashboardRouter.get('/summary', async (req, res) => {
     [gymId],
   );
 
+  // #2265: Top foods — ranked by how many currently assigned Nutrition Plans
+  // carry the food (a plan counts once however often it repeats the food).
+  // Food identity is COALESCE(base, gym-owned) like every other reader (#1849).
+  const locale = getRequestLocale(req);
+  const { rows: topFoods } = await db.query<{
+    food_id: number; name: string; image: string | null; uses: number | string;
+  }>(
+    `SELECT f.id AS food_id, ${localizedNameSql('f', locale)} AS name, f.image_url AS image, u.uses
+       FROM (
+         SELECT COALESCE(i.base_nutrition_library_item_id, i.nutrition_library_item_id) AS food,
+                COUNT(DISTINCT mnp.id) AS uses
+           FROM member_nutrition_plans mnp
+           JOIN members m
+             ON m.id = mnp.member_id AND m.gym_id = mnp.gym_id AND m.deleted_at IS NULL
+           JOIN member_nutrition_plan_days d ON d.member_nutrition_plan_id = mnp.id
+           JOIN member_nutrition_plan_meals ml ON ml.member_nutrition_plan_day_id = d.id
+           JOIN member_nutrition_plan_meal_items i ON i.meal_id = ml.id
+          WHERE mnp.gym_id = ?
+            AND ${planEffectiveOnSql('mnp')}
+          GROUP BY food
+          ORDER BY uses DESC, food ASC
+          LIMIT ${TOP_FOODS_LIMIT}
+       ) u
+       JOIN nutrition_library_item_catalogue f ON f.id = u.food
+      ORDER BY u.uses DESC, f.id ASC`,
+    [gymId, today, today],
+  );
+  const planAssignments = Number(planRows[0]?.assignments ?? 0);
+
   const goalMembers = Number(goalTotals[0]?.members ?? 0);
   const goalAssignments = Number(goalTotals[0]?.assignments ?? 0);
 
@@ -183,6 +222,14 @@ nutritionDashboardRouter.get('/summary', async (req, res) => {
       assignments: Number(planRows[0]?.assignments ?? 0),
       plans_in_use: Number(planRows[0]?.plans_in_use ?? 0),
     },
+    top_foods: topFoods.map((r, i) => ({
+      rank: i + 1,
+      food_id: Number(r.food_id),
+      name: r.name,
+      image_url: r.image ?? null,
+      uses: Number(r.uses),
+      percent: percentOf(Number(r.uses), planAssignments),
+    })),
     personal_goals: {
       members: goalMembers,
       goals_in_use: Number(goalTotals[0]?.goals_in_use ?? 0),

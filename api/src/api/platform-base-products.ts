@@ -3,6 +3,8 @@ import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
+import { getRequestLocale } from '../infra/locale';
+import { attachProductTranslations, clearedLocales, parseProductTranslations, writeProductTranslations } from './product-translations';
 import { parseBaseProductInput, type BaseProductInput } from '../domain/baseProducts';
 import {
   isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit, parseMemberImageRequest,
@@ -26,6 +28,10 @@ const COLUMNS = `bp.id, bp.charge_type_code, bp.name, bp.type, bp.units, bp.amou
   bp.description, bp.notes, bp.package_information, bp.tax_behavior, bp.image_url, bp.image_thumbnail_url,
   bp.created_at, bp.created_by, bp.modified_at, bp.modified_by`;
 
+async function withTranslations(req: any, rows: any[]) {
+  return attachProductTranslations('base', rows, getRequestLocale(req));
+}
+
 function shape(row: any) {
   return {
     ...row,
@@ -35,12 +41,13 @@ function shape(row: any) {
   };
 }
 
-async function loadOne(id: unknown) {
+async function loadOne(id: unknown, req?: any) {
   const { rows } = await db.query<any>(
     `SELECT ${COLUMNS} FROM base_products bp WHERE bp.id = ? AND bp.deleted_at IS NULL`,
     [id],
   );
-  return rows[0] ? shape(rows[0]) : null;
+  if (!rows[0]) return null;
+  return (await withTranslations(req ?? { headers: {} }, [shape(rows[0])]))[0];
 }
 
 function toInput(row: any): BaseProductInput {
@@ -77,13 +84,13 @@ platformBaseProductsRouter.get('/', requireSuperadmin, async (req, res, next) =>
     const { rows } = await db.query<any>(
       `SELECT ${COLUMNS} FROM base_products bp WHERE ${where} ORDER BY bp.name ASC`, params,
     );
-    res.json(rows.map(shape));
+    res.json(await withTranslations(req, rows.map(shape)));
   } catch (err) { next(err); }
 });
 
 platformBaseProductsRouter.get('/:id', requireSuperadmin, async (req, res, next) => {
   try {
-    const row = await loadOne(req.params.id);
+    const row = await loadOne(req.params.id, req);
     if (!row) return res.status(404).json({ error: 'Base product not found' });
     res.json(row);
   } catch (err) { next(err); }
@@ -96,6 +103,12 @@ platformBaseProductsRouter.post('/', requireSuperadmin, async (req, res, next) =
     const v = parsed.value;
     const ctError = await chargeTypeError(v.charge_type_code);
     if (ctError) return res.status(400).json({ error: ctError });
+    let translations: Record<string, { name: string; description: string | null }> = {};
+    if (req.body?.translations !== undefined) {
+      const p = parseProductTranslations(req.body.translations);
+      if ('error' in p) return res.status(400).json({ error: p.error });
+      translations = p.value;
+    }
     const actor = resolvePlatformActor(req.superadminName);
     let id: number;
     try {
@@ -110,11 +123,12 @@ platformBaseProductsRouter.post('/', requireSuperadmin, async (req, res, next) =
           v.description, v.notes, v.package_information, v.tax_behavior, actor],
       );
       id = result.insertId;
+      await writeProductTranslations('base', db, id, translations);
     } catch (err: any) {
       if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A base product for this charge type or name already exists' });
       throw err;
     }
-    const row = await loadOne(id);
+    const row = await loadOne(id, req);
     recordAudit(req, { action: 'create', entityType: 'base_product', entityId: id, next: row });
     res.status(201).json(row);
   } catch (err) { next(err); }
@@ -131,6 +145,14 @@ platformBaseProductsRouter.put('/:id', requireSuperadmin, async (req, res, next)
       const ctError = await chargeTypeError(v.charge_type_code);
       if (ctError) return res.status(400).json({ error: ctError });
     }
+    let translations: Record<string, { name: string; description: string | null }> | null = null;
+    let cleared: string[] = [];
+    if (req.body?.translations !== undefined) {
+      const p = parseProductTranslations(req.body.translations);
+      if ('error' in p) return res.status(400).json({ error: p.error });
+      translations = p.value;
+      cleared = clearedLocales(req.body.translations, p.value);
+    }
     const actor = resolvePlatformActor(req.superadminName);
     try {
       await db.query(
@@ -144,6 +166,7 @@ platformBaseProductsRouter.put('/:id', requireSuperadmin, async (req, res, next)
           v.enrollment_status, v.mandatory ? 1 : 0, v.validity_days, v.one_time_purchase ? 1 : 0,
           v.description, v.notes, v.package_information, v.tax_behavior, actor, existing.id],
       );
+      if (translations) await writeProductTranslations('base', db, existing.id, translations, cleared);
     } catch (err: any) {
       if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A base product for this charge type or name already exists' });
       throw err;
@@ -154,7 +177,7 @@ platformBaseProductsRouter.put('/:id', requireSuperadmin, async (req, res, next)
         id: existing.id, name: v.name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url,
       });
     }
-    const row = await loadOne(existing.id);
+    const row = await loadOne(existing.id, req);
     recordAudit(req, { action: 'update', entityType: 'base_product', entityId: existing.id, previous: existing, next: row });
     res.json(row);
   } catch (err) { next(err); }
@@ -203,7 +226,7 @@ platformBaseProductsRouter.post('/:id/image', requireSuperadmin, memberImageUplo
       action: 'update', entityType: 'base_product', entityId: baseProduct.id, entityName: baseProduct.name,
       previous: { image_url: baseProduct.image_url }, next: { image_url: stored.image_url },
     });
-    res.json(await loadOne(baseProduct.id));
+    res.json(await loadOne(baseProduct.id, req));
   } catch (err) { next(err); }
 });
 
@@ -216,6 +239,6 @@ platformBaseProductsRouter.delete('/:id/image', requireSuperadmin, async (req, r
       action: 'update', entityType: 'base_product', entityId: baseProduct.id, entityName: baseProduct.name,
       previous: { image_url: baseProduct.image_url }, next: { image_url: null },
     });
-    res.json(await loadOne(baseProduct.id));
+    res.json(await loadOne(baseProduct.id, req));
   } catch (err) { next(err); }
 });
