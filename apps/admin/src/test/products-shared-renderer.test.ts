@@ -26,4 +26,10 @@ describe('Products list renderer is shared (#2105)', () => {
   it('the grid is declared once, in the shared renderer', () => {
     expect(chrome).toContain('LIST_GRID_ROW_CLASS');
   });
+
+  // #2251 — the expanded card and the form are the Gym card's too.
+  it.each([['Gym', gym], ['Base', base]])('%s page draws its card through ProductLayout over visibleProductSections', (_n, src) => {
+    expect(src).toContain('<ProductLayout');
+    expect(src).toContain('visibleProductSections(');
+  });
 });

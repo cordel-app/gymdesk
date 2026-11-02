@@ -13,8 +13,12 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
-  ProductListFrame, ProductListRow, productCardStyle, type ProductListText, type ProductRowData,
+  ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
 } from '@/components/products/ProductListChrome';
+import { ProductLayout, productValueStyle, productTextareaStyle, productCheckboxCellStyle } from '../../financials/products/ProductLayout';
+import {
+  EMPTY_VALUE, visibleProductSections, type VisibleProductField,
+} from '../../financials/products/productProfile';
 import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
@@ -142,6 +146,9 @@ export default function BaseProductsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<BaseProduct | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggleExpand = (id: number) =>
+    setExpanded((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [deleting, setDeleting] = useState<BaseProduct | null>(null);
 
   useEffect(() => {
@@ -214,91 +221,168 @@ export default function BaseProductsPage() {
   });
   const price = (p: BaseProduct) => (p.amount == null ? dash : p.amount.toFixed(2));
 
-  const editor = form && (
-    <div style={inlineEditorStyle}>
-      <div style={inlineEditorTitleStyle}>{form.id == null ? t('add') : t('edit')}</div>
-      <label style={formFieldLabelStyle}>{t('name')}</label>
-      <input style={formControlStyle} value={form.name} maxLength={150} onChange={(e) => set('name', e.target.value)} />
+  // #2251: Base Products render the Gym Products card — the same sections, field
+  // order and labels (`visibleProductSections`, `ProductLayout`) — and differ
+  // only through what a cell holds: a template has no tax rate (a behaviour),
+  // no Professional Services, and carries a charge type code and a
+  // one-time-purchase flag the gym card does not.
+  const sectionsFor = (type: string) =>
+    visibleProductSections({ isSystem: false, isSessionType: false })
+      .filter((sec) => sec.key !== 'professional_services')
+      .map((sec) => ({ ...sec, fields: sec.fields.filter((f) => type === 'sessions' || f.key !== 'units') }));
+
+  function renderValue(p: BaseProduct, field: VisibleProductField): React.ReactNode {
+    const v = (x: React.ReactNode) => <div style={productValueStyle}>{x}</div>;
+    switch (field.key) {
+      case 'name': return v(p.name);
+      case 'type': return v(t(`type_${p.type}`));
+      case 'description': return v(p.description ?? EMPTY_VALUE);
+      case 'units': return v(p.units ?? EMPTY_VALUE);
+      case 'status': return v(tStatus(p.status));
+      case 'enrollment_status': return v(tStatus(p.enrollment_status));
+      case 'mandatory': return v(p.mandatory ? tp('yes') : tp('no'));
+      case 'amount': return v(price(p));
+      case 'billing_frequency': return v(billingFrequencyLabel(p.billing_frequency, tFreq) ?? EMPTY_VALUE);
+      case 'validity_days': return v(p.validity_days ?? EMPTY_VALUE);
+      case 'tax_rate_id': return v(t(`tax_behavior_${p.tax_behavior}`));
+      case 'package_information': return v(p.package_information ?? EMPTY_VALUE);
+      case 'notes': return v(p.notes ?? EMPTY_VALUE);
+      default: return null;
+    }
+  }
+
+  function renderControl(f: Form, field: VisibleProductField): React.ReactNode {
+    switch (field.key) {
+      case 'name':
+        return <input style={formControlStyle} value={f.name} maxLength={150} autoFocus onChange={(e) => set('name', e.target.value)} />;
+      case 'type':
+        return (
+          <select style={formControlStyle} value={f.type} onChange={(e) => set('type', e.target.value as Form['type'])}>
+            {TYPES.map((v) => <option key={v} value={v}>{t(`type_${v}`)}</option>)}
+          </select>
+        );
+      case 'description':
+        return <textarea style={productTextareaStyle} rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />;
+      case 'units':
+        return <input style={formControlStyle} type="number" min={1} step={1} value={f.units} onChange={(e) => set('units', e.target.value)} />;
+      case 'status':
+        return (
+          <select style={formControlStyle} value={f.status} onChange={(e) => set('status', e.target.value as Form['status'])}>
+            <option value="active">{t('active')}</option>
+            <option value="inactive">{t('inactive')}</option>
+          </select>
+        );
+      case 'enrollment_status':
+        return (
+          <select style={formControlStyle} value={f.enrollment_status} onChange={(e) => set('enrollment_status', e.target.value as Form['enrollment_status'])}>
+            <option value="public">{t('enrollment_public')}</option>
+            <option value="staff_only">{t('enrollment_staff_only')}</option>
+          </select>
+        );
+      case 'mandatory':
+        return (
+          <label style={productCheckboxCellStyle}>
+            <input type="checkbox" checked={f.mandatory} onChange={(e) => set('mandatory', e.target.checked)} />
+            {f.mandatory ? tp('yes') : tp('no')}
+          </label>
+        );
+      case 'amount':
+        return <input style={formControlStyle} type="number" min={0} step="0.01" value={f.amount} placeholder="0.00" onChange={(e) => set('amount', e.target.value)} />;
+      case 'billing_frequency':
+        return (
+          <select style={formControlStyle} value={f.billing_frequency} onChange={(e) => set('billing_frequency', e.target.value as Form['billing_frequency'])}>
+            {FREQUENCIES.map((v) => <option key={v} value={v}>{billingFrequencyLabel(v, tFreq) ?? v}</option>)}
+          </select>
+        );
+      case 'validity_days':
+        return <input style={formControlStyle} type="number" min={1} step={1} value={f.validity_days} placeholder={EMPTY_VALUE} onChange={(e) => set('validity_days', e.target.value)} />;
+      case 'tax_rate_id':
+        return (
+          <select style={formControlStyle} value={f.tax_behavior} onChange={(e) => set('tax_behavior', e.target.value as Form['tax_behavior'])}>
+            {TAX_BEHAVIORS.map((v) => <option key={v} value={v}>{t(`tax_behavior_${v}`)}</option>)}
+          </select>
+        );
+      case 'package_information':
+        return <textarea style={productTextareaStyle} rows={3} value={f.package_information} onChange={(e) => set('package_information', e.target.value)} />;
+      case 'notes':
+        return <textarea style={productTextareaStyle} rows={3} value={f.notes} onChange={(e) => set('notes', e.target.value)} />;
+      default:
+        return null;
+    }
+  }
+
+  /** The base-only fields (not on a gym Product), in the template's own section. */
+  const extras = (f: Form | null, p: BaseProduct | null) => (
+    <div style={{ marginTop: 12 }}>
       <label style={formFieldLabelStyle}>{t('charge_type_code')}</label>
-      <input style={formControlStyle} value={form.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
-      <div style={{ fontSize: 12, color: '#666' }}>{t('charge_type_code_help')}</div>
-      <label style={formFieldLabelStyle}>{t('type')}</label>
-      <select style={formControlStyle} value={form.type} onChange={(e) => set('type', e.target.value as Form['type'])}>
-        {TYPES.map((v) => <option key={v} value={v}>{t(`type_${v}`)}</option>)}
-      </select>
-      {form.type === 'sessions' && (
+      {f ? (
         <>
-          <label style={formFieldLabelStyle}>{t('units')}</label>
-          <input style={formControlStyle} type="number" min={1} step={1} value={form.units} onChange={(e) => set('units', e.target.value)} />
+          <input style={formControlStyle} value={f.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
+          <div style={{ fontSize: 12, color: 'var(--gd-text-secondary, #666)' }}>{t('charge_type_code_help')}</div>
+          <label style={{ ...productCheckboxCellStyle, marginTop: 12 }}>
+            <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
+            {t('one_time_purchase')}
+          </label>
+        </>
+      ) : (
+        <>
+          <div style={productValueStyle}>{p?.charge_type_code ?? dash}</div>
+          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('one_time_purchase')}</label>
+          <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
         </>
       )}
-      <label style={formFieldLabelStyle}>{t('amount')}</label>
-      <input style={formControlStyle} type="number" min={0} step="0.01" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
-      <label style={formFieldLabelStyle}>{t('billing_frequency')}</label>
-      <select style={formControlStyle} value={form.billing_frequency} onChange={(e) => set('billing_frequency', e.target.value as Form['billing_frequency'])}>
-        {FREQUENCIES.map((v) => <option key={v} value={v}>{billingFrequencyLabel(v, tFreq) ?? v}</option>)}
-      </select>
-      <label style={formFieldLabelStyle}>{t('status')}</label>
-      <select style={formControlStyle} value={form.status} onChange={(e) => set('status', e.target.value as Form['status'])}>
-        <option value="active">{t('active')}</option>
-        <option value="inactive">{t('inactive')}</option>
-      </select>
-      <label style={formFieldLabelStyle}>{t('enrollment_status')}</label>
-      <select style={formControlStyle} value={form.enrollment_status} onChange={(e) => set('enrollment_status', e.target.value as Form['enrollment_status'])}>
-        <option value="public">{t('enrollment_public')}</option>
-        <option value="staff_only">{t('enrollment_staff_only')}</option>
-      </select>
-      <label style={formFieldLabelStyle}>{t('tax_behavior')}</label>
-      <select style={formControlStyle} value={form.tax_behavior} onChange={(e) => set('tax_behavior', e.target.value as Form['tax_behavior'])}>
-        {TAX_BEHAVIORS.map((v) => <option key={v} value={v}>{t(`tax_behavior_${v}`)}</option>)}
-      </select>
-      <label style={formFieldLabelStyle}>{t('description')}</label>
-      <textarea style={formControlStyle} rows={2} value={form.description} onChange={(e) => set('description', e.target.value)} />
-      {form.type === 'sessions' && (
-        <>
-          <label style={formFieldLabelStyle}>{t('package_information')}</label>
-          <textarea style={formControlStyle} rows={2} value={form.package_information} onChange={(e) => set('package_information', e.target.value)} />
-        </>
-      )}
-      <label style={formFieldLabelStyle}>{t('notes')}</label>
-      <textarea style={formControlStyle} rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
-      <label style={formFieldLabelStyle}>{t('validity_days')}</label>
-      <input style={formControlStyle} type="number" min={1} step={1} value={form.validity_days} onChange={(e) => set('validity_days', e.target.value)} />
-      <label style={{ ...formFieldLabelStyle, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="checkbox" checked={form.mandatory} onChange={(e) => set('mandatory', e.target.checked)} />
-        {t('mandatory')}
-      </label>
-      <label style={{ ...formFieldLabelStyle, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="checkbox" checked={form.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
-        {t('one_time_purchase')}
-      </label>
-      {/* #2009 stage 3 — the template's image, acting on the server at once
-          (`POST`/`DELETE /platform/base-products/:id/image`). Its key carries the
-          template's id, so the create form offers none. The objects live under
-          `cordel/`, which no gym's storage settings gate. */}
-      {form.id != null && (
-        <div style={{ margin: '12px 0 4px' }}>
-          <label style={formFieldLabelStyle}>{t('section_media')}</label>
-          <MemberImageField
-            target={{
-              kind: 'immediate',
-              memberId: form.id,
-              basePath: '/platform/base-products',
-              imageUrl: rows.find((r) => r.id === form.id)?.image_url ?? null,
-              stamp: rows.find((r) => r.id === form.id)?.modified_at,
-              onChanged: (updated) => {
-                setRows((prev) => prev.map((r) => (r.id === form.id ? { ...r, ...(updated as BaseProduct) } : r)));
-              },
-            }}
-            requiresGymStorage={false}
-            label={(key) => t(key as any)}
-          />
-        </div>
-      )}
+    </div>
+  );
+
+  const mediaFor = (id: number) => (
+    <div style={{ margin: '12px 0 4px' }}>
+      <label style={formFieldLabelStyle}>{t('section_media')}</label>
+      <MemberImageField
+        target={{
+          kind: 'immediate',
+          memberId: id,
+          basePath: '/platform/base-products',
+          imageUrl: rows.find((r) => r.id === id)?.image_url ?? null,
+          stamp: rows.find((r) => r.id === id)?.modified_at,
+          onChanged: (updated) => {
+            setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...(updated as BaseProduct) } : r)));
+          },
+        }}
+        requiresGymStorage={false}
+        label={(key) => t(key as any)}
+      />
+    </div>
+  );
+
+  const actions = (
+    <>
       {error && <div style={formErrorStyle} role="alert">{error}</div>}
       <div style={inlineActionsRowStyle}>
         <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
         <button style={secondaryBtnSmall} disabled={saving} onClick={() => { setForm(null); setError(null); }}>{t('cancel')}</button>
+      </div>
+    </>
+  );
+
+  const layoutFor = (f: Form | null, p: BaseProduct | null) => (
+    <ProductLayout
+      sections={sectionsFor(f?.type ?? p!.type)}
+      editing={!!f}
+      sectionTitle={(sec) => tp(sec.titleKey as any)}
+      fieldLabel={(field) => tp(field.labelKey as any)}
+      renderField={(field) => renderControl(f!, field)}
+      renderValue={(field) => renderValue(f ? ({ ...p } as BaseProduct) : p!, field)}
+    />
+  );
+
+  // Create card: the same layout, an empty draft as the "row" being edited.
+  const newEditor = form?.id === null && (
+    <div style={{ ...productCardStyle, marginBottom: 12 }}>
+      <div style={productExpandedBodyStyle}>
+        <div style={inlineEditorTitleStyle}>{t('add')}</div>
+        {layoutFor(form, null)}
+        {extras(form, null)}
+        {actions}
       </div>
     </div>
   );
@@ -321,28 +405,36 @@ export default function BaseProductsPage() {
         />
       </div>
 
-      {form?.id === null && editor}
+      {newEditor}
 
       <ProductListFrame showHeader={rows.length > 0} t={tp as any}>
         {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: form?.id === null ? 12 : 0 }}>
             {rows.map((p) => (
               <div key={p.id} style={productCardStyle}>
-                {form?.id === p.id ? (
-                  <div style={{ padding: 12 }}>{editor}</div>
-                ) : (
-                  <ProductListRow
-                    item={rowData(p)}
-                    isExpanded={false}
-                    sessionNote={null}
-                    text={listText}
-                    onToggle={() => { setForm(formFor(p)); setError(null); }}
-                    menuItems={[
-                      { label: t('edit'), onClick: () => { setForm(formFor(p)); setError(null); } },
-                      { label: t('details'), onClick: () => setDetails(p) },
-                      { label: t('delete'), onClick: () => setDeleting(p), danger: true },
-                    ]}
-                  />
+                <ProductListRow
+                  item={rowData(p)}
+                  isExpanded={expanded.has(p.id) || form?.id === p.id}
+                  sessionNote={null}
+                  text={listText}
+                  onToggle={() => toggleExpand(p.id)}
+                  menuItems={[
+                    { label: t('edit'), onClick: () => { setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
+                    { label: t('details'), onClick: () => setDetails(p) },
+                    { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                  ]}
+                />
+                {(expanded.has(p.id) || form?.id === p.id) && (
+                  <div style={productExpandedBodyStyle}>
+                    {form?.id === p.id ? layoutFor(form, p) : layoutFor(null, p)}
+                    {extras(form?.id === p.id ? form : null, p)}
+                    {form?.id === p.id ? (
+                      <>
+                        {mediaFor(p.id)}
+                        {actions}
+                      </>
+                    ) : null}
+                  </div>
                 )}
               </div>
             ))}
