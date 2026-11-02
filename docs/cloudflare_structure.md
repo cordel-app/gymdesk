@@ -19,6 +19,9 @@
 │   ├── spaces/
 │   │   ├── {space_id}-{space_name}.webp                              — 1080 × 1080 px
 │   │   └── {space_id}-{space_name}-thumbnail.webp                    — 256 × 256 px
+│   ├── staff/
+│   │   ├── {staff_id}-{staff_name}.webp                              — 1080 × 1080 px
+│   │   └── {staff_id}-{staff_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
