@@ -22,6 +22,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { MemberImageField } from '@/components/MemberImageField';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 
 // #801: a Space has no ACTIVITIES section. The Space form used to carry a
 // checkbox list writing `PUT /spaces/:id/activity-types`; both the section and
@@ -44,6 +48,9 @@ interface Space {
   notes: string | null;
   opening_time: string | null;
   closing_time: string | null;
+  /** #2260: the 1080 x 1080 master and 256 x 256 thumbnail WebP; null = no image. */
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -144,6 +151,7 @@ export default function SpacesPage() {
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
+  const [view, setView] = useExerciseViewMode();
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -409,6 +417,14 @@ export default function SpacesPage() {
     );
   }
 
+  /** The image routes answer the whole row: take the image fields into the list's row. */
+  function applyImageChange(next: unknown) {
+    const row = next as Partial<Space> & { id: number };
+    setSpaces((rows) => rows.map((r) => (r.id === row.id
+      ? { ...r, image_url: row.image_url ?? null, image_thumbnail_url: row.image_thumbnail_url ?? null, modified_at: row.modified_at ?? r.modified_at }
+      : r)));
+  }
+
   function renderSpaceRow(space: Space) {
     const isExpanded = expanded.has(space.id);
     const isEditing = editingId === space.id;
@@ -426,10 +442,36 @@ export default function SpacesPage() {
 
     return (
       <div key={space.id} style={cardStyle}>
-        {/* Collapsed row */}
+        {view === 'cards' ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {space.image_url && (
+              <CardSquareImage src={space.image_url} alt={space.name} version={space.modified_at} placeholder={null} />
+            )}
+            <div
+              style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: isEditing ? 'default' : 'pointer' }}
+              onClick={() => { if (!isEditing) toggleExpand(space.id); }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{space.name}</div>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ContextMenu items={menuItems} ariaLabel={`Actions for ${space.name}`} />
+                </div>
+              </div>
+              {space.center_name && <div style={{ fontSize: 13, color: '#888' }}>{space.center_name}</div>}
+              <div style={{ fontSize: 13, color: '#666' }}>{t('label_capacity')}: {space.capacity}</div>
+              <div style={{ fontSize: 12.5, color: '#888' }}>{space.created_by ?? '—'} · {fmtDate(space.created_at)}</div>
+              <div><StatusBadge status={space.status} label={tStatus(space.status)} /></div>
+            </div>
+          </div>
+        ) : (
+        /* Collapsed row */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(space.id)}>
-          <div className={CELL_CLASS.name} title={space.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {space.name}
+          <div className={CELL_CLASS.name} title={space.name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* No image → no thumbnail at all, not an empty placeholder (#2260). */}
+            {(space.image_thumbnail_url ?? space.image_url) && (
+              <MemberAvatar name={space.name} imageUrl={space.image_thumbnail_url ?? space.image_url ?? null} stamp={space.modified_at} size={36} />
+            )}
+            <span style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {descText}
@@ -451,6 +493,7 @@ export default function SpacesPage() {
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${space.name}`} />
           </div>
         </div>
+        )}
 
         {/* Inline edit form */}
         {isEditing && (
@@ -542,6 +585,21 @@ export default function SpacesPage() {
               style={{ ...inlineInputStyle, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
             />
 
+            <SectionHeader title={t('section_media')} />
+            <MemberImageField
+              target={{
+                kind: 'immediate',
+                memberId: space.id,
+                basePath: '/spaces',
+                imageUrl: space.image_url ?? null,
+                stamp: space.modified_at,
+                onChanged: applyImageChange,
+              }}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+              label={(key) => t(key as any)}
+            />
+
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
@@ -618,12 +676,22 @@ export default function SpacesPage() {
         </div>
       </div>
 
+      {/* The Cards | List toggle sits on the right of the toolbar (#2260). */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ExerciseViewToggle value={view} onChange={setView} />
+      </div>
+
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : visibleSpaces.length === 0 && !inlineNew ? (
         <>
           {renderInlineNewRow()}
           <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
+      ) : view === 'cards' ? (
+        <>
+          {renderInlineNewRow()}
+          <CardGrid>{visibleSpaces.map(renderSpaceRow)}</CardGrid>
         </>
       ) : (
         /* The header band and the cards share LIST_GRID_COLUMNS and scroll

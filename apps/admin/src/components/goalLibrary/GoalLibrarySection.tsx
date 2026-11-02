@@ -513,7 +513,7 @@ export function GoalLibrarySection({
                 : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             // #2258 — only a gym copy of a Base Personal Goal carries the link.
-            ...(configurable && scope !== 'platform' && goal.base_personal_goal_id ? [
+            ...(configurable && goal.base_personal_goal_id ? [
               { label: label('resync_with_system'), onClick: () => resyncWithSystem(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             ...(writable ? [

@@ -16,7 +16,7 @@ import {
 } from '@/components/listChrome';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, readOnlyStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { PROFILE_ROLE_MAP } from '@/config/permissions';
 import {
@@ -26,7 +26,11 @@ import {
   formatStaffField,
   toStaffEditFormValues,
 } from './staffProfile';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { inlineActionsRowStyle, secondaryBtnSmall, secondaryBtnStyle, alertTextColor } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { MemberImageField } from '@/components/MemberImageField';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { formatGymDateOnly, formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -42,6 +46,9 @@ export interface StaffMember extends StaffProfile {
   /** #592: the gym_memberships row (login) this record owns, if any. */
   gym_membership_id: number | null;
   profile_photo_url: string | null;
+  /** #2262: the 1080 x 1080 master and 256 x 256 thumbnail WebP; null = no image. */
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   direct_manager_id: number | null;
   direct_manager_name: string | null;
   contract_days_remaining: number | null;
@@ -133,6 +140,11 @@ function contractBadge(days: number | null): React.ReactNode {
 }
 
 function avatar(member: StaffMember) {
+  // #2262: the uploaded thumbnail, in a circle; without one the existing initials avatar stays.
+  const thumb = member.image_thumbnail_url ?? member.image_url;
+  if (thumb) {
+    return <MemberAvatar name={`${member.first_name} ${member.last_name}`} imageUrl={thumb} stamp={member.modified_at} size={36} />;
+  }
   if (member.profile_photo_url) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={member.profile_photo_url} alt={member.first_name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />;
@@ -292,6 +304,7 @@ export default function StaffPage() {
   const firstNameRef = useRef<HTMLInputElement>(null);
   // #613: read-only roles see every control, disabled — the API rejects their writes.
   const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const [view, setView] = useExerciseViewMode();
 
   // Debounce search
   useEffect(() => {
@@ -791,12 +804,12 @@ export default function StaffPage() {
         {member && (
           <div style={{ display: 'flex', gap: 8 }}>
             {(canInvite || canResend) && (
-              <button type="button" onClick={() => handleGrantAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#4c6ef5'), !canWrite)}>
+              <button type="button" onClick={() => handleGrantAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(primaryBtnSmall(), !canWrite)}>
                 {canResend ? t('access_resend') : t('access_invite')}
               </button>
             )}
             {canRevoke && (
-              <button type="button" onClick={() => setRevokingAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>
+              <button type="button" onClick={() => setRevokingAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall(alertTextColor), !canWrite)}>
                 {t('access_revoke')}
               </button>
             )}
@@ -908,6 +921,40 @@ export default function StaffPage() {
     );
   }
 
+  /** The image routes answer the staff row: take the image fields, keep the rest of the list row. */
+  function applyImageChange(next: unknown) {
+    const row = next as Partial<StaffMember> & { id: number };
+    setRows((list) => list.map((r) => (r.id === row.id
+      ? { ...r, image_url: row.image_url ?? null, image_thumbnail_url: row.image_thumbnail_url ?? null, modified_at: row.modified_at ?? r.modified_at }
+      : r)));
+  }
+
+  function renderMedia() {
+    const editing = rows.find((r) => r.id === editingId);
+    return (
+      <div>
+        <p style={subsectionLabelStyle}>{t('section_media')}</p>
+        {editing ? (
+          <MemberImageField
+            target={{
+              kind: 'immediate',
+              memberId: editing.id,
+              basePath: '/staff',
+              imageUrl: editing.image_url ?? null,
+              stamp: editing.modified_at,
+              onChanged: applyImageChange,
+            }}
+            disabled={!canWrite}
+            disabledTitle={readOnlyTitle}
+            label={(key) => t(key as any)}
+          />
+        ) : (
+          <p style={{ color: '#888', fontSize: 13, margin: 0 }}>{t('image_save_first')}</p>
+        )}
+      </div>
+    );
+  }
+
   function renderInlineEditor() {
     return (
       <div style={{ borderTop: '1px solid #e8e8ed', padding: 20 }}>
@@ -919,6 +966,8 @@ export default function StaffPage() {
             <p style={subsectionLabelStyle}>{t('section_employment')}</p>
             {renderEmployment()}
           </div>
+
+          {renderMedia()}
 
           {renderCenters()}
 
@@ -951,8 +1000,8 @@ export default function StaffPage() {
           * `[Save] [Cancel]`.
           */}
         <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>
+          <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
+          <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
             {saving ? t('saving') : t('save')}
           </button>
         </div>
@@ -977,7 +1026,37 @@ export default function StaffPage() {
     menuItems.push({ label: t('action_delete'), onClick: () => setDeleting(member), danger: true, disabled: !canWrite, title: readOnlyTitle });
 
     return (
-      <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>
+      <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: view === 'cards' ? 0 : 10, overflow: 'hidden' }}>
+        {view === 'cards' ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {member.image_url && (
+              <CardSquareImage src={member.image_url} alt={`${member.first_name} ${member.last_name}`} version={member.modified_at} placeholder={null} />
+            )}
+            <div
+              style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: isEditing ? 'default' : 'pointer' }}
+              onClick={() => { if (!isEditing) openExpand(member); }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                  <div style={{ fontWeight: 600, fontSize: 16 }}>{member.first_name} {member.last_name}</div>
+                  {member.employee_number && <div style={{ fontSize: 12, color: '#888' }}>{member.employee_number}</div>}
+                </div>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ContextMenu items={menuItems} />
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: '#555' }}>{member.profile}</div>
+              <div style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span>{member.hire_date ? formatGymDateOnly(String(member.hire_date), gymFmt) : '—'}</span>
+                {contractBadge(member.contract_days_remaining !== undefined ? Number(member.contract_days_remaining) : null)}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <StatusBadge status={member.employment_status} label={t(`employment_status_${member.employment_status}`)} />
+                <StatusBadge status={member.current_status === 'available' ? 'active' : 'paused'} label={t(`current_status_${member.current_status}`)} />
+              </div>
+            </div>
+          </div>
+        ) : (
         <div
           className={LIST_GRID_ROW_CLASS}
           style={listRowStyle(isEditing)}
@@ -1034,6 +1113,7 @@ export default function StaffPage() {
             <ContextMenu items={menuItems} />
           </div>
         </div>
+        )}
 
         {isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(member) : null}
       </div>
@@ -1086,7 +1166,7 @@ export default function StaffPage() {
           {field(t('label_updated_at'), member.modified_at ? formatGymDateTime(member.modified_at, gymFmt) : null)}
           <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
             <ViewAuditLogButton entityType="staff" entityId={member.id} onNavigate={() => setDetailsMember(null)} />
-            <button onClick={() => setDetailsMember(null)} style={btnStyle('#888')}>{t('close')}</button>
+            <button onClick={() => setDetailsMember(null)} style={secondaryBtnStyle}>{t('close')}</button>
           </div>
         </div>
       </div>
@@ -1098,7 +1178,7 @@ export default function StaffPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <button onClick={openNew} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>{t('add')}</button>
+        <button onClick={openNew} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
       </div>
 
       {/* Filters */}
@@ -1121,7 +1201,24 @@ export default function StaffPage() {
           <option value="">{t('filter_cur_status_all')}</option>
           {CURRENT_STATUSES.map((s) => <option key={s} value={s}>{t(`current_status_${s}`)}</option>)}
         </select>
+        {/* #2262: the Cards | List toggle, aligned to the right of the toolbar. */}
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={view} onChange={setView} />
+        </div>
       </div>
+
+      {view === 'cards' ? (
+        <>
+          {editingId === 'new' && renderNewRow()}
+          {loading ? (
+            <p style={{ color: '#888' }}>{t('loading')}</p>
+          ) : rows.length === 0 ? (
+            <p style={{ color: '#888' }}>{t('empty')}</p>
+          ) : (
+            <CardGrid>{rows.map((m) => renderMemberRow(m))}</CardGrid>
+          )}
+        </>
+      ) : (<>
 
       {/* The header band and the cards share LIST_GRID_COLUMNS and scroll
           together, so they cannot fall out of line, and a narrow viewport
@@ -1155,6 +1252,8 @@ export default function StaffPage() {
           )}
         </div>
       </div>
+
+      </>)}
 
       {/* Details modal */}
       {detailsMember && renderDetailsModal(detailsMember)}

@@ -70,7 +70,7 @@ describe('POST /personal-goals/:id/resync-with-system', () => {
 
   it('keeps assignments and readings', async () => {
     memberId = (await db.query(
-      "INSERT INTO members (gym_id, first_name, last_name, email, created_by) VALUES (?, 'R', 'S', ?, 'test')",
+      "INSERT INTO members (gym_id, name, email) VALUES (?, 'R S', ?)",
       [gymA, `resync-${Date.now()}@example.com`],
     )).insertId;
     const mpg = await db.query(
