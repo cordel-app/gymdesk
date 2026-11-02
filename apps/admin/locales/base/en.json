@@ -513,7 +513,7 @@
     "section_membership_plan": "Membership Plan",
     "section_billing_event_simulation": "Billing Event Simulation",
     "ps_status_label": "PS Status",
-    "ps_status_none": "No Product Set",
+    "ps_status_none": "None",
     "ps_status_draft": "Draft",
     "ps_status_pending_payment": "Pending Payment",
     "ps_status_active": "Active",

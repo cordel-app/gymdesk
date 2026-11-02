@@ -514,7 +514,7 @@
     "section_membership_plan": "Pla de membresia",
     "section_billing_event_simulation": "Simulació d'esdeveniments de facturació",
     "ps_status_label": "Estat PS",
-    "ps_status_none": "Sense conjunt de productes",
+    "ps_status_none": "Cap",
     "ps_status_draft": "Esborrany",
     "ps_status_pending_payment": "Pendent de pagament",
     "ps_status_active": "Actiu",

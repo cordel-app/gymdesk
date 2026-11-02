@@ -513,7 +513,7 @@
     "section_membership_plan": "Plan de membresía",
     "section_billing_event_simulation": "Simulación de eventos de facturación",
     "ps_status_label": "Estado PS",
-    "ps_status_none": "Sin conjunto de productos",
+    "ps_status_none": "Ninguno",
     "ps_status_draft": "Borrador",
     "ps_status_pending_payment": "Pendiente de pago",
     "ps_status_active": "Activo",
