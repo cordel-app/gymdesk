@@ -6,12 +6,9 @@ import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAlloc
 import { toPlanDurationRepeats } from '../domain/planDuration';
 
 /**
- * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan.
- *
- * The legacy rows (`product_set_plan_snapshots` and the `user_membership_*` benefit tables) hold
- * one plan per version, so a second plan has no legacy home: it is written straight into the plan
- * snapshot tables (`source_plan_snapshot_id` NULL — a *native* snapshot), which `syncPlanSnapshot()`
- * leaves alone, and it is carried onto each successor version by `copyNativePlanSnapshots()`.
+ * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan: a plan beyond the
+ * first is written straight into the plan snapshot tables (`addPlanSnapshotToVersion()`) and every
+ * plan rides onto each successor version as an inherited copy (`copyPlanSnapshotToVersion()`).
  *
  * Oscar's rule for its calendar: everything with the same periodicity bills on the same day, so the
  * plan joins the schedule of its cadence (`allocateSchedule()`); the engine prorates the stretch
@@ -114,7 +111,10 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
  * The copy is native — it has no legacy twin — and keeps the assignment the original is the contract
  * of (`source_user_membership_id`).
  */
-export async function copyPlanSnapshotToVersion(tx: Tx, gymId: string, fromSnapshotId: number, toSetId: number): Promise<number> {
+export async function copyPlanSnapshotToVersion(
+  tx: Tx, gymId: string, fromSnapshotId: number, toSetId: number,
+  opts: { keepAssignment?: boolean } = { keepAssignment: true },
+): Promise<number> {
   const { insertId } = await tx.query(
     `INSERT INTO plan_snapshots
        (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, ends_at, closed_at,
@@ -126,7 +126,7 @@ export async function copyPlanSnapshotToVersion(tx: Tx, gymId: string, fromSnaps
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
-            s.source_user_membership_id, s.created_by
+            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, toSetId, fromSnapshotId, gymId]);
   await tx.query(
@@ -169,30 +169,25 @@ export async function copyPlanSnapshotToVersion(tx: Tx, gymId: string, fromSnaps
 }
 
 /**
- * Carries the native plan snapshots of `fromSetId` onto its successor, as inherited copies. The
- * legacy-backed snapshot is the clone's own business (`cloneConfiguration()` copies the legacy
- * rows and `syncPlanSnapshot()` derives it).
- */
-export async function copyNativePlanSnapshots(tx: Tx, gymId: string, fromSetId: number, toSetId: number): Promise<number[]> {
-  const { rows } = await tx.query<any>(
-    `SELECT id FROM plan_snapshots
-      WHERE gym_id = ? AND product_set_id = ? AND source_plan_snapshot_id IS NULL ORDER BY id`, [gymId, fromSetId]);
-  const copies: number[] = [];
-  for (const row of rows) copies.push(await copyPlanSnapshotToVersion(tx, gymId, Number(row.id), toSetId));
-  return copies;
-}
-
-/**
  * #2125 stage 13 — "Add": the owner's active version A is merged into the Draft D that carries the
  * plan being added (D is in A's chain, so the schedules and the coverage are already shared).
  * Every plan of A (legacy-backed or native) becomes an inherited native snapshot of D, and A's
  * recurring Product lines and Product Promotions ride along, so activating D supersedes A without
  * losing anything A was billing. D's own plan stays what it is: the one being added.
  */
-export async function mergeActiveVersionIntoDraft(tx: Tx, gymId: string, activeSetId: number, draftSetId: number): Promise<void> {
+export async function mergeActiveVersionIntoDraft(
+  tx: Tx, gymId: string, activeSetId: number, draftSetId: number,
+  /** #2125 stage 20: plans being replaced — the assignments whose snapshots are not carried over. */
+  opts: { excludeUserMembershipIds?: readonly number[] } = {},
+): Promise<void> {
+  const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
-    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, activeSetId]);
-  for (const plan of plans) await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
+    'SELECT id, source_user_membership_id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id',
+    [gymId, activeSetId]);
+  for (const plan of plans) {
+    if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;
+    await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
+  }
 
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot

@@ -109,34 +109,44 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     });
   }
 
-  await tx.query(
-    `INSERT INTO product_set_plan_snapshots
-       (gym_id, product_set_id, schedule_id, membership_fee_price,
-        free_periods, paid_periods, bonus_periods, pay_beforehand_periods, auto_renew,
-        recurring_billing_interval, recurring_billing_unit, origin)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id), membership_fee_price = VALUES(membership_fee_price),
-       free_periods = VALUES(free_periods), paid_periods = VALUES(paid_periods),
-       bonus_periods = VALUES(bonus_periods), pay_beforehand_periods = VALUES(pay_beforehand_periods),
-       auto_renew = VALUES(auto_renew),
-       recurring_billing_interval = VALUES(recurring_billing_interval),
-       recurring_billing_unit = VALUES(recurring_billing_unit),
-       origin = VALUES(origin)`,
-    [
-      gymId, productSetId, scheduleId, input.membershipFeePrice ?? null,
-      plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
-      plan.pay_beforehand_periods ?? null,
-      toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
-      plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
-      input.origin ?? null,
-    ],
-  );
-
-  // #2125 stage 16: the plan's included Products are the snapshot's own lines, so the snapshot row
-  // is derived from the plan configuration first and the lines are written under it.
+  // #2125 stage 17: the plan snapshot is written directly (it is the plan's configuration). A version
+  // being re-snapshotted updates its primary snapshot; otherwise the snapshot is created.
+  const { rows: setInfo } = await tx.query<any>(
+    'SELECT owner_member_id, status, starts_at, ends_at, user_membership_id, created_by FROM product_sets WHERE id = ? AND gym_id = ?',
+    [productSetId, gymId]);
+  const set = setInfo[0];
+  const values = [
+    scheduleId, input.membershipFeePrice ?? null,
+    plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
+    plan.pay_beforehand_periods ?? null,
+    toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
+    plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
+    input.origin ?? null,
+  ];
+  let snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId != null) {
+    await tx.query(
+      `UPDATE plan_snapshots SET schedule_id = ?, membership_fee_price = ?, free_periods = ?, paid_periods = ?,
+              bonus_periods = ?, pay_beforehand_periods = ?, auto_renew = ?, recurring_billing_interval = ?,
+              recurring_billing_unit = ?, origin = ?, membership_plan_id = ?, modified_at = UTC_TIMESTAMP()
+        WHERE id = ?`, [...values, membershipPlanId, snapshotId]);
+  } else {
+    const { insertId } = await tx.query(
+      `INSERT INTO plan_snapshots
+         (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, ends_at,
+          schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
+          auto_renew, recurring_billing_interval, recurring_billing_unit, origin, source_user_membership_id, created_by)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, productSetId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
+        set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
+        set.created_by ?? null]);
+    snapshotId = Number(insertId);
+    await tx.query(
+      'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+      [gymId, snapshotId, set.owner_member_id]);
+  }
+  // Coverage and Promotion applications follow the version.
   await syncPlanSnapshot(tx, gymId, productSetId);
-  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
-  if (snapshotId == null) throw new Error('The plan snapshot was not derived');
   for (const category of CATEGORIES) {
     const target = PLAN_LINE_TABLE[category];
     const source = planBenefitTableForCategory(category);

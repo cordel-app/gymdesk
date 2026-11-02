@@ -68,8 +68,9 @@ export type CommitOutcome =
 async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
   const { rows } = await tx.query<{
     id: number; member_id: number; status: string; starts_at: string; replace_on_activation: number;
+    replaces_user_membership_id: number | null;
   }>(
-    `SELECT id, member_id, status, replace_on_activation, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
+    `SELECT id, member_id, status, replace_on_activation, replaces_user_membership_id, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
        FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
   );
@@ -121,10 +122,13 @@ async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member
  * to — both in one chain — and merges the first into the second. `false` when the shape is not that
  * (no Draft, a Draft outside the owner's chain, no active plan version): the caller refuses the add.
  */
-async function mergeOwnerVersionForAdd(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<boolean> {
+async function mergeOwnerVersionForAdd(
+  tx: Tx, gymId: string, row: { id: number; member_id: number }, excludeUserMembershipIds: readonly number[] = [],
+): Promise<boolean> {
   const { rows: drafts } = await tx.query<any>(
     `SELECT id, root_product_set_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft' ORDER BY version DESC, id DESC LIMIT 1 FOR UPDATE`,
+      WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment')
+      ORDER BY version DESC, id DESC LIMIT 1 FOR UPDATE`,
     [gymId, row.id]);
   const { rows: actives } = await tx.query<any>(
     `SELECT id, root_product_set_id FROM product_sets
@@ -132,8 +136,33 @@ async function mergeOwnerVersionForAdd(tx: Tx, gymId: string, row: { id: number;
     [gymId, row.member_id]);
   const draft = drafts[0]; const active = actives[0];
   if (!draft || !active || Number(draft.root_product_set_id) !== Number(active.root_product_set_id)) return false;
-  await mergeActiveVersionIntoDraft(tx, gymId, Number(active.id), Number(draft.id));
+  // A Save & Pay merges when it is submitted and the payment's commit comes back here: merging twice
+  // would duplicate every plan, so a Draft that already carries inherited snapshots is left as it is.
+  const { rows: merged } = await tx.query<any>(
+    'SELECT 1 FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND is_inherited = 1 LIMIT 1',
+    [gymId, draft.id]);
+  if (merged.length > 0) return true;
+  await mergeActiveVersionIntoDraft(tx, gymId, Number(active.id), Number(draft.id), { excludeUserMembershipIds });
   return true;
+}
+
+/**
+ * #2125 stage 20 — which live assignments a Replace cancels: the one the Draft was raised to
+ * replace (`replaces_user_membership_id`, set by `assign-new-plan`) when it is still live, else —
+ * a Draft created another way, or whose target is gone — every one in the way, as before.
+ */
+export function replacementTargets(found: LiveAssignment[], replacesId: number | null | undefined): LiveAssignment[] {
+  if (replacesId != null) {
+    const named = found.filter((c) => Number(c.id) === Number(replacesId));
+    if (named.length > 0) return named;
+  }
+  return found;
+}
+
+/** The owner's own plans that stay live when only `targets` are replaced (they need merging in). */
+function survivingOwnPlans(found: LiveAssignment[], targets: LiveAssignment[], ownerMemberId: number): LiveAssignment[] {
+  const gone = new Set(targets.map((t) => Number(t.id)));
+  return found.filter((c) => !gone.has(Number(c.id)) && Number(c.owner_member_id) === Number(ownerMemberId));
 }
 
 /** `draft → active` or `pending_payment → active`, superseding on `confirm`. */
@@ -149,8 +178,10 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
 
   const found = await liveConflicts(tx, input.gymId, row);
   const resolution = input.resolution ?? (Number(row.replace_on_activation) === 1 ? 'replace' : null);
+  // #2125 stage 20: a Draft raised from one plan's row replaces that plan, not every one in the way.
+  const targets = replacementTargets(found, row.replaces_user_membership_id);
   if (found.length > 0 && !resolution && !(row.status === PENDING_PAYMENT_STATUS)) {
-    return { kind: 'conflict', conflicts: found };
+    return { kind: 'conflict', conflicts: targets };
   }
   // #2125 stage 13: an explicit 'add' beside the owner's own live plan merges the active version
   // into this assignment's Draft, so activating it supersedes the version without ending any
@@ -160,7 +191,13 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     if (!merged) return { kind: 'add_unsupported' };
   }
   // A Pending Payment row was asked at Save & Pay; with no recorded choice it was an add.
-  const conflicts = resolution === 'replace' ? found : [];
+  const conflicts = resolution === 'replace' ? targets : [];
+  // Replacing some of the owner's plans while others stay: those others are merged into this Draft
+  // (without the replaced ones), exactly as an Add does, or activating it would end their billing.
+  if (conflicts.length > 0 && survivingOwnPlans(found, conflicts, row.member_id).length > 0) {
+    const merged = await mergeOwnerVersionForAdd(tx, input.gymId, row, conflicts.map((c) => c.id));
+    if (!merged) return { kind: 'add_unsupported' };
+  }
   if (conflicts.length > 0) {
     const dateError = supersedeStartsAtError(row.starts_at, conflicts);
     if (dateError) return { kind: 'bad_date', message: dateError };
@@ -214,15 +251,23 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
 
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {
-    if (!input.resolution) return { kind: 'conflict', conflicts };
+    // #2125 stage 20: a Draft raised from one plan's row replaces that plan (see `replacementTargets`).
+    const targets = replacementTargets(conflicts, row.replaces_user_membership_id);
+    if (!input.resolution) return { kind: 'conflict', conflicts: targets };
     // #2125 stage 14: an add merges the active version into the Draft before it is submitted, so the
     // initial charge it writes is the added plan's alone and the payment activates the merged version.
     if (input.resolution === 'add' && addSharesOwnerChain(conflicts, row.member_id)) {
       if (!(await mergeOwnerVersionForAdd(tx, input.gymId, row))) return { kind: 'add_unsupported' };
     }
     if (input.resolution === 'replace') {
-      const dateError = supersedeStartsAtError(row.starts_at, conflicts);
+      const dateError = supersedeStartsAtError(row.starts_at, targets);
       if (dateError) return { kind: 'bad_date', message: dateError };
+      // The plans that stay are merged now, so the initial charge is the new plan's alone.
+      if (survivingOwnPlans(conflicts, targets, row.member_id).length > 0) {
+        if (!(await mergeOwnerVersionForAdd(tx, input.gymId, row, targets.map((c) => c.id)))) {
+          return { kind: 'add_unsupported' };
+        }
+      }
     }
   }
 

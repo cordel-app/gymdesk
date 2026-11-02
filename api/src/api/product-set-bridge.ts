@@ -1,6 +1,5 @@
 import { loadPaidThrough } from './cancellation-entitlement';
-import { copyNativePlanSnapshots } from './plan-snapshot-add';
-import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
@@ -47,18 +46,15 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 
 /** The configuration of `fromSetId`, copied onto `toSetId` (a fresh Draft). */
 export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: number, toSetId: number): Promise<void> {
-  await tx.query(
-    `INSERT INTO product_set_plan_snapshots
-       (gym_id, product_set_id, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
-        membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-        personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
-        recurring_billing_interval, recurring_billing_unit, origin, is_inherited)
-     SELECT gym_id, ?, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
-            membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-            personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
-            recurring_billing_interval, recurring_billing_unit, origin, 1
-       FROM product_set_plan_snapshots WHERE gym_id = ? AND product_set_id = ?`,
-    [toSetId, gymId, fromSetId]);
+  // #2125 stage 17: the plan snapshots are the configuration — every plan of the predecessor is
+  // copied (its included Products, beneficiaries and Promotions with it) as an inherited snapshot.
+  // The primary one is not yet the contract of any assignment (the successor takes its own at
+  // activation), so it does not carry the predecessor's.
+  const { rows: plans } = await tx.query<{ id: number }>(
+    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, fromSetId]);
+  for (const [index, plan] of plans.entries()) {
+    await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), toSetId, { keepAssignment: index > 0 });
+  }
 
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
@@ -71,28 +67,6 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
   await syncPlanSnapshot(tx, gymId, toSetId);
-  // #2125 stage 16: the included Products are the plan snapshot's lines — the successor's primary
-  // snapshot (just derived) takes a copy of the predecessor's primary snapshot's.
-  const fromSnapshot = await primaryPlanSnapshotId(tx, gymId, fromSetId);
-  const toSnapshot = await primaryPlanSnapshotId(tx, gymId, toSetId);
-  if (fromSnapshot != null && toSnapshot != null) {
-    for (const [table, extra] of [
-      [PLAN_LINE_TABLE.session, ', frequency'],
-      [PLAN_LINE_TABLE.oneoff, ''],
-      [PLAN_LINE_TABLE.periodical, ', schedule_id'],
-    ] as const) {
-      await tx.query(
-        `INSERT INTO ${table}
-           (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency,
-            unit_price, currency, \`action\`, \`value\`, mandatory${extra})
-         SELECT gym_id, ?, product_id, quantity, item_name, item_type, item_billing_frequency,
-                unit_price, currency, \`action\`, \`value\`, mandatory${extra}
-           FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`,
-        [toSnapshot, gymId, fromSnapshot]);
-    }
-  }
-  // #2125 stage 9: plans added beside the first have no legacy row; they ride onto the successor as copies.
-  await copyNativePlanSnapshots(tx, gymId, fromSetId, toSetId);
 }
 
 /** #2125 stage 13: only the Promotions about a Product (a plan's own live on its plan snapshot). */

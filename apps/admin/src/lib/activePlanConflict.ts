@@ -130,7 +130,12 @@ export function conflictWording(conflict: ActivePlanConflict): {
   count: number;
 } {
   const count = conflict.conflicts.length;
-  return count > 1
+  if (count <= 1) return { titleKey: 'replace_plan_title', bodyKey: 'replace_plan_body', count };
+  // #2125: a member may hold several plans, so "more than one conflict" no longer means "more than
+  // one member". Several members is the Plans page's bulk assign; several plans of one member is the
+  // Add-or-Replace choice for somebody who already holds a few.
+  const members = new Set(conflict.conflicts.map((c) => c.blocked_member_id));
+  return members.size > 1
     ? { titleKey: 'replace_plan_title_many', bodyKey: 'replace_plan_body_many', count }
-    : { titleKey: 'replace_plan_title', bodyKey: 'replace_plan_body', count };
+    : { titleKey: 'replace_plan_title_plans', bodyKey: 'replace_plan_body_plans', count };
 }

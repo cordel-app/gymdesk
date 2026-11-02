@@ -1,21 +1,12 @@
 /**
- * #2125 stage 2 — dual-write of the plan snapshot model (migration 347) beside the legacy
- * ProductSet rows. Nothing reads `plan_snapshots` yet (stage 3): this module only keeps them
- * equal to what the legacy tables say, in the very transaction that changed the legacy rows.
- *
- * One idempotent function re-derives a version's snapshot from its legacy rows
- * (`product_set_plan_snapshots`, the benefit/periodical tables, the Membership Plan Promotion
- * applications and the chain's coverage), keyed by the `source_*` columns stage 1 added, so the
- * backfill and the dual-write can never disagree about which row is whose. Copying a version
- * (`cloneConfiguration()`) therefore copies the snapshots by re-deriving them, `is_inherited`
- * included, and creates no purchase, application or charge of its own.
+ * #2125 — the plan snapshot model (migration 347) is the source of truth for a Membership Plan's
+ * configuration (stage 17 removed the legacy `product_set_plan_snapshots` it was once derived
+ * from). What is left to keep in step is derived from the version and its neighbours: status,
+ * dates and the linked assignment, coverage, and the Membership Plan Promotion applications.
  */
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-
-/** The snapshot status of a version: its own, except where its projected assignment has moved on. */
-const STATUS_SQL = `CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
-                         ELSE ps.status END`;
+import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
@@ -23,71 +14,45 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_periodical_product_snapshots', source: 'user_membership_promotion_periodical_snapshot' },
 ];
 
-/** Re-derives the plan snapshot of one ProductSet version from its legacy rows. */
+/**
+ * Keeps a version's plan snapshots in step with the version and the assignments they are the
+ * contract of (#2125 stage 17: the plan snapshot is the source of truth for a plan's
+ * configuration; nothing here derives it from another table any more).
+ *
+ *   - every snapshot's status follows its version's, except where the assignment it names has
+ *     moved on (paused, cancelled, expired), and `closed_at` follows that assignment;
+ *   - the version's primary snapshot (the lowest id) takes the version's own member, plan, dates
+ *     and linked assignment;
+ *   - the primary snapshot's beneficiaries are the owner plus whoever the chain covers, and its
+ *     Membership Plan Promotion applications are derived from the version's applications.
+ */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
-  const { rows: legacy } = await tx.query<{ id: number }>(
-    `SELECT psps.id
-       FROM product_set_plan_snapshots psps
-       JOIN product_sets ps ON ps.id = psps.product_set_id AND ps.gym_id = psps.gym_id
-      WHERE psps.product_set_id = ? AND psps.gym_id = ? AND ps.membership_plan_id IS NOT NULL`,
-    [productSetId, gymId]);
-
-  if (!legacy[0]) {
-    // A plan-less version (or one whose plan was removed) has no legacy-backed snapshot; children
-    // cascade. A native snapshot (#2125 stage 9: a plan added beside the first, with no legacy row)
-    // is not derived from anything here and stays.
-    await tx.query('DELETE FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_plan_snapshot_id IS NOT NULL',
-      [gymId, productSetId]);
-    await syncNativeSnapshotStatus(tx, gymId, productSetId);
-    return;
-  }
-
-  // A version whose configuration row was replaced keeps one snapshot, never two.
-  await tx.query('DELETE FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_plan_snapshot_id <> ?',
-    [gymId, productSetId, legacy[0].id]);
-  await syncNativeSnapshotStatus(tx, gymId, productSetId);
-
   await tx.query(
-    `INSERT INTO plan_snapshots
-       (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, ends_at, closed_at,
-        schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
-        free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
-        personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
-        source_plan_snapshot_id, source_user_membership_id, created_at, created_by)
-     SELECT ps.gym_id, ps.id, ps.owner_member_id, ps.membership_plan_id, ${STATUS_SQL},
-            psps.is_inherited, ps.starts_at, ps.ends_at, um.closed_at,
-            psps.schedule_id, psps.plan_price_id, psps.base_price, psps.discount_reason, psps.discount_expires_at,
-            psps.membership_fee_price, psps.free_periods, psps.paid_periods, psps.bonus_periods,
-            psps.pay_beforehand_periods, psps.personal_fee_benefit_action, psps.personal_fee_benefit_value,
-            psps.auto_renew, psps.recurring_billing_interval, psps.recurring_billing_unit, psps.origin,
-            psps.id, ps.user_membership_id, ps.created_at, ps.created_by
-       FROM product_set_plan_snapshots psps
-       JOIN product_sets ps ON ps.id = psps.product_set_id AND ps.gym_id = psps.gym_id
-       LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-      WHERE psps.id = ?
-     ON DUPLICATE KEY UPDATE
-       member_id = VALUES(member_id), membership_plan_id = VALUES(membership_plan_id), status = VALUES(status),
-       is_inherited = VALUES(is_inherited), starts_at = VALUES(starts_at), ends_at = VALUES(ends_at),
-       closed_at = VALUES(closed_at), schedule_id = VALUES(schedule_id), plan_price_id = VALUES(plan_price_id),
-       base_price = VALUES(base_price), discount_reason = VALUES(discount_reason),
-       discount_expires_at = VALUES(discount_expires_at), membership_fee_price = VALUES(membership_fee_price),
-       free_periods = VALUES(free_periods), paid_periods = VALUES(paid_periods), bonus_periods = VALUES(bonus_periods),
-       pay_beforehand_periods = VALUES(pay_beforehand_periods),
-       personal_fee_benefit_action = VALUES(personal_fee_benefit_action),
-       personal_fee_benefit_value = VALUES(personal_fee_benefit_value), auto_renew = VALUES(auto_renew),
-       recurring_billing_interval = VALUES(recurring_billing_interval),
-       recurring_billing_unit = VALUES(recurring_billing_unit), origin = VALUES(origin),
-       source_user_membership_id = VALUES(source_user_membership_id),
-       modified_at = UTC_TIMESTAMP()`,
-    [legacy[0].id]);
+    `UPDATE plan_snapshots s
+       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
+       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
+        SET s.status = CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
+                            ELSE ps.status END,
+            s.closed_at = um.closed_at
+      WHERE s.gym_id = ? AND s.product_set_id = ?`,
+    [gymId, productSetId]);
 
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) return;
+  await tx.query(
+    `UPDATE plan_snapshots s
+       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
+        SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
+            s.starts_at = ps.starts_at, s.ends_at = ps.ends_at,
+            s.source_user_membership_id = COALESCE(ps.user_membership_id, s.source_user_membership_id)
+      WHERE s.id = ?`,
+    [snapshotId]);
   const { rows: snap } = await tx.query<{ id: number; member_id: number; root_product_set_id: number }>(
     `SELECT s.id, s.member_id, ps.root_product_set_id
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
-      WHERE s.source_plan_snapshot_id = ? AND s.gym_id = ?`, [legacy[0].id, gymId]);
-  const snapshotId = Number(snap[0].id);
+      WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, gymId]);
 
   // Beneficiaries: the owner always, plus whoever the chain covers.
   await tx.query(
@@ -169,17 +134,4 @@ export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, user
   const { rows } = await tx.query<{ id: number }>(
     'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, userMembershipId]);
   for (const r of rows) await syncPlanSnapshot(tx, gymId, Number(r.id));
-}
-
-/**
- * #2125 stage 9 — a native snapshot (a plan added beside the first one, `source_plan_snapshot_id`
- * NULL) has no legacy row to be derived from, but it lives and dies with its version: its status
- * follows the version's (draft, pending_payment, active, superseded).
- */
-async function syncNativeSnapshotStatus(tx: Tx, gymId: string, productSetId: number): Promise<void> {
-  await tx.query(
-    `UPDATE plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
-        SET s.status = ps.status, s.modified_at = UTC_TIMESTAMP()
-      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_plan_snapshot_id IS NULL AND s.status <> ps.status`,
-    [gymId, productSetId]);
 }

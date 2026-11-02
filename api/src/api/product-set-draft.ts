@@ -238,7 +238,7 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
   if (Object.keys(patch).length === 0) return { kind: 'invalid', message: 'No Billing & Duration fields to update' };
 
   const { rows } = await tx.query<any>(
-    'SELECT paid_periods, pay_beforehand_periods FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ? FOR UPDATE',
+    'SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x) FOR UPDATE',
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   const paid = 'paid_periods' in patch ? Number(patch.paid_periods ?? 0) : Number(rows[0].paid_periods ?? 0);
@@ -246,7 +246,7 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
   if (prepaid > paid) return { kind: 'invalid', message: 'pay_beforehand_periods cannot exceed paid_periods' };
 
   const sets = Object.keys(patch).map((k) => `${k} = ?`).join(', ');
-  await tx.query(`UPDATE product_set_plan_snapshots SET ${sets} WHERE product_set_id = ? AND gym_id = ?`,
+  await tx.query(`UPDATE plan_snapshots SET ${sets} WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [...Object.values(patch), draft.id, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
@@ -265,7 +265,7 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     // not being changed is not a refusal; only an actual change on a later
     // version (which shares the chain's schedule) is.
     const { rows: cur } = await tx.query<any>(
-      'SELECT recurring_billing_interval, recurring_billing_unit FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      'SELECT recurring_billing_interval, recurring_billing_unit FROM plan_snapshots WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)',
       [draft.id, draft.gym_id]);
     const sameInterval = cur[0] && Number(cur[0].recurring_billing_interval) === Number(body?.recurring_billing_interval);
     const sameUnit = cur[0] && (cur[0].recurring_billing_unit ?? null) === (body?.recurring_billing_unit ?? null);
@@ -278,11 +278,11 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     return { kind: 'invalid', message: `Billing frequency must be one of: ${describeAcceptedPlanCadences()}` };
   }
   const { rows } = await tx.query<any>(
-    'SELECT schedule_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ? FOR UPDATE',
+    'SELECT schedule_id FROM plan_snapshots WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x) FOR UPDATE',
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   await tx.query(
-    'UPDATE product_set_plan_snapshots SET recurring_billing_interval = ?, recurring_billing_unit = ? WHERE product_set_id = ? AND gym_id = ?',
+    'UPDATE plan_snapshots SET recurring_billing_interval = ?, recurring_billing_unit = ? WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)',
     [interval, unit, draft.id, draft.gym_id]);
   if (rows[0].schedule_id != null) {
     await tx.query(
@@ -305,7 +305,7 @@ export async function setMembershipFeePrice(tx: Tx, draft: LockedDraft, raw: unk
     return { kind: 'invalid', message: 'membership_fee_price must be a non-negative number' };
   }
   await tx.query(
-    'UPDATE product_set_plan_snapshots SET membership_fee_price = ? WHERE product_set_id = ? AND gym_id = ?',
+    'UPDATE plan_snapshots SET membership_fee_price = ? WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)',
     [price, draft.id, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
@@ -323,9 +323,9 @@ export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): P
     return { kind: 'invalid', message: 'discount_expires_at must be YYYY-MM-DD' };
   }
   await tx.query(
-    `UPDATE product_set_plan_snapshots
+    `UPDATE plan_snapshots
         SET membership_fee_price = ?, discount_reason = ?, discount_expires_at = ?
-      WHERE product_set_id = ? AND gym_id = ?`,
+      WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [price, reason, expires ? String(expires) : null, draft.id, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
@@ -345,8 +345,8 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
     value = Math.round(raw * 100) / 100;
   }
   await tx.query(
-    `UPDATE product_set_plan_snapshots SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
-      WHERE product_set_id = ? AND gym_id = ?`,
+    `UPDATE plan_snapshots SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
+      WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
     [action, value, draft.id, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };

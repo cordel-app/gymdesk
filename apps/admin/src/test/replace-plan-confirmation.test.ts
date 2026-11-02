@@ -138,8 +138,18 @@ describe('What the dialog says about a conflict (#956 Q4, UI considerations)', (
     expect(conflictWording({ current: one, conflicts: [one], message: '' })).toEqual({
       titleKey: 'replace_plan_title', bodyKey: 'replace_plan_body', count: 1,
     });
-    expect(conflictWording({ current: one, conflicts: [one, two], message: '' })).toEqual({
+    // Two assignments blocking two different members: the Plans page's bulk assign.
+    const other = assignment({ id: 12, blocked_member_id: 99 });
+    expect(conflictWording({ current: one, conflicts: [one, other], message: '' })).toEqual({
       titleKey: 'replace_plan_title_many', bodyKey: 'replace_plan_body_many', count: 2,
+    });
+  });
+
+  it('says "plans" rather than "members" when one member holds several (#2125)', () => {
+    const one = assignment();
+    const two = assignment({ id: 12 });
+    expect(conflictWording({ current: one, conflicts: [one, two], message: '' })).toEqual({
+      titleKey: 'replace_plan_title_plans', bodyKey: 'replace_plan_body_plans', count: 2,
     });
   });
 
@@ -219,8 +229,10 @@ describe('The dialog\'s copy is one shared set of keys (#806)', () => {
   const KEYS = [
     'replace_plan_title',
     'replace_plan_title_many',
+    'replace_plan_title_plans',
     'replace_plan_body',
     'replace_plan_body_many',
+    'replace_plan_body_plans',
     'replace_plan_current',
     'replace_plan_current_many',
     'replace_plan_new',
@@ -241,7 +253,7 @@ describe('The dialog\'s copy is one shared set of keys (#806)', () => {
       }
       // next-intl prints a missing placeholder's key verbatim, so the plural
       // sentences have to interpolate the count they are chosen for.
-      for (const key of ['replace_plan_title_many', 'replace_plan_body_many']) {
+      for (const key of ['replace_plan_title_many', 'replace_plan_body_many', 'replace_plan_title_plans', 'replace_plan_body_plans']) {
         expect(messages.common[key]).toContain('{count}');
       }
       expect(messages.common.replace_plan_since).toContain('{date}');

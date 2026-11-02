@@ -188,6 +188,7 @@
     "clerk_status_enrolled_on": "Enrolled · {date}",
     "clerk_status_enrolled": "Enrolled",
     "clerk_status_not_enrolled": "Not enrolled",
+    "clerk_status_account_exists": "Account exists (not linked)",
     "clerk_invitation_invited_on": "Invited · {date}",
     "clerk_invitation_invited": "Invited",
     "clerk_invitation_none": "None",

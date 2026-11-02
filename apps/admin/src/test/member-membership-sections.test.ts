@@ -112,8 +112,8 @@ describe('Member Membership sections (#634)', () => {
   it('offers Active + Public plans and Draft plans (shown, not selectable) in the add picker (#1659)', () => {
     expect(plansSrc).toContain("apiFetch<(AssignablePlan & { enrollment_status?: string })[]>('/membership-plans')");
     expect(plansSrc).toContain("p.lifecycle_status === 'draft'");
-    // A plan already active for this Member can't be assigned twice.
-    expect(plansSrc).toContain('activePlanIds');
+    // #2125: a Member may hold the same plan twice, so a held plan is not filtered out of the picker.
+    expect(plansSrc).not.toContain('activePlanIds');
   });
 
   it('shows every active plan, not just the newest (§1/§6)', () => {

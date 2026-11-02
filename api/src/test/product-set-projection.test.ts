@@ -49,7 +49,7 @@ async function assignments(owner: number) {
   const { rows } = await db.query<any>(
     `SELECT um.id, um.status, um.membership_plan_id,
             (SELECT s.membership_fee_price FROM product_sets ps
-               JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
+               JOIN plan_snapshots s ON s.product_set_id = ps.id
               WHERE ps.user_membership_id = um.id ORDER BY ps.version DESC, ps.id DESC LIMIT 1) AS membership_fee_price
        FROM user_memberships um WHERE um.member_id = ? ORDER BY um.id`, [owner]);
   return rows;
