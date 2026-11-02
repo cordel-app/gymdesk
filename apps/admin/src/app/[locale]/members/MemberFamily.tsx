@@ -104,12 +104,6 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
                 {t('members.family_view')}
               </a>
               {canWrite && (<>
-                {!m.is_owner && (
-                  <button style={secondaryBtnSmall} disabled={busy}
-                    onClick={() => run(() => apiFetch(`${base}/owner`, { method: 'PUT', body: JSON.stringify({ member_id: m.member_id }) }))}>
-                    {t('members.family_make_owner')}
-                  </button>
-                )}
                 <button style={secondaryBtnSmall} disabled={busy} onClick={() => setPending({ kind: 'remove', member: m })}>
                   {t('members.family_remove')}
                 </button>
