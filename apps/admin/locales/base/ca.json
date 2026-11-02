@@ -4938,7 +4938,7 @@
     "metric_avg_goals": "Mitjana d'objectius per membre"
   },
   "professional_services": {
-    "update_system_data": "Actualitza les dades del sistema",
+    "update_system_data": "Resincronitza amb el sistema",
     "update_system_data_done": "Dades del sistema actualitzades.",
     "update_system_data_up_to_date": "Ja està al dia amb el servei del sistema.",
     "update_system_data_base_gone": "El servei professional del sistema d'origen ja no existeix.",
