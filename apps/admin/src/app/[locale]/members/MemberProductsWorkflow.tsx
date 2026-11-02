@@ -34,8 +34,10 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
 }
 
 export function ProductsWorkflowBar({
-  current, loading, error, workflow, canWrite, busy, onSaveAndPay, onDiscarded,
+  current, loading, error, workflow, canWrite, busy, onSaveAndPay, onDiscarded, holdsNothing,
 }: {
+  /** The version holds no Products (read from its detail). */
+  holdsNothing?: boolean;
   current: ProductSetSummary | null;
   loading: boolean;
   error: boolean;
@@ -47,7 +49,7 @@ export function ProductsWorkflowBar({
   onDiscarded?: () => void;
 }) {
   const t = useTranslations('members');
-  const statusKey = psStatusKey(current);
+  const statusKey = psStatusKey(current, !!holdsNothing);
   const enabled = saveAndPayEnabled({ ...workflow, canWrite });
   const { apiFetch } = useApiClient();
   const [confirming, setConfirming] = useState(false);

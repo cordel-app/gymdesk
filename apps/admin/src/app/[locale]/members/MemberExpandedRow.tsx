@@ -487,6 +487,7 @@ export function MemberExpandedRow({
             current={configuration.current_product_set}
             loading={productSetDetail.loading}
             error={productSetDetail.error}
+            holdsNothing={productSetDetail.products.oneOff.length + productSetDetail.products.recurring.length === 0}
             workflow={workflow}
             canWrite={canWriteMembers && canManagePackages}
             onDiscarded={reloadConfiguration}
