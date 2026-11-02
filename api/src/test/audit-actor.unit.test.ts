@@ -114,6 +114,7 @@ describe('gate: audited tables', () => {
     { file: 'api/plan-image-storage.ts', table: 'membership_plans', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/professional-service-image-storage.ts', table: 'professional_services', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/space-image-storage.ts', table: 'spaces', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/center-image-storage.ts', table: 'centers', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/base-product-image-storage.ts', table: 'base_products', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/payment-method-image-storage.ts', table: 'base_payment_methods', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff-image-storage.ts', table: 'staff', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },

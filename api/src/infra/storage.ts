@@ -144,6 +144,8 @@ export const PROFESSIONAL_SERVICES_FOLDER = 'professional_services';
 export const SPACES_FOLDER = 'spaces';
 /** #2262: a Staff member's image folder, directly under the gym root. */
 export const STAFF_FOLDER = 'staff';
+/** #2261: a Center's image folder, directly under the gym root. */
+export const CENTERS_FOLDER = 'centers';
 /** #2009: a Base Product's image folder, under `cordel/` only (a gym's imported Product references it by URL). */
 export const BASE_PRODUCTS_FOLDER = 'base_products';
 
@@ -244,6 +246,9 @@ const GYM_FOLDERS = [
   // #2262: the gym-level `staff/` root, holding a Staff member's image.
   // Appended last, with its writer (`POST /staff/:id/image`).
   `${STAFF_FOLDER}/`,
+  // #2261: the gym-level `centers/` root, holding a Center's image.
+  // Appended last, with its writer (`POST /centers/:id/image`).
+  `${CENTERS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

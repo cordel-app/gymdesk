@@ -36,6 +36,10 @@ import {
   toCenterUpdatePayload,
 } from './centerProfile';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { MemberImageField } from '@/components/MemberImageField';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 
 /**
  * #800 — the Center row expands into a read-only view of the Center and
@@ -49,6 +53,9 @@ interface Center extends CenterProfile {
   theme_name: string | null;
   gym_theme_name: string | null;
   active_member_count: number;
+  /** #2261: the 1080 x 1080 master and 256 x 256 thumbnail WebP; null = no image. */
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -166,6 +173,7 @@ export default function CentersPage() {
 
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
+  const [view, setView] = useExerciseViewMode();
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
@@ -287,6 +295,14 @@ export default function CentersPage() {
     }
   }
 
+  /** The image routes answer the raw row: keep the list's joined columns, take the image fields. */
+  function applyImageChange(next: unknown) {
+    const row = next as Partial<Center> & { id: number };
+    setCenters((rows) => rows.map((r) => (r.id === row.id
+      ? { ...r, image_url: row.image_url ?? null, image_thumbnail_url: row.image_thumbnail_url ?? null, modified_at: row.modified_at ?? r.modified_at }
+      : r)));
+  }
+
   function themeLabel(center: Center): string {
     return formatCenterTheme(center, t('theme_inherited_suffix'));
   }
@@ -361,6 +377,23 @@ export default function CentersPage() {
               </div>
             );
           })}
+        </div>
+
+        <div style={{ marginTop: 28 }}>
+          <p style={subsectionLabelStyle}>{t('section_media')}</p>
+          <MemberImageField
+            target={{
+              kind: 'immediate',
+              memberId: center.id,
+              basePath: '/centers',
+              imageUrl: center.image_url ?? null,
+              stamp: center.modified_at,
+              onChanged: applyImageChange,
+            }}
+            disabled={!canWrite}
+            disabledTitle={readOnlyTitle}
+            label={(key) => t(key as any)}
+          />
         </div>
 
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
@@ -468,8 +501,37 @@ export default function CentersPage() {
       { label: t('delete'), onClick: () => setDeleting(center), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
+    const contact = [center.email, center.phone, center.address].filter(Boolean) as string[];
+
     return (
-      <div key={center.id} style={{ ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' }}>
+      <div key={center.id} style={{ ...cardSurfaceStyle, marginBottom: view === 'cards' ? 0 : 8, overflow: 'hidden' }}>
+        {view === 'cards' ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {center.image_url && (
+              <CardSquareImage src={center.image_url} alt={center.name} version={center.modified_at} placeholder={null} />
+            )}
+            <div
+              style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: isEditing ? 'default' : 'pointer' }}
+              onClick={() => { if (!isEditing) openExpand(center); }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{center.name}</div>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ContextMenu items={menuItems} ariaLabel={`Actions for ${center.name}`} />
+                </div>
+              </div>
+              {contact.length > 0 && (
+                <div style={{ fontSize: 13, color: '#888', display: 'flex', flexDirection: 'column', gap: 2, overflowWrap: 'anywhere' }}>
+                  {contact.map((line) => <span key={line}>{line}</span>)}
+                </div>
+              )}
+              <div style={{ fontSize: 12.5, color: '#888' }}>
+                {center.created_by ?? EMPTY_VALUE} · {formatDateShort(gymFmt, center.created_at)}
+              </div>
+              <div><StatusBadge status={center.status} label={tStatus(center.status)} /></div>
+            </div>
+          </div>
+        ) : (
         <div
           className={LIST_GRID_ROW_CLASS}
           style={listRowStyle(isEditing)}
@@ -478,8 +540,12 @@ export default function CentersPage() {
           <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', transform: isExpanded || isEditing ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
 
           {/* Name */}
-          <div className={CELL_CLASS.name} title={center.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>{center.name}</span>
+          <div className={CELL_CLASS.name} title={center.name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* No image → no thumbnail at all, not an empty placeholder (#2261). */}
+            {(center.image_thumbnail_url ?? center.image_url) && (
+              <MemberAvatar name={center.name} imageUrl={center.image_thumbnail_url ?? center.image_url ?? null} stamp={center.modified_at} size={36} />
+            )}
+            <span style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{center.name}</span>
           </div>
 
           {/* Description */}
@@ -505,6 +571,7 @@ export default function CentersPage() {
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${center.name}`} />
           </div>
         </div>
+        )}
 
         {isEditing ? renderInlineEditor(center) : isExpanded ? renderReadOnlyProfile(center) : null}
       </div>
@@ -518,13 +585,20 @@ export default function CentersPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 10 }}>
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={CENTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
-            allLabel={tStatus('all')}
-          />
           <button onClick={handleAdd} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
+        </div>
+      </div>
+
+      {/* Status filter on the left, the Cards | List toggle on the right (#2261). */}
+      <div style={{ marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <StatusFilter
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={CENTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+          allLabel={tStatus('all')}
+        />
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={view} onChange={setView} />
         </div>
       </div>
 
@@ -532,6 +606,8 @@ export default function CentersPage() {
         <p style={{ color: '#aaa', padding: 16 }}>{t('loading')}</p>
       ) : centers.length === 0 ? (
         <p style={{ color: '#aaa', padding: 16 }}>{t('empty')}</p>
+      ) : view === 'cards' ? (
+        <CardGrid>{centers.map(renderRow)}</CardGrid>
       ) : (
         /* The header band and the cards share LIST_GRID_COLUMNS and scroll
            together, so they cannot fall out of line, and a narrow viewport
