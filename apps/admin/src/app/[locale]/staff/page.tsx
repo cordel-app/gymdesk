@@ -16,7 +16,7 @@ import {
 } from '@/components/listChrome';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, readOnlyStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { PROFILE_ROLE_MAP } from '@/config/permissions';
 import {
@@ -26,7 +26,7 @@ import {
   formatStaffField,
   toStaffEditFormValues,
 } from './staffProfile';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { inlineActionsRowStyle, secondaryBtnSmall, secondaryBtnStyle, alertTextColor } from '@/components/formChrome';
 import { formatGymDateOnly, formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -791,12 +791,12 @@ export default function StaffPage() {
         {member && (
           <div style={{ display: 'flex', gap: 8 }}>
             {(canInvite || canResend) && (
-              <button type="button" onClick={() => handleGrantAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#4c6ef5'), !canWrite)}>
+              <button type="button" onClick={() => handleGrantAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(primaryBtnSmall(), !canWrite)}>
                 {canResend ? t('access_resend') : t('access_invite')}
               </button>
             )}
             {canRevoke && (
-              <button type="button" onClick={() => setRevokingAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>
+              <button type="button" onClick={() => setRevokingAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall(alertTextColor), !canWrite)}>
                 {t('access_revoke')}
               </button>
             )}
@@ -951,8 +951,8 @@ export default function StaffPage() {
           * `[Save] [Cancel]`.
           */}
         <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>
+          <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
+          <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
             {saving ? t('saving') : t('save')}
           </button>
         </div>
@@ -1086,7 +1086,7 @@ export default function StaffPage() {
           {field(t('label_updated_at'), member.modified_at ? formatGymDateTime(member.modified_at, gymFmt) : null)}
           <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
             <ViewAuditLogButton entityType="staff" entityId={member.id} onNavigate={() => setDetailsMember(null)} />
-            <button onClick={() => setDetailsMember(null)} style={btnStyle('#888')}>{t('close')}</button>
+            <button onClick={() => setDetailsMember(null)} style={secondaryBtnStyle}>{t('close')}</button>
           </div>
         </div>
       </div>
@@ -1098,7 +1098,7 @@ export default function StaffPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <button onClick={openNew} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>{t('add')}</button>
+        <button onClick={openNew} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
       </div>
 
       {/* Filters */}
