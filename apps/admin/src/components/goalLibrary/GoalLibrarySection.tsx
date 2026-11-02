@@ -260,6 +260,17 @@ export function GoalLibrarySection({
     }
   }
 
+  /** #2258: syncs name, description (+ translations) and an absent image from the Base goal. */
+  async function resyncWithSystem(goal: GoalRow) {
+    try {
+      const res = await apiFetch<{ updated?: string[] }>(`${basePath}/${goal.id}/resync-with-system`, { method: 'POST' });
+      toast(res?.updated?.length ? label('resynced') : label('resync_up_to_date'));
+      load();
+    } catch (e: any) {
+      toast(e?.body?.code === 'base_unavailable' ? label('resync_base_gone') : (e.message ?? label('error_generic')));
+    }
+  }
+
   /**
    * The gym's own availability state for the goal — never the goal's row, and
    * never a soft delete: a System goal deactivated here is still the platform's
@@ -500,6 +511,10 @@ export function GoalLibrarySection({
               available
                 ? { label: label('deactivate'), onClick: () => setAvailability(goal, 'deactivate'), disabled: !canWrite, title: readOnlyTitle, danger: true }
                 : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #2258 — only a gym copy of a Base Personal Goal carries the link.
+            ...(configurable && scope !== 'platform' && goal.base_personal_goal_id ? [
+              { label: label('resync_with_system'), onClick: () => resyncWithSystem(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             ...(writable ? [
               { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },

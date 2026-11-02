@@ -55,7 +55,7 @@ export interface ImportableBasePersonalGoal extends BasePersonalGoalRow {
  * Best-effort, like Duplicate: a failed copy leaves the goal with no image and an
  * error in the log, never a half-created goal.
  */
-async function copyTemplateImages(
+export async function copyTemplateImages(
   gymId: string,
   template: BasePersonalGoalRow,
   goalId: number,
