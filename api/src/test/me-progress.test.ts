@@ -10,6 +10,7 @@ let otherGymId: string;
 let memberId: number;
 let exerciseId: number;
 let otherMemberExerciseId: number;
+let muscleSlug: string;
 
 async function member(gid: string, name: string, clerk: string | null): Promise<number> {
   const email = `${name.toLowerCase().replace(/\W+/g, '-')}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.com`;
@@ -58,6 +59,9 @@ beforeAll(async () => {
   exerciseId = insertId;
   const { rows: rt } = await db.query<{ id: number }>(`SELECT id FROM result_types WHERE slug = 'weight'`);
   await db.query('INSERT INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [exerciseId, rt[0].id]);
+  const { rows: mu } = await db.query<{ id: number; slug: string }>(`SELECT id, slug FROM muscles ORDER BY id LIMIT 1`);
+  muscleSlug = mu[0].slug;
+  await db.query(`INSERT INTO exercise_muscles (exercise_id, gym_id, muscle, muscle_id, role) VALUES (?, ?, ?, ?, 'principal')`, [exerciseId, gymId, mu[0].slug, mu[0].id]);
   await logOn(gymId, memberId, exerciseId, '2026-10-01', [[60, 10], [70, 5]]);
   // A deleted plan's log still counts: history belongs to the member and exercise.
   await logOn(gymId, memberId, exerciseId, '2026-10-03', [[80, 3]], 'deleted');
@@ -86,6 +90,9 @@ describe('GET /me/progress/exercises (#1224)', () => {
     expect(e.days_exercised).toBe(2);
     expect(e.max_weight).toBe(80);
     expect(e.best_result).toEqual({ slug: 'weight', value: 80 });
+    // #2284 — what the Members App filters on.
+    expect(e.last_logged_date).toBe('2026-10-03');
+    expect(e.muscles).toEqual([muscleSlug]);
   });
 
   it('never exposes another member\'s or gym\'s history', async () => {
