@@ -20,6 +20,8 @@ import {
 import { themeRootFolderKeys, themeStorageFolderKeys } from '../domain/themeFolders';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
 import { themeLogoSymbolUrl } from '../domain/themeLogoSymbol';
+import { themeHomeImageUrl } from '../domain/themeHomeImage';
+import { homeImageBodyParser, removeHomeImage, uploadHomeImage, type HomeImageScope } from './theme-home-image';
 import { logoSymbolBodyParser, removeLogoSymbol, uploadLogoSymbol, type LogoSymbolScope } from './theme-logo-symbol';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import { storageCauseFromDetails } from '../domain/storageFailureCause';
@@ -56,7 +58,7 @@ const LOGO_MAX_BYTES = 512 * 1024; // 512 KB
  * so a list or a write that forgot the column would report a logo-less theme.
  */
 const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, status, logo_mime, '
-  + 'logo_updated_at, logo_object_key, logo_symbol_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by';
+  + 'logo_updated_at, logo_object_key, logo_symbol_object_key, home_image_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by';
 
 /**
  * `memberImages` are this theme's `theme_member_images` rows (#732), passed in
@@ -65,7 +67,7 @@ const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, sta
  * explicitly not as six requests of its own.
  */
 function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
-  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, ...rest } = row;
+  const { logo_bytes: _lb, logo_object_key: _lk, logo_symbol_object_key: _ls, home_image_object_key: _hk, ...rest } = row;
   return {
     ...rest,
     // #732: always all six fields; `null` is "this slot is not configured", and
@@ -82,6 +84,7 @@ function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
     logo_url: themeLogoUrl(row),
     // #2157: the symbol-only logo, used as the favicon. Null when none is uploaded.
     logo_symbol_url: themeLogoSymbolUrl(row),
+    home_image_url: themeHomeImageUrl(row),
     is_system_default: !!row.is_system_default,
     logo_contains_gym_name: !!row.logo_contains_gym_name,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
@@ -126,7 +129,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
+      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.home_image_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
@@ -150,7 +153,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
     `SELECT t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
+            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_symbol_object_key, t.home_image_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
             (
               SELECT COUNT(DISTINCT gg.id) FROM gyms gg
               LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
@@ -899,4 +902,18 @@ themesRouter.post('/:id/logo-symbol', requireSuperadmin, logoSymbolBodyParser, a
 
 themesRouter.delete('/:id/logo-symbol', requireSuperadmin, async (req, res, next) => {
   try { await removeLogoSymbol(baseLogoSymbolScope(req, res), req, res); } catch (err) { next(err); }
+});
+
+// ─── Home Image (#2287) ──────────────────────────────────────────────────────
+
+function baseHomeImageScope(req: express.Request, res: express.Response): HomeImageScope {
+  return { ...baseLogoSymbolScope(req, res) };
+}
+
+themesRouter.post('/:id/home-image', requireSuperadmin, homeImageBodyParser, async (req, res, next) => {
+  try { await uploadHomeImage(baseHomeImageScope(req, res), req, res); } catch (err) { next(err); }
+});
+
+themesRouter.delete('/:id/home-image', requireSuperadmin, async (req, res, next) => {
+  try { await removeHomeImage(baseHomeImageScope(req, res), req, res); } catch (err) { next(err); }
 });
