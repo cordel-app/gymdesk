@@ -1,5 +1,6 @@
 'use client';
 
+import { ExerciseInfo } from './ExerciseInfo';
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { LineChart } from '@gymdesk/charts';
@@ -103,6 +104,7 @@ export function MemberProgress() {
               imageUrl={thumb}
               previewUrl={item.image_url ?? thumb}
               imageFallback={thumb ? t('nutrition.no_image') : undefined}
+              imageDetails={<ExerciseInfo info={item} />}
             >
               <div style={styles.stats}>
                 <Stat label={t('progress.days_exercised')} value={String(item.days_exercised)} />
