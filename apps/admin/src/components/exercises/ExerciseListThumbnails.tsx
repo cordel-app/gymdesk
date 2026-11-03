@@ -13,7 +13,7 @@ const thumbStyle: React.CSSProperties = {
   background: 'var(--gd-app-bg, #f3f4f6)', border: '1px solid var(--gd-card-border, #e5e7eb)', boxSizing: 'border-box',
 };
 
-/** #2220: the full-size image behind a thumbnail, shown in a modal. Falls back to the thumbnail when no master exists (muscle fallback). */
+/** #2220/#2306: the full-size image behind a thumbnail, shown in a modal. Never shows the thumbnail enlarged. */
 function FullSizeModal({ src, label, onClose }: { src: string; label: string; onClose: () => void }) {
   const t = useTranslations('exercises');
   const [broken, setBroken] = React.useState(false);
@@ -44,13 +44,14 @@ function Thumb({ src, full, label }: { src: string | null; full?: string | null;
   const [open, setOpen] = React.useState(false);
   const show = !!src && SAFE_IMAGE_SRC.test(src) && !broken;
   if (show) {
-    const big = full && SAFE_IMAGE_SRC.test(full) ? full : src!;
+    // #2306: only a real master opens the modal; a thumbnail-only variant (muscle fallback) is not enlarged.
+    const big = full && SAFE_IMAGE_SRC.test(full) ? full : null;
     return (
       <>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src!} alt={label} title={label} loading="lazy" onError={() => setBroken(true)}
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }} style={{ ...thumbStyle, cursor: 'zoom-in' }} />
-        {open && <FullSizeModal src={big} label={label} onClose={() => setOpen(false)} />}
+          onClick={big ? (e) => { e.stopPropagation(); setOpen(true); } : undefined} style={{ ...thumbStyle, cursor: big ? 'zoom-in' : 'default' }} />
+        {open && big && <FullSizeModal src={big} label={label} onClose={() => setOpen(false)} />}
       </>
     );
   }
