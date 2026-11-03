@@ -574,6 +574,7 @@ export default function ExercisesPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         <ExerciseReadOnlyView
+          nameLocales={nameLocales}
           exercise={ex}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}

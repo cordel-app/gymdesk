@@ -5,6 +5,7 @@ import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
+import { FieldTranslationsModal, GlobeButton, translationValues, type TranslatedField } from './FieldTranslationsModal';
 import { localeLabel } from '@/lib/localeLabels';
 import {
   EXERCISE_EMPTY_VALUE,
@@ -61,6 +62,7 @@ export function ExerciseReadOnlyView({
   muscleLabel,
   resultTypes,
   media,
+  nameLocales,
 }: {
   exercise: ExerciseReadOnlyRow;
   /** The muscle catalogue, as the context's lookup endpoint returned it. */
@@ -71,11 +73,19 @@ export function ExerciseReadOnlyView({
   resultTypes: ResultTypeRow[];
   /** The MEDIA section's previews — `<ExerciseMediaPreview>`, built by the page. */
   media: React.ReactNode;
+  /** The supported languages (the page's locales read); absent = base plus stored ones. */
+  nameLocales?: { base: string; translatable: string[] } | null;
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
   // #967: the language names live in the root namespace, resolved by `localeLabel`.
   const tRoot = useTranslations();
+  const [openField, setOpenField] = React.useState<TranslatedField | null>(null);
+  const baseLocale = nameLocales?.base ?? '';
+  const codes = nameLocales
+    ? [nameLocales.base, ...nameLocales.translatable]
+    : [baseLocale, ...Array.from(new Set([...Object.keys(exercise.translations ?? {}), ...Object.keys(exercise.description_translations ?? {})])).sort()];
+  const modalLocales = codes.map((c) => ({ code: c, label: c ? localeLabel(c, (key) => tRoot(key as any)) : t('translations_default') }));
 
   const roleOf = new Map((exercise.muscles ?? []).map((m) => [m.key, m.role]));
   // The catalogue plus any legacy key already on the exercise, exactly as the
@@ -90,42 +100,24 @@ export function ExerciseReadOnlyView({
     <>
       <p style={exerciseSectionLabelStyle}>{t('section_general')}</p>
       <div style={exerciseFieldGridStyle}>
-        {/* #967 §6: the read-only half of the editor's NAME, which is one input
-            per supported language — so the card lists the base name and every
-            translation the exercise actually stores, in the same grid, under the
-            same label. It needs no locale list of its own: the row's own
-            `translations` map is the languages it has, and `⋮ → Details` stays
-            the technical metadata alone (#965 §12). A list row and a workout
-            still show one name. */}
-        <Field wide label={t('label_name')} value={exercise.name} />
-        {Object.entries(exercise.translations ?? {})
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([loc, value]) => (
-            <Field
-              key={loc}
-              wide
-              label={`${t('label_name')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
-              value={exerciseDisplayValue(value)}
-            />
-          ))}
-        <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} />
-        <Field wide label={t('label_short_description')} value={exerciseDisplayValue(exercise.short_description)} />
-        {Object.entries(exercise.description_translations ?? {})
-          .sort(([a], [b]) => a.localeCompare(b))
-          .flatMap(([loc, v]) => [
-            <Field
-              key={`sd-${loc}`}
-              wide
-              label={`${t('label_short_description')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
-              value={exerciseDisplayValue(v?.short_description)}
-            />,
-            <Field
-              key={`d-${loc}`}
-              wide
-              label={`${t('label_description')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
-              value={exerciseDisplayValue(v?.description)}
-            />,
-          ])}
+        {/* #2300: the default-language value only; the globe opens every language, read-only. */}
+        <Field wide label={t('label_name')} value={exercise.name} globe={() => setOpenField('name')} globeLabel={t('translations_open', { field: t('label_name') })} />
+        <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} globe={() => setOpenField('description')} globeLabel={t('translations_open', { field: t('label_description') })} />
+        <Field wide label={t('label_short_description')} value={exerciseDisplayValue(exercise.short_description)} globe={() => setOpenField('short_description')} globeLabel={t('translations_open', { field: t('label_short_description') })} />
+        <FieldTranslationsModal
+          open={openField !== null}
+          title={openField ? t('translations_title', { field: t(openField === 'name' ? 'label_name' : openField === 'description' ? 'label_description' : 'label_short_description') }) : ''}
+          locales={modalLocales}
+          values={openField ? translationValues(openField, baseLocale, { ...exercise, name: exercise.name, short_description: exercise.short_description ?? '', description: exercise.description ?? '', translations: exercise.translations ?? {}, description_translations: exercise.description_translations ?? {} } as any) : {}}
+          multiline={openField === 'description'}
+          readOnly
+          saveLabel=""
+          cancelLabel=""
+          closeLabel={t('translations_close')}
+          emptyLabel="—"
+          onSave={() => undefined}
+          onClose={() => setOpenField(null)}
+        />
         <Field
           label={t('label_category')}
           value={exerciseDisplayValue(exerciseCategoryLabel(exercise.category, (key) => t(key as any), (v) => v))}
@@ -177,11 +169,14 @@ export function ExerciseReadOnlyView({
 }
 
 /** One `LABEL` over its value, in the box the editor's input occupies (#929). */
-function Field({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+function Field({ label, value, wide, globe, globeLabel }: { label: string; value: string; wide?: boolean; globe?: () => void; globeLabel?: string }) {
   return (
     <div style={wide ? exerciseFieldWideStyle : undefined}>
       <p style={exerciseFieldLabelStyle}>{label}</p>
-      <p style={exerciseFieldValueStyle}>{value}</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <p style={{ ...exerciseFieldValueStyle, flex: 1 }}>{value}</p>
+        {globe && <GlobeButton label={globeLabel ?? label} onClick={globe} />}
+      </div>
     </div>
   );
 }
