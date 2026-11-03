@@ -53,7 +53,6 @@ afterAll(async () => {
 describe('POST /exercises/:id/resync-with-system', () => {
   it('requires auth and write access', async () => {
     expect((await request.post(url(copyId)).set('x-gym-id', gymA)).status).toBe(401);
-    await createTestMembership(frontDesk, 'front_desk');
     expect((await request.post(url(copyId)).set(as(frontDesk))).status).toBe(403);
   });
 

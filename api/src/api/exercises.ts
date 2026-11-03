@@ -52,7 +52,7 @@ import {
 } from '../domain/exerciseListFilters';
 import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale } from '../infra/locale';
 import { logger } from '../lib/logger';
-import { BASE_EXERCISE_TABLES, CATALOGUE_EXERCISE_TABLES } from '../domain/exerciseTables';
+import { BASE_EXERCISE_TABLES, CATALOGUE_EXERCISE_TABLES, LEGACY_EXERCISE_TABLES } from '../domain/exerciseTables';
 
 /** #1849 E2: gym-facing reads go through the catalogue views (Base rows + the gym's own). */
 const C = CATALOGUE_EXERCISE_TABLES;
@@ -733,11 +733,11 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
     const { rows: baseNames } = await db.query<any>(
       `SELECT locale, name FROM ${BASE_EXERCISE_TABLES.translations} WHERE exercise_id = ? ORDER BY locale`, [base.id]);
     const { rows: ownNames } = await db.query<any>(
-      `SELECT locale, name FROM exercise_translations WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
+      `SELECT locale, name FROM ${LEGACY_EXERCISE_TABLES.translations} WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
     const { rows: baseDesc } = await db.query<any>(
       `SELECT locale, short_description, description FROM ${BASE_EXERCISE_TABLES.descriptions} WHERE exercise_id = ? ORDER BY locale`, [base.id]);
     const { rows: ownDesc } = await db.query<any>(
-      `SELECT locale, short_description, description FROM exercise_description_translations WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
+      `SELECT locale, short_description, description FROM ${LEGACY_EXERCISE_TABLES.descriptions} WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
     // Only the locales the Base Exercise carries are compared: the copy may hold
     // others of its own, and those are never removed.
     const ownNameMap = new Map<string, string>(ownNames.map((r: any) => [r.locale, r.name]));
