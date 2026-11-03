@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   parseBasePsTranslations,
   parseMaxCapacity,
+  parseMinParticipants,
+  minParticipantsError,
   parseBaseName,
 } from '../domain/baseProfessionalServices';
 
@@ -28,5 +30,21 @@ describe('base professional services rules (#1817)', () => {
     expect('error' in parseBasePsTranslations({ es: { name: 'x' } })).toBe(true);
     expect('error' in parseBasePsTranslations({ es: { name: 'x' }, ca: { name: ' ' } })).toBe(true);
     expect('error' in parseBasePsTranslations({ es: { name: 'x' }, ca: { name: 'y' }, fr: { name: 'z' } })).toBe(true);
+  });
+});
+
+describe('minimum participants rules (#2293)', () => {
+  it('parses like capacity', () => {
+    expect(parseMinParticipants(3)).toEqual({ value: 3 });
+    expect(parseMinParticipants('4')).toEqual({ value: 4 });
+    expect(parseMinParticipants(null)).toEqual({ value: null });
+    for (const bad of [0, -2, 1.5, 'x']) expect('error' in parseMinParticipants(bad)).toBe(true);
+  });
+
+  it('may not exceed a limited capacity; unlimited has no ceiling', () => {
+    expect(minParticipantsError(5, 4)).not.toBeNull();
+    expect(minParticipantsError(4, 4)).toBeNull();
+    expect(minParticipantsError(50, null)).toBeNull();
+    expect(minParticipantsError(null, 4)).toBeNull();
   });
 });

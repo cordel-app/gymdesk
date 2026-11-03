@@ -249,11 +249,24 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         ))}
         <label style={formFieldLabelStyle}>{t('label_max_capacity')}</label>
         <input
-          style={formControlStyle} inputMode="numeric" value={form.max_capacity}
-          placeholder={t('placeholder_max_capacity')}
+          style={formControlStyle} inputMode="numeric" value={form.unlimited ? '' : form.max_capacity}
+          placeholder={t('placeholder_max_capacity')} disabled={form.unlimited}
           onChange={(e) => setForm({ ...form, max_capacity: e.target.value })}
         />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox" checked={form.unlimited}
+            onChange={(e) => setForm({ ...form, unlimited: e.target.checked })}
+          />
+          {t('label_unlimited')}
+        </label>
         <div style={formHelpTextStyle}>{t('max_capacity_help')}</div>
+        <label style={formFieldLabelStyle}>{t('label_min_participants')}</label>
+        <input
+          style={formControlStyle} inputMode="numeric" value={form.min_participants}
+          onChange={(e) => setForm({ ...form, min_participants: e.target.value })}
+        />
+        <div style={formHelpTextStyle}>{t('min_participants_help')}</div>
         {item && (
           <>
             <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
@@ -298,6 +311,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
           );
         })}
         <DetailRow label={t('label_max_capacity')} value={capacityText(item)} />
+        <DetailRow label={t('label_min_participants')} value={item.min_participants == null ? dash : String(item.min_participants)} />
         {/* Same order as the editor: texts, capacity, then Media (#2241). */}
         <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
         {item.image_url ? (
