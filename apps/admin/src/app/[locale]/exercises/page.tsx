@@ -367,7 +367,7 @@ export default function ExercisesPage() {
         toast(t('resync_done'), 'success');
         await load();
       } else {
-        toast(t('resync_up_to_date'));
+        toast(t('resync_up_to_date'), 'info');
       }
     } catch (err: any) {
       toast(err?.body?.code === 'base_unavailable' ? t('resync_base_gone')

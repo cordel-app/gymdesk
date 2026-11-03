@@ -468,7 +468,8 @@ export default function ProductsPage() {
   async function handleResync(item: Product) {
     try {
       const res = await apiFetch<{ updated: boolean }>(`/products/${item.id}/resync`, { method: 'POST' });
-      toast(res?.updated ? t('resync_success') : t('resync_no_change'));
+      if (res?.updated) toast(t('resync_success'), 'success');
+      else toast(t('resync_no_change'), 'info');
       if (res?.updated) load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
