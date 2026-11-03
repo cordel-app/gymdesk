@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2296 (My Goals labels a target Target (Absolute) or Target (Relative); a relative target reads `20 + 2 (relative target): 22 kg` — baseline, change and the server's effective target — in the card summary, the TARGET field and the chart's target label, via `goalTargetDisplay()` in `apps/member/src/lib/memberGoals.ts`. Members App only; no API, migration or progress-logic change)
 - **Done**: #2295 (Member → Progress: clicking an exercise thumbnail opens a modal with the full-size, sex-resolved image (aspect ratio kept) and the exercise's complete localized description; `GET /members/:id/progress/exercises` reports the `description` beside the image; no new route or migration)
 - **Done**: #2293 (Professional Services, Base and gym-based: an *Unlimited* checkbox beside Max Capacity (stored as no capacity) and a new *Minimum Participants* (`professional_services.min_participants`, migration 362, nullable, no backfill) validated not to exceed a limited capacity; Import and Duplicate copy it; `POST /class-sessions/:id/complete` answers `409 minimum_participants_not_met` for an event delivered by a service with a minimum when fewer members are booked)
 - **Done**: #2299 (the Import buttons of Exercises, Products, Professional Services and Personal Goals wear `primaryBtnStyle()`, so they follow the active Theme; the hard-coded green on Import System Exercises is gone)
