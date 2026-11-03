@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2198 follow-up (Member card → Progress: the chart legend is clickable — tapping a metric isolates its line and the axis rescales to it, tapping it again shows all lines; a new **Add reading** button (date, reps, weight, write-capable roles only) calls `POST /members/:memberId/progress/exercises/:exerciseId/readings`, which appends the reading as the last set of that day (or creates the day's log), refuses future dates and writes no audit row like the other reading writes. No migration)
 - **Done**: #2291 (Activity schedule rules: each rule shows an explicit Edit button in Edit mode beside the ✕; the weekday toggle buttons use the Theme's primary button colours when selected and the input surface colours otherwise. No API or migration change)
 - **Done**: #2126 stage 3c (`POST /members/:id/product-purchases/:purchaseId/pay` reads the saved draft from `product_session_snapshots` / `product_oneoff_snapshots` instead of the purchase record; no schema change. Remaining stage 3 readers: payment status concept, wallet/eligibility, staff purchases list)
 - **Done**: #2126 stage 3b (the Members App catalogue's live-purchase read, `loadLivePurchases()` in `me-products.ts`, reads `product_session_snapshots` / `product_oneoff_snapshots` (`source_id` is the purchase id the Promotion snapshot is keyed on) instead of `member_products_oneoff_snapshot`; no schema change. Remaining stage 3 readers: payment status concept, wallet/eligibility, staff purchases)

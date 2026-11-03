@@ -211,6 +211,70 @@ memberProgressRouter.put('/readings/:logId', requireModuleWrite('TRAINING'), asy
   } catch (err) { next(err); }
 });
 
+/**
+ * #2198 follow-up — staff add a reading (date, reps, weight) to an exercise the member already
+ * has progress on. It becomes the **last set** of that day: appended to the day's latest log when
+ * there is one, else a new log (neither planned nor standalone — staff-entered). Writes no audit
+ * row, like the other reading writes (#1231). A date after today is refused.
+ */
+memberProgressRouter.post('/exercises/:exerciseId/readings', requireModuleWrite('TRAINING'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!Number.isInteger(exerciseId) || exerciseId < 1) return res.status(400).json({ error: 'Invalid exercise id' });
+  const body = req.body ?? {};
+  const date = typeof body.logged_date === 'string' ? body.logged_date.slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+    return res.status(400).json({ error: 'logged_date must be a date (YYYY-MM-DD)' });
+  }
+  const weight = nonNegative(body.weight);
+  const reps = nonNegative(body.reps);
+  if (weight === undefined && body.weight !== undefined) return res.status(400).json({ error: 'weight must be a non-negative number' });
+  if (reps === undefined && body.reps !== undefined) return res.status(400).json({ error: 'reps must be a non-negative whole number' });
+  if (reps != null && !Number.isInteger(reps)) return res.status(400).json({ error: 'reps must be a non-negative whole number' });
+  if (weight == null && reps == null) return res.status(400).json({ error: 'weight or reps is required' });
+  try {
+    const member = await loadMember(gymId, (req.params as any).memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    const { rows: tz } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz[0]?.time_zone ?? 'Europe/Madrid' }).format(new Date());
+    if (date > today) return res.status(400).json({ error: 'logged_date cannot be in the future' });
+    const { rows: known } = await db.query(
+      'SELECT id, exercise_id, base_exercise_id FROM exercise_logs WHERE gym_id = ? AND member_id = ? AND COALESCE(base_exercise_id, exercise_id) = ? LIMIT 1',
+      [gymId, member.id, exerciseId],
+    );
+    if (!known[0]) return res.status(404).json({ error: 'No progress for this exercise' });
+    await db.transaction(async (tx) => {
+      const { rows: dayLogs } = await tx.query(
+        `SELECT id FROM exercise_logs WHERE gym_id = ? AND member_id = ? AND COALESCE(base_exercise_id, exercise_id) = ? AND logged_date = ?
+         ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+        [gymId, member.id, exerciseId, date],
+      );
+      let logId: number;
+      if (dayLogs[0]) {
+        logId = Number(dayLogs[0].id);
+      } else {
+        const ins = await tx.query(
+          `INSERT INTO exercise_logs (gym_id, member_id, exercise_id, base_exercise_id, logged_date, skipped)
+           VALUES (?, ?, ?, ?, ?, 0)`,
+          [gymId, member.id, known[0].exercise_id ?? null, known[0].base_exercise_id ?? null, date],
+        );
+        logId = Number(ins.insertId);
+      }
+      const { rows: next } = await tx.query(
+        `SELECT COALESCE(MAX(s.set_number), 0) + 1 AS n FROM exercise_log_sets s JOIN exercise_logs l ON l.id = s.exercise_log_id
+         WHERE l.gym_id = ? AND l.member_id = ? AND COALESCE(l.base_exercise_id, l.exercise_id) = ? AND l.logged_date = ?`,
+        [gymId, member.id, exerciseId, date],
+      );
+      await tx.query(
+        'INSERT INTO exercise_log_sets (gym_id, exercise_log_id, set_number, weight, reps) VALUES (?, ?, ?, ?, ?)',
+        [gymId, logId, Number(next[0].n), weight ?? null, reps ?? null],
+      );
+    });
+    const detail = await exerciseDetail(gymId, member.id, exerciseId, undefined, req);
+    res.status(201).json(detail);
+  } catch (err) { next(err); }
+});
+
 memberProgressRouter.delete('/readings/:logId', requireModuleWrite('TRAINING'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId } = getTenantContext(req);
   const logId = Number(req.params.logId);
