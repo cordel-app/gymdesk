@@ -358,6 +358,24 @@ export default function ExercisesPage() {
     setRows((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
   }
 
+  // ─── Resync with System (#2302) ───────────────────────────────────────────
+
+  async function handleResync(ex: Exercise) {
+    try {
+      const res = await apiFetch<{ updated: string[] }>(`/exercises/${ex.id}/resync-with-system`, { method: 'POST' });
+      if (res?.updated?.length) {
+        toast(t('resync_done'), 'success');
+        await load();
+      } else {
+        toast(t('resync_up_to_date'));
+      }
+    } catch (err: any) {
+      toast(err?.body?.code === 'base_unavailable' ? t('resync_base_gone')
+        : err?.body?.code === 'name_taken' ? t('resync_name_taken')
+        : (err.message ?? t('error_generic')));
+    }
+  }
+
   // ─── Duplicate ────────────────────────────────────────────────────────────
 
   async function handleDuplicate(ex: Exercise) {
@@ -584,6 +602,9 @@ export default function ExercisesPage() {
           { label: t('details'), onClick: () => setDetailFor(ex) },
           { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
           { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
+          ...(ex.cloned_from_id != null
+            ? [{ label: t('resync_with_system'), onClick: () => handleResync(ex), disabled: !canWrite, title: readOnlyTitle }]
+            : []),
           ex.status === 'active'
             ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
             : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
