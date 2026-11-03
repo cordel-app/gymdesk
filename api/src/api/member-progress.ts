@@ -3,6 +3,8 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getRequestLocale } from '../infra/locale';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
+import { CATALOGUE_EXERCISE_TABLES } from '../domain/exerciseTables';
+import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import {
   defaultResultType, metricBests, metricDays, progressDays, summarizeExercise,
@@ -55,6 +57,7 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
       `SELECT e.id, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
+              ${localizedDescriptionExpr('e', getRequestLocale(req), CATALOGUE_EXERCISE_TABLES)} AS description,
               ${allowedTypesSql}
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
@@ -77,6 +80,7 @@ memberProgressRouter.get('/exercises', async (req: Request, res: Response, next:
       exercise_name: ex.exercise_name,
       image_url: ex.image_url ?? null,
       image_thumbnail_url: ex.image_thumbnail_url ?? null,
+      description: ex.description ?? null,
       ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], asAllowed(ex.allowed_result_types)),
       metrics: metricBests(byExercise.get(Number(ex.id)) ?? [], asAllowed(ex.allowed_result_types)),
     })).filter((ex: any) => ex.days_exercised > 0)

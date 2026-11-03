@@ -715,6 +715,8 @@
     "progress_modified_at": "Modified at",
     "progress_modified_by": "Modified by",
     "progress_close": "Close",
+    "progress_no_image": "No image available.",
+    "progress_no_description": "No description available.",
     "progress_delete_confirm": "Permanently delete this reading? This cannot be undone.",
     "pay_method": "Payment method",
     "pay_method_choose": "Select a payment method",

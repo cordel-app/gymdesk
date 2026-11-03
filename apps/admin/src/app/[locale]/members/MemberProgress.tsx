@@ -15,6 +15,7 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
+import { ProgressExerciseImageModal } from './ProgressExerciseImageModal';
 import {
   addReadingPayload, combinedChartSeries, dayFlagLines, focusChartSeries, toggleFocus, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
   type AddReadingDraft, type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
@@ -35,6 +36,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [detailsFor, setDetailsFor] = useState<ProgressSummary | null>(null);
+  const [imageFor, setImageFor] = useState<ProgressSummary | null>(null);
   const [deletingExercise, setDeletingExercise] = useState<ProgressSummary | null>(null);
   const [deleteError, setDeleteError] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -70,6 +72,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   return (
     <>
     <ProgressExerciseDetailsModal exercise={detailsFor} onClose={() => setDetailsFor(null)} />
+    <ProgressExerciseImageModal key={imageFor?.exercise_id ?? 'none'} exercise={imageFor} onClose={() => setImageFor(null)} />
     <ConfirmDialog
       open={deletingExercise !== null}
       message={t('members.progress_delete_exercise_confirm')}
@@ -91,7 +94,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
               onClick={() => setOpen(isOpen ? null : item.exercise_id)}
               style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', flex: 1, minWidth: 0 }}
             >
-              <ExerciseAvatar src={item.image_thumbnail_url ?? item.image_url ?? null} name={item.exercise_name} />
+              <ExerciseAvatar src={item.image_thumbnail_url ?? item.image_url ?? null} name={item.exercise_name} onOpen={() => setImageFor(item)} />
               <strong style={{ flex: '1 1 160px' }}>{item.exercise_name}</strong>
               <Stat label={t('members.progress_days')} value={String(item.days_exercised)} />
               {item.metrics.map((m) => (
@@ -127,7 +130,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
 const AVATAR_SIZE = 36;
 
 /** Circular exercise picture (the API's sex-resolved thumbnail); a neutral disc when there is none or it fails to load. */
-function ExerciseAvatar({ src, name }: { src: string | null; name: string }) {
+function ExerciseAvatar({ src, name, onOpen }: { src: string | null; name: string; onOpen: () => void }) {
   const [broken, setBroken] = useState(false);
   const style: React.CSSProperties = {
     width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
@@ -135,7 +138,8 @@ function ExerciseAvatar({ src, name }: { src: string | null; name: string }) {
   };
   if (src && SAFE_IMAGE_SRC.test(src) && !broken) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={name} loading="lazy" onError={() => setBroken(true)} style={style} />;
+    return <img src={src} alt={name} loading="lazy" onError={() => setBroken(true)} style={{ ...style, cursor: 'zoom-in' }}
+      onClick={(e) => { e.stopPropagation(); onOpen(); }} />;
   }
   return <span aria-hidden="true" style={{ ...style, display: 'inline-block' }} />;
 }
