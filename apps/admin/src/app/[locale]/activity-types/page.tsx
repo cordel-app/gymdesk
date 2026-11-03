@@ -23,7 +23,7 @@ import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryActionColors, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
@@ -33,7 +33,7 @@ import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberIm
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
-import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
+import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle, secondaryBtnSmall } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -784,10 +784,9 @@ export default function ActivityTypesPage() {
                     }}
                     style={{
                       padding: '5px 10px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
-                      border: `1px solid ${selected ? '#6c63ff' : '#ccc'}`,
-                      background: selected ? '#6c63ff' : '#fff',
-                      color: selected ? '#fff' : '#444',
-                      fontWeight: selected ? 600 : 400,
+                      ...(selected
+                        ? { ...primaryActionColors, border: '1px solid var(--gd-primary-btn, #6c63ff)', fontWeight: 600 }
+                        : { background: 'var(--gd-input-bg, #ffffff)', color: 'var(--gd-text, #444)', border: '1px solid var(--gd-input-border, #d1d5db)', fontWeight: 400 }),
                     }}
                   >
                     {tWeekday(String(w.value))}
@@ -899,6 +898,11 @@ export default function ActivityTypesPage() {
                     </button>
                   ) : (
                     <span style={{ flex: 1, color: '#333' }}>{ruleLabel(rule)}</span>
+                  )}
+                  {editing && (
+                    <button type="button" onClick={() => openEditRule(rule)} style={secondaryBtnSmall}>
+                      {ts('edit_rule')}
+                    </button>
                   )}
                   {editing && (
                     <button

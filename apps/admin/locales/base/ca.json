@@ -3554,6 +3554,7 @@
       "cancel": "Cancel·lar",
       "confirm_cancel_booked": "Cancel·lar sessió(ns) reservada(es) i continuar",
       "no_rules": "Sense regles d'horari.",
+      "edit_rule": "Editar regla d'horari",
       "delete_rule": "Eliminar regla d'horari",
       "label_type": "Tipus d'horari",
       "label_date": "Data",
