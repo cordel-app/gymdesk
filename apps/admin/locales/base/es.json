@@ -4064,6 +4064,7 @@
     "create": "Crear",
     "save": "Guardar",
     "saving": "Guardando…",
+    "image_modal_no_description": "Sin descripción.",
     "close": "Cerrar",
     "loading": "Cargando…",
     "error_required": "El nombre es obligatorio.",

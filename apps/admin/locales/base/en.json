@@ -4078,6 +4078,7 @@
     "create": "Create",
     "save": "Save",
     "saving": "Saving…",
+    "image_modal_no_description": "No description.",
     "close": "Close",
     "loading": "Loading…",
     "error_required": "Name is required.",

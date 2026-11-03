@@ -4091,6 +4091,7 @@
     "create": "Crear",
     "save": "Desar",
     "saving": "Desant…",
+    "image_modal_no_description": "Sense descripció.",
     "close": "Tanca",
     "loading": "Carregant…",
     "error_required": "El nom és obligatori.",
