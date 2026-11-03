@@ -83,11 +83,17 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
       services.map((s: { professional_service_id: number; name: string; description: string | null }) => ({ ...s, id: s.professional_service_id })),
       getRequestLocale(req),
     );
+    const imagesById = new Map<number, { image_thumbnail_url: string | null; image_url: string | null }>(
+      services.map((s: { professional_service_id: number; image_thumbnail_url: string | null; image_url: string | null }) => [
+        s.professional_service_id,
+        { image_thumbnail_url: s.image_thumbnail_url, image_url: s.image_url },
+      ]),
+    );
     res.json(localized.map((s) => ({
       professional_service_id: s.professional_service_id,
       name: s.name,
-      image_thumbnail_url: s.image_thumbnail_url,
-      image_url: s.image_url ?? null,
+      image_thumbnail_url: imagesById.get(s.professional_service_id)?.image_thumbnail_url ?? null,
+      image_url: imagesById.get(s.professional_service_id)?.image_url ?? null,
       display_description: s.display_description ?? null,
       available_items: balances.get(s.professional_service_id)?.sessions ?? 0,
       sources: balances.get(s.professional_service_id)?.sources ?? [],
