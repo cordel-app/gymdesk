@@ -10,6 +10,8 @@ export interface ProgressSummary {
   exercise_name: string;
   image_url?: string | null;
   image_thumbnail_url?: string | null;
+  /** #2295 — the exercise's full description in the request language. */
+  description?: string | null;
   days_exercised: number;
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;

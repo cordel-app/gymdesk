@@ -716,6 +716,8 @@
     "progress_modified_at": "Modificat el",
     "progress_modified_by": "Modificat per",
     "progress_close": "Tanca",
+    "progress_no_image": "No hi ha cap imatge disponible.",
+    "progress_no_description": "No hi ha cap descripció disponible.",
     "progress_delete_confirm": "Vols eliminar aquest registre definitivament? No es pot desfer.",
     "pay_method": "Mètode de pagament",
     "pay_method_choose": "Selecciona un mètode de pagament",
