@@ -4059,6 +4059,7 @@
     "food_details_title": "Detalls de l'aliment",
     "image_after_create": "Crea primer l'aliment i després puja la seva imatge des d'Editar.",
     "no_image": "Sense imatge",
+    "image_modal_no_description": "Sense descripció disponible.",
     "section_audit": "Auditoria",
     "created_by": "Creat per",
     "modified_by": "Modificat per",

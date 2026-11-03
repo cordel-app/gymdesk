@@ -4046,6 +4046,7 @@
     "food_details_title": "Food details",
     "image_after_create": "Create the food first, then upload its image from Edit.",
     "no_image": "No image",
+    "image_modal_no_description": "No description available.",
     "section_audit": "Audit",
     "created_by": "Created By",
     "modified_by": "Modified By",
