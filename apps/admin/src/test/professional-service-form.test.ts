@@ -20,9 +20,31 @@ describe('base professional service form (#1817)', () => {
     expect(f.texts.ca.name).toBe('');
     f.texts.ca.name = ' EP-ca ';
     expect(toPayload(f)).toEqual({
-      name: 'PT', description: 'One to one', max_capacity: 4,
+      name: 'PT', description: 'One to one', max_capacity: 4, min_participants: null,
       translations: { es: { name: 'EP', description: null }, ca: { name: 'EP-ca', description: null } },
     });
+  });
+
+  it('Unlimited sends no capacity and disables its validation (#2293)', () => {
+    const f = formFor(row);
+    f.unlimited = true;
+    f.max_capacity = 'abc';
+    expect(toPayload(f).max_capacity).toBeNull();
+    expect(formErrorKey({ ...f, texts: { ...f.texts, en: { name: 'PT', description: '' } } }, false)).toBeNull();
+  });
+
+  it('validates Minimum Participants against a limited capacity (#2293)', () => {
+    const f = formFor(row);
+    f.min_participants = '5';
+    expect(formErrorKey(f, false)).toBe('error_min_exceeds_capacity');
+    f.min_participants = '0';
+    expect(formErrorKey(f, false)).toBe('error_min_participants');
+    f.min_participants = '4';
+    expect(formErrorKey(f, false)).toBeNull();
+    expect(toPayload(f).min_participants).toBe(4);
+    f.unlimited = true;
+    f.min_participants = '50';
+    expect(formErrorKey(f, false)).toBeNull();
   });
 
   it('sends a cleared capacity as null', () => {
@@ -37,6 +59,7 @@ describe('shared professional service form (#2110)', () => {
     f.texts.en.name = 'PT';
     expect(formErrorKey(f, true)).toBe('error_required_translations');
     expect(formErrorKey(f, false)).toBeNull();
+    f.unlimited = false;
     f.max_capacity = '0';
     expect(formErrorKey(f, false)).toBe('error_max_capacity');
     f.texts.en.name = ' ';
