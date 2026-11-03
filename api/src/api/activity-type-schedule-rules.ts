@@ -92,30 +92,84 @@ function computeSlotWarning(
  * of its own). Mirrors `computeSlotWarning`'s shape: a single advisory string or
  * null, surfaced alongside the saved rule rather than blocking the save.
  */
+export interface OverlapConflict {
+  activity_type_id: number;
+  activity_type_name: string;
+  trainer: string | null;
+  space: string | null;
+}
+
+/**
+ * #2292: the structured form of the overlap check — one entry per conflicting
+ * activity, carrying only the resources that actually clash (trainer, space or
+ * both) with their display names. `computeOverlapWarning` is its sentence form.
+ */
+async function computeOverlapConflicts(
+  gymId: string,
+  excludeRuleId: number | null,
+  activityType: { default_space_id: number | null; default_trainer_membership_id: number | null },
+  config: RuleWindowConfig,
+): Promise<OverlapConflict[]> {
+  const candidates = await findOverlappingRules(
+    gymId, excludeRuleId, activityType.default_space_id, activityType.default_trainer_membership_id,
+  );
+  const overlapping = candidates.filter((c) => rulesOverlap(config, c.config));
+  if (overlapping.length === 0) return [];
+
+  let spaceName: string | null = null;
+  let trainerName: string | null = null;
+  if (activityType.default_space_id != null) {
+    const { rows } = await db.query('SELECT name FROM spaces WHERE id = ? AND gym_id = ?', [activityType.default_space_id, gymId]);
+    spaceName = rows[0]?.name ?? null;
+  }
+  if (activityType.default_trainer_membership_id != null) {
+    const { rows } = await db.query(
+      `SELECT TRIM(CONCAT(s.first_name, ' ', s.last_name)) AS name
+       FROM staff s WHERE s.gym_membership_id = ? AND s.gym_id = ? LIMIT 1`,
+      [activityType.default_trainer_membership_id, gymId],
+    );
+    trainerName = rows[0]?.name ?? null;
+  }
+
+  const byActivity = new Map<number, OverlapConflict>();
+  for (const c of overlapping) {
+    const spaceHit = activityType.default_space_id != null && c.default_space_id === activityType.default_space_id;
+    const trainerHit = activityType.default_trainer_membership_id != null
+      && c.default_trainer_membership_id === activityType.default_trainer_membership_id;
+    if (!spaceHit && !trainerHit) continue;
+    const entry = byActivity.get(c.activity_type_id)
+      ?? { activity_type_id: c.activity_type_id, activity_type_name: c.activity_type_name, trainer: null, space: null };
+    if (trainerHit) entry.trainer = trainerName ?? '—';
+    if (spaceHit) entry.space = spaceName ?? '—';
+    byActivity.set(c.activity_type_id, entry);
+  }
+  return [...byActivity.values()];
+}
+
+function overlapWarningFrom(conflicts: OverlapConflict[]): string | null {
+  const messages: string[] = [];
+  const spaceNames = [...new Set(conflicts.filter((c) => c.space != null).map((c) => c.activity_type_name))];
+  const trainerNames = [...new Set(conflicts.filter((c) => c.trainer != null).map((c) => c.activity_type_name))];
+  if (spaceNames.length > 0) messages.push(`This schedule overlaps with the same space used by: ${spaceNames.join(', ')}.`);
+  if (trainerNames.length > 0) messages.push(`This schedule overlaps with the same trainer assigned to: ${trainerNames.join(', ')}.`);
+  return messages.length > 0 ? messages.join(' ') : null;
+}
+
+function overlapConfirmationResponse(conflicts: OverlapConflict[]) {
+  return {
+    error: 'schedule_overlap',
+    message: 'The proposed schedule overlaps with existing activities. Resend with confirm_overlaps: true to save it anyway.',
+    conflicts,
+  };
+}
+
 async function computeOverlapWarning(
   gymId: string,
   excludeRuleId: number | null,
   activityType: { default_space_id: number | null; default_trainer_membership_id: number | null },
   config: RuleWindowConfig,
 ): Promise<string | null> {
-  const candidates = await findOverlappingRules(
-    gymId, excludeRuleId, activityType.default_space_id, activityType.default_trainer_membership_id,
-  );
-  const overlapping = candidates.filter((c) => rulesOverlap(config, c.config));
-
-  const spaceConflicts = activityType.default_space_id == null ? [] : overlapping.filter((c) => c.default_space_id === activityType.default_space_id);
-  const trainerConflicts = activityType.default_trainer_membership_id == null ? [] : overlapping.filter((c) => c.default_trainer_membership_id === activityType.default_trainer_membership_id);
-
-  const messages: string[] = [];
-  if (spaceConflicts.length > 0) {
-    const names = [...new Set(spaceConflicts.map((c) => c.activity_type_name))].join(', ');
-    messages.push(`This schedule overlaps with the same space used by: ${names}.`);
-  }
-  if (trainerConflicts.length > 0) {
-    const names = [...new Set(trainerConflicts.map((c) => c.activity_type_name))].join(', ');
-    messages.push(`This schedule overlaps with the same trainer assigned to: ${names}.`);
-  }
-  return messages.length > 0 ? messages.join(' ') : null;
+  return overlapWarningFrom(await computeOverlapConflicts(gymId, excludeRuleId, activityType, config));
 }
 
 async function getGymTimezone(gymId: string): Promise<string> {
@@ -290,6 +344,22 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
   const weekdays = resolveWeekdays(req.body);
 
+  // #2292: overlaps with another activity's trainer/space need explicit
+  // confirmation before anything is written.
+  if (req.body.confirm_overlaps !== true) {
+    const conflicts = await computeOverlapConflicts(gymId, null, activityType, {
+      type,
+      start_date,
+      end_date: type === 'one_off' ? null : end_date,
+      weekday: type === 'monthly' ? Number(weekday) : null,
+      weekdays: type === 'weekly' ? weekdays : null,
+      ordinal: type === 'monthly' ? ordinal : null,
+      start_time: start_time.slice(0, 5),
+      end_time: end_time.slice(0, 5),
+    });
+    if (conflicts.length > 0) return res.status(409).json(overlapConfirmationResponse(conflicts));
+  }
+
   const { insertId } = await db.query(
     `INSERT INTO activity_type_schedule_rules
      (gym_id, activity_type_id, type, start_date, end_date, weekday, weekdays, ordinal, start_time, end_time)
@@ -366,6 +436,11 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
     start_time: start_time.slice(0, 5),
     end_time: end_time.slice(0, 5),
   };
+
+  if (req.body.confirm_overlaps !== true) {
+    const conflicts = await computeOverlapConflicts(gymId, Number(ruleId), activityType, newConfig);
+    if (conflicts.length > 0) return res.status(409).json(overlapConfirmationResponse(conflicts));
+  }
 
   const gymTimezone = await getGymTimezone(gymId);
 
