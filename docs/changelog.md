@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2305 (Resync with System on Exercises, Personal Goals and Products shows the "Already up to date with the System …" notice as an informational toast and a real resync as a success toast, instead of the default red error styling; the Product message reads like the others; sync logic unchanged)
 - **Done**: #2293 (Professional Services, Base and gym-based: an *Unlimited* checkbox beside Max Capacity (stored as no capacity) and a new *Minimum Participants* (`professional_services.min_participants`, migration 362, nullable, no backfill) validated not to exceed a limited capacity; Import and Duplicate copy it; `POST /class-sessions/:id/complete` answers `409 minimum_participants_not_met` for an event delivered by a service with a minimum when fewer members are booked)
 - **Done**: #2299 (the Import buttons of Exercises, Products, Professional Services and Personal Goals wear `primaryBtnStyle()`, so they follow the active Theme; the hard-coded green on Import System Exercises is gone)
 - **Done**: #2302 (`POST /exercises/:id/resync-with-system` and a `⋮ → Resync with System` item on imported Gym Exercises: refreshes name, description and short description with their es/ca translations from the originating Base Exercise and fills a missing male/female image, leaving every other field, the video, provenance, plan assignments and progress untouched)

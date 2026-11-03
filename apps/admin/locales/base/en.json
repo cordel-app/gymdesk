@@ -4604,7 +4604,7 @@
     "duplicate": "Duplicate",
     "resync_system": "Resync with System",
     "resync_success": "Product resynced with System.",
-    "resync_no_change": "Nothing to update: this Product already matches the System Product.",
+    "resync_no_change": "Already up to date with the System Product.",
     "activate": "Activate",
     "deactivate": "Deactivate",
     "delete": "Delete",

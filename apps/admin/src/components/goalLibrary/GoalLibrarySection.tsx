@@ -264,7 +264,8 @@ export function GoalLibrarySection({
   async function resyncWithSystem(goal: GoalRow) {
     try {
       const res = await apiFetch<{ updated?: string[] }>(`${basePath}/${goal.id}/resync-with-system`, { method: 'POST' });
-      toast(res?.updated?.length ? label('resynced') : label('resync_up_to_date'));
+      if (res?.updated?.length) toast(label('resynced'), 'success');
+      else toast(label('resync_up_to_date'), 'info');
       load();
     } catch (e: any) {
       toast(e?.body?.code === 'base_unavailable' ? label('resync_base_gone') : (e.message ?? label('error_generic')));
