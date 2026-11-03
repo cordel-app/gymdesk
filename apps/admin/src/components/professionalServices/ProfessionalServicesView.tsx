@@ -18,6 +18,7 @@ import {
   cardSectionLabelStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle,
   inlineActionsRowStyle, inlineEditorStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
+import { ProfessionalServiceImageModal } from './ProfessionalServiceImageModal';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { MemberImageField } from '@/components/MemberImageField';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
@@ -107,6 +108,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<PsRow | null>(null);
+  const [imageOf, setImageOf] = useState<PsRow | null>(null);
   const [deleting, setDeleting] = useState<PsRow | null>(null);
   // #2129: the server refuses a delete while records still reference the service.
   const [inUse, setInUse] = useState<{ activities: number; calendar_events: number; product_snapshots: number } | null>(null);
@@ -315,7 +317,9 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         {/* Same order as the editor: texts, capacity, then Media (#2241). */}
         <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
         {item.image_url ? (
-          <div style={{ width: 160 }}>
+          <div style={{ width: 160, cursor: 'zoom-in' }} role="button" tabIndex={0} aria-label={item.display_name}
+            onClick={() => setImageOf(item)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setImageOf(item); } }}>
             <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
           </div>
         ) : (
@@ -331,7 +335,11 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {item.image_url && (
-          <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
+          <div role="button" tabIndex={0} aria-label={item.display_name} style={{ cursor: 'zoom-in' }}
+            onClick={() => setImageOf(item)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setImageOf(item); } }}>
+            <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
+          </div>
         )}
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer' }} onClick={() => toggleExpand(item.id)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -386,7 +394,11 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
             <div className={CELL_CLASS.name} title={item.display_name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
               {/* No image → no thumbnail at all, not an empty placeholder (#2110). */}
               {(item.image_thumbnail_url ?? item.image_url) && (
-                <MemberAvatar name={item.display_name} imageUrl={item.image_thumbnail_url ?? item.image_url ?? null} stamp={item.modified_at} size={36} />
+                <span role="button" tabIndex={0} aria-label={item.display_name} style={{ cursor: 'zoom-in', display: 'inline-flex' }}
+                  onClick={(e) => { e.stopPropagation(); setImageOf(item); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setImageOf(item); } }}>
+                  <MemberAvatar name={item.display_name} imageUrl={item.image_thumbnail_url ?? item.image_url ?? null} stamp={item.modified_at} size={36} />
+                </span>
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -474,6 +486,13 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >
+        <ProfessionalServiceImageModal
+          target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+          onClose={() => setImageOf(null)}
+          closeLabel={t('close')}
+          noImageLabel={t('image_none')}
+          noDescriptionLabel={t('no_description')}
+        />
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {PS_LOCALES.map((l) => (

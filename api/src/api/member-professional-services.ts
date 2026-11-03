@@ -2,6 +2,8 @@ import { assignmentPlanSnapshotId } from './assignment-config';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { attachTranslations } from './professional-service-translations';
+import { getRequestLocale } from '../infra/locale';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { resolveRequestActor } from '../domain/auditActor';
 import {
@@ -64,7 +66,8 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
 
     const { rows: services } = await db.query(
       `SELECT ps.id AS professional_service_id, ps.name,
-              COALESCE(ps.image_thumbnail_url, ps.image_url) AS image_thumbnail_url
+              COALESCE(ps.image_thumbnail_url, ps.image_url) AS image_thumbnail_url,
+              ps.image_url, ps.description
          FROM professional_services ps
          JOIN gym_professional_services gps
            ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
@@ -75,10 +78,23 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
     const balances = new Map(
       (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b]),
     );
-    res.json(services.map((s: { professional_service_id: number; name: string; image_thumbnail_url: string | null }) => ({
+    // #2297: the full-size image and the description in the request locale, for the image modal.
+    const localized = await attachTranslations(
+      services.map((s: { professional_service_id: number; name: string; description: string | null }) => ({ ...s, id: s.professional_service_id })),
+      getRequestLocale(req),
+    );
+    const imagesById = new Map<number, { image_thumbnail_url: string | null; image_url: string | null }>(
+      services.map((s: { professional_service_id: number; image_thumbnail_url: string | null; image_url: string | null }) => [
+        s.professional_service_id,
+        { image_thumbnail_url: s.image_thumbnail_url, image_url: s.image_url },
+      ]),
+    );
+    res.json(localized.map((s) => ({
       professional_service_id: s.professional_service_id,
       name: s.name,
-      image_thumbnail_url: s.image_thumbnail_url,
+      image_thumbnail_url: imagesById.get(s.professional_service_id)?.image_thumbnail_url ?? null,
+      image_url: imagesById.get(s.professional_service_id)?.image_url ?? null,
+      display_description: s.display_description ?? null,
       available_items: balances.get(s.professional_service_id)?.sessions ?? 0,
       sources: balances.get(s.professional_service_id)?.sources ?? [],
     })));
