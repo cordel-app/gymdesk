@@ -718,6 +718,8 @@
     "progress_modified_at": "Modificado el",
     "progress_modified_by": "Modificado por",
     "progress_close": "Cerrar",
+    "progress_no_image": "No hay imagen disponible.",
+    "progress_no_description": "No hay descripción disponible.",
     "progress_delete_confirm": "¿Eliminar este registro definitivamente? No se puede deshacer.",
     "pay_method": "Método de pago",
     "pay_method_choose": "Selecciona un método de pago",
