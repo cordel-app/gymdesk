@@ -4537,6 +4537,7 @@
     "duration_four_weeks": "{count} × 4 semanas"
   },
   "products": {
+    "no_description": "Sin descripción disponible.",
     "import_system": "Importar productos del sistema",
     "import_modal_title": "Importar productos del sistema",
     "import_select_all_matching": "Seleccionar todos los resultados",
@@ -5428,6 +5429,7 @@
     "class_attendees": "Ver asistentes"
   },
   "base_products": {
+    "no_description": "Sin descripción disponible.",
     "title": "Productos base",
     "subtitle": "Plantillas de los Productos con los que empieza un gimnasio nuevo. Los cambios solo afectan a los gimnasios creados después.",
     "add": "+ Añadir producto base",

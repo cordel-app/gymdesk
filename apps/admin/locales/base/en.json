@@ -4551,6 +4551,7 @@
     "duration_four_weeks": "{count} × 4 weeks"
   },
   "products": {
+    "no_description": "No description available.",
     "import_system": "Import System Products",
     "import_modal_title": "Import System Products",
     "import_select_all_matching": "Select all matching",
@@ -5442,6 +5443,7 @@
     "class_attendees": "View attendees"
   },
   "base_products": {
+    "no_description": "No description available.",
     "title": "Base Products",
     "subtitle": "Templates for the Products a newly created gym starts with. Changes affect only gyms created afterwards.",
     "add": "+ Add Base Product",

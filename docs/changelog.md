@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2251 follow-up (Products lists, Gym and Base: the filters sit on the left under the title, each row shows a circular thumbnail left of the name when the Product has an image, and clicking it opens the shared image modal with the full 1080 × 1080 image uncropped and the description below; UI only, no API or migration change; Related to #2251)
+
 - **Done**: #2306 (the exercise image modal opens only the full-size `image_url` of the clicked gender, never the thumbnail enlarged; a thumbnail-only variant such as the muscle fallback is not zoomable. UI only, no API or migration change; closes #2306)
 
 - **Done**: #2300 (Exercises, Base and gym-based: Name, Short Description and Description show only the base-language value in both the editor and the read-only view, each with a globe icon that opens a modal listing every supported language for that field (editable with Save/Cancel in Edit, read-only with Close otherwise); no API or migration change, other multilingual entities are not yet converted)

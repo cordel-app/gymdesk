@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CardGrid } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
@@ -227,6 +228,7 @@ export default function ProductsPage() {
 
   const [details, setDetails] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
+  const [imageOf, setImageOf] = useState<Product | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -973,6 +975,7 @@ export default function ProductsPage() {
           sessionNote={sessionNote}
           text={listText}
           onToggle={() => toggleExpand(item.id)}
+          onImageClick={() => setImageOf(item)}
         />
         )}
 
@@ -1051,6 +1054,14 @@ export default function ProductsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <ExerciseViewToggle value={view} onChange={setView} />
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        </div>
+      </div>
+
+      {/* #2251: filters on the left, as on Base Products. */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
           <form onSubmit={handleSearch} style={{ display: 'flex', gap: 6 }}>
             <input
               value={searchQ}
@@ -1074,10 +1085,6 @@ export default function ProductsPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <ExerciseViewToggle value={view} onChange={setView} />
-          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
-        </div>
       </div>
 
       {view === 'cards' ? (
@@ -1193,6 +1200,14 @@ export default function ProductsPage() {
       </CrudModal>
 
       {/* Delete confirm */}
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
+
       <ConfirmDialog
         open={deleting !== null}
         message={(<div><p style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('confirm_delete_title')}</p><p style={{ margin: 0 }}>{t('confirm_delete_body')}</p></div>) as any}
