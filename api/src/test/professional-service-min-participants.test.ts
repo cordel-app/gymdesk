@@ -82,9 +82,9 @@ describe('completing an event below its service minimum (#2293)', () => {
   async function eventWith(serviceId: number, booked: number): Promise<number> {
     const { insertId } = await db.query(
       `INSERT INTO calendar_events (gym_id, center_id, activity_type_id, professional_service_id,
-         trainer_membership_id, starts_at, ends_at, status)
+         trainer_membership_id, title, starts_at, ends_at, status)
        VALUES (?, ?, ?, ?, (SELECT id FROM gym_memberships WHERE gym_id = ? AND role = 'trainer_performance' LIMIT 1),
-         DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 HOUR), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR), 'scheduled')`,
+         'Session', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 HOUR), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR), 'scheduled')`,
       [gymId, centerId, activityTypeId, serviceId, gymId],
     );
     for (let i = 0; i < booked; i++) {

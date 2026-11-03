@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
+import { FoodImageModal, type FoodImageTarget } from '@/components/nutritionLibrary/FoodImageModal';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
@@ -95,6 +96,7 @@ export default function CordelNutritionLibraryPage() {
   const [tab, setTab] = useState<LibraryTabId>('foods');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [imageTarget, setImageTarget] = useState<FoodImageTarget | null>(null);
   const [total, setTotal] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
@@ -489,7 +491,9 @@ export default function CordelNutritionLibraryPage() {
   const columns: Column<LibraryItem>[] = [
     { header: t('label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
+          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at}
+            label={item.display_name ?? item.name}
+            onClick={() => setImageTarget({ name: item.display_name ?? item.name, imageUrl: item.image_url, version: item.modified_at ?? item.created_at, description: (item as { display_description?: string | null }).display_description ?? item.description })} />
           <strong>{item.display_name ?? item.name}</strong>
         </span>
       ) },
@@ -534,6 +538,7 @@ export default function CordelNutritionLibraryPage() {
 
   return (
     <div>
+      <FoodImageModal target={imageTarget} onClose={() => setImageTarget(null)} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{tCommon('nav.base_nutrition_library')}</h1>
         {/* The Foods tab's own `+ Add`; the goals tab renders its own (§7). */}
