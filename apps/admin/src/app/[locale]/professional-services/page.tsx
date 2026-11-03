@@ -5,8 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
-import { readOnlyStyle } from '@/components/ui';
-import { secondaryBtnStyle } from '@/components/formChrome';
+import { primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { useToast } from '@/components/Toast';
 import { ProfessionalServicesView } from '@/components/professionalServices/ProfessionalServicesView';
 import { ImportProfessionalServicesModal } from './ImportProfessionalServicesModal';
@@ -48,7 +47,7 @@ export default function ProfessionalServicesPage() {
         addLabel={t('add')}
         emptyLabel={t('empty')}
         headerActions={() => isAdmin && (
-          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(secondaryBtnStyle, !canWrite)} disabled={!canWrite}>{t('import_services')}</button>
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>{t('import_services')}</button>
         )}
       />
       <ImportProfessionalServicesModal
