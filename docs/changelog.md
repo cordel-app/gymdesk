@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2305 (Resync with System on Exercises, Personal Goals and Products shows the "Already up to date with the System …" notice as an informational toast and a real resync as a success toast, instead of the default red error styling; the Product message reads like the others; sync logic unchanged)
 - **Done**: #2297 (clicking a Professional Service image opens one `ProfessionalServiceImageModal` with the full-size image and the description in the current language, on Members → Professional Services, the gym's Professional Services and Cordel's Base ones; `GET /members/:id/professional-services` also reports `image_url` and `display_description`; no data, storage or business-logic change).
 - **Done**: #2296 (My Goals labels a target Target (Absolute) or Target (Relative); a relative target reads `20 + 2 (relative target): 22 kg` — baseline, change and the server's effective target — in the card summary, the TARGET field and the chart's target label, via `goalTargetDisplay()` in `apps/member/src/lib/memberGoals.ts`. Members App only; no API, migration or progress-logic change)
 - **Done**: #2295 (Member → Progress: clicking an exercise thumbnail opens a modal with the full-size, sex-resolved image (aspect ratio kept) and the exercise's complete localized description; `GET /members/:id/progress/exercises` reports the `description` beside the image; no new route or migration)
