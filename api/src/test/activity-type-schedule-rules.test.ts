@@ -1652,7 +1652,7 @@ describe('overlap warnings between rules (#482)', () => {
       .set('x-gym-id', gymId)
       .send({
         type: 'weekly', start_date: week.start, end_date: week.end,
-        weekdays: [1], start_time: '16:30', end_time: '17:30', // Monday, overlaps 16:00–17:00
+        weekdays: [1], start_time: '16:30', end_time: '17:30', confirm_overlaps: true, // Monday, overlaps 16:00–17:00
       });
     expect(res.status).toBe(201);
     expect(res.body.overlap_warning).toContain('same space');
@@ -1706,7 +1706,7 @@ describe('overlap warnings between rules (#482)', () => {
       .set('x-gym-id', gymId)
       .send({
         type: 'weekly', start_date: week.start, end_date: week.end,
-        weekdays: [2], start_time: '10:30', end_time: '11:30', // Tuesday, overlaps
+        weekdays: [2], start_time: '10:30', end_time: '11:30', confirm_overlaps: true, // Tuesday, overlaps
       });
     expect(createD.status).toBe(201);
     expect(createD.body.overlap_warning).toContain('same trainer');
@@ -1747,7 +1747,7 @@ describe('overlap warnings between rules (#482)', () => {
       .set('x-gym-id', gymId)
       .send({
         type: 'weekly', start_date: week.start, end_date: week.end,
-        weekdays: [1], start_time: '16:00', end_time: '17:00', // moved onto Activity Type A's Monday window
+        weekdays: [1], start_time: '16:00', end_time: '17:00', confirm_overlaps: true, // moved onto Activity Type A's Monday window
       });
     expect(putRes.status).toBe(200);
     expect(putRes.body.overlap_warning).toContain('same space');
@@ -1777,5 +1777,85 @@ describe('overlap warnings between rules (#482)', () => {
       });
     expect(putRes.status).toBe(200);
     expect(putRes.body.overlap_warning).toBeNull();
+  });
+  // #2292: an overlap needs explicit confirmation before anything is saved.
+  it('POST overlapping on space only answers 409 schedule_overlap listing the space, saves nothing', async () => {
+    const week = upcomingMonSunWeek();
+    const before = await db.query('SELECT COUNT(*) AS n FROM activity_type_schedule_rules WHERE activity_type_id = ?', [spaceActivityTypeB]);
+    const res = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [1], start_time: '16:15', end_time: '17:15' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('schedule_overlap');
+    const names = res.body.conflicts.map((c: any) => c.activity_type_name);
+    expect(names).toContain('Overlap Space A');
+    const a = res.body.conflicts.find((c: any) => c.activity_type_name === 'Overlap Space A');
+    expect(a.space).toBe('Overlap Test Space');
+    expect(a.trainer).toBeNull();
+    const after = await db.query('SELECT COUNT(*) AS n FROM activity_type_schedule_rules WHERE activity_type_id = ?', [spaceActivityTypeB]);
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
+  it('POST overlapping on trainer only lists the trainer and not the space', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(trainerActivityTypeD))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [2], start_time: '10:15', end_time: '11:15' });
+    expect(res.status).toBe(409);
+    const c = res.body.conflicts.find((x: any) => x.activity_type_name === 'Overlap Trainer C');
+    expect(c.trainer).toBe('Overlap Trainer');
+    expect(c.space).toBeNull();
+  });
+
+  it('POST overlapping on both trainer and space with the same activity reports both under it', async () => {
+    const week = upcomingMonSunWeek();
+    const mk = await request
+      .post('/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Overlap Both X', duration_minutes: 60, max_capacity: 10, status: 'active', default_space_id: spaceId, default_trainer_membership_id: trainerMembershipId });
+    expect(mk.status).toBe(201);
+    const first = await request
+      .post(rulesBase(mk.body.id))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [6], start_time: '08:00', end_time: '09:00' });
+    expect(first.status).toBe(201);
+    const mk2 = await request
+      .post('/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Overlap Both Y', duration_minutes: 60, max_capacity: 10, status: 'active', default_space_id: spaceId, default_trainer_membership_id: trainerMembershipId });
+    const res = await request
+      .post(rulesBase(mk2.body.id))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [6], start_time: '08:30', end_time: '09:30' });
+    expect(res.status).toBe(409);
+    expect(res.body.conflicts).toHaveLength(1);
+    expect(res.body.conflicts[0]).toMatchObject({ activity_type_name: 'Overlap Both X', trainer: 'Overlap Trainer', space: 'Overlap Test Space' });
+  });
+
+  it('PUT into an overlap answers 409 and leaves the rule unchanged until confirmed', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [0], start_time: '09:00', end_time: '10:00' });
+    expect(createRes.status).toBe(201);
+    const url = `/activity-types/${spaceActivityTypeB}/schedule-rules/${createRes.body.id}`;
+    const body = { type: 'weekly', start_date: week.start, end_date: week.end, weekdays: [1], start_time: '16:00', end_time: '17:00' };
+    const refused = await request.put(url).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('schedule_overlap');
+    const { rows } = await db.query('SELECT weekdays FROM activity_type_schedule_rules WHERE id = ?', [createRes.body.id]);
+    expect(JSON.parse(typeof rows[0].weekdays === 'string' ? rows[0].weekdays : JSON.stringify(rows[0].weekdays))).toEqual([0]);
+    const ok = await request.put(url).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ ...body, confirm_overlaps: true });
+    expect(ok.status).toBe(200);
   });
 });
