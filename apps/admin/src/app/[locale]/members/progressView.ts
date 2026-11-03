@@ -172,3 +172,36 @@ export function combinedChartSeries(
       }),
     }));
 }
+
+/**
+ * #2198 — the legend isolates one metric: with a `focusId` only that series is drawn, on the
+ * left axis, so the axis rescales to it; `null` (or an id no series has) draws them all.
+ */
+export function focusChartSeries(series: ChartSeries[], focusId: string | null): ChartSeries[] {
+  const focused = focusId === null ? undefined : series.find((s) => s.id === focusId);
+  if (!focused) return series;
+  return [{ ...focused, axis: 0 as const }];
+}
+
+/** A tapped legend entry isolates its metric; tapping the isolated one shows them all again. */
+export function toggleFocus(current: string | null, id: string): string | null {
+  return current === id ? null : id;
+}
+
+export interface AddReadingDraft { date: string; reps: string; weight: string }
+
+/** `null` when the draft holds something the API would refuse: no date, nothing measured, fractional reps. */
+export function addReadingPayload(d: AddReadingDraft): { logged_date: string; reps: number | null; weight: number | null } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return null;
+  const num = (v: string): number | null | undefined => {
+    if (v.trim() === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const reps = num(d.reps);
+  const weight = num(d.weight);
+  if (reps === undefined || weight === undefined) return null;
+  if (reps !== null && !Number.isInteger(reps)) return null;
+  if (reps === null && weight === null) return null;
+  return { logged_date: d.date, reps, weight };
+}
