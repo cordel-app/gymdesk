@@ -16,8 +16,8 @@ import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
 import {
-  combinedChartSeries, dayFlagLines, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
-  type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
+  addReadingPayload, combinedChartSeries, dayFlagLines, focusChartSeries, toggleFocus, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
+  type AddReadingDraft, type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
 /**
@@ -164,6 +164,9 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   // #2178 — a hovered day wins over the day a click pinned; a second click unpins it.
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [pinnedX, setPinnedX] = useState<number | null>(null);
+  // #2198 — the legend isolates one metric; the axes rescale to it.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [adding, setAdding] = useState<AddReadingDraft | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -191,7 +194,19 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
       maxReps: (v) => t('members.progress_flag_max_reps', { v }),
     }, gym, { kg: t('members.progress_unit_kg'), reps: t('members.progress_unit_reps') }),
   ), [detail, gym, t]);
+  const shownSeries = useMemo(() => focusChartSeries(chartSeries, focusId), [chartSeries, focusId]);
   if (!detail) return null;
+
+  async function addReading() {
+    const payload = adding ? addReadingPayload(adding) : null;
+    if (!payload) { setError(t('members.progress_invalid')); return; }
+    setBusy(true); setError(null);
+    try {
+      await apiFetch(`${base}/exercises/${item.exercise_id}/readings`, { method: 'POST', body: JSON.stringify(payload) });
+      setAdding(null);
+      await reload();
+    } catch { setError(t('members.progress_add_reading_error')); } finally { setBusy(false); }
+  }
 
   async function save(r: ProgressReading) {
     const payload = draft ? readingPayload(draft) : null;
@@ -284,9 +299,24 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   }
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {chartSeries.length > 0 && (
+      {chartSeries.length > 1 && (
+        <div role="group" aria-label={t('members.progress_legend')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {chartSeries.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              aria-pressed={focusId === s.id}
+              onClick={() => setFocusId(toggleFocus(focusId, s.id))}
+              style={focusId === s.id ? primaryBtnSmall() : secondaryBtnSmall}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {shownSeries.length > 0 && (
         <LineChart
-          series={chartSeries}
+          series={shownSeries}
           height={220}
           selectedX={hoverX ?? pinnedX}
           ariaLabel={t('members.progress_chart_aria', { name: item.exercise_name })}
@@ -295,6 +325,26 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
       )}
       <div style={innerCardStyle}>
         <span style={cardSectionLabelStyle}>{t('members.progress_readings')}</span>
+        {canWrite && !adding && (
+          <div>
+            <button type="button" style={primaryBtnSmall()}
+              onClick={() => { setAdding({ date: new Date().toISOString().slice(0, 10), reps: '', weight: '' }); setError(null); }}>
+              {t('members.progress_add_reading')}
+            </button>
+          </div>
+        )}
+        {canWrite && adding && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <input type="date" aria-label={t('members.progress_col_date')} style={{ ...formControlStyle, width: 150 }} value={adding.date}
+              max={new Date().toISOString().slice(0, 10)} onChange={(e) => setAdding({ ...adding, date: e.target.value })} />
+            <input aria-label={t('members.progress_reps')} placeholder={t('members.progress_reps')} style={input} value={adding.reps} inputMode="numeric"
+              onChange={(e) => setAdding({ ...adding, reps: e.target.value })} />
+            <input aria-label={t('members.progress_weight')} placeholder={t('members.progress_weight')} style={input} value={adding.weight} inputMode="decimal"
+              onChange={(e) => setAdding({ ...adding, weight: e.target.value })} />
+            <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={addReading}>{t('members.progress_save')}</button>
+            <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => { setAdding(null); setError(null); }}>{t('members.progress_cancel')}</button>
+          </div>
+        )}
         {error && <p style={formErrorStyle}>{error}</p>}
         <div style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
           <span style={{ width: 70, flexShrink: 0, ...cardSectionLabelStyle }}>{t('members.progress_col_date')}</span>
