@@ -3532,6 +3532,7 @@
       "cancel": "Cancel",
       "confirm_cancel_booked": "Cancel booked slot(s) & continue",
       "no_rules": "No schedule rules yet.",
+      "edit_rule": "Edit schedule rule",
       "delete_rule": "Delete schedule rule",
       "label_type": "Schedule type",
       "label_date": "Date",

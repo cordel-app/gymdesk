@@ -3527,6 +3527,7 @@
       "cancel": "Cancelar",
       "confirm_cancel_booked": "Cancelar sesión(es) reservada(s) y continuar",
       "no_rules": "Sin reglas de horario.",
+      "edit_rule": "Editar regla de horario",
       "delete_rule": "Eliminar regla de horario",
       "label_type": "Tipo de horario",
       "label_date": "Fecha",
