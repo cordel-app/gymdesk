@@ -7,6 +7,7 @@ import {
   formForAssignableGoal,
   formForMemberGoal,
   formatGoalTarget,
+  goalTargetDisplay,
   goalDisplayName,
   goalFormError,
   goalStatusKey,
@@ -282,7 +283,7 @@ describe('the page reuses the app rather than restating it (§19, §983)', () =>
   it('decides nothing about a goal for itself — every rule comes from the lib', () => {
     expect(pageSrc).not.toMatch(/target_value\s*===\s*null\s*\?/);
     expect(pageSrc).not.toMatch(/status\s*===\s*'achieved'/);
-    expect(pageSrc).toContain('formatGoalTarget');
+    expect(pageSrc).toContain('goalTargetDisplay');
   });
 });
 
@@ -741,5 +742,27 @@ describe('#1115 creating and editing are inline (§2, §3)', () => {
       }
       expect(goals.summary_target, code).toContain('{value}');
     }
+  });
+});
+
+describe('#2296 relative and absolute target display', () => {
+  it('shows baseline, change and result for an increase', () => {
+    const d = goalTargetDisplay({ target_value: 2, target_unit: 'kg', target_type: 'relative', effective_target: 22 });
+    expect(d?.labelKey).toBe('goals.field_target_relative');
+    expect(d?.values).toEqual({ initial: '20', op: '+', change: '2', result: '22 kg' });
+  });
+  it('uses a minus for a decrease and keeps decimals', () => {
+    const d = goalTargetDisplay({ target_value: -5.5, target_unit: 'kg', target_type: 'relative', effective_target: 74.5 });
+    expect(d?.values).toEqual({ initial: '80', op: '-', change: '5.5', result: '74.5 kg' });
+  });
+  it('falls back to the configured change with no reading', () => {
+    const d = goalTargetDisplay({ target_value: -3, target_unit: 'kg', target_type: 'relative', effective_target: null });
+    expect(d?.valueKey).toBeNull();
+    expect(d?.text).toBe('-3 kg');
+  });
+  it('leaves an absolute target as configured', () => {
+    const d = goalTargetDisplay({ target_value: 75, target_unit: 'kg', target_type: 'absolute', effective_target: 75 });
+    expect(d).toMatchObject({ labelKey: 'goals.field_target_absolute', valueKey: null, text: '75 kg' });
+    expect(goalTargetDisplay({ target_value: null, target_unit: null })).toBeNull();
   });
 });

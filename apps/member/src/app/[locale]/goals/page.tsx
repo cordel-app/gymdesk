@@ -33,7 +33,7 @@ import {
   formatReadingValue,
   readingFormError,
   toReadingPayload,
-  formatGoalTarget,
+  goalTargetDisplay,
   goalDisplayName,
   goalSummaryLine,
 } from '@/lib/memberGoals';
@@ -228,6 +228,13 @@ export default function GoalsPage() {
     }
   }
 
+  /** #2296 — the target as one phrase, the relative formula included. */
+  function targetText(goal: MemberGoal): string | null {
+    const d = goalTargetDisplay(goal);
+    if (!d) return null;
+    return d.valueKey ? t(d.valueKey as any, d.values) : d.text;
+  }
+
   const nameOf = (goal: MemberGoal) => goalDisplayName(goal, t as unknown as (key: string) => string);
 
   /**
@@ -239,12 +246,14 @@ export default function GoalsPage() {
     const values: Record<(typeof GOAL_HEADER_FIELDS)[number], string | null> = {
       'goals.field_goal': nameOf(goal),
       'goals.label_initial_reading': formatReadingValue(goal.initial_reading, goal.target_unit),
-      'goals.field_target': formatGoalTarget(goal),
+      'goals.field_target': targetText(goal),
       'goals.label_latest_reading': formatReadingValue(goal.latest_reading, goal.target_unit),
       'goals.label_progress': formatProgressPercent(goal.progress_percent),
     };
     return GOAL_HEADER_FIELDS.map((key) => ({
-      key, label: t(key as any), value: values[key] ?? '—',
+      key,
+      label: key === 'goals.field_target' ? t((goalTargetDisplay(goal)?.labelKey ?? 'goals.field_target_absolute') as any) : t(key as any),
+      value: values[key] ?? '—',
     }));
   }
 
@@ -255,9 +264,10 @@ export default function GoalsPage() {
    * out what is absent rather than placeholdering it.
    */
   function cardSummary(goal: MemberGoal): string | null {
-    const target = formatGoalTarget(goal);
+    const target = targetText(goal);
+    const rel = goal.target_type === 'relative';
     return goalSummaryLine([
-      target === null ? null : t('goals.summary_target', { value: target }),
+      target === null ? null : t(rel ? 'goals.summary_target_relative' : 'goals.summary_target_absolute', { value: target }),
       formatProgressPercent(goal.progress_percent),
     ]);
   }
@@ -283,7 +293,7 @@ export default function GoalsPage() {
    */
   function chartLabels(goal: MemberGoal) {
     // #1229: the line is drawn at the effective target (baseline + change for a relative goal).
-    const target = formatReadingValue(goal.effective_target ?? goal.target_value, goal.target_unit);
+    const target = targetText(goal);
     return {
       title: t('goals.section_progress_chart'),
       ariaLabel: t('goals.chart_aria_label'),

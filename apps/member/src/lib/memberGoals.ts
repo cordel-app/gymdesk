@@ -112,6 +112,49 @@ export function formatGoalTarget(goal: { target_value: number | null; target_uni
 }
 
 /**
+ * #2296 — how a goal's target reads, as a locale key plus its interpolation
+ * values (the lib resolves no `t()`).
+ *
+ * An absolute target is the configured figure. A relative one shows the
+ * baseline, the configured change and the calculated absolute target:
+ * `20 + 2 (relative target): 22 kg`. The baseline is the server's
+ * `effective_target` minus the change, so this module calculates nothing the
+ * progress logic does not already decide; with no reading yet there is no
+ * absolute target, and the configured change alone is shown.
+ */
+export function goalTargetDisplay(goal: {
+  target_value: number | null;
+  target_unit: string | null;
+  target_type?: 'absolute' | 'relative';
+  effective_target?: number | null;
+}): { labelKey: string; valueKey: string | null; values: Record<string, string>; text: string } | null {
+  const plain = formatGoalTarget(goal);
+  if (plain === null) return null;
+  if (goal.target_type !== 'relative') {
+    return { labelKey: 'goals.field_target_absolute', valueKey: null, values: {}, text: plain };
+  }
+  const labelKey = 'goals.field_target_relative';
+  const change = Number(goal.target_value);
+  const result = goal.effective_target;
+  if (result === null || result === undefined || !Number.isFinite(Number(result))) {
+    return { labelKey, valueKey: null, values: {}, text: plain };
+  }
+  const num = (n: number) => String(Number(n.toFixed(2)));
+  const finalText = formatReadingValue(Number(result), goal.target_unit) ?? plain;
+  return {
+    labelKey,
+    valueKey: 'goals.target_relative_formula',
+    values: {
+      initial: num(Number(result) - change),
+      op: change < 0 ? '-' : '+',
+      change: num(Math.abs(change)),
+      result: finalText,
+    },
+    text: plain,
+  };
+}
+
+/**
  * Whether the member is still pursuing this goal. The predicate
  * `mpgoal_live_goal_key` generates its unique key from, mirrored here so the
  * page's two lists split exactly where the server's do.
