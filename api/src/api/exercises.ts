@@ -52,7 +52,7 @@ import {
 } from '../domain/exerciseListFilters';
 import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale } from '../infra/locale';
 import { logger } from '../lib/logger';
-import { BASE_EXERCISE_TABLES, CATALOGUE_EXERCISE_TABLES } from '../domain/exerciseTables';
+import { BASE_EXERCISE_TABLES, CATALOGUE_EXERCISE_TABLES, LEGACY_EXERCISE_TABLES } from '../domain/exerciseTables';
 
 /** #1849 E2: gym-facing reads go through the catalogue views (Base rows + the gym's own). */
 const C = CATALOGUE_EXERCISE_TABLES;
@@ -686,6 +686,107 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
     res.status(201).json(shapeExercise(rows[0]));
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2302: "Resync with System" — a selective, field-level update of an imported
+ * exercise from the Base Exercise it records as its provenance. Moves only the
+ * name, the description and the short description (base columns and the
+ * per-locale translations the Base Exercise carries) and a male/female image the
+ * copy is *missing*; every other field, the video, the muscles, the Recorded
+ * Metrics, the provenance and the Base row itself are left alone.
+ */
+exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows: own } = await db.query<any>(
+      `SELECT id, name, description, short_description, image_male_url, image_female_url,
+              COALESCE(base_exercise_id, cloned_from_id) AS source_id
+         FROM exercises WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
+      [req.params.id, gymId],
+    );
+    if (own.length === 0) return res.status(404).json({ error: 'Not found' });
+    const copy = own[0];
+    if (!copy.source_id) {
+      return res.status(400).json({ code: 'no_base_exercise', error: 'This exercise was not imported from the System catalogue.' });
+    }
+    const { rows: baseRows } = await db.query<any>(
+      `SELECT id, name, description, short_description, image_male_url, image_female_url
+         FROM base_exercises WHERE id = ? AND status != 'deleted'`,
+      [copy.source_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ code: 'base_unavailable', error: 'The originating System exercise no longer exists.' });
+    }
+    const base = baseRows[0];
+    if (base.name !== copy.name) {
+      const { rows: taken } = await db.query(
+        `SELECT id FROM exercises WHERE gym_id = ? AND status != 'deleted' AND name = ? AND id <> ? LIMIT 1`,
+        [gymId, base.name, copy.id],
+      );
+      if (taken.length > 0) {
+        return res.status(409).json({ code: 'name_taken', error: 'Another exercise in this gym already uses the System name.' });
+      }
+    }
+
+    const { rows: baseNames } = await db.query<any>(
+      `SELECT locale, name FROM ${BASE_EXERCISE_TABLES.translations} WHERE exercise_id = ? ORDER BY locale`, [base.id]);
+    const { rows: ownNames } = await db.query<any>(
+      `SELECT locale, name FROM ${LEGACY_EXERCISE_TABLES.translations} WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
+    const { rows: baseDesc } = await db.query<any>(
+      `SELECT locale, short_description, description FROM ${BASE_EXERCISE_TABLES.descriptions} WHERE exercise_id = ? ORDER BY locale`, [base.id]);
+    const { rows: ownDesc } = await db.query<any>(
+      `SELECT locale, short_description, description FROM ${LEGACY_EXERCISE_TABLES.descriptions} WHERE exercise_id = ? ORDER BY locale`, [copy.id]);
+    // Only the locales the Base Exercise carries are compared: the copy may hold
+    // others of its own, and those are never removed.
+    const ownNameMap = new Map<string, string>(ownNames.map((r: any) => [r.locale, r.name]));
+    const ownDescMap = new Map<string, any>(ownDesc.map((r: any) => [r.locale, r]));
+    const namesChanged = baseNames.some((r: any) => ownNameMap.get(r.locale) !== r.name);
+    const descsChanged = baseDesc.some((r: any) => {
+      const o = ownDescMap.get(r.locale);
+      return !o || (o.short_description ?? '') !== (r.short_description ?? '') || (o.description ?? '') !== (r.description ?? '');
+    });
+    const baseTextChanged = copy.name !== base.name
+      || (copy.description ?? null) !== (base.description ?? null)
+      || (copy.short_description ?? null) !== (base.short_description ?? null);
+    const maleImage = !copy.image_male_url && !!base.image_male_url;
+    const femaleImage = !copy.image_female_url && !!base.image_female_url;
+    const textChanged = baseTextChanged || namesChanged || descsChanged;
+    if (!textChanged && !maleImage && !femaleImage) return res.json({ updated: [], message: 'up_to_date' });
+
+    const actor = resolveRequestActor(getTenantContext(req));
+    await db.transaction(async (tx) => {
+      const sets: string[] = [];
+      const params: any[] = [];
+      if (textChanged) {
+        sets.push('name = ?', 'description = ?', 'short_description = ?');
+        params.push(base.name, base.description, base.short_description);
+      }
+      if (maleImage) { sets.push('image_male_url = ?'); params.push(base.image_male_url); }
+      if (femaleImage) { sets.push('image_female_url = ?'); params.push(base.image_female_url); }
+      await tx.query(
+        `UPDATE exercises SET ${sets.join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ?`,
+        [...params, actor, copy.id, gymId],
+      );
+      if (textChanged) {
+        await copyExerciseTranslations(tx, base.id, copy.id, BASE_EXERCISE_TABLES);
+        await copyExerciseDescriptionTranslations(tx, base.id, copy.id, BASE_EXERCISE_TABLES);
+      }
+    });
+    const updated: string[] = [];
+    if (textChanged) updated.push('name', 'description');
+    if (maleImage) updated.push('image_male');
+    if (femaleImage) updated.push('image_female');
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'exercise',
+      entityId: copy.id,
+      next: { resync_with_system: updated },
+    });
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [copy.id, gymId]);
+    res.json({ updated, exercise: rows[0] ? shapeExercise(rows[0]) : null });
   } catch (err) { next(err); }
 });
 

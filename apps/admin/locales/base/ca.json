@@ -2128,6 +2128,11 @@
     "save_changes": "Desar canvis"
   },
   "exercises": {
+    "resync_with_system": "Resincronitza amb el sistema",
+    "resync_done": "Exercici resincronitzat amb l'exercici del sistema.",
+    "resync_up_to_date": "Ja està actualitzat amb l'exercici del sistema.",
+    "resync_base_gone": "L'exercici del sistema d'origen ja no existeix.",
+    "resync_name_taken": "Un altre exercici d'aquest gimnàs ja fa servir el nom del sistema.",
     "title": "Exercicis",
     "add": "+ Afegir exercici",
     "import": "Importar",

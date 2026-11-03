@@ -2142,6 +2142,11 @@
     "save_changes": "Save Changes"
   },
   "exercises": {
+    "resync_with_system": "Resync with System",
+    "resync_done": "Exercise resynced with the System exercise.",
+    "resync_up_to_date": "Already up to date with the System exercise.",
+    "resync_base_gone": "The originating System exercise no longer exists.",
+    "resync_name_taken": "Another exercise in this gym already uses the System name.",
     "title": "Exercises",
     "add": "+ Add Exercise",
     "import": "Import",
