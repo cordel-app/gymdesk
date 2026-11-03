@@ -256,6 +256,9 @@ export default function ActivityTypesPage() {
   // already-booked future occurrence comes back as 409 booked_occurrences_impacted;
   // these hold the confirmation prompt until staff explicitly proceeds.
   const [editRuleConflict, setEditRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
+  // #2292: trainer/space overlaps need explicit confirmation before the save.
+  const [overlapConflict, setOverlapConflict] = useState<{ actId: number; ruleId: number | null; conflicts: OverlapConflictItem[] } | null>(null);
+  const overlapAcceptedRef = useRef(false);
   const [deleteRuleConflict, setDeleteRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
 
   // #503 stage 3: editing a field that's copied onto future calendar_events (space,
@@ -554,12 +557,12 @@ export default function ActivityTypesPage() {
   // computes alongside the save (window doesn't divide evenly by the
   // activity's duration, or it overlaps another rule's space/trainer) —
   // surfaced as info toasts rather than blocking the save.
-  function showRuleWarnings(saved: { slot_warning?: string | null; overlap_warning?: string | null }) {
+  // The overlap advisory is now a confirmation modal before the save (#2292).
+  function showRuleWarnings(saved: { slot_warning?: string | null }) {
     if (saved.slot_warning) toast(saved.slot_warning, 'info');
-    if (saved.overlap_warning) toast(saved.overlap_warning, 'info');
   }
 
-  async function saveAddRule(actId: number) {
+  async function saveAddRule(actId: number, confirmOverlaps = false) {
     if (addRuleForm.type === 'weekly' && addRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
       return;
@@ -579,13 +582,19 @@ export default function ActivityTypesPage() {
           start_time: addRuleForm.start_time,
           end_time: addRuleForm.end_time,
           member_ids: addRuleMembers.map((m) => m.id),
+          ...(confirmOverlaps ? { confirm_overlaps: true } : {}),
         }),
       });
+      setOverlapConflict(null);
       setAddingRuleFor(null);
       await fetchRules(actId);
       showRuleWarnings(saved);
     } catch (err: any) {
-      setRuleError(err.message ?? t('error_generic'));
+      if (err.status === 409 && err.body?.error === 'schedule_overlap') {
+        setOverlapConflict({ actId, ruleId: null, conflicts: err.body.conflicts ?? [] });
+      } else {
+        setRuleError(err.message ?? t('error_generic'));
+      }
     } finally {
       setRuleSaving(false);
     }
@@ -618,12 +627,13 @@ export default function ActivityTypesPage() {
   }
 
   function cancelEditRule() {
+    overlapAcceptedRef.current = false;
     setEditingRuleId(null);
     setRuleError(null);
     setEditRuleConflict(null);
   }
 
-  async function saveEditRule(actId: number, ruleId: number, confirmCancelBooked = false) {
+  async function saveEditRule(actId: number, ruleId: number, confirmCancelBooked = false, confirmOverlaps = overlapAcceptedRef.current) {
     if (editRuleForm.type === 'weekly' && editRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
       return;
@@ -644,14 +654,19 @@ export default function ActivityTypesPage() {
           end_time: editRuleForm.end_time,
           member_ids: editRuleMembers.map((m) => m.id),
           ...(confirmCancelBooked ? { confirm_cancel_booked: true } : {}),
+          ...(confirmOverlaps ? { confirm_overlaps: true } : {}),
         }),
       });
+      overlapAcceptedRef.current = false;
+      setOverlapConflict(null);
       setEditingRuleId(null);
       setEditRuleConflict(null);
       await fetchRules(actId);
       showRuleWarnings(saved);
     } catch (err: any) {
-      if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
+      if (err.status === 409 && err.body?.error === 'schedule_overlap') {
+        setOverlapConflict({ actId, ruleId, conflicts: err.body.conflicts ?? [] });
+      } else if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
         setEditRuleConflict({ actId, ruleId, message: err.body.message ?? err.message });
       } else {
         setRuleError(err.message ?? t('error_generic'));
@@ -659,6 +674,21 @@ export default function ActivityTypesPage() {
     } finally {
       setRuleSaving(false);
     }
+  }
+
+  function acceptOverlap() {
+    if (!overlapConflict) return;
+    if (overlapConflict.ruleId == null) {
+      saveAddRule(overlapConflict.actId, true);
+    } else {
+      overlapAcceptedRef.current = true;
+      saveEditRule(overlapConflict.actId, overlapConflict.ruleId, false, true);
+    }
+  }
+
+  function cancelOverlap() {
+    overlapAcceptedRef.current = false;
+    setOverlapConflict(null);
   }
 
   function confirmEditRuleConflict() {
@@ -1553,6 +1583,31 @@ export default function ActivityTypesPage() {
         onCancel={() => setDeleting(null)}
       />
 
+      {/* #2292: overlap confirmation — schedule rule create/edit */}
+      <ConfirmDialog
+        open={overlapConflict !== null}
+        message={ts('overlap_intro')}
+        details={overlapConflict && (
+          <div>
+            {overlapConflict.conflicts.map((c) => (
+              <div key={c.activity_type_id} style={{ marginBottom: 10 }}>
+                <div style={{ fontWeight: 600 }}>{ts('overlap_activity', { name: c.activity_type_name })}</div>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {c.trainer != null && <li><strong>{ts('overlap_trainer')}:</strong> {c.trainer}</li>}
+                  {c.space != null && <li><strong>{ts('overlap_space')}:</strong> {c.space}</li>}
+                </ul>
+              </div>
+            ))}
+            <p style={{ margin: '12px 0 0', fontSize: 13, lineHeight: 1.5 }}>{ts('overlap_explanation')}</p>
+          </div>
+        )}
+        confirmLabel={ts('overlap_accept')}
+        cancelLabel={ts('cancel')}
+        onConfirm={acceptOverlap}
+        onCancel={cancelOverlap}
+        busy={ruleSaving}
+      />
+
       {/* #482: booked-occurrence impact confirm — schedule rule edit */}
       <ConfirmDialog
         open={editRuleConflict !== null}
@@ -1589,6 +1644,13 @@ export default function ActivityTypesPage() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+interface OverlapConflictItem {
+  activity_type_id: number;
+  activity_type_name: string;
+  trainer: string | null;
+  space: string | null;
+}
 
 function SectionHeader({ title }: { title: string }) {
   return (
