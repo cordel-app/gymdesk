@@ -354,6 +354,7 @@ export default function CordelExercisesPage() {
     return (
       <div style={{ padding: '16px 20px' }}>
         <ExerciseReadOnlyView
+          nameLocales={nameLocales}
           exercise={exercise}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
