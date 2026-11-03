@@ -22,7 +22,7 @@ import {
   type StagedGenderMedia,
   uploadStagedGenderMedia,
 } from '@/lib/exerciseGenderMedia';
-import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 // #806: the Exercise editor, its form-state hook and the form declaration are
 // shared with the platform Base Exercises page — there is one implementation of
 // the form and this page supplies the gym context's persistence.
@@ -706,7 +706,7 @@ export default function ExercisesPage() {
           {/* #803: the header button names what it imports — the platform's System
               Exercises. The modal's own primary action stays `import`, so the two
               deliberately read differently and need two keys. */}
-          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import_system_exercises')}</button>
+          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('import_system_exercises')}</button>
           {/* #805: opens the inline creation card at the top of the list, never a modal. */}
           <button onClick={openAdd} disabled={!canWrite || addOpen} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
         </div>

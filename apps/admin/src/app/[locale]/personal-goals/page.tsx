@@ -8,8 +8,7 @@ import { useToast } from '@/components/Toast';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { ImportSystemPersonalGoalsModal } from '@/components/personalGoals/ImportSystemPersonalGoalsModal';
-import { readOnlyStyle } from '@/components/ui';
-import { secondaryBtnStyle } from '@/components/formChrome';
+import { primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { AssignGoalToMemberModal } from '@/components/personalGoals/AssignGoalToMemberModal';
 
 /**
@@ -71,7 +70,7 @@ export default function PersonalGoalsPage() {
           <button
             onClick={() => setImportOpen(true)}
             title={readOnlyTitle}
-            style={readOnlyStyle(secondaryBtnStyle, !canWrite)}
+            style={readOnlyStyle(primaryBtnStyle(), !canWrite)}
             disabled={!canWrite}
           >
             {tGoals('import_system')}

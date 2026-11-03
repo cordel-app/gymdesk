@@ -1074,7 +1074,7 @@ export default function ProductsPage() {
             allLabel={tStatus('all')}
           />
           <ExerciseViewToggle value={view} onChange={setView} />
-          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(secondaryBtnStyle, !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
           <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
