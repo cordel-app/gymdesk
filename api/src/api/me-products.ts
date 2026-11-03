@@ -183,11 +183,16 @@ async function loadLivePurchases(
   memberId: number,
 ): Promise<Map<number, { id: number; status: string }[]>> {
   const { rows } = await db.query<{ id: number; product_id: number; status: string }>(
-    `SELECT id, product_id, status
-       FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND status IN ('pending_payment', 'active')
-      ORDER BY id DESC`,
-    [gymId, memberId],
+    // #2126 stage 3: read from the Product snapshot tables (a purchase is in exactly one of the
+    // two); `source_id` is the purchase id the Promotion snapshot is keyed on.
+    `SELECT id, product_id, status FROM (
+       SELECT source_id AS id, product_id, status FROM product_session_snapshots
+        WHERE gym_id = ? AND member_id = ? AND status IN ('pending_payment', 'active')
+       UNION ALL
+       SELECT source_id AS id, product_id, status FROM product_oneoff_snapshots
+        WHERE gym_id = ? AND member_id = ? AND status IN ('pending_payment', 'active')
+     ) p ORDER BY id DESC`,
+    [gymId, memberId, gymId, memberId],
   );
   const byProduct = new Map<number, { id: number; status: string }[]>();
   for (const row of rows) {
