@@ -27,6 +27,7 @@ import {
   innerCardStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -34,6 +35,8 @@ interface WalletRow {
   professional_service_id: number;
   name: string;
   image_thumbnail_url?: string | null;
+  image_url?: string | null;
+  display_description?: string | null;
   available_items: number;
 }
 
@@ -56,6 +59,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   const { toast } = useToast();
   const { canWrite, readOnlyTitle } = useModuleAccess('MEMBERS');
   const [rows, setRows] = useState<WalletRow[] | null>(null);
+  const [imageRow, setImageRow] = useState<WalletRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [historyId, setHistoryId] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -130,6 +134,13 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
 
   return (
     <div>
+      <ProfessionalServiceImageModal
+        target={imageRow ? { name: imageRow.name, imageUrl: imageRow.image_url ?? imageRow.image_thumbnail_url, description: imageRow.display_description } : null}
+        onClose={() => setImageRow(null)}
+        closeLabel={t('prof_services_close')}
+        noImageLabel={t('prof_services_no_image')}
+        noDescriptionLabel={t('prof_services_no_description')}
+      />
       {rows.map((row) => {
         const id = row.professional_service_id;
         return (
@@ -150,12 +161,18 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
               >
                 <span aria-hidden="true" style={{ width: 12 }}>{historyId === id ? '▾' : '▸'}</span>
                 {row.image_thumbnail_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={row.image_thumbnail_url}
-                    alt=""
-                    style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-                  />
+                  <span
+                    role="button" tabIndex={0} aria-label={row.name} style={{ cursor: 'zoom-in', display: 'inline-flex' }}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setImageRow(row); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setImageRow(row); } }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={row.image_thumbnail_url}
+                      alt=""
+                      style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                    />
+                  </span>
                 )}
                 <span style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 500, fontSize: 14 }}>{row.name}</div>
