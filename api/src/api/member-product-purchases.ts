@@ -329,8 +329,14 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     if (!member) return res.status(404).json({ error: 'Member not found' });
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
     const { rows } = await db.query<any>(
-      `SELECT id, product_id, direct_discount_percent FROM member_products_oneoff_snapshot
-        WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+      // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
+      `SELECT id, product_id, direct_discount_percent FROM (
+         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+           FROM product_session_snapshots
+         UNION ALL
+         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+           FROM product_oneoff_snapshots
+       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
       [purchaseId, gymId, memberId],
     );
     const draft = rows[0];
