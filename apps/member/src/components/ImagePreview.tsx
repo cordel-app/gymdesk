@@ -15,11 +15,13 @@ import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
  * handed and resolves nothing but its own close label; with no `src` it renders
  * its children untouched (nothing to enlarge).
  */
-export function ImagePreviewButton({ src, alt, title, description = null, children, style }: {
+export function ImagePreviewButton({ src, alt, title, description = null, details = null, children, style }: {
   src: string | null | undefined;
   alt: string;
   title: string;
   description?: string | null;
+  /** #2320 — richer content under the picture (an exercise's facts). */
+  details?: React.ReactNode;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
@@ -58,6 +60,7 @@ export function ImagePreviewButton({ src, alt, title, description = null, childr
             <img src={src} alt={alt} style={styles.image} onError={() => setBroken(true)} />
           )}
           {description && <p style={styles.description}>{description}</p>}
+          {details}
         </MemberDialog>
       )}
     </>
@@ -66,6 +69,6 @@ export function ImagePreviewButton({ src, alt, title, description = null, childr
 
 const styles: Record<string, React.CSSProperties> = {
   trigger: { padding: 0, margin: 0, border: 'none', background: 'none', cursor: 'zoom-in', font: 'inherit', color: 'inherit', display: 'block', width: '100%', height: '100%' },
-  image: { width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block', borderRadius: 8, background: memberTheme.pageBackground },
+  image: { width: '100%', height: 'auto', display: 'block', borderRadius: 8, background: memberTheme.pageBackground },
   description: { margin: 0, fontSize: 14, color: memberTheme.textSecondary, overflowWrap: 'anywhere' },
 };

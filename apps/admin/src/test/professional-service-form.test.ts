@@ -73,3 +73,15 @@ describe('shared professional service form (#2110)', () => {
     expect(matchesSearch(row, '  ')).toBe(true);
   });
 });
+
+describe('translations modal helpers (#2331)', () => {
+  it('lists every supported language for a field and applies edits back', async () => {
+    const { textValuesOf, applyTextValues } = await import('../components/professionalServices/psModel');
+    const f = formFor(row);
+    expect(textValuesOf(f.texts, 'name')).toEqual({ en: 'PT', es: 'EP', ca: '' });
+    const next = applyTextValues(f, 'name', { en: 'PT2', es: 'EP', ca: 'CA' });
+    expect(next.texts.ca.name).toBe('CA');
+    expect(next.texts.en.description).toBe('One to one'); // other field untouched
+    expect(f.texts.ca.name).toBe(''); // original not mutated (Cancel keeps saved values)
+  });
+});

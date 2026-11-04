@@ -9,8 +9,13 @@ import {
   cardMutedTextStyle, formControlStyle, formErrorStyle, innerCardStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { listNameBadgeAccentStyle } from '@/components/listChrome';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { memberImagePreviewSrc } from '@/components/MemberImageField';
+import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import { overlayStyle, modalStyle } from '@/components/ui';
 
-interface FamilyMember { member_id: number; name: string; email: string; is_owner: boolean }
+interface FamilyMember { member_id: number; name: string; email: string; is_owner: boolean;
+  image_url?: string | null; image_thumbnail_url?: string | null; modified_at?: string | null }
 interface Family { id: number; name: string; owner_member_id: number | null; members: FamilyMember[] }
 interface Candidate { id: number; name: string }
 
@@ -33,6 +38,7 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<FamilyMember | null>(null);
 
   const load = useCallback(() => {
     apiFetch<{ family: Family | null }>(base)
@@ -96,6 +102,14 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {family.members.map((m) => (
           <div key={m.member_id} style={{ ...innerCardStyle, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {m.image_url && SAFE_IMAGE_SRC.test(memberImagePreviewSrc(m.image_url, m.modified_at) ?? '') ? (
+              <button type="button" onClick={() => setPhoto(m)} aria-label={t('members.family_photo_open', { name: m.name })}
+                style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer', display: 'flex', borderRadius: '50%' }}>
+                <MemberAvatar name={m.name} imageUrl={m.image_thumbnail_url ?? m.image_url} stamp={m.modified_at} />
+              </button>
+            ) : (
+              <MemberAvatar name={m.name} imageUrl={null} />
+            )}
             <span style={{ fontWeight: 500 }}>{m.name}</span>
             {m.is_owner && <span style={listNameBadgeAccentStyle}>{t('members.family_owner_badge')}</span>}
             <span style={cardMutedTextStyle}>{m.email}</span>
@@ -133,6 +147,19 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
         </div>
       )}
       {error && <p style={formErrorStyle}>{error}</p>}
+      {photo && (
+        <div style={overlayStyle} onClick={() => setPhoto(null)} role="presentation"
+          onKeyDown={(e) => { if (e.key === 'Escape') setPhoto(null); }}>
+          <div role="dialog" aria-modal="true" aria-label={photo.name}
+            style={{ ...modalStyle, width: 'auto', maxWidth: '90vw', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={memberImagePreviewSrc(photo.image_url, photo.modified_at) ?? ''} alt={photo.name}
+              style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', display: 'block' }} />
+            <div><button type="button" autoFocus style={secondaryBtnSmall} onClick={() => setPhoto(null)}>{t('members.family_photo_close')}</button></div>
+          </div>
+        </div>
+      )}
       <ConfirmDialog
         open={pending !== null}
         message={pending?.kind === 'remove'

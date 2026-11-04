@@ -33,6 +33,7 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 import { DescriptionTranslationsField } from '@/components/nutritionLibrary/DescriptionTranslationsField';
 import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
+import { FoodImageModal, type FoodImageTarget } from '@/components/nutritionLibrary/FoodImageModal';
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
@@ -75,6 +76,7 @@ export default function NutritionLibraryPage() {
   const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [imageTarget, setImageTarget] = useState<FoodImageTarget | null>(null);
   const [total, setTotal] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
@@ -395,7 +397,9 @@ export default function NutritionLibraryPage() {
   const columns: Column<LibraryItem>[] = [
     { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
+          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at}
+            label={item.display_name ?? item.name}
+            onClick={() => setImageTarget({ name: item.display_name ?? item.name, imageUrl: item.image_url, version: item.modified_at ?? item.created_at, description: (item as { display_description?: string | null }).display_description ?? item.description })} />
           <strong>{item.display_name ?? item.name}</strong>
           {item.gym_id === null && <span style={listNameBadgeStyle}>{t('nutrition_library.system_badge')}</span>}
         </span>
@@ -444,6 +448,7 @@ export default function NutritionLibraryPage() {
 
   return (
     <div>
+      <FoodImageModal target={imageTarget} onClose={() => setImageTarget(null)} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_library.title')}</h1>
         {/* The Foods tab's own `+ Add` (§7). The goals tab renders its own, which

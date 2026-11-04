@@ -21,6 +21,7 @@ import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { IMAGE_PREVIEW_THUMBNAIL_SIZE } from '@/components/imagePreviewFrame';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { localeLabel } from '@/lib/localeLabels';
 import { GoalDetailsModal } from './GoalDetailsModal';
@@ -108,6 +109,8 @@ export function GoalLibrarySection({
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [detailGoal, setDetailGoal] = useState<GoalRow | null>(null);
+  // #2308: clicking a Nutrition Goal's thumbnail opens its full-size image.
+  const [imageGoal, setImageGoal] = useState<GoalRow | null>(null);
   const [deleting, setDeleting] = useState<GoalRow | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -550,12 +553,25 @@ export function GoalLibrarySection({
       width: 64,
       mobile: 'secondary' as const,
       render: (goal: GoalRow) => (
-        <MemberAvatar
-          name={nameOf(goal)}
-          imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
-          stamp={goal.modified_at ?? goal.created_at}
-          size={40}
-        />
+        kind === 'nutrition' && goal.image_url ? (
+          <button type="button" onClick={(e) => { e.stopPropagation(); setImageGoal(goal); }}
+            aria-label={nameOf(goal)}
+            style={{ border: 0, padding: 0, background: 'none', cursor: 'zoom-in', borderRadius: '50%', display: 'inline-flex' }}>
+            <MemberAvatar
+              name={nameOf(goal)}
+              imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
+              stamp={goal.modified_at ?? goal.created_at}
+              size={40}
+            />
+          </button>
+        ) : (
+          <MemberAvatar
+            name={nameOf(goal)}
+            imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
+            stamp={goal.modified_at ?? goal.created_at}
+            size={40}
+          />
+        )
       ),
     }] : []),
     {
@@ -773,6 +789,19 @@ export function GoalLibrarySection({
           <button type="button" onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={secondaryBtnSmall}>›</button>
         </div>
       )}
+
+      <ProfessionalServiceImageModal
+        target={imageGoal ? {
+          name: nameOf(imageGoal),
+          imageUrl: imageGoal.image_url,
+          description: translated ? (imageGoal.display_description ?? imageGoal.description) : imageGoal.description,
+          version: imageGoal.modified_at ?? imageGoal.created_at,
+        } : null}
+        onClose={() => setImageGoal(null)}
+        closeLabel={label('close')}
+        noImageLabel={label('image_none')}
+        noDescriptionLabel={label('image_modal_no_description')}
+      />
 
       {detailGoal && (
         <GoalDetailsModal

@@ -11,6 +11,7 @@ import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
   ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
@@ -161,6 +162,7 @@ export default function BaseProductsPage() {
   const toggleExpand = (id: number) =>
     setExpanded((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [deleting, setDeleting] = useState<BaseProduct | null>(null);
+  const [imageOf, setImageOf] = useState<BaseProduct | null>(null);
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -445,6 +447,7 @@ export default function BaseProductsPage() {
                   sessionNote={null}
                   text={listText}
                   onToggle={() => toggleExpand(p.id)}
+                  onImageClick={() => setImageOf(p)}
                   menuItems={[
                     { label: t('edit'), onClick: () => { setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
                     { label: t('details'), onClick: () => setDetails(p) },
@@ -503,6 +506,14 @@ export default function BaseProductsPage() {
           </div>
         )}
       </CrudModal>
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
 
       <ConfirmDialog
         open={!!deleting}

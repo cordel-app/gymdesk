@@ -3,7 +3,8 @@
 import { useTranslations } from 'next-intl';
 import { MemberDialog } from '@/components/MemberDialog';
 import { exerciseImageFullSrc, type ExerciseMedia } from '@/lib/exerciseMedia';
-import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
+import { ExerciseInfo } from './ExerciseInfo';
+import { secondaryButtonStyle } from '@/lib/memberChrome';
 
 /**
  * #1527: what a member gets when they select an exercise card in My Training —
@@ -11,7 +12,7 @@ import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
  * the description arrives already localized by the API (`exercise_description`).
  */
 export function ExerciseDetailsDialog({ exercise, description, onClose }: {
-  exercise: ExerciseMedia & { exercise_name?: string };
+  exercise: ExerciseMedia & { exercise_name?: string; exercise_short_description?: string | null; exercise_muscles?: string[] | null; exercise_category?: string | null; exercise_equipment?: string | null };
   description: string | null;
   onClose: () => void;
 }) {
@@ -25,10 +26,11 @@ export function ExerciseDetailsDialog({ exercise, description, onClose }: {
       onClose={onClose}
       actions={<button type="button" onClick={onClose} style={{ ...secondaryButtonStyle, padding: '10px 14px', borderRadius: 8 }}>{t('exercise_media.close')}</button>}
     >
-      {src && <img src={src} alt={t('exercise_media.image_alt', { name })} style={{ display: 'block', width: '100%', maxHeight: '50vh', objectFit: 'contain' }} />}
-      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: memberTheme.text, whiteSpace: 'pre-wrap' }}>
-        {description && description.trim() ? description : t('training.no_description')}
-      </p>
+      {src && <img src={src} alt={t('exercise_media.image_alt', { name })} style={{ display: 'block', width: '100%', height: 'auto' }} />}
+      <ExerciseInfo info={{
+        short_description: exercise.exercise_short_description, description,
+        muscles: exercise.exercise_muscles, category: exercise.exercise_category, equipment: exercise.exercise_equipment,
+      }} />
     </MemberDialog>
   );
 }

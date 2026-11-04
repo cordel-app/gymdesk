@@ -47,6 +47,8 @@ export interface ProductRowData {
   created_at: string | null;
   modified_at: string | null;
   image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  description?: string | null;
 }
 
 /** The translators the renderer needs, supplied by the page. */
@@ -146,7 +148,7 @@ export function ProductListFrame({
 // ─── Collapsed list row ───────────────────────────────────────────────────────
 
 export function ProductListRow({
-  item, isExpanded, menuItems, sessionNote, text, onToggle,
+  item, isExpanded, menuItems, sessionNote, text, onToggle, onImageClick,
 }: {
   item: ProductRowData;
   isExpanded: boolean;
@@ -155,14 +157,24 @@ export function ProductListRow({
   sessionNote: string | null;
   text: ProductListText;
   onToggle: () => void;
+  /** #2251: clicking the circular thumbnail opens the image modal. */
+  onImageClick?: () => void;
 }) {
   const { t, tFreq, tStatus, formatDate } = text;
   const isSystem = Boolean(item.is_system);
   const isMandatory = Boolean(item.mandatory);
   return (
     <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={onToggle}>
-      <div className={CELL_CLASS.name} style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }} title={item.name}>
-        {item.name}
+      <div className={CELL_CLASS.name} style={{ ...cellStyle, fontWeight: 600, fontSize: 15, display: 'flex', alignItems: 'center', gap: 10 }} title={item.name}>
+        {/* #2251: circular thumbnail left of the name; no image, no thumbnail. */}
+        {(item.image_thumbnail_url ?? item.image_url) && (
+          <span role="button" tabIndex={0} aria-label={item.name} style={{ cursor: 'zoom-in', display: 'inline-flex', flexShrink: 0 }}
+            onClick={(e) => { e.stopPropagation(); onImageClick?.(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onImageClick?.(); } }}>
+            <MemberAvatar name={item.name} imageUrl={item.image_thumbnail_url ?? item.image_url ?? null} stamp={item.modified_at} size={36} />
+          </span>
+        )}
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
         {isSystem && (
           <span style={listNameBadgeStyle}>
             {t('system_badge')}

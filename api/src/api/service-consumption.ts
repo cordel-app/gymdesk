@@ -35,14 +35,30 @@ export async function spendSessionForBooking(
   if (existing.length > 0) return { spent: false, skipped: 'already_spent' };
 
   const { rows: bRows } = await tx.query(
-    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id, ceb.negative_balance_ok
+    `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id, ceb.negative_balance_ok,
+            ceb.booking_group_id, ceb.booked_by_member_id
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
       WHERE ceb.id = ? AND ceb.gym_id = ?`,
     [bookingId, gymId],
   );
   if (bRows.length === 0) return { spent: false, skipped: 'not_applicable' };
-  const { member_id: memberId, calendar_event_id: eventId, activity_type_id: activityTypeId } = bRows[0];
+  const { calendar_event_id: eventId, activity_type_id: activityTypeId } = bRows[0];
+  // #1984 stage 2b-2: a Duo booking spends one session per group, charged to the
+  // member who made the booking, whichever participant's row triggers the spend.
+  const groupId: string | null = bRows[0].booking_group_id ?? null;
+  const memberId = groupId && bRows[0].booked_by_member_id != null
+    ? Number(bRows[0].booked_by_member_id)
+    : bRows[0].member_id;
+  if (groupId) {
+    const { rows: groupSpent } = await tx.query(
+      `SELECT psc.id FROM professional_service_consumptions psc
+         JOIN calendar_event_bookings g ON g.id = psc.calendar_event_booking_id
+        WHERE g.gym_id = ? AND g.booking_group_id = ? FOR UPDATE`,
+      [gymId, groupId],
+    );
+    if (groupSpent.length > 0) return { spent: false, skipped: 'already_spent' };
+  }
 
   const required = await loadRequiredServices(tx, gymId, activityTypeId, eventId);
   if (required.length === 0) return { spent: false, skipped: 'not_applicable' };

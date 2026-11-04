@@ -14,9 +14,16 @@ export interface ProgressSummary {
   exercise_name: string;
   image_url: string | null;
   image_thumbnail_url: string | null;
+  /** #2321 — the instructional video for the member's sex, else the only one; null when none. */
+  video_url?: string | null;
+  video_thumbnail_url?: string | null;
   /** #2284 — the latest performed day (`YYYY-MM-DD`), and the muscle slugs the exercise works. */
   last_logged_date: string | null;
   muscles: string[];
+  short_description?: string | null;
+  description?: string | null;
+  category?: string | null;
+  equipment?: string | null;
   days_exercised: number;
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;
@@ -31,7 +38,7 @@ export interface ProgressDay {
   sets: ProgressSet[];
 }
 
-export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url' | 'last_logged_date' | 'muscles'> {
+export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url' | 'video_url' | 'video_thumbnail_url' | 'last_logged_date' | 'muscles'> {
   days: ProgressDay[];
 }
 

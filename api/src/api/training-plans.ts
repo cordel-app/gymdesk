@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
 import { baseTrainingPlanName, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
-import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
+import { localizedDescriptionExpr, localizedShortDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -152,6 +152,9 @@ export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') 
                       'id', we.id, 'position', we.position, 'exercise_id', COALESCE(we.base_exercise_id, we.exercise_id), 'exercise_name', ${localizedExerciseNameSql('e', locale)},
                       'exercise_image_url', ${effectiveImageUrlSql('e', sex)}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e', sex)}, 'exercise_video_url', ${effectiveVideoUrlSql('e', sex)}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e', sex)},
                       'exercise_description', ${localizedDescriptionExpr('e', locale)},
+                      'exercise_short_description', ${localizedShortDescriptionExpr('e', locale)},
+                      'exercise_category', e.category, 'exercise_equipment', e.equipment,
+                      'exercise_muscles', (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id),
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
                       'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,

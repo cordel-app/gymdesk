@@ -9,7 +9,7 @@ export const FOOD_THUMBNAIL_SIZE = 32;
  * (Gym and Cordel Base). A food with no image, or one that fails to load,
  * renders a neutral placeholder of the same size so rows stay aligned.
  */
-export function FoodThumbnail({ imageUrl, version, size = FOOD_THUMBNAIL_SIZE }: { imageUrl: string | null; version?: string | null; size?: number }) {
+export function FoodThumbnail({ imageUrl, version, size = FOOD_THUMBNAIL_SIZE, onClick, label }: { imageUrl: string | null; version?: string | null; size?: number; onClick?: () => void; label?: string }) {
   const [failed, setFailed] = useState(false);
   const box = {
     width: size,
@@ -25,8 +25,17 @@ export function FoodThumbnail({ imageUrl, version, size = FOOD_THUMBNAIL_SIZE }:
     return <span aria-hidden="true" style={{ ...box, background: 'var(--gd-input-bg, #f1f1f1)', border: '1px solid var(--gd-card-border, #e0e0e0)' }} />;
   }
   const src = version ? `${imageUrl}?v=${encodeURIComponent(version)}` : imageUrl;
-  return (
+  const img = (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />
   );
+  if (onClick) {
+    return (
+      <button type="button" aria-label={label} onClick={(e) => { e.stopPropagation(); onClick(); }}
+        style={{ ...box, padding: 0, border: 'none', background: 'none', cursor: 'zoom-in' }}>
+        {img}
+      </button>
+    );
+  }
+  return img;
 }

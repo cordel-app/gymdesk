@@ -1,5 +1,6 @@
 'use client';
 
+import { ExerciseInfo } from './ExerciseInfo';
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { LineChart } from '@gymdesk/charts';
@@ -7,6 +8,8 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDayMonth } from '@/lib/gymFormat';
 import { MemberGoalCard } from '@/components/MemberGoalCard';
+import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
+import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
 import { inputStyle, memberTheme, noticeStyle } from '@/lib/memberChrome';
 import {
   type ProgressDetail, type ProgressSummary,
@@ -30,6 +33,7 @@ export function MemberProgress() {
   const [failed, setFailed] = useState(false);
   const [filters, setFilters] = useState<ProgressFilters>(NO_PROGRESS_FILTERS);
   const [openId, setOpenId] = useState<Record<number, boolean>>({});
+  const [videoItem, setVideoItem] = useState<ProgressSummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +51,17 @@ export function MemberProgress() {
   const visible = filterProgress(items, filters, gymToday(new Date(), gym.time_zone));
   const muscles = progressMuscles(items);
   const filtered = filters.exerciseId !== null || filters.muscle !== null || filters.range !== 'all';
+
+  // #2321 — the same Play control as My Training Plan (▶, external pages open in a tab).
+  const playButton = (item: ProgressSummary) => {
+    const url = item.video_url;
+    const kind = exerciseVideoKind(url);
+    if (!url || !kind) return undefined;
+    const label = t('exercise_media.play_video_of', { name: item.exercise_name });
+    return kind === 'external'
+      ? <a href={url} target="_blank" rel="noreferrer" aria-label={label} style={styles.playBtn}>▶</a>
+      : <button type="button" onClick={() => setVideoItem(item)} aria-label={label} style={styles.playBtn}>▶</button>;
+  };
 
   return (
     <div>
@@ -103,6 +118,8 @@ export function MemberProgress() {
               imageUrl={thumb}
               previewUrl={item.image_url ?? thumb}
               imageFallback={thumb ? t('nutrition.no_image') : undefined}
+              actions={playButton(item)}
+              imageDetails={<ExerciseInfo info={item} />}
             >
               <div style={styles.stats}>
                 <Stat label={t('progress.days_exercised')} value={String(item.days_exercised)} />
@@ -114,6 +131,14 @@ export function MemberProgress() {
           </div>
         );
       })}
+      {videoItem?.video_url && (
+        <ExerciseVideoViewer
+          url={videoItem.video_url}
+          poster={exerciseVideoPosterUrl({ exercise_video_url: videoItem.video_url, exercise_video_thumbnail_url: videoItem.video_thumbnail_url })}
+          name={videoItem.exercise_name}
+          onClose={() => setVideoItem(null)}
+        />
+      )}
       {filtered && visible.length === 0 && (
         <button type="button" style={styles.clear} onClick={() => setFilters(NO_PROGRESS_FILTERS)}>{t('progress.clear_filters')}</button>
       )}
@@ -194,6 +219,7 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
 }
 
 const styles: Record<string, CSSProperties> = {
+  playBtn: { flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', padding: 0, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, textDecoration: 'none', background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
   filters: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 },
   filterField: { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', minWidth: 0 },
   clear: { background: 'none', border: 'none', color: memberTheme.textSecondary, textDecoration: 'underline', cursor: 'pointer', display: 'block', margin: '0 auto', font: 'inherit' },
