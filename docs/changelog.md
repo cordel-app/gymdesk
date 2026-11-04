@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2327 (Exercise search, Base and Gym libraries alike, matches the name and its translations only; short and full descriptions, base or translated, are no longer searched. Reverses #1355 §2; no migration)
 - **Done**: #1984 stage 2b-3 (replacement attendee: `POST /bookings` takes `replaces_booking_id` (migration 365) naming an `absent`, booked participant of the same occurrence; the replacement joins that booking's group (a solo original gets one), so the session is spent once and charged to the original booker; one replacement per booking, capacity not re-checked; no API response shape change beyond the new column)
 - **Done**: #1984 stage 2b-2 (Duo consumption: a Duo booking spends one Professional Service session per group, not per participant — `spendSessionForBooking()` skips a booking whose group already has a ledger row and charges the member who made the booking; the replacement attendee is not built yet)
 - **Done**: #2340 (Nutrition Library read-only view, shared by the gym and Cordel Base libraries: the Status badge fits its content instead of stretching across the card; no API or migration change)
