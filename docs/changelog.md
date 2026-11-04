@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #1984 stage 2b-2 (Duo consumption: a Duo booking spends one Professional Service session per group, not per participant — `spendSessionForBooking()` skips a booking whose group already has a ledger row and charges the member who made the booking; the replacement attendee is not built yet)
 - **Done**: #2340 (Nutrition Library read-only view, shared by the gym and Cordel Base libraries: the Status badge fits its content instead of stretching across the card; no API or migration change)
 - **Done**: #2324 (Deactivating or deleting an Activity discontinues its future events: `PUT /activity-types/:id` with `status: inactive` and `DELETE /activity-types/:id` answer `409 activity_discontinue_confirmation_required` with counts until `confirm_discontinue: true`, then in one transaction delete future events with no booking history, cancel those with bookings (rows kept, waiting list released) and leave past events alone; each affected member gets one `activity_discontinued` alert (migration 364) via `api/src/api/activity-discontinuation.ts`; the Admin shows the confirmation modal; Members App alert copy in en/es/ca)
 - **Done**: #2328 (Members App exercise image modals: My Training Plan and My Progress share `ExerciseInfo`, now sectioned with icons — Short description, Description, Muscles, Equipment, Category — and the image fills the modal width at its natural ratio, no height cap or grey side areas; no API or migration change)
