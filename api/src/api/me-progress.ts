@@ -4,6 +4,7 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
+import { localizedDescriptionExprs } from '../domain/exerciseDescriptionTranslations';
 import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import {
   defaultResultType, progressDays, summarizeExercise,
@@ -89,6 +90,7 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
               ${effectiveVideoUrlSql('e', sex)} AS video_url,
               ${effectiveVideoPosterSql('e', sex)} AS video_thumbnail_url,
               ${allowedTypesSql},
+              ${localizedDescriptionExprs('e', getRequestLocale(req))}, e.category, e.equipment,
               (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
@@ -107,6 +109,10 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
         video_url: ex.video_url ?? null,
         video_thumbnail_url: ex.video_thumbnail_url ?? null,
         last_logged_date: performed.length ? performed[performed.length - 1] : null,
+        short_description: ex.display_short_description ?? null,
+        description: ex.display_description ?? null,
+        category: ex.category ?? null,
+        equipment: ex.equipment ?? null,
         muscles: ((json(ex.muscles) ?? []) as string[]).slice().sort(),
         ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], allowed),
       };

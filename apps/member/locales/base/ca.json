@@ -751,6 +751,9 @@
     "menu_label": "Accions de l’objectiu"
   },
   "exercise_media": {
+    "muscles": "Músculs",
+    "category": "Categoria",
+    "equipment": "Equipament",
     "image": "Imatge de l'exercici",
     "image_alt": "Imatge de {name}",
     "view_image": "Veure la imatge de l'exercici",

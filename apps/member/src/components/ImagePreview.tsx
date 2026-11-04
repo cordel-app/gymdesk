@@ -15,11 +15,13 @@ import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
  * handed and resolves nothing but its own close label; with no `src` it renders
  * its children untouched (nothing to enlarge).
  */
-export function ImagePreviewButton({ src, alt, title, description = null, children, style }: {
+export function ImagePreviewButton({ src, alt, title, description = null, details = null, children, style }: {
   src: string | null | undefined;
   alt: string;
   title: string;
   description?: string | null;
+  /** #2320 — richer content under the picture (an exercise's facts). */
+  details?: React.ReactNode;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
@@ -58,6 +60,7 @@ export function ImagePreviewButton({ src, alt, title, description = null, childr
             <img src={src} alt={alt} style={styles.image} onError={() => setBroken(true)} />
           )}
           {description && <p style={styles.description}>{description}</p>}
+          {details}
         </MemberDialog>
       )}
     </>
