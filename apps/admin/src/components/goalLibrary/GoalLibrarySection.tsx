@@ -25,7 +25,7 @@ import { ProfessionalServiceImageModal } from '@/components/professionalServices
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { localeLabel } from '@/lib/localeLabels';
 import { GoalDetailsModal } from './GoalDetailsModal';
-import { GoalTranslationsModal, TranslationsGlobeButton, TranslatedField, TranslationMap } from './GoalTranslationsModal';
+import { GoalTranslationsModal, TranslationsGlobeButton, TranslatedField, TranslationMap, toFormTranslations } from './GoalTranslationsModal';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
   emptyGoalForm, formatGoalTarget, goalAvailability, goalFormError,
@@ -349,7 +349,7 @@ export function GoalLibrarySection({
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <label style={formFieldLabelStyle}>{label('label_name')} *</label>
-            {globe('name', form.translations ?? {}, true, (m) => setForm({ ...form, translations: m }))}
+            {globe('name', form.translations ?? {}, true, (m) => setForm({ ...form, translations: toFormTranslations(m) }))}
           </div>
           <input
             ref={autoFocusRef}
@@ -431,7 +431,7 @@ export function GoalLibrarySection({
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <label style={formFieldLabelStyle}>{label('label_description')}</label>
-            {globe('description', form.translations ?? {}, true, (m) => setForm({ ...form, translations: m }))}
+            {globe('description', form.translations ?? {}, true, (m) => setForm({ ...form, translations: toFormTranslations(m) }))}
           </div>
           <textarea
             value={form.description}

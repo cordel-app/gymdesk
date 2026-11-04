@@ -16,6 +16,13 @@ export type TranslationMap = Record<string, { name?: string | null; description?
  * draft lives here only until Save (Cancel discards it). `editable = false` is the
  * read-only view of the same list, with no Save.
  */
+/** The modal's loose map as the form holds it (`''` = not translated). */
+export function toFormTranslations(m: TranslationMap): Record<string, { name: string; description: string }> {
+  const out: Record<string, { name: string; description: string }> = {};
+  for (const [loc, v] of Object.entries(m)) out[loc] = { name: v.name ?? '', description: v.description ?? '' };
+  return out;
+}
+
 export function GoalTranslationsModal({
   field, title, locales, translations, editable, label, onSave, onClose,
 }: {
