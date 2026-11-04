@@ -2725,7 +2725,10 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
       `SELECT ceb.id AS booking_id,
               ce.id AS entity_id, at.name AS title,
               ce.starts_at, ce.ends_at, ceb.status AS booking_status,
-              ceb.attendance_status, ceb.cancelled_at
+              ceb.attendance_status, ceb.cancelled_at,
+              -- #2326: the event's own image, else the Activity's (as upcoming bookings).
+              COALESCE(NULLIF(TRIM(ce.image_url), ''), NULLIF(TRIM(at.image_url), '')) AS class_type_image_url,
+              at.description AS class_type_description
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        JOIN activity_types at ON at.id = ce.activity_type_id
