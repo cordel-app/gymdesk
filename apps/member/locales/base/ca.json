@@ -327,6 +327,8 @@
     "type_shared_training_rejected": "Entrenament compartit rebutjat",
     "type_event_cancelled": "Reserva cancel·lada",
     "type_event_updated": "Reserva actualitzada",
+    "type_booking_cancelled_by_partner": "Cancel·lada pel teu acompanyant",
+    "detail_booking_cancelled_by_partner": "El teu acompanyant ha cancel·lat aquesta reserva, així que la teva plaça també s’ha cancel·lat.",
     "type_event_reactivated": "Classe reactivada",
     "detail_event_reactivated": "La classe torna a estar disponible i la teva reserva s’ha restaurat.",
     "type_waitlist_closed": "Llista d'espera tancada",
