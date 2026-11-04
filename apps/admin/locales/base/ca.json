@@ -4568,6 +4568,7 @@
     "duration_four_weeks": "{count} × 4 setmanes"
   },
   "products": {
+    "no_description": "Cap descripció disponible.",
     "import_system": "Importa productes del sistema",
     "import_modal_title": "Importa productes del sistema",
     "import_select_all_matching": "Selecciona tots els resultats",
@@ -5459,6 +5460,7 @@
     "class_attendees": "Veure assistents"
   },
   "base_products": {
+    "no_description": "Cap descripció disponible.",
     "title": "Productes base",
     "subtitle": "Plantilles dels Productes amb què comença un gimnàs nou. Els canvis només afecten els gimnasos creats després.",
     "add": "+ Afegeix producte base",
