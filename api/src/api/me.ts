@@ -33,6 +33,8 @@ import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
+import { cancelGroupPartners, membersShareCoverage } from './duo-booking';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
@@ -1048,7 +1050,35 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx), chosenService);
+    // #1984 stage 2b-1: an optional second participant makes this a Duo booking,
+    // written as one unit in one transaction.
+    const parsed = parseParticipantIds(req.body.participant_member_ids, memberId);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const actor = resolveRequestActor(ctx);
+    let result;
+    if (parsed.partnerIds.length === 0) {
+      result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, actor, chosenService);
+    } else {
+      const partnerId = parsed.partnerIds[0];
+      result = await db.transaction(async (tx) => {
+        const { rows: partner } = await tx.query(
+          'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [partnerId, gymId]);
+        if (partner.length === 0 || !(await membersShareCoverage(tx, gymId, memberId, partnerId))) {
+          throw Object.assign(new Error('The participant is not linked to you through plan coverage'), { status: 403, code: 'participant_not_linked' });
+        }
+        const first = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        if (first.status !== 'booked' || second.status !== 'booked') {
+          // A Duo has no waiting-list path: both places or neither.
+          throw Object.assign(new Error('There are not enough places for two participants'), { status: 409, code: 'duo_requires_places' });
+        }
+        const groupId = newBookingGroupId();
+        await tx.query(
+          'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ? WHERE id IN (?, ?) AND gym_id = ?',
+          [groupId, memberId, first.id, second.id, gymId]);
+        return { ...first, booking_group_id: groupId, partner_booking_id: second.id };
+      });
+    }
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1115,7 +1145,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT ceb.id, ceb.status, ceb.calendar_event_id AS class_session_id, ce.starts_at,
+      `SELECT ceb.id, ceb.status, ceb.booking_group_id, ceb.calendar_event_id AS class_session_id, ce.starts_at,
               at.name AS title,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
@@ -1145,8 +1175,17 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     // #1189 stage 3: a member's cancellation that reaches here was allowed
     // free of charge (outside the notice window, or inside the grace period).
     const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false, actor: resolveRequestActor(ctx) });
-    if (cancelResult.promotedMemberId) {
-      sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
+    const promoted = cancelResult.promotedMemberId ? [Number(cancelResult.promotedMemberId)] : [];
+    // #1984 stage 2b-1: cancelling one participant of a Duo cancels the group
+    // and tells the other participant.
+    if (rows[0].booking_group_id) {
+      const grp = await cancelGroupPartners(gymId, rows[0].booking_group_id, Number(req.params.id), resolveRequestActor(ctx), {
+        sessionId: Number(rows[0].class_session_id), title: rows[0].title, starts_at: rows[0].starts_at,
+      });
+      promoted.push(...grp.promotedMemberIds);
+    }
+    for (const pid of promoted) {
+      sendNotification(gymId, pid, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
     }
     res.status(204).send();

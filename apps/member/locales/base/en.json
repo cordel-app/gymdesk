@@ -327,6 +327,8 @@
     "type_shared_training_rejected": "Shared training declined",
     "type_event_cancelled": "Booking cancelled",
     "type_event_updated": "Booking updated",
+    "type_booking_cancelled_by_partner": "Cancelled by your partner",
+    "detail_booking_cancelled_by_partner": "Your partner cancelled this booking, so your place has been cancelled too.",
     "type_event_reactivated": "Class reactivated",
     "detail_event_reactivated": "The class is available again and your booking has been restored.",
     "type_waitlist_closed": "Waiting list closed",
