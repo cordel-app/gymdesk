@@ -94,7 +94,11 @@ export function NutritionItemReadOnlyView({
       )}
 
       <Section label={t('col_status')}>
-        <StatusBadge status={item.status} label={t(`status_${item.status}`)} />
+        {/* Section is a column flex box, so a bare child stretches to the full
+            width; align-self keeps the badge as wide as its label. */}
+        <span style={{ alignSelf: 'flex-start' }}>
+          <StatusBadge status={item.status} label={t(`status_${item.status}`)} />
+        </span>
       </Section>
 
       {extraRows}
