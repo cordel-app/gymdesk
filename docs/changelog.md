@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2319 (Members → Family: each member shows a circular profile thumbnail left of their name, falling back to the initial avatar; clicking it opens a modal with the full-size image, uncropped. `GET /members/:id/family` also reports each member's `image_url`, `image_thumbnail_url` and `modified_at`; no migration or storage change)
 - **Done**: #2308 (clicking a Nutrition Goal's circular thumbnail in the gym and Cordel Base Nutrition Library opens the shared image modal with the full-size `image_url` and the complete description in the current language, with a graceful message for a missing or failed image; no API, data or storage change)
 - **Done**: #2307 (clicking a food's circular thumbnail in the gym's Nutrition Library and Cordel's Base Nutrition Library opens `FoodImageModal` (the Professional Services image modal) with the full-size `image_url` and the complete description below; a missing or failed image shows a message, never an enlarged thumbnail; no API, data or storage change)
 - **Done**: #2306 (the exercise image modal opens only the full-size `image_url` of the clicked gender, never the thumbnail enlarged; a thumbnail-only variant such as the muscle fallback is not zoomable. UI only, no API or migration change; closes #2306)

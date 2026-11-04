@@ -649,6 +649,8 @@
     "family_make_owner": "Make owner",
     "family_remove": "Remove",
     "family_view": "View",
+    "family_photo_open": "View photo of {name}",
+    "family_photo_close": "Close",
     "family_dissolve": "Dissolve family",
     "family_confirm_remove": "Remove {name} from the family?",
     "family_confirm_dissolve": "Dissolve this family? Members keep their own plans and products.",

@@ -46,8 +46,8 @@ async function familyOf(q: Q, gymId: string, memberId: number, lock = false) {
 }
 
 async function shape(q: Q, gymId: string, family: { id: number; name: string }) {
-  const { rows: members } = await q.query<{ member_id: number; name: string; email: string; is_owner: number }>(
-    `SELECT fm.member_id, m.name, m.email, fm.is_owner
+  const { rows: members } = await q.query<{ member_id: number; name: string; email: string; is_owner: number; image_url: string | null; image_thumbnail_url: string | null; modified_at: string | null }>(
+    `SELECT fm.member_id, m.name, m.email, fm.is_owner, m.image_url, m.image_thumbnail_url, m.modified_at
        FROM family_members fm JOIN members m ON m.id = fm.member_id
       WHERE fm.family_id = ? AND fm.gym_id = ?
       ORDER BY fm.is_owner DESC, m.name ASC`, [family.id, gymId]);
@@ -58,7 +58,7 @@ async function shape(q: Q, gymId: string, family: { id: number; name: string }) 
     owner_member_id: owner?.member_id ?? null,
     // The owner is the payer of family purchases once payer resolution lands (stage 2).
     payer_member_id: owner?.member_id ?? null,
-    members: members.map((m) => ({ member_id: m.member_id, name: m.name, email: m.email, is_owner: m.is_owner === 1 })),
+    members: members.map((m) => ({ member_id: m.member_id, name: m.name, email: m.email, is_owner: m.is_owner === 1, image_url: m.image_url, image_thumbnail_url: m.image_thumbnail_url, modified_at: m.modified_at })),
   };
 }
 
