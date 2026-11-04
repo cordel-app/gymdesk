@@ -5,7 +5,7 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { localizedDescriptionExprs } from '../domain/exerciseDescriptionTranslations';
-import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
+import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import {
   defaultResultType, progressDays, summarizeExercise,
   type AllowedResultType, type ProgressLog,
@@ -87,6 +87,8 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
       `SELECT e.id, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
               ${effectiveImageUrlSql('e', sex)} AS image_url,
               ${effectiveImageThumbnailUrlSql('e', sex)} AS image_thumbnail_url,
+              ${effectiveVideoUrlSql('e', sex)} AS video_url,
+              ${effectiveVideoPosterSql('e', sex)} AS video_thumbnail_url,
               ${allowedTypesSql},
               ${localizedDescriptionExprs('e', getRequestLocale(req))}, e.category, e.equipment,
               (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles
@@ -103,6 +105,9 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
         exercise_name: ex.exercise_name,
         image_url: ex.image_url ?? null,
         image_thumbnail_url: ex.image_thumbnail_url ?? null,
+        // #2321 — the member's-sex video (the other one when only one exists).
+        video_url: ex.video_url ?? null,
+        video_thumbnail_url: ex.video_thumbnail_url ?? null,
         last_logged_date: performed.length ? performed[performed.length - 1] : null,
         short_description: ex.display_short_description ?? null,
         description: ex.display_description ?? null,

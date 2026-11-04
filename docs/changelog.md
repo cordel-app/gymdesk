@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2321 (My Progress in the Members App shows the My Training Plan ▶ Play control beside an exercise when it has a video: `GET /me/progress/exercises` reports `video_url` / `video_thumbnail_url` chosen for the member's sex, falling back to the only video available; no video, no icon; the card, filters and image modal are unchanged)
 - **Done**: #2251 follow-up (Products lists, Gym and Base: the filters sit on the left under the title, each row shows a circular thumbnail left of the name when the Product has an image, and clicking it opens the shared image modal with the full 1080 × 1080 image uncropped and the description below; UI only, no API or migration change; Related to #2251)
 
 - **Done**: #2320 (the exercise image modal in My Training Plan and My Progress now shows the exercise's short description, description, muscles, category and equipment below the enlarged image, via one `ExerciseInfo` component; a blank value leaves no section; `GET /training-plans` trees and `GET /me/progress/exercises` report the extra read-only fields; no migration)
