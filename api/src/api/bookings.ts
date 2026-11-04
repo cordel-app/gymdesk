@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -319,12 +320,66 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
   );
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
+  // #1984 stage 2b-3: a replacement attendee stands in for an absent booked
+  // participant of the same occurrence. It joins the original's group, so the
+  // one session is spent once and charged to the original booker.
+  const rawReplaces = req.body.replaces_booking_id;
+  const replacesId = rawReplaces == null || rawReplaces === '' ? null : Number(rawReplaces);
+  if (replacesId !== null && (!Number.isInteger(replacesId) || replacesId <= 0)) {
+    return res.status(400).json({ error: 'replaces_booking_id must be a positive integer' });
+  }
+  if (replacesId !== null && (waitlist || force)) {
+    return res.status(400).json({ error: 'A replacement attendee cannot be waitlisted or forced' });
+  }
+
   try {
-    const result = await bookMemberOnSession(
-      gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist),
-      undefined, Boolean(override_eligibility), resolveRequestActor(getTenantContext(req)),
-      chosenService,
-    );
+    const actor = resolveRequestActor(getTenantContext(req));
+    const result = await db.transaction(async (tx) => {
+      let original: any = null;
+      if (replacesId !== null) {
+        const { rows: orig } = await tx.query(
+          `SELECT id, member_id, calendar_event_id, status, attendance_status, booking_group_id, booked_by_member_id
+             FROM calendar_event_bookings WHERE id = ? AND gym_id = ? FOR UPDATE`,
+          [replacesId, gymId],
+        );
+        original = orig[0];
+        if (!original) throw Object.assign(new Error('Booking to replace not found'), { status: 404 });
+        if (Number(original.calendar_event_id) !== Number(class_session_id)) {
+          throw Object.assign(new Error('The booking to replace belongs to another session'), { status: 400 });
+        }
+        if (original.status !== 'booked' || original.attendance_status !== 'absent') {
+          throw Object.assign(new Error('Only an absent, booked participant can be replaced'), { status: 409, code: 'replacement_requires_absent' });
+        }
+        if (Number(original.member_id) === Number(member_id)) {
+          throw Object.assign(new Error('A member cannot replace themselves'), { status: 400 });
+        }
+        const { rows: dup } = await tx.query(
+          'SELECT id FROM calendar_event_bookings WHERE gym_id = ? AND replaces_booking_id = ? AND status <> ? LIMIT 1',
+          [gymId, replacesId, 'cancelled'],
+        );
+        if (dup.length > 0) throw Object.assign(new Error('This booking already has a replacement'), { status: 409, code: 'already_replaced' });
+      }
+      const r = await bookMemberOnSession(
+        // A replacement takes the seat of the absent participant, so capacity is not re-checked.
+        gymId, member_id, class_session_id, Boolean(force) || original != null, Boolean(waitlist),
+        tx, Boolean(override_eligibility), actor, chosenService,
+      );
+      if (original) {
+        const groupId: string = original.booking_group_id ?? crypto.randomUUID();
+        const bookedBy = original.booked_by_member_id ?? original.member_id;
+        if (!original.booking_group_id) {
+          await tx.query(
+            'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+            [groupId, bookedBy, actor, original.id, gymId],
+          );
+        }
+        await tx.query(
+          'UPDATE calendar_event_bookings SET replaces_booking_id = ?, booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+          [original.id, groupId, bookedBy, actor, r.id, gymId],
+        );
+      }
+      return r;
+    });
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
     // the Members App). This is the staff-side half, which raised nothing at all
