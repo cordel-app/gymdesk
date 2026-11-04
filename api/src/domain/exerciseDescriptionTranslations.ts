@@ -37,6 +37,11 @@ export function localizedDescriptionExpr(alias: string, locale: SupportedLocale,
   return expr('description', alias, locale, tables.descriptions);
 }
 
+/** The short description alone, localized, as a bare expression (for a JSON_OBJECT). */
+export function localizedShortDescriptionExpr(alias: string, locale: SupportedLocale, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
+  return expr('short_description', alias, locale, tables.descriptions);
+}
+
 /** `display_short_description` and `display_description`, resolved for `locale`. */
 export function localizedDescriptionExprs(alias: string, locale: SupportedLocale, tables: ExerciseTables = LEGACY_EXERCISE_TABLES): string {
   return `${expr('short_description', alias, locale, tables.descriptions)} AS display_short_description,

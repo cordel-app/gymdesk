@@ -17,6 +17,10 @@ export interface ProgressSummary {
   /** #2284 — the latest performed day (`YYYY-MM-DD`), and the muscle slugs the exercise works. */
   last_logged_date: string | null;
   muscles: string[];
+  short_description?: string | null;
+  description?: string | null;
+  category?: string | null;
+  equipment?: string | null;
   days_exercised: number;
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;

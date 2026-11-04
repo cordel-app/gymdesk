@@ -751,6 +751,9 @@
     "menu_label": "Goal actions"
   },
   "exercise_media": {
+    "muscles": "Muscles",
+    "category": "Category",
+    "equipment": "Equipment",
     "image": "Exercise image",
     "image_alt": "Image of {name}",
     "view_image": "View the exercise image",
