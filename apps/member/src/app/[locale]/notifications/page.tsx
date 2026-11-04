@@ -57,7 +57,7 @@ function timeAgo(iso: string, locale: string): string {
 type CategoryFilter = 'all' | 'staff' | 'auto';
 const CATEGORY_FILTERS: CategoryFilter[] = ['all', 'staff', 'auto'];
 
-const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h'];
+const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h', 'activity_discontinued'];
 
 export default function NotificationsPage() {
   const t = useTranslations('notifications');

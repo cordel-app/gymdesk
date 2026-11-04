@@ -331,6 +331,8 @@
     "detail_event_reactivated": "La clase vuelve a estar disponible y tu reserva se ha restaurado.",
     "type_waitlist_closed": "Lista de espera cerrada",
     "detail_waitlist_closed": "La lista de espera de esta clase se ha cerrado. Ya no estás en ella y no puedes volver a apuntarte.",
+    "type_activity_discontinued": "Actividad discontinuada",
+    "detail_activity_discontinued": "La actividad se ha discontinuado. Tus próximas sesiones asociadas a esta actividad se han cancelado.",
     "type_waitlist_removed": "Fuera de la lista de espera",
     "detail_waitlist_removed": "Se te ha retirado de la lista de espera de esta clase. La lista sigue abierta, así que puedes volver a apuntarte.",
     "type_booking_reminder_2h": "Recordatorio de entreno",

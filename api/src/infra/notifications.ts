@@ -55,7 +55,9 @@ export type NotificationType =
    * event). The one alert whose text is the gym's own rather than a locale key;
    * the Alerts page files it under *Staff*, every other type under *Auto*.
    */
-  | 'staff_message';
+  | 'staff_message'
+  /** #2324: the Activity was deactivated or deleted; one alert per member, never per event. */
+  | 'activity_discontinued';
 
 export interface NotificationPayload {
   title: string;

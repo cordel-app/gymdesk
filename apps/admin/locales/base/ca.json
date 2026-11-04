@@ -3560,6 +3560,8 @@
     "meta_deleted_at": "Eliminat el",
     "confirm_delete": "Desactivar aquesta activitat? Els esdeveniments futurs del calendari del seu horari seran cancel·lats. Aquesta acció es pot desfer des de la Paperera.",
     "confirm_propagate": "Actualitzar esdeveniments futurs",
+    "confirm_discontinue": "Aquesta activitat es discontinuarà. S'eliminaran {events} esdeveniment(s) futur(s): els {booked} amb reserves es cancel·len i la resta s'esborra. Les llistes d'espera es buiden i s'avisa els membres afectats.",
+    "confirm_discontinue_accept": "Accepta",
     "error_required": "Nom, durada i aforament són obligatoris.",
     "error_generic": "Alguna cosa ha anat malament.",
     "cancel": "Cancel·lar",
