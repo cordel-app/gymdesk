@@ -265,6 +265,11 @@ export default function ActivityTypesPage() {
   // trainer, center, color, capacity) comes back as 409 future_events_impacted until
   // staff explicitly confirms the propagation.
   const [saveConflict, setSaveConflict] = useState<{ row: ActivityType; message: string } | null>(null);
+  // #2324: deactivating or deleting an Activity discontinues its future events;
+  // the API answers 409 with the counts until the admin confirms.
+  const [discontinueConflict, setDiscontinueConflict] = useState<
+    { kind: 'save' | 'delete'; row: ActivityType; events: number; booked: number } | null
+  >(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -459,7 +464,7 @@ export default function ActivityTypesPage() {
     setDeleteRuleConflict(null);
   }
 
-  async function handleSave(row: ActivityType, confirmPropagate = false) {
+  async function handleSave(row: ActivityType, confirmPropagate = false, confirmDiscontinue = false) {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
@@ -485,6 +490,7 @@ export default function ActivityTypesPage() {
           public_event: editForm.public_event,
           waitlist_mode: editForm.waitlist_mode,
           ...(confirmPropagate ? { confirm_propagate: true } : {}),
+          ...(confirmDiscontinue ? { confirm_discontinue: true } : {}),
         }),
       });
       await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
@@ -492,12 +498,17 @@ export default function ActivityTypesPage() {
         body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices), ...capacities }),
       });
       setSaveConflict(null);
+      setDiscontinueConflict(null);
       setEditingId(null);
       resetScheduleEditing();
       load();
     } catch (err: any) {
       if (err.status === 409 && err.body?.error === 'future_events_impacted') {
         setSaveConflict({ row, message: err.body.message ?? err.message });
+      } else if (err.status === 409 && err.body?.error === 'activity_discontinue_confirmation_required') {
+        setDiscontinueConflict({
+          kind: 'save', row, events: Number(err.body.impacted_events ?? 0), booked: Number(err.body.booked_events ?? 0),
+        });
       } else {
         setEditError(err.message ?? t('error_generic'));
       }
@@ -524,15 +535,26 @@ export default function ActivityTypesPage() {
 
   // ─── Delete ──────────────────────────────────────────────────────────────────
 
-  async function handleDelete() {
+  async function handleDelete(confirmDiscontinue = false) {
     if (!deleting) return;
     try {
-      await apiFetch(`/activity-types/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/activity-types/${deleting.id}`, {
+        method: 'DELETE',
+        ...(confirmDiscontinue ? { body: JSON.stringify({ confirm_discontinue: true }) } : {}),
+      });
       setDeleting(null);
+      setDiscontinueConflict(null);
       if (editingId === deleting.id) { setEditingId(null); resetScheduleEditing(); }
       setExpanded((prev) => { const s = new Set(prev); s.delete(deleting.id); return s; });
       load();
     } catch (err: any) {
+      if (err.status === 409 && err.body?.error === 'activity_discontinue_confirmation_required') {
+        setDiscontinueConflict({
+          kind: 'delete', row: deleting, events: Number(err.body.impacted_events ?? 0), booked: Number(err.body.booked_events ?? 0),
+        });
+        setDeleting(null);
+        return;
+      }
       setDeleting(null);
       toast(err.message ?? t('error_generic'));
     }
@@ -1579,7 +1601,7 @@ export default function ActivityTypesPage() {
         message={t('confirm_delete')}
         confirmLabel={t('delete')}
         cancelLabel={t('cancel')}
-        onConfirm={handleDelete}
+        onConfirm={() => handleDelete()}
         onCancel={() => setDeleting(null)}
       />
 
@@ -1627,6 +1649,23 @@ export default function ActivityTypesPage() {
         cancelLabel={ts('cancel')}
         onConfirm={confirmDeleteRuleConflict}
         onCancel={() => setDeleteRuleConflict(null)}
+      />
+
+      {/* #2324: discontinuing an Activity (inactive / deleted) */}
+      <ConfirmDialog
+        open={discontinueConflict !== null}
+        message={discontinueConflict
+          ? t('confirm_discontinue', { events: discontinueConflict.events, booked: discontinueConflict.booked })
+          : ''}
+        confirmLabel={t('confirm_discontinue_accept')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (!discontinueConflict) return;
+          if (discontinueConflict.kind === 'save') handleSave(discontinueConflict.row, false, true);
+          else { setDeleting(discontinueConflict.row); handleDelete(true); }
+        }}
+        onCancel={() => setDiscontinueConflict(null)}
+        busy={editSaving}
       />
 
       {/* #503 stage 3: propagating an edited default field to future calendar_events */}

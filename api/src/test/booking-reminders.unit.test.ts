@@ -35,7 +35,7 @@ const STAFF_BOOKINGS = readFileSync(join(API_SRC, 'api', 'bookings.ts'), 'utf8')
 const APP = readFileSync(join(API_SRC, 'app.ts'), 'utf8');
 // The newest migration that rewrites the CHECK list (the superset test reads it).
 const LATEST_CHECK_MIGRATION = readFileSync(
-  join(API_SRC, 'infra', 'migrations', '363_duo_booking_group.js'),
+  join(API_SRC, 'infra', 'migrations', '364_activity_discontinued_notification.js'),
   'utf8',
 );
 const MIGRATION = readFileSync(
