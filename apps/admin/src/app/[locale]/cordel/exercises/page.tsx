@@ -540,6 +540,7 @@ export default function CordelExercisesPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(row) => toggleExpand(row.id)}
+        clickRowToExpand
       />}
 
       {detailFor && (
