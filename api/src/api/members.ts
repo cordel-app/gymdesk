@@ -122,7 +122,7 @@ membersRouter.get('/', async (req, res) => {
   const limitClause = q ? 'LIMIT 20' : '';
   const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name,
+    `SELECT m.*,
             CASE
               WHEN m.clerk_user_id IS NOT NULL THEN 'active'
               WHEN m.invitation_id IS NOT NULL THEN 'invited'
@@ -144,7 +144,6 @@ membersRouter.get('/', async (req, res) => {
             -- implementation, domain/memberPaymentStatus.ts.
             ${memberPaymentStatusSql('m')} AS payment_status
      FROM members m
-     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
      WHERE ${where.join(' AND ')}
      ${havingClause}
@@ -353,7 +352,7 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const tenantCtx = getTenantContext(req);
   const { gymId } = tenantCtx;
-  const { name, email, phone, fare_id, center_ids, default_center_id, nif_nie_passport } = req.body;
+  const { name, email, phone, center_ids, default_center_id, nif_nie_passport } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
 
   const centers = await resolveMemberCenters(gymId, center_ids, default_center_id);
@@ -368,8 +367,8 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [name, email, phone ?? null, fare_id ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
+        'INSERT INTO members (name, email, phone, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?)',
+        [name, email, phone ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
       );
       for (const centerId of centers.ids) {
         await tx.query(
