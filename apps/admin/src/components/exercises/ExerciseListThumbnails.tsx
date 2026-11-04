@@ -50,7 +50,7 @@ function Thumb({ src, full, label }: { src: string | null; full?: string | null;
       <>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src!} alt={label} title={label} loading="lazy" onError={() => setBroken(true)}
-          onClick={big ? (e) => { e.stopPropagation(); setOpen(true); } : undefined} style={{ ...thumbStyle, cursor: big ? 'zoom-in' : 'default' }} />
+          onClick={(e) => { e.stopPropagation(); if (big) setOpen(true); }} style={{ ...thumbStyle, cursor: big ? 'zoom-in' : 'default' }} />
         {open && big && <FullSizeModal src={big} label={label} onClose={() => setOpen(false)} />}
       </>
     );
