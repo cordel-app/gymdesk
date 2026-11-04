@@ -751,6 +751,8 @@
     "menu_label": "Accions de l’objectiu"
   },
   "exercise_media": {
+    "short_description": "Descripció breu",
+    "description": "Descripció",
     "muscles": "Músculs",
     "category": "Categoria",
     "equipment": "Equipament",
