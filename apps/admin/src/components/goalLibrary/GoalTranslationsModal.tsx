@@ -7,7 +7,7 @@ import { formControlStyle, formFieldLabelStyle, modalActionsRowStyle } from '@/c
 import { localeLabel } from '@/lib/localeLabels';
 
 export type TranslatedField = 'name' | 'description';
-export type TranslationMap = Record<string, { name: string; description: string }>;
+export type TranslationMap = Record<string, { name?: string | null; description?: string | null }>;
 
 /**
  * #2332 — the translations of ONE multilingual field (Name or Description), one input per
