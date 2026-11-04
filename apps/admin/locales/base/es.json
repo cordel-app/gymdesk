@@ -3533,6 +3533,8 @@
     "meta_deleted_at": "Eliminado el",
     "confirm_delete": "¿Desactivar esta actividad? Los eventos de calendario futuros de su horario serán cancelados. Esta acción se puede deshacer desde la Papelera.",
     "confirm_propagate": "Actualizar eventos futuros",
+    "confirm_discontinue": "Esta actividad se discontinuará. Se eliminarán {events} evento(s) futuro(s): los {booked} con reservas se cancelan y el resto se borra. Las listas de espera se vacían y se avisa a los miembros afectados.",
+    "confirm_discontinue_accept": "Aceptar",
     "error_required": "Nombre, duración y aforo son obligatorios.",
     "error_generic": "Algo ha ido mal.",
     "cancel": "Cancelar",

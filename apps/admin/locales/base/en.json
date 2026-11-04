@@ -3538,6 +3538,8 @@
     "meta_deleted_at": "Deleted at",
     "confirm_delete": "Soft-delete this activity? Future calendar events from its schedule will be cancelled. This action can be undone from the Recycle Bin.",
     "confirm_propagate": "Update future events",
+    "confirm_discontinue": "This activity will be discontinued. {events} future event(s) will be removed: the {booked} with bookings are cancelled and the rest are deleted. Waiting lists are cleared and affected members are notified.",
+    "confirm_discontinue_accept": "Accept",
     "error_required": "Name, duration and capacity are required.",
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
