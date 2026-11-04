@@ -327,6 +327,8 @@
     "type_shared_training_rejected": "Entreno compartido rechazado",
     "type_event_cancelled": "Reserva cancelada",
     "type_event_updated": "Reserva actualizada",
+    "type_booking_cancelled_by_partner": "Cancelada por tu acompañante",
+    "detail_booking_cancelled_by_partner": "Tu acompañante ha cancelado esta reserva, así que tu plaza también se ha cancelado.",
     "type_event_reactivated": "Clase reactivada",
     "detail_event_reactivated": "La clase vuelve a estar disponible y tu reserva se ha restaurado.",
     "type_waitlist_closed": "Lista de espera cerrada",
@@ -753,6 +755,8 @@
     "menu_label": "Acciones del objetivo"
   },
   "exercise_media": {
+    "short_description": "Descripción breve",
+    "description": "Descripción",
     "muscles": "Músculos",
     "category": "Categoría",
     "equipment": "Equipamiento",

@@ -3,7 +3,7 @@
  * Activity is deactivated or deleted and its future events are cancelled.
  *
  * Same device as migration 270: `chk_member_notifications_type` is dropped and
- * re-added with the previous list (270's) plus one value, a strict superset, so
+ * re-added with the previous list (270's) plus one value (and 363's), a strict superset, so
  * revalidation cannot fail on existing data. Rebuilds `member_notifications`
  * under ALGORITHM=COPY, LOCK=SHARED. Helpers are copied, never shared.
  */
@@ -24,6 +24,8 @@ const NOTIFICATION_TYPES = [
   'waitlist_removed',
   'booking_reminder_2h',
   'staff_message',
+  // #1984 stage 2b-1 (migration 363).
+  'booking_cancelled_by_partner',
   // #2324 — the Activity was discontinued.
   'activity_discontinued',
 ];

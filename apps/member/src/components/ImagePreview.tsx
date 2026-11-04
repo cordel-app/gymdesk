@@ -69,6 +69,6 @@ export function ImagePreviewButton({ src, alt, title, description = null, detail
 
 const styles: Record<string, React.CSSProperties> = {
   trigger: { padding: 0, margin: 0, border: 'none', background: 'none', cursor: 'zoom-in', font: 'inherit', color: 'inherit', display: 'block', width: '100%', height: '100%' },
-  image: { width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block', borderRadius: 8, background: memberTheme.pageBackground },
+  image: { width: '100%', height: 'auto', display: 'block', borderRadius: 8, background: memberTheme.pageBackground },
   description: { margin: 0, fontSize: 14, color: memberTheme.textSecondary, overflowWrap: 'anywhere' },
 };
