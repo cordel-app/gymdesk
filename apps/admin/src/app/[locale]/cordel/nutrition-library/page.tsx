@@ -624,6 +624,7 @@ export default function CordelNutritionLibraryPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
+        clickRowToExpand
       />
 
       {/* One picker for the page: `openImagePicker()` points it at a food. */}

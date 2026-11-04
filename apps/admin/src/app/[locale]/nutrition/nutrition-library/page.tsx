@@ -543,6 +543,7 @@ export default function NutritionLibraryPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
+        clickRowToExpand
       />
 
       {detailItem && (
