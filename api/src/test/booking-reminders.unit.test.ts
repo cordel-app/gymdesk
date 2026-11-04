@@ -34,7 +34,7 @@ const ME = readFileSync(join(API_SRC, 'api', 'me.ts'), 'utf8');
 const STAFF_BOOKINGS = readFileSync(join(API_SRC, 'api', 'bookings.ts'), 'utf8');
 const APP = readFileSync(join(API_SRC, 'app.ts'), 'utf8');
 const MIGRATION = readFileSync(
-  join(API_SRC, 'infra', 'migrations', '270_staff_message_notification.js'),
+  join(API_SRC, 'infra', 'migrations', '363_duo_booking_group.js'),
   'utf8',
 );
 const WORKFLOW = readFileSync(

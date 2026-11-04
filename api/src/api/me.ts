@@ -1074,8 +1074,8 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
         }
         const groupId = newBookingGroupId();
         await tx.query(
-          'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ? WHERE id IN (?, ?) AND gym_id = ?',
-          [groupId, memberId, first.id, second.id, gymId]);
+          'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id IN (?, ?) AND gym_id = ?',
+          [groupId, memberId, actor, first.id, second.id, gymId]);
         return { ...first, booking_group_id: groupId, partner_booking_id: second.id };
       });
     }
