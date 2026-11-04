@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2331 (Professional Services, Base and Gym-based: Name and Description show the default language only, with a globe icon per field opening the shared `FieldTranslationsModal` — editable with Save/Cancel in the editor, read-only in the expanded row; the modal lists the supported languages from `PS_LOCALES`, persistence is the unchanged `translations` payload, no migration)
 - **Done**: #2330 (a click anywhere on a Base Exercises row toggles it, via `DataTable`'s opt-in `clickRowToExpand` that ignores buttons, links, inputs and dialogs; the Gym Exercises row already did. An exercise thumbnail click never toggles the row, even when it has no full-size image to open. Closes #2330)
 - **Done**: #2327 (Exercise search, Base and Gym libraries alike, matches the name and its translations only; short and full descriptions, base or translated, are no longer searched. Reverses #1355 §2; no migration)
 - **Done**: #1984 stage 2b-3 (replacement attendee: `POST /bookings` takes `replaces_booking_id` (migration 365) naming an `absent`, booked participant of the same occurrence; the replacement joins that booking's group (a solo original gets one), so the session is spent once and charged to the original booker; one replacement per booking, capacity not re-checked; no API response shape change beyond the new column)
