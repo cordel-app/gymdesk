@@ -924,7 +924,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                   AND ctum.activity_type_id = ce.activity_type_id
               ) AS access_locked
        FROM calendar_events ce
-       JOIN activity_types at ON at.id = ce.activity_type_id
+       LEFT JOIN activity_types at ON at.id = ce.activity_type_id
        LEFT JOIN centers c ON c.id = ce.center_id
        LEFT JOIN spaces sp ON sp.id = ce.space_id
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
