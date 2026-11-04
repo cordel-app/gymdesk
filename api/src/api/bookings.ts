@@ -369,8 +369,8 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
         const bookedBy = original.booked_by_member_id ?? original.member_id;
         if (!original.booking_group_id) {
           await tx.query(
-            'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ? WHERE id = ? AND gym_id = ?',
-            [groupId, bookedBy, original.id, gymId],
+            'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+            [groupId, bookedBy, actor, original.id, gymId],
           );
         }
         await tx.query(
