@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2321 (My Progress in the Members App shows the My Training Plan ▶ Play control beside an exercise when it has a video: `GET /me/progress/exercises` reports `video_url` / `video_thumbnail_url` chosen for the member's sex, falling back to the only video available; no video, no icon; the card, filters and image modal are unchanged)
 - **Done**: #2319 (Members → Family: each member shows a circular profile thumbnail left of their name, falling back to the initial avatar; clicking it opens a modal with the full-size image, uncropped. `GET /members/:id/family` also reports each member's `image_url`, `image_thumbnail_url` and `modified_at`; no migration or storage change)
 - **Done**: #2308 (clicking a Nutrition Goal's circular thumbnail in the gym and Cordel Base Nutrition Library opens the shared image modal with the full-size `image_url` and the complete description in the current language, with a graceful message for a missing or failed image; no API, data or storage change)
 - **Done**: #2307 (clicking a food's circular thumbnail in the gym's Nutrition Library and Cordel's Base Nutrition Library opens `FoodImageModal` (the Professional Services image modal) with the full-size `image_url` and the complete description below; a missing or failed image shows a message, never an enlarged thumbnail; no API, data or storage change)
