@@ -4046,7 +4046,10 @@
     "locale_en": "Inglés",
     "locale_es": "Español",
     "locale_ca": "Catalán",
-    "description_placeholder": "Notas opcionales sobre este alimento"
+    "description_placeholder": "Notas opcionales sobre este alimento",
+    "translations_title": "Traducciones: {field}",
+    "translations_close": "Cerrar",
+    "translations_open": "Abrir traducciones de {field}"
   },
   "goal_library": {
     "tab_foods": "Alimentos",
