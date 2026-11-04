@@ -119,3 +119,24 @@ export function matchesSearch(s: PsRow, q: string): boolean {
   const hay = [s.name, s.description, ...Object.values(s.translations ?? {}).flatMap((t) => [t?.name, t?.description])];
   return hay.some((v) => typeof v === 'string' && v.toLowerCase().includes(needle));
 }
+
+export type PsTextField = 'name' | 'description';
+
+/** `{ locale: value }` of one field across every supported language (#2331). */
+export function textValuesOf(texts: Form['texts'], field: PsTextField): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const l of PS_LOCALES) out[l] = texts[l][field];
+  return out;
+}
+
+/** The read-only row's texts in the form's shape, so one function serves both views. */
+export function textsOfRow(s: PsRow): Form['texts'] {
+  return formFor(s).texts;
+}
+
+/** The form with one field's values from the translations modal applied. */
+export function applyTextValues(f: Form, field: PsTextField, values: Record<string, string>): Form {
+  const texts = { ...f.texts };
+  for (const l of PS_LOCALES) texts[l] = { ...texts[l], [field]: values[l] ?? '' };
+  return { ...f, texts };
+}
