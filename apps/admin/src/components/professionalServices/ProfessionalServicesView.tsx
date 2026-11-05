@@ -438,7 +438,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const newEditor = form?.id === null ? <div style={{ marginBottom: 12 }}>{renderEditor()}</div> : null;
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900 }}>
+    <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{cfg.title}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
