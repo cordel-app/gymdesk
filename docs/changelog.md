@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2377 (the gym Exercises editor's Equipment dropdown now offers the System's equipment vocabulary — the Base Exercises' values from `GET /exercises/base/facets` — merged with the gym's own, so it matches the Base editor and `No equipment` stays; no API or migration change; `exercises/page.tsx`)
 - **Done**: #2372 (Members → Products: the inline Add Product form now closes after a recurring Product is saved, as it already did for a one-time one, so the saved line shows only as a regular row of the Products table; no API change)
 - **Done**: #2376 (Equipment follows the Base Exercise: `POST /exercises/import` copies `equipment` onto the new gym copy, as it does `category`, and `POST /exercises/:id/resync-with-system` brings it back in line with the Base Exercise's current value, reporting `equipment` in `updated`; no migration, no new endpoint.)
 - **Done**: #2378 (Exercise editor, Base and Gym-based: the Primary/Secondary selector of a selected muscle now sits immediately beside its checkbox and label instead of at the column edge; layout only, no API or schema change)
