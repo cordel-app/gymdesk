@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2183 follow-up (`GET /members/:id/clerk-status` also looks up the pending Clerk invitation when the row stores none, independently of an existing account, reports `has_pending_invitation`/`invited` and stores the invitation id as `System`, so Clerk Invitation no longer reads None while Clerk holds one; no migration)
 - **Done**: #1985 follow-up (Members App calendar lists events with no Activity Type): `GET /me/schedule` now LEFT JOINs `activity_types`, so a standalone calendar event is no longer dropped from the member calendar.
 
 - **Done**: #2337 (Nutrition Library and Base Nutrition Library: a click anywhere on a food row toggles it via `DataTable`'s `clickRowToExpand`; the image still opens its modal without toggling and buttons, menus and links keep their behaviour.)

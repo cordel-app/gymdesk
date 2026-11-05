@@ -299,21 +299,40 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
 
-  const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
+  let { invited_at } = rows[0];
+  const { clerk_user_id, invitation_id, enrolled_at } = rows[0];
   // #2183: an unlinked member whose email already has a Clerk account (the invite is
   // refused with "account already exists") read "None". Report the fact, read-only;
   // linking stays /me/link's job. A lookup failure reports nothing.
+  // #2183 follow-up: Clerk may also hold a pending invitation this row never stored
+  // (the invite was refused with "invitation or account already exists"). Report it
+  // independently of the account, so Clerk Invitation never reads "None" beside it.
   let accountExists = false;
-  if (!clerk_user_id && !invitation_id) {
+  let pendingInvitation = !!invitation_id;
+  if (!clerk_user_id) {
     try {
       const { rows: er } = await db.query<any>(
         'SELECT email FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
       const email = er[0]?.email;
       if (email) {
-        const found = resolveInviteConflict(email, [], listItems(await clerkClient.users.getUserList({ emailAddress: [email] })));
-        accountExists = found.kind === 'account_exists';
+        const users = listItems<any>(await clerkClient.users.getUserList({ emailAddress: [email] }));
+        accountExists = resolveInviteConflict(email, [], users).kind === 'account_exists';
+        if (!pendingInvitation) {
+          const found = resolveInviteConflict(email, await listPendingInvitations(email), []);
+          if (found.kind === 'pending_invitation') {
+            pendingInvitation = true;
+            await db.query(
+              `UPDATE members SET invitation_id = ?, invited_at = COALESCE(invited_at, UTC_TIMESTAMP()),
+                      modified_at = UTC_TIMESTAMP(), modified_by = ?
+                WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invitation_id IS NULL`,
+              [found.invitationId, 'System', req.params.id, gymId],
+            );
+            const { rows: ir } = await db.query<any>('SELECT invited_at FROM members WHERE id = ?', [req.params.id]);
+            invited_at = ir[0]?.invited_at ?? invited_at;
+          }
+        }
       }
-    } catch { /* leave false */ }
+    } catch { /* leave as stored */ }
   }
   // #1234: the dates are history, reported as stored and independent of the status.
   // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
@@ -331,13 +350,13 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
     has_payment_token: !!tokenRows[0],
     invited_at: invited_at ?? null,
     enrolled_at: enrolled_at ?? null,
-    has_pending_invitation: !!invitation_id,
+    has_pending_invitation: pendingInvitation,
     enrolled: !!clerk_user_id,
     account_exists: accountExists,
   };
 
   if (!clerk_user_id) {
-    return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null, ...dates });
+    return res.json({ status: pendingInvitation ? 'invited' : 'not_enrolled', userId: null, ...dates });
   }
 
   try {
