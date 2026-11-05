@@ -476,6 +476,30 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         </div>
       )}
 
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? t('translations_title', { field: fieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal ? textValuesOf(langModal.row ? textsOfRow(langModal.row) : (form?.texts ?? emptyForm().texts), langModal.field) : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={langModal?.row != null}
+        saveLabel={t('save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setForm((f) => f && applyTextValues(f, langModal.field, vals));
+          setLangModal(null);
+        }}
+      />
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
       <CrudModal
         open={details !== null}
         title={t('details_title')}
@@ -488,30 +512,6 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >
-        <FieldTranslationsModal
-          open={langModal !== null}
-          title={langModal ? t('translations_title', { field: fieldLabel(langModal.field) }) : ''}
-          locales={langLocales}
-          values={langModal ? textValuesOf(langModal.row ? textsOfRow(langModal.row) : (form?.texts ?? emptyForm().texts), langModal.field) : {}}
-          multiline={langModal?.field === 'description'}
-          readOnly={langModal?.row != null}
-          saveLabel={t('save')}
-          cancelLabel={t('cancel')}
-          closeLabel={t('translations_close')}
-          emptyLabel="—"
-          onClose={() => setLangModal(null)}
-          onSave={(vals) => {
-            if (langModal) setForm((f) => f && applyTextValues(f, langModal.field, vals));
-            setLangModal(null);
-          }}
-        />
-        <ProfessionalServiceImageModal
-          target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
-          onClose={() => setImageOf(null)}
-          closeLabel={t('close')}
-          noImageLabel={t('image_none')}
-          noDescriptionLabel={t('no_description')}
-        />
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <ModalField label={t('label_name')} value={details.name || dash} />
