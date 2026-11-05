@@ -46,3 +46,18 @@ describe('exercise info wiring (#2203)', () => {
     expect(modal).not.toMatch(/<svg[^>]*(fill|stroke)="#/);
   });
 });
+
+describe('shared Exercise Detail Viewer (#2379)', () => {
+  it('lists equipment between muscles and categories and hides it when absent', () => {
+    const info = buildExerciseInfo({
+      name: 'Squat', equipment: 'barbell', category: 'strength', muscles: [{ key: 'quads', role: 'principal' }],
+    });
+    expect(exerciseInfoFields(info)).toEqual(['muscles', 'equipment', 'categories']);
+    expect(exerciseInfoFields(buildExerciseInfo({ name: 'Squat', equipment: ' ' }))).toEqual([]);
+  });
+  it('is the one viewer every exercise thumbnail opens', () => {
+    expect(read('components', 'exercises', 'ExerciseListThumbnails.tsx')).toContain('ExerciseInfoModal');
+    expect(read('components', 'ExerciseMediaThumbnails.tsx')).toContain('ExerciseInfoModal');
+    expect(read('app', '[locale]', 'members', 'MemberProgress.tsx')).toContain('ExerciseInfoModal');
+  });
+});
