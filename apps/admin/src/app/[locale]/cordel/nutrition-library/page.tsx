@@ -605,6 +605,7 @@ export default function CordelNutritionLibraryPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
+        clickRowToExpand
       />
 
       <NutritionFieldTranslations
