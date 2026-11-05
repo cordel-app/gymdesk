@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2372 (Members → Products: the inline Add Product form now closes after a recurring Product is saved, as it already did for a one-time one, so the saved line shows only as a regular row of the Products table; no API change)
 - **Done**: #2376 (Equipment follows the Base Exercise: `POST /exercises/import` copies `equipment` onto the new gym copy, as it does `category`, and `POST /exercises/:id/resync-with-system` brings it back in line with the Base Exercise's current value, reporting `equipment` in `updated`; no migration, no new endpoint.)
 - **Done**: #2378 (Exercise editor, Base and Gym-based: the Primary/Secondary selector of a selected muscle now sits immediately beside its checkbox and label instead of at the column edge; layout only, no API or schema change)
 - **Done**: #2374 (adding a Product to a Member with a Promotion asks for the Promotion's missing *mandatory* Products only: `POST /members/:id/product-purchases` answers `409 promotion_requires_products` until `confirm_required_products: true`, then creates those Products with the same Promotion; optional Products are never added or listed and `products.mandatory` plays no part; the quote reports `required_products`, the Add Product form shows the confirmation and Cancel unticks the Promotion. `api/src/domain/promotionRequiredProducts.ts`, `api/src/api/promotion-required-products.ts`)

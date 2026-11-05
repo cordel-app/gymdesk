@@ -151,6 +151,9 @@ export function AddProductPurchase({
         // The Draft was created on first use or reused; the section reflects it.
         setOutcome({ kind: 'draft_updated' });
         onChanged();
+        // #2372: embedded in the Products table, the saved line is listed there
+        // as a regular row, so the form goes away instead of lingering.
+        if (embedded) onClose();
       }
     } catch (err: any) {
       if (err?.body?.error === 'billing_frequency_differs' && Array.isArray(err.body.existing)) {
