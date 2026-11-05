@@ -261,8 +261,10 @@ async function backfillPlanSnapshots(knex) {
   // One snapshot per Product Set version that carries a Membership Plan. The lifecycle of a
   // live Product Set follows its projected assignment (cancelled, expired, paused); a draft,
   // pending or superseded set keeps its own status.
-  // Migration 356 drops the legacy configuration table; once gone there is nothing left to copy.
-  counts.plan_snapshots = !(await knex.schema.hasTable('product_set_plan_snapshots')) ? 0 : await run(`
+  // Migration 356 drops the legacy configuration table and the source link; migration 366 later re-creates
+  // `product_set_plan_snapshots` as a junction, so the link column (not the table) says whether there is
+  // anything left to copy.
+  counts.plan_snapshots = !(await knex.schema.hasColumn('plan_snapshots', 'source_plan_snapshot_id')) ? 0 : await run(`
     INSERT INTO plan_snapshots
       (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, ends_at, closed_at,
        schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
