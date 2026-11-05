@@ -566,10 +566,8 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
  */
 export async function loadMemberProfile(gymId: string, memberId: number): Promise<Record<string, any> | null> {
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id,
-            p.name AS fare_name
+    `SELECT m.*
      FROM members m
-     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
     [gymId, memberId],
   );
@@ -924,7 +922,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                   AND ctum.activity_type_id = ce.activity_type_id
               ) AS access_locked
        FROM calendar_events ce
-       JOIN activity_types at ON at.id = ce.activity_type_id
+       LEFT JOIN activity_types at ON at.id = ce.activity_type_id
        LEFT JOIN centers c ON c.id = ce.center_id
        LEFT JOIN spaces sp ON sp.id = ce.space_id
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id

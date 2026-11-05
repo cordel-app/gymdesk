@@ -250,7 +250,7 @@ export default function BasePaymentMethodsPage() {
   const when = (v: string | null | undefined) => (v ? formatGymDateTime(v, fmt) : dash);
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => openForm(null)}>{t('add')}</button>
