@@ -80,7 +80,7 @@ describe('Members: PROFILE in the expanded card (#797)', () => {
 
   it('shows the Member\'s centers and marks the default one', () => {
     const section = profileSection();
-    expect(section).toContain("t('members.assigned_centers')");
+    expect(section).not.toContain("t('members.assigned_centers')"); // #2381
     expect(section).toContain("t('members.default_center')");
     // Resolved by the API, whose fallback is the one implementation (#797).
     expect(expandedSrc).toContain('/centers`');
