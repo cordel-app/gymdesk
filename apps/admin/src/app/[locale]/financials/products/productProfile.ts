@@ -54,7 +54,6 @@ export type ProductFieldKey =
   | 'name'
   | 'type'
   | 'description'
-  | 'translations'
   | 'units'
   | 'status'
   | 'enrollment_status'
@@ -130,8 +129,6 @@ export const PRODUCT_SECTIONS: readonly ProductSectionSpec[] = [
       { key: 'name', labelKey: 'label_name', required: true, frozenWhenSystem: true },
       { key: 'type', labelKey: 'label_type', frozenWhenSystem: true },
       { key: 'description', labelKey: 'label_description', fullWidth: true },
-      // #2254: Spanish and Catalan name + description; English is the fields above.
-      { key: 'translations', labelKey: 'label_translations', fullWidth: true },
       { key: 'units', labelKey: 'label_units', frozenWhenSystem: true },
       { key: 'status', labelKey: 'label_status' },
       { key: 'enrollment_status', labelKey: 'label_enrollment_status' },
@@ -287,5 +284,36 @@ export function toProductFormValues(item: ProductFormRow): ProductFormValues {
     tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
     mandatory: Boolean(item.mandatory),
     professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
+  };
+}
+
+/** #2334: the languages a Product's name and description exist in; English is the base text. */
+export const PRODUCT_TEXT_LOCALES = ['en', 'es', 'ca'] as const;
+export type ProductTextField = 'name' | 'description';
+
+interface ProductTexts {
+  name: string;
+  description: string;
+  tr: Record<ProductTranslationLocale, { name: string; description: string }>;
+}
+
+/** `{ locale: value }` of one field across every language, for the translations modal. */
+export function productTextValues(v: ProductTexts, field: ProductTextField): Record<string, string> {
+  return {
+    en: v[field],
+    es: v.tr.es[field],
+    ca: v.tr.ca[field],
+  };
+}
+
+/** The form patch that applies one field's values from the translations modal. */
+export function applyProductTextValues(v: ProductTexts, field: ProductTextField, values: Record<string, string>): Pick<ProductTexts, 'name' | 'description' | 'tr'> {
+  return {
+    name: field === 'name' ? values.en ?? '' : v.name,
+    description: field === 'description' ? values.en ?? '' : v.description,
+    tr: {
+      es: { ...v.tr.es, [field]: values.es ?? '' },
+      ca: { ...v.tr.ca, [field]: values.ca ?? '' },
+    },
   };
 }

@@ -6,7 +6,6 @@ import { FoodImageModal, type FoodImageTarget } from '@/components/nutritionLibr
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
-import { DescriptionTranslationsField } from '@/components/nutritionLibrary/DescriptionTranslationsField';
 import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -14,6 +13,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
+import { GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { NutritionFieldTranslations, type NutritionTextField } from '@/components/nutritionLibrary/NutritionFieldTranslations';
 import { NutritionItemReadOnlyView } from '@/components/nutritionLibrary/NutritionItemReadOnlyView';
 import { NutritionItemDetailsModal } from '@/components/nutritionLibrary/NutritionItemDetailsModal';
 import {
@@ -111,6 +112,12 @@ export default function CordelNutritionLibraryPage() {
   const [qualityFilter, setQualityFilter] = useState<string[]>([]);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // #2336: which field's translations modal is open — for a form being edited
+  // (writable) or for a read-only row.
+  const [langModal, setLangModal] = useState<
+    { field: NutritionTextField; form: EditForm; setForm: (f: EditForm) => void; item?: undefined } |
+    { field: NutritionTextField; item: LibraryItem; form?: undefined; setForm?: undefined } | null
+  >(null);
 
   // `⋮ → Details` — the read-only modal (#799 §9). It renders the list row it is
   // given, so nothing is fetched and nothing can disagree with the expanded card.
@@ -376,57 +383,31 @@ export default function CordelNutritionLibraryPage() {
       <div style={{ padding: '16px 20px' }}>
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('label_name')} *</label>
-          <input
-            ref={autoFocusRef}
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder={t('name_placeholder')}
-            style={inlineInputStyle}
-            autoFocus={!autoFocusRef}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              ref={autoFocusRef}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder={t('name_placeholder')}
+              style={{ ...inlineInputStyle, flex: 1 }}
+              autoFocus={!autoFocusRef}
+            />
+            <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setLangModal({ field: 'name', form, setForm })} />
+          </div>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('label_description')}</label>
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder={t('description_placeholder')}
-            rows={3}
-            style={{ ...inlineInputStyle, resize: 'vertical' }}
-          />
-        </div>
-        <DescriptionTranslationsField
-          locales={translatableLocales}
-          values={form.descriptionTranslations}
-          onChange={(next) => setForm({ ...form, descriptionTranslations: next })}
-          localeLabel={localeLabel}
-          label={t('label_description_translations')}
-          hint={t('description_translations_hint')}
-          placeholderFor={(language) => t('description_in', { language })}
-          labelStyle={inlineLabelStyle}
-          inputStyle={inlineInputStyle}
-        />
-        {translatableLocales.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={inlineLabelStyle}>{t('label_translations')}</label>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>
-              {t('translations_hint')}
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {translatableLocales.map((loc) => (
-                <div key={loc} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ width: 80, flexShrink: 0, fontSize: 12.5, color: '#555' }}>{localeLabel(loc)}</span>
-                  <input
-                    value={form.translations[loc] ?? ''}
-                    onChange={(e) => setForm({ ...form, translations: { ...form.translations, [loc]: e.target.value } })}
-                    placeholder={form.name ? t('translation_in', { name: form.name, language: localeLabel(loc) }) : localeLabel(loc)}
-                    style={inlineInputStyle}
-                  />
-                </div>
-              ))}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder={t('description_placeholder')}
+              rows={3}
+              style={{ ...inlineInputStyle, resize: 'vertical', flex: 1 }}
+            />
+            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setLangModal({ field: 'description', form, setForm })} />
           </div>
-        )}
+        </div>
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('label_categories')} *</label>
           {renderCheckboxes(allCategories, form.categoryIds, (ids) => setForm({ ...form, categoryIds: ids }), categoryLabel)}
@@ -618,13 +599,34 @@ export default function CordelNutritionLibraryPage() {
               item={item}
               allCategories={allCategories}
               allQualities={allQualities}
-              locales={translatableLocales}
+              onOpenTranslations={(field) => setLangModal({ field, item })}
             />
           )
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
         clickRowToExpand
+      />
+
+      <NutritionFieldTranslations
+        field={langModal?.field ?? null}
+        baseValue={langModal ? (langModal.item ? (langModal.field === 'name' ? langModal.item.name : langModal.item.description ?? '') : langModal.form![langModal.field]) : ''}
+        translations={langModal ? (langModal.item
+          ? (langModal.field === 'name' ? langModal.item.translations : langModal.item.description_translations) ?? {}
+          : (langModal.field === 'name' ? langModal.form!.translations : langModal.form!.descriptionTranslations)) : {}}
+        locales={translatableLocales}
+        localeLabel={localeLabel}
+        readOnly={langModal?.item !== undefined}
+        onClose={() => setLangModal(null)}
+        onSave={(base, tr) => {
+          if (langModal?.form) {
+            const f = langModal.form;
+            langModal.setForm!(langModal.field === 'name'
+              ? { ...f, name: base, translations: tr }
+              : { ...f, description: base, descriptionTranslations: tr });
+          }
+          setLangModal(null);
+        }}
       />
 
       {/* One picker for the page: `openImagePicker()` points it at a food. */}
