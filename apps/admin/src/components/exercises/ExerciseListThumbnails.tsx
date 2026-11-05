@@ -3,7 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
-import { overlayStyle, modalStyle } from '@/components/ui';
+import { ExerciseInfoModal } from './ExerciseInfoModal';
 import { type ExerciseGenderMediaValues } from '@/lib/exerciseGenderMedia';
 
 const SIZE = 28;
@@ -13,46 +13,14 @@ const thumbStyle: React.CSSProperties = {
   background: 'var(--gd-app-bg, #f3f4f6)', border: '1px solid var(--gd-card-border, #e5e7eb)', boxSizing: 'border-box',
 };
 
-/** #2220/#2306: the full-size image behind a thumbnail, shown in a modal. Never shows the thumbnail enlarged. */
-function FullSizeModal({ src, label, onClose }: { src: string; label: string; onClose: () => void }) {
-  const t = useTranslations('exercises');
+function Thumb({ src, label, onOpen }: { src: string | null; label: string; onOpen?: () => void }) {
   const [broken, setBroken] = React.useState(false);
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div style={overlayStyle} role="dialog" aria-modal="true" aria-label={label} onClick={onClose}>
-      <div style={{ ...modalStyle, width: 'auto', padding: 16, position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-        <button type="button" aria-label={t('close_image')} onClick={onClose}
-          style={{ position: 'absolute', top: 4, right: 8, border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'inherit' }}>×</button>
-        {broken ? (
-          <p style={{ margin: 24 }}>{t('image_unavailable')}</p>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={label} onError={() => setBroken(true)}
-            style={{ display: 'block', width: 'min(1080px, 90vw)', maxHeight: '85vh', aspectRatio: '1 / 1', objectFit: 'contain' }} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Thumb({ src, full, label }: { src: string | null; full?: string | null; label: string }) {
-  const [broken, setBroken] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
   const show = !!src && SAFE_IMAGE_SRC.test(src) && !broken;
   if (show) {
-    // #2306: only a real master opens the modal; a thumbnail-only variant (muscle fallback) is not enlarged.
-    const big = full && SAFE_IMAGE_SRC.test(full) ? full : null;
     return (
-      <>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src!} alt={label} title={label} loading="lazy" onError={() => setBroken(true)}
-          onClick={(e) => { e.stopPropagation(); if (big) setOpen(true); }} style={{ ...thumbStyle, cursor: big ? 'zoom-in' : 'default' }} />
-        {open && big && <FullSizeModal src={big} label={label} onClose={() => setOpen(false)} />}
-      </>
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src!} alt={label} title={label} loading="lazy" onError={() => setBroken(true)}
+        onClick={(e) => { e.stopPropagation(); onOpen?.(); }} style={{ ...thumbStyle, cursor: onOpen ? 'zoom-in' : 'default' }} />
     );
   }
   // Neutral placeholder: a missing variant never hides the other one.
@@ -67,15 +35,20 @@ function Thumb({ src, full, label }: { src: string | null; full?: string | null;
  */
 export function ExerciseListThumbnails({ exercise }: {
   exercise: ExerciseGenderMediaValues & {
+    id?: number;
+    name?: string;
     effective_image_male_thumbnail_url?: string | null;
     effective_image_female_thumbnail_url?: string | null;
   };
 }) {
   const t = useTranslations('exercises');
+  const [open, setOpen] = React.useState(false);
+  const onOpen = exercise.id != null ? () => setOpen(true) : undefined;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-      <Thumb src={exercise.effective_image_male_thumbnail_url ?? exercise.image_male_thumbnail_url ?? null} full={exercise.image_male_url} label={t('gender_male')} />
-      <Thumb src={exercise.effective_image_female_thumbnail_url ?? exercise.image_female_thumbnail_url ?? null} full={exercise.image_female_url} label={t('gender_female')} />
+      <Thumb src={exercise.effective_image_male_thumbnail_url ?? exercise.image_male_thumbnail_url ?? null} label={t('gender_male')} onOpen={onOpen} />
+      <Thumb src={exercise.effective_image_female_thumbnail_url ?? exercise.image_female_thumbnail_url ?? null} label={t('gender_female')} onOpen={onOpen} />
+      {open && exercise.id != null && <ExerciseInfoModal exerciseId={exercise.id} fallbackName={exercise.name} onClose={() => setOpen(false)} />}
     </span>
   );
 }

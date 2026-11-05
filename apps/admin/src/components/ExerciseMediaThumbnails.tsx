@@ -6,6 +6,7 @@ import {
   ExerciseMedia, exerciseImageSrc, exerciseVideoPosterUrl, hasExerciseMedia,
 } from './exerciseMedia';
 import { ExerciseVideoModal } from './ExerciseVideoModal';
+import { ExerciseInfoModal } from './exercises/ExerciseInfoModal';
 
 /**
  * #720 — the media thumbnails shown at the right of every workout exercise row.
@@ -20,8 +21,10 @@ import { ExerciseVideoModal } from './ExerciseVideoModal';
  * a row (§3, §10). A thumbnail that fails to load hides itself and leaves the
  * other one alone (§13).
  */
-export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
+export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all', exerciseId }: {
   exercise: ExerciseMedia;
+  /** When given, clicking the image opens the shared Exercise Detail Viewer (#2379). */
+  exerciseId?: number;
   size?: number;
   /**
    * `image` renders only the exercise image as a circular avatar (the workout
@@ -33,6 +36,7 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
   const [imageBroken, setImageBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   if (!hasExerciseMedia(exercise)) return null;
 
@@ -57,9 +61,13 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
           alt={name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image')}
           title={name}
           loading="lazy"
-          style={imageTile}
+          style={exerciseId != null ? { ...imageTile, cursor: 'zoom-in' } : imageTile}
+          onClick={exerciseId != null ? () => setInfoOpen(true) : undefined}
           onError={() => setImageBroken(true)}
         />
+      )}
+      {infoOpen && exerciseId != null && (
+        <ExerciseInfoModal exerciseId={exerciseId} fallbackName={name} fallbackImageUrl={imageSrc} onClose={() => setInfoOpen(false)} />
       )}
 
       {videoUrl && (

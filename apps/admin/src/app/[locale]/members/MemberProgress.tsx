@@ -15,7 +15,7 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
-import { ProgressExerciseImageModal } from './ProgressExerciseImageModal';
+import { ExerciseInfoModal } from '@/components/exercises/ExerciseInfoModal';
 import {
   addReadingPayload, combinedChartSeries, dayFlagLines, focusChartSeries, toggleFocus, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
   type AddReadingDraft, type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
@@ -72,7 +72,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
   return (
     <>
     <ProgressExerciseDetailsModal exercise={detailsFor} onClose={() => setDetailsFor(null)} />
-    <ProgressExerciseImageModal key={imageFor?.exercise_id ?? 'none'} exercise={imageFor} onClose={() => setImageFor(null)} />
+    {imageFor && <ExerciseInfoModal key={imageFor.exercise_id} exerciseId={imageFor.exercise_id} fallbackName={imageFor.exercise_name} fallbackImageUrl={imageFor.image_url ?? null} onClose={() => setImageFor(null)} />}
     <ConfirmDialog
       open={deletingExercise !== null}
       message={t('members.progress_delete_exercise_confirm')}

@@ -2711,6 +2711,7 @@
     "short_description": "Descripción breve",
     "description": "Descripción",
     "muscles": "Músculos afectados",
+    "equipment": "Equipamiento",
     "categories": "Categorías",
     "principal": "Principal",
     "secondary": "Secundario",
