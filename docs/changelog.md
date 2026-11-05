@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #1985 follow-up (Members App calendar lists events with no Activity Type): `GET /me/schedule` now LEFT JOINs `activity_types`, so a standalone calendar event is no longer dropped from the member calendar.
+
 - **Done**: #2337 (Nutrition Library and Base Nutrition Library: a click anywhere on a food row toggles it via `DataTable`'s `clickRowToExpand`; the image still opens its modal without toggling and buttons, menus and links keep their behaviour.)
 - **Done**: #2336 (Nutrition Library, Base and Gym-based: Name (Base only, a gym food has a single name) and Description show the default language only, with a globe icon per field opening the shared `FieldTranslationsModal` — editable with Save/Cancel in the editor, read-only in the expanded row; supported languages come from the API, persistence is the unchanged `translations` / `description_translations` payload, no migration. Closes #2336)
 - **Done**: #2334 (Products, Base and Gym-based: Name and Description show the default language only, with a globe icon per field opening the shared `FieldTranslationsModal` — editable behind Edit with Save/Cancel, read-only otherwise; the vertical ES/CA fields are gone. Reuses the `product_translations` storage and `translations` payload, no API or migration change; helpers `productTextValues()` / `applyProductTextValues()` in `productProfile.ts`.)
