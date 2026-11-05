@@ -39,7 +39,7 @@ import {
 } from './memberTabs';
 import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
-import { modalActionsRowStyle } from '@/components/formChrome';
+import { innerCardStyle, inlineActionsRowStyle } from '@/components/formChrome';
 
 interface Plan {
   id: number;
@@ -52,8 +52,6 @@ interface Plan {
 interface Member extends MemberProfile {
   id: number;
   email: string;
-  fare_id: number | null;
-  fare_name: string | null;
   clerk_user_id: string | null;
   invitation_id: string | null;
   account_status: 'active' | 'invited' | 'not_enrolled';
@@ -67,7 +65,6 @@ const emptyForm = {
   name: '',
   email: '',
   phone: '',
-  fare_id: '',
   nif_nie_passport: '',
 };
 
@@ -404,7 +401,6 @@ export default function MembersPage() {
         name: form.name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || null,
-        fare_id: form.fare_id ? parseInt(form.fare_id) : null,
         nif_nie_passport: form.nif_nie_passport.trim() || null,
       };
       if (showCenters) {
@@ -897,36 +893,11 @@ export default function MembersPage() {
         </FilterField>
       </FilterBar>
 
-      {loading ? (
-        <p style={mutedTextStyle}>{t('members.loading')}</p>
-      ) : members.length === 0 ? (
-        <p style={mutedTextStyle}>{t('members.empty')}</p>
-      ) : (
-        /* The header band and the rows are one list surface (#724): they share
-           LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
-           line, and a narrow viewport scrolls the list instead of the page. */
-        <div style={listSurfaceStyle}>
-          <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
-            <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
-              <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
-                {LIST_COLUMNS.map((col) => (
-                  <div key={col.key} className={CELL_CLASS[col.key]} style={cellStyle}>
-                    {col.key === 'avatar' ? null : t(`members.${col.labelKey}`)}
-                  </div>
-                ))}
-              </div>
-
-              {members.map(renderRow)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add modal (editing a member happens inline on the expanded row — #365) */}
+      {/* #2363: the Add Member form is inline, in the page, never a modal (editing is inline on the expanded row — #365) */}
       {modalOpen && (
-        <div style={overlayStyle} onClick={closeModal}>
-          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 20px' }}>{t('members.modal_add')}</h2>
+        <div style={{ ...innerCardStyle, marginBottom: 16, padding: 20, maxWidth: 560 }}>
+          <div>
+            <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>{t('members.modal_add')}</h2>
 
             <label style={labelStyle}>{t('members.label_name')}</label>
             <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
@@ -948,18 +919,6 @@ export default function MembersPage() {
               disabled={saving}
               label={(key) => t(`members.${key}`)}
             />
-
-            {plans.length > 0 && (
-              <>
-                <label style={labelStyle}>{t('members.label_fare')}</label>
-                <select style={inputStyle} value={form.fare_id} onChange={(e) => setForm({ ...form, fare_id: e.target.value })}>
-                  <option value="">{t('members.fare_none')}</option>
-                  {plans.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} — {parseFloat(p.base_price).toFixed(2)}</option>
-                  ))}
-                </select>
-              </>
-            )}
 
             {showCenters && (
               <>
@@ -986,11 +945,36 @@ export default function MembersPage() {
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
-            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
+            <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
               <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
               <button onClick={handleAdd} style={primaryBtnStyle()} disabled={saving}>
                 {saving ? t('members.saving') : t('members.modal_add')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p style={mutedTextStyle}>{t('members.loading')}</p>
+      ) : members.length === 0 ? (
+        <p style={mutedTextStyle}>{t('members.empty')}</p>
+      ) : (
+        /* The header band and the rows are one list surface (#724): they share
+           LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
+           line, and a narrow viewport scrolls the list instead of the page. */
+        <div style={listSurfaceStyle}>
+          <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+            <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+              <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+                {LIST_COLUMNS.map((col) => (
+                  <div key={col.key} className={CELL_CLASS[col.key]} style={cellStyle}>
+                    {col.key === 'avatar' ? null : t(`members.${col.labelKey}`)}
+                  </div>
+                ))}
+              </div>
+
+              {members.map(renderRow)}
             </div>
           </div>
         </div>
@@ -1077,8 +1061,6 @@ function chevronStyle(expanded: boolean): React.CSSProperties {
     transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
   };
 }
-const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
-const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 460, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 4, marginTop: 14, color: '#333' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' };
 const helpTextStyle: React.CSSProperties = { margin: '4px 0 0', fontSize: 12.5, color: '#888' };

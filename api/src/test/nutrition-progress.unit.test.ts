@@ -137,4 +137,22 @@ describe('#1957 assignment date windows', () => {
     expect(nutritionProgress([], [], TODAY, d1, req).week_days.find((x) => x.date === d1)?.status).toBe('rest');
     expect(nutritionProgress([], [], TODAY, d3, req).week_days.find((x) => x.date === d3)?.status).toBe('pending');
   });
+
+  // #2338: two assignments in force, the page shows only the newest; the hidden one must not hold the day below 100 %.
+  it('counts only the newest assignment in force on a date', () => {
+    const plans = [{ id: 10, order: 0, from: null, to: null }, { id: 20, order: 1, from: null, to: null }];
+    const meals = [{ id: 1, weekday: 7, plan: 10 }, { id: 2, weekday: 7, plan: 20 }];
+    const reqs = { goalIds: [5], restrictionIds: [], plans, planOf: { 'goal|5': 10 } };
+    const p = nutritionProgress(meals, [{ mealId: 2, date: TODAY }], TODAY, TODAY, reqs);
+    expect(p.day).toEqual({ completed: 1, total: 1, percent: 100 });
+    // The older plan still counts on a date the newer one does not cover.
+    const bounded = [{ id: 10, order: 0, from: null, to: null }, { id: 20, order: 1, from: TODAY, to: null }];
+    const before = nutritionProgress(meals, [], TODAY, '2026-10-13', { ...reqs, plans: bounded });
+    expect(before.day.total).toBe(1);
+  });
+
+  it('applies an assignment window to a meal on a specific weekday', () => {
+    const meals = [{ id: 1, weekday: 2, from: '2026-11-01', to: null }];
+    expect(isMealScheduledOn(meals[0], TODAY)).toBe(false);
+  });
 });

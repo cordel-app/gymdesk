@@ -176,7 +176,7 @@ describe('POST /me/profile/image', () => {
     expect(res.body.image_url).toBe(url(key));
     expect(res.body.image_thumbnail_url).toBe(url(thumbKey));
     expect(res.body).toHaveProperty('preferred_locale');
-    expect(res.body).toHaveProperty('fare_name');
+    expect(res.body).not.toHaveProperty('fare_name');
     expect(res.body).not.toHaveProperty('is_new_member');
   });
 

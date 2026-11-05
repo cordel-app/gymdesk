@@ -870,6 +870,23 @@ describe('POST /members — nif_nie_passport', () => {
     expect(getRes.body.nif_nie_passport).toBe('12345678Z');
   });
 
+  // #2363: a Member is created with no Fare / Membership Plan, and the column is gone.
+  it('ignores a fare_id in the body and reports no fare on the row', async () => {
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'No Fare Member', email: `no-fare-${Date.now()}@test.com`, fare_id: 1 });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('membership_plan_id');
+    const { rows } = await db.query(
+      `SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND COLUMN_NAME = 'membership_plan_id'`);
+    expect(rows).toHaveLength(0);
+    const list = await request.get('/members').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(list.body[0]).not.toHaveProperty('fare_name');
+  });
+
   it('creates a member with a valid NIE and normalizes to uppercase', async () => {
     const email = `doc-nie-${Date.now()}@test.com`;
     const res = await request

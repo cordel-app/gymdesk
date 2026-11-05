@@ -462,6 +462,7 @@ export default function CordelExercisesPage() {
               nameLocales={nameLocales}
               muscleKeys={muscleKeys}
               muscleLabel={muscleLabel}
+              equipmentOptions={facets?.equipment}
               resultTypes={resultTypes}
               nameRef={newNameRef}
               media={renderEditorMedia(null)}
@@ -487,6 +488,7 @@ export default function CordelExercisesPage() {
                     nameLocales={nameLocales}
                     muscleKeys={muscleKeys}
                     muscleLabel={muscleLabel}
+                    equipmentOptions={facets?.equipment}
                     resultTypes={resultTypes}
                     nameRef={nameInputRef}
                     media={renderEditorMedia(row)}
@@ -529,6 +531,7 @@ export default function CordelExercisesPage() {
                 nameLocales={nameLocales}
               muscleKeys={muscleKeys}
                 muscleLabel={muscleLabel}
+                equipmentOptions={facets?.equipment}
                 resultTypes={resultTypes}
                 nameRef={nameInputRef}
                 media={renderEditorMedia(row)}
