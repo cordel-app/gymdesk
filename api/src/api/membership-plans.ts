@@ -1,3 +1,4 @@
+import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { addCoverage } from './product-sets';
 import { refreshPlanPriceReference, repriceOnVersion } from './assignment-reprice';
@@ -70,6 +71,7 @@ import {
 
 interface PlanRow {
   id: number;
+  center_access_mode?: string;
   gym_id: string;
   name: string;
   description: string | null;
@@ -1002,7 +1004,11 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       // the Activity Type's own `activity_type_eligible_plans` list, which names
       // the original plan — a copy is a new plan and starts off named by none.
 
-      // Copy centers
+      // Copy centers (#2383: and the access mode)
+      await tx.query(
+        'UPDATE membership_plans SET center_access_mode = (SELECT center_access_mode FROM (SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?) src) WHERE id = ? AND gym_id = ?',
+        [req.params.id, gymId, insertId, gymId],
+      );
       const { rows: centers } = await tx.query(
         'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
         [req.params.id, gymId],
@@ -1214,9 +1220,19 @@ membershipPlansRouter.get('/:id/centers', async (req, res) => {
 membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { center_ids } = req.body;
-  if (!Array.isArray(center_ids)) return res.status(400).json({ error: 'center_ids must be an array' });
+  const parsed = parseCenterAccessInput(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  // #2383: the two dynamic modes store no center rows. A request that names no
+  // mode keeps the plan's current one (the pre-#2383 body was center_ids alone,
+  // which meant specific centers).
+  let mode = parsed.mode;
+  if (mode === null) {
+    const { rows: cur } = await db.query('SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    mode = isPlanCenterAccessMode(cur[0]?.center_access_mode) ? cur[0].center_access_mode : 'specific_centers';
+  }
+  const center_ids = mode === 'specific_centers' ? parsed.centerIds : [];
   try {
+    await db.query('UPDATE membership_plans SET center_access_mode = ? WHERE id = ? AND gym_id = ?', [mode, req.params.id, gymId]);
     await db.query('DELETE FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?', [req.params.id, gymId]);
     for (const cid of center_ids) {
       await db.query(
