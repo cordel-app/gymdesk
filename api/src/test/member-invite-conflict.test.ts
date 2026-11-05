@@ -102,3 +102,32 @@ describe('POST /members/:id/invite conflict reconciliation', () => {
     expect((await stored(m.id)).invitation_id).toBeNull();
   });
 });
+
+describe('GET /members/:id/clerk-status with an invitation Clerk holds but the row does not', () => {
+  const status = (id: number) =>
+    request.get(`/members/${id}/clerk-status`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+
+  it('reports the pending invitation (even beside an existing account) and stores it', async () => {
+    const m = await member();
+    clerk.getInvitationList.mockReset();
+    clerk.getInvitationList.mockResolvedValue({ data: [{ id: 'inv_status', emailAddress: m.email, status: 'pending' }] });
+    clerk.getUserList.mockResolvedValue({ data: [{ id: 'user_x', emailAddresses: [{ emailAddress: m.email }] }] });
+    const res = await status(m.id);
+    expect(res.status).toBe(200);
+    expect(res.body.has_pending_invitation).toBe(true);
+    expect(res.body.status).toBe('invited');
+    expect(res.body.account_exists).toBe(true);
+    expect(res.body.invited_at).not.toBeNull();
+    expect((await stored(m.id)).invitation_id).toBe('inv_status');
+  });
+
+  it('keeps "none" when Clerk holds no invitation', async () => {
+    const m = await member();
+    clerk.getInvitationList.mockReset();
+    clerk.getInvitationList.mockResolvedValue({ data: [] });
+    clerk.getUserList.mockResolvedValue({ data: [] });
+    const res = await status(m.id);
+    expect(res.body.has_pending_invitation).toBe(false);
+    expect(res.body.status).toBe('not_enrolled');
+  });
+});
