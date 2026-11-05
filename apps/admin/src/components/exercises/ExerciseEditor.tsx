@@ -6,7 +6,7 @@ import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } fro
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
 // #968: the form's own actions wear the platform's chrome — the left-aligned
 // inline row, the themed primary and the neutral secondary — rather than a
@@ -131,6 +131,16 @@ export function ExerciseEditor({
   const translatableLocales = nameLocales?.translatable ?? [];
   const localeName = (loc: string) => localeLabel(loc, (key) => tCommon(key as any));
   const [openField, setOpenField] = React.useState<TranslatedField | null>(null);
+  // #2385: show/edit the description fields in the selected app language (base value as the fallback).
+  const viewLocale = useLocale();
+  const viewIsTranslation = translatableLocales.includes(viewLocale);
+  const descValue = (f: 'description' | 'short_description') =>
+    (viewIsTranslation ? form.description_translations[viewLocale]?.[f] || form[f] : form[f]) ?? '';
+  const setDescValue = (f: 'description' | 'short_description', v: string) => {
+    if (viewIsTranslation) {
+      setForm({ ...form, description_translations: { ...form.description_translations, [viewLocale]: { ...(form.description_translations[viewLocale] ?? {}), [f]: v } } });
+    } else setForm({ ...form, [f]: v });
+  };
   const modalLocales = nameLocales ? [nameLocales.base, ...translatableLocales].map((c) => ({ code: c, label: localeName(c) })) : [];
 
   return (
@@ -147,17 +157,17 @@ export function ExerciseEditor({
           </div>
         </div>
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
+          <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
           <div style={globeRowSt}>
-            <textarea id={id('description')} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...descriptionAreaSt, flex: 1 }} />
-            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+            <input id={id('short_description')} maxLength={300} value={descValue('short_description')} onChange={(e) => setDescValue('short_description', e.target.value)} style={{ ...inlineInputSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_short_description') })} onClick={() => setOpenField('short_description')} />
           </div>
         </div>
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
+          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <div style={globeRowSt}>
-            <input id={id('short_description')} maxLength={300} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} style={{ ...inlineInputSt, flex: 1 }} />
-            <GlobeButton label={t('translations_open', { field: t('label_short_description') })} onClick={() => setOpenField('short_description')} />
+            <textarea id={id('description')} rows={4} value={descValue('description')} onChange={(e) => setDescValue('description', e.target.value)} style={{ ...descriptionAreaSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
           </div>
         </div>
         <FieldTranslationsModal
