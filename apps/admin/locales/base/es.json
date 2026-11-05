@@ -2273,6 +2273,8 @@
     "label_muscles": "Músculos",
     "label_status": "Estado",
     "label_category": "Categoría",
+    "label_equipment": "Equipamiento",
+    "equipment_none": "Sin equipamiento",
     "category_none": "Sin categoría",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Halterofilia olímpica",

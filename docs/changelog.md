@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2362 (Exercises, Base and Gym-based: Equipment is a dropdown in the editor and a value in the expanded row, offering the values already present in the catalogue (`exercises.equipment` is free text, so no Equipment entity or migration); `POST`/`PUT` on `/exercises` and `/platform/exercises` now accept `equipment` through `parseExerciseEquipmentInput()` (absent keeps, blank clears). Muscles are sorted alphabetically by label and laid out in up to three columns that fold on narrow screens. Closes #2362)
 - **Done**: #2183 follow-up (`GET /members/:id/clerk-status` also looks up the pending Clerk invitation when the row stores none, independently of an existing account, reports `has_pending_invitation`/`invited` and stores the invitation id as `System`, so Clerk Invitation no longer reads None while Clerk holds one; no migration)
 - **Done**: #1985 follow-up (Members App calendar lists events with no Activity Type): `GET /me/schedule` now LEFT JOINs `activity_types`, so a standalone calendar event is no longer dropped from the member calendar.
 

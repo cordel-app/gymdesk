@@ -2287,6 +2287,8 @@
     "label_muscles": "Muscles",
     "label_status": "Status",
     "label_category": "Category",
+    "label_equipment": "Equipment",
+    "equipment_none": "No equipment",
     "category_none": "No category",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Olympic Weightlifting",
