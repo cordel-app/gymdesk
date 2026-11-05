@@ -68,6 +68,9 @@ export function AddProductPurchase({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // #1865: the Draft already bills on other frequencies; Continue re-sends with the confirmation.
+  // #2374: the Promotion toggled last, and the promotion selection whose required Products were confirmed.
+  const [lastToggled, setLastToggled] = useState<number | null>(null);
+  const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
   const [frequencyPrompt, setFrequencyPrompt] = useState<{ existing: string[]; incoming: string } | null>(null);
 
   const product = useMemo(() => catalogue?.find((p) => p.id === productId) ?? null, [catalogue, productId]);
@@ -110,7 +113,17 @@ export function AddProductPurchase({
     setError(null);
   }
 
+  const selectionKey = promotionIds.slice().sort((a, b) => a - b).join(',');
+  const requiredProducts = quote?.required_products ?? [];
+  const requiredPending = requiredProducts.length > 0 && confirmedKey !== selectionKey;
+
+  function cancelRequired() {
+    // Cancel leaves the form as it was: the Promotion just ticked is unticked.
+    setPromotionIds((prev) => prev.filter((p) => p !== lastToggled));
+  }
+
   function togglePromotion(id: number) {
+    setLastToggled(id);
     setPromotionIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
@@ -126,6 +139,7 @@ export function AddProductPurchase({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
           ...(product.recurring ? {} : { draft: true }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
+          ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
         }),
       });
       if (res.kind === 'one_time_draft') {
@@ -152,7 +166,7 @@ export function AddProductPurchase({
     }
   }
 
-  const canCreate = !busy && !outcome && productId != null && quote != null && !Number.isNaN(discountValue);
+  const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue);
 
   return (
     <div style={embedded ? { padding: '12px 16px' } : { ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
@@ -262,6 +276,21 @@ export function AddProductPurchase({
       )}
 
       {error && <p role="alert" style={formErrorStyle}>{error}</p>}
+
+      <ConfirmDialog
+        open={requiredPending && !outcome}
+        message={`${t('required_products_title')}. ${t('required_products_message')}`}
+        details={(
+          <>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>{requiredProducts.map((p) => <li key={p.id}>{p.name}</li>)}</ul>
+            <p style={{ margin: '10px 0 0', fontSize: 14 }}>{t('required_products_question')}</p>
+          </>
+        )}
+        confirmLabel={t('required_products_confirm')}
+        cancelLabel={t('add_product_cancel')}
+        onConfirm={() => setConfirmedKey(selectionKey)}
+        onCancel={cancelRequired}
+      />
 
       <ConfirmDialog
         open={frequencyPrompt != null}

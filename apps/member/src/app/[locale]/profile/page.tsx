@@ -52,7 +52,7 @@ export default function ProfilePage() {
   const {
     isLinked, loading: appLoading,
     gyms, gymId, switchGym,
-    centers, activeCenterId, setActiveCenterId,
+    centers, activeCenterId,
     isSuperadmin,
     member, updateMember,
   } = useApp();
@@ -190,14 +190,9 @@ export default function ProfilePage() {
         <div style={styles.editRow}>
           <p style={styles.label}>{t('profile.default_center')}</p>
           {centers.length > 0 ? (
-            <select
-              value={activeCenterId ?? ''}
-              onChange={(e) => setActiveCenterId(Number(e.target.value))}
-              style={styles.select}
-              aria-label={t('common.center_switcher_label')}
-            >
-              {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <p style={styles.value}>
+              {(centers.find((c) => c.id === activeCenterId) ?? centers[0]).name}
+            </p>
           ) : (
             <p style={styles.value}><span style={styles.empty}>{t('profile.no_center')}</span></p>
           )}

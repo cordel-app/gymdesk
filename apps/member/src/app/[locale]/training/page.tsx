@@ -45,6 +45,7 @@ interface BlockExercise {
   exercise_description?: string | null;
   exercise_short_description?: string | null;
   exercise_muscles?: string[] | null;
+  exercise_primary_muscles?: string[] | null;
   exercise_category?: string | null;
   exercise_equipment?: string | null;
 }
