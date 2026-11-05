@@ -438,7 +438,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const newEditor = form?.id === null ? <div style={{ marginBottom: 12 }}>{renderEditor()}</div> : null;
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900 }}>
+    <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{cfg.title}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -476,6 +476,30 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         </div>
       )}
 
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? t('translations_title', { field: fieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal ? textValuesOf(langModal.row ? textsOfRow(langModal.row) : (form?.texts ?? emptyForm().texts), langModal.field) : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={langModal?.row != null}
+        saveLabel={t('save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setForm((f) => f && applyTextValues(f, langModal.field, vals));
+          setLangModal(null);
+        }}
+      />
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
       <CrudModal
         open={details !== null}
         title={t('details_title')}
@@ -488,30 +512,6 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >
-        <FieldTranslationsModal
-          open={langModal !== null}
-          title={langModal ? t('translations_title', { field: fieldLabel(langModal.field) }) : ''}
-          locales={langLocales}
-          values={langModal ? textValuesOf(langModal.row ? textsOfRow(langModal.row) : (form?.texts ?? emptyForm().texts), langModal.field) : {}}
-          multiline={langModal?.field === 'description'}
-          readOnly={langModal?.row != null}
-          saveLabel={t('save')}
-          cancelLabel={t('cancel')}
-          closeLabel={t('translations_close')}
-          emptyLabel="—"
-          onClose={() => setLangModal(null)}
-          onSave={(vals) => {
-            if (langModal) setForm((f) => f && applyTextValues(f, langModal.field, vals));
-            setLangModal(null);
-          }}
-        />
-        <ProfessionalServiceImageModal
-          target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
-          onClose={() => setImageOf(null)}
-          closeLabel={t('close')}
-          noImageLabel={t('image_none')}
-          noDescriptionLabel={t('no_description')}
-        />
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <ModalField label={t('label_name')} value={details.name || dash} />

@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
+import { GlobeButton } from '@/components/exercises/FieldTranslationsModal';
 import {
   NutritionItemTaxonomy,
   NutritionLibraryItemRow,
@@ -29,30 +30,27 @@ export function NutritionItemReadOnlyView({
   item,
   allCategories,
   allQualities,
-  locales,
   extraRows,
+  onOpenTranslations,
+  nameTranslatable = true,
 }: {
   item: NutritionLibraryItemRow;
   allCategories: NutritionItemTaxonomy[];
   allQualities: NutritionItemTaxonomy[];
-  /**
-   * The translatable locales to show a row for, so a blank one is visible while
-   * authoring. Omitted (a gym's library, whose own items carry a single name)
-   * falls back to whichever locales the item actually has.
-   */
-  locales?: string[];
   /**
    * Read-only rows belonging to the page rather than to the item's own field set
    * — the gym library's Ownership row. Rendered between Status and Translations
    * so §22's own order (Description → Status, Media last) is untouched.
    */
   extraRows?: React.ReactNode;
+  /** #2336: opens the translations modal of Name or Description (read-only). */
+  onOpenTranslations?: (field: 'name' | 'description') => void;
+  /** A gym's own foods carry a single name, so only Cordel's library offers Name translations. */
+  nameTranslatable?: boolean;
 }) {
   const t = useTranslations('nutrition_library');
   const assignedCategoryIds = new Set(item.categories.map((c) => c.id));
   const assignedQualityIds = new Set(item.qualities.map((q) => q.id));
-  const translationLocales = locales ?? Object.keys(item.translations ?? {}).sort();
-  const descriptionLocales = locales ?? Object.keys(item.description_translations ?? {}).sort();
 
   /**
    * A slug-keyed label from the catalogue namespaces, falling back to the slug
@@ -60,38 +58,28 @@ export function NutritionItemReadOnlyView({
    * category or locale added to the database before its key is added here would
    * otherwise render as its raw key path.
    */
+  const globeLabel = (f: 'name' | 'description') => t('translations_open', { field: t(f === 'name' ? 'label_name' : 'label_description') });
   const label = (key: string, fallback: string) => (t.has(key as any) ? t(key as any) : fallback);
 
   return (
     <div style={{ padding: '14px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <Section label={t('label_name')}>
-        <span style={valueStyle}>{displayValue(item.display_name || item.name)}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={valueStyle}>{displayValue(item.display_name || item.name)}</span>
+          {onOpenTranslations && nameTranslatable && <GlobeButton label={globeLabel('name')} onClick={() => onOpenTranslations('name')} />}
+        </span>
       </Section>
 
       <Section label={t('label_description')}>
         {/* The author's own line breaks are kept, and a long word wraps instead
             of stretching the card sideways. */}
-        <span style={{ ...valueStyle, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-          {displayValue(item.description)}
+        <span style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+          <span style={{ ...valueStyle, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {displayValue(item.display_description ?? item.description)}
+          </span>
+          {onOpenTranslations && <GlobeButton label={globeLabel('description')} onClick={() => onOpenTranslations('description')} />}
         </span>
       </Section>
-
-      {descriptionLocales.length > 0 && (
-        <Section label={t('label_description_translations')}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {descriptionLocales.map((locale) => (
-              <div key={locale} style={{ display: 'flex', gap: 10 }}>
-                <span style={{ width: 110, flexShrink: 0, color: 'var(--text-muted, #888)' }}>
-                  {label(`locale_${locale}`, locale.toUpperCase())}
-                </span>
-                <span style={{ ...valueStyle, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                  {displayValue(item.description_translations?.[locale])}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
 
       <Section label={t('col_status')}>
         {/* Section is a column flex box, so a bare child stretches to the full
@@ -102,21 +90,6 @@ export function NutritionItemReadOnlyView({
       </Section>
 
       {extraRows}
-
-      {translationLocales.length > 0 && (
-        <Section label={t('label_translations')}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {translationLocales.map((locale) => (
-              <div key={locale} style={{ display: 'flex', gap: 10 }}>
-                <span style={{ width: 110, flexShrink: 0, color: 'var(--text-muted, #888)' }}>
-                  {label(`locale_${locale}`, locale.toUpperCase())}
-                </span>
-                <span style={valueStyle}>{displayValue(item.translations?.[locale])}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
 
       <Section label={t('label_categories')}>
         <TaxonomyChips all={allCategories} assigned={assignedCategoryIds} labelFor={(slug) => label(`category_${slug}`, slug)} />

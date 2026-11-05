@@ -1,5 +1,7 @@
 'use client';
 
+import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { sortMuscleKeys } from './exerciseForm';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
@@ -91,9 +93,9 @@ export function ExerciseReadOnlyView({
   // The catalogue plus any legacy key already on the exercise, exactly as the
   // editor's picker does — a muscle dropped from `MUSCLE_KEYS` must still be
   // visible on the exercise that carries it.
-  const principal = [...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))]
+  const principal = sortMuscleKeys([...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))], muscleLabel)
     .filter((key) => roleOf.get(key) === 'principal');
-  const secondary = [...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))]
+  const secondary = sortMuscleKeys([...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))], muscleLabel)
     .filter((key) => roleOf.get(key) === 'secondary');
 
   return (
@@ -117,6 +119,10 @@ export function ExerciseReadOnlyView({
           emptyLabel="—"
           onSave={() => undefined}
           onClose={() => setOpenField(null)}
+        />
+        <Field
+          label={t('label_equipment')}
+          value={exercise.equipment ? exerciseFacetValueLabel(exercise.equipment) : EXERCISE_EMPTY_VALUE}
         />
         <Field
           label={t('label_category')}

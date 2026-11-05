@@ -1,5 +1,7 @@
 'use client';
 
+import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { sortMuscleKeys, MUSCLE_COLUMNS_STYLE } from './exerciseForm';
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
@@ -94,6 +96,8 @@ export interface ExerciseEditorProps {
   muscleKeys: string[];
   /** A muscle key's label — `useMuscleLabel()`. */
   muscleLabel: (key: string) => string;
+  /** #2362: the Equipment values already in the catalogue (the facets read). */
+  equipmentOptions?: string[];
   /** The result-type catalogue, as the context's lookup endpoint returned it. */
   resultTypes: ResultTypeRow[];
   /** The Media section's controls — `<ExerciseGenderMedia>`, built by the page. */
@@ -107,7 +111,7 @@ export interface ExerciseEditorProps {
 }
 
 export function ExerciseEditor({
-  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, resultTypes, media, nameRef, saveLabel, onCancel, onSave,
+  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, equipmentOptions = [], resultTypes, media, nameRef, saveLabel, onCancel, onSave,
 }: ExerciseEditorProps) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
@@ -115,7 +119,11 @@ export function ExerciseEditor({
   const { form, setForm } = state;
   const id = (field: string) => `${idPrefix}-${field}`;
   // The static catalog plus any legacy key already on the exercise being edited.
-  const pickerKeys = [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
+  const pickerKeys = sortMuscleKeys(
+    [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))],
+    muscleLabel,
+  );
+  const equipmentChoices = Array.from(new Set(equipmentOptions)).sort((a, b) => exerciseFacetValueLabel(a).localeCompare(exerciseFacetValueLabel(b)));
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
   // The base locale is the language `exercises.name` itself is written in, so the
   // field that *is* the base name carries its label; the others are rows in
@@ -190,6 +198,15 @@ export function ExerciseEditor({
           </select>
         </div>
         <div>
+          <label htmlFor={id('equipment')} style={inlineLabelSt}>{t('label_equipment')}</label>
+          <select id={id('equipment')} value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} style={inlineSelectSt}>
+            <option value="">{t('equipment_none')}</option>
+            {/* A stored value no longer in the catalogue's facets is shown, disabled, so it still reads correctly. */}
+            {form.equipment && !equipmentChoices.includes(form.equipment) && <option value={form.equipment} disabled>{exerciseFacetValueLabel(form.equipment)}</option>}
+            {equipmentChoices.map((v) => <option key={v} value={v}>{exerciseFacetValueLabel(v)}</option>)}
+          </select>
+        </div>
+        <div>
           <label htmlFor={id('status')} style={inlineLabelSt}>{t('label_status')}</label>
           <select id={id('status')} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={inlineSelectSt}>
             {EXERCISE_STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
@@ -235,11 +252,11 @@ export function ExerciseEditor({
 
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_muscles')}</p>
-        <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ maxHeight: 260, overflowY: 'auto', ...MUSCLE_COLUMNS_STYLE }}>
           {pickerKeys.map((key) => {
             const role = state.muscles.get(key);
             return (
-              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, breakInside: 'avoid', marginBottom: 6 }}>
                 <input type="checkbox" checked={!!role}
                   onChange={(ev) => {
                     const next = new Map(state.muscles);

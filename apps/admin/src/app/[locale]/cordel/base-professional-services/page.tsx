@@ -28,7 +28,7 @@ export default function BaseProfessionalServicesPage() {
       apiRoot="/platform/professional-services"
       requiresGymStorage={false}
       hasStatus={false}
-      requireAllTranslations
+      requireAllTranslations={false}
       isReadOnlyDefinition={() => false}
       canWrite
       title={t('title')}
