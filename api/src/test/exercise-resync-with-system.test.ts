@@ -113,7 +113,7 @@ describe('POST /exercises/:id/resync-with-system', () => {
 
 describe('equipment (#2376)', () => {
   it('import copies equipment from the Base Exercise and resync follows its current value', async () => {
-    await db.query("UPDATE base_exercises SET equipment = 'barbell' WHERE id = ?", [baseId]);
+    await db.query("UPDATE base_exercises SET equipment = 'barbell', status = 'active', deleted_at = NULL WHERE id = ?", [baseId]);
     const second = await createBaseExercise({ name: `${PREFIX}-eq` });
     await db.query("UPDATE base_exercises SET equipment = 'dumbbell' WHERE id = ?", [second]);
     try {
