@@ -10,6 +10,9 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel } from '@/lib/localeLabels';
+import { PRODUCT_TEXT_LOCALES, applyProductTextValues, productTextValues, type ProductTextField } from '../../financials/products/productProfile';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
@@ -163,6 +166,12 @@ export default function BaseProductsPage() {
     setExpanded((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [deleting, setDeleting] = useState<BaseProduct | null>(null);
   const [imageOf, setImageOf] = useState<BaseProduct | null>(null);
+  // #2334: which field's translations modal is open, for which row (null = the new-row form).
+  const tAll = useTranslations();
+  const [langModal, setLangModal] = useState<{ field: ProductTextField; product: BaseProduct | null } | null>(null);
+  const langLocales = PRODUCT_TEXT_LOCALES.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }));
+  const textFieldLabel = (f: ProductTextField) => tp(f === 'name' ? 'label_name' : 'label_description');
+  const globeRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 };
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -246,10 +255,16 @@ export default function BaseProductsPage() {
 
   function renderValue(p: BaseProduct, field: VisibleProductField): React.ReactNode {
     const v = (x: React.ReactNode) => <div style={productValueStyle}>{x}</div>;
+    const globeValue = (prod: BaseProduct, fld: ProductTextField, x: React.ReactNode) => (
+      <div style={globeRowStyle}>
+        <div style={{ ...productValueStyle, flex: 1 }}>{x}</div>
+        <GlobeButton label={tp('translations_open', { field: textFieldLabel(fld) })} onClick={() => setLangModal({ field: fld, product: prod })} />
+      </div>
+    );
     switch (field.key) {
-      case 'name': return v(p.name);
+      case 'name': return globeValue(p, 'name', p.name);
       case 'type': return v(t(`type_${p.type}`));
-      case 'description': return v(p.description ?? EMPTY_VALUE);
+      case 'description': return globeValue(p, 'description', p.description ?? EMPTY_VALUE);
       case 'units': return v(p.units ?? EMPTY_VALUE);
       case 'status': return v(tStatus(p.status));
       case 'enrollment_status': return v(tStatus(p.enrollment_status));
@@ -267,7 +282,12 @@ export default function BaseProductsPage() {
   function renderControl(f: Form, field: VisibleProductField): React.ReactNode {
     switch (field.key) {
       case 'name':
-        return <input style={formControlStyle} value={f.name} maxLength={150} autoFocus onChange={(e) => set('name', e.target.value)} />;
+        return (
+          <div style={globeRowStyle}>
+            <input style={{ ...formControlStyle, flex: 1 }} value={f.name} maxLength={150} autoFocus onChange={(e) => set('name', e.target.value)} />
+            <GlobeButton label={tp('translations_open', { field: textFieldLabel('name') })} onClick={() => setLangModal({ field: 'name', product: null })} />
+          </div>
+        );
       case 'type':
         return (
           <select style={formControlStyle} value={f.type} onChange={(e) => set('type', e.target.value as Form['type'])}>
@@ -275,7 +295,12 @@ export default function BaseProductsPage() {
           </select>
         );
       case 'description':
-        return <textarea style={productTextareaStyle} rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />;
+        return (
+          <div style={globeRowStyle}>
+            <textarea style={{ ...productTextareaStyle, flex: 1 }} rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />
+            <GlobeButton label={tp('translations_open', { field: textFieldLabel('description') })} onClick={() => setLangModal({ field: 'description', product: null })} />
+          </div>
+        );
       case 'units':
         return <input style={formControlStyle} type="number" min={1} step={1} value={f.units} onChange={(e) => set('units', e.target.value)} />;
       case 'status':
@@ -330,22 +355,6 @@ export default function BaseProductsPage() {
       <label style={formFieldLabelStyle}>{t('charge_type_code')}</label>
       {f ? (
         <>
-          {/* #2254: the name and description in the other languages (EN is the base text). */}
-          <div style={{ ...formHelpTextStyle, marginBottom: 8 }}>{t('translations_help')}</div>
-          {(['es', 'ca'] as const).map((l) => (
-            <div key={l} style={{ marginBottom: 8 }}>
-              <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
-              <input
-                style={formControlStyle} value={f.tr[l].name} maxLength={150}
-                onChange={(e) => set('tr', { ...f.tr, [l]: { ...f.tr[l], name: e.target.value } })}
-              />
-              <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-              <textarea
-                style={productTextareaStyle} rows={2} value={f.tr[l].description}
-                onChange={(e) => set('tr', { ...f.tr, [l]: { ...f.tr[l], description: e.target.value } })}
-              />
-            </div>
-          ))}
           <input style={formControlStyle} value={f.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
           <div style={{ fontSize: 12, color: 'var(--gd-text-secondary, #666)' }}>{t('charge_type_code_help')}</div>
           <label style={{ ...productCheckboxCellStyle, marginTop: 12 }}>
@@ -472,6 +481,28 @@ export default function BaseProductsPage() {
         )}
       </ProductListFrame>
 
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? tp('translations_title', { field: textFieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal
+          ? productTextValues(
+              form && (langModal.product == null || form.id === langModal.product.id) ? form : formFor(langModal.product),
+              langModal.field,
+            )
+          : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={!(langModal && form && (langModal.product == null || form.id === langModal.product.id))}
+        saveLabel={tp('save')}
+        cancelLabel={tp('cancel')}
+        closeLabel={tp('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setForm((f) => f && { ...f, ...applyProductTextValues(f, langModal.field, vals) });
+          setLangModal(null);
+        }}
+      />
       <CrudModal
         open={!!details}
         title={details?.name ?? ''}
