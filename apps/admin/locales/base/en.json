@@ -4060,7 +4060,10 @@
     "locale_en": "English",
     "locale_es": "Spanish",
     "locale_ca": "Catalan",
-    "description_placeholder": "Optional notes about this food"
+    "description_placeholder": "Optional notes about this food",
+    "translations_title": "Translations: {field}",
+    "translations_close": "Close",
+    "translations_open": "Open translations for {field}"
   },
   "goal_library": {
     "tab_foods": "Foods",

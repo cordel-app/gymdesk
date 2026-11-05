@@ -4073,7 +4073,10 @@
     "locale_en": "Anglès",
     "locale_es": "Espanyol",
     "locale_ca": "Català",
-    "description_placeholder": "Notes opcionals sobre aquest aliment"
+    "description_placeholder": "Notes opcionals sobre aquest aliment",
+    "translations_title": "Traduccions: {field}",
+    "translations_close": "Tanca",
+    "translations_open": "Obre les traduccions de {field}"
   },
   "goal_library": {
     "tab_foods": "Aliments",
