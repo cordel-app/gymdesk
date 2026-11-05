@@ -2284,6 +2284,8 @@
     "label_muscles": "Muscles",
     "label_status": "Status",
     "label_category": "Category",
+    "label_equipment": "Equipment",
+    "equipment_none": "No equipment",
     "category_none": "No category",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Olympic Weightlifting",
@@ -4057,7 +4059,10 @@
     "locale_en": "English",
     "locale_es": "Spanish",
     "locale_ca": "Catalan",
-    "description_placeholder": "Optional notes about this food"
+    "description_placeholder": "Optional notes about this food",
+    "translations_title": "Translations: {field}",
+    "translations_close": "Close",
+    "translations_open": "Open translations for {field}"
   },
   "goal_library": {
     "tab_foods": "Foods",
@@ -4673,6 +4678,9 @@
     "image_error_upload_failed": "Failed to upload the image.",
     "image_error_remove_failed": "Failed to remove the image.",
     "section_media": "Media",
+    "translations_title": "Translations: {field}",
+    "translations_close": "Close",
+    "translations_open": "Open translations for {field}",
     "name_in": "Name ({locale})",
     "description_in": "Description ({locale})",
     "translations_help": "Translations (optional — English is used when a language is left empty)",

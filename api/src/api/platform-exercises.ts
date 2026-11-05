@@ -1,3 +1,4 @@
+import { parseExerciseEquipmentInput } from '../domain/exerciseEquipment';
 import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
 import { applyRecordedMetrics, parseRecordedMetricsRequest, respondMetricRemoval, syncExerciseResultTypes } from './exercise-result-types';
 import { Request, Router } from 'express';
@@ -232,6 +233,8 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
+  const equipmentInput = parseExerciseEquipmentInput(req.body);
+  if (equipmentInput.error) return res.status(400).json({ error: equipmentInput.error });
   let metricsRequest;
   try { metricsRequest = parseRecordedMetricsRequest(req.body); }
   catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
@@ -253,11 +256,11 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       const newId = await reserveBaseExerciseId(tx);
       await tx.query(
         `INSERT INTO ${B.exercises}
-          (id, name, description, short_description, category,
+          (id, name, description, short_description, category, equipment,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
            created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [newId, name.trim(), description ?? null, shortDescription.value, categoryInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId, name.trim(), description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active',
          actor],
@@ -295,6 +298,8 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
+  const equipmentInput = parseExerciseEquipmentInput(req.body);
+  if (equipmentInput.error) return res.status(400).json({ error: equipmentInput.error });
   let metricsRequest;
   try { metricsRequest = parseRecordedMetricsRequest(req.body); }
   catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
@@ -329,6 +334,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
           category              = IF(?, ?, category),
+          equipment             = IF(?, ?, equipment),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
           -- #1182: who last changed it, snapshotted beside when.
@@ -343,6 +349,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
+          equipmentInput.provided ? 1 : 0, equipmentInput.value,
           status ?? null,
           actor,
           id,

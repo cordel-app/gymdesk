@@ -513,6 +513,7 @@ export default function ExercisesPage() {
             nameLocales={nameLocales}
             muscleKeys={muscleKeys}
             muscleLabel={muscleLabel}
+            equipmentOptions={facets?.equipment}
             resultTypes={resultTypes}
             nameRef={newNameRef}
             media={<ExerciseGenderMedia
@@ -541,6 +542,7 @@ export default function ExercisesPage() {
           nameLocales={nameLocales}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
+          equipmentOptions={facets?.equipment}
           resultTypes={resultTypes}
           nameRef={nameInputRef}
           media={<ExerciseGenderMedia

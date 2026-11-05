@@ -39,6 +39,7 @@ export interface NutritionLibraryItemRow {
   translations?: Record<string, string>;
   /** Per-locale descriptions keyed by locale (#1720). Absent locales fall back to `description`. */
   description_translations?: Record<string, string>;
+  display_description?: string | null;
   categories: NutritionItemTaxonomy[];
   qualities: NutritionItemTaxonomy[];
   created_at: string;
