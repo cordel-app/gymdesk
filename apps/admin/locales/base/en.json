@@ -121,6 +121,7 @@
     "default_center": "Default Center",
     "default_center_none": "Select a default center",
     "error_no_center": "A member must belong to at least one center.",
+    "error_no_default_center": "Choose a default center.",
     "error_default_not_assigned": "Default center must be one of the assigned centers.",
     "filter_center": "Center",
     "filter_search": "Search",

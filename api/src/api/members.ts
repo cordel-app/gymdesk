@@ -59,6 +59,10 @@ async function resolveMemberCenters(
   centerIds: unknown,
   defaultCenterId: unknown,
 ): Promise<{ ids: number[]; defaultId: number } | { error: string }> {
+  // #2381: the form sends only the Default Center; it is then the one assignment.
+  if (!(Array.isArray(centerIds) && centerIds.length > 0) && Number(defaultCenterId)) {
+    centerIds = [Number(defaultCenterId)];
+  }
   if (Array.isArray(centerIds) && centerIds.length > 0) {
     const ids = centerIds.map((id) => Number(id));
     const defaultId = Number(defaultCenterId);

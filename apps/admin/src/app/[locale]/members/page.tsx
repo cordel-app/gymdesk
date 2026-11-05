@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canAccessModule, canWriteFeature, canWriteModule } from '@/config/permissions';
-import { useCenter } from '@/context/CenterContext';
+import { useCenter, type CenterOption } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -187,7 +187,6 @@ export default function MembersPage() {
   }, [countsKey]);
 
   const showCenters = centers.length > 1;
-  const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   // Inline editing (Member is edited on the expanded row, not in a modal — #365)
@@ -196,7 +195,7 @@ export default function MembersPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  const [editAssignedCenterIds, setEditAssignedCenterIds] = useState<Set<number>>(new Set());
+  const [editCenterOptions, setEditCenterOptions] = useState<CenterOption[]>([]);
   const [editDefaultCenterId, setEditDefaultCenterId] = useState<number | null>(null);
   // #797: a saved edit may have changed the Member's centers, and the read-only
   // PROFILE section below reads those from the API rather than from this row.
@@ -344,7 +343,6 @@ export default function MembersPage() {
     setForm(emptyForm);
     setAddImage(null);
     setError(null);
-    setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
     setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
     setModalOpen(true);
   }
@@ -368,16 +366,7 @@ export default function MembersPage() {
     setForm(emptyForm);
     setAddImage(null);
     setError(null);
-    setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
-  }
-
-  function toggleCenter(id: number, checked: boolean) {
-    const next = new Set(assignedCenterIds);
-    if (checked) next.add(id); else next.delete(id);
-    setAssignedCenterIds(next);
-    if (!checked && defaultCenterId === id) setDefaultCenterId(null);
-    if (checked && next.size === 1) setDefaultCenterId(id);
   }
 
   async function handleAdd() {
@@ -386,8 +375,7 @@ export default function MembersPage() {
       return;
     }
     if (showCenters) {
-      if (assignedCenterIds.size === 0) { setError(t('members.error_no_center')); return; }
-      if (defaultCenterId == null || !assignedCenterIds.has(defaultCenterId)) { setError(t('members.error_default_not_assigned')); return; }
+      if (defaultCenterId == null) { setError(t('members.error_no_default_center')); return; }
     }
     if (!validateDocumentId(form.nif_nie_passport).valid) {
       setError(t('members.error_document_invalid'));
@@ -404,7 +392,6 @@ export default function MembersPage() {
         nif_nie_passport: form.nif_nie_passport.trim() || null,
       };
       if (showCenters) {
-        body.center_ids = Array.from(assignedCenterIds);
         body.default_center_id = defaultCenterId;
       }
       const created = await apiFetch<{ id: number }>('/members', { method: 'POST', body: JSON.stringify(body) });
@@ -459,11 +446,19 @@ export default function MembersPage() {
     selectTab(m.id, 'profile');
     if (showCenters) {
       try {
-        const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
-        setEditAssignedCenterIds(new Set(rows.map((r) => r.center_id)));
-        setEditDefaultCenterId(rows.find((r) => r.is_default)?.center_id ?? null);
+        const [rows, options] = await Promise.all([
+          apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`),
+          apiFetch<{ id: number; name: string }[]>(`/members/${m.id}/centers/options`),
+        ]);
+        const current = rows.find((r) => r.is_default)?.center_id ?? null;
+        const opts = options.map((o) => ({ id: o.id, name: o.name })) as CenterOption[];
+        // A stored default the plans no longer cover stays visible rather than reading as none.
+        const stored = current != null && !opts.some((o) => o.id === current)
+          ? centers.filter((c) => c.id === current) : [];
+        setEditCenterOptions([...stored, ...opts]);
+        setEditDefaultCenterId(current);
       } catch {
-        setEditAssignedCenterIds(new Set());
+        setEditCenterOptions([]);
         setEditDefaultCenterId(null);
       }
     }
@@ -474,23 +469,14 @@ export default function MembersPage() {
     setEditForm(emptyMemberEditForm);
     setEditError(null);
     setImageRetry(null);
-    setEditAssignedCenterIds(new Set());
+    setEditCenterOptions([]);
     setEditDefaultCenterId(null);
-  }
-
-  function toggleEditCenter(id: number, checked: boolean) {
-    const next = new Set(editAssignedCenterIds);
-    if (checked) next.add(id); else next.delete(id);
-    setEditAssignedCenterIds(next);
-    if (!checked && editDefaultCenterId === id) setEditDefaultCenterId(null);
-    if (checked && next.size === 1) setEditDefaultCenterId(id);
   }
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('members.error_required')); return; }
     if (showCenters) {
-      if (editAssignedCenterIds.size === 0) { setEditError(t('members.error_no_center')); return; }
-      if (editDefaultCenterId == null || !editAssignedCenterIds.has(editDefaultCenterId)) { setEditError(t('members.error_default_not_assigned')); return; }
+      if (editDefaultCenterId == null) { setEditError(t('members.error_no_default_center')); return; }
     }
     if (!validateDocumentId(editForm.nif_nie_passport).valid) {
       setEditError(t('members.error_document_invalid'));
@@ -514,7 +500,7 @@ export default function MembersPage() {
       if (showCenters) {
         await apiFetch(`/members/${editedId}/centers`, {
           method: 'PUT',
-          body: JSON.stringify({ center_ids: Array.from(editAssignedCenterIds), default_center_id: editDefaultCenterId }),
+          body: JSON.stringify({ default_center_id: editDefaultCenterId }),
         });
       }
       setEditingId(null);
@@ -775,11 +761,9 @@ export default function MembersPage() {
                   onRetryConsumed: () => setImageRetry(null),
                 }}
                 showCenters={showCenters}
-                centers={centers}
-                assignedCenterIds={editAssignedCenterIds}
+                centerOptions={editCenterOptions}
                 defaultCenterId={editDefaultCenterId}
                 onChange={setEditForm}
-                onToggleCenter={toggleEditCenter}
                 onDefaultCenterChange={setEditDefaultCenterId}
                 onSave={saveEdit}
                 onCancel={cancelEdit}
@@ -922,21 +906,10 @@ export default function MembersPage() {
 
             {showCenters && (
               <>
-                <label style={labelStyle}>{t('members.assigned_centers')}</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, padding: 10 }}>
-                  {centers.map((c) => (
-                    <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-                      <input type="checkbox" checked={assignedCenterIds.has(c.id)}
-                             onChange={(e) => toggleCenter(c.id, e.target.checked)} />
-                      {c.name}
-                    </label>
-                  ))}
-                </div>
-
                 <label style={labelStyle}>{t('members.default_center')}</label>
                 <select style={inputStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
                   <option value="">{t('members.default_center_none')}</option>
-                  {centers.filter((c) => assignedCenterIds.has(c.id)).map((c) => (
+                  {centers.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
