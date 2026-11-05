@@ -1,3 +1,4 @@
+import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -90,7 +91,7 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
               ${effectiveVideoUrlSql('e', sex)} AS video_url,
               ${effectiveVideoPosterSql('e', sex)} AS video_thumbnail_url,
               ${allowedTypesSql},
-              ${localizedDescriptionExprs('e', getRequestLocale(req))}, e.category, e.equipment,
+              ${localizedDescriptionExprs('e', getRequestLocale(req))}, ${exerciseFactSql('e', 'category')} AS category, ${exerciseFactSql('e', 'equipment')} AS equipment,
               (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
