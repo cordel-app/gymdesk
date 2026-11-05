@@ -915,13 +915,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
             (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
-             status, created_by, cloned_from_id, base_exercise_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?)`,
+             status, created_by, cloned_from_id, base_exercise_id, category, equipment, short_description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
-           actor, id, src.category ?? null],
+           actor, id, src.category ?? null, src.equipment ?? null, src.short_description ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
