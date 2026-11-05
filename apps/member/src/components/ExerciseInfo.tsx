@@ -15,6 +15,8 @@ export interface ExerciseInfoFields {
   short_description?: string | null;
   description?: string | null;
   muscles?: string[] | null;
+  /** Subset of `muscles` with the principal role; drawn as chips ahead of the rest. */
+  primary_muscles?: string[] | null;
   category?: string | null;
   equipment?: string | null;
 }
@@ -35,12 +37,14 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
   const muscles = (info.muscles ?? []).filter(Boolean);
   const category = filled(info.category);
   const equipment = filled(info.equipment);
+  const primary = (info.primary_muscles ?? []).filter(Boolean);
+  const secondary = muscles.filter((m) => !primary.includes(m));
   const sections: Array<{ key: string; label: string; value: string }> = [];
   const short = filled(info.short_description);
   const description = filled(info.description);
   if (short) sections.push({ key: 'short', label: t('exercise_media.short_description'), value: short });
   if (description) sections.push({ key: 'description', label: t('exercise_media.description'), value: description });
-  if (muscles.length) sections.push({ key: 'muscles', label: t('exercise_media.muscles'), value: muscles.map(muscleLabel).join(', ') });
+  if (muscles.length && primary.length === 0) sections.push({ key: 'muscles', label: t('exercise_media.muscles'), value: muscles.map(muscleLabel).join(', ') });
   if (equipment) sections.push({ key: 'equipment', label: t('exercise_media.equipment'), value: equipment.split(',').map((e) => muscleLabel(e.trim())).filter(Boolean).join(', ') });
   if (category) sections.push({ key: 'category', label: t('exercise_media.category'), value: muscleLabel(category) });
   if (sections.length === 0) return null;
@@ -54,8 +58,21 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
           <p style={text}>{s.value}</p>
         </div>
       ))}
+      {primary.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: memberTheme.textSecondary }}>
+            {ICONS.muscles}{t('exercise_media.muscles')}
+          </span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 14, color: memberTheme.text }}>
+            {primary.map((m) => <span key={m} style={chip}>{muscleLabel(m)}</span>)}
+            {secondary.length > 0 && <span style={{ overflowWrap: 'anywhere' }}>{secondary.map(muscleLabel).join(', ')}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 const text: React.CSSProperties = { margin: 0, fontSize: 14, lineHeight: 1.5, color: memberTheme.text, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
+
+const chip: React.CSSProperties = { background: `color-mix(in srgb, ${memberTheme.primaryButton} 14%, ${memberTheme.surface})`, color: memberTheme.primaryButton, borderRadius: 999, padding: '3px 10px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' };

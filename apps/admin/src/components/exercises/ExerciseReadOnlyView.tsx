@@ -104,8 +104,8 @@ export function ExerciseReadOnlyView({
       <div style={exerciseFieldGridStyle}>
         {/* #2300: the default-language value only; the globe opens every language, read-only. */}
         <Field wide label={t('label_name')} value={exercise.name} globe={() => setOpenField('name')} globeLabel={t('translations_open', { field: t('label_name') })} />
-        <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} globe={() => setOpenField('description')} globeLabel={t('translations_open', { field: t('label_description') })} />
-        <Field wide label={t('label_short_description')} value={exerciseDisplayValue(exercise.short_description)} globe={() => setOpenField('short_description')} globeLabel={t('translations_open', { field: t('label_short_description') })} />
+        <Field wide label={t('label_short_description')} value={exerciseDisplayValue((exercise.display_short_description ?? exercise.short_description))} globe={() => setOpenField('short_description')} globeLabel={t('translations_open', { field: t('label_short_description') })} />
+        <Field wide label={t('label_description')} value={exerciseDisplayValue((exercise.display_description ?? exercise.description))} globe={() => setOpenField('description')} globeLabel={t('translations_open', { field: t('label_description') })} />
         <FieldTranslationsModal
           open={openField !== null}
           title={openField ? t('translations_title', { field: t(openField === 'name' ? 'label_name' : openField === 'description' ? 'label_description' : 'label_short_description') }) : ''}
