@@ -90,7 +90,7 @@ describe('the field set is declared once (#974 §1)', () => {
     // The whole of what `PUT /products/:id` carries, plus the Name the
     // read-only half used to omit.
     expect(keys).toEqual([
-      'name', 'type', 'description', 'translations', 'units', 'status', 'enrollment_status', 'mandatory',
+      'name', 'type', 'description', 'units', 'status', 'enrollment_status', 'mandatory',
       'amount', 'billing_frequency', 'validity_days', 'tax_rate_id',
       'professional_services', 'package_information', 'notes',
     ]);
@@ -121,7 +121,7 @@ describe('the field set is declared once (#974 §1)', () => {
   it('spans the grid with free text rather than squeezing it into a cell', () => {
     const fullWidth = PRODUCT_SECTIONS.flatMap((s) => s.fields).filter((f) => f.fullWidth);
     expect(fullWidth.map((f) => f.key)).toEqual([
-      'description', 'translations', 'professional_services', 'package_information', 'notes',
+      'description', 'professional_services', 'package_information', 'notes',
     ]);
   });
 
@@ -193,7 +193,7 @@ describe('both halves see the same sections (#974 §1/§3)', () => {
     const general = visibleProductSections({ isSystem: true, isSessionType: false })
       .find((s) => s.key === 'general')!;
     expect(general.fields.map((f) => f.key)).toEqual([
-      'name', 'type', 'description', 'translations', 'units', 'status', 'enrollment_status', 'mandatory',
+      'name', 'type', 'description', 'units', 'status', 'enrollment_status', 'mandatory',
     ]);
     const frozen = general.fields.filter((f) => !f.editable).map((f) => f.key);
     expect(frozen).toEqual(['name', 'type', 'units']);
