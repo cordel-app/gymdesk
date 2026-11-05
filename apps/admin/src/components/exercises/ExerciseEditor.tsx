@@ -266,14 +266,14 @@ export function ExerciseEditor({
           {pickerKeys.map((key) => {
             const role = state.muscles.get(key);
             return (
-              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, breakInside: 'avoid', marginBottom: 6 }}>
+              <div key={key} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 13, breakInside: 'avoid', marginBottom: 6 }}>
                 <input type="checkbox" checked={!!role}
                   onChange={(ev) => {
                     const next = new Map(state.muscles);
                     if (ev.target.checked) next.set(key, 'principal'); else next.delete(key);
                     state.setMuscles(next);
                   }} />
-                <span style={{ flex: 1 }}>{muscleLabel(key)}</span>
+                <span>{muscleLabel(key)}</span>
                 {role && (
                   <select value={role} onChange={(ev) => { const next = new Map(state.muscles); next.set(key, ev.target.value as MuscleRole); state.setMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
                     <option value="principal">{t('role_principal')}</option>
