@@ -49,7 +49,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductPurchase } from './AddProductPurchase';
+import { AddProductDetails, addProductDraftCells, useAddProductForm } from './AddProductPurchase';
 import {
   billingEventPath,
   filterPurchasesByStatus,
@@ -92,6 +92,11 @@ export function MemberPurchasedProducts({
 
   const [adding, setAdding] = useState(false);
   useEffect(() => { if (committedKey) setAdding(false); }, [committedKey]);
+  // #2372 follow-up: the form's fields are the draft row's own cells.
+  const addForm = useAddProductForm({
+    memberId, isAdmin, recurringOnly: false, embedded: true, enabled: adding,
+    onClose: () => setAdding(false), onChanged,
+  });
   // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
   const [discarding, setDiscarding] = useState<PurchasedProduct | null>(null);
   const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'));
@@ -276,25 +281,15 @@ export function MemberPurchasedProducts({
           emptyText={t('purchased_products_none')}
           expandedRowKeys={expandedIds}
           onToggleExpand={toggleExpand}
-          draftRow={adding ? {
-            cells: columns.map((col, i) => {
-              if (i === 0) return <div style={{ fontWeight: 500 }}>{t('add_product_new_row')}</div>;
-              if (col.header === t('purchase_col_status')) {
-                return <StatusBadge status="draft" label={t('add_product_draft_badge')} />;
-              }
-              return null;
-            }),
-            form: (
-              <AddProductPurchase
-                embedded
-                memberId={memberId}
-                isAdmin={isAdmin}
-                canPay={canPay}
-                onClose={() => setAdding(false)}
-                onChanged={onChanged}
-              />
-            ),
-          } : undefined}
+          draftRow={adding ? (() => {
+            const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
+            // Same order as `columns`: product, date, end date, price, tax, promotion, discount, final, payment status, status, actions.
+            const cells: React.ReactNode[] = [
+              c.product, c.date, null, c.price, c.tax, c.promotion, c.discount, c.final, null,
+              <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />, null,
+            ];
+            return { cells, form: <AddProductDetails form={addForm} /> };
+          })() : undefined}
           renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
       />
       {/* #1640: the action sits below the list, at the bottom of the section. */}
