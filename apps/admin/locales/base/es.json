@@ -2026,7 +2026,8 @@
     "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
     "tax_included_suffix": "IVA incluido",
     "item_duration_hint": "La duración es el número de periodos de facturación del propio Producto a los que se aplica la promoción. Cuando termina, el Producto continúa a su precio habitual.",
-    "simulation_initial_payment": "Pago inicial"
+    "simulation_initial_payment": "Pago inicial",
+    "image_open": "Ver la imagen de {name}"
   },
   "audit": {
     "title": "Registro de auditoría",

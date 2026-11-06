@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2410 (Promotions: the read-only card now opens with the same General section as Edit, and a Promotion's listing image opens a viewer with the full 1080 × 1080 image and its Session / One-off / Periodical lines, drawn by the card's own `ProductBenefitView`; no API or schema change)
 - **Done**: #2306 (follow-up) — clicking the female exercise thumbnail now opens the female full-size image, not the male one: `ExerciseInfoModal` takes the clicked gender and `GET /exercises/:id` reports `effective_image_male_url` / `effective_image_female_url` (own master, else the primary muscle's, never a thumbnail).
 - **Done**: #2379 follow-up (Exercise Detail Viewer: `GET /exercises/:id` reports `category`/`equipment` through `exerciseFactSql()` so a Gym Exercise copy with none of its own shows the System exercise's, as the Members App does — Equipment was missing from the viewer; the viewer uses the Members App's section icons and lists comma-separated equipment values individually).
 
