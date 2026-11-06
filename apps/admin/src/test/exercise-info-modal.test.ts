@@ -61,3 +61,18 @@ describe('shared Exercise Detail Viewer (#2379)', () => {
     expect(read('app', '[locale]', 'members', 'MemberProgress.tsx')).toContain('ExerciseInfoModal');
   });
 });
+
+describe('gender-specific full-size image (#2306)', () => {
+  const row = { name: 'Squat', image_male_url: 'https://x/m.webp', image_female_url: 'https://x/f.webp', effective_image_url: 'https://x/m.webp' };
+  it('shows the master of the clicked gender', () => {
+    expect(buildExerciseInfo(row, 'male').imageUrl).toBe('https://x/m.webp');
+    expect(buildExerciseInfo(row, 'female').imageUrl).toBe('https://x/f.webp');
+  });
+  it('never shows the other gender\'s picture or a thumbnail', () => {
+    expect(buildExerciseInfo({ name: 'S', image_male_url: 'https://x/m.webp', effective_image_url: 'https://x/m.webp' }, 'female').imageUrl).toBeNull();
+  });
+  it('keeps the effective image for an exercise with no own image, or no gender', () => {
+    expect(buildExerciseInfo({ name: 'S', effective_image_url: 'https://x/mu.webp' }, 'female').imageUrl).toBe('https://x/mu.webp');
+    expect(buildExerciseInfo(row).imageUrl).toBe('https://x/m.webp');
+  });
+});

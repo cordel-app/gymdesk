@@ -18,6 +18,8 @@ export interface ExerciseInfoRow {
   equipment?: string | null;
   muscles?: { key: string; role: string }[] | null;
   effective_image_url?: string | null;
+  image_male_url?: string | null;
+  image_female_url?: string | null;
 }
 
 export type ExerciseInfoFieldId = 'short_description' | 'description' | 'muscles' | 'equipment' | 'categories';
@@ -41,11 +43,24 @@ const text = (v: string | null | undefined): string | null => {
   return s ? s : null;
 };
 
-export function buildExerciseInfo(row: ExerciseInfoRow): ExerciseInfo {
+/**
+ * #2306: the full-size image for the clicked gender position. The own master of
+ * that gender wins; with a gender given and only the other gender's master
+ * present, nothing is shown (never the other sex's picture); an exercise with
+ * no own image keeps the effective (primary muscle) master.
+ */
+function infoImage(row: ExerciseInfoRow, gender?: 'male' | 'female'): string | null {
+  if (!gender) return text(row.effective_image_url);
+  const own = text(gender === 'male' ? row.image_male_url : row.image_female_url);
+  if (own) return own;
+  return text(row.image_male_url) || text(row.image_female_url) ? null : text(row.effective_image_url);
+}
+
+export function buildExerciseInfo(row: ExerciseInfoRow, gender?: 'male' | 'female'): ExerciseInfo {
   const category = text(row.category);
   return {
     name: text(row.display_name) ?? row.name,
-    imageUrl: text(row.effective_image_url),
+    imageUrl: infoImage(row, gender),
     shortDescription: text(row.display_short_description) ?? text(row.short_description),
     description: text(row.display_description) ?? text(row.description),
     muscles: (row.muscles ?? []).map((m) => ({

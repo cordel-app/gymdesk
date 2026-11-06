@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2306 follow-up (Exercise image modal: clicking the female thumbnail opens the female full-size image and the male one the male image; the list passes the clicked gender to `ExerciseInfoModal`, which shows that gender's own master and never the other sex's picture or a thumbnail. Admin-only, no API change)
+
 - **Done**: #2391 (Assigned Plan configuration: the open section editor's Save/Cancel pair is rendered once at the bottom of the whole configuration block instead of under each section; sections still edit one at a time, no API change)
 
 - **Done**: #2375 (Assigned Plan card: entering Edit mode on a Draft no longer auto-opens Billing & Duration (#1814 reversed), so every section keeps an enabled `Edit` and staff open the one they want; one section at a time still applies. No API change)
