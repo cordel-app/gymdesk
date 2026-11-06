@@ -80,6 +80,12 @@ afterAll(async () => {
 });
 
 // #2125 stage 6 — the engine's input is one assignment per plan snapshot of the version.
+/** The fixtures write a plan snapshot by hand; the Product Set junction is what the loaders read (M3). */
+async function linkPlanSnapshots(setId: number): Promise<void> {
+  await db.query(
+    'INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) SELECT product_set_id, id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+}
+
 describe('loadProductSetSimulationAssignments', () => {
   it('with one plan answers exactly what the version-keyed loader builds', async () => {
     const locker = await product('Locker', 10, 'month');
@@ -114,6 +120,7 @@ describe('loadProductSetSimulationAssignments', () => {
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
        VALUES (?, ?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
       [gymId, set.id, owner, second, TODAY, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id);
 
     const list = await loadProductSetSimulationAssignments(gymId, set.id);
     expect(list).toHaveLength(2);
@@ -174,6 +181,7 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
        VALUES (?, ?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
       [gymId, set.id, owner, second, TODAY, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id);
 
     const both = await planScheduledEvents(gymId, set.id, TODAY, 2);
     expect(both.map((e) => e.date)).toEqual(alone.map((e) => e.date));
@@ -202,6 +210,7 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew, is_inherited)
        VALUES (?, ?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0, 0)`,
       [gymId, set.id, owner, second, joinStart, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id);
 
     const events = await planScheduledEvents(gymId, set.id, TODAY, 3);
     const secondLines = events.flatMap((e) => e.lines

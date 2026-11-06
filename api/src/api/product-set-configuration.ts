@@ -205,12 +205,12 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
   for (const table of ['plan_periodical_snapshots', 'member_products_recurrent_snapshot'] as const) {
     // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
     const scope = table === 'plan_periodical_snapshots'
-      ? 'plan_snapshot_id IN (SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?)'
+      ? 'plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)'
       : 'product_set_id = ?';
     const { rows } = await tx.query<any>(
       `SELECT id, item_billing_frequency${table === 'member_products_recurrent_snapshot' ? ', starts_at' : ''}
          FROM ${table} WHERE gym_id = ? AND ${scope} AND schedule_id IS NULL`,
-      table === 'plan_periodical_snapshots' ? [gymId, gymId, productSetId] : [gymId, productSetId]);
+      [gymId, productSetId]);
     for (const row of rows) {
       const cadence = cadenceForFrequency(row.item_billing_frequency);
       if (!cadence) continue;
@@ -273,7 +273,8 @@ export async function loadProductSetSimulationAssignment(
             sch.cadence_interval, sch.cadence_unit
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id
+       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+       LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id
        LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
       WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId],
