@@ -1536,7 +1536,16 @@
     "staff_only": "Staff Only"
   },
   "plans": {
-    "title": "Membership Plans",
+    "title": "Plans",
+    "viewer_section_pricing": "Pricing",
+    "viewer_section_billing": "Billing",
+    "viewer_section_products": "Included Products",
+    "viewer_optional_tag": "Optional",
+    "viewer_waived_benefits": "Waived benefits",
+    "viewer_yes": "Yes",
+    "viewer_no": "No",
+    "viewer_no_products": "No Products included.",
+    "viewer_no_description": "No description.",
     "add": "+ Add Plan",
     "loading": "Loading…",
     "empty": "No plans yet.",

@@ -25,6 +25,9 @@ import {
 } from '@/components/listChrome';
 import { AssignPlanToMembersEditor } from './AssignPlanToMembersEditor';
 import { PlanDetailModal } from './PlanDetailModal';
+import { PlanImageDetails } from './PlanImageDetails';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { PlanCard } from './PlanCard';
 import { PlanViewToggle, usePlanViewMode } from './PlanViewToggle';
 import { computeVatPreview } from '@/lib/priceVat';
@@ -377,6 +380,8 @@ export default function PlansPage() {
 
   // Details modal (#512)
   const [detailFor, setDetailFor] = useState<Plan | null>(null);
+  // #2408: the plan image viewer (full image + description, pricing, billing, products).
+  const [imageOf, setImageOf] = useState<Plan | null>(null);
 
   // Pricing sub-form (inline, per plan) — price is always VAT-inclusive (#547)
   const [pricingForm, setPricingForm] = useState({ price: '', tax_rate_id: '' });
@@ -1068,6 +1073,7 @@ export default function PlansPage() {
                 <PlanCard
                   key={plan.id}
                   active={editingId === plan.id}
+                  onImageClick={() => setImageOf(plan)}
                   menuItems={planMenuItems(plan)}
                   plan={{
                     id: plan.id,
@@ -1115,8 +1121,16 @@ export default function PlansPage() {
               <div key={plan.id} id={`plan-row-${plan.id}`} style={cardStyle(false)}>
                 {/* Row header */}
                 <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(plan.id)}>
-                  <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {plan.name}
+                  <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* #2408: circular thumbnail left of the name; no image, no container. */}
+                    {(plan.image_thumbnail_url ?? plan.image_url) && (
+                      <span role="button" tabIndex={0} aria-label={plan.name} style={{ cursor: 'zoom-in', display: 'inline-flex', flexShrink: 0 }}
+                        onClick={(e) => { e.stopPropagation(); setImageOf(plan); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setImageOf(plan); } }}>
+                        <MemberAvatar name={plan.name} imageUrl={plan.image_thumbnail_url ?? plan.image_url ?? null} stamp={plan.modified_at} size={36} />
+                      </span>
+                    )}
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.name}</span>
                   </div>
                   <div className={CELL_CLASS.description} style={{ fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {descText}
@@ -1839,6 +1853,16 @@ export default function PlansPage() {
       {detailFor && (
         <PlanDetailModal plan={detailFor} onClose={() => setDetailFor(null)} />
       )}
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('plans.details_close')}
+        noImageLabel={t('plans.image_none')}
+        noDescriptionLabel={t('plans.viewer_no_description')}
+      >
+        {imageOf && <PlanImageDetails plan={imageOf} />}
+      </ProfessionalServiceImageModal>
     </div>
   );
 }
