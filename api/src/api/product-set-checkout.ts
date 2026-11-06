@@ -1,4 +1,5 @@
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { recordPaymentAttempt } from './payment-attempt';
 import { AttemptMethod } from '../domain/paymentAttemptMethod';
 import { payerCheckoutUrl } from './checkout-url';
 import crypto from 'crypto';
@@ -225,6 +226,7 @@ export async function createProductSetCheckout(input: {
       [input.gymId, input.memberId, input.charge.amount.toFixed(2), chargeTypeId, billingEventId,
         orderId, result.providerOrderId, pageToken, pageTokenExpires, Number(prev[0]?.n ?? 0) + 1, input.actor],
     );
+    await recordPaymentAttempt(tx, insertId);
     await tx.query('UPDATE product_sets SET payment_request_id = ? WHERE id = ?', [insertId, input.productSetId]);
     return { paymentRequestId: Number(insertId), billingEventId };
   });

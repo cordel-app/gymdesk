@@ -506,3 +506,5 @@ Constraints that are purely about how the code is organised stay in `CLAUDE.md` 
 - **A Professional Service can require a minimum number of participants** (#2293). `min_participants` is optional, never above a limited Max Capacity, and an event delivered by that service cannot be completed with fewer booked members (staff cancel it instead). Enforced in `domain/baseProfessionalServices.ts` and `POST /class-sessions/:id/complete`.
 
 - **A Membership Plan's center access is Specific centers, All centers (future ones included) or Only the Member's Default Center; a Member's access is the union of their live plans** (#2383) — `api/src/domain/planCenterAccess.ts`.
+
+- **A payment attempt records its method by name and the Billing Event counts attempts** (#2451, migration 376). Every `payment_requests` insert is followed by `recordPaymentAttempt()` (`api/src/api/payment-attempt.ts`, mapping in `domain/paymentAttemptSnapshot.ts`), which copies the catalogue method's English name onto the attempt for good and increments `billing_events.attempt_count` atomically.

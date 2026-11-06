@@ -1,4 +1,5 @@
 import { resolvePayerFor } from './payer-resolution';
+import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
@@ -2579,6 +2580,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       [gymId, um.id, memberId, payer.payerMemberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
+    await recordPaymentAttempt(db, insertId);
     const checkoutUrl = await payerCheckoutUrl({ gymId, memberId, pageToken, requestLocale: getRequestLocale(req) });
     res.status(201).json({ id: insertId, checkoutUrl });
   } catch (err: any) {
@@ -2824,7 +2826,8 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              (SELECT pr.payment_method_name FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'

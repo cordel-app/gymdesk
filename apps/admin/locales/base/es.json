@@ -839,6 +839,7 @@
     "col_tx_status": "Estado",
     "col_tx_amount": "Importe",
     "col_tx_provider": "Proveedor",
+    "col_tx_method": "Método de pago",
     "col_tx_card": "Tarjeta",
     "col_tx_ref": "Referencia",
     "previous": "Anterior",

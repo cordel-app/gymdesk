@@ -1038,6 +1038,9 @@ export default function MembershipPage() {
             </span>
             {/* #787 — the receipt number is the gate: the server allocates one
                 only for a payment that was received. */}
+            {event.payment_method_name && (
+              <span style={{ fontSize: 12, opacity: 0.75 }}>{event.payment_method_name}</span>
+            )}
             {event.receipt_number && (
               <button
                 onClick={() => downloadReceipt(event.id)}
