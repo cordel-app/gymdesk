@@ -112,6 +112,10 @@ platformBasePaymentMethodsRouter.get('/:id', requireSuperadmin, async (req, res)
 
 async function writeTranslations(tx: { query: (sql: string, params?: any[]) => Promise<any> }, id: number, t: TranslationsInput) {
   for (const [locale, v] of Object.entries(t)) {
+    if (!v.name) {
+      await tx.query('DELETE FROM base_payment_method_translations WHERE base_payment_method_id = ? AND locale = ?', [id, locale]);
+      continue;
+    }
     await tx.query(
       `INSERT INTO base_payment_method_translations (base_payment_method_id, locale, name, description)
        VALUES (?, ?, ?, ?)
