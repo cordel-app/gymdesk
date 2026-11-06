@@ -5342,7 +5342,9 @@
     "image_error_too_large": "La imagen es demasiado grande.",
     "image_error_unreadable": "No se pudo leer ese archivo como imagen.",
     "image_error_upload_failed": "No se pudo subir la imagen.",
-    "image_error_remove_failed": "No se pudo quitar la imagen."
+    "image_error_remove_failed": "No se pudo quitar la imagen.",
+    "translations_title": "Traducciones: {field}",
+    "translations_open": "Abrir traducciones de {field}"
   },
   "mobile_builds": {
     "title": "Builds móviles",

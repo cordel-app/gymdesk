@@ -23,6 +23,7 @@ import {
   validateMuscleImagePair,
 } from '../domain/muscleImages';
 import { logger } from '../lib/logger';
+import { muscleTranslationsExpr, parseMuscleTranslations, replaceMuscleTranslations, withMuscleTranslations } from '../domain/muscleTranslations';
 import {
   StorageOperationError,
   buildStorageObjectUrl,
@@ -107,7 +108,7 @@ function allImageUrls(m: MuscleRow): (string | null)[] {
 }
 
 const SELECT_MUSCLE = `
-  SELECT m.*,
+  SELECT m.*, ${muscleTranslationsExpr('m')},
     (SELECT COUNT(DISTINCT em.exercise_id) FROM exercise_muscle_catalogue em WHERE em.muscle_id = m.id) AS exercise_count
   FROM muscles m`;
 
@@ -148,7 +149,7 @@ platformMusclesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     const where = q ? 'WHERE m.name LIKE ? OR m.slug LIKE ?' : '';
     const params = q ? [`%${q}%`, `%${q}%`] : [];
     const { rows } = await db.query(`${SELECT_MUSCLE} ${where} ORDER BY m.name ASC, m.id ASC`, params);
-    res.json(rows);
+    res.json(rows.map((r: any) => withMuscleTranslations(r)));
   } catch (err) { next(err); }
 });
 
@@ -156,7 +157,7 @@ platformMusclesRouter.get('/:id', requireSuperadmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Muscle not found' });
-    res.json(rows[0]);
+    res.json(withMuscleTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -164,20 +165,26 @@ platformMusclesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   try {
     const parsed = parseName(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const tr = parseMuscleTranslations(req.body);
+    if (tr.error) return res.status(400).json({ error: tr.error });
     const slug = slugFromMuscleName(parsed.value);
     if (!slug) return res.status(400).json({ error: 'name must contain letters or digits' });
     const dup = await db.query('SELECT id FROM muscles WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [slug, parsed.value]);
     if (dup.rows.length > 0) return res.status(409).json({ error: 'A muscle with this name already exists' });
 
     const actor = platformActor(req);
-    const result = await db.query(
-      'INSERT INTO muscles (slug, name, created_by) VALUES (?, ?, ?)',
-      [slug, parsed.value, actor],
-    );
-    const id = (result as any).insertId;
+    const id = await db.transaction(async (tx) => {
+      const result = await tx.query(
+        'INSERT INTO muscles (slug, name, created_by) VALUES (?, ?, ?)',
+        [slug, parsed.value, actor],
+      );
+      const newId = (result as any).insertId;
+      if (tr.translations) await replaceMuscleTranslations(tx, newId, tr.translations);
+      return newId;
+    });
     recordAudit(req, { action: 'create', entityType: 'muscle', entityId: id, next: { slug, name: parsed.value } });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [id]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(withMuscleTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -188,6 +195,8 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
     const parsed = parseName(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
     const name = parsed.value;
+    const tr = parseMuscleTranslations(req.body);
+    if (tr.error) return res.status(400).json({ error: tr.error });
 
     const dup = await db.query('SELECT id FROM muscles WHERE LOWER(name) = LOWER(?) AND id != ? LIMIT 1', [name, muscle.id]);
     if (dup.rows.length > 0) return res.status(409).json({ error: 'A muscle with this name already exists' });
@@ -228,12 +237,15 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
     }
 
     const actor = platformActor(req);
-    await db.query(
+    await db.transaction(async (tx) => {
+    await tx.query(
       `UPDATE muscles SET name = ?, image_male_url = ?, image_male_url_thumbnail = ?,
               image_female_url = ?, image_female_url_thumbnail = ?, modified_at = UTC_TIMESTAMP(),
               modified_by = ? WHERE id = ?`,
       [name, urls.image_male_url, urls.image_male_url_thumbnail, urls.image_female_url, urls.image_female_url_thumbnail, actor, muscle.id],
     );
+    if (tr.translations) await replaceMuscleTranslations(tx, muscle.id, tr.translations);
+    });
     if (moves.length) await sweepMuscleObjects(allImageUrls(muscle), Object.values(urls));
 
     recordAudit(req, {
@@ -241,7 +253,7 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
       previous: { name: muscle.name }, next: { name },
     });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
-    res.json(rows[0]);
+    res.json(withMuscleTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -346,7 +358,7 @@ platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, muscleImageUplo
       previous: { [cols.image]: previous[0] }, next: { [cols.image]: imageUrl },
     });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
-    res.json(rows[0]);
+    res.json(withMuscleTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -370,6 +382,6 @@ platformMusclesRouter.delete('/:id/image/:sex', requireSuperadmin, async (req, r
       previous: { [cols.image]: previous[0] }, next: { [cols.image]: null },
     });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
-    res.json(rows[0]);
+    res.json(withMuscleTranslations(rows[0]));
   } catch (err) { next(err); }
 });
