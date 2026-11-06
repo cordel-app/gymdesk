@@ -103,4 +103,20 @@ describe('GET /me/professional-services', () => {
     // another member's sessions are not this member's balance
     expect(res.body.items.find((i: any) => i.professional_service_id === on).remaining).toBe(0);
   });
+
+  it('reports name and description in the request locale, falling back to the base text (#2425)', async () => {
+    await memberIn(gymId, 'mps-locale');
+    const id = await service(gymId, `Base ${uniq()}`);
+    await db.query('UPDATE professional_services SET description = ? WHERE id = ?', ['Base description', id]);
+    await db.query(
+      `INSERT INTO professional_service_translations (professional_service_id, locale, name, description) VALUES (?, 'es', ?, ?)`,
+      [id, 'Nombre ES', 'Descripción ES'],
+    );
+    const find = (res: any) => res.body.items.find((x: any) => x.professional_service_id === id);
+    const es = await asMember(gymId, 'mps-locale').set('x-locale', 'es');
+    expect(find(es)).toMatchObject({ name: 'Nombre ES', description: 'Descripción ES' });
+    const ca = await asMember(gymId, 'mps-locale').set('x-locale', 'ca');
+    expect(find(ca).description).toBe('Base description');
+    expect(find(ca).name).toMatch(/^Base /);
+  });
 });

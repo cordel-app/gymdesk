@@ -31,10 +31,12 @@ export interface PlanCardData {
 }
 
 /** One Membership Plan in the card grid (#1369). Presentation only. */
-export function PlanCard({ plan, menuItems, active }: {
+export function PlanCard({ plan, menuItems, active, onImageClick }: {
   plan: PlanCardData;
   menuItems: ContextMenuItem[];
   active: boolean;
+  /** #2408: opens the plan image viewer. */
+  onImageClick?: () => void;
 }) {
   const t = useTranslations('plans');
   const shown = plan.benefits.slice(0, MAX_BENEFITS);
@@ -43,7 +45,11 @@ export function PlanCard({ plan, menuItems, active }: {
     <div style={{ ...cardSurfaceStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, outline: active ? '2px solid var(--brand, #6c63ff)' : undefined }}>
       {/* Same square image the Exercise cards use; absent → no empty container. */}
       {plan.imageUrl && (
-        <CardSquareImage src={plan.imageUrl} alt={plan.name} version={plan.imageVersion} placeholder={null} />
+        <div role="button" tabIndex={0} aria-label={plan.name} style={{ cursor: 'zoom-in' }}
+          onClick={() => onImageClick?.()}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onImageClick?.(); } }}>
+          <CardSquareImage src={plan.imageUrl} alt={plan.name} version={plan.imageVersion} placeholder={null} />
+        </div>
       )}
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>

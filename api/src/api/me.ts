@@ -2916,7 +2916,7 @@ meRouter.get(
     const { gymId } = ctx;
     try {
       const memberId = await resolveMemberId(gymId, ctx);
-      res.json({ items: await memberServiceBalances(gymId, memberId) });
+      res.json({ items: await memberServiceBalances(gymId, memberId, getRequestLocale(req)) });
     } catch (err) {
       next(err);
     }
