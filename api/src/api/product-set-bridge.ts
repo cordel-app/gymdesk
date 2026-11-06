@@ -332,8 +332,8 @@ async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
     `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.user_membership_id
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.status = 'active'
-        AND EXISTS (SELECT 1 FROM plan_snapshots s WHERE s.product_set_id = ps.id AND s.gym_id = ps.gym_id
-                      AND s.source_user_membership_id = ?)
+        AND EXISTS (SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+                     WHERE psj.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_user_membership_id = ?)
       FOR UPDATE`, [gymId, userMembershipId]);
   if (!rows[0]) return null;
   return {

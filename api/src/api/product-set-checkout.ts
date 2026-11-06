@@ -58,8 +58,9 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
 
 async function carriesInheritedNativePlans(gymId: string, productSetId: number, exec: Exec): Promise<boolean> {
   const { rows } = await exec.query(
-    `SELECT SUM(is_inherited = 1) AS inherited, SUM(is_inherited = 0) AS added
-       FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?`, [gymId, productSetId]);
+    `SELECT SUM(s.is_inherited = 1) AS inherited, SUM(s.is_inherited = 0) AS added
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ?`, [gymId, productSetId]);
   // A version that adds a plan beside running ones holds both kinds; a plain clone is all inherited.
   return Number(rows[0]?.inherited ?? 0) > 0 && Number(rows[0]?.added ?? 0) > 0;
 }
