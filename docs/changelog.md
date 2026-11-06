@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2379 follow-up (Exercise Detail Viewer: `GET /exercises/:id` reports `category`/`equipment` through `exerciseFactSql()` so a Gym Exercise copy with none of its own shows the System exercise's, as the Members App does — Equipment was missing from the viewer; the viewer uses the Members App's section icons and lists comma-separated equipment values individually).
+
 - **Done**: #2391 (Assigned Plan configuration: the open section editor's Save/Cancel pair is rendered once at the bottom of the whole configuration block instead of under each section; sections still edit one at a time, no API change)
 
 - **Done**: #2375 (Assigned Plan card: entering Edit mode on a Draft no longer auto-opens Billing & Duration (#1814 reversed), so every section keeps an enabled `Edit` and staff open the one they want; one section at a time still applies. No API change)

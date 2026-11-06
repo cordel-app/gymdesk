@@ -1,3 +1,4 @@
+import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { parseExerciseEquipmentInput } from '../domain/exerciseEquipment';
 import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -405,7 +406,19 @@ exercisesRouter.get('/:id', async (req, res, next) => {
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(shapeExercise(rows[0]));
+    // #2379 follow-up: the detail viewer shows equipment/category the way the Members App
+    // does — a copy with none of its own reads the System exercise's (read-time only).
+    const { rows: facts } = await db.query(
+      `SELECT ${exerciseFactSql('e', 'category')} AS category, ${exerciseFactSql('e', 'equipment')} AS equipment
+         FROM exercise_catalogue e WHERE e.id = ?`,
+      [req.params.id],
+    );
+    const shaped = shapeExercise(rows[0]);
+    if (facts[0]) {
+      shaped.category = facts[0].category ?? shaped.category;
+      shaped.equipment = facts[0].equipment ?? shaped.equipment;
+    }
+    res.json(shaped);
   } catch (err) { next(err); }
 });
 

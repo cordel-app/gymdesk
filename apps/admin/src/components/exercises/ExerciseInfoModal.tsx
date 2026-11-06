@@ -16,11 +16,12 @@ import {
  * description, affected muscles and categories. Every field is optional.
  */
 const ICON_PATHS: Record<ExerciseInfoFieldId, React.ReactNode> = {
-  short_description: <><path d="M4 7h16" /><path d="M4 12h10" /></>,
-  description: <><path d="M4 6h16" /><path d="M4 11h16" /><path d="M4 16h16" /><path d="M4 21h10" /></>,
-  muscles: <><circle cx="12" cy="5" r="2" /><path d="M12 7v6" /><path d="M7 9l5-2 5 2" /><path d="M9 21l3-8 3 8" /></>,
-  equipment: <><path d="M6.5 6.5v11" /><path d="M17.5 6.5v11" /><path d="M3 9v6" /><path d="M21 9v6" /><path d="M6.5 12h11" /></>,
-  categories: <><path d="M20 12l-8 8-9-9V4h7z" /><circle cx="7.5" cy="8.5" r="1" /></>,
+  // The Members App's icons (ExerciseInfo.tsx), so both apps read alike.
+  short_description: <path d="M4 7h16M4 12h10" />,
+  description: <path d="M4 6h16M4 10h16M4 14h16M4 18h10" />,
+  muscles: <path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11" />,
+  equipment: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />,
+  categories: <><path d="M20 12l-8 8-9-9V3h8z" /><circle cx="7.5" cy="7.5" r="1" /></>,
 };
 
 /** Monochrome line icon: strokes in `currentColor`, no colour of its own. */
@@ -112,7 +113,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
               </>
             ));
           }
-          if (id === 'equipment') return field(id, t('equipment'), equipmentLabel(info.equipment, (k) => tCat(k as any), (v) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())));
+          if (id === 'equipment') return field(id, t('equipment'), (info.equipment ?? '').split(',').map((e) => e.trim()).filter(Boolean).map((e) => equipmentLabel(e, (k) => tCat(k as any), (v) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))).join(', '));
           return field(id, t('categories'), info.categories
             .map((c) => exerciseCategoryLabel(c, (k) => tCat(k as any), (v) => v.replace(/\b\w/g, (ch) => ch.toUpperCase())))
             .join(', '));
