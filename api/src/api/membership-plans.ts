@@ -72,6 +72,7 @@ import {
 interface PlanRow {
   id: number;
   center_access_mode?: string;
+  online_access?: number | boolean;
   gym_id: string;
   name: string;
   description: string | null;
@@ -1006,8 +1007,8 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
 
       // Copy centers (#2383: and the access mode)
       await tx.query(
-        'UPDATE membership_plans SET center_access_mode = (SELECT center_access_mode FROM (SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?) src) WHERE id = ? AND gym_id = ?',
-        [req.params.id, gymId, insertId, gymId],
+        'UPDATE membership_plans SET center_access_mode = (SELECT center_access_mode FROM (SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?) src), online_access = (SELECT online_access FROM (SELECT online_access FROM membership_plans WHERE id = ? AND gym_id = ?) src2) WHERE id = ? AND gym_id = ?',
+        [req.params.id, gymId, req.params.id, gymId, insertId, gymId],
       );
       const { rows: centers } = await tx.query(
         'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
@@ -1231,8 +1232,15 @@ membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res,
     mode = isPlanCenterAccessMode(cur[0]?.center_access_mode) ? cur[0].center_access_mode : 'specific_centers';
   }
   const center_ids = mode === 'specific_centers' ? parsed.centerIds : [];
+  // #2406: On-line is a specific-centers selection; a request that does not
+  // mention it keeps what is stored, and the other modes clear it.
+  let online = mode === 'specific_centers' ? parsed.online : false;
+  if (online === null) {
+    const { rows: cur } = await db.query('SELECT online_access FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    online = Number(cur[0]?.online_access) === 1;
+  }
   try {
-    await db.query('UPDATE membership_plans SET center_access_mode = ? WHERE id = ? AND gym_id = ?', [mode, req.params.id, gymId]);
+    await db.query('UPDATE membership_plans SET center_access_mode = ?, online_access = ? WHERE id = ? AND gym_id = ?', [mode, online ? 1 : 0, req.params.id, gymId]);
     await db.query('DELETE FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?', [req.params.id, gymId]);
     for (const cid of center_ids) {
       await db.query(

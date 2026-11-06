@@ -25,7 +25,7 @@ registerBookingAccessHook(async (tx, gymId, memberId, _activityTypeId, centerId,
   // member may hold several, and the booking is allowed when *any* of them
   // covers the center. #2383: each plan has a center access mode.
   const { rows: memberships } = await tx.query(
-    `SELECT DISTINCT um.membership_plan_id, mp.center_access_mode FROM user_memberships um
+    `SELECT DISTINCT um.membership_plan_id, mp.center_access_mode, mp.online_access FROM user_memberships um
      JOIN membership_plans mp ON mp.id = um.membership_plan_id
      WHERE um.gym_id = ? AND um.status = 'active'
        AND (um.member_id = ? OR EXISTS (
@@ -43,7 +43,8 @@ registerBookingAccessHook(async (tx, gymId, memberId, _activityTypeId, centerId,
       WHERE gym_id = ? AND membership_plan_id IN (${marks})`,
     [gymId, ...planIds],
   );
-  const plans = memberships.map((m: { membership_plan_id: number; center_access_mode: string }) => ({
+  const plans = memberships.map((m: { membership_plan_id: number; center_access_mode: string; online_access: number }) => ({
+    online: Number(m.online_access) === 1,
     mode: (isPlanCenterAccessMode(m.center_access_mode) ? m.center_access_mode : 'specific_centers') as PlanCenterAccessMode,
     centerIds: centerRows
       .filter((r: { membership_plan_id: number }) => r.membership_plan_id === m.membership_plan_id)
@@ -100,8 +101,11 @@ export async function centersAvailableToMember(
   if (planIds.length > 0) {
     const marks = planIds.map(() => '?').join(',');
     const { rows: restricted } = await db.query(
-      `SELECT DISTINCT membership_plan_id FROM membership_plan_centers
-        WHERE gym_id = ? AND membership_plan_id IN (${marks})`,
+      `SELECT DISTINCT mp.id FROM membership_plans mp
+        WHERE mp.gym_id = ? AND mp.id IN (${marks})
+          AND (EXISTS (SELECT 1 FROM membership_plan_centers mpc
+                        WHERE mpc.membership_plan_id = mp.id AND mpc.gym_id = mp.gym_id)
+               OR (mp.center_access_mode = 'specific_centers' AND mp.online_access = 1))`,
       [gymId, ...planIds],
     );
     if (restricted.length === planIds.length) {
