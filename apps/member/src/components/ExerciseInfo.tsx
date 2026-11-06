@@ -39,6 +39,12 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
   const equipment = filled(info.equipment);
   const primary = (info.primary_muscles ?? []).filter(Boolean);
   const secondary = muscles.filter((m) => !primary.includes(m));
+  // #2403: categories are stored as lowercase slugs; resolve the member's locale
+  // key, falling back to the humanised stored value (decided before t() is called).
+  const categoryLabel = (c: string) => {
+    const key = `exercise_media.category_${c.trim().toLowerCase().replace(/[\s-]+/g, '_')}`;
+    return t.has(key) ? t(key) : muscleLabel(c);
+  };
   const sections: Array<{ key: string; label: string; value: string }> = [];
   const short = filled(info.short_description);
   const description = filled(info.description);
@@ -46,7 +52,7 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
   if (description) sections.push({ key: 'description', label: t('exercise_media.description'), value: description });
   if (muscles.length && primary.length === 0) sections.push({ key: 'muscles', label: t('exercise_media.muscles'), value: muscles.map(muscleLabel).join(', ') });
   if (equipment) sections.push({ key: 'equipment', label: t('exercise_media.equipment'), value: equipment.split(',').map((e) => muscleLabel(e.trim())).filter(Boolean).join(', ') });
-  if (category) sections.push({ key: 'category', label: t('exercise_media.category'), value: muscleLabel(category) });
+  if (category) sections.push({ key: 'category', label: t('exercise_media.category'), value: categoryLabel(category) });
   if (sections.length === 0) return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

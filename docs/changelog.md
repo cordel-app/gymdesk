@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2403 (Members App exercise details show the category in the Member's language: `exercise_media.category_<slug>` keys in en/es/ca, resolved in `ExerciseInfo`, falling back to the humanised stored value for an unknown slug; no API or schema change)
+
 - **Done**: #2363 (follow-up): the inline Add Member form uses the full page width and the Member Edit view's grid, labels and controls (`profileGridStyle`, `formControlStyle`); no field, validation or API change.
 
 - **A Membership Plan chooses how it grants center access: specific centers, all centers, or only the Member's Default Center** (#2383). `membership_plans.center_access_mode` (migration 370, default `specific_centers`, so every existing plan is unchanged) with `domain/planCenterAccess.ts` as the one resolver: `all_centers` is a persistent rule that includes future centers and stores no rows, `member_default_center` follows the Member's current default center and grants nothing without one, and several live plans union. The booking center check (`plan-center-access.ts`) and the Plans → Centers editor use it.
