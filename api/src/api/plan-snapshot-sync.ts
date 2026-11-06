@@ -4,6 +4,7 @@
  * from). What is left to keep in step is derived from the version and its neighbours: status,
  * dates and the linked assignment, coverage, and the Membership Plan Promotion applications.
  */
+import { syncPlanSnapshotJunction } from './snapshot-junction-sync';
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
@@ -29,6 +30,8 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
+  // M2: the Product Set <-> plan snapshot junction follows the snapshots the version holds.
+  await syncPlanSnapshotJunction(tx, gymId, productSetId);
   await tx.query(
     `UPDATE plan_snapshots s
        JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
