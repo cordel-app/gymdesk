@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2441 (Base Professional Services: only the English name is required; Spanish, Catalan and other translations are optional on create and edit, a blanked locale is cleared and readers fall back to the English text, matching a gym's own services; no schema or frontend change; closes #2441)
 - **Done**: #2372 follow-up (Members → Products: the Add Product form's fields (product selector, price, VAT, promotion, direct discount, final price, Draft status) are now the cells of the table's draft row, with Promotions and Save / Cancel in the row attached beneath it; `useAddProductForm()` holds the state, the recurring section keeps its standalone form. Frontend only; no API or schema change)
 - **Done**: #2410 (Promotions: the read-only card now opens with the same General section as Edit, and a Promotion's listing image opens a viewer with the full 1080 × 1080 image and its Session / One-off / Periodical lines, drawn by the card's own `ProductBenefitView`; no API or schema change)
 - **Done**: #2425 (Members App → My Products → Professional Services shows each service's name and description in the request locale, which follows the member's profile language, through the existing `professional_service_translations` junction (`attachTranslations()`), falling back to the base text; no API contract, migration or frontend change; closes #2425)
