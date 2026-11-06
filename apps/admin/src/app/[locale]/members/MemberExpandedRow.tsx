@@ -401,12 +401,6 @@ export function MemberExpandedRow({
                     />
                   )}
                   centers={{
-                    assignedLabel: t('members.assigned_centers'),
-                    assigned: (
-                      <p style={profileValueStyle}>
-                        {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join('\n')}
-                      </p>
-                    ),
                     defaultLabel: t('members.default_center'),
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}

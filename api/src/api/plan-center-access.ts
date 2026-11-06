@@ -1,3 +1,4 @@
+import { db } from '../infra/db';
 import { registerBookingAccessHook } from './bookings';
 import { soleActiveCenterId } from '../infra/centerContext';
 import {
@@ -75,3 +76,49 @@ registerBookingAccessHook(async (tx, gymId, memberId, _activityTypeId, centerId,
     );
   }
 });
+
+/**
+ * #2381: the centers a Member may pick as their Default Center — the same
+ * coverage the booking hook above enforces, read for a form. A Member with no
+ * active plan, or with a plan that lists no centers (covers every center), may
+ * pick any active center of the gym; otherwise the union of the plans' centers.
+ */
+export async function centersAvailableToMember(
+  gymId: string,
+  memberId: string | number,
+): Promise<{ id: number; name: string }[]> {
+  const { rows: memberships } = await db.query<{ membership_plan_id: number }>(
+    `SELECT DISTINCT um.membership_plan_id FROM user_memberships um
+     WHERE um.gym_id = ? AND um.status = 'active'
+       AND (um.member_id = ? OR EXISTS (
+         SELECT 1 FROM user_membership_members umm
+         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
+       ))`,
+    [gymId, memberId, memberId],
+  );
+  const planIds = memberships.map((m) => m.membership_plan_id);
+  if (planIds.length > 0) {
+    const marks = planIds.map(() => '?').join(',');
+    const { rows: restricted } = await db.query(
+      `SELECT DISTINCT membership_plan_id FROM membership_plan_centers
+        WHERE gym_id = ? AND membership_plan_id IN (${marks})`,
+      [gymId, ...planIds],
+    );
+    if (restricted.length === planIds.length) {
+      const { rows } = await db.query<{ id: number; name: string }>(
+        `SELECT DISTINCT c.id, c.name FROM centers c
+          JOIN membership_plan_centers mpc ON mpc.center_id = c.id AND mpc.gym_id = c.gym_id
+         WHERE c.gym_id = ? AND c.deleted_at IS NULL AND c.status = 'active'
+           AND mpc.membership_plan_id IN (${marks})
+         ORDER BY c.name`,
+        [gymId, ...planIds],
+      );
+      return rows;
+    }
+  }
+  const { rows } = await db.query<{ id: number; name: string }>(
+    `SELECT id, name FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' ORDER BY name`,
+    [gymId],
+  );
+  return rows;
+}

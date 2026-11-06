@@ -195,3 +195,64 @@ describe('GET /members/:memberId/centers', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// #2381: the Member form no longer assigns centers — it sends the Default Center
+// alone. Existing assignments are kept; only the default moves.
+describe('PUT /members/:memberId/centers with default_center_id only (#2381)', () => {
+  let gymId: string;
+  let centerA: number;
+  let centerB: number;
+  let centerC: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Member Centers Gym — default only');
+    await createTestMembership(gymId);
+    centerA = await createCenter(gymId, 'Default-only A');
+    centerB = await createCenter(gymId, 'Default-only B');
+    centerC = await createCenter(gymId, 'Default-only C');
+  });
+
+  it('lists every active center as an option for a Member with no plan', async () => {
+    const memberId = await createMember(gymId);
+    const res = await request
+      .get(`/members/${memberId}/centers/options`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.map((c: { id: number }) => c.id).sort()).toEqual([centerA, centerB, centerC].sort());
+  });
+
+  it('moves the default and leaves existing assignments untouched', async () => {
+    const memberId = await createMember(gymId);
+    await assignCenter(gymId, memberId, centerA, true);
+    await assignCenter(gymId, memberId, centerB, false);
+
+    const res = await request
+      .put(`/members/${memberId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ default_center_id: centerC });
+    expect(res.status).toBe(200);
+
+    const { rows } = await db.query<{ center_id: number; is_default: number }>(
+      'SELECT center_id, is_default FROM member_centers WHERE member_id = ? AND deleted_at IS NULL',
+      [memberId],
+    );
+    expect(rows.map((r) => r.center_id).sort()).toEqual([centerA, centerB, centerC].sort());
+    expect(rows.filter((r) => r.is_default).map((r) => r.center_id)).toEqual([centerC]);
+  });
+
+  it('creates a Member from the default center alone', async () => {
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Default Only', email: `default-only-${Date.now()}@test.com`, default_center_id: centerB });
+    expect(res.status).toBe(201);
+    const { rows } = await db.query<{ center_id: number; is_default: number }>(
+      'SELECT center_id, is_default FROM member_centers WHERE member_id = ? AND deleted_at IS NULL',
+      [res.body.id],
+    );
+    expect(rows).toEqual([{ center_id: centerB, is_default: 1 }]);
+  });
+});
