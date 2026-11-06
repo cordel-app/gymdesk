@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2407 (follow-up: the Plans page heading now reads *Planes* / *Plans* in es/ca, matching the renamed sidebar entry; locale values only, no route or identifier touched)
 - **Done**: #2374 (follow-up: a Product Promotion's periodical grant for a Product the Member does not hold no longer becomes a billed line of its own in the Draft's Billing Event Simulation — an optional Product of the Promotion is not billed; `collectBillableItems()` in `domain/billingSimulation.ts` skips it, regression test in `product-promotion-service-simulation.unit.test.ts`.)
 - **Done**: #2335 (Cordel → Base Payment Methods: Name and Description show the English text with a globe opening the shared translations modal; only the English name is required, a blank translation clears its row. Gym-based payment methods do not exist, so Base only.)
 - **Done**: #2372 follow-up (Members → Products: the Add Product form's fields (product selector, price, VAT, promotion, direct discount, final price, Draft status) are now the cells of the table's draft row, with Promotions and Save / Cancel in the row attached beneath it; `useAddProductForm()` holds the state, the recurring section keeps its standalone form. Frontend only; no API or schema change)
