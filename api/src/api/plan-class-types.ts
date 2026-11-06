@@ -86,13 +86,13 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
      JOIN class_type_user_memberships ctum
        ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
      WHERE um.gym_id = ? AND um.status = 'active'
-       AND (um.member_id = ? OR EXISTS (
+       AND EXISTS (
          SELECT 1 FROM user_membership_members umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-       ))
+       )
        AND ctum.class_type_id = ?
      LIMIT 1`,
-    [gymId, memberId, memberId, classTypeId],
+    [gymId, memberId, classTypeId],
   );
   if (matchRows.length === 0) {
     // Translated by the caller via error message; the "plan_required" code lets

@@ -20,7 +20,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyChildQuery } from './helpers';
+  request, legacyChildQuery, createTestDraftAssignment, activateTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -108,12 +108,12 @@ async function createSessionProduct(gymId: string, serviceId: number, units: num
 }
 
 async function assignActivePlan(gymId: string, memberId: number, planId: number): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
-     VALUES (?, ?, ?, 'active', CURDATE())`,
-    [gymId, memberId, planId],
-  );
-  return insertId;
+  // Through the real routes: coverage is the plan snapshot's beneficiaries (#2125 stage 22), so a bare
+  // `user_memberships` row with no version covers nobody.
+  const today = new Date().toISOString().slice(0, 10);
+  const umId = await createTestDraftAssignment(gymId, memberId, planId, { startsAt: today });
+  await activateTestAssignment(gymId, umId);
+  return umId;
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number): Promise<number> {

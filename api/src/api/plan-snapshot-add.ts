@@ -121,12 +121,12 @@ export async function copyPlanSnapshotToVersion(
         schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
-        source_user_membership_id, created_by)
+        source_user_membership_id, created_by, owner_is_beneficiary)
      SELECT s.gym_id, ?, s.member_id, s.membership_plan_id, ps.status, 1, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
-            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by
+            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, toSetId, fromSnapshotId, gymId]);
   await tx.query(

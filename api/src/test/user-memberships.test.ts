@@ -1640,7 +1640,7 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 400 when attempting to remove the owner', async () => {
+  it('removes the owner from the beneficiaries without ending their ownership (#2125 stage 22)', async () => {
     const owner = await createMember(gymId);
     const planId = await createPlan(gymId, '2');
     const umId = await createUserMembershipDirect(gymId, owner, planId);
@@ -1648,8 +1648,12 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
       .delete(`/user-memberships/${umId}/members/${owner}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/owner/i);
+    expect(res.status).toBe(204);
+    const { rows } = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    expect(Number(rows[0].member_id)).toBe(owner);
+    const list = await request.get(`/user-memberships/${umId}/members`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(list.body.members.map((m: any) => Number(m.member_id))).not.toContain(owner);
   });
 
   it('removes a non-owner covered member and returns 204', async () => {
