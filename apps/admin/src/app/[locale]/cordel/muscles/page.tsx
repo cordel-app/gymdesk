@@ -13,6 +13,8 @@ import { formControlStyle, formFieldLabelStyle, inlineActionsRowStyle, secondary
 import { formatExerciseTimestamp, exerciseDisplayValue } from '@/components/exercises/exerciseForm';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel } from '@/lib/localeLabels';
 
 /**
  * #1368 stage 3 — Cordel → Muscles: the global muscle catalogue and its image
@@ -31,6 +33,7 @@ interface Muscle {
   image_female_url: string | null;
   image_female_url_thumbnail: string | null;
   exercise_count: number;
+  translations?: Record<string, string>;
   created_by: string | null;
   modified_by: string | null;
   created_at?: string | null;
@@ -40,6 +43,7 @@ interface Muscle {
 export default function CordelMusclesPage() {
   const gymFmt = useGymFormatSettings();
   const t = useTranslations('muscles_page');
+  const tAll = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -55,6 +59,18 @@ export default function CordelMusclesPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Muscle | null>(null);
   const [details, setDetails] = useState<Muscle | null>(null);
+  // #2402: the platform's language list is the API's; the base locale is the muscle's own name.
+  const [locales, setLocales] = useState<string[]>([]);
+  const [baseLocale, setBaseLocale] = useState('en');
+  const [editTranslations, setEditTranslations] = useState<Record<string, string>>({});
+  const [newTranslations, setNewTranslations] = useState<Record<string, string>>({});
+  const [langModal, setLangModal] = useState<{ kind: 'view' | 'edit' | 'create'; row?: Muscle } | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ locales?: string[]; base_locale?: string }>('/platform/exercises/lookups')
+      .then((d) => { setLocales(d.locales ?? []); if (d.base_locale) setBaseLocale(d.base_locale); })
+      .catch(() => { /* the globe stays hidden when the list cannot be read */ });
+  }, [apiFetch]);
 
   const load = useCallback(async () => {
     try {
@@ -77,8 +93,8 @@ export default function CordelMusclesPage() {
     if (!newName.trim()) { setError(t('name_required')); return; }
     setSaving(true); setError(null);
     try {
-      await apiFetch(API_BASE, { method: 'POST', body: JSON.stringify({ name: newName.trim() }) });
-      setCreating(false); setNewName('');
+      await apiFetch(API_BASE, { method: 'POST', body: JSON.stringify({ name: newName.trim(), translations: newTranslations }) });
+      setCreating(false); setNewName(''); setNewTranslations({});
       toast(t('saved'), 'success');
       await load();
     } catch (err: any) {
@@ -90,10 +106,10 @@ export default function CordelMusclesPage() {
     if (!editName.trim()) { setError(t('name_required')); return; }
     setSaving(true); setError(null);
     try {
-      if (editName.trim() !== row.name) {
-        const updated = await apiFetch<Muscle>(`${API_BASE}/${row.id}`, { method: 'PUT', body: JSON.stringify({ name: editName.trim() }) });
-        replaceRow(updated);
-      }
+      const updated = await apiFetch<Muscle>(`${API_BASE}/${row.id}`, {
+        method: 'PUT', body: JSON.stringify({ name: editName.trim(), translations: editTranslations }),
+      });
+      replaceRow(updated);
       setEditingId(null);
       toast(t('saved'), 'success');
     } catch (err: any) {
@@ -115,8 +131,40 @@ export default function CordelMusclesPage() {
     }
   }
 
+  function globe(kind: 'view' | 'edit' | 'create', row?: Muscle) {
+    if (locales.length === 0) return null;
+    return <GlobeButton label={t('translations_open', { field: t('name') })} onClick={() => setLangModal({ kind, row })} />;
+  }
+
+  const langValues: Record<string, string> = (() => {
+    if (!langModal) return {};
+    if (langModal.kind === 'create') return { ...newTranslations, [baseLocale]: newName };
+    if (langModal.kind === 'edit') return { ...editTranslations, [baseLocale]: editName };
+    return { ...(langModal.row?.translations ?? {}), [baseLocale]: langModal.row?.name ?? '' };
+  })();
+
+  function applyLangValues(vals: Record<string, string>) {
+    const { [baseLocale]: base, ...rest } = vals;
+    if (langModal?.kind === 'create') { setNewName(base ?? newName); setNewTranslations(rest); }
+    else if (langModal?.kind === 'edit') { setEditName(base ?? editName); setEditTranslations(rest); }
+    setLangModal(null);
+  }
+
   return (
     <div>
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={t('translations_title', { field: t('name') })}
+        locales={locales.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }))}
+        values={langValues}
+        readOnly={langModal?.kind === 'view'}
+        saveLabel={t('save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={applyLangValues}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <button type="button" style={primaryBtnStyle()} onClick={() => { setCreating(true); setError(null); }}>{t('add')}</button>
@@ -134,7 +182,10 @@ export default function CordelMusclesPage() {
       {creating && (
         <div style={{ ...cardSurfaceStyle, padding: 16, marginBottom: 12 }}>
           <label style={formFieldLabelStyle}>{t('name')}</label>
-          <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} style={formControlStyle} aria-label={t('name')} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} style={{ ...formControlStyle, flex: 1 }} aria-label={t('name')} />
+            {globe('create')}
+          </div>
           <p style={{ fontSize: 12, color: '#888', margin: '8px 0' }}>{t('image_after_create')}</p>
           {error && <p style={formErrorStyle}>{error}</p>}
           <div style={inlineActionsRowStyle}>
@@ -189,7 +240,7 @@ export default function CordelMusclesPage() {
               <ContextMenu
                 ariaLabel={row.name}
                 items={[
-                  { label: t('edit'), onClick: () => { setEditingId(row.id); setExpandedId(row.id); setEditName(row.name); setError(null); } },
+                  { label: t('edit'), onClick: () => { setEditingId(row.id); setExpandedId(row.id); setEditName(row.name); setEditTranslations(row.translations ?? {}); setError(null); } },
                   { label: t('details'), onClick: () => setDetails(row) },
                   {
                     label: t('delete'), danger: true,
@@ -204,7 +255,7 @@ export default function CordelMusclesPage() {
             {expanded && !editing && (
               <div style={{ marginTop: 12 }}>
                 <label style={formFieldLabelStyle}>{t('name')}</label>
-                <div style={{ fontSize: 14 }}>{row.name}</div>
+                <div style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 4 }}>{row.name}{globe('view', row)}</div>
                 <label style={{ ...formFieldLabelStyle, marginTop: 8 }}>{t('slug')}</label>
                 <div style={{ fontSize: 14 }}>{row.slug}</div>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 12 }}>
@@ -231,7 +282,10 @@ export default function CordelMusclesPage() {
             {editing && (
               <div style={{ marginTop: 12 }}>
                 <label style={formFieldLabelStyle}>{t('name')}</label>
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} style={formControlStyle} aria-label={t('name')} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} style={{ ...formControlStyle, flex: 1 }} aria-label={t('name')} />
+                  {globe('edit', row)}
+                </div>
                 <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('image_requirements')}</p>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 8 }}>
                   {(['male', 'female'] as const).map((sex) => (
