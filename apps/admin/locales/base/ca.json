@@ -2035,7 +2035,8 @@
     "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "tax_included_suffix": "IVA inclòs",
     "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual.",
-    "simulation_initial_payment": "Pagament inicial"
+    "simulation_initial_payment": "Pagament inicial",
+    "image_open": "Veure la imatge de {name}"
   },
   "audit": {
     "title": "Registre d'auditoria",
