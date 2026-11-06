@@ -17,7 +17,8 @@ import {
 const ICON_PATHS: Record<ExerciseInfoFieldId, React.ReactNode> = {
   short_description: <><path d="M4 7h16" /><path d="M4 12h10" /></>,
   description: <><path d="M4 6h16" /><path d="M4 11h16" /><path d="M4 16h16" /><path d="M4 21h10" /></>,
-  muscles: <><path d="M6.5 6.5v11" /><path d="M17.5 6.5v11" /><path d="M3 9v6" /><path d="M21 9v6" /><path d="M6.5 12h11" /></>,
+  muscles: <><circle cx="12" cy="5" r="2" /><path d="M12 7v6" /><path d="M7 9l5-2 5 2" /><path d="M9 21l3-8 3 8" /></>,
+  equipment: <><path d="M6.5 6.5v11" /><path d="M17.5 6.5v11" /><path d="M3 9v6" /><path d="M21 9v6" /><path d="M6.5 12h11" /></>,
   categories: <><path d="M20 12l-8 8-9-9V4h7z" /><circle cx="7.5" cy="8.5" r="1" /></>,
 };
 
@@ -82,7 +83,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     <div style={overlayStyle} onClick={onClose}>
       <div
         role="dialog" aria-modal="true" aria-label={name || t('title')}
-        style={{ ...modalStyle, width: 520, maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ ...modalStyle, width: 'min(520px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 style={{ margin: '0 0 12px' }}>{name || t('title')}</h2>
@@ -90,7 +91,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
         {imageUrl && !imageBroken ? (
           <img
             src={imageUrl} alt={name} onError={() => setImageBroken(true)}
-            style={{ display: 'block', width: '100%', maxHeight: 320, objectFit: 'contain', borderRadius: 8, background: '#fafafa' }}
+            style={{ display: 'block', width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', borderRadius: 8, background: '#fafafa' }}
           />
         ) : null}
 
@@ -110,6 +111,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
               </>
             ));
           }
+          if (id === 'equipment') return field(id, t('equipment'), info.equipment!.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
           return field(id, t('categories'), info.categories
             .map((c) => exerciseCategoryLabel(c, (k) => tCat(k as any), (v) => v.replace(/\b\w/g, (ch) => ch.toUpperCase())))
             .join(', '));

@@ -28,4 +28,11 @@ describe('#1657 inline draft Add Product', () => {
     expect(raw).toContain('"add_product_save_draft"');
     expect(raw).toContain('"add_product_draft_badge"');
   });
+
+  // #2372 — a saved line is listed in the Products table, so the embedded form closes.
+  it('closes the embedded form after a recurring Product is saved too', () => {
+    const idx = form.indexOf("setOutcome({ kind: 'draft_updated' })");
+    expect(idx).toBeGreaterThan(-1);
+    expect(form.slice(idx, idx + 400)).toContain('if (embedded) onClose();');
+  });
 });

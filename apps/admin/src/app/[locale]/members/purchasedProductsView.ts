@@ -135,6 +135,8 @@ export interface PurchasableProductPromotion {
 
 /** The server's quote (`POST …/product-purchases/quote`): every figure VAT-inclusive. */
 export interface PurchaseQuote {
+  /** #2374: mandatory Products of the chosen Promotions still to be added (never optional ones). */
+  required_products?: Array<{ id: number; name: string }>;
   product_id: number;
   product_name: string;
   recurring: boolean;
