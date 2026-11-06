@@ -19,12 +19,14 @@ export interface ProfessionalServiceImageTarget {
  * the full-size image with its aspect ratio kept, then the complete description.
  * Both are optional; labels come from the caller's namespace.
  */
-export function ProfessionalServiceImageModal({ target, onClose, closeLabel, noImageLabel, noDescriptionLabel }: {
+export function ProfessionalServiceImageModal({ target, onClose, closeLabel, noImageLabel, noDescriptionLabel, children }: {
   target: ProfessionalServiceImageTarget | null;
   onClose: () => void;
   closeLabel: string;
   noImageLabel: string;
   noDescriptionLabel: string;
+  /** #2408: extra detail under the description (a plan's pricing, billing, products). */
+  children?: React.ReactNode;
 }) {
   const [broken, setBroken] = useState(false);
   React.useEffect(() => { setBroken(false); }, [target?.imageUrl]);
@@ -54,6 +56,7 @@ export function ProfessionalServiceImageModal({ target, onClose, closeLabel, noI
         <p style={{ margin: '16px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>
           {target.description?.trim() ? target.description : noDescriptionLabel}
         </p>
+        {children}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
           <button type="button" onClick={onClose} style={btnStyle('#444')}>{closeLabel}</button>
         </div>
