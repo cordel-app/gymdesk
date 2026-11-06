@@ -1,3 +1,4 @@
+import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -750,6 +751,11 @@ export async function regularMembershipFee(
 userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { member_id, membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at } = req.body;
+  // #2125 stage 22: the payer is a beneficiary of the plan unless the request says otherwise.
+  if (req.body?.owner_is_beneficiary !== undefined && typeof req.body.owner_is_beneficiary !== 'boolean') {
+    return res.status(400).json({ error: 'owner_is_beneficiary must be a boolean' });
+  }
+  const ownerIsBeneficiary = req.body?.owner_is_beneficiary !== false;
   if (!member_id || !membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'member_id, membership_plan_id and starts_at are required' });
   }
@@ -822,7 +828,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       // #635 stage 2 — freeze the Plan's commercial configuration onto the
       // assignment, in the same transaction so it can never commit without one.
       // #1325 PR 3e: the Draft is a ProductSet Draft from birth; edits go to it.
-      await createDraftSetForAssignment(tx, {
+      const createdSetId = await createDraftSetForAssignment(tx, {
         gymId, userMembershipId: insertId, ownerMemberId: Number(member_id),
         membershipPlanId: Number(membership_plan_id),
         startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
@@ -833,6 +839,10 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
       });
+      if (!ownerIsBeneficiary) {
+        const planSnapshotId = await primaryPlanSnapshotId(tx, gymId, createdSetId);
+        if (planSnapshotId != null) await setOwnerIsBeneficiary(tx, gymId, planSnapshotId, false);
+      }
       return { kind: 'created' as const, insertId };
     });
     const created = await loadAssignmentRow(gymId, outcome.insertId, false);

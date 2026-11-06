@@ -28,11 +28,11 @@ registerBookingAccessHook(async (tx, gymId, memberId, _activityTypeId, centerId,
     `SELECT DISTINCT um.membership_plan_id, mp.center_access_mode, mp.online_access FROM user_memberships um
      JOIN membership_plans mp ON mp.id = um.membership_plan_id
      WHERE um.gym_id = ? AND um.status = 'active'
-       AND (um.member_id = ? OR EXISTS (
+       AND EXISTS (
          SELECT 1 FROM user_membership_members umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-       ))`,
-    [gymId, memberId, memberId],
+       )`,
+    [gymId, memberId],
   );
   if (memberships.length === 0) return; // No membership — other guards handle
 

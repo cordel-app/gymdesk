@@ -41,3 +41,24 @@ export async function planSnapshotOfAssignment(
   }
   return primaryPlanSnapshotId(exec, gymId, productSetId);
 }
+
+/**
+ * Whether a plan's payer is also one of its beneficiaries (#2125 stage 22). Turning it off removes the owner's
+ * beneficiary row; turning it on adds it. The flag survives the syncs and every copy of the snapshot.
+ */
+export async function setOwnerIsBeneficiary(
+  exec: Exec, gymId: string, planSnapshotId: number, isBeneficiary: boolean,
+): Promise<void> {
+  await exec.query('UPDATE plan_snapshots SET owner_is_beneficiary = ? WHERE id = ? AND gym_id = ?',
+    [isBeneficiary ? 1 : 0, planSnapshotId, gymId]);
+  if (isBeneficiary) {
+    await exec.query(
+      `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
+       SELECT gym_id, id, member_id, 1 FROM plan_snapshots WHERE id = ? AND gym_id = ?
+       ON DUPLICATE KEY UPDATE is_owner = 1`, [planSnapshotId, gymId]);
+  } else {
+    await exec.query(
+      `DELETE b FROM plan_snapshot_beneficiaries b JOIN plan_snapshots s ON s.id = b.plan_snapshot_id
+        WHERE b.plan_snapshot_id = ? AND b.gym_id = ? AND b.member_id = s.member_id`, [planSnapshotId, gymId]);
+  }
+}

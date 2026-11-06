@@ -7,7 +7,7 @@ import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 
@@ -520,12 +520,12 @@ export async function addCoveredMember(
   const { rows: plan } = await tx.query<{ member_limit: string | null }>(
     `SELECT mp.member_limit FROM plan_snapshots s JOIN membership_plans mp ON mp.id = s.membership_plan_id
       WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, draft.gym_id]);
-  // The owner always counts as one covered Member, whether or not their own row
-  // has been written yet (the projection inserts it at activation).
+  // #2125 stage 22: the payer is a beneficiary only when the plan says so, so the limit counts the
+  // beneficiaries the plan has, whoever they are.
   const { rows: count } = await tx.query<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND is_owner = 0',
+    'SELECT COUNT(*) AS n FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ?',
     [draft.gym_id, snapshotId]);
-  if (Number(count[0].n) + 1 >= memberLimit(plan[0]?.member_limit)) {
+  if (Number(count[0].n) >= memberLimit(plan[0]?.member_limit)) {
     return { kind: 'invalid', message: 'This membership has reached its member limit.' };
   }
   const { rows: already } = await tx.query(
@@ -537,9 +537,13 @@ export async function addCoveredMember(
   }
   // #2125: a Member already on a plan of their own (or covered by another) may be covered by this one
   // too; "already covered by *this* plan" above is the only duplicate a coverage change refuses.
-  await tx.query(
-    `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
-    [draft.gym_id, snapshotId, memberId]);
+  if (memberId === draft.owner_member_id) {
+    await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, true);
+  } else {
+    await tx.query(
+      `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
+      [draft.gym_id, snapshotId, memberId]);
+  }
   await touch(tx, draft);
   return { ok: true };
 }
@@ -547,9 +551,18 @@ export async function addCoveredMember(
 export async function removeCoveredMember(
   tx: Tx, draft: LockedDraft, memberId: number, opts: { userMembershipId?: number | null } = {},
 ): Promise<{ ok: true } | DraftRefusal> {
-  if (memberId === draft.owner_member_id) return { kind: 'invalid', message: 'The owner cannot be removed' };
   const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, opts.userMembershipId ?? null);
   if (snapshotId == null) return { kind: 'not_found' };
+  if (memberId === draft.owner_member_id) {
+    // The payer stays the payer; only their place among the plan's beneficiaries goes (#2125 stage 22).
+    const { rows: has } = await tx.query(
+      'SELECT 1 FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? LIMIT 1',
+      [draft.gym_id, snapshotId, memberId]);
+    if (has.length === 0) return { kind: 'not_found' };
+    await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+    await touch(tx, draft);
+    return { ok: true };
+  }
   const { rowCount } = await tx.query(
     'DELETE FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? AND is_owner = 0',
     [draft.gym_id, snapshotId, memberId]);

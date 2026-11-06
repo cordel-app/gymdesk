@@ -55,11 +55,16 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
       WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, gymId]);
 
   // Beneficiaries (#2125 stage 21): each snapshot's own; the sync only guarantees the owner's row.
+  // The owner's row follows the plan's own choice (#2125 stage 22): a payer who is not a beneficiary has none.
   await tx.query(
     `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
-     SELECT ?, ?, ?, 1
+     SELECT s.gym_id, s.id, ?, 1 FROM plan_snapshots s WHERE s.id = ? AND s.owner_is_beneficiary = 1
      ON DUPLICATE KEY UPDATE is_owner = 1`,
-    [gymId, snapshotId, snap[0].member_id]);
+    [snap[0].member_id, snapshotId]);
+  await tx.query(
+    `DELETE b FROM plan_snapshot_beneficiaries b JOIN plan_snapshots s ON s.id = b.plan_snapshot_id
+      WHERE b.plan_snapshot_id = ? AND b.member_id = ? AND s.owner_is_beneficiary = 0`,
+    [snapshotId, snap[0].member_id]);
 
   // #2125 stage 16: the included Products are the snapshot's own lines; nothing derives them here.
 
