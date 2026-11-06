@@ -466,7 +466,6 @@ export function AssignedPlanConfiguration({
               cadence beside them is what one period is. */}
           <p style={hintSt}>{t('duration_periods_hint')}</p>
           <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-          <SaveCancel saving={saving} onSave={saveDuration} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
         <div style={{ marginBottom: 10 }}>
@@ -540,7 +539,6 @@ export function AssignedPlanConfiguration({
             )}
           </div>
           <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
-          <SaveCancel saving={saving} onSave={saveFeeBenefit} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
         <CardDetailRow
@@ -577,7 +575,6 @@ export function AssignedPlanConfiguration({
                   benefitContext="plan"
                 />
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-                <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />
               </div>
             ) : (
               /* #924 stage 1 — the one shared grid every Product section
@@ -605,6 +602,25 @@ export function AssignedPlanConfiguration({
           </CardSection>
         );
       })}
+
+      {/* #2391 — the open section editor's Save/Cancel closes the whole
+          configuration block (plan fee + included products), never the middle
+          of it. One pair, committing whichever section is open. */}
+      {editing && (
+        <div style={{ marginTop: 14 }}>
+          <SaveCancel
+            saving={saving}
+            onSave={() => {
+              if (editing === 'billing') return saveDuration();
+              if (editing === 'fee_benefit') return saveFeeBenefit();
+              const spec = BENEFIT_SECTIONS.find((b) => b.section === editing);
+              if (spec) return saveBenefits(spec.endpoint);
+            }}
+            onCancel={cancelEdit}
+            t={t}
+          />
+        </div>
+      )}
     </>
   );
 }
