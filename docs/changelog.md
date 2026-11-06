@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2363 (follow-up): the inline Add Member form uses the full page width and the Member Edit view's grid, labels and controls (`profileGridStyle`, `formControlStyle`); no field, validation or API change.
+
 - **A Membership Plan chooses how it grants center access: specific centers, all centers, or only the Member's Default Center** (#2383). `membership_plans.center_access_mode` (migration 370, default `specific_centers`, so every existing plan is unchanged) with `domain/planCenterAccess.ts` as the one resolver: `all_centers` is a persistent rule that includes future centers and stores no rows, `member_default_center` follows the Member's current default center and grants nothing without one, and several live plans union. The booking center check (`plan-center-access.ts`) and the Plans → Centers editor use it.
 - **Done**: #2393 (Base Products and Products carry `sharing_type` (`individual` | `shared`, migration 369, default `individual` for every existing row): edited in Cordel's Base Products form, copied by Import, refreshed by Resync with System, accepted by `POST`/`PUT /products` and copied by Duplicate; validated by `PRODUCT_SHARING_TYPES` in `domain/baseProducts.ts`. Nothing reads it for behaviour yet)
 - **Done**: #2320 follow-up (the exercise image modal now shows equipment and category for a Gym Exercise imported before the importer copied `equipment`: `POST /exercises/import` copies it, and `GET /me/training-plans` / `GET /me/progress/exercises` fall back to the System exercise's value through `exerciseFactSql()` when the copy's is blank; the enlarged image is explicitly full width at its natural aspect ratio)
