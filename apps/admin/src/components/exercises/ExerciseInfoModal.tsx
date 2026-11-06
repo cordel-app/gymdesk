@@ -38,10 +38,12 @@ function FieldIcon({ id }: { id: ExerciseInfoFieldId }) {
   );
 }
 
-export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, onClose }: {
+export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, gender, onClose }: {
   exerciseId: number;
   fallbackName?: string;
   fallbackImageUrl?: string | null;
+  /** The thumbnail that was clicked (#2306): the modal shows that gender's full-size image. */
+  gender?: 'male' | 'female' | null;
   onClose: () => void;
 }) {
   const t = useTranslations('exercise_info');
@@ -64,7 +66,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     return () => { cancelled = true; };
   }, [apiFetch, exerciseId]);
 
-  const info = row ? buildExerciseInfo(row) : null;
+  const info = row ? buildExerciseInfo(row, gender) : null;
   const name = info?.name ?? fallbackName ?? '';
   const imageUrl = info ? info.imageUrl : (fallbackImageUrl ?? null);
   const muscleLabel = (key: string) => (muscleKeys.includes(key)

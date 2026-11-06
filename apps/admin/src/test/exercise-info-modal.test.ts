@@ -22,6 +22,13 @@ describe('exercise info view (#2203)', () => {
     expect(exerciseInfoFields(info)).toEqual(['short_description', 'muscles', 'categories']);
   });
 
+  it('opens the clicked gender\'s own full-size image, never the other one (#2306)', () => {
+    const row = { name: 'X', effective_image_url: 'https://x/m.webp', effective_image_male_url: 'https://x/m.webp', effective_image_female_url: 'https://x/f.webp' };
+    expect(buildExerciseInfo(row, 'female').imageUrl).toBe('https://x/f.webp');
+    expect(buildExerciseInfo(row, 'male').imageUrl).toBe('https://x/m.webp');
+    expect(buildExerciseInfo({ name: 'X', effective_image_male_url: 'https://x/m.webp' }, 'female').imageUrl).toBeNull();
+  });
+
   it('survives an exercise with nothing but a name', () => {
     const info = buildExerciseInfo({ name: 'Plank' });
     expect(info.imageUrl).toBeNull();

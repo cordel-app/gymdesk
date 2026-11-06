@@ -18,6 +18,9 @@ export interface ExerciseInfoRow {
   equipment?: string | null;
   muscles?: { key: string; role: string }[] | null;
   effective_image_url?: string | null;
+  /** #2306: the full-size master of each position (never a thumbnail). */
+  effective_image_male_url?: string | null;
+  effective_image_female_url?: string | null;
 }
 
 export type ExerciseInfoFieldId = 'short_description' | 'description' | 'muscles' | 'equipment' | 'categories';
@@ -41,11 +44,12 @@ const text = (v: string | null | undefined): string | null => {
   return s ? s : null;
 };
 
-export function buildExerciseInfo(row: ExerciseInfoRow): ExerciseInfo {
+export function buildExerciseInfo(row: ExerciseInfoRow, gender?: 'male' | 'female' | null): ExerciseInfo {
   const category = text(row.category);
   return {
     name: text(row.display_name) ?? row.name,
-    imageUrl: text(row.effective_image_url),
+    // #2306: a clicked gendered thumbnail opens that gender's own master; no gender → the default.
+    imageUrl: gender ? text(gender === 'female' ? row.effective_image_female_url : row.effective_image_male_url) : text(row.effective_image_url),
     shortDescription: text(row.display_short_description) ?? text(row.short_description),
     description: text(row.display_description) ?? text(row.description),
     muscles: (row.muscles ?? []).map((m) => ({
