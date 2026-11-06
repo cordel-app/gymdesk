@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2407 (follow-up: the Plans page heading now reads *Planes* / *Plans* in es/ca, matching the renamed sidebar entry; locale values only, no route or identifier touched)
 - **Done**: #2410 (Promotions: the read-only card now opens with the same General section as Edit, and a Promotion's listing image opens a viewer with the full 1080 × 1080 image and its Session / One-off / Periodical lines, drawn by the card's own `ProductBenefitView`; no API or schema change)
 - **Done**: #2425 (Members App → My Products → Professional Services shows each service's name and description in the request locale, which follows the member's profile language, through the existing `professional_service_translations` junction (`attachTranslations()`), falling back to the base text; no API contract, migration or frontend change; closes #2425)
 - **Done**: #2408 (English page title `Membership Plans` → `Plans` (es/ca unchanged, no route or identifier touched); the Plans List shows a circular thumbnail left of the name and the Cards image is clickable; both open the shared image viewer (`ProfessionalServiceImageModal`, now with optional `children`) showing the full 1080 × 1080 image, the description and `PlanImageDetails` — price with VAT note, billing frequency/durations/auto-renew/waived benefits, and the included Products by One-off / Session / Period category with Mandatory vs Optional. Frontend only: reads the plan row the page already holds)
