@@ -94,7 +94,7 @@ export function MemberPurchasedProducts({
   useEffect(() => { if (committedKey) setAdding(false); }, [committedKey]);
   // #2372 follow-up: the form's fields are the draft row's own cells.
   const addForm = useAddProductForm({
-    memberId, isAdmin, recurringOnly: false, embedded: true, enabled: adding,
+    memberId, isAdmin, canPay, recurringOnly: false, embedded: true, enabled: adding,
     onClose: () => setAdding(false), onChanged,
   });
   // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
