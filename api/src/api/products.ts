@@ -13,6 +13,7 @@ import { classifyProduct } from '../domain/productClassification';
 import { getRequestLocale } from '../infra/locale';
 import { attachProductTranslations, clearedLocales, copyProductTranslations, parseProductTranslations, writeProductTranslations } from './product-translations';
 import { productFrequencyWriteError } from '../domain/productFrequency';
+import { PRODUCT_SHARING_TYPES } from '../domain/baseProducts';
 import { importBaseProducts, listBaseProductsForGym } from './gym-default-products';
 import {
   gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
@@ -40,6 +41,7 @@ const SELECT = `
     gc.is_system,
     gc.mandatory,
     gc.one_time_purchase,
+    gc.sharing_type,
     gc.description,
     gc.amount,
     gc.currency,
@@ -217,6 +219,7 @@ productsRouter.get('/base', requireRole('admin'), async (req, res, next) => {
       mandatory: Boolean(r.mandatory),
       validity_days: r.validity_days,
       one_time_purchase: Boolean(r.one_time_purchase),
+      sharing_type: r.sharing_type,
       imported: r.imported,
       imported_product_id: r.imported_product_id,
     })));
@@ -259,7 +262,7 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
   const actor = resolveRequestActor(ctx);
   try {
     const { rows } = await db.query(
-      'SELECT id, name, description, image_url, base_product_id FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT id, name, description, image_url, base_product_id, sharing_type FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, ctx.gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -268,7 +271,7 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
       return res.status(409).json({ error: 'not_imported', message: 'This Product was not imported from a System Product' });
     }
     const { rows: baseRows } = await db.query(
-      'SELECT name, description, image_url, image_thumbnail_url FROM base_products WHERE id = ? AND deleted_at IS NULL',
+      'SELECT name, description, image_url, image_thumbnail_url, sharing_type FROM base_products WHERE id = ? AND deleted_at IS NULL',
       [prod.base_product_id],
     );
     if (baseRows.length === 0) {
@@ -285,6 +288,11 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
     if ((base.description ?? null) !== (prod.description ?? null)) {
       sets.push('description = ?'); params.push(base.description ?? null);
       changed.description = { previous: prod.description ?? null, next: base.description ?? null };
+    }
+    // #2393: the Base Product's sharing type is System metadata, like the name.
+    if (base.sharing_type && base.sharing_type !== prod.sharing_type) {
+      sets.push('sharing_type = ?'); params.push(base.sharing_type);
+      changed.sharing_type = { previous: prod.sharing_type, next: base.sharing_type };
     }
     // Image: copied by reference (as Import and Duplicate do) and only when the
     // gym's Product has none — a gym-customised image is never overwritten.
@@ -357,7 +365,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory,
+    mandatory, sharing_type,
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -376,6 +384,9 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (unitsErr) return res.status(400).json({ error: unitsErr });
   const mandatoryErr = validateMandatory(mandatory);
   if (mandatoryErr) return res.status(400).json({ error: mandatoryErr });
+  if (sharing_type !== undefined && sharing_type !== null && !(PRODUCT_SHARING_TYPES as readonly string[]).includes(sharing_type)) {
+    return res.status(400).json({ error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` });
+  }
   let translations: Record<string, { name: string; description: string | null }> = {};
   if (req.body.translations !== undefined) {
     const p = parseProductTranslations(req.body.translations);
@@ -399,9 +410,9 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, sharing_type, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name.trim(),
@@ -415,6 +426,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           // #832: absent means non-mandatory — the ticket's default for a new
           // item and for every row that existed before the column did.
           mandatory ? 1 : 0,
+          sharing_type || 'individual',
           notes?.trim() || null,
           package_information?.trim() || null,
           validity_days != null ? parseInt(validity_days, 10) : null,
@@ -477,9 +489,9 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, one_time_purchase, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, one_time_purchase, sharing_type, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             image_url, image_thumbnail_url, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -500,6 +512,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
           orig.mandatory,
           // #1349: copied as it stands, like the flag above.
           orig.one_time_purchase,
+          orig.sharing_type,
           orig.notes,
           orig.package_information,
           orig.validity_days,
@@ -544,7 +557,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory,
+    mandatory, sharing_type,
   } = req.body;
 
   if (type && !VALID_TYPES.includes(type)) {
@@ -567,6 +580,9 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   // user chose and has to reach the column — so what decides whether the
   // column moves is whether the request supplied the field, not its truthiness
   // (a COALESCE on the value itself could never persist an unchecked box).
+  if (sharing_type !== undefined && sharing_type !== null && !(PRODUCT_SHARING_TYPES as readonly string[]).includes(sharing_type)) {
+    return res.status(400).json({ error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` });
+  }
   const mandatoryProvided = mandatory !== undefined && mandatory !== null;
   // #2254: absent keeps the stored translations; a locale given blank clears it.
   let translations: Record<string, { name: string; description: string | null }> | null = null;
@@ -645,6 +661,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
          -- mandatoryProvided, the shape PUT /promotions/:id uses for
          -- only_applicable_for_new_members.
          mandatory                 = IF(?, ?, mandatory),
+         sharing_type              = COALESCE(?, sharing_type),
          notes                     = ?,
          name                      = COALESCE(IF(? = 0, ?, NULL), name),
          type                      = COALESCE(IF(? = 0, ?, NULL), type),
@@ -664,6 +681,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         status ?? null,
         enrollment_status ?? null,
         mandatoryProvided ? 1 : 0, mandatory ? 1 : 0,
+        sharing_type ?? null,
         notes ?? null,
         isSystem, name?.trim() ?? null,
         isSystem, type ?? null,

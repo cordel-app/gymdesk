@@ -1,5 +1,7 @@
 'use client';
 
+import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { sortMuscleKeys } from './exerciseForm';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
@@ -91,9 +93,9 @@ export function ExerciseReadOnlyView({
   // The catalogue plus any legacy key already on the exercise, exactly as the
   // editor's picker does — a muscle dropped from `MUSCLE_KEYS` must still be
   // visible on the exercise that carries it.
-  const principal = [...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))]
+  const principal = sortMuscleKeys([...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))], muscleLabel)
     .filter((key) => roleOf.get(key) === 'principal');
-  const secondary = [...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))]
+  const secondary = sortMuscleKeys([...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))], muscleLabel)
     .filter((key) => roleOf.get(key) === 'secondary');
 
   return (
@@ -102,8 +104,8 @@ export function ExerciseReadOnlyView({
       <div style={exerciseFieldGridStyle}>
         {/* #2300: the default-language value only; the globe opens every language, read-only. */}
         <Field wide label={t('label_name')} value={exercise.name} globe={() => setOpenField('name')} globeLabel={t('translations_open', { field: t('label_name') })} />
-        <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} globe={() => setOpenField('description')} globeLabel={t('translations_open', { field: t('label_description') })} />
-        <Field wide label={t('label_short_description')} value={exerciseDisplayValue(exercise.short_description)} globe={() => setOpenField('short_description')} globeLabel={t('translations_open', { field: t('label_short_description') })} />
+        <Field wide label={t('label_short_description')} value={exerciseDisplayValue((exercise.display_short_description ?? exercise.short_description))} globe={() => setOpenField('short_description')} globeLabel={t('translations_open', { field: t('label_short_description') })} />
+        <Field wide label={t('label_description')} value={exerciseDisplayValue((exercise.display_description ?? exercise.description))} globe={() => setOpenField('description')} globeLabel={t('translations_open', { field: t('label_description') })} />
         <FieldTranslationsModal
           open={openField !== null}
           title={openField ? t('translations_title', { field: t(openField === 'name' ? 'label_name' : openField === 'description' ? 'label_description' : 'label_short_description') }) : ''}
@@ -117,6 +119,10 @@ export function ExerciseReadOnlyView({
           emptyLabel="—"
           onSave={() => undefined}
           onClose={() => setOpenField(null)}
+        />
+        <Field
+          label={t('label_equipment')}
+          value={exercise.equipment ? exerciseFacetValueLabel(exercise.equipment) : EXERCISE_EMPTY_VALUE}
         />
         <Field
           label={t('label_category')}

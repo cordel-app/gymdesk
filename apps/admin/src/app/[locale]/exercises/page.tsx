@@ -254,6 +254,9 @@ export default function ExercisesPage() {
     }
   }
 
+  const [systemEquipment, setSystemEquipment] = useState<string[]>([]);
+  const editorEquipment = Array.from(new Set([...systemEquipment, ...(facets?.equipment ?? [])]));
+
   async function loadFacets() {
     if (!activeGymId) return;
     try {
@@ -264,6 +267,12 @@ export default function ExercisesPage() {
       setFacets({ equipment: res.equipment ?? [], category: categories });
       setTotal(res.total ?? null);
     } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
+    // #2377: the editor offers the System's equipment vocabulary (the Base
+    // Exercises' values), not only what this gym's own exercises already use.
+    try {
+      const base = await apiFetch<{ equipment: string[] }>('/exercises/base/facets');
+      setSystemEquipment(base.equipment ?? []);
+    } catch { /* the editor falls back to the gym's own values */ }
   }
 
   // ─── Muscle label helper (#806: shared with the Base Exercises page) ──────
@@ -513,6 +522,7 @@ export default function ExercisesPage() {
             nameLocales={nameLocales}
             muscleKeys={muscleKeys}
             muscleLabel={muscleLabel}
+            equipmentOptions={editorEquipment}
             resultTypes={resultTypes}
             nameRef={newNameRef}
             media={<ExerciseGenderMedia
@@ -541,6 +551,7 @@ export default function ExercisesPage() {
           nameLocales={nameLocales}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
+          equipmentOptions={editorEquipment}
           resultTypes={resultTypes}
           nameRef={nameInputRef}
           media={<ExerciseGenderMedia

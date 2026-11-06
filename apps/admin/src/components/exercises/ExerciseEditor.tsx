@@ -1,10 +1,12 @@
 'use client';
 
+import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { sortMuscleKeys, MUSCLE_COLUMNS_STYLE } from './exerciseForm';
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
 // #968: the form's own actions wear the platform's chrome — the left-aligned
 // inline row, the themed primary and the neutral secondary — rather than a
@@ -94,6 +96,8 @@ export interface ExerciseEditorProps {
   muscleKeys: string[];
   /** A muscle key's label — `useMuscleLabel()`. */
   muscleLabel: (key: string) => string;
+  /** #2362: the Equipment values already in the catalogue (the facets read). */
+  equipmentOptions?: string[];
   /** The result-type catalogue, as the context's lookup endpoint returned it. */
   resultTypes: ResultTypeRow[];
   /** The Media section's controls — `<ExerciseGenderMedia>`, built by the page. */
@@ -107,7 +111,7 @@ export interface ExerciseEditorProps {
 }
 
 export function ExerciseEditor({
-  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, resultTypes, media, nameRef, saveLabel, onCancel, onSave,
+  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, equipmentOptions = [], resultTypes, media, nameRef, saveLabel, onCancel, onSave,
 }: ExerciseEditorProps) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
@@ -115,7 +119,11 @@ export function ExerciseEditor({
   const { form, setForm } = state;
   const id = (field: string) => `${idPrefix}-${field}`;
   // The static catalog plus any legacy key already on the exercise being edited.
-  const pickerKeys = [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
+  const pickerKeys = sortMuscleKeys(
+    [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))],
+    muscleLabel,
+  );
+  const equipmentChoices = Array.from(new Set(equipmentOptions)).sort((a, b) => exerciseFacetValueLabel(a).localeCompare(exerciseFacetValueLabel(b)));
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
   // The base locale is the language `exercises.name` itself is written in, so the
   // field that *is* the base name carries its label; the others are rows in
@@ -123,6 +131,16 @@ export function ExerciseEditor({
   const translatableLocales = nameLocales?.translatable ?? [];
   const localeName = (loc: string) => localeLabel(loc, (key) => tCommon(key as any));
   const [openField, setOpenField] = React.useState<TranslatedField | null>(null);
+  // #2385: show/edit the description fields in the selected app language (base value as the fallback).
+  const viewLocale = useLocale();
+  const viewIsTranslation = translatableLocales.includes(viewLocale);
+  const descValue = (f: 'description' | 'short_description') =>
+    (viewIsTranslation ? form.description_translations[viewLocale]?.[f] || form[f] : form[f]) ?? '';
+  const setDescValue = (f: 'description' | 'short_description', v: string) => {
+    if (viewIsTranslation) {
+      setForm({ ...form, description_translations: { ...form.description_translations, [viewLocale]: { ...(form.description_translations[viewLocale] ?? {}), [f]: v } } });
+    } else setForm({ ...form, [f]: v });
+  };
   const modalLocales = nameLocales ? [nameLocales.base, ...translatableLocales].map((c) => ({ code: c, label: localeName(c) })) : [];
 
   return (
@@ -139,17 +157,17 @@ export function ExerciseEditor({
           </div>
         </div>
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
+          <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
           <div style={globeRowSt}>
-            <textarea id={id('description')} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...descriptionAreaSt, flex: 1 }} />
-            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+            <input id={id('short_description')} maxLength={300} value={descValue('short_description')} onChange={(e) => setDescValue('short_description', e.target.value)} style={{ ...inlineInputSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_short_description') })} onClick={() => setOpenField('short_description')} />
           </div>
         </div>
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
+          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <div style={globeRowSt}>
-            <input id={id('short_description')} maxLength={300} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} style={{ ...inlineInputSt, flex: 1 }} />
-            <GlobeButton label={t('translations_open', { field: t('label_short_description') })} onClick={() => setOpenField('short_description')} />
+            <textarea id={id('description')} rows={4} value={descValue('description')} onChange={(e) => setDescValue('description', e.target.value)} style={{ ...descriptionAreaSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
           </div>
         </div>
         <FieldTranslationsModal
@@ -187,6 +205,15 @@ export function ExerciseEditor({
             {/* A stored legacy value outside the supported set is shown, disabled, so it still reads correctly (#980's pattern). */}
             {form.category && !isExerciseCategory(form.category) && <option value={form.category} disabled>{form.category}</option>}
             {EXERCISE_CATEGORIES.map((c) => <option key={c} value={c}>{t(exerciseCategoryLabelKey(c) as any)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={id('equipment')} style={inlineLabelSt}>{t('label_equipment')}</label>
+          <select id={id('equipment')} value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} style={inlineSelectSt}>
+            <option value="">{t('equipment_none')}</option>
+            {/* A stored value no longer in the catalogue's facets is shown, disabled, so it still reads correctly. */}
+            {form.equipment && !equipmentChoices.includes(form.equipment) && <option value={form.equipment} disabled>{exerciseFacetValueLabel(form.equipment)}</option>}
+            {equipmentChoices.map((v) => <option key={v} value={v}>{exerciseFacetValueLabel(v)}</option>)}
           </select>
         </div>
         <div>
@@ -235,18 +262,18 @@ export function ExerciseEditor({
 
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_muscles')}</p>
-        <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ maxHeight: 260, overflowY: 'auto', ...MUSCLE_COLUMNS_STYLE }}>
           {pickerKeys.map((key) => {
             const role = state.muscles.get(key);
             return (
-              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <div key={key} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 13, breakInside: 'avoid', marginBottom: 6 }}>
                 <input type="checkbox" checked={!!role}
                   onChange={(ev) => {
                     const next = new Map(state.muscles);
                     if (ev.target.checked) next.set(key, 'principal'); else next.delete(key);
                     state.setMuscles(next);
                   }} />
-                <span style={{ flex: 1 }}>{muscleLabel(key)}</span>
+                <span>{muscleLabel(key)}</span>
                 {role && (
                   <select value={role} onChange={(ev) => { const next = new Map(state.muscles); next.set(key, ev.target.value as MuscleRole); state.setMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
                     <option value="principal">{t('role_principal')}</option>

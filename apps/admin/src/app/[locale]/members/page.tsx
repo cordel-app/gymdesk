@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canAccessModule, canWriteFeature, canWriteModule } from '@/config/permissions';
-import { useCenter } from '@/context/CenterContext';
+import { useCenter, type CenterOption } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -39,7 +39,8 @@ import {
 } from './memberTabs';
 import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
-import { modalActionsRowStyle } from '@/components/formChrome';
+import { innerCardStyle, inlineActionsRowStyle, formControlStyle } from '@/components/formChrome';
+import { profileGridStyle, profileFieldLabelStyle, PROFILE_ROW_GAP } from './MemberProfileLayout';
 
 interface Plan {
   id: number;
@@ -52,8 +53,6 @@ interface Plan {
 interface Member extends MemberProfile {
   id: number;
   email: string;
-  fare_id: number | null;
-  fare_name: string | null;
   clerk_user_id: string | null;
   invitation_id: string | null;
   account_status: 'active' | 'invited' | 'not_enrolled';
@@ -67,7 +66,6 @@ const emptyForm = {
   name: '',
   email: '',
   phone: '',
-  fare_id: '',
   nif_nie_passport: '',
 };
 
@@ -190,7 +188,6 @@ export default function MembersPage() {
   }, [countsKey]);
 
   const showCenters = centers.length > 1;
-  const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   // Inline editing (Member is edited on the expanded row, not in a modal — #365)
@@ -199,7 +196,7 @@ export default function MembersPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  const [editAssignedCenterIds, setEditAssignedCenterIds] = useState<Set<number>>(new Set());
+  const [editCenterOptions, setEditCenterOptions] = useState<CenterOption[]>([]);
   const [editDefaultCenterId, setEditDefaultCenterId] = useState<number | null>(null);
   // #797: a saved edit may have changed the Member's centers, and the read-only
   // PROFILE section below reads those from the API rather than from this row.
@@ -347,7 +344,6 @@ export default function MembersPage() {
     setForm(emptyForm);
     setAddImage(null);
     setError(null);
-    setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
     setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
     setModalOpen(true);
   }
@@ -371,16 +367,7 @@ export default function MembersPage() {
     setForm(emptyForm);
     setAddImage(null);
     setError(null);
-    setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
-  }
-
-  function toggleCenter(id: number, checked: boolean) {
-    const next = new Set(assignedCenterIds);
-    if (checked) next.add(id); else next.delete(id);
-    setAssignedCenterIds(next);
-    if (!checked && defaultCenterId === id) setDefaultCenterId(null);
-    if (checked && next.size === 1) setDefaultCenterId(id);
   }
 
   async function handleAdd() {
@@ -389,8 +376,7 @@ export default function MembersPage() {
       return;
     }
     if (showCenters) {
-      if (assignedCenterIds.size === 0) { setError(t('members.error_no_center')); return; }
-      if (defaultCenterId == null || !assignedCenterIds.has(defaultCenterId)) { setError(t('members.error_default_not_assigned')); return; }
+      if (defaultCenterId == null) { setError(t('members.error_no_default_center')); return; }
     }
     if (!validateDocumentId(form.nif_nie_passport).valid) {
       setError(t('members.error_document_invalid'));
@@ -404,11 +390,9 @@ export default function MembersPage() {
         name: form.name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || null,
-        fare_id: form.fare_id ? parseInt(form.fare_id) : null,
         nif_nie_passport: form.nif_nie_passport.trim() || null,
       };
       if (showCenters) {
-        body.center_ids = Array.from(assignedCenterIds);
         body.default_center_id = defaultCenterId;
       }
       const created = await apiFetch<{ id: number }>('/members', { method: 'POST', body: JSON.stringify(body) });
@@ -463,11 +447,19 @@ export default function MembersPage() {
     selectTab(m.id, 'profile');
     if (showCenters) {
       try {
-        const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
-        setEditAssignedCenterIds(new Set(rows.map((r) => r.center_id)));
-        setEditDefaultCenterId(rows.find((r) => r.is_default)?.center_id ?? null);
+        const [rows, options] = await Promise.all([
+          apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`),
+          apiFetch<{ id: number; name: string }[]>(`/members/${m.id}/centers/options`),
+        ]);
+        const current = rows.find((r) => r.is_default)?.center_id ?? null;
+        const opts = options.map((o) => ({ id: o.id, name: o.name })) as CenterOption[];
+        // A stored default the plans no longer cover stays visible rather than reading as none.
+        const stored = current != null && !opts.some((o) => o.id === current)
+          ? centers.filter((c) => c.id === current) : [];
+        setEditCenterOptions([...stored, ...opts]);
+        setEditDefaultCenterId(current);
       } catch {
-        setEditAssignedCenterIds(new Set());
+        setEditCenterOptions([]);
         setEditDefaultCenterId(null);
       }
     }
@@ -478,23 +470,14 @@ export default function MembersPage() {
     setEditForm(emptyMemberEditForm);
     setEditError(null);
     setImageRetry(null);
-    setEditAssignedCenterIds(new Set());
+    setEditCenterOptions([]);
     setEditDefaultCenterId(null);
-  }
-
-  function toggleEditCenter(id: number, checked: boolean) {
-    const next = new Set(editAssignedCenterIds);
-    if (checked) next.add(id); else next.delete(id);
-    setEditAssignedCenterIds(next);
-    if (!checked && editDefaultCenterId === id) setEditDefaultCenterId(null);
-    if (checked && next.size === 1) setEditDefaultCenterId(id);
   }
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('members.error_required')); return; }
     if (showCenters) {
-      if (editAssignedCenterIds.size === 0) { setEditError(t('members.error_no_center')); return; }
-      if (editDefaultCenterId == null || !editAssignedCenterIds.has(editDefaultCenterId)) { setEditError(t('members.error_default_not_assigned')); return; }
+      if (editDefaultCenterId == null) { setEditError(t('members.error_no_default_center')); return; }
     }
     if (!validateDocumentId(editForm.nif_nie_passport).valid) {
       setEditError(t('members.error_document_invalid'));
@@ -518,7 +501,7 @@ export default function MembersPage() {
       if (showCenters) {
         await apiFetch(`/members/${editedId}/centers`, {
           method: 'PUT',
-          body: JSON.stringify({ center_ids: Array.from(editAssignedCenterIds), default_center_id: editDefaultCenterId }),
+          body: JSON.stringify({ default_center_id: editDefaultCenterId }),
         });
       }
       setEditingId(null);
@@ -779,11 +762,9 @@ export default function MembersPage() {
                   onRetryConsumed: () => setImageRetry(null),
                 }}
                 showCenters={showCenters}
-                centers={centers}
-                assignedCenterIds={editAssignedCenterIds}
+                centerOptions={editCenterOptions}
                 defaultCenterId={editDefaultCenterId}
                 onChange={setEditForm}
-                onToggleCenter={toggleEditCenter}
                 onDefaultCenterChange={setEditDefaultCenterId}
                 onSave={saveEdit}
                 onCancel={cancelEdit}
@@ -897,6 +878,66 @@ export default function MembersPage() {
         </FilterField>
       </FilterBar>
 
+      {/* #2363: the Add Member form is inline, in the page, never a modal (editing is inline on the expanded row — #365) */}
+      {modalOpen && (
+        <div style={{ ...innerCardStyle, marginBottom: 16, padding: 20 }}>
+          <div>
+            <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>{t('members.modal_add')}</h2>
+
+            {/* #2363 follow-up: the Edit view's grid and controls, full width. */}
+            <div style={{ marginBottom: PROFILE_ROW_GAP }}>
+              <label style={profileFieldLabelStyle}>{t('members.label_image')}</label>
+              {/* #1374 §2: staged, not uploaded — the Member has no id yet. */}
+              <MemberImageField
+                target={{ kind: 'staged', file: addImage, onFile: setAddImage }}
+                disabled={saving}
+                label={(key) => t(`members.${key}`)}
+              />
+            </div>
+
+            <div style={profileGridStyle}>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_name')}</label>
+                <input style={formControlStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_email')}</label>
+                <input style={formControlStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_phone')}</label>
+                <input style={formControlStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_document')}</label>
+                <input style={formControlStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
+                <p style={helpTextStyle}>{t('members.help_document')}</p>
+              </div>
+              {showCenters && (
+                <div>
+                  <label style={profileFieldLabelStyle}>{t('members.default_center')}</label>
+                  <select style={formControlStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">{t('members.default_center_none')}</option>
+                    {centers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
+
+            <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
+              <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
+              <button onClick={handleAdd} style={primaryBtnStyle()} disabled={saving}>
+                {saving ? t('members.saving') : t('members.modal_add')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p style={mutedTextStyle}>{t('members.loading')}</p>
       ) : members.length === 0 ? (
@@ -917,80 +958,6 @@ export default function MembersPage() {
               </div>
 
               {members.map(renderRow)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add modal (editing a member happens inline on the expanded row — #365) */}
-      {modalOpen && (
-        <div style={overlayStyle} onClick={closeModal}>
-          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 20px' }}>{t('members.modal_add')}</h2>
-
-            <label style={labelStyle}>{t('members.label_name')}</label>
-            <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
-
-            <label style={labelStyle}>{t('members.label_email')}</label>
-            <input style={inputStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
-
-            <label style={labelStyle}>{t('members.label_phone')}</label>
-            <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
-
-            <label style={labelStyle}>{t('members.label_document')}</label>
-            <input style={inputStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
-            <p style={helpTextStyle}>{t('members.help_document')}</p>
-
-            {/* #1374 §2: staged, not uploaded — the Member has no id yet. */}
-            <label style={labelStyle}>{t('members.label_image')}</label>
-            <MemberImageField
-              target={{ kind: 'staged', file: addImage, onFile: setAddImage }}
-              disabled={saving}
-              label={(key) => t(`members.${key}`)}
-            />
-
-            {plans.length > 0 && (
-              <>
-                <label style={labelStyle}>{t('members.label_fare')}</label>
-                <select style={inputStyle} value={form.fare_id} onChange={(e) => setForm({ ...form, fare_id: e.target.value })}>
-                  <option value="">{t('members.fare_none')}</option>
-                  {plans.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} — {parseFloat(p.base_price).toFixed(2)}</option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            {showCenters && (
-              <>
-                <label style={labelStyle}>{t('members.assigned_centers')}</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, padding: 10 }}>
-                  {centers.map((c) => (
-                    <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-                      <input type="checkbox" checked={assignedCenterIds.has(c.id)}
-                             onChange={(e) => toggleCenter(c.id, e.target.checked)} />
-                      {c.name}
-                    </label>
-                  ))}
-                </div>
-
-                <label style={labelStyle}>{t('members.default_center')}</label>
-                <select style={inputStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">{t('members.default_center_none')}</option>
-                  {centers.filter((c) => assignedCenterIds.has(c.id)).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
-
-            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
-              <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
-              <button onClick={handleAdd} style={primaryBtnStyle()} disabled={saving}>
-                {saving ? t('members.saving') : t('members.modal_add')}
-              </button>
             </div>
           </div>
         </div>
@@ -1077,8 +1044,6 @@ function chevronStyle(expanded: boolean): React.CSSProperties {
     transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
   };
 }
-const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
-const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 460, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 4, marginTop: 14, color: '#333' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' };
 const helpTextStyle: React.CSSProperties = { margin: '4px 0 0', fontSize: 12.5, color: '#888' };

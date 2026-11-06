@@ -566,10 +566,8 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
  */
 export async function loadMemberProfile(gymId: string, memberId: number): Promise<Record<string, any> | null> {
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id,
-            p.name AS fare_name
+    `SELECT m.*
      FROM members m
-     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
     [gymId, memberId],
   );
@@ -1465,16 +1463,31 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
  * with an `end_date`), each with its assignment's inclusive date range. A date's meals are therefore
  * those of the assignment effective on it, never the current plan's for every date.
  */
-async function planMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number; from: string | null; to: string | null }[]> {
+async function planMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number; from: string | null; to: string | null; plan: number }[]> {
   const { rows } = await db.query(
-    `SELECT m.id, d.weekday, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date
+    `SELECT m.id, d.weekday, p.id AS plan_id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date
      FROM member_nutrition_plans p
      JOIN member_nutrition_plan_days d ON d.member_nutrition_plan_id = p.id AND d.gym_id = p.gym_id
      JOIN member_nutrition_plan_meals m ON m.member_nutrition_plan_day_id = d.id AND m.gym_id = p.gym_id
      WHERE p.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`,
     [gymId, memberId],
   );
-  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday), from: r.from_date, to: r.to_date }));
+  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday), from: r.from_date, to: r.to_date, plan: r.plan_id }));
+}
+
+/**
+ * #2338: the assignments in force, ranked as `GET /me/nutrition-plan` picks the one it shows
+ * (newest `created_at` first, `LIMIT 1`): on a date with several, only the highest `order` counts.
+ */
+async function planWindows(gymId: string, memberId: number): Promise<{ id: number; order: number; from: string | null; to: string | null }[]> {
+  const { rows } = await db.query(
+    `SELECT id, DATE_FORMAT(start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(end_date, '%Y-%m-%d') AS to_date
+     FROM member_nutrition_plans
+     WHERE gym_id = ? AND member_id = ? AND (status = 'active' OR (status = 'completed' AND end_date IS NOT NULL))
+     ORDER BY created_at ASC, id ASC`,
+    [gymId, memberId],
+  );
+  return (rows as any[]).map((r, i) => ({ id: r.id, order: i, from: r.from_date, to: r.to_date }));
 }
 
 /**
@@ -1484,13 +1497,14 @@ async function planMeals(gymId: string, memberId: number): Promise<{ id: number;
 async function planRequirements(gymId: string, memberId: number): Promise<PlanRequirements> {
   const plans = `JOIN member_nutrition_plans p ON p.id = x.member_nutrition_plan_id AND p.gym_id = x.gym_id
      WHERE x.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`;
-  const cols = `x.id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date`;
+  const cols = `x.id, x.member_nutrition_plan_id AS plan_id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date`;
   const { rows: g } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_goals x ${plans}`, [gymId, memberId]);
   const { rows: r } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_restrictions x ${plans}`, [gymId, memberId]);
   const windows: Record<string, { from: string | null; to: string | null }> = {};
-  for (const x of g as any[]) windows[`goal|${x.id}`] = { from: x.from_date, to: x.to_date };
-  for (const x of r as any[]) windows[`restriction|${x.id}`] = { from: x.from_date, to: x.to_date };
-  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id), windows };
+  const planOf: Record<string, number> = {};
+  for (const x of g as any[]) { windows[`goal|${x.id}`] = { from: x.from_date, to: x.to_date }; planOf[`goal|${x.id}`] = x.plan_id; }
+  for (const x of r as any[]) { windows[`restriction|${x.id}`] = { from: x.from_date, to: x.to_date }; planOf[`restriction|${x.id}`] = x.plan_id; }
+  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id), windows, planOf, plans: await planWindows(gymId, memberId) };
 }
 
 /**

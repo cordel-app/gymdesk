@@ -110,3 +110,26 @@ describe('POST /exercises/:id/resync-with-system', () => {
     expect(res.body.code).toBe('base_unavailable');
   });
 });
+
+describe('equipment (#2376)', () => {
+  it('import copies equipment from the Base Exercise and resync follows its current value', async () => {
+    await db.query("UPDATE base_exercises SET equipment = 'barbell', status = 'active', deleted_at = NULL WHERE id = ?", [baseId]);
+    const second = await createBaseExercise({ name: `${PREFIX}-eq` });
+    await db.query("UPDATE base_exercises SET equipment = 'dumbbell' WHERE id = ?", [second]);
+    try {
+      const imp = await request.post('/exercises/import').set(as(gymB)).send({ baseExerciseIds: [second] });
+      expect(imp.status).toBe(201);
+      expect((await row(imp.body.imported[0].id)).equipment).toBe('dumbbell');
+
+      await db.query("UPDATE exercises SET equipment = 'machine' WHERE id = ?", [copyId]);
+      const res = await request.post(url(copyId)).set(as(gymA));
+      expect(res.status).toBe(200);
+      expect(res.body.updated).toContain('equipment');
+      expect((await row(copyId)).equipment).toBe('barbell');
+      const again = await request.post(url(copyId)).set(as(gymA));
+      expect(again.body.updated).toEqual([]);
+    } finally {
+      await deleteBaseExercises([second]);
+    }
+  });
+});

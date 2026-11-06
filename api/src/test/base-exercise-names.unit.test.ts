@@ -18,3 +18,12 @@ describe('bundled Base Exercise names', () => {
     }
   });
 });
+
+// #2221: the migration that loads the names reads a frozen copy of the bundled file (the runner image
+// carries the migrations directory but not src/data).
+describe('base exercise names migration', () => {
+  it('ships a copy identical to the bundled names', async () => {
+    const copy = (await import('../infra/migrations/data/base-exercise-names.json')).default;
+    expect(copy).toEqual(names);
+  });
+});

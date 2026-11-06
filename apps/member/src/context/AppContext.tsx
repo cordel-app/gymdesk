@@ -12,7 +12,6 @@ export interface MemberProfile {
   name: string;
   email: string;
   phone: string | null;
-  fare_name: string | null;
   clerk_user_id: string;
   /**
    * #1039: the member's own default language for the Members App, or `null` for

@@ -15,11 +15,12 @@ export interface ExerciseInfoRow {
   description?: string | null;
   display_description?: string | null;
   category?: string | null;
+  equipment?: string | null;
   muscles?: { key: string; role: string }[] | null;
   effective_image_url?: string | null;
 }
 
-export type ExerciseInfoFieldId = 'short_description' | 'description' | 'muscles' | 'categories';
+export type ExerciseInfoFieldId = 'short_description' | 'description' | 'muscles' | 'equipment' | 'categories';
 
 export interface ExerciseInfoMuscle { key: string; role: 'principal' | 'secondary' }
 
@@ -29,6 +30,8 @@ export interface ExerciseInfo {
   shortDescription: string | null;
   description: string | null;
   muscles: ExerciseInfoMuscle[];
+  /** Stored equipment value (free text from the dataset), humanised by the modal. */
+  equipment: string | null;
   /** Stored category ids (there is one today; a list so a second never needs a new shape). */
   categories: string[];
 }
@@ -49,6 +52,7 @@ export function buildExerciseInfo(row: ExerciseInfoRow): ExerciseInfo {
       key: m.key,
       role: m.role === 'secondary' ? 'secondary' : 'principal',
     })),
+    equipment: text(row.equipment),
     categories: category ? [category] : [],
   };
 }
@@ -59,6 +63,7 @@ export function exerciseInfoFields(info: ExerciseInfo): ExerciseInfoFieldId[] {
   if (info.shortDescription) out.push('short_description');
   if (info.description) out.push('description');
   if (info.muscles.length > 0) out.push('muscles');
+  if (info.equipment) out.push('equipment');
   if (info.categories.length > 0) out.push('categories');
   return out;
 }

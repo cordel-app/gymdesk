@@ -1,3 +1,4 @@
+import { parseExerciseEquipmentInput } from '../domain/exerciseEquipment';
 import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyRecordedMetrics, parseRecordedMetricsRequest, respondMetricRemoval, syncExerciseResultTypes } from './exercise-result-types';
@@ -431,6 +432,8 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
+  const equipmentInput = parseExerciseEquipmentInput(req.body);
+  if (equipmentInput.error) return res.status(400).json({ error: equipmentInput.error });
   let metricsRequest;
   try { metricsRequest = parseRecordedMetricsRequest(req.body); }
   catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
@@ -452,10 +455,10 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, short_description, category,
+          (gym_id, name, description, short_description, category, equipment,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description ?? null, shortDescription.value, categoryInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, name.trim(), description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active', actor],
       );
@@ -495,6 +498,8 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const categoryInput = parseExerciseCategoryInput(req.body);
   if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
+  const equipmentInput = parseExerciseEquipmentInput(req.body);
+  if (equipmentInput.error) return res.status(400).json({ error: equipmentInput.error });
   let metricsRequest;
   try { metricsRequest = parseRecordedMetricsRequest(req.body); }
   catch (e: any) { return res.status(e.status ?? 400).json({ error: e.message }); }
@@ -526,6 +531,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
           category              = IF(?, ?, category),
+          equipment             = IF(?, ?, equipment),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
           modified_by           = ?
@@ -539,6 +545,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
+          equipmentInput.provided ? 1 : 0, equipmentInput.value,
           status ?? null,
           actor,
           id, gymId,
@@ -692,7 +699,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
 /**
  * #2302: "Resync with System" — a selective, field-level update of an imported
  * exercise from the Base Exercise it records as its provenance. Moves only the
- * name, the description and the short description (base columns and the
+ * name, the description, the short description, the equipment (base columns and the
  * per-locale translations the Base Exercise carries) and a male/female image the
  * copy is *missing*; every other field, the video, the muscles, the Recorded
  * Metrics, the provenance and the Base row itself are left alone.
@@ -701,7 +708,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
   const { gymId } = getTenantContext(req);
   try {
     const { rows: own } = await db.query<any>(
-      `SELECT id, name, description, short_description, image_male_url, image_female_url,
+      `SELECT id, name, description, short_description, equipment, image_male_url, image_female_url,
               COALESCE(base_exercise_id, cloned_from_id) AS source_id
          FROM exercises WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
       [req.params.id, gymId],
@@ -712,7 +719,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
       return res.status(400).json({ code: 'no_base_exercise', error: 'This exercise was not imported from the System catalogue.' });
     }
     const { rows: baseRows } = await db.query<any>(
-      `SELECT id, name, description, short_description, image_male_url, image_female_url
+      `SELECT id, name, description, short_description, equipment, image_male_url, image_female_url
          FROM base_exercises WHERE id = ? AND status != 'deleted'`,
       [copy.source_id],
     );
@@ -753,7 +760,9 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
     const maleImage = !copy.image_male_url && !!base.image_male_url;
     const femaleImage = !copy.image_female_url && !!base.image_female_url;
     const textChanged = baseTextChanged || namesChanged || descsChanged;
-    if (!textChanged && !maleImage && !femaleImage) return res.json({ updated: [], message: 'up_to_date' });
+    // #2376: equipment follows the Base Exercise's current value (NULL included).
+    const equipmentChanged = (copy.equipment ?? null) !== (base.equipment ?? null);
+    if (!textChanged && !equipmentChanged && !maleImage && !femaleImage) return res.json({ updated: [], message: 'up_to_date' });
 
     const actor = resolveRequestActor(getTenantContext(req));
     await db.transaction(async (tx) => {
@@ -763,6 +772,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
         sets.push('name = ?', 'description = ?', 'short_description = ?');
         params.push(base.name, base.description, base.short_description);
       }
+      if (equipmentChanged) { sets.push('equipment = ?'); params.push(base.equipment ?? null); }
       if (maleImage) { sets.push('image_male_url = ?'); params.push(base.image_male_url); }
       if (femaleImage) { sets.push('image_female_url = ?'); params.push(base.image_female_url); }
       await tx.query(
@@ -777,6 +787,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
     });
     const updated: string[] = [];
     if (textChanged) updated.push('name', 'description');
+    if (equipmentChanged) updated.push('equipment');
     if (maleImage) updated.push('image_male');
     if (femaleImage) updated.push('image_female');
     recordAudit(req, {
@@ -908,13 +919,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
             (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
-             status, created_by, cloned_from_id, base_exercise_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?)`,
+             status, created_by, cloned_from_id, base_exercise_id, category, equipment)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
-           actor, id, src.category ?? null],
+           actor, id, src.category ?? null, src.equipment ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
