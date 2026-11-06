@@ -8,6 +8,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 ## November 2026
 
 - **Done**: #2407 (sidebar entry `nav.plans` reads *Planes* in Spanish and *Plans* in Catalan instead of *Cuotas* / *Quotes*; locale values only, route, permissions and the page's own title unchanged)
+- **Done**: #2402 (Cordel → Muscles: muscle names in every supported language. Migration 371 adds `muscle_translations` (`muscle_id`, `locale`, `name`; `muscles.name` stays the base value and fallback) through the shared `nameTranslations` mechanism (`domain/muscleTranslations.ts`); `GET/POST/PUT /platform/muscles` report and accept `translations` (absent keeps, `{}` clears, partial sets allowed, base locale refused). The page shows the globe beside the name, opening the standard translations modal read-only outside Edit and editable in Edit/Add)
+
 - **Done**: #2403 (Members App exercise details show the category in the Member's language: `exercise_media.category_<slug>` keys in en/es/ca, resolved in `ExerciseInfo`, falling back to the humanised stored value for an unknown slug; no API or schema change)
 
 - **Done**: #2363 (follow-up): the inline Add Member form uses the full page width and the Member Edit view's grid, labels and controls (`profileGridStyle`, `formControlStyle`); no field, validation or API change.

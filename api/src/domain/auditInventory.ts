@@ -55,6 +55,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "base_exercise_allowed_result_types": ["parent", "base_exercises"],
   "nutrition_goal_translations": ["parent", "nutrition_goals"],
   "personal_goal_translations": ["parent", "personal_goals"],
+  "muscle_translations": ["parent", "muscles"],
   "professional_service_translations": ["parent", "professional_services"],
   "product_translations": ["parent", "products"],
   "base_product_translations": ["parent", "base_products"],
