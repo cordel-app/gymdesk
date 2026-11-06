@@ -957,7 +957,8 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   const { rows: versionRows } = await db.query<any>(
     `SELECT ps.status, snap.is_inherited
        FROM product_sets ps
-       LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id AND snap.gym_id = ps.gym_id
+       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+       LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id AND snap.gym_id = ps.gym_id
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );
