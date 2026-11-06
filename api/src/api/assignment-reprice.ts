@@ -33,7 +33,7 @@ async function writePrice(tx: Tx, gymId: string, setId: number, price: number, p
   await tx.query(
     `UPDATE plan_snapshots
         SET membership_fee_price = ?, base_price = ?, plan_price_id = ?
-      WHERE id = (SELECT x.id FROM (SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?) x)`,
+      WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
     [price, price, planPriceId, setId, gymId],
   );
 }

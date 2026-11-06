@@ -51,7 +51,8 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   // The primary one is not yet the contract of any assignment (the successor takes its own at
   // activation), so it does not carry the predecessor's.
   const { rows: plans } = await tx.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, fromSetId]);
+    `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`, [gymId, fromSetId]);
   for (const [index, plan] of plans.entries()) {
     await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), toSetId, { keepAssignment: index > 0 });
   }

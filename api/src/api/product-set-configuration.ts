@@ -141,6 +141,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
         set.created_by ?? null]);
     snapshotId = Number(insertId);
+    await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, snapshotId]);
     await tx.query(
       'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gymId, snapshotId, set.owner_member_id]);
