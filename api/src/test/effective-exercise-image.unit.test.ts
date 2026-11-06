@@ -128,3 +128,14 @@ describe('per-position gender thumbnails (#1704)', () => {
     });
   });
 });
+
+describe('resolveEffectiveImage() per-gender masters (#2306)', () => {
+  it('reports each gender\'s own full-size image, and the muscle\'s master as fallback', () => {
+    const r = resolveEffectiveImage(
+      { image_male_url: 'https://c/m.webp', image_female_url: null },
+      [{ id: 1, name: 'Chest', image_url: 'https://c/pm.webp', image_thumbnail_url: null, image_male_url: 'https://c/pm.webp', image_female_url: 'https://c/pf.webp' }],
+    );
+    expect(r.effective_image_male_url).toBe('https://c/m.webp');
+    expect(r.effective_image_female_url).toBe('https://c/pf.webp');
+  });
+});

@@ -42,13 +42,13 @@ export function ExerciseListThumbnails({ exercise }: {
   };
 }) {
   const t = useTranslations('exercises');
-  const [open, setOpen] = React.useState(false);
-  const onOpen = exercise.id != null ? () => setOpen(true) : undefined;
+  const [open, setOpen] = React.useState<'male' | 'female' | null>(null);
+  const onOpen = (g: 'male' | 'female') => (exercise.id != null ? () => setOpen(g) : undefined);
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-      <Thumb src={exercise.effective_image_male_thumbnail_url ?? exercise.image_male_thumbnail_url ?? null} label={t('gender_male')} onOpen={onOpen} />
-      <Thumb src={exercise.effective_image_female_thumbnail_url ?? exercise.image_female_thumbnail_url ?? null} label={t('gender_female')} onOpen={onOpen} />
-      {open && exercise.id != null && <ExerciseInfoModal exerciseId={exercise.id} fallbackName={exercise.name} onClose={() => setOpen(false)} />}
+      <Thumb src={exercise.effective_image_male_thumbnail_url ?? exercise.image_male_thumbnail_url ?? null} label={t('gender_male')} onOpen={onOpen('male')} />
+      <Thumb src={exercise.effective_image_female_thumbnail_url ?? exercise.image_female_thumbnail_url ?? null} label={t('gender_female')} onOpen={onOpen('female')} />
+      {open && exercise.id != null && <ExerciseInfoModal exerciseId={exercise.id} fallbackName={exercise.name} gender={open} onClose={() => setOpen(null)} />}
     </span>
   );
 }
