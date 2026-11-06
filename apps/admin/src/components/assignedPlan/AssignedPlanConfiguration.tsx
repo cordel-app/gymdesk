@@ -226,13 +226,10 @@ export function AssignedPlanConfiguration({
   // discards whatever was being typed — the same thing the card's own Cancel
   // does on the Membership Plan and Promotion cards.
   useEffect(() => {
+    // #2375: entering Edit mode opens nothing by itself (it used to open
+    // Billing & Duration on a Draft, #1814), so every section shows an enabled
+    // `Edit` and staff choose which one to open.
     if (!cardEditing) cancelEdit();
-    // #1814: entering Edit mode on a Draft must show real controls, not a
-    // card of values with a per-section `Edit` button each. Billing & Duration
-    // (the fee and the durations) opens straight away; the other sections keep
-    // their own `Edit`. Keyed on the mode flip only, so saving a section does
-    // not reopen it.
-    else if (editable && planStatus === 'draft') openDurationEdit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardEditing]);
 
