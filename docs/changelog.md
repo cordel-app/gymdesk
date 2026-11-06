@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2439 (the gym's Professional Services list reads `professional_services` filtered by the gym's own `gym_id` and no longer shows Base (`gym_id IS NULL`) services, even when a `gym_professional_services` row points at one; the status comes from a LEFT JOIN with `active` as the default; Import, activate and deactivate are unchanged)
 - **Done**: #2335 (Cordel → Base Payment Methods: Name and Description show the English text with a globe opening the shared translations modal; only the English name is required, a blank translation clears its row. Gym-based payment methods do not exist, so Base only.)
 - **Done**: #2372 follow-up (Members → Products: the Add Product form's fields (product selector, price, VAT, promotion, direct discount, final price, Draft status) are now the cells of the table's draft row, with Promotions and Save / Cancel in the row attached beneath it; `useAddProductForm()` holds the state, the recurring section keeps its standalone form. Frontend only; no API or schema change)
 - **Done**: #2410 (Promotions: the read-only card now opens with the same General section as Edit, and a Promotion's listing image opens a viewer with the full 1080 × 1080 image and its Session / One-off / Periodical lines, drawn by the card's own `ProductBenefitView`; no API or schema change)
