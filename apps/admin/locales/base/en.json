@@ -1785,7 +1785,13 @@
     "view_cards": "Cards",
     "card_no_benefits": "No benefits included",
     "card_more_benefits": "+{n} more",
-    "simulation_initial_payment": "Initial payment"
+    "simulation_initial_payment": "Initial payment",
+    "center_mode_specific_centers": "Specific centers",
+    "center_mode_specific_centers_help": "Only the centers selected below.",
+    "center_mode_all_centers": "All centers",
+    "center_mode_all_centers_help": "Every center, including centers created in the future.",
+    "center_mode_member_default_center": "Only Member Default Center",
+    "center_mode_member_default_center_help": "Follows the Default Center in each Member's profile; a Member with none gets no center."
   },
   "prices": {
     "title": "Prices",
@@ -5494,6 +5500,9 @@
     "validity_days": "Validity (days)",
     "mandatory": "Mandatory",
     "one_time_purchase": "One-time purchase",
+    "sharing_type": "Sharing type",
+    "sharing_individual": "Individual",
+    "sharing_shared": "Shared",
     "yes": "Yes",
     "no": "No",
     "delete_confirm": "Delete \"{name}\"? Gyms created from now on will not receive it; Products already generated are not affected.",

@@ -18,9 +18,9 @@ beforeAll(async () => {
   const res = await db.query(
     `INSERT INTO base_products
        (charge_type_code, name, type, units, amount, billing_frequency, status, enrollment_status,
-        mandatory, validity_days, one_time_purchase, description, notes, package_information,
+        mandatory, validity_days, one_time_purchase, sharing_type, description, notes, package_information,
         tax_behavior, image_url, image_thumbnail_url, created_at, created_by)
-     VALUES (NULL, ?, 'sessions', 5, 50, 'once', 'active', 'public', 0, 90, 1,
+     VALUES (NULL, ?, 'sessions', 5, 50, 'once', 'active', 'public', 0, 90, 1, 'shared',
         'Five sessions', 'Internal note', 'Valid 90 days', 'exclusive',
         'https://img.example/p.webp', 'https://img.example/p-thumbnail.webp', UTC_TIMESTAMP(), 'test')`,
     [NAME],
@@ -43,7 +43,7 @@ describe('Base Product import field mapping', () => {
     const { rows } = await db.query<any>('SELECT * FROM products WHERE gym_id = ? AND base_product_id = ?', [gymId, templateId]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      name: NAME, type: 'sessions', units: 5, validity_days: 90, one_time_purchase: 1,
+      name: NAME, type: 'sessions', units: 5, validity_days: 90, one_time_purchase: 1, sharing_type: 'shared',
       description: 'Five sessions', notes: 'Internal note', package_information: 'Valid 90 days',
       tax_behavior: 'exclusive', image_url: 'https://img.example/p.webp',
       image_thumbnail_url: 'https://img.example/p-thumbnail.webp',
@@ -77,5 +77,20 @@ describe('parseBaseProductInput text fields', () => {
     expect('error' in parseBaseProductInput({ name: 'X', tax_behavior: 'none' })).toBe(true);
     expect('error' in parseBaseProductInput({ name: 'X', description: 'a'.repeat(501) })).toBe(true);
     expect('error' in parseBaseProductInput({ name: 'X', notes: 5 })).toBe(true);
+  });
+});
+
+describe('sharing_type (#2393)', () => {
+  it('is validated, defaults to individual and is kept when omitted', () => {
+    const created = parseBaseProductInput({ name: 'X' });
+    if ('error' in created) throw new Error(created.error);
+    expect(created.value.sharing_type).toBe('individual');
+    const shared = parseBaseProductInput({ sharing_type: 'shared' }, created.value);
+    if ('error' in shared) throw new Error(shared.error);
+    expect(shared.value.sharing_type).toBe('shared');
+    const kept = parseBaseProductInput({ name: 'Z' }, shared.value);
+    if ('error' in kept) throw new Error(kept.error);
+    expect(kept.value.sharing_type).toBe('shared');
+    expect('error' in parseBaseProductInput({ name: 'X', sharing_type: 'family' })).toBe(true);
   });
 });

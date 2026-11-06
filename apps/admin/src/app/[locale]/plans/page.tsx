@@ -123,6 +123,7 @@ interface Plan extends PlanGeneralRow {
   promotion_count: number;
   billing_policy: BillingPolicy | null;
   centers: Center[];
+  center_access_mode?: 'specific_centers' | 'all_centers' | 'member_default_center';
   price_history: PriceRow[];
   image_url?: string | null;
   image_thumbnail_url?: string | null;
@@ -385,6 +386,7 @@ export default function PlansPage() {
 
   // Centers sub-form (inline, per plan)
   const [centersForPlanId, setCentersForPlanId] = useState<number | null>(null);
+  const [centerAccessMode, setCenterAccessMode] = useState<'specific_centers' | 'all_centers' | 'member_default_center'>('specific_centers');
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
@@ -681,6 +683,7 @@ export default function PlansPage() {
     }
     setCentersForPlanId(plan.id);
     setSelectedCenterIds((plan.centers ?? []).map((c) => c.id));
+    setCenterAccessMode(plan.center_access_mode ?? 'specific_centers');
   }
 
   async function handleSaveCenters() {
@@ -688,7 +691,10 @@ export default function PlansPage() {
     try {
       await apiFetch(`/membership-plans/${centersForPlanId}/centers`, {
         method: 'PUT',
-        body: JSON.stringify({ center_ids: selectedCenterIds }),
+        body: JSON.stringify({
+          center_access_mode: centerAccessMode,
+          ...(centerAccessMode === 'specific_centers' ? { center_ids: selectedCenterIds } : {}),
+        }),
       });
       setCentersForPlanId(null);
       load();
@@ -1552,7 +1558,22 @@ export default function PlansPage() {
                     />
                     {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        {allCenters.map((c) => (
+                        {(['specific_centers', 'all_centers', 'member_default_center'] as const).map((m) => (
+                          <div key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0' }}>
+                            <input
+                              type="radio"
+                              name={`center_mode_${plan.id}`}
+                              id={`center_mode_${plan.id}_${m}`}
+                              checked={centerAccessMode === m}
+                              onChange={() => setCenterAccessMode(m)}
+                            />
+                            <label htmlFor={`center_mode_${plan.id}_${m}`} style={{ fontSize: 13, cursor: 'pointer' }}>
+                              <strong>{t(`plans.center_mode_${m}`)}</strong>
+                              <div style={{ opacity: 0.7 }}>{t(`plans.center_mode_${m}_help`)}</div>
+                            </label>
+                          </div>
+                        ))}
+                        {centerAccessMode === 'specific_centers' && allCenters.map((c) => (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
                             <input
                               type="checkbox"
@@ -1573,6 +1594,8 @@ export default function PlansPage() {
                           saveLabel: t('plans.save_changes'),
                         })}
                       </div>
+                    ) : plan.center_access_mode === 'all_centers' || plan.center_access_mode === 'member_default_center' ? (
+                      <DetailRow label="" value={t(`plans.center_mode_${plan.center_access_mode}`)} />
                     ) : (plan.centers ?? []).length === 0 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />
                     ) : (

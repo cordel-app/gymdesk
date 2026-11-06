@@ -57,6 +57,7 @@ interface BaseProduct {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  sharing_type: 'individual' | 'shared';
   description: string | null;
   notes: string | null;
   package_information: string | null;
@@ -83,6 +84,7 @@ interface Form {
   mandatory: boolean;
   validity_days: string;
   one_time_purchase: boolean;
+  sharing_type: 'individual' | 'shared';
   description: string;
   notes: string;
   package_information: string;
@@ -104,6 +106,7 @@ function formFor(p: BaseProduct | null): Form {
     mandatory: p?.mandatory ?? false,
     validity_days: p?.validity_days != null ? String(p.validity_days) : '',
     one_time_purchase: p?.one_time_purchase ?? false,
+    sharing_type: p?.sharing_type ?? 'individual',
     description: p?.description ?? '',
     notes: p?.notes ?? '',
     package_information: p?.package_information ?? '',
@@ -128,6 +131,7 @@ function payloadFor(f: Form) {
     mandatory: f.mandatory,
     validity_days: f.validity_days.trim() ? Number(f.validity_days) : null,
     one_time_purchase: f.one_time_purchase,
+    sharing_type: f.sharing_type,
     description: f.description.trim() || null,
     notes: f.notes.trim() || null,
     package_information: f.package_information.trim() || null,
@@ -361,12 +365,19 @@ export default function BaseProductsPage() {
             <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
             {t('one_time_purchase')}
           </label>
+          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
+          <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
+            <option value="individual">{t('sharing_individual')}</option>
+            <option value="shared">{t('sharing_shared')}</option>
+          </select>
         </>
       ) : (
         <>
           <div style={productValueStyle}>{p?.charge_type_code ?? dash}</div>
           <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('one_time_purchase')}</label>
           <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
+          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
+          <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
         </>
       )}
     </div>
@@ -530,6 +541,7 @@ export default function BaseProductsPage() {
             <MemberImagePreview src={memberImagePreviewSrc(details.image_url, details.modified_at)} emptyLabel={t('image_none')} />
             <p><strong>{t('mandatory')}:</strong> {details.mandatory ? t('yes') : t('no')}</p>
             <p><strong>{t('one_time_purchase')}:</strong> {details.one_time_purchase ? t('yes') : t('no')}</p>
+            <p><strong>{t('sharing_type')}:</strong> {details.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</p>
             <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
             <p><strong>{t('created_by')}:</strong> {details.created_by ?? dash}</p>
             <p><strong>{t('modified_at')}:</strong> {when(details.modified_at)}</p>
