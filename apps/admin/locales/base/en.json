@@ -5592,7 +5592,7 @@
     "delete_confirm": "Delete \"{name}\"? It is kept for historical records and can no longer be selected.",
     "error_load": "Could not load payment methods.",
     "error_generic": "Something went wrong.",
-    "error_required": "Code and a name in every language are required.",
+    "error_required": "Code and an English name are required.",
     "image": "Image",
     "image_none": "No image",
     "created_at": "Created At",
@@ -5600,7 +5600,15 @@
     "modified_at": "Modified At",
     "modified_by": "Modified By",
     "deleted_at": "Deleted At",
-    "deleted_by": "Deleted By"
+    "deleted_by": "Deleted By",
+    "translations_title": "Translations: {field}",
+    "translations_close": "Close",
+    "translations_open": "Open translations for {field}",
+    "translations_cancel": "Cancel",
+    "translations_save": "Save",
+    "translations_empty": "No translation (falls back to English)",
+    "label_name": "Name",
+    "label_description": "Description"
   },
   "base_professional_services": {
     "title": "Base Professional Services",

@@ -36,3 +36,12 @@ describe('#1657 inline draft Add Product', () => {
     expect(form.slice(idx, idx + 400)).toContain('if (embedded) onClose();');
   });
 });
+
+// #2372 follow-up — the draft row's own cells carry the form's fields.
+describe('#2372 Add Product fields are cells of the draft row', () => {
+  const table = readFileSync(join(DIR, 'MemberPurchasedProducts.tsx'), 'utf8');
+  it('feeds the draft row from addProductDraftCells, not a separate form', () => {
+    expect(table).toContain('addProductDraftCells(addForm');
+    expect(table).not.toContain('<AddProductPurchase');
+  });
+});
