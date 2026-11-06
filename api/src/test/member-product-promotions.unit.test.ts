@@ -420,7 +420,7 @@ describe('the Admin half (§11, §12, §13)', () => {
     expect(src).not.toContain('<input');
     expect(src).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);
     expect(src).not.toContain('useApiClient');
-    expect(src).toContain('<AddProductPurchase');
+    expect(src).toContain('useAddProductForm(');
     // The form decides no price: it asks the server's quote on every change.
     const form = read(REPO, 'apps', 'admin', 'src', 'app', '[locale]', 'members', 'AddProductPurchase.tsx');
     expect(form).toContain('/quote');
