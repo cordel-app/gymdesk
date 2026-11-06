@@ -39,7 +39,8 @@ import {
 } from './memberTabs';
 import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
-import { innerCardStyle, inlineActionsRowStyle } from '@/components/formChrome';
+import { innerCardStyle, inlineActionsRowStyle, formControlStyle } from '@/components/formChrome';
+import { profileGridStyle, profileFieldLabelStyle, PROFILE_ROW_GAP } from './MemberProfileLayout';
 
 interface Plan {
   id: number;
@@ -879,42 +880,51 @@ export default function MembersPage() {
 
       {/* #2363: the Add Member form is inline, in the page, never a modal (editing is inline on the expanded row — #365) */}
       {modalOpen && (
-        <div style={{ ...innerCardStyle, marginBottom: 16, padding: 20, maxWidth: 560 }}>
+        <div style={{ ...innerCardStyle, marginBottom: 16, padding: 20 }}>
           <div>
             <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>{t('members.modal_add')}</h2>
 
-            <label style={labelStyle}>{t('members.label_name')}</label>
-            <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
+            {/* #2363 follow-up: the Edit view's grid and controls, full width. */}
+            <div style={{ marginBottom: PROFILE_ROW_GAP }}>
+              <label style={profileFieldLabelStyle}>{t('members.label_image')}</label>
+              {/* #1374 §2: staged, not uploaded — the Member has no id yet. */}
+              <MemberImageField
+                target={{ kind: 'staged', file: addImage, onFile: setAddImage }}
+                disabled={saving}
+                label={(key) => t(`members.${key}`)}
+              />
+            </div>
 
-            <label style={labelStyle}>{t('members.label_email')}</label>
-            <input style={inputStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
-
-            <label style={labelStyle}>{t('members.label_phone')}</label>
-            <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
-
-            <label style={labelStyle}>{t('members.label_document')}</label>
-            <input style={inputStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
-            <p style={helpTextStyle}>{t('members.help_document')}</p>
-
-            {/* #1374 §2: staged, not uploaded — the Member has no id yet. */}
-            <label style={labelStyle}>{t('members.label_image')}</label>
-            <MemberImageField
-              target={{ kind: 'staged', file: addImage, onFile: setAddImage }}
-              disabled={saving}
-              label={(key) => t(`members.${key}`)}
-            />
-
-            {showCenters && (
-              <>
-                <label style={labelStyle}>{t('members.default_center')}</label>
-                <select style={inputStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">{t('members.default_center_none')}</option>
-                  {centers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </>
-            )}
+            <div style={profileGridStyle}>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_name')}</label>
+                <input style={formControlStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_email')}</label>
+                <input style={formControlStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_phone')}</label>
+                <input style={formControlStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
+              </div>
+              <div>
+                <label style={profileFieldLabelStyle}>{t('members.label_document')}</label>
+                <input style={formControlStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
+                <p style={helpTextStyle}>{t('members.help_document')}</p>
+              </div>
+              {showCenters && (
+                <div>
+                  <label style={profileFieldLabelStyle}>{t('members.default_center')}</label>
+                  <select style={formControlStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">{t('members.default_center_none')}</option>
+                    {centers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
