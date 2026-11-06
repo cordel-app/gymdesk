@@ -1777,7 +1777,9 @@
     "center_mode_all_centers": "Todos los centros",
     "center_mode_all_centers_help": "Todos los centros, incluidos los que se creen en el futuro.",
     "center_mode_member_default_center": "Solo el centro predeterminado del miembro",
-    "center_mode_member_default_center_help": "Sigue el centro predeterminado del perfil de cada miembro; si no tiene, no accede a ningún centro."
+    "center_mode_member_default_center_help": "Sigue el centro predeterminado del perfil de cada miembro; si no tiene, no accede a ningún centro.",
+    "center_online": "En línea",
+    "center_online_help": "Solo servicios remotos (entrenamiento personal online, coaching). No da acceso a ningún centro físico."
   },
   "prices": {
     "title": "Precios",

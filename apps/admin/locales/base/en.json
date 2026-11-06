@@ -1791,7 +1791,9 @@
     "center_mode_all_centers": "All centers",
     "center_mode_all_centers_help": "Every center, including centers created in the future.",
     "center_mode_member_default_center": "Only Member Default Center",
-    "center_mode_member_default_center_help": "Follows the Default Center in each Member's profile; a Member with none gets no center."
+    "center_mode_member_default_center_help": "Follows the Default Center in each Member's profile; a Member with none gets no center.",
+    "center_online": "On-line",
+    "center_online_help": "Remote services only (online personal training, coaching). Grants no physical center."
   },
   "prices": {
     "title": "Prices",

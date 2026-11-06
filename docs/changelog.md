@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2406 (Plans → Centers: the modes read All Centers, Only Member Default Center, Specific Centers with the center list directly under Specific Centers; a new stable *On-line* choice (`membership_plans.online_access`, migration 372, default 0) is selected inside Specific Centers, grants no physical center and is never part of All Centers; resolved by `resolveCenterAccess()` (`online`), cleared by the other modes, copied by Duplicate)
+
 - **Done**: #2404 (Equipment names are translated: `exercises.equipment_<slug>` (Admin) and `exercise_media.equipment_<slug>` (Members App) keys in en/es/ca for the twelve catalogue values, resolved by `equipmentLabel()` in the Admin filter, chips, editor dropdown, read-only card and info modal, and in the Members App exercise details; an unknown stored value falls back to its humanised form. Stored values, filters and the API are unchanged)
 
 - **Done**: #2407 (sidebar entry `nav.plans` reads *Planes* in Spanish and *Plans* in Catalan instead of *Cuotas* / *Quotes*; locale values only, route, permissions and the page's own title unchanged)
