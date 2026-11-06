@@ -591,7 +591,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(line.schedule_id).not.toBeNull();
     // The schedule bills on the 1st: a fixture period starting on a 1st would collide with the line's own
     // scheduled billing event (billing_events_schedule_period_key), so step off it (date-dependent flake).
-    if (dayOffset(start).endsWith('-01')) { start += 1; end += 1; }
+    if (dayOffset(start).endsWith('-01')) start += 1;
     const m = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
     const memberId = m.rows[0].member_id;
     const ev = await db.query(
