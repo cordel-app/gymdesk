@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
 import { useTranslations } from 'next-intl';
 import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
@@ -85,6 +86,7 @@ export function ExerciseFilterBar({
 
   const active = isExerciseFilterActive(value);
   const categoryLabel = (v: string) => exerciseCategoryLabel(v, (key) => t(key as any), exerciseFacetValueLabel);
+  const equipmentText = (v: string) => equipmentLabel(v, (key) => t(key as any), exerciseFacetValueLabel);
   const equipmentOptions = facets?.equipment ?? [];
   const categoryOptions = facets?.category ?? [];
 
@@ -92,7 +94,7 @@ export function ExerciseFilterBar({
     search: (v) => t('filter_chip_search', { value: v }),
     status: (v) => tStatus(v as 'active' | 'inactive'),
     muscle: muscleLabel,
-    equipment: exerciseFacetValueLabel,
+    equipment: equipmentText,
     category: categoryLabel,
   });
 
@@ -160,7 +162,7 @@ export function ExerciseFilterBar({
             style={filterControlStyle}
             searchPlaceholder={t('filter_equipment_search')}
             clearLabel={t('filter_clear')}
-            options={equipmentOptions.map((v) => ({ value: v, label: exerciseFacetValueLabel(v) }))}
+            options={equipmentOptions.map((v) => ({ value: v, label: equipmentText(v) }))}
             selected={value.equipment}
             onChange={(equipment) => onChange({ ...value, equipment })}
           />

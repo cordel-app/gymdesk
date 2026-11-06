@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2404 (Equipment names are translated: `exercises.equipment_<slug>` (Admin) and `exercise_media.equipment_<slug>` (Members App) keys in en/es/ca for the twelve catalogue values, resolved by `equipmentLabel()` in the Admin filter, chips, editor dropdown, read-only card and info modal, and in the Members App exercise details; an unknown stored value falls back to its humanised form. Stored values, filters and the API are unchanged)
+
 - **Done**: #2402 (Cordel → Muscles: muscle names in every supported language. Migration 371 adds `muscle_translations` (`muscle_id`, `locale`, `name`; `muscles.name` stays the base value and fallback) through the shared `nameTranslations` mechanism (`domain/muscleTranslations.ts`); `GET/POST/PUT /platform/muscles` report and accept `translations` (absent keeps, `{}` clears, partial sets allowed, base locale refused). The page shows the globe beside the name, opening the standard translations modal read-only outside Edit and editable in Edit/Add)
 
 - **Done**: #2403 (Members App exercise details show the category in the Member's language: `exercise_media.category_<slug>` keys in en/es/ca, resolved in `ExerciseInfo`, falling back to the humanised stored value for an unknown slug; no API or schema change)

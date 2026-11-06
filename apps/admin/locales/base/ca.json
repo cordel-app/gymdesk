@@ -2336,7 +2336,19 @@
     "gender_media_error_remove_failed": "No s'ha pogut treure el fitxer.",
     "gender_media_created_upload_failed": "L'exercici s'ha creat, però no s'ha pogut pujar part del contingut multimèdia. Torna-ho a provar des de l'editor.",
     "close_image": "Tanca la imatge",
-    "image_unavailable": "Imatge no disponible"
+    "image_unavailable": "Imatge no disponible",
+    "equipment_bands": "Bandes elàstiques",
+    "equipment_barbell": "Barra",
+    "equipment_body_only": "Pes corporal",
+    "equipment_cable": "Politja",
+    "equipment_dumbbell": "Manuelles",
+    "equipment_e_z_curl_bar": "Barra EZ",
+    "equipment_exercise_ball": "Pilota d'exercici",
+    "equipment_foam_roll": "Corró d'escuma",
+    "equipment_kettlebells": "Kettlebells",
+    "equipment_machine": "Màquina",
+    "equipment_medicine_ball": "Pilota medicinal",
+    "equipment_other": "Altre"
   },
   "muscles": {
     "chest": "Pit",

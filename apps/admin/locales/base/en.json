@@ -2350,7 +2350,19 @@
     "gender_media_error_remove_failed": "The file could not be removed.",
     "gender_media_created_upload_failed": "The exercise was created, but some media could not be uploaded. Retry it from the editor.",
     "close_image": "Close image",
-    "image_unavailable": "Image not available"
+    "image_unavailable": "Image not available",
+    "equipment_bands": "Bands",
+    "equipment_barbell": "Barbell",
+    "equipment_body_only": "Body only",
+    "equipment_cable": "Cable",
+    "equipment_dumbbell": "Dumbbell",
+    "equipment_e_z_curl_bar": "EZ curl bar",
+    "equipment_exercise_ball": "Exercise ball",
+    "equipment_foam_roll": "Foam roller",
+    "equipment_kettlebells": "Kettlebells",
+    "equipment_machine": "Machine",
+    "equipment_medicine_ball": "Medicine ball",
+    "equipment_other": "Other"
   },
   "muscles": {
     "chest": "Chest",

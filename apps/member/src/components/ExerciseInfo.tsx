@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { muscleLabel } from '@/lib/memberProgress';
+import { equipmentLabelKey } from '@/lib/exerciseEquipment';
 import { memberTheme } from '@/lib/memberChrome';
 
 /**
@@ -51,7 +52,7 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
   if (short) sections.push({ key: 'short', label: t('exercise_media.short_description'), value: short });
   if (description) sections.push({ key: 'description', label: t('exercise_media.description'), value: description });
   if (muscles.length && primary.length === 0) sections.push({ key: 'muscles', label: t('exercise_media.muscles'), value: muscles.map(muscleLabel).join(', ') });
-  if (equipment) sections.push({ key: 'equipment', label: t('exercise_media.equipment'), value: equipment.split(',').map((e) => muscleLabel(e.trim())).filter(Boolean).join(', ') });
+  if (equipment) sections.push({ key: 'equipment', label: t('exercise_media.equipment'), value: equipment.split(',').map((e) => e.trim()).filter(Boolean).map((e) => { const k = equipmentLabelKey(e); return t.has(k) ? t(k) : muscleLabel(e); }).join(', ') });
   if (category) sections.push({ key: 'category', label: t('exercise_media.category'), value: categoryLabel(category) });
   if (sections.length === 0) return null;
   return (
