@@ -1,6 +1,7 @@
 'use client';
 
 import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
 import { sortMuscleKeys, MUSCLE_COLUMNS_STYLE } from './exerciseForm';
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
@@ -123,7 +124,8 @@ export function ExerciseEditor({
     [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))],
     muscleLabel,
   );
-  const equipmentChoices = Array.from(new Set(equipmentOptions)).sort((a, b) => exerciseFacetValueLabel(a).localeCompare(exerciseFacetValueLabel(b)));
+  const equipmentText = (v: string) => equipmentLabel(v, (key) => t(key as any), exerciseFacetValueLabel);
+  const equipmentChoices = Array.from(new Set(equipmentOptions)).sort((a, b) => equipmentText(a).localeCompare(equipmentText(b)));
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
   // The base locale is the language `exercises.name` itself is written in, so the
   // field that *is* the base name carries its label; the others are rows in
@@ -212,8 +214,8 @@ export function ExerciseEditor({
           <select id={id('equipment')} value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} style={inlineSelectSt}>
             <option value="">{t('equipment_none')}</option>
             {/* A stored value no longer in the catalogue's facets is shown, disabled, so it still reads correctly. */}
-            {form.equipment && !equipmentChoices.includes(form.equipment) && <option value={form.equipment} disabled>{exerciseFacetValueLabel(form.equipment)}</option>}
-            {equipmentChoices.map((v) => <option key={v} value={v}>{exerciseFacetValueLabel(v)}</option>)}
+            {form.equipment && !equipmentChoices.includes(form.equipment) && <option value={form.equipment} disabled>{equipmentText(form.equipment)}</option>}
+            {equipmentChoices.map((v) => <option key={v} value={v}>{equipmentText(v)}</option>)}
           </select>
         </div>
         <div>

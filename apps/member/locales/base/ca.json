@@ -774,7 +774,19 @@
     "play_video": "Reproduir el vídeo de l'exercici",
     "play_video_of": "Reproduir el vídeo de {name}",
     "video_of": "Vídeo de {name}",
-    "close": "Tancar"
+    "close": "Tancar",
+    "equipment_bands": "Bandes elàstiques",
+    "equipment_barbell": "Barra",
+    "equipment_body_only": "Pes corporal",
+    "equipment_cable": "Politja",
+    "equipment_dumbbell": "Manuelles",
+    "equipment_e_z_curl_bar": "Barra EZ",
+    "equipment_exercise_ball": "Pilota d'exercici",
+    "equipment_foam_roll": "Corró d'escuma",
+    "equipment_kettlebells": "Kettlebells",
+    "equipment_machine": "Màquina",
+    "equipment_medicine_ball": "Pilota medicinal",
+    "equipment_other": "Altre"
   },
   "native": {
     "loading": "Carregant…",

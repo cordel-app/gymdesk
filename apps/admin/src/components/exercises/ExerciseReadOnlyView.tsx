@@ -1,6 +1,7 @@
 'use client';
 
 import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
 import { sortMuscleKeys } from './exerciseForm';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
 import React from 'react';
@@ -122,7 +123,7 @@ export function ExerciseReadOnlyView({
         />
         <Field
           label={t('label_equipment')}
-          value={exercise.equipment ? exerciseFacetValueLabel(exercise.equipment) : EXERCISE_EMPTY_VALUE}
+          value={exercise.equipment ? equipmentLabel(exercise.equipment, (key) => t(key as any), exerciseFacetValueLabel) : EXERCISE_EMPTY_VALUE}
         />
         <Field
           label={t('label_category')}

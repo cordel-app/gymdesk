@@ -2336,7 +2336,19 @@
     "gender_media_error_remove_failed": "No se pudo quitar el archivo.",
     "gender_media_created_upload_failed": "El ejercicio se creó, pero no se pudo subir parte del contenido multimedia. Reinténtalo desde el editor.",
     "close_image": "Cerrar imagen",
-    "image_unavailable": "Imagen no disponible"
+    "image_unavailable": "Imagen no disponible",
+    "equipment_bands": "Bandas elásticas",
+    "equipment_barbell": "Barra",
+    "equipment_body_only": "Peso corporal",
+    "equipment_cable": "Polea",
+    "equipment_dumbbell": "Mancuerna",
+    "equipment_e_z_curl_bar": "Barra EZ",
+    "equipment_exercise_ball": "Pelota de ejercicio",
+    "equipment_foam_roll": "Rodillo de espuma",
+    "equipment_kettlebells": "Pesas rusas",
+    "equipment_machine": "Máquina",
+    "equipment_medicine_ball": "Balón medicinal",
+    "equipment_other": "Otro"
   },
   "muscles": {
     "chest": "Pecho",

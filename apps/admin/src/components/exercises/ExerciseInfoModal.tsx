@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
 import {
   buildExerciseInfo, exerciseInfoFields, type ExerciseInfoFieldId, type ExerciseInfoRow,
 } from './exerciseInfoView';
@@ -111,7 +112,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
               </>
             ));
           }
-          if (id === 'equipment') return field(id, t('equipment'), info.equipment!.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+          if (id === 'equipment') return field(id, t('equipment'), equipmentLabel(info.equipment, (k) => tCat(k as any), (v) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())));
           return field(id, t('categories'), info.categories
             .map((c) => exerciseCategoryLabel(c, (k) => tCat(k as any), (v) => v.replace(/\b\w/g, (ch) => ch.toUpperCase())))
             .join(', '));

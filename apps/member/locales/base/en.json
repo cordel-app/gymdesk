@@ -774,7 +774,19 @@
     "play_video": "Play the exercise video",
     "play_video_of": "Play the video of {name}",
     "video_of": "Video of {name}",
-    "close": "Close"
+    "close": "Close",
+    "equipment_bands": "Bands",
+    "equipment_barbell": "Barbell",
+    "equipment_body_only": "Body only",
+    "equipment_cable": "Cable",
+    "equipment_dumbbell": "Dumbbell",
+    "equipment_e_z_curl_bar": "EZ curl bar",
+    "equipment_exercise_ball": "Exercise ball",
+    "equipment_foam_roll": "Foam roller",
+    "equipment_kettlebells": "Kettlebells",
+    "equipment_machine": "Machine",
+    "equipment_medicine_ball": "Medicine ball",
+    "equipment_other": "Other"
   },
   "native": {
     "loading": "Loading…",
