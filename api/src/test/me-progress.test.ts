@@ -95,6 +95,18 @@ describe('GET /me/progress/exercises (#1224)', () => {
     expect(e.muscles).toEqual([muscleSlug]);
   });
 
+  it('reports the System exercise\'s equipment for a copy imported without one (#2320)', async () => {
+    const slug = `fact-fallback-${Date.now()}`;
+    const base = await db.query(`INSERT INTO base_exercises (name, slug, equipment, category) VALUES ('Fallback Base', ?, 'barbell', 'strength')`, [slug]);
+    const copy = await db.query(
+      `INSERT INTO exercises (gym_id, name, base_exercise_id) VALUES (?, 'Fallback Copy', ?)`, [gymId, base.insertId]);
+    await logOn(gymId, memberId, copy.insertId, '2026-10-04', [[50, 5]]);
+    const res = await asMember(request.get('/me/progress/exercises')).expect(200);
+    const e = res.body.find((x: any) => x.exercise_id === copy.insertId);
+    expect(e.equipment).toBe('barbell');
+    expect(e.category).toBe('strength');
+  });
+
   it('never exposes another member\'s or gym\'s history', async () => {
     const res = await asMember(request.get('/me/progress/exercises')).expect(200);
     expect(res.body.find((e: any) => e.exercise_id === otherMemberExerciseId)).toBeUndefined();
