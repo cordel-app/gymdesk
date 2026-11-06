@@ -699,7 +699,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
 /**
  * #2302: "Resync with System" — a selective, field-level update of an imported
  * exercise from the Base Exercise it records as its provenance. Moves only the
- * name, the description and the short description (base columns and the
+ * name, the description, the short description, the equipment (base columns and the
  * per-locale translations the Base Exercise carries) and a male/female image the
  * copy is *missing*; every other field, the video, the muscles, the Recorded
  * Metrics, the provenance and the Base row itself are left alone.
@@ -708,7 +708,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
   const { gymId } = getTenantContext(req);
   try {
     const { rows: own } = await db.query<any>(
-      `SELECT id, name, description, short_description, image_male_url, image_female_url,
+      `SELECT id, name, description, short_description, equipment, image_male_url, image_female_url,
               COALESCE(base_exercise_id, cloned_from_id) AS source_id
          FROM exercises WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
       [req.params.id, gymId],
@@ -719,7 +719,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
       return res.status(400).json({ code: 'no_base_exercise', error: 'This exercise was not imported from the System catalogue.' });
     }
     const { rows: baseRows } = await db.query<any>(
-      `SELECT id, name, description, short_description, image_male_url, image_female_url
+      `SELECT id, name, description, short_description, equipment, image_male_url, image_female_url
          FROM base_exercises WHERE id = ? AND status != 'deleted'`,
       [copy.source_id],
     );
@@ -760,7 +760,9 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
     const maleImage = !copy.image_male_url && !!base.image_male_url;
     const femaleImage = !copy.image_female_url && !!base.image_female_url;
     const textChanged = baseTextChanged || namesChanged || descsChanged;
-    if (!textChanged && !maleImage && !femaleImage) return res.json({ updated: [], message: 'up_to_date' });
+    // #2376: equipment follows the Base Exercise's current value (NULL included).
+    const equipmentChanged = (copy.equipment ?? null) !== (base.equipment ?? null);
+    if (!textChanged && !equipmentChanged && !maleImage && !femaleImage) return res.json({ updated: [], message: 'up_to_date' });
 
     const actor = resolveRequestActor(getTenantContext(req));
     await db.transaction(async (tx) => {
@@ -770,6 +772,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
         sets.push('name = ?', 'description = ?', 'short_description = ?');
         params.push(base.name, base.description, base.short_description);
       }
+      if (equipmentChanged) { sets.push('equipment = ?'); params.push(base.equipment ?? null); }
       if (maleImage) { sets.push('image_male_url = ?'); params.push(base.image_male_url); }
       if (femaleImage) { sets.push('image_female_url = ?'); params.push(base.image_female_url); }
       await tx.query(
@@ -784,6 +787,7 @@ exercisesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), 
     });
     const updated: string[] = [];
     if (textChanged) updated.push('name', 'description');
+    if (equipmentChanged) updated.push('equipment');
     if (maleImage) updated.push('image_male');
     if (femaleImage) updated.push('image_female');
     recordAudit(req, {

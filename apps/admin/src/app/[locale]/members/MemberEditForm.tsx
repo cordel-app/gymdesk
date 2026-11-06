@@ -42,8 +42,8 @@ export type { MemberEditFormValues };
 export function MemberEditForm({
   form, isNewMember, welcomed, error, saving,
   image,
-  showCenters, centers, assignedCenterIds, defaultCenterId,
-  onChange, onToggleCenter, onDefaultCenterChange,
+  showCenters, centerOptions, defaultCenterId,
+  onChange, onDefaultCenterChange,
   onSave, onCancel,
 }: {
   form: MemberEditFormValues;
@@ -76,11 +76,10 @@ export function MemberEditForm({
   error: string | null;
   saving: boolean;
   showCenters: boolean;
-  centers: CenterOption[];
-  assignedCenterIds: Set<number>;
+  /** #2381: the centers the Member's Membership Plans cover. */
+  centerOptions: CenterOption[];
   defaultCenterId: number | null;
   onChange: (form: MemberEditFormValues) => void;
-  onToggleCenter: (id: number, checked: boolean) => void;
   onDefaultCenterChange: (id: number | null) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -167,21 +166,6 @@ export function MemberEditForm({
           centers={
             showCenters
               ? {
-                  assignedLabel: t('assigned_centers'),
-                  assigned: (
-                    <div style={centerListStyle}>
-                      {centers.map((c) => (
-                        <label key={c.id} style={formCheckboxLabelStyle}>
-                          <input
-                            type="checkbox"
-                            checked={assignedCenterIds.has(c.id)}
-                            onChange={(e) => onToggleCenter(c.id, e.target.checked)}
-                          />
-                          {c.name}
-                        </label>
-                      ))}
-                    </div>
-                  ),
                   defaultLabel: t('default_center'),
                   default: (
                     <select
@@ -190,7 +174,7 @@ export function MemberEditForm({
                       onChange={(e) => onDefaultCenterChange(e.target.value ? Number(e.target.value) : null)}
                     >
                       <option value="">{t('default_center_none')}</option>
-                      {centers.filter((c) => assignedCenterIds.has(c.id)).map((c) => (
+                      {centerOptions.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>

@@ -12,7 +12,7 @@ import { secondaryButtonStyle } from '@/lib/memberChrome';
  * the description arrives already localized by the API (`exercise_description`).
  */
 export function ExerciseDetailsDialog({ exercise, description, onClose }: {
-  exercise: ExerciseMedia & { exercise_name?: string; exercise_short_description?: string | null; exercise_muscles?: string[] | null; exercise_category?: string | null; exercise_equipment?: string | null };
+  exercise: ExerciseMedia & { exercise_name?: string; exercise_short_description?: string | null; exercise_muscles?: string[] | null; exercise_primary_muscles?: string[] | null; exercise_category?: string | null; exercise_equipment?: string | null };
   description: string | null;
   onClose: () => void;
 }) {
@@ -29,7 +29,7 @@ export function ExerciseDetailsDialog({ exercise, description, onClose }: {
       {src && <img src={src} alt={t('exercise_media.image_alt', { name })} style={{ display: 'block', width: '100%', maxWidth: 'none', height: 'auto', objectFit: 'contain', alignSelf: 'stretch' }} />}
       <ExerciseInfo info={{
         short_description: exercise.exercise_short_description, description,
-        muscles: exercise.exercise_muscles, category: exercise.exercise_category, equipment: exercise.exercise_equipment,
+        muscles: exercise.exercise_muscles, primary_muscles: exercise.exercise_primary_muscles, category: exercise.exercise_category, equipment: exercise.exercise_equipment,
       }} />
     </MemberDialog>
   );

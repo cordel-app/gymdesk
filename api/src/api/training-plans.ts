@@ -156,6 +156,7 @@ export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') 
                       'exercise_short_description', ${localizedShortDescriptionExpr('e', locale)},
                       'exercise_category', ${exerciseFactSql('e', 'category')}, 'exercise_equipment', ${exerciseFactSql('e', 'equipment')},
                       'exercise_muscles', (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id),
+                      'exercise_primary_muscles', (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id WHERE em.role = 'principal') mm WHERE mm.exercise_id = e.id),
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
                       'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,

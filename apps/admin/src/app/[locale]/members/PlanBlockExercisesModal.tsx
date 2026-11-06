@@ -138,7 +138,7 @@ export function PlanBlockExercisesModal({ memberId, planId, workoutId, blockId, 
                   <td style={td}>{i.max_reps ?? '—'}</td>
                   <td style={td}>{i.sets ?? '—'}</td>
                   <td style={td}>{i.rest_seconds ?? '—'}</td>
-                  <td style={{ ...td, textAlign: 'right' }}><ExerciseMediaThumbnails exercise={i} /></td>
+                  <td style={{ ...td, textAlign: 'right' }}><ExerciseMediaThumbnails exercise={i} exerciseId={i.exercise_id} /></td>
                   <td style={{ ...td, display: 'flex', gap: 6 }}>
                     <button onClick={() => move(idx, -1)} style={btnSmall('#888')} disabled={idx === 0}>↑</button>
                     <button onClick={() => move(idx, 1)} style={btnSmall('#888')} disabled={idx === items.length - 1}>↓</button>

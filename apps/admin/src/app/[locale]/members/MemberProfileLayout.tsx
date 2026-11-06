@@ -64,12 +64,10 @@ export function MemberProfileLayout({
    */
   renderCalculated: (field: MemberProfileFieldSpec) => React.ReactNode;
   /**
-   * Assigned Centers and Default Center, in the one position both modes place
+   * The Default Center (#2381: Assigned Centers is no longer a Member field), in the one position both modes place
    * them. `null` where the gym has a single center and the page hides them.
    */
   centers: {
-    assignedLabel: string;
-    assigned: React.ReactNode;
     defaultLabel: string;
     default: React.ReactNode;
   } | null;
@@ -107,10 +105,6 @@ export function MemberProfileLayout({
 
       {centers && (
         <div style={{ ...profileGridStyle, marginTop: PROFILE_ROW_GAP }}>
-          <div>
-            <label style={profileFieldLabelStyle}>{centers.assignedLabel}</label>
-            {centers.assigned}
-          </div>
           <div>
             <label style={profileFieldLabelStyle}>{centers.defaultLabel}</label>
             {centers.default}
