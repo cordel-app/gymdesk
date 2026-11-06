@@ -48,8 +48,9 @@ export function parseStatus(value: unknown): { value: BasePaymentMethodStatus } 
 }
 
 /**
- * Judges the `translations` map of a request. Every supported locale must carry
- * a name; a description is optional (blank = NULL). An unknown locale is a 400,
+ * Judges the `translations` map of a request. The English (base) name is
+ * required; another locale may be left blank (`name: ''`, which clears its row
+ * so readers fall back to English). A description is optional (blank = NULL). An unknown locale is a 400,
  * never dropped quietly.
  */
 export function parseTranslations(value: unknown): { value: TranslationsInput } | { error: string } {
@@ -65,6 +66,10 @@ export function parseTranslations(value: unknown): { value: TranslationsInput } 
   const out: TranslationsInput = {};
   for (const locale of BASE_PAYMENT_METHOD_LOCALES) {
     const entry = input[locale];
+    if (locale !== 'en' && (entry === undefined || entry === null || (typeof entry === 'object' && !String(entry.name ?? '').trim()))) {
+      out[locale] = { name: '', description: null };
+      continue;
+    }
     if (!entry || typeof entry !== 'object') return { error: `translations.${locale}.name is required` };
     if (typeof entry.name !== 'string' || !entry.name.trim()) return { error: `translations.${locale}.name is required` };
     const name = entry.name.trim();
