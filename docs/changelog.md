@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2375 (Assigned Plan card: entering Edit mode on a Draft no longer auto-opens Billing & Duration (#1814 reversed), so every section keeps an enabled `Edit` and staff open the one they want; one section at a time still applies. No API change)
+
 - **Done**: #2406 (Plans → Centers: the modes read All Centers, Only Member Default Center, Specific Centers with the center list directly under Specific Centers; a new stable *On-line* choice (`membership_plans.online_access`, migration 372, default 0) is selected inside Specific Centers, grants no physical center and is never part of All Centers; resolved by `resolveCenterAccess()` (`online`), cleared by the other modes, copied by Duplicate)
 
 - **Done**: #2404 (Equipment names are translated: `exercises.equipment_<slug>` (Admin) and `exercise_media.equipment_<slug>` (Members App) keys in en/es/ca for the twelve catalogue values, resolved by `equipmentLabel()` in the Admin filter, chips, editor dropdown, read-only card and info modal, and in the Members App exercise details; an unknown stored value falls back to its humanised form. Stored values, filters and the API are unchanged)
