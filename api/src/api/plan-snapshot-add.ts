@@ -81,6 +81,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null, input.actor ?? null]);
 
+  await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, insertId]);
   await tx.query(
     'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gymId, insertId, input.memberId]);
@@ -129,6 +130,7 @@ export async function copyPlanSnapshotToVersion(
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, toSetId, fromSnapshotId, gymId]);
+  await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   await tx.query(
     `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
      SELECT gym_id, ?, member_id, is_owner FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
@@ -182,7 +184,8 @@ export async function mergeActiveVersionIntoDraft(
 ): Promise<void> {
   const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
-    'SELECT id, source_user_membership_id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id',
+    `SELECT s.id, s.source_user_membership_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`,
     [gymId, activeSetId]);
   for (const plan of plans) {
     if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;

@@ -309,6 +309,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
           `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, origin, source_user_membership_id)
            VALUES (?, ?, ?, ?, 'draft', 0, ?, 'admin', ?)`,
           [resolved.gym_id, versionId, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
+        await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
         rows.push({ id: Number(insertId) });
       }
       last = await db.query(

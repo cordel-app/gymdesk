@@ -22,7 +22,8 @@ type Exec = { query: Tx['query'] };
 /** The version's primary plan snapshot, or `null` for a plan-less version. */
 export async function primaryPlanSnapshotId(exec: Exec, gymId: string, productSetId: number): Promise<number | null> {
   const { rows } = await exec.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id LIMIT 1', [gymId, productSetId]);
+    `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id LIMIT 1`, [gymId, productSetId]);
   return rows[0] ? Number(rows[0].id) : null;
 }
 
@@ -35,8 +36,9 @@ export async function planSnapshotOfAssignment(
 ): Promise<number | null> {
   if (userMembershipId != null) {
     const { rows } = await exec.query<{ id: number }>(
-      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? AND source_user_membership_id = ?
-        ORDER BY id LIMIT 1`, [gymId, productSetId, userMembershipId]);
+      `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+        WHERE s.gym_id = ? AND psj.product_set_id = ? AND s.source_user_membership_id = ?
+        ORDER BY s.id LIMIT 1`, [gymId, productSetId, userMembershipId]);
     if (rows[0]) return Number(rows[0].id);
   }
   return primaryPlanSnapshotId(exec, gymId, productSetId);
