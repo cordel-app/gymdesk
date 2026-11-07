@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2435 (Activities list: Center, Space and Active Trainer filters beside Status, combined with AND; Space options follow the selected Center; Clear filters; client-side over the existing list, no API or schema change).
+
 - **Done**: #2407 (follow-up: the Plans page heading now reads *Planes* / *Plans* in es/ca, matching the renamed sidebar entry; locale values only, no route or identifier touched)
 - **Done**: #2374 (follow-up: a Product Promotion's periodical grant for a Product the Member does not hold no longer becomes a billed line of its own in the Draft's Billing Event Simulation — an optional Product of the Promotion is not billed; `collectBillableItems()` in `domain/billingSimulation.ts` skips it, regression test in `product-promotion-service-simulation.unit.test.ts`.)
 - **Done**: #2335 (Cordel → Base Payment Methods: Name and Description show the English text with a globe opening the shared translations modal; only the English name is required, a blank translation clears its row. Gym-based payment methods do not exist, so Base only.)
