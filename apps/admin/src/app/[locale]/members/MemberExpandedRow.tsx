@@ -50,6 +50,7 @@ import {
   newMemberValueKey,
   type MemberProfile,
 } from './memberProfile';
+import { MemberCenterAccess } from './MemberCenterAccess';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
@@ -411,6 +412,13 @@ export function MemberExpandedRow({
               </div>
             </Section>
           )}
+
+          {/* #2422: effective center access, resolved by the server from the live plans. */}
+          <Section label={t('members.section_center_access')} divider={!editing}>
+            <div style={card}>
+              <MemberCenterAccess memberId={memberId} refreshKey={centers} />
+            </div>
+          </Section>
 
           {/* Account (Clerk status) */}
           {(clerkStatus || (statuses && statuses.length > 0)) && (
