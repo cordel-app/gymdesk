@@ -40,9 +40,9 @@ const SELECT = `
     ps.modified_at,
     ps.modified_by,
     ps.deleted_by,
-    gps.status
+    COALESCE(gps.status, 'active') AS status
   FROM professional_services ps
-  JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+  LEFT JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
 `;
 
 /** One row (or none) shaped with its translations and the request locale's display values (#2110). */
@@ -63,9 +63,9 @@ professionalServicesRouter.get('/', async (req, res, next) => {
   }
   try {
     const params: unknown[] = [gymId];
-    let sql = `${SELECT} WHERE (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL`;
+    let sql = `${SELECT} WHERE ps.gym_id = ? AND ps.deleted_at IS NULL`;
     params.push(gymId);
-    if (status) { sql += ' AND gps.status = ?'; params.push(status); }
+    if (status) { sql += " AND COALESCE(gps.status, 'active') = ?"; params.push(status); }
     if (search) {
       sql += ` AND (ps.name LIKE ? OR ps.description LIKE ? OR EXISTS (
         SELECT 1 FROM professional_service_translations t
