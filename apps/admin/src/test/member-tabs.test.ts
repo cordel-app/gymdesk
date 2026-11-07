@@ -77,7 +77,7 @@ describe('Member card tabs: the declaration (#961)', () => {
     // §1: Profile is who the Member is — their fields and their login. #1051
     // moved the plans they hold out of it.
     expect(sectionsForTab('profile')).toEqual([
-      'section_profile', 'section_account',
+      'section_profile', 'section_center_access', 'section_account',
     ]);
     // The thread's `Q2` answer: every section the ticket's own table left
     // unassigned goes to Products & Services, in the order the card had them —
