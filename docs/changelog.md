@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2449 (Admin → Members → Payments expands a billing event into the same shared renderer as Payments → Billing Events (`payments/billing-events/BillingEventExpandedRow.tsx`): details, lines and payment transactions; read-only there, no second details component; UI-only, no API or migration change; closes #2449)
 - **Done**: #2379 (Admin → Members → Progress: every exercise can open the shared Exercise Detail Viewer — the avatar is clickable even with no picture and `⋮ → View exercise` opens it; no second viewer)
 - **Done**: #2448 (Billing Event Simulation: everything under the chart is one collapsible **BILLING SIMULATION DETAILS** section, closed by default, implemented once in the shared `BillingEventSimulation` renderer so Products, Plans and Assigned Plans behave identically; UI-only, no API or migration change; closes #2448)
 - **Done**: #2420 (Membership Plans → Centers: On-line is a fourth, independent access mode (`center_access_mode = 'online'`, migration 377) shown as its own radio and removed from the Specific Centers list; it grants remote services only, no physical center, not the Member's Default Center, and is never All Centers. Plans whose only selection was On-line are migrated to the mode; a plan that combined On-line with physical centers keeps both through the legacy `online_access` flag, still honoured by `resolveCenterAccess()`; closes #2420)

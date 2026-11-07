@@ -68,7 +68,7 @@ const DETAILS_VIEWS: {
   { file: 'spaces/page.tsx',                                              entityType: 'space' },
   { file: 'staff/page.tsx',                                               entityType: 'staff' },
   { file: 'themes/page.tsx',                                              entityType: 'theme' },
-  { file: 'payments/billing-events/page.tsx',                             entityType: 'billing_event' },
+  { file: 'payments/billing-events/BillingEventExpandedRow.tsx',                             entityType: 'billing_event' },
   { file: 'nutrition/nutrition-plans/page.tsx',                           entityType: 'member_nutrition_plan' },
   { file: 'nutrition/nutrition-plan-templates/page.tsx',                  entityType: 'nutrition_plan_template' },
   { file: 'system/gyms/page.tsx',                                         entityType: 'gym',                    platform: true },
