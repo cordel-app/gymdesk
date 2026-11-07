@@ -814,6 +814,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
+              -- #2471: the occurrence's own description wins over the Activity Type's.
+              COALESCE(NULLIF(TRIM(ce.description), ''), at.description) AS event_description,
               -- #1637: the event's own image (#1382), else the Activity Type's.
               COALESCE(NULLIF(TRIM(ce.image_url), ''), NULLIF(TRIM(at.image_url), '')) AS class_type_image_url,
               at.is_shareable,
