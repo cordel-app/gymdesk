@@ -1232,8 +1232,9 @@ membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res,
     mode = isPlanCenterAccessMode(cur[0]?.center_access_mode) ? cur[0].center_access_mode : 'specific_centers';
   }
   const center_ids = mode === 'specific_centers' ? parsed.centerIds : [];
-  // #2406: On-line is a specific-centers selection; a request that does not
-  // mention it keeps what is stored, and the other modes clear it.
+  // #2406: the legacy On-line flag (plans that combined it with physical
+  // centers) is kept as stored unless the request names it; every other mode
+  // clears it (#2420: On-line is the `online` mode now).
   let online = mode === 'specific_centers' ? parsed.online : false;
   if (online === null) {
     const { rows: cur } = await db.query('SELECT online_access FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
