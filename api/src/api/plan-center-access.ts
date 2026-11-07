@@ -105,6 +105,7 @@ export async function centersAvailableToMember(
         WHERE mp.gym_id = ? AND mp.id IN (${marks})
           AND (EXISTS (SELECT 1 FROM membership_plan_centers mpc
                         WHERE mpc.membership_plan_id = mp.id AND mpc.gym_id = mp.gym_id)
+               OR mp.center_access_mode = 'online'
                OR (mp.center_access_mode = 'specific_centers' AND mp.online_access = 1))`,
       [gymId, ...planIds],
     );
