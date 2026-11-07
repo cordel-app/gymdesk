@@ -16,7 +16,7 @@ interface Notification {
   category?: 'staff' | 'auto';
   entity_type: 'session' | null;
   entity_id: number | null;
-  payload: { title?: string; message?: string; reason?: string; starts_at?: string; [key: string]: unknown } | null;
+  payload: { title?: string; message?: string; reason?: string; starts_at?: string; sender_first_name?: string; [key: string]: unknown } | null;
   read_at: string | null;
   created_at: string;
 }
@@ -109,7 +109,10 @@ export default function NotificationsPage() {
     } catch {}
   }
 
-  function typeLabel(type: string): string {
+  function typeLabel(type: string, payload?: Notification['payload']): string {
+    if (type === 'staff_message' && payload?.sender_first_name) {
+      return t('type_staff_message_from', { name: payload.sender_first_name });
+    }
     const key = `type_${type}` as any;
     try { return t(key); } catch { return type; }
   }
@@ -156,7 +159,7 @@ export default function NotificationsPage() {
             >
               <div style={styles.itemTop}>
                 <span style={styles.typeLabel}>
-                  {typeLabel(n.type)}
+                  {typeLabel(n.type, n.payload)}
                   <span style={styles.categoryTag}>{t(`category_${n.category ?? 'auto'}` as any)}</span>
                 </span>
                 <span style={styles.timeLabel}>{timeAgo(n.created_at, locale)}</span>
