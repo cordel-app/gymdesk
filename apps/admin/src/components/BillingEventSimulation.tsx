@@ -282,6 +282,8 @@ export function BillingEventSimulation({
     setLocalShowZero(next);
     onShowZeroChange?.(next);
   };
+  // #2448 — everything under the chart is one collapsible section, closed by default.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const dates = visibleBillingDates(simulation?.dates ?? [], !zeroToggle || showZero);
   const signature = dates.map((group) => group.date).join('|');
 
@@ -320,6 +322,17 @@ export function BillingEventSimulation({
 
   return (
     <div>
+      <button
+        type="button"
+        onClick={() => setDetailsOpen((v) => !v)}
+        aria-expanded={detailsOpen}
+        style={detailsHeader}
+      >
+        <span aria-hidden="true" style={chevron}>{detailsOpen ? '▾' : '▸'}</span>
+        {t('simulation_details')}
+      </button>
+      {detailsOpen && (
+      <div>
       {zeroToggle && (
         <label style={zeroToggleStyle}>
           <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} />
@@ -375,6 +388,8 @@ export function BillingEventSimulation({
 
       <p style={footnote}>{t('simulation_disclaimer')}</p>
       {simulation.truncated && <p style={footnote}>{t('simulation_truncated')}</p>}
+      </div>
+      )}
     </div>
   );
 }
@@ -408,6 +423,11 @@ const tableStyle: React.CSSProperties = {
 };
 const zeroToggleStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 8, cursor: 'pointer',
+};
+const detailsHeader: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 0',
+  background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
+  fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'inherit',
 };
 const hint: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
 const toolbar: React.CSSProperties = {
