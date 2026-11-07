@@ -5,7 +5,7 @@ import React from 'react';
  * space (#1556). One stroke style in `currentColor`, so the caller's text colour
  * is the only colour they ever wear; the shapes alone tell them apart.
  */
-export type ActivityMetaIconName = 'center' | 'trainer' | 'space';
+export type ActivityMetaIconName = 'center' | 'trainer' | 'space' | 'capacity' | 'service';
 
 const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
   center: (
@@ -18,6 +18,19 @@ const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="8" r="3.5" />
       <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  capacity: (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20a6 6 0 0 1 12 0" />
+      <path d="M16 5.5a3 3 0 0 1 0 5.5M18 20a6 6 0 0 0-3-5.2" />
+    </>
+  ),
+  service: (
+    <>
+      <rect x="4" y="7" width="16" height="12" rx="2" />
+      <path d="M9 7V5h6v2M4 13h16" />
     </>
   ),
   space: (
