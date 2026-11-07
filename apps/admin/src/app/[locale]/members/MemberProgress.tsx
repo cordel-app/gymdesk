@@ -104,6 +104,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
             <ContextMenu
               ariaLabel={t('members.progress_exercise_actions')}
               items={[
+                { label: t('members.progress_view_exercise'), onClick: () => setImageFor(item) },
                 { label: t('members.progress_details'), onClick: () => setDetailsFor(item) },
                 { label: t('members.progress_delete_exercise'), danger: true, disabled: !canWrite,
                   title: canWrite ? undefined : t('common.read_only_hint'), onClick: () => { setDeleteError(false); setDeletingExercise(item); } },
@@ -141,7 +142,8 @@ function ExerciseAvatar({ src, name, onOpen }: { src: string | null; name: strin
     return <img src={src} alt={name} loading="lazy" onError={() => setBroken(true)} style={{ ...style, cursor: 'zoom-in' }}
       onClick={(e) => { e.stopPropagation(); onOpen(); }} />;
   }
-  return <span aria-hidden="true" style={{ ...style, display: 'inline-block' }} />;
+  // No picture: still a way into the shared Exercise Detail Viewer (#2379).
+  return <button type="button" aria-label={name} onClick={(e) => { e.stopPropagation(); onOpen(); }} style={{ ...style, display: 'inline-block', padding: 0, cursor: 'zoom-in' }} />;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

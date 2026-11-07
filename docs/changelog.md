@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2379 (Admin → Members → Progress: every exercise can open the shared Exercise Detail Viewer — the avatar is clickable even with no picture and `⋮ → View exercise` opens it; no second viewer)
 - **Done**: #2420 (Membership Plans → Centers: On-line is a fourth, independent access mode (`center_access_mode = 'online'`, migration 377) shown as its own radio and removed from the Specific Centers list; it grants remote services only, no physical center, not the Member's Default Center, and is never All Centers. Plans whose only selection was On-line are migrated to the mode; a plan that combined On-line with physical centers keeps both through the legacy `online_access` flag, still honoured by `resolveCenterAccess()`; closes #2420)
 - **Done**: #2436 (Members App Home: My Next Bookings now draws the same center/space/trainer icons as My Bookings via `ActivityMetaIcon`; the activity image on the left was already in place from #1764 and is unchanged)
 - **Done**: #2419 (Members App: My Training and My Progress open one shared exercise detail modal (`ExerciseDetailsModal`, My Training's layout); muscles read as a `Primary:` line and a `Secondary:` line with no chips, an empty group is omitted, and the Muscles icon is a flexed biceps; no API or migration change; closes #2419)

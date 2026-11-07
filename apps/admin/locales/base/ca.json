@@ -714,6 +714,7 @@
     "progress_delete_error": "No s'ha pogut eliminar el registre.",
     "progress_exercise_actions": "Accions de l'exercici",
     "progress_details": "Detalls",
+    "progress_view_exercise": "Veure exercici",
     "progress_details_title": "Detalls de l'exercici",
     "progress_delete_exercise": "Elimina",
     "progress_delete_exercise_confirm": "Totes les lectures d'aquest exercici s'eliminaran de manera permanent. Aquesta acció no es pot desfer.",
