@@ -204,8 +204,16 @@ export default function BasePaymentMethodsPage() {
   const editor = form && (
     <div style={inlineEditorStyle}>
       <div style={inlineEditorTitleStyle}>{form.id == null ? t('add') : t('edit')}</div>
-      <label style={formFieldLabelStyle}>{t('code')}</label>
-      <input style={formControlStyle} value={form.code} disabled={form.id != null} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+      <label style={formFieldLabelStyle}>{t('label_name')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.name} maxLength={120} onChange={(e) => setTranslation('en', 'name', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setOpenField('name')} />
+      </div>
+      <label style={formFieldLabelStyle}>{t('label_description')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.description} maxLength={500} onChange={(e) => setTranslation('en', 'description', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+      </div>
       <label style={formFieldLabelStyle}>{t('status')}</label>
       <select
         style={formControlStyle}
@@ -243,16 +251,10 @@ export default function BasePaymentMethodsPage() {
           );
         })()
       )}
-      <label style={formFieldLabelStyle}>{t('label_name')}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.name} maxLength={120} onChange={(e) => setTranslation('en', 'name', e.target.value)} />
-        <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setOpenField('name')} />
-      </div>
-      <label style={formFieldLabelStyle}>{t('label_description')}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.description} maxLength={500} onChange={(e) => setTranslation('en', 'description', e.target.value)} />
-        <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
-      </div>
+      {form.id == null && (<>
+      <label style={formFieldLabelStyle}>{t('code')}</label>
+      <input style={formControlStyle} value={form.code} disabled={form.id != null} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+      </>)}
       <FieldTranslationsModal
         open={openField !== null}
         title={t('translations_title', { field: openField ? t(openField === 'name' ? 'label_name' : 'label_description') : '' })}
@@ -358,12 +360,13 @@ export default function BasePaymentMethodsPage() {
                 <div style={{ padding: 12 }}>
                   {isEditing ? editor : (
                     <div style={{ fontSize: 14 }}>
-                      <p style={{ margin: '0 0 4px' }}><strong>{t('col_code')}:</strong> {m.code}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('label_name')}:</strong> {m.display_name}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('label_description')}:</strong> {m.display_description ?? dash}</p>
                       <p style={{ margin: '0 0 4px' }}><strong>{t('col_status')}:</strong> {t(m.status)}</p>
-                      {LOCALES.map((l) => (
-                        <p key={l} style={{ margin: '0 0 4px' }}><strong>{l.toUpperCase()}:</strong> {m.translations[l]?.name ?? dash}
-                          {m.translations[l]?.description ? ` — ${m.translations[l]?.description}` : ''}</p>
-                      ))}
+                      {m.image_url && thumb && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={memberImagePreviewSrc(m.image_url, m.modified_at) ?? thumb} alt={m.display_name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, marginTop: 8 }} />
+                      )}
                     </div>
                   )}
                 </div>
