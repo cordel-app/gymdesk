@@ -1512,7 +1512,7 @@
     "staff_only": "Solo Personal"
   },
   "plans": {
-    "title": "Cuotas",
+    "title": "Planes",
     "viewer_section_pricing": "Precio",
     "viewer_section_billing": "Facturación",
     "viewer_section_products": "Productos incluidos",
@@ -5578,7 +5578,7 @@
     "delete_confirm": "¿Eliminar \"{name}\"? Se conserva para el historial y ya no se podrá seleccionar.",
     "error_load": "No se pudieron cargar los métodos de pago.",
     "error_generic": "Algo salió mal.",
-    "error_required": "El código y un nombre en cada idioma son obligatorios.",
+    "error_required": "El código y el nombre en inglés son obligatorios.",
     "image": "Imagen",
     "image_none": "Sin imagen",
     "created_at": "Creado el",
@@ -5586,7 +5586,15 @@
     "modified_at": "Modificado el",
     "modified_by": "Modificado por",
     "deleted_at": "Eliminado el",
-    "deleted_by": "Eliminado por"
+    "deleted_by": "Eliminado por",
+    "translations_title": "Traducciones: {field}",
+    "translations_close": "Cerrar",
+    "translations_open": "Abrir traducciones de {field}",
+    "translations_cancel": "Cancelar",
+    "translations_save": "Guardar",
+    "translations_empty": "Sin traducción (se usa el inglés)",
+    "label_name": "Nombre",
+    "label_description": "Descripción"
   },
   "base_professional_services": {
     "title": "Servicios profesionales base",

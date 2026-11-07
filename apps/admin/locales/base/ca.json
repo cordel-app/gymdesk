@@ -1512,7 +1512,7 @@
     "staff_only": "Només Personal"
   },
   "plans": {
-    "title": "Quotes",
+    "title": "Plans",
     "viewer_section_pricing": "Preu",
     "viewer_section_billing": "Facturació",
     "viewer_section_products": "Productes inclosos",
@@ -5605,7 +5605,7 @@
     "delete_confirm": "Eliminar \"{name}\"? Es conserva per a l'historial i ja no es podrà seleccionar.",
     "error_load": "No s'han pogut carregar els mètodes de pagament.",
     "error_generic": "Alguna cosa ha anat malament.",
-    "error_required": "El codi i un nom en cada idioma són obligatoris.",
+    "error_required": "El codi i el nom en anglès són obligatoris.",
     "image": "Imatge",
     "image_none": "Sense imatge",
     "created_at": "Creat el",
@@ -5613,7 +5613,15 @@
     "modified_at": "Modificat el",
     "modified_by": "Modificat per",
     "deleted_at": "Eliminat el",
-    "deleted_by": "Eliminat per"
+    "deleted_by": "Eliminat per",
+    "translations_title": "Traduccions: {field}",
+    "translations_close": "Tanca",
+    "translations_open": "Obre les traduccions de {field}",
+    "translations_cancel": "Cancel·la",
+    "translations_save": "Desa",
+    "translations_empty": "Sense traducció (s'usa l'anglès)",
+    "label_name": "Nom",
+    "label_description": "Descripció"
   },
   "base_professional_services": {
     "title": "Serveis professionals base",

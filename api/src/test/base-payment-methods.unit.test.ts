@@ -29,10 +29,16 @@ describe('base payment methods rules (#1663)', () => {
     expect('error' in parseStatus('deleted')).toBe(true);
   });
 
-  it('requires a name in every supported locale and rejects unknown locales', () => {
+  it('requires the English name only and rejects unknown locales', () => {
     const ok = parseTranslations(full);
     expect('value' in ok && ok.value.es.description).toBeNull();
-    expect('error' in parseTranslations({ en: full.en, es: full.es })).toBe(true);
     expect('error' in parseTranslations({ ...full, fr: { name: 'x' } })).toBe(true);
+  });
+
+  it('lets a non-English locale be left blank (cleared) but never English', () => {
+    const r = parseTranslations({ en: full.en, es: { name: '' } });
+    expect('value' in r && r.value.es).toEqual({ name: '', description: null });
+    expect('value' in r && r.value.ca).toEqual({ name: '', description: null });
+    expect('error' in parseTranslations({ en: { name: ' ' } })).toBe(true);
   });
 });
