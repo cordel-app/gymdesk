@@ -1,4 +1,5 @@
 import { resolvePayerFor } from './payer-resolution';
+import { recordPaymentAttempt } from './payment-attempt';
 import { originOf } from '../domain/itemOrigin';
 import { syncProductSnapshotForPurchase, syncProductSnapshotForPaymentRequest } from './product-snapshot-sync';
 import { DateTime } from 'luxon';
@@ -560,6 +561,7 @@ export async function startProductPurchase(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,
         [billingEventId, paymentRequestId, input.gymId],
       );
+      await recordPaymentAttempt(tx, paymentRequestId);
 
       const { insertId } = await tx.query(
         `INSERT INTO member_products_oneoff_snapshot

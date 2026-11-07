@@ -133,3 +133,20 @@ describe('Import Base Professional Services', () => {
     expect(res.body).toEqual({ imported: [], skipped: [taken] });
   });
 });
+
+describe('Gym list shows only the gym\'s own services (#2439)', () => {
+  it('omits a Base service even when a stale gym_professional_services row points at it', async () => {
+    await db.query(
+      "INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by) VALUES (?, ?, 'active', 'test')",
+      [gymB, baseA],
+    );
+    const own = await request.post('/professional-services').set(as(gymB)).send({ name: `${PREFIX}-own` });
+    expect(own.status).toBe(201);
+    const res = await request.get('/professional-services').set(as(gymB));
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(own.body.id);
+    expect(ids).not.toContain(baseA);
+    expect(res.body.every((r: any) => r.gym_id !== null)).toBe(true);
+  });
+});

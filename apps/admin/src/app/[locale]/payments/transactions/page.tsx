@@ -13,6 +13,7 @@ interface BillingEvent {
   member_name: string | null;
   amount: string | null;
   source: string;
+  payment_method_name?: string | null;
   notes: string | null;
   created_at: string;
   charge_type_code: string | null;
@@ -84,13 +85,14 @@ export default function TransactionsPage() {
                 <th style={{ padding: '8px 12px' }}>Charge Type</th>
                 <th style={{ padding: '8px 12px', textAlign: 'right' }}>Amount</th>
                 <th style={{ padding: '8px 12px' }}>Source</th>
+                <th style={{ padding: '8px 12px' }}>Payment method</th>
                 <th style={{ padding: '8px 12px' }}>Notes</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
+                  <td colSpan={8} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
                     No transactions yet.
                   </td>
                 </tr>
@@ -105,6 +107,7 @@ export default function TransactionsPage() {
                     {formatAmount(row.amount)}
                   </td>
                   <td style={{ padding: '8px 12px' }}>{row.source}</td>
+                  <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
                   <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.notes ?? '—'}</td>
                 </tr>
               ))}

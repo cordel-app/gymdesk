@@ -840,6 +840,7 @@
     "col_tx_status": "Estat",
     "col_tx_amount": "Import",
     "col_tx_provider": "Proveïdor",
+    "col_tx_method": "Mètode de pagament",
     "col_tx_card": "Targeta",
     "col_tx_ref": "Referència",
     "previous": "Anterior",

@@ -1,4 +1,5 @@
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { recordPaymentAttempt } from './payment-attempt';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -187,6 +188,7 @@ export async function executeDueScheduledEvents(opts: {
           [event.gym_id, event.member_id, event.payer_member_id, feeTypeId, event.id, orderId, nextAttempt, SYSTEM_ACTOR],
         );
         attemptId = insertId;
+        await recordPaymentAttempt(tx, insertId);
         await tx.query(
           `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing', payer_member_id = ?,
                 modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [event.payer_member_id, SYSTEM_ACTOR, event.id]);
@@ -203,6 +205,7 @@ export async function executeDueScheduledEvents(opts: {
         [event.gym_id, event.member_id, event.payer_member_id, amount, feeTypeId, event.id, event.provider ?? 'monei', orderId, nextAttempt, SYSTEM_ACTOR],
       );
       attemptId = insertId;
+      await recordPaymentAttempt(tx, insertId);
       // The event leaves "scheduled" the moment an attempt exists; its status is
       // now its latest attempt's. The type is settled below.
       await tx.query(

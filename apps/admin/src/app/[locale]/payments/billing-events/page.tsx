@@ -64,6 +64,7 @@ interface Transaction {
   provider_ref: string | null;
   source: string | null;
   attempt: number | null;
+  payment_method_name?: string | null;
   failure_code: string | null;
   failure_message: string | null;
   notes: string | null;
@@ -259,6 +260,25 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
 const detailLabelStyle: React.CSSProperties = { color: '#6b7280', fontSize: 12 };
 const detailValueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 500 };
 
+function CollapsibleSection({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: React.ReactNode }) {
+  // #2451: Transaction Details and Payment Transactions start collapsed, Billing Event Lines expanded.
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, margin: '0 0 8px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+      >
+        <span aria-hidden>{open ? '▾' : '▸'}</span>
+        {title}
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -353,10 +373,7 @@ function ExpandedRow({
       <div style={{ padding: '12px 16px 16px' }}>
         {/* ── Details (read-only) ── */}
         {details && (
-          <>
-            <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>
-              {t('billing_events_page.details_heading')}
-            </p>
+          <CollapsibleSection title={t('billing_events_page.details_heading')} defaultOpen={false}>
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
               gap: 10, marginBottom: 16,
@@ -420,13 +437,12 @@ function ExpandedRow({
                 </button>
               )}
             </div>
-          </>
+          </CollapsibleSection>
         )}
 
         {/* ── Billing event lines (#1474, read-only) ── */}
         {details?.lines && details.lines.length > 0 && (
-          <>
-            <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>{t('billing_events_page.lines_heading')}</p>
+          <CollapsibleSection title={t('billing_events_page.lines_heading')} defaultOpen>
             <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', marginBottom: 16 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
@@ -455,18 +471,18 @@ function ExpandedRow({
                 ))}
               </tbody>
             </table>
-          </>
+          </CollapsibleSection>
         )}
 
         {/* ── Payment transactions ── */}
-        <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>{t('billing_events_page.transactions_heading')}</p>
+        <CollapsibleSection title={t('billing_events_page.transactions_heading')} defaultOpen={false}>
         {rows && rows.length === 0 ? (
           <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>{t('billing_events_page.transactions_empty')}</p>
         ) : (
           <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                {(['col_tx_date', 'col_tx_status', 'col_tx_amount', 'col_tx_source', 'col_tx_attempt', 'col_tx_card', 'col_tx_ref', 'col_tx_reason'] as const).map((k) => (
+                {(['col_tx_date', 'col_tx_status', 'col_tx_amount', 'col_tx_source', 'col_tx_attempt', 'col_tx_method', 'col_tx_card', 'col_tx_ref', 'col_tx_reason'] as const).map((k) => (
                   <th key={k} style={{ padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>
                     {t(`billing_events_page.${k}`)}
                   </th>
@@ -483,6 +499,7 @@ function ExpandedRow({
                   </td>
                   <td style={{ padding: '6px 10px' }}>{tx.source ?? '—'}</td>
                   <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>{tx.attempt ?? '—'}</td>
+                  <td style={{ padding: '6px 10px' }}>{tx.payment_method_name ?? '—'}</td>
                   <td style={{ padding: '6px 10px' }}>
                     {tx.card_brand && tx.card_last4 ? `${tx.card_brand} ···${tx.card_last4}` : '—'}
                   </td>
@@ -497,6 +514,7 @@ function ExpandedRow({
             </tbody>
           </table>
         )}
+        </CollapsibleSection>
       </div>
     </td>
   );

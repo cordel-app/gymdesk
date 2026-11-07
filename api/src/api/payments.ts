@@ -60,7 +60,8 @@ const MAX_LIMIT = 200;
 const LIST_SELECT = `
   SELECT be.*,
          m.name AS member_name,
-         ct.code AS charge_type_code
+         ct.code AS charge_type_code,
+         (SELECT pr.payment_method_name FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name
   FROM billing_events be
   LEFT JOIN members m ON m.id = be.member_id
   LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
@@ -496,7 +497,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
     const { rows } = await db.query<any>(
       `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
               pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
-              pr.attempt, pr.failure_code, pr.failure_message, pr.notes,
+              pr.attempt, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
               pr.created_by, pr.modified_at, pr.modified_by,
               m.name AS member_name,
               mp.name AS plan_name,

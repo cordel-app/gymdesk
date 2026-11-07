@@ -90,6 +90,8 @@ export interface MemberBillingEvent {
   notes: string | null;
   created_at: string;
   receipt_number: string | null;
+  /** #2451 — the method's name as snapshotted when the transaction was created; null when none applies. */
+  payment_method_name?: string | null;
   /** #1123 §4 — derived by the API's one implementation, never here. */
   status: MemberBillingEventStatus;
 }

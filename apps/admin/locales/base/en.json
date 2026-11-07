@@ -839,6 +839,7 @@
     "col_tx_status": "Status",
     "col_tx_amount": "Amount",
     "col_tx_provider": "Provider",
+    "col_tx_method": "Payment method",
     "col_tx_card": "Card",
     "col_tx_ref": "Reference",
     "previous": "Previous",

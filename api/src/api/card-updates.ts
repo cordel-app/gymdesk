@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { recordPaymentAttempt } from './payment-attempt';
 import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -140,6 +141,7 @@ export async function createCardUpdateRequest(
         input.actor, billingEventId,
       ],
     );
+    await recordPaymentAttempt(tx, requestId);
     return requestId;
   });
 
