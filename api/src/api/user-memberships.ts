@@ -1,4 +1,5 @@
 import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -1224,7 +1225,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       if (open) {
         const { rows: prev } = await tx.query<{ n: number }>(
           'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId]);
-        await tx.query(
+        const { insertId: cashAttemptId } = await tx.query(
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
@@ -1233,6 +1234,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
           [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
+        await recordPaymentAttempt(tx, cashAttemptId);
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],

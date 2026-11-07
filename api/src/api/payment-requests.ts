@@ -1,4 +1,5 @@
 import { resolvePayerFor } from './payer-resolution';
+import { recordPaymentAttempt } from './payment-attempt';
 import crypto from 'crypto';
 import { payerCheckoutUrl } from './checkout-url';
 import { Router, Request, Response, NextFunction } from 'express';
@@ -159,6 +160,7 @@ paymentRequestsRouter.post(
         ],
       );
 
+      await recordPaymentAttempt(db, insertId);
       const checkoutUrl = await payerCheckoutUrl({ gymId, memberId: payer.payerMemberId, pageToken });
       res.status(201).json({ id: insertId, checkoutUrl });
     } catch (err) {

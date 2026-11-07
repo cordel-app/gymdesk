@@ -1,4 +1,5 @@
 import { resolvePayerFor } from '../api/payer-resolution';
+import { recordPaymentAttempt } from '../api/payment-attempt';
 import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
@@ -233,6 +234,7 @@ async function insertTransaction(params: {
       params.actor,
     ],
   );
+  await recordPaymentAttempt(params.exec ?? db, insertId);
   return insertId;
 }
 
