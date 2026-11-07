@@ -21,6 +21,7 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { ImagePreviewButton } from '@/components/ImagePreview';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -260,8 +261,16 @@ export default function HomePage() {
                   height; with none there is no empty column. */}
               <div style={styles.bookingLayout}>
                 {nextBooking.class_type_image_url?.trim() && !bookingImageFailed && (
-                  <div style={styles.bookingImageBox}>
-                    <img src={nextBooking.class_type_image_url.trim()} alt="" style={styles.bookingImage} onError={() => setBookingImageFailed(true)} />
+                  <div style={styles.bookingImageBox} onClick={(e) => e.stopPropagation()}>
+                    <ImagePreviewButton
+                      src={nextBooking.class_type_image_url.trim()}
+                      alt={nextBooking.class_type_name}
+                      title={nextBooking.class_type_name}
+                      description={nextBooking.class_type_description?.trim() || null}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={nextBooking.class_type_image_url.trim()} alt="" style={styles.bookingImage} onError={() => setBookingImageFailed(true)} />
+                    </ImagePreviewButton>
                   </div>
                 )}
                 <div style={styles.bookingInfo}>
@@ -452,11 +461,11 @@ const styles: Record<string, React.CSSProperties> = {
   section:         { marginBottom: 20 },
   h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:            { ...sectionCardStyle, padding: '16px 18px', cursor: 'default' },
-  nextBookingCard: { ...sectionCardStyle, padding: '16px 18px', cursor: 'default', display: 'block', textAlign: 'left' },
-  bookingLayout:   { display: 'flex', alignItems: 'stretch', gap: 14 },
-  bookingImageBox: { flex: '0 0 auto', alignSelf: 'stretch', aspectRatio: '1 / 1', position: 'relative', borderRadius: 8, overflow: 'hidden' },
-  bookingImage:    { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-  bookingInfo:     { flex: '1 1 0', minWidth: 0 },
+  nextBookingCard: { ...sectionCardStyle, padding: 0, overflow: 'hidden', cursor: 'default', display: 'block', textAlign: 'left' },
+  bookingLayout:   { display: 'flex', alignItems: 'stretch' },
+  bookingImageBox: { flex: '0 0 112px', alignSelf: 'stretch', position: 'relative', overflow: 'hidden' },
+  bookingImage:    { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  bookingInfo:     { flex: '1 1 0', minWidth: 0, padding: '16px 18px' },
   bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   bookingDetail:   { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted, display: 'flex', gap: 6, alignItems: 'center' },
   srOnly:          { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
