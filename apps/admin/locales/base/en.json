@@ -713,6 +713,7 @@
     "progress_delete_error": "Could not delete the reading.",
     "progress_exercise_actions": "Exercise actions",
     "progress_details": "Details",
+    "progress_view_exercise": "View exercise",
     "progress_details_title": "Exercise details",
     "progress_delete_exercise": "Delete",
     "progress_delete_exercise_confirm": "All readings for this exercise will be permanently deleted. This action cannot be undone.",

@@ -713,6 +713,7 @@
     "progress_delete_error": "No se pudo eliminar el registro.",
     "progress_exercise_actions": "Acciones del ejercicio",
     "progress_details": "Detalles",
+    "progress_view_exercise": "Ver ejercicio",
     "progress_details_title": "Detalles del ejercicio",
     "progress_delete_exercise": "Eliminar",
     "progress_delete_exercise_confirm": "Todas las lecturas de este ejercicio se eliminarán de forma permanente. Esta acción no se puede deshacer.",
