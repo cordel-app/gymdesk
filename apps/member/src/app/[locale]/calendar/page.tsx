@@ -51,6 +51,7 @@ interface ScheduleSession {
   class_type_name: string;
   /** #1637 — the activity's description and image (event override, else the Activity Type's). */
   class_type_description?: string | null;
+  event_description?: string | null;
   class_type_image_url?: string | null;
   starts_at: string;
   ends_at: string;
@@ -594,7 +595,7 @@ export default function MemberCalendarPage() {
                 <span>{value.trim()}</span>
               </p>
             ) : null))}
-            {selected.class_type_description && selected.class_type_description.trim() && (
+            {(selected.event_description ?? selected.class_type_description)?.trim() && (
               <p
                 style={{
                   margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
@@ -603,7 +604,7 @@ export default function MemberCalendarPage() {
                     : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
                 }}
               >
-                {selected.class_type_description.trim()}
+                {(selected.event_description ?? selected.class_type_description)?.trim()}
               </p>
             )}
 
