@@ -5606,6 +5606,7 @@
     "error_required": "El código y el nombre en inglés son obligatorios.",
     "image": "Imagen",
     "image_none": "Sin imagen",
+    "no_description": "Sin descripción.",
     "created_at": "Creado el",
     "created_by": "Creado por",
     "modified_at": "Modificado el",

@@ -5620,6 +5620,7 @@
     "error_required": "Code and an English name are required.",
     "image": "Image",
     "image_none": "No image",
+    "no_description": "No description available.",
     "created_at": "Created At",
     "created_by": "Created By",
     "modified_at": "Modified At",
