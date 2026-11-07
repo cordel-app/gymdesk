@@ -602,6 +602,7 @@
     "recurring_status_draft": "Esborrany",
     "recurring_status_none": "—",
     "recurring_payment_pending": "Pagament pendent",
+    "draft_expires_in": "L'esborrany caduca en",
     "recurring_expired": "Aquest esborrany ha caducat.",
     "recurring_plan_label": "Pla de membresia",
     "recurring_from_plan": "del pla",

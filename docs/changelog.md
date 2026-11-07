@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2477 (stage 1: `expireDrafts()` now discards each expired Draft through the same `cancelInFlight()` a manual cancel runs, one transaction per Draft with expiry re-checked under the row lock; the Admin Products tab shows a "Draft expires in" countdown driven by the server's `expires_in_seconds`. Members App indicator not built: that app shows no Draft)
 
 - **Done**: #2471 (Members App calendar event modal shows the description: the occurrence's own `calendar_events.description` when it has one, else the Activity Type's, nothing when neither; `GET /me/schedule` reports it as `event_description`, no new column)
 - **Done**: #2470 (Billing & Duration on the Plan card and the Assigned Plan card (Members card included) now carries a small explanation under the summary for each configured parameter (Free Period, Paid Duration, Pre-paid Duration, Bonus Duration, Billing frequency alignment, Auto-renew), from the one `billing_duration_help` namespace via `billingDurationExplanations()`; the Billing Event Simulation section is one shared `BillingEventSimulationPanel` — the chart directly under the heading and the *Billing Simulation Details* collapsible (collapsed by default) below it — on Plans, Assigned Plans and Members → Products. UI only; no billing change.)
