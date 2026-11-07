@@ -11,7 +11,12 @@ const asg = (services: any[], extra: any = {}): any => ({
 describe('diffConfigurations (#1537)', () => {
   it('treats everything as added when there is no previous configuration', () => {
     const out = diffConfigurations(null, asg([svc(1, 1)]));
-    expect(out).toEqual([expect.objectContaining({ kind: 'added' })]);
+    expect(out.map((c) => c.kind).sort()).toEqual(['added', 'plan_changed']);
+  });
+
+  it('reports a first Membership Plan as a change even with no recurring lines (#2097)', () => {
+    expect(diffConfigurations(null, asg([]))).toEqual([{ kind: 'plan_changed', from: null, to: 'Plan' }]);
+    expect(diffConfigurations(null, asg([], { planName: null }))).toEqual([]);
   });
 
   it('reports added, removed, quantity and price changes and ignores ended lines', () => {

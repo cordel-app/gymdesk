@@ -76,6 +76,10 @@ export function diffConfigurations(
   }
   for (const [key, line] of was) if (!now.has(key)) out.push({ kind: 'removed', line });
 
+  // A first configuration has no version to compare against, but a Membership
+  // Plan it carries is still a change: without this a Draft holding only a new
+  // plan lists nothing, and the Products tab's Save & Pay never opens (#2097).
+  if (!before && after.planName) out.push({ kind: 'plan_changed', from: null, to: after.planName });
   if (before) {
     if ((before.planName ?? null) !== (after.planName ?? null)) out.push({ kind: 'plan_changed', from: before.planName ?? null, to: after.planName ?? null });
     if (cents(before.membershipFeePrice) !== cents(after.membershipFeePrice)) out.push({ kind: 'fee_changed', from: before.membershipFeePrice, to: after.membershipFeePrice });

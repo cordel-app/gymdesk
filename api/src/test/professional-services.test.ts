@@ -289,39 +289,16 @@ describe('GET /professional-services and GET /professional-services/:id', () => 
     inactiveCustomId = await createCustomService(gymId, { name: 'Zumba Nights', status: 'inactive' });
   });
 
-  it('returns the 5 seeded system services plus custom services, combined', async () => {
+  it('lists only the gym\'s own services, never the Base/system ones (#2439)', async () => {
     const res = await request
       .get('/professional-services')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-
-    const rows = res.body as Array<{ id: number; is_system: number; system_key: string | null }>;
-    expect(rows).toHaveLength(7); // 5 system + 2 custom, scoped to this fresh gym
-
-    const systemKeys = rows.filter((r) => r.is_system).map((r) => r.system_key).sort();
-    expect(systemKeys).toEqual(
-      [
-        'personal_training_individual',
-        'personal_training_duo',
-        'group_class',
-        'nutrition_coaching',
-        'physiotherapy',
-      ].sort(),
-    );
+    const rows = res.body as Array<{ id: number; gym_id: string | null }>;
+    expect(rows).toHaveLength(2); // the 2 custom services; the 5 seeded system ones are Base rows
+    expect(rows.every((r) => r.gym_id !== null)).toBe(true);
     expect(rows.map((r) => r.id)).toEqual(expect.arrayContaining([customId, inactiveCustomId]));
-  });
-
-  it('orders system services before custom services', async () => {
-    const res = await request
-      .get('/professional-services')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    const rows = res.body as Array<{ is_system: number }>;
-    const firstCustomIndex = rows.findIndex((r) => !r.is_system);
-    const lastSystemIndex = rows.map((r) => r.is_system).lastIndexOf(1);
-    expect(lastSystemIndex).toBeLessThan(firstCustomIndex);
   });
 
   it('returns a single system service by id', async () => {
