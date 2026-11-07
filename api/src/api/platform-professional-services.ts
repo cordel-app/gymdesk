@@ -11,7 +11,7 @@ import {
   migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
-import { attachTranslations, writeTranslations } from './professional-service-translations';
+import { attachTranslations, deleteTranslations, writeTranslations } from './professional-service-translations';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { getRequestLocale as resolveLocale } from '../infra/locale';
@@ -19,7 +19,7 @@ import {
   BasePsTranslations,
   parseBaseDescription,
   parseBaseName,
-  parseBasePsTranslations,
+  parsePsTranslations,
   parseMaxCapacity,
   parseMinParticipants,
   minParticipantsError,
@@ -105,7 +105,8 @@ platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res,
   if ('error' in minParticipants) return res.status(400).json({ error: minParticipants.error });
   const minVsCap = minParticipantsError(minParticipants.value, capacity.value);
   if (minVsCap) return res.status(400).json({ error: minVsCap });
-  const translations = parseBasePsTranslations(body.translations);
+  // #2441: English (the base name) is the only required language.
+  const translations = body.translations === undefined ? { value: {} } : parsePsTranslations(body.translations, { requireAll: false });
   if ('error' in translations) return res.status(400).json({ error: translations.error });
 
   const actor = resolvePlatformActor(req.superadminName);
@@ -170,10 +171,12 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
     const minVsCap = minParticipantsError(minParticipants, capacity);
     if (minVsCap) return res.status(400).json({ error: minVsCap });
     let translations: BasePsTranslations | null = null;
+    let clearedLocales: string[] = [];
     if (body.translations !== undefined) {
-      const p = parseBasePsTranslations(body.translations);
+      const p = parsePsTranslations(body.translations, { requireAll: false });
       if ('error' in p) return res.status(400).json({ error: p.error });
       translations = p.value;
+      clearedLocales = Object.keys(body.translations).filter((l) => !(l in p.value));
     }
 
     const actor = resolvePlatformActor(req.superadminName);
@@ -185,6 +188,7 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
         [name, description, capacity, minParticipants, actor, existing.id],
       );
       if (translations) await writeTranslations(tx, existing.id, translations);
+      await deleteTranslations(tx, existing.id, clearedLocales);
     });
     // #2010: the image key carries the service's name, so a rename moves it.
     if (name !== existing.name && existing.image_url) {

@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2441 (Base Professional Services: only the English name is required; Spanish, Catalan and other translations are optional on create and edit, a blanked locale is cleared and readers fall back to the English text, matching a gym's own services; no schema or frontend change; closes #2441)
 - **Done**: #2097 follow-up (Members → Products Save & Pay never opened the payment modal for a Draft holding only a newly assigned Membership Plan: the review diff of a first configuration now lists the plan as a change, so the global Save & Pay enables and opens the review/payment modal)
 - **Done**: #2407 (follow-up: the Plans page heading now reads *Planes* / *Plans* in es/ca, matching the renamed sidebar entry; locale values only, no route or identifier touched)
 - **Done**: #2374 (follow-up: a Product Promotion's periodical grant for a Product the Member does not hold no longer becomes a billed line of its own in the Draft's Billing Event Simulation — an optional Product of the Promotion is not billed; `collectBillableItems()` in `domain/billingSimulation.ts` skips it, regression test in `product-promotion-service-simulation.unit.test.ts`.)

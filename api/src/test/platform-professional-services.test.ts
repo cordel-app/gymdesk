@@ -62,13 +62,20 @@ describe('CRUD', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('rejects invalid capacity and missing translations', async () => {
+  it('rejects invalid capacity', async () => {
     for (const bad of [0, -1, 1.5, 'x']) {
       const r = await auth(request.post('/platform/professional-services')).send(body('bad', { max_capacity: bad }));
       expect(r.status).toBe(400);
     }
-    const r = await auth(request.post('/platform/professional-services')).send(body('bad2', { translations: { es: { name: 'x' } } }));
-    expect(r.status).toBe(400);
+  });
+
+  it('needs only the English name: translations are optional (#2441)', async () => {
+    const partial = await auth(request.post('/platform/professional-services')).send(body('opt1', { translations: { es: { name: 'x' } } }));
+    expect(partial.status).toBe(201);
+    const none = await auth(request.post('/platform/professional-services')).send({ name: `${PREFIX}-opt2` });
+    expect(none.status).toBe(201);
+    const noName = await auth(request.post('/platform/professional-services')).send({ name: ' ' });
+    expect(noName.status).toBe(400);
   });
 
   it('lists, reads and edits; omitted translations are kept', async () => {
