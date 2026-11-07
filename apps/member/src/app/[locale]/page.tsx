@@ -21,6 +21,7 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
@@ -277,12 +278,12 @@ export default function HomePage() {
                     {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
                   </p>
                   {([
-                    ['📍', nextBooking.center_name, t('home.booking_center')],
-                    ['👤', nextBooking.trainer_name, t('home.booking_trainer')],
-                    ['🚪', nextBooking.space_name, t('home.booking_space')],
+                    ['center', nextBooking.center_name, t('home.booking_center')],
+                    ['space', nextBooking.space_name, t('home.booking_space')],
+                    ['trainer', nextBooking.trainer_name, t('home.booking_trainer')],
                   ] as const).map(([icon, value, label]) => value?.trim() ? (
                     <p key={label} style={styles.bookingDetail} title={label}>
-                      <span aria-hidden="true">{icon}</span>
+                      <ActivityMetaIcon name={icon} />
                       <span className="sr-only" style={styles.srOnly}>{label}: </span>
                       <span>{value.trim()}</span>
                     </p>
