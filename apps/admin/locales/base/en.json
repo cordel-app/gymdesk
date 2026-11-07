@@ -601,6 +601,7 @@
     "recurring_status_draft": "Draft",
     "recurring_status_none": "—",
     "recurring_payment_pending": "Payment pending",
+    "draft_expires_in": "Draft expires in",
     "recurring_expired": "This draft has expired.",
     "recurring_plan_label": "Membership Plan",
     "recurring_from_plan": "from plan",
