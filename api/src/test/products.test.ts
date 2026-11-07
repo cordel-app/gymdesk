@@ -1686,6 +1686,60 @@ describe('Products — Professional Services linkage (#546)', () => {
     });
   });
 
+  // ── #2440: inactive services ─────────────────────────────────────────────
+
+  describe('services deactivated for the gym (#2440)', () => {
+    let inactiveId: number;
+    let productId: number;
+
+    beforeAll(async () => {
+      inactiveId = await createProfessionalService(gymId, 'Deactivated Service');
+      const ok = await request
+        .post('/products')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Linked Before Deactivation', type: 'sessions', professional_service_ids: [inactiveId] });
+      productId = ok.body.id;
+      await db.query(
+        "UPDATE gym_professional_services SET status = 'inactive' WHERE gym_id = ? AND professional_service_id = ?",
+        [gymId, inactiveId],
+      );
+    });
+
+    it('rejects newly linking an inactive service on create', async () => {
+      const res = await request
+        .post('/products')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'New Link To Inactive', type: 'sessions', professional_service_ids: [inactiveId] });
+      expect(res.status).toBe(400);
+    });
+
+    it('keeps an existing link to an inactive service when it is sent back unchanged', async () => {
+      const res = await request
+        .put(`/products/${productId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [inactiveId] });
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([inactiveId]);
+    });
+
+    it('rejects switching a product to a different inactive service on update', async () => {
+      const other = await createProfessionalService(gymId, 'Another Deactivated');
+      await db.query(
+        "UPDATE gym_professional_services SET status = 'inactive' WHERE gym_id = ? AND professional_service_id = ?",
+        [gymId, other],
+      );
+      const res = await request
+        .put(`/products/${productId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [other] });
+      expect(res.status).toBe(400);
+    });
+  });
+
   // ── input validation ─────────────────────────────────────────────────────
 
   describe('professional_service_ids input validation', () => {
