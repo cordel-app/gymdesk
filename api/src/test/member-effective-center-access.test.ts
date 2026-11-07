@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment,
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
   createTestGym, createTestMembership, request,
 } from './helpers';
 
@@ -38,11 +38,22 @@ async function plan(mode: string, centers: number[] = [], online = 0): Promise<n
   for (const c of centers) {
     await db.query('INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)', [gymId, insertId, c]);
   }
+  await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                  VALUES (?, ?, 10, '2020-01-01', 'active')`, [gymId, insertId]);
+  await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                  VALUES (?, ?, 1, 'month')`, [gymId, insertId]);
   return insertId as number;
 }
 async function assign(memberId: number, planId: number): Promise<number> {
   const um = await createTestDraftAssignment(gymId, memberId, planId);
-  await activateTestAssignment(gymId, um);
+  // A Member may hold several plans (#2125): 'add' keeps the earlier ones live,
+  // where the default confirm would replace them.
+  const res = await request
+    .post(`/user-memberships/${um}/activate`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ on_conflict: 'add' });
+  if (res.status >= 300) throw new Error(`activate: ${res.status} ${JSON.stringify(res.body)}`);
   return um;
 }
 async function setDefault(memberId: number, centerId: number) {
