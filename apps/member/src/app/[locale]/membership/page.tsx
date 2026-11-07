@@ -39,6 +39,7 @@ import {
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
+import type { PlanOverviewView } from '@/components/MemberPlanOverview';
 import {
   type MemberPendingPlan,
   type MemberPlanOffer,
@@ -645,6 +646,9 @@ export default function MembershipPage() {
         name: product.name,
         description: product.description,
         imageUrl: product.image_url ?? null,
+        imageFullUrl: product.image_full_url ?? product.image_url ?? null,
+        previewTitle: t('membership.preview_product', { name: product.name }),
+        imageAlt: product.name,
         // §5: the Final price, which is the applied Promotion's own figure —
         // the server's, never recomputed here (#817).
         price: productFinalPriceText(product, applied, gymFmt),
@@ -686,6 +690,11 @@ export default function MembershipPage() {
         key: String(promotion.promotion_id),
         heading: t('membership.promotion_heading'),
         name: promotion.promotion_name,
+        imageUrl: promotion.image_url ?? null,
+        imageFullUrl: promotion.image_full_url ?? promotion.image_url ?? null,
+        description: promotion.description ?? null,
+        previewTitle: t('membership.preview_promotion', { name: promotion.promotion_name }),
+        imageAlt: promotion.promotion_name,
         benefit: promotionNoteText(
           promotionBenefitNote(promotion.action, promotion.value, product.currency, gymFmt),
         ),
@@ -715,6 +724,11 @@ export default function MembershipPage() {
       key: `applied-${promotion.id}`,
       heading: t('membership.promotion_heading'),
       name: promotion.promotion_name,
+      imageUrl: promotion.image_url ?? null,
+      imageFullUrl: promotion.image_full_url ?? promotion.image_url ?? null,
+      description: promotion.description ?? null,
+      previewTitle: t('membership.preview_promotion', { name: promotion.promotion_name }),
+      imageAlt: promotion.promotion_name,
       benefit: promotionNoteText(
         promotionBenefitNote(
           promotion.benefit_action, promotion.benefit_value, product.currency, gymFmt,
@@ -914,6 +928,62 @@ export default function MembershipPage() {
     );
   }
 
+  // #2426 — the server's overview of a plan, worded and formatted here; every
+  // figure is the engine's (`GET /me/membership-plans`), none is computed.
+  function planOverviewView(plan: MemberPlanOffer): PlanOverviewView | null {
+    const o = plan.overview;
+    if (!o) return null;
+    const bd = o.billing_duration;
+    const freq = (f: string | null) => (f && ['once', 'week', 'four_weeks', 'month', 'year', 'per_session'].includes(f)
+      ? t(`membership.frequency.${f}` as any) : null);
+    return {
+      durationHeading: t('membership.plan_ov_duration'),
+      durationRows: [
+        { label: t('membership.plan_ov_free'), value: String(bd.free_periods) },
+        { label: t('membership.plan_ov_paid'), value: String(bd.paid_periods) },
+        { label: t('membership.plan_ov_prepaid'), value: String(bd.prepaid_periods) },
+        { label: t('membership.plan_ov_bonus'), value: String(bd.bonus_periods) },
+        ...(bd.billing_interval != null && bd.billing_unit
+          ? [{ label: t('membership.plan_ov_billing'), value: formatInterval(bd.billing_interval, bd.billing_unit, (k) => t(k as any)) }]
+          : []),
+        { label: t('membership.plan_ov_auto_renew'), value: t(bd.auto_renew ? 'membership.plan_ov_yes' : 'membership.plan_ov_no') },
+      ],
+      productsHeading: t('membership.plan_ov_products'),
+      products: o.products.map((p) => {
+        const note = p.action && p.action !== 'no_benefit'
+          ? promotionBenefitNote(p.action, p.value, forecast.currency, gymFmt) : null;
+        return {
+          key: `${p.section}:${p.product_id}`,
+          name: p.name,
+          requirement: t(p.mandatory ? 'membership.plan_ov_mandatory' : 'membership.plan_ov_optional'),
+          detail: [`${p.quantity} ×`, freq(p.frequency)].filter(Boolean).join(' · '),
+          regularLabel: t('membership.plan_ov_regular'),
+          regular: money(p.original_line_price_incl_tax) ?? '—',
+          benefit: note ? t(note.key as any, note.values) : t('membership.plan_ov_no_benefit'),
+          finalLabel: t('membership.plan_final_price'),
+          final: money(p.final_line_price_incl_tax) ?? '—',
+        };
+      }),
+      prepaid: o.prepaid_end_date
+        ? { label: t('membership.plan_ov_prepaid_end'), value: formatGymDateOnly(o.prepaid_end_date, gymFmt) } : null,
+      initial: o.initial_payment != null
+        ? { label: t('membership.plan_ov_initial'), value: money(o.initial_payment) ?? '—' } : null,
+      simulationHeading: t('membership.plan_ov_simulation'),
+      simulationToggleLabel: t('membership.plan_ov_simulation'),
+      simulation: o.simulation.dates.map((d) => ({
+        key: d.date,
+        date: formatGymDateOnly(d.date, gymFmt),
+        total: money(d.total) ?? '—',
+        lines: d.lines.map((l, i) => ({
+          key: `${d.date}:${i}`,
+          label: l.label,
+          amount: money(l.actual_charge) ?? '—',
+          note: l.regular_price !== l.actual_charge ? `${t('membership.plan_ov_regular')} ${money(l.regular_price) ?? '—'}` : null,
+        })),
+      })),
+    };
+  }
+
   function renderPlanCatalogue() {
     if (!catalogueOpen) return null;
     const items: MemberPlanCardItem[] = (planCatalogue ?? []).map((plan) => {
@@ -937,6 +1007,7 @@ export default function MembershipPage() {
           checked: !(declinedPlanBenefits[plan.id] ?? []).includes(planBenefitKey(b)),
           onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
         })),
+        overview: planOverviewView(plan),
         promotions: plan.promotions.map((promotion) => {
           const benefit = planPromotionBenefitNote(promotion, gymFmt);
           const duration = planPromotionDurationNote(promotion);

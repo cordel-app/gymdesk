@@ -33,14 +33,42 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
   return review;
 }
 
+/** The PS Status header only (#2446): the actions live in the Summary. */
 export function ProductsWorkflowBar({
-  current, loading, error, workflow, canWrite, busy, onSaveAndPay, onDiscarded, holdsNothing,
+  current, loading, error, holdsNothing,
 }: {
   /** The version holds no Products (read from its detail). */
   holdsNothing?: boolean;
   current: ProductSetSummary | null;
   loading: boolean;
   error: boolean;
+}) {
+  const t = useTranslations('members');
+  const statusKey = psStatusKey(current, !!holdsNothing);
+  return (
+    <div
+      data-ps-status-bar
+      style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}
+    >
+      <span style={{ ...cardSectionLabelStyle, margin: 0 }}>{t('ps_status_label')}</span>
+      {loading ? (
+        <span style={cardHintStyle}>{t('product_set_loading')}</span>
+      ) : error ? (
+        <span style={cardHintStyle}>{t('product_set_error')}</span>
+      ) : statusKey ? (
+        <StatusBadge status={statusKey} label={t(`ps_status_${statusKey}` as any)} />
+      ) : (
+        <StatusBadge status="none" label={t('ps_status_none')} />
+      )}
+    </div>
+  );
+}
+
+/** #2446 — the one global Save & Pay and Cancel, rendered at the bottom-left of the Summary. */
+export function ProductsWorkflowActions({
+  current, workflow, canWrite, busy, onSaveAndPay, onDiscarded,
+}: {
+  current: ProductSetSummary | null;
   workflow: WorkflowInput;
   canWrite: boolean;
   busy?: boolean;
@@ -49,7 +77,6 @@ export function ProductsWorkflowBar({
   onDiscarded?: () => void;
 }) {
   const t = useTranslations('members');
-  const statusKey = psStatusKey(current, !!holdsNothing);
   const enabled = saveAndPayEnabled({ ...workflow, canWrite });
   const { apiFetch } = useApiClient();
   const [confirming, setConfirming] = useState(false);
@@ -74,21 +101,7 @@ export function ProductsWorkflowBar({
     }
   };
   return (
-    <div
-      data-ps-status-bar
-      style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}
-    >
-      <span style={{ ...cardSectionLabelStyle, margin: 0 }}>{t('ps_status_label')}</span>
-      {loading ? (
-        <span style={cardHintStyle}>{t('product_set_loading')}</span>
-      ) : error ? (
-        <span style={cardHintStyle}>{t('product_set_error')}</span>
-      ) : statusKey ? (
-        <StatusBadge status={statusKey} label={t(`ps_status_${statusKey}` as any)} />
-      ) : (
-        <StatusBadge status="none" label={t('ps_status_none')} />
-      )}
-      {/* #1915 — Save & Pay (primary) left, Cancel right, as in the Summary's bottom bar. */}
+    <div data-summary-actions style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
       <button
         type="button"
         data-global-save-and-pay

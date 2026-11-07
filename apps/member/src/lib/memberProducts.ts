@@ -46,6 +46,8 @@ export interface MemberProduct {
   units: number | null;
   /** #1823 — the Product's picture; `null` when it has none. */
   image_url?: string | null;
+  /** #2424 — the 1080 × 1080 master the enlarged preview shows. */
+  image_full_url?: string | null;
   billing_frequency: string | null;
   price_incl_tax: number | null;
   currency: string;
@@ -218,6 +220,10 @@ export interface MemberProductPromotion {
   value: number | null;
   /** §6 — the billing cycles it covers, or `null` where it names none. */
   duration_cycles: number | null;
+  /** #2424 — the Promotion's own description and pictures; `null` when it has none. */
+  description?: string | null;
+  image_url?: string | null;
+  image_full_url?: string | null;
   regular_price_incl_tax: number | null;
   final_price_incl_tax: number | null;
 }
@@ -230,6 +236,9 @@ export interface AppliedMemberProductPromotion {
   benefit_action: string;
   benefit_value: number | null;
   duration_cycles: number | null;
+  description?: string | null;
+  image_url?: string | null;
+  image_full_url?: string | null;
   regular_amount: number;
   final_amount: number;
   applied_at: string | null;

@@ -77,9 +77,14 @@ import {
  * snapshot of the one a live purchase was actually made under, read from
  * `member_products_oneoff_promotion_snapshot` and never from the live Promotion (§13).
  */
+export interface PromotionMedia {
+  description: string | null;
+  image_url: string | null;
+  image_full_url: string | null;
+}
 export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields & {
-  promotions: MemberProductPromotionOffer[];
-  applied_promotion: AppliedPromotion | null;
+  promotions: (MemberProductPromotionOffer & PromotionMedia)[];
+  applied_promotion: (AppliedPromotion & PromotionMedia) | null;
 };
 
 /**
@@ -151,6 +156,17 @@ export async function memberProductCatalogue(
     ),
   ]);
 
+  // #2424 — the Promotions' own picture and description, read from the live row
+  // (an image is not part of what was agreed, so it is not in any snapshot).
+  const promotionIds = new Set<number>();
+  for (const list of offers.values()) for (const o of list) promotionIds.add(o.promotion_id);
+  for (const a of applied.values()) promotionIds.add(a.promotion_id);
+  const media = await loadPromotionMedia(gymId, [...promotionIds]);
+  const withMedia = <T extends { promotion_id: number }>(p: T) => ({
+    ...p,
+    ...(media.get(p.promotion_id) ?? { description: null, image_url: null, image_full_url: null }),
+  });
+
   return items.map((item) => {
     const own = purchases.get(item.id) ?? [];
     const purchase = describeProductPurchase(item, own.map((r) => r.status));
@@ -166,10 +182,29 @@ export async function memberProductCatalogue(
       // A Product the member already holds or is paying for is not on offer
       // again: the Buy action is gone (§6), so an *Apply promotion* beside it
       // would act on nothing.
-      promotions: purchase.purchase_state === 'available' ? offers.get(item.id) ?? [] : [],
-      applied_promotion: live ? applied.get(live.id) ?? null : null,
+      promotions: (purchase.purchase_state === 'available' ? offers.get(item.id) ?? [] : []).map(withMedia),
+      applied_promotion: live && applied.get(live.id) ? withMedia(applied.get(live.id)!) : null,
     };
   });
+}
+
+/** #2424 — a Promotion's description and pictures (thumbnail first, master for the preview). */
+async function loadPromotionMedia(gymId: string, ids: number[]) {
+  const out = new Map<number, { description: string | null; image_url: string | null; image_full_url: string | null }>();
+  if (ids.length === 0) return out;
+  const { rows } = await db.query<any>(
+    `SELECT id, description, image_url, image_thumbnail_url FROM promotions
+      WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
+    [gymId, ...ids],
+  );
+  for (const r of rows) {
+    out.set(Number(r.id), {
+      description: r.description ?? null,
+      image_url: r.image_thumbnail_url ?? r.image_url ?? null,
+      image_full_url: r.image_url ?? null,
+    });
+  }
+  return out;
 }
 
 /**

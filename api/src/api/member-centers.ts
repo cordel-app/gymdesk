@@ -4,7 +4,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
-import { centersAvailableToMember } from './plan-center-access';
+import { centersAvailableToMember, memberEffectiveCenterAccess } from './plan-center-access';
 
 /** Mounted at /members/:memberId/centers (mergeParams: true), like training-plans.ts. */
 export const memberCentersRouter = Router({ mergeParams: true });
@@ -34,6 +34,18 @@ memberCentersRouter.get('/options', async (req, res) => {
   );
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
   res.json(await centersAvailableToMember(gymId, memberId));
+});
+
+/** #2422: read-only effective center access, resolved from the Member's live plans. */
+memberCentersRouter.get('/effective-access', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { memberId } = req.params as { memberId: string };
+  const { rows: memberRows } = await db.query(
+    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [memberId, gymId],
+  );
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+  res.json(await memberEffectiveCenterAccess(gymId, memberId));
 });
 
 memberCentersRouter.get('/', async (req, res) => {

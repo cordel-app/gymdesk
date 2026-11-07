@@ -76,6 +76,8 @@ export interface MemberProduct {
   units: number | null;
   /** #1823 — the Product's own picture (thumbnail first), `null` when it has none. */
   image_url: string | null;
+  /** #2424 — the 1080 × 1080 master for the enlarged preview; `null` when there is none. */
+  image_full_url: string | null;
   billing_frequency: string | null;
   price_incl_tax: number | null;
   currency: string;
@@ -114,6 +116,7 @@ export function shapeMemberProduct(row: MemberProductRow, priceInclTax: number |
     type: row.type,
     units: units != null && Number.isFinite(units) ? units : null,
     image_url: row.image_thumbnail_url ?? row.image_url ?? null,
+    image_full_url: row.image_url ?? null,
     billing_frequency: row.billing_frequency ?? null,
     price_incl_tax: priceInclTax,
     currency: row.currency ?? 'EUR',

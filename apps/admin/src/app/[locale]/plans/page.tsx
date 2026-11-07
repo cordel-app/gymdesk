@@ -126,7 +126,7 @@ interface Plan extends PlanGeneralRow {
   promotion_count: number;
   billing_policy: BillingPolicy | null;
   centers: Center[];
-  center_access_mode?: 'specific_centers' | 'all_centers' | 'member_default_center';
+  center_access_mode?: 'specific_centers' | 'all_centers' | 'member_default_center' | 'online';
   online_access?: number | boolean;
   price_history: PriceRow[];
   image_url?: string | null;
@@ -390,8 +390,7 @@ export default function PlansPage() {
 
   // Centers sub-form (inline, per plan)
   const [centersForPlanId, setCentersForPlanId] = useState<number | null>(null);
-  const [centerAccessMode, setCenterAccessMode] = useState<'specific_centers' | 'all_centers' | 'member_default_center'>('specific_centers');
-  const [onlineAccess, setOnlineAccess] = useState(false);
+  const [centerAccessMode, setCenterAccessMode] = useState<'specific_centers' | 'all_centers' | 'member_default_center' | 'online'>('specific_centers');
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
@@ -689,7 +688,6 @@ export default function PlansPage() {
     setCentersForPlanId(plan.id);
     setSelectedCenterIds((plan.centers ?? []).map((c) => c.id));
     setCenterAccessMode(plan.center_access_mode ?? 'specific_centers');
-    setOnlineAccess(Number(plan.online_access) === 1);
   }
 
   async function handleSaveCenters() {
@@ -699,7 +697,7 @@ export default function PlansPage() {
         method: 'PUT',
         body: JSON.stringify({
           center_access_mode: centerAccessMode,
-          ...(centerAccessMode === 'specific_centers' ? { center_ids: selectedCenterIds, online_access: onlineAccess } : {}),
+          ...(centerAccessMode === 'specific_centers' ? { center_ids: selectedCenterIds } : {}),
         }),
       });
       setCentersForPlanId(null);
@@ -1584,7 +1582,7 @@ export default function PlansPage() {
                     />
                     {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        {(['all_centers', 'member_default_center', 'specific_centers'] as const).map((m) => (
+                        {(['all_centers', 'member_default_center', 'specific_centers', 'online'] as const).map((m) => (
                           <Fragment key={m}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0' }}>
                             <input
@@ -1616,18 +1614,6 @@ export default function PlansPage() {
                                   <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
                                 </div>
                               ))}
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0' }}>
-                                <input
-                                  type="checkbox"
-                                  id={`center_${plan.id}_online`}
-                                  checked={onlineAccess}
-                                  onChange={(e) => setOnlineAccess(e.target.checked)}
-                                />
-                                <label htmlFor={`center_${plan.id}_online`} style={{ fontSize: 13, cursor: 'pointer' }}>
-                                  {t('plans.center_online')}
-                                  <div style={{ opacity: 0.7 }}>{t('plans.center_online_help')}</div>
-                                </label>
-                              </div>
                             </div>
                           )}
                           </Fragment>
@@ -1638,7 +1624,7 @@ export default function PlansPage() {
                           saveLabel: t('plans.save_changes'),
                         })}
                       </div>
-                    ) : plan.center_access_mode === 'all_centers' || plan.center_access_mode === 'member_default_center' ? (
+                    ) : plan.center_access_mode === 'all_centers' || plan.center_access_mode === 'member_default_center' || plan.center_access_mode === 'online' ? (
                       <DetailRow label="" value={t(`plans.center_mode_${plan.center_access_mode}`)} />
                     ) : (plan.centers ?? []).length === 0 && Number(plan.online_access) !== 1 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />

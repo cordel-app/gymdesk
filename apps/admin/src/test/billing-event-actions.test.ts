@@ -22,7 +22,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const pageSrc = stripComments(readFileSync(PAGE, 'utf-8'));
+const pageSrc = stripComments(readFileSync(PAGE, 'utf-8') + readFileSync(join(PAGE, '..', 'BillingEventExpandedRow.tsx'), 'utf-8'));
 
 const REQUIRED_KEYS = [
   'col_actions',

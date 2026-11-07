@@ -18,7 +18,8 @@ import {
   inlineEditorTitleStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
-import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { MemberImageField, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -87,6 +88,8 @@ export default function BasePaymentMethodsPage() {
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<Method | null>(null);
   const [deleting, setDeleting] = useState<Method | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [imageOf, setImageOf] = useState<Method | null>(null);
   const [openField, setOpenField] = useState<'name' | 'description' | null>(null);
 
   useEffect(() => {
@@ -182,6 +185,14 @@ export default function BasePaymentMethodsPage() {
     setForm(formFor(m));
     setStagedImage(null);
     setError(null);
+  }
+
+  function toggleExpand(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
 
   function closeForm() {
@@ -296,33 +307,70 @@ export default function BasePaymentMethodsPage() {
       {form?.id === null && editor}
 
       <div style={{ ...cardSurfaceStyle, marginTop: form?.id === null ? 12 : 0 }}>
-        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((m) => (
-          form?.id === m.id ? (
-            <div key={m.id} style={{ padding: 12, borderTop: '1px solid var(--gd-separator, #eee)' }}>{editor}</div>
-          ) : (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--gd-separator, #eee)' }}>
-              <MemberImagePreview
-                src={memberImagePreviewSrc(m.image_thumbnail_url ?? m.image_url, m.modified_at)}
-                emptyLabel={t('image_none')}
-                size={40}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{m.display_name}</div>
-                <div style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.code}{m.display_description ? ` · ${m.display_description}` : ''}
+        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((m) => {
+          const isEditing = form?.id === m.id;
+          const isOpen = expanded.has(m.id) || isEditing;
+          const thumb = memberImagePreviewSrc(m.image_thumbnail_url ?? m.image_url, m.modified_at);
+          return (
+            <div key={m.id} style={{ borderTop: '1px solid var(--gd-separator, #eee)' }}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={isOpen}
+                onClick={() => toggleExpand(m.id)}
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleExpand(m.id); } }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+              >
+                <button
+                  type="button"
+                  aria-label={m.image_url ? m.display_name : t('image_none')}
+                  disabled={!m.image_url}
+                  onClick={(e) => { e.stopPropagation(); if (m.image_url) setImageOf(m); }}
+                  style={{ border: 'none', background: 'none', padding: 0, cursor: m.image_url ? 'zoom-in' : 'default', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, width: 40, height: 40 }}
+                >
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', display: 'block' }} />
+                  ) : (
+                    <span style={{ display: 'block', width: 40, height: 40, borderRadius: '50%', background: 'var(--gd-separator, #eee)' }} />
+                  )}
+                </button>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontWeight: 600, flexShrink: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.display_name}</span>
+                  {m.display_description && (
+                    <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{m.display_description}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>{m.created_by ?? dash}</div>
+                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>{when(m.created_at)}</div>
+                <StatusBadge status={m.status} label={t(m.status)} />
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ContextMenu
+                    items={[
+                      { label: t('edit'), onClick: () => { setExpanded((p) => new Set(p).add(m.id)); openForm(m); } },
+                      { label: t('details'), onClick: () => setDetails(m) },
+                      { label: t('delete'), onClick: () => setDeleting(m), danger: true },
+                    ]}
+                  />
                 </div>
               </div>
-              <StatusBadge status={m.status} label={t(m.status)} />
-              <ContextMenu
-                items={[
-                  { label: t('edit'), onClick: () => openForm(m) },
-                  { label: t('details'), onClick: () => setDetails(m) },
-                  { label: t('delete'), onClick: () => setDeleting(m), danger: true },
-                ]}
-              />
+              {isOpen && (
+                <div style={{ padding: 12 }}>
+                  {isEditing ? editor : (
+                    <div style={{ fontSize: 14 }}>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('col_code')}:</strong> {m.code}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('col_status')}:</strong> {t(m.status)}</p>
+                      {LOCALES.map((l) => (
+                        <p key={l} style={{ margin: '0 0 4px' }}><strong>{l.toUpperCase()}:</strong> {m.translations[l]?.name ?? dash}
+                          {m.translations[l]?.description ? ` — ${m.translations[l]?.description}` : ''}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )
-        ))}
+          );
+        })}
       </div>
 
       <CrudModal
@@ -352,6 +400,14 @@ export default function BasePaymentMethodsPage() {
           </div>
         )}
       </CrudModal>
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
 
       <ConfirmDialog
         open={!!deleting}

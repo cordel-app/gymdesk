@@ -7,7 +7,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole, requireModuleWrite, requireFeatureWrite } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { recordNotifications } from '../infra/notifications';
-import { parseCommunicationInput, MEMBER_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
+import { parseCommunicationInput, senderFirstName, MEMBER_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { deriveAccessRights } from '../domain/memberAccessRights';
@@ -618,7 +618,11 @@ membersRouter.post(
         type: 'staff_message',
         entityType: null,
         entityId: null,
-        payload: { title: parsed.title, message: parsed.message },
+        payload: {
+          title: parsed.title,
+          message: parsed.message,
+          sender_first_name: senderFirstName(getTenantContext(req).actorName),
+        },
       }]);
 
       recordAudit(req, {
