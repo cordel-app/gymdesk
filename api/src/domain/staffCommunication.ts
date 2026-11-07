@@ -32,3 +32,13 @@ export function parseCommunicationInput(body: unknown): CommunicationParse {
   }
   return { ok: true, title, message };
 }
+
+/**
+ * #2452: the sender's first name for "MESSAGE FROM <name>" — the first word of
+ * the acting staff member's display name, `null` when nobody can be named (the
+ * Members App then keeps the generic label).
+ */
+export function senderFirstName(actorName: string | null | undefined): string | null {
+  const first = actorName?.trim().split(/\s+/)[0];
+  return first ? first : null;
+}
