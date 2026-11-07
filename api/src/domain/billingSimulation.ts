@@ -1037,10 +1037,12 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   // Additional Periodic Service prices that service's own stream
   // (`buildServiceStream`); giving it a stream of its own as well billed the
   // Product twice, on alternating dates once the two cadences drifted.
-  const serviceProducts = new Set(a.services.map((x) => x.productId));
   for (const promo of a.promotions) {
     for (const grant of promo.grants) {
-      if (promo.productTarget && grant.category === 'periodical' && grant.productId > 0 && serviceProducts.has(grant.productId)
+      // #2374 — and a Product Promotion never bills a Product the member does not
+      // hold: it discounts the lines they have, so a grant for another Product
+      // (an optional one, or one not yet added) is not a charge of its own.
+      if (promo.productTarget && grant.category === 'periodical' && grant.productId > 0
           && !byCharge.has(`item:${grant.productId}`)) continue;
       const existing = grant.productId > 0 ? byCharge.get(`item:${grant.productId}`) : undefined;
       if (existing) {

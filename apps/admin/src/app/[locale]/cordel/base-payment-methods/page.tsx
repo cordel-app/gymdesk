@@ -17,6 +17,7 @@ import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -86,6 +87,7 @@ export default function BasePaymentMethodsPage() {
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<Method | null>(null);
   const [deleting, setDeleting] = useState<Method | null>(null);
+  const [openField, setOpenField] = useState<'name' | 'description' | null>(null);
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -111,7 +113,7 @@ export default function BasePaymentMethodsPage() {
 
   async function save() {
     if (!form) return;
-    if (!form.code.trim() || LOCALES.some((l) => !form.translations[l].name.trim())) {
+    if (!form.code.trim() || !form.translations.en.name.trim()) {
       setError(t('error_required'));
       return;
     }
@@ -230,14 +232,33 @@ export default function BasePaymentMethodsPage() {
           );
         })()
       )}
-      {LOCALES.map((l) => (
-        <div key={l}>
-          <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
-          <input style={formControlStyle} value={form.translations[l].name} maxLength={120} onChange={(e) => setTranslation(l, 'name', e.target.value)} />
-          <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-          <input style={formControlStyle} value={form.translations[l].description} maxLength={500} onChange={(e) => setTranslation(l, 'description', e.target.value)} />
-        </div>
-      ))}
+      <label style={formFieldLabelStyle}>{t('label_name')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.name} maxLength={120} onChange={(e) => setTranslation('en', 'name', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setOpenField('name')} />
+      </div>
+      <label style={formFieldLabelStyle}>{t('label_description')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.description} maxLength={500} onChange={(e) => setTranslation('en', 'description', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+      </div>
+      <FieldTranslationsModal
+        open={openField !== null}
+        title={t('translations_title', { field: openField ? t(openField === 'name' ? 'label_name' : 'label_description') : '' })}
+        locales={LOCALES.map((l) => ({ code: l, label: l.toUpperCase() }))}
+        values={openField ? Object.fromEntries(LOCALES.map((l) => [l, form.translations[l][openField]])) : {}}
+        multiline={openField === 'description'}
+        saveLabel={t('translations_save')}
+        cancelLabel={t('translations_cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel={t('translations_empty')}
+        onSave={(vals) => {
+          const field = openField!;
+          setForm((f) => f && ({ ...f, translations: Object.fromEntries(LOCALES.map((l) => [l, { ...f.translations[l], [field]: vals[l] ?? '' }])) as Translations }));
+          setOpenField(null);
+        }}
+        onClose={() => setOpenField(null)}
+      />
       {error && <div style={formErrorStyle} role="alert">{error}</div>}
       <div style={inlineActionsRowStyle}>
         <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
