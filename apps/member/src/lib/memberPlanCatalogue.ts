@@ -47,6 +47,29 @@ export function declinedBenefitsPayload(
     .map((b) => ({ section: b.section, product_id: b.product_id }));
 }
 
+/** #2426 — the server's overview of a plan (`memberPlanOverview.ts` on the API). */
+export interface MemberPlanOverviewData {
+  billing_duration: {
+    free_periods: number; paid_periods: number; prepaid_periods: number; bonus_periods: number;
+    billing_interval: number | null; billing_unit: string | null; auto_renew: boolean;
+  };
+  products: Array<{
+    section: string; product_id: number; name: string; quantity: number; frequency: string | null;
+    mandatory: boolean; action: string | null; value: number | null;
+    original_price_incl_tax: number | null; final_price_incl_tax: number | null;
+    original_line_price_incl_tax: number | null; final_line_price_incl_tax: number | null;
+  }>;
+  prepaid_end_date: string | null;
+  initial_payment: number | null;
+  simulation: {
+    available: boolean; tax_included: boolean;
+    dates: Array<{ date: string; total: number; lines: Array<{
+      kind: string; label: string; actual_charge: number; regular_price: number;
+      benefits: Array<{ action?: string }>;
+    }> }>;
+  };
+}
+
 /** One plan a member may choose, as `GET /me/membership-plans` reports it. */
 export interface MemberPlanOffer {
   id: number;
@@ -59,6 +82,8 @@ export interface MemberPlanOffer {
   promotions: MemberPlanOfferPromotion[];
   /** The Plan's benefit lines (#1184 stage 3b); absent from an older API. */
   benefits?: MemberPlanOfferBenefit[];
+  /** #2426 — absent from an older API. */
+  overview?: MemberPlanOverviewData | null;
 }
 
 /** The member's plan awaiting its first payment, as `GET /me/membership` reports it. */
