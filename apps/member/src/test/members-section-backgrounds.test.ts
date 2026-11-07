@@ -139,7 +139,9 @@ describe('a custom image replaces the default icon (#982 §1)', () => {
   });
 
   it('adds no placeholder or second asset in the icon\'s place', () => {
-    expect(homeSrc).not.toContain('<img');
+    // The only <img>s on Home are the next booking's own picture (#1764), never a tile placeholder.
+    expect(homeSrc.match(/<img/g)!.length).toBe(2);
+    expect(homeSrc).not.toMatch(/<NavTile[^>]*<img/);
     expect(cardSrc).not.toContain('<img');
   });
 
