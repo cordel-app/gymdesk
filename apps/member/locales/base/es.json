@@ -423,6 +423,8 @@
     "product_purchase_pending_error": "Ya tienes un pago en curso para este producto.",
     "product_purchase_recurring_error": "Este producto todavía no se puede comprar desde la app. Consulta con tu gimnasio.",
     "product_purchase_unpriced_error": "Este producto todavía no tiene precio. Consulta con tu gimnasio.",
+    "preview_product": "Producto: {name}",
+    "preview_promotion": "Promoción: {name}",
     "promotion_heading": "Promoción",
     "promotion_apply": "Aplicar promoción",
     "promotion_applied": "Promoción aplicada",

@@ -152,6 +152,12 @@ describe('what a member is shown of one Product (#1121 §4)', () => {
     expect(shapeMemberProduct(row({}), 5).image_url).toBeNull();
   });
 
+  it('reports the master separately so the preview never enlarges the thumbnail (#2424)', () => {
+    const shaped = shapeMemberProduct(row({ image_url: 'm.webp', image_thumbnail_url: 't.webp' }), 5);
+    expect(shaped.image_full_url).toBe('m.webp');
+    expect(shapeMemberProduct(row({}), 5).image_full_url).toBeNull();
+  });
+
   it('carries a Sessions package’s units, as a number', () => {
     const shaped = shapeMemberProduct(row({ type: 'sessions', units: '10' }), 500);
     expect(shaped).toMatchObject({ type: 'sessions', units: 10 });

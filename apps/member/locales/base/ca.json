@@ -423,6 +423,8 @@
     "product_purchase_pending_error": "Ja tens un pagament en curs per a aquest producte.",
     "product_purchase_recurring_error": "Aquest producte encara no es pot comprar des de l’app. Consulta-ho amb el teu gimnàs.",
     "product_purchase_unpriced_error": "Aquest producte encara no té preu. Consulta-ho amb el teu gimnàs.",
+    "preview_product": "Producte: {name}",
+    "preview_promotion": "Promoció: {name}",
     "promotion_heading": "Promoció",
     "promotion_apply": "Aplicar promoció",
     "promotion_applied": "Promoció aplicada",
