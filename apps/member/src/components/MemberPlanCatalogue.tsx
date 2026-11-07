@@ -2,6 +2,7 @@
 
 import { type CSSProperties, type ReactNode } from 'react';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { MemberPlanOverview, type PlanOverviewView } from './MemberPlanOverview';
 
 /**
  * #1122 §2–§5 — the look of the **Add Plan** catalogue: one card per plan a
@@ -47,6 +48,8 @@ export interface MemberPlanCardItem {
   benefitsHeading?: string;
   benefits?: MemberPlanCardBenefit[];
   promotions?: MemberPlanCardPromotion[];
+  /** #2426 — Billing & Duration, Products, Initial Payment and the collapsed simulation. */
+  overview?: PlanOverviewView | null;
   /** The card's one action row: *Choose this plan*. */
   action?: ReactNode;
 }
@@ -94,6 +97,7 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
                   ))}
                 </div>
               )}
+              {item.overview && <MemberPlanOverview view={item.overview} />}
               {(item.promotions ?? []).map((promotion) => (
                 <div key={promotion.key} style={styles.promotion}>
                   <span style={styles.promotionHeading}>{promotion.heading}</span>

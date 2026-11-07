@@ -296,7 +296,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
   return rows.length > 0 ? rows[0].id : null;
 }
 
-async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
+export async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   const [prices, bpRows, centers, memberCount, products, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
