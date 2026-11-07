@@ -601,6 +601,7 @@
     "recurring_status_draft": "Borrador",
     "recurring_status_none": "—",
     "recurring_payment_pending": "Pago pendiente",
+    "draft_expires_in": "El borrador caduca en",
     "recurring_expired": "Este borrador ha caducado.",
     "recurring_plan_label": "Plan de membresía",
     "recurring_from_plan": "del plan",

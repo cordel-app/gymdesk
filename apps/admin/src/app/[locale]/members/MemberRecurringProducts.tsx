@@ -26,6 +26,7 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetSummary } from './membershipConfiguration';
 import { AddProductPurchase } from './AddProductPurchase';
+import { DraftExpiryIndicator } from './DraftExpiryIndicator';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { editableLines, planSummary, recurringState, type EditableLine } from './recurringProductsView';
 
@@ -139,6 +140,9 @@ export function MemberRecurringProducts({
   return (
     <div style={innerCardStyle} data-recurring-products data-recurring-status={state.chip ?? 'none'}>
       {/* #1613 — the title and status chip are gone: the tab's PS Status chip says it. */}
+      {current?.status === 'draft' && !current.expired && (
+        <div style={{ marginBottom: 8 }}><DraftExpiryIndicator seconds={current.expires_in_seconds} onExpire={onChanged} /></div>
+      )}
       {(state.paymentPending || state.expired) && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
           {state.paymentPending && <span style={cardHintStyle}>{t('recurring_payment_pending')}</span>}
