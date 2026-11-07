@@ -73,3 +73,15 @@ describe('On-line center (#2406)', () => {
     expect('error' in parseCenterAccessInput({ center_ids: [], online_access: 'yes' })).toBe(true);
   });
 });
+
+describe('#2420 On-line mode', () => {
+  it('grants remote access and no physical center, and is not All Centers', () => {
+    const a = resolveCenterAccess([{ mode: 'online', centerIds: [] }], 5);
+    expect(onlineAllowed(a)).toBe(true);
+    expect(a.all).toBe(false);
+    expect(centerAllowed(a, 5)).toBe(false);
+  });
+  it('accepts online as a mode', () => {
+    expect(parseCenterAccessInput({ center_access_mode: 'online' })).toEqual({ mode: 'online', centerIds: [], online: null });
+  });
+});

@@ -2,7 +2,7 @@
  * #2383: the one place that decides which centers a Member may use through
  * their Membership Plans. Pure — the SQL half is `api/src/api/plan-center-access.ts`.
  */
-export const PLAN_CENTER_ACCESS_MODES = ['specific_centers', 'all_centers', 'member_default_center'] as const;
+export const PLAN_CENTER_ACCESS_MODES = ['specific_centers', 'all_centers', 'member_default_center', 'online'] as const;
 export type PlanCenterAccessMode = (typeof PLAN_CENTER_ACCESS_MODES)[number];
 export const DEFAULT_PLAN_CENTER_ACCESS_MODE: PlanCenterAccessMode = 'specific_centers';
 
@@ -17,6 +17,13 @@ export function isPlanCenterAccessMode(v: unknown): v is PlanCenterAccessMode {
  * `membership_plans.online_access`, and it is only meaningful in
  * `specific_centers` mode. `all_centers` means every physical center and never
  * includes it.
+ */
+/**
+ * #2420: On-line is an access mode of its own (`online`): remote services only,
+ * no physical center, no Default Center, never All Centers. The legacy
+ * `online_access` flag survives only on plans that combined On-line with
+ * physical centers before this ticket (migration 377 preserves them), and is
+ * still honoured by the resolver.
  */
 export const ONLINE_CENTER_KEY = 'online';
 
@@ -47,9 +54,10 @@ export function resolveCenterAccess(
   memberDefaultCenterId: number | null,
 ): EffectiveCenterAccess {
   const centerIds = new Set<number>();
-  const online = plans.some((p) => p.mode === 'specific_centers' && p.online === true);
+  const online = plans.some((p) => p.mode === 'online' || (p.mode === 'specific_centers' && p.online === true));
   for (const p of plans) {
     if (p.mode === 'all_centers') return { all: true, centerIds, online };
+    if (p.mode === 'online') continue; // remote services only: no physical center
     if (p.mode === 'member_default_center') {
       if (memberDefaultCenterId != null) centerIds.add(Number(memberDefaultCenterId));
       continue;

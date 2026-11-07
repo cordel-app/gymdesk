@@ -1789,6 +1789,8 @@
     "center_mode_all_centers_help": "Tots els centres, inclosos els que es creïn en el futur.",
     "center_mode_member_default_center": "Només el centre per defecte del membre",
     "center_mode_member_default_center_help": "Segueix el centre per defecte del perfil de cada membre; si no en té, no accedeix a cap centre.",
+    "center_mode_online": "En línia",
+    "center_mode_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic.",
     "center_online": "En línia",
     "center_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic."
   },
