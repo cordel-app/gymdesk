@@ -645,6 +645,9 @@ export default function MembershipPage() {
         name: product.name,
         description: product.description,
         imageUrl: product.image_url ?? null,
+        imageFullUrl: product.image_full_url ?? product.image_url ?? null,
+        previewTitle: t('membership.preview_product', { name: product.name }),
+        imageAlt: product.name,
         // §5: the Final price, which is the applied Promotion's own figure —
         // the server's, never recomputed here (#817).
         price: productFinalPriceText(product, applied, gymFmt),
@@ -686,6 +689,11 @@ export default function MembershipPage() {
         key: String(promotion.promotion_id),
         heading: t('membership.promotion_heading'),
         name: promotion.promotion_name,
+        imageUrl: promotion.image_url ?? null,
+        imageFullUrl: promotion.image_full_url ?? promotion.image_url ?? null,
+        description: promotion.description ?? null,
+        previewTitle: t('membership.preview_promotion', { name: promotion.promotion_name }),
+        imageAlt: promotion.promotion_name,
         benefit: promotionNoteText(
           promotionBenefitNote(promotion.action, promotion.value, product.currency, gymFmt),
         ),
@@ -715,6 +723,11 @@ export default function MembershipPage() {
       key: `applied-${promotion.id}`,
       heading: t('membership.promotion_heading'),
       name: promotion.promotion_name,
+      imageUrl: promotion.image_url ?? null,
+      imageFullUrl: promotion.image_full_url ?? promotion.image_url ?? null,
+      description: promotion.description ?? null,
+      previewTitle: t('membership.preview_promotion', { name: promotion.promotion_name }),
+      imageAlt: promotion.promotion_name,
       benefit: promotionNoteText(
         promotionBenefitNote(
           promotion.benefit_action, promotion.benefit_value, product.currency, gymFmt,
