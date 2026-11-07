@@ -32,6 +32,7 @@ import { ActivityImageField } from '@/components/ActivityImageField';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { PromotionImageModal as ActivityImageModal } from '../promotions/PromotionImageModal';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle, secondaryBtnSmall } from '@/components/formChrome';
 
@@ -62,6 +63,12 @@ interface ActivityType {
   modified_by: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+}
+
+/** The 256 × 256 thumbnail beside a WebP master; a legacy master has none and is drawn as is. */
+function activityThumb(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  return /\.webp(\?.*)?$/i.test(imageUrl) ? imageUrl.replace(/\.webp(\?.*)?$/i, '-thumbnail.webp$1') : imageUrl;
 }
 
 interface ScheduleRule {
@@ -222,6 +229,7 @@ export default function ActivityTypesPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
   const [loadingRules, setLoadingRules] = useState<Set<number>>(new Set());
+  const [imageFor, setImageFor] = useState<ActivityType | null>(null);
   const [eligibleServicesMap, setEligibleServicesMap] = useState<Map<number, ProfessionalService[]>>(new Map());
 
   // Edit general fields
@@ -993,6 +1001,24 @@ export default function ActivityTypesPage() {
     );
   }
 
+  // #2434: the image opens the shared viewer (full image, description, details).
+  function openImage(row: ActivityType) {
+    setImageFor(row);
+    if (!eligibleServicesMap.has(row.id)) fetchEligibleServices(row.id);
+  }
+  function imageButton(row: ActivityType, child: React.ReactNode, style?: React.CSSProperties) {
+    return (
+      <button
+        type="button"
+        aria-label={t('image_open', { name: row.name })}
+        onClick={(e) => { e.stopPropagation(); openImage(row); }}
+        style={{ border: 'none', background: 'none', padding: 0, cursor: 'zoom-in', display: 'block', ...style }}
+      >
+        {child}
+      </button>
+    );
+  }
+
   // ─── Card header (Cards view, #1389) ─────────────────────────────────────────
 
   // The closed card. The expanded and edit bodies below it are the list row's
@@ -1008,7 +1034,7 @@ export default function ActivityTypesPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {row.image_url && (
-          <CardSquareImage src={row.image_url} alt={row.name} version={row.modified_at} placeholder={null} />
+          imageButton(row, <CardSquareImage src={row.image_url} alt={row.name} version={row.modified_at} placeholder={null} />, { width: '100%' })
         )}
         <div style={{ padding: '12px 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1109,6 +1135,11 @@ export default function ActivityTypesPage() {
         /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {row.image_url && (
+              <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
+                {imageButton(row, <MemberAvatar name={row.name} imageUrl={activityThumb(row.image_url)} stamp={row.modified_at} size={28} />)}
+              </span>
+            )}
             {row.name}
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description ?? undefined}>
@@ -1674,6 +1705,41 @@ export default function ActivityTypesPage() {
         onCancel={() => setEditRuleConflict(null)}
         busy={ruleSaving}
       />
+
+      {imageFor && (() => {
+        const services = eligibleServicesMap.get(imageFor.id) ?? [];
+        const info = [
+          { icon: 'capacity' as const, label: t('label_capacity'), value: imageFor.max_capacity ? String(imageFor.max_capacity) : '' },
+          { icon: 'service' as const, label: t('viewer_professional_services'), value: services.map((p) => p.name).join(', ') },
+          { icon: 'trainer' as const, label: t('label_default_trainer'), value: imageFor.default_trainer_name ?? '' },
+          { icon: 'space' as const, label: t('label_default_space'), value: imageFor.default_space_name ?? '' },
+        ].filter((i) => i.value);
+        return (
+          <ActivityImageModal
+            name={imageFor.name}
+            imageUrl={imageFor.image_url}
+            version={imageFor.modified_at}
+            onClose={() => setImageFor(null)}
+            closeLabel={t('close')}
+            noImageLabel={t('image_none')}
+          >
+            {imageFor.description && (
+              <p style={{ margin: '0 0 16px', fontSize: 14, whiteSpace: 'pre-wrap' }}>{imageFor.description}</p>
+            )}
+            {info.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
+                {info.map((i) => (
+                  <div key={i.icon} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ActivityMetaIcon name={i.icon} size={16} />
+                    <span style={{ color: '#888' }}>{i.label}:</span>
+                    <span>{i.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ActivityImageModal>
+        );
+      })()}
 
       {/* #482: booked-occurrence impact confirm — schedule rule delete */}
       <ConfirmDialog
