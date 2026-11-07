@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseBasePsTranslations,
+  parsePsTranslations,
   parseMaxCapacity,
   parseMinParticipants,
   minParticipantsError,
@@ -30,6 +31,14 @@ describe('base professional services rules (#1817)', () => {
     expect('error' in parseBasePsTranslations({ es: { name: 'x' } })).toBe(true);
     expect('error' in parseBasePsTranslations({ es: { name: 'x' }, ca: { name: ' ' } })).toBe(true);
     expect('error' in parseBasePsTranslations({ es: { name: 'x' }, ca: { name: 'y' }, fr: { name: 'z' } })).toBe(true);
+  });
+});
+
+describe('optional translations (#2441)', () => {
+  it('a Base service needs only its English name: blank or missing locales are accepted', () => {
+    expect(parsePsTranslations({}, { requireAll: false })).toEqual({ value: {} });
+    expect(parsePsTranslations({ es: { name: '', description: '' } }, { requireAll: false })).toEqual({ value: {} });
+    expect('error' in parsePsTranslations({ fr: { name: 'z' } }, { requireAll: false })).toBe(true);
   });
 });
 
