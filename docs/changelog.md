@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2435 (Activities list: Center, Space and Active Trainer filters beside Status, combined with AND; Space options follow the selected Center; Clear filters; client-side over the existing list, no API or schema change).
+
 - **Done**: #2451 (Payment Transactions keep an immutable snapshot of the payment method name (`payment_requests.payment_method_name` / `payment_method_code`, copied from `base_payment_methods` at creation; cash→Cash, card terminal→Card, online→Monei, raised by the member→Members App, waiver→none) shown in Billing Events → Payment Transactions, Payment Transactions and the Members App Payments card. `billing_events.attempt_count` is the authoritative attempt counter, incremented atomically by `recordPaymentAttempt()` after every `payment_requests` insert (migration 376, backfilled from existing attempts). Billing Event details: Transaction Details and Payment Transactions collapsed, Billing Event Lines expanded, all toggleable)
 - **Done**: #2439 (the gym's Professional Services list reads `professional_services` filtered by the gym's own `gym_id` and no longer shows Base (`gym_id IS NULL`) services, even when a `gym_professional_services` row points at one; the status comes from a LEFT JOIN with `active` as the default; Import, activate and deactivate are unchanged)
 - **Done**: #2441 (Base Professional Services: only the English name is required; Spanish, Catalan and other translations are optional on create and edit, a blanked locale is cleared and readers fall back to the English text, matching a gym's own services; no schema or frontend change; closes #2441)

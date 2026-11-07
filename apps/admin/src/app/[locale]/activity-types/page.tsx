@@ -210,6 +210,9 @@ export default function ActivityTypesPage() {
   const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [centerFilter, setCenterFilter] = useState('');
+  const [spaceFilter, setSpaceFilter] = useState('');
+  const [trainerFilter, setTrainerFilter] = useState('');
   // #1389: the page loads every activity once and narrows it here, so the
   // summary cards stay gym-wide whatever the filters say.
   const [search, setSearch] = useState('');
@@ -1427,7 +1430,13 @@ export default function ActivityTypesPage() {
   const needle = search.trim().toLowerCase();
   const visibleRows = rows.filter((r) =>
     (!statusFilter || r.status === statusFilter)
+    && (!centerFilter || String(r.default_center_id) === centerFilter)
+    && (!spaceFilter || String(r.default_space_id) === spaceFilter)
+    && (!trainerFilter || String(r.default_trainer_membership_id) === trainerFilter)
     && (!needle || r.name.toLowerCase().includes(needle) || (r.description ?? '').toLowerCase().includes(needle)));
+
+  const filterSpaces = centerFilter ? spaces.filter((sp) => String(sp.center_id) === centerFilter) : spaces;
+  const anyFilter = !!(statusFilter || centerFilter || spaceFilter || trainerFilter);
 
   if (gymLoading || !canRead) return null;
 
@@ -1471,6 +1480,31 @@ export default function ActivityTypesPage() {
             />
           </FilterField>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
+          <FilterField label={t('filter_center')} htmlFor="activity-center-filter">
+            <select id="activity-center-filter" value={centerFilter} style={filterControlStyle}
+              onChange={(e) => {
+                const v = e.target.value; setCenterFilter(v);
+                if (v && spaceFilter && !spaces.some((sp) => String(sp.id) === spaceFilter && String(sp.center_id) === v)) setSpaceFilter('');
+              }}>
+              <option value="">{t('filter_all_centers')}</option>
+              {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label={t('filter_space')} htmlFor="activity-space-filter">
+            <select id="activity-space-filter" value={spaceFilter} onChange={(e) => setSpaceFilter(e.target.value)} style={filterControlStyle}>
+              <option value="">{t('filter_all_spaces')}</option>
+              {filterSpaces.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label={t('filter_trainer')} htmlFor="activity-trainer-filter">
+            <select id="activity-trainer-filter" value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)} style={filterControlStyle}>
+              <option value="">{t('filter_all_trainers')}</option>
+              {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+            </select>
+          </FilterField>
+          {anyFilter && (
+            <button type="button" style={secondaryBtnSmall} onClick={() => { setStatusFilter(''); setCenterFilter(''); setSpaceFilter(''); setTrainerFilter(''); }}>{t('filter_clear')}</button>
+          )}
         </div>
         <ExerciseViewToggle value={view} onChange={setView} />
       </FilterBar>
