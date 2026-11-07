@@ -1815,7 +1815,8 @@
     "center_mode_online": "On-line",
     "center_mode_online_help": "Remote services only (online personal training, coaching). Grants no physical center.",
     "center_online": "On-line",
-    "center_online_help": "Remote services only (online personal training, coaching). Grants no physical center."
+    "center_online_help": "Remote services only (online personal training, coaching). Grants no physical center.",
+    "section_billing_simulation_details": "Billing Simulation Details"
   },
   "prices": {
     "title": "Prices",
@@ -4998,7 +4999,8 @@
     "col_relationship": "Relationship",
     "relationship_primary": "Primary",
     "relationship_linked": "Linked",
-    "simulation_initial_payment": "Initial payment"
+    "simulation_initial_payment": "Initial payment",
+    "section_billing_simulation_details": "Billing Simulation Details"
   },
   "taxes": {
     "title": "Taxes",
@@ -5749,5 +5751,24 @@
     "top_exercises": "Top 5 Most Used Exercises",
     "top_empty": "No exercises found in active training plans.",
     "uses": "{count} plans · {percent}%"
+  },
+  "billing_duration_help": {
+    "label_free": "Free Period",
+    "label_paid": "Paid Duration",
+    "label_prepaid": "Pre-paid Duration",
+    "label_bonus": "Bonus Duration",
+    "label_frequency": "Billing frequency",
+    "label_auto_renew": "Auto-renew",
+    "free": "The member has access without being charged the plan fee for the first {count, plural, one {# billing period} other {# billing periods}}. The paid period starts once it ends.",
+    "paid": "The paid part of the plan lasts {count, plural, one {# complete billing period} other {# complete billing periods}}, and the plan fee is charged in each of them.",
+    "prepaid": "{count, plural, one {# billing period} other {# billing periods}} of the Paid Duration are charged upfront in the first payment, so no further fee is charged for them. Paid Duration sets how long the paid part lasts; Pre-paid Duration sets how much of it is collected at the start.",
+    "bonus": "{count, plural, one {# extra billing period} other {# extra billing periods}} of free access after the paid part ends. They extend the member's access and create no additional charges.",
+    "alignment_month": "Billing happens on the first day of each month.",
+    "alignment_four_weeks": "Billing happens on a fixed 28-day cycle.",
+    "alignment_week": "Billing happens every Monday.",
+    "alignment_year": "Billing happens once a year, on the applicable annual billing date.",
+    "alignment_other": "How often the member is charged; each period is billed on its own cycle.",
+    "auto_renew_on": "When the paid and bonus periods end, the plan starts a new billing cycle automatically.",
+    "auto_renew_off": "When the paid and bonus periods end, the plan does not start a new cycle; it continues at the regular price."
   }
 }
