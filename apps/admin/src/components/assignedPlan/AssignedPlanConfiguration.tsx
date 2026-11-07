@@ -34,6 +34,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
+import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
@@ -495,6 +496,16 @@ export function AssignedPlanConfiguration({
                 value: fmtMoney(snapshot.membership_fee_price),
               },
             ])}
+          />
+          <BillingDurationExplanations
+            config={{
+              free_periods: snapshot.free_periods,
+              paid_periods: snapshot.paid_periods,
+              pay_beforehand_periods: snapshot.pay_beforehand_periods,
+              bonus_periods: snapshot.bonus_periods,
+              recurring_billing_interval: snapshot.recurring_billing_interval,
+              recurring_billing_unit: snapshot.recurring_billing_unit,
+            }}
           />
         </div>
       )}

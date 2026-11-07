@@ -142,10 +142,11 @@ describe('#955 — which cards are open', () => {
 
 describe('#955 — the presentation is one component, in the Example Timeline’s language', () => {
   it('is rendered by both consumers, with no second implementation', () => {
-    for (const src of [plansSrc, promotionsSrc]) {
-      expect(src).toContain("from '@/components/BillingEventSimulation'");
-      expect(src).toContain('<BillingEventSimulation');
-    }
+    // #2470 — Plans renders it through the shared panel (chart + details).
+    expect(plansSrc).toContain("from '@/components/BillingEventSimulationPanel'");
+    expect(plansSrc).toContain('<BillingEventSimulationPanel');
+    expect(promotionsSrc).toContain("from '@/components/BillingEventSimulation'");
+    expect(promotionsSrc).toContain('<BillingEventSimulation');
     // Neither page draws a period card, a toggle or a billing table of its own.
     for (const src of [plansSrc, promotionsSrc]) {
       expect(src).not.toMatch(/BillingPeriodCard|BillingEventTable|simulation_expand_all|simulation_col_/);

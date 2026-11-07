@@ -1789,7 +1789,8 @@
     "center_mode_member_default_center": "Només el centre per defecte del membre",
     "center_mode_member_default_center_help": "Segueix el centre per defecte del perfil de cada membre; si no en té, no accedeix a cap centre.",
     "center_online": "En línia",
-    "center_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic."
+    "center_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic.",
+    "section_billing_simulation_details": "Detalls de la simulació de facturació"
   },
   "prices": {
     "title": "Preus",
@@ -4994,7 +4995,8 @@
     "col_relationship": "Relació",
     "relationship_primary": "Principal",
     "relationship_linked": "Vinculat",
-    "simulation_initial_payment": "Pagament inicial"
+    "simulation_initial_payment": "Pagament inicial",
+    "section_billing_simulation_details": "Detalls de la simulació de facturació"
   },
   "taxes": {
     "title": "Impostos",
@@ -5744,5 +5746,24 @@
     "top_exercises": "Els 5 exercicis més usats",
     "top_empty": "No hi ha exercicis en plans d'entrenament actius.",
     "uses": "{count} plans · {percent}%"
+  },
+  "billing_duration_help": {
+    "label_free": "Període gratuït",
+    "label_paid": "Durada de pagament",
+    "label_prepaid": "Durada prepagada",
+    "label_bonus": "Durada de bonificació",
+    "label_frequency": "Freqüència de facturació",
+    "label_auto_renew": "Renovació automàtica",
+    "free": "El membre té accés sense que se li cobri la quota del pla durant {count, plural, one {# període de facturació} other {# períodes de facturació}}. El període de pagament comença en acabar.",
+    "paid": "La part de pagament del pla dura {count, plural, one {# període de facturació complet} other {# períodes de facturació complets}} i en cadascun es cobra la quota del pla.",
+    "prepaid": "{count, plural, one {# període de facturació} other {# períodes de facturació}} de la Durada de pagament es cobren per avançat en el primer pagament, de manera que no es cobra més quota per ells. La Durada de pagament defineix quant dura la part de pagament; la Durada prepagada, quant es cobra a l'inici.",
+    "bonus": "{count, plural, one {# període de facturació extra} other {# períodes de facturació extra}} d'accés gratuït en acabar la part de pagament. Amplien l'accés del membre sense generar càrrecs addicionals.",
+    "frequency_month": "La facturació es fa el primer dia de cada mes.",
+    "frequency_four_weeks": "La facturació segueix un cicle fix de 28 dies.",
+    "frequency_week": "La facturació es fa cada dilluns.",
+    "frequency_year": "La facturació es fa un cop l'any, a la data de facturació anual aplicable.",
+    "frequency_other": "Cada quant es cobra al membre; cada període es factura en el seu propi cicle.",
+    "auto_renew_on": "En acabar els períodes de pagament i de bonificació, el pla inicia un nou cicle de facturació automàticament.",
+    "auto_renew_off": "En acabar els períodes de pagament i de bonificació, el pla no inicia un nou cicle; continua al preu regular."
   }
 }

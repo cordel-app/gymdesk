@@ -25,8 +25,7 @@ import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
-import { BillingEventSimulation } from '@/components/BillingEventSimulation';
-import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
+import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
 import {
   exampleTimelineCycleNote,
   exampleTimelineRowCycle,
@@ -133,8 +132,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // #1724: the Membership Fee Simulation starts collapsed.
   const [feeSimOpen, setFeeSimOpen] = useState(false);
   // #1810 — the Billing Event Forecast is collapsed by default; the chart above it is not.
-  const [forecastOpen, setForecastOpen] = useState(false);
-  const [forecastShowZero, setForecastShowZero] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
@@ -538,15 +535,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 })}
               </p>
             )}
-            {/* #2090 — the chart lives under this heading: every month, a month
-                with nothing due drawn as 0, over the same simulation. */}
-            <BillingEventSimulationChart
-              simulation={detail.billing_event_simulation}
-              showZero
-              continuousMonths
-              t={(key, values) => t(key as any, values as any)}
-              formatDate={(date) => fmtTimelineDate(date, gymFmt)}
-            />
             <ExampleTimeline
               labels={{
                 // #1130 stage 2 — the Cycle column, rendered only for the rows
@@ -616,32 +604,23 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           prices (#817). Read-only: computed on every read, persisted nowhere,
           and it charges nothing. */}
       <CardSection label={t('section_billing_forecast')}>
-        <button
-          type="button"
-          aria-expanded={forecastOpen}
-          onClick={() => setForecastOpen((open) => !open)}
-          style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}
-        >
-          <span aria-hidden="true" style={{ fontSize: 11, width: 10 }}>{forecastOpen ? '▾' : '▸'}</span>
-          {t('section_billing_event_simulation')}
-        </button>
-        {forecastOpen && (
-          <BillingEventSimulation
-            simulation={detail.billing_event_simulation}
-            zeroToggle
-            showZero={forecastShowZero}
-            onShowZeroChange={setForecastShowZero}
-            t={(key, values) => t(key as any, values as any)}
-            formatDate={(date) => fmtTimelineDate(date, gymFmt)}
-            cycleNote={(() => {
-              // #1130 stage 3 — the same marker the Membership Fee Simulation
-              // above carries: whether this contract's cycle starts again is the
-              // engine's answer, and the card only words it.
-              const note = exampleTimelineCycleNote(detail.billing_event_simulation?.cycle ?? null);
-              return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
-            })()}
-          />
-        )}
+        {/* #2470 — chart first, then the collapsed Billing Simulation Details.
+            #2090: the chart draws every month, a month with nothing due as 0. */}
+        <BillingEventSimulationPanel
+          simulation={detail.billing_event_simulation}
+          zeroToggle
+          continuousMonths
+          t={(key, values) => t(key as any, values as any)}
+          formatDate={(date) => fmtTimelineDate(date, gymFmt)}
+          detailsTitle={t('section_billing_simulation_details')}
+          cycleNote={(() => {
+            // #1130 stage 3 — the same marker the Membership Fee Simulation
+            // above carries: whether this contract's cycle starts again is the
+            // engine's answer, and the card only words it.
+            const note = exampleTimelineCycleNote(detail.billing_event_simulation?.cycle ?? null);
+            return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
+          })()}
+        />
       </CardSection>
 
       {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in

@@ -36,10 +36,11 @@ function assignedPlansNamespace(code: string): Record<string, string> {
 
 describe('#924 §8: the section renders the shared Billing Event Simulation', () => {
   it('renders the shared component, not one of its own', () => {
+    // #2470 — through the shared panel (chart + collapsed details).
     expect(rowSrc).toContain(
-      "import { BillingEventSimulation } from '@/components/BillingEventSimulation'",
+      "import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel'",
     );
-    expect(rowSrc).toContain('<BillingEventSimulation');
+    expect(rowSrc).toContain('<BillingEventSimulationPanel');
     expect(rowSrc).toContain("t('section_billing_forecast')");
   });
 

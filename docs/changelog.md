@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2470 (Billing & Duration on the Plan card and the Assigned Plan card (Members card included) now carries a small explanation under the summary for each configured parameter (Free Period, Paid Duration, Pre-paid Duration, Bonus Duration, Billing frequency alignment, Auto-renew), from the one `billing_duration_help` namespace via `billingDurationExplanations()`; the Billing Event Simulation section is one shared `BillingEventSimulationPanel` — the chart directly under the heading and the *Billing Simulation Details* collapsible (collapsed by default) below it — on Plans, Assigned Plans and Members → Products. UI only; no billing change.)
 - **Done**: #2419 (Members App: My Training and My Progress open one shared exercise detail modal (`ExerciseDetailsModal`, My Training's layout); muscles read as a `Primary:` line and a `Secondary:` line with no chips, an empty group is omitted, and the Muscles icon is a flexed biceps; no API or migration change; closes #2419)
 - **Done**: #2435 (Activities list: Center, Space and Active Trainer filters beside Status, combined with AND; Space options follow the selected Center; Clear filters; client-side over the existing list, no API or schema change).
 

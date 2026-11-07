@@ -32,8 +32,8 @@ import { PlanCard } from './PlanCard';
 import { PlanViewToggle, usePlanViewMode } from './PlanViewToggle';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
-import { BillingEventSimulation } from '@/components/BillingEventSimulation';
-import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
+import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
+import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   ProductBenefitEditor,
@@ -349,8 +349,6 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   // #1810: the Billing Event Simulation is collapsed by default; the "Show €0"
   // choice is shared with the chart under it.
-  const [simulationOpen, setSimulationOpen] = useState<Record<number, boolean>>({});
-  const [simulationShowZero, setSimulationShowZero] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   // Status filter (aligned with the Promotions list header — the list endpoint
@@ -1496,6 +1494,17 @@ export default function PlansPage() {
                               },
                             ])}
                           />
+                          <BillingDurationExplanations
+                            config={{
+                              free_periods: plan.free_periods,
+                              paid_periods: plan.paid_periods,
+                              pay_beforehand_periods: plan.pay_beforehand_periods,
+                              bonus_periods: plan.bonus_periods,
+                              recurring_billing_interval: plan.billing_policy?.recurring_billing_interval,
+                              recurring_billing_unit: plan.billing_policy?.recurring_billing_unit,
+                              auto_renew: plan.billing_policy != null ? !!plan.billing_policy.auto_renew : undefined,
+                            }}
+                          />
                           {plan.billing_policy == null && (
                             <p style={{ ...hintSt, marginTop: 6 }}>{t('plans.no_billing')}</p>
                           )}
@@ -1768,52 +1777,29 @@ export default function PlansPage() {
                         the run does not make. Nothing is persisted and nothing
                         is charged. */}
                     {(() => {
-                      const simOpen = simulationOpen[plan.id] === true;
-                      const showZero = simulationShowZero[plan.id] === true;
                       const simT = (key: string, values?: Record<string, string | number>) =>
                         t(`plans.${key}` as any, values as any);
-                      const simDate = (date: string) => fmtTimelineDate(date, gymFmt);
                       return (
                         <>
-                          <SectionHeader title={t('plans.section_billing_event_chart')} />
-                          <BillingEventSimulationChart
+                          {/* #2470 — heading, chart, then the collapsed details. */}
+                          <SectionHeader title={t('plans.section_billing_event_simulation')} />
+                          <BillingEventSimulationPanel
                             simulation={plan.billing_event_simulation}
-                            showZero={showZero}
+                            zeroToggle
                             t={simT}
-                            formatDate={simDate}
+                            formatDate={(date) => fmtTimelineDate(date, gymFmt)}
+                            detailsTitle={t('plans.section_billing_simulation_details')}
+                            cycleNote={(() => {
+                              // #1130 stage 3 — the same marker the Membership Fee
+                              // Simulation above carries, from the same rule and the
+                              // same key: the two sections tell one story (§3).
+                              const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
+                              return key ? t(`plans.${key}` as any) : null;
+                            })()}
                           />
-                          <div style={subSectionSt}>
-                            <button
-                              type="button"
-                              aria-expanded={simOpen}
-                              onClick={() => setSimulationOpen((prev) => ({ ...prev, [plan.id]: !simOpen }))}
-                              style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                            >
-                              <span aria-hidden="true" style={{ color: '#888', fontSize: 11, width: 10 }}>{simOpen ? '▾' : '▸'}</span>
-                              <CardSectionHeader title={t('plans.section_billing_event_simulation')} />
-                            </button>
-                          </div>
-                          {simOpen && (
-                            <BillingEventSimulation
-                              simulation={plan.billing_event_simulation}
-                              zeroToggle
-                              showZero={showZero}
-                              onShowZeroChange={(next) => setSimulationShowZero((prev) => ({ ...prev, [plan.id]: next }))}
-                              t={simT}
-                              formatDate={simDate}
-                              cycleNote={(() => {
-                                // #1130 stage 3 — the same marker the Membership Fee
-                                // Simulation above carries, from the same rule and the
-                                // same key: the two sections tell one story (§3).
-                                const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
-                                return key ? t(`plans.${key}` as any) : null;
-                              })()}
-                            />
-                          )}
                         </>
                       );
                     })()}
-
                   </div>
                 )}
               </div>

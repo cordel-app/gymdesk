@@ -15,8 +15,8 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { CardDetailRow } from '@/components/CardDetailRow';
-import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
-import { BillingEventSimulation, type BillingEventSimulationData } from '@/components/BillingEventSimulation';
+import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
+import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { cardHintStyle, cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -159,14 +159,16 @@ export function ProductSetForecast({ forecast, loading, error, chartSimulation }
   return (
     <>
       {/* #1951 — the chart plots every period, €0.00 ones included, whatever the
-          list below hides: it is fed the unfiltered simulation with showZero. */}
-      <BillingEventSimulationChart
-        simulation={chartSimulation ?? forecast}
-        showZero
+          details below hide: it is fed the unfiltered simulation with showZero.
+          #2470 — chart first, then the collapsed Billing Simulation Details. */}
+      <BillingEventSimulationPanel
+        simulation={forecast}
+        chartSimulation={chartSimulation ?? forecast}
+        chartShowZero
         t={translate}
         formatDate={formatDate}
+        detailsTitle={tPlan('section_billing_simulation_details')}
       />
-      <BillingEventSimulation simulation={forecast} t={translate} formatDate={formatDate} />
     </>
   );
 }
