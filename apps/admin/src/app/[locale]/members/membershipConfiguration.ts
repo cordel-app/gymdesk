@@ -82,6 +82,8 @@ export interface ProductSetRow {
   /** The initial payment Save & Pay wrote, or `null` for a Draft. */
   amount_due: number | null;
   expired: boolean;
+  /** Seconds left on a Draft by the server's clock (#2477); null for any other status. */
+  expires_in_seconds?: number | null;
   created_by: string | null;
 }
 
@@ -102,6 +104,7 @@ export interface ProductSetSummary {
   created_at: string | null;
   created_by: string | null;
   expired: boolean;
+  expires_in_seconds?: number | null;
 }
 
 export interface MemberConfiguration {
