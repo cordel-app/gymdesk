@@ -758,6 +758,8 @@
     "short_description": "Descripció breu",
     "description": "Descripció",
     "muscles": "Músculs",
+    "muscles_primary": "Principals",
+    "muscles_secondary": "Secundaris",
     "category": "Categoria",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Halterofília olímpica",

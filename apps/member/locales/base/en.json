@@ -758,6 +758,8 @@
     "short_description": "Short description",
     "description": "Description",
     "muscles": "Muscles",
+    "muscles_primary": "Primary",
+    "muscles_secondary": "Secondary",
     "category": "Category",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Olympic Weightlifting",
