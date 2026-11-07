@@ -758,6 +758,8 @@
     "short_description": "Descripción breve",
     "description": "Descripción",
     "muscles": "Músculos",
+    "muscles_primary": "Principales",
+    "muscles_secondary": "Secundarios",
     "category": "Categoría",
     "category_cardio": "Cardio",
     "category_olympic_weightlifting": "Halterofilia olímpica",

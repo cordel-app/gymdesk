@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2419 (Members App: My Training and My Progress open one shared exercise detail modal (`ExerciseDetailsModal`, My Training's layout); muscles read as a `Primary:` line and a `Secondary:` line with no chips, an empty group is omitted, and the Muscles icon is a flexed biceps; no API or migration change; closes #2419)
 - **Done**: #2435 (Activities list: Center, Space and Active Trainer filters beside Status, combined with AND; Space options follow the selected Center; Clear filters; client-side over the existing list, no API or schema change).
 
 - **Done**: #2451 (Payment Transactions keep an immutable snapshot of the payment method name (`payment_requests.payment_method_name` / `payment_method_code`, copied from `base_payment_methods` at creation; cash→Cash, card terminal→Card, online→Monei, raised by the member→Members App, waiver→none) shown in Billing Events → Payment Transactions, Payment Transactions and the Members App Payments card. `billing_events.attempt_count` is the authoritative attempt counter, incremented atomically by `recordPaymentAttempt()` after every `payment_requests` insert (migration 376, backfilled from existing attempts). Billing Event details: Transaction Details and Payment Transactions collapsed, Billing Event Lines expanded, all toggleable)

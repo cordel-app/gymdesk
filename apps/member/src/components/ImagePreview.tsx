@@ -15,13 +15,15 @@ import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
  * handed and resolves nothing but its own close label; with no `src` it renders
  * its children untouched (nothing to enlarge).
  */
-export function ImagePreviewButton({ src, alt, title, description = null, details = null, children, style }: {
+export function ImagePreviewButton({ src, alt, title, description = null, details = null, renderDialog, children, style }: {
   src: string | null | undefined;
   alt: string;
   title: string;
   description?: string | null;
   /** #2320 — richer content under the picture (an exercise's facts). */
   details?: React.ReactNode;
+  /** #2419 — replaces the default dialog (My Progress uses the exercise modal). */
+  renderDialog?: (close: () => void) => React.ReactNode;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
@@ -43,7 +45,8 @@ export function ImagePreviewButton({ src, alt, title, description = null, detail
       >
         {children}
       </button>
-      {open && (
+      {open && renderDialog && renderDialog(() => setOpen(false))}
+      {open && !renderDialog && (
         <MemberDialog
           title={title}
           labelledBy={titleId}
