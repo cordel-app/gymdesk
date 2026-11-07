@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cancellationEndDate, paidPeriodEnd, paidThroughDate } from '../domain/cancellationEntitlement';
+import { cancellationEndDate, paidPeriodEnd, paidThroughDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 
 const month = { interval: 1, unit: 'month' as const };
 
@@ -40,5 +40,24 @@ describe('cancellation end date (#1196)', () => {
 
   it('never ends before the plan began', () => {
     expect(cancellationEndDate({ today: '2026-10-13', assignmentStart: '2026-10-13', paidThrough: null })).toBe('2026-10-13');
+  });
+});
+
+describe('prepaid coverage end (#2488)', () => {
+  const m = (prepaidPeriods: number, o: object = {}) => ({ freePeriods: 0, prepaidPeriods, interval: 1, unit: 'month', ...o });
+  it('two monthly prepaid periods cover through the end of the second', () => {
+    expect(prepaidCoverageEnd(m(2), '2026-11-07')).toBe('2027-01-06');
+  });
+  it('twelve prepaid months', () => {
+    expect(prepaidCoverageEnd(m(12), '2026-11-07')).toBe('2027-11-06');
+  });
+  it('4-weekly cadence steps by weeks, not months', () => {
+    expect(prepaidCoverageEnd(m(2, { unit: 'week', interval: 4 }), '2026-11-07')).toBe('2027-01-01');
+  });
+  it('one prepaid period, a free period first, or no cadence leaves the schedule rule', () => {
+    expect(prepaidCoverageEnd(m(1), '2026-11-07')).toBeNull();
+    expect(prepaidCoverageEnd(m(2, { freePeriods: 1 }), '2026-11-07')).toBeNull();
+    expect(prepaidCoverageEnd(m(2, { unit: null }), '2026-11-07')).toBeNull();
+    expect(prepaidCoverageEnd(null, '2026-11-07')).toBeNull();
   });
 });
