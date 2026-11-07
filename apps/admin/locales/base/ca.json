@@ -5633,6 +5633,7 @@
     "error_required": "El codi i el nom en anglès són obligatoris.",
     "image": "Imatge",
     "image_none": "Sense imatge",
+    "no_description": "Sense descripció.",
     "created_at": "Creat el",
     "created_by": "Creat per",
     "modified_at": "Modificat el",
