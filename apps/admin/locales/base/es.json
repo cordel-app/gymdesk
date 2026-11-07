@@ -5749,11 +5749,11 @@
     "paid": "La parte de pago del plan dura {count, plural, one {# periodo de facturación completo} other {# periodos de facturación completos}} y en cada uno se cobra la cuota del plan.",
     "prepaid": "{count, plural, one {# periodo de facturación} other {# periodos de facturación}} de la Duración de pago se cobran por adelantado en el primer pago, por lo que no se cobra más cuota por ellos. La Duración de pago define cuánto dura la parte de pago; la Duración prepagada, cuánto se cobra al inicio.",
     "bonus": "{count, plural, one {# periodo de facturación extra} other {# periodos de facturación extra}} de acceso gratuito al terminar la parte de pago. Amplían el acceso del miembro sin generar cargos adicionales.",
-    "frequency_month": "La facturación se realiza el primer día de cada mes.",
-    "frequency_four_weeks": "La facturación sigue un ciclo fijo de 28 días.",
-    "frequency_week": "La facturación se realiza cada lunes.",
-    "frequency_year": "La facturación se realiza una vez al año, en la fecha de facturación anual aplicable.",
-    "frequency_other": "Cada cuánto se cobra al miembro; cada periodo se factura en su propio ciclo.",
+    "alignment_month": "La facturación se realiza el primer día de cada mes.",
+    "alignment_four_weeks": "La facturación sigue un ciclo fijo de 28 días.",
+    "alignment_week": "La facturación se realiza cada lunes.",
+    "alignment_year": "La facturación se realiza una vez al año, en la fecha de facturación anual aplicable.",
+    "alignment_other": "Cada cuánto se cobra al miembro; cada periodo se factura en su propio ciclo.",
     "auto_renew_on": "Al terminar los periodos de pago y de bonificación, el plan inicia un nuevo ciclo de facturación automáticamente.",
     "auto_renew_off": "Al terminar los periodos de pago y de bonificación, el plan no inicia un nuevo ciclo; continúa al precio regular."
   }

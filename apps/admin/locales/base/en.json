@@ -5763,11 +5763,11 @@
     "paid": "The paid part of the plan lasts {count, plural, one {# complete billing period} other {# complete billing periods}}, and the plan fee is charged in each of them.",
     "prepaid": "{count, plural, one {# billing period} other {# billing periods}} of the Paid Duration are charged upfront in the first payment, so no further fee is charged for them. Paid Duration sets how long the paid part lasts; Pre-paid Duration sets how much of it is collected at the start.",
     "bonus": "{count, plural, one {# extra billing period} other {# extra billing periods}} of free access after the paid part ends. They extend the member's access and create no additional charges.",
-    "frequency_month": "Billing happens on the first day of each month.",
-    "frequency_four_weeks": "Billing happens on a fixed 28-day cycle.",
-    "frequency_week": "Billing happens every Monday.",
-    "frequency_year": "Billing happens once a year, on the applicable annual billing date.",
-    "frequency_other": "How often the member is charged; each period is billed on its own cycle.",
+    "alignment_month": "Billing happens on the first day of each month.",
+    "alignment_four_weeks": "Billing happens on a fixed 28-day cycle.",
+    "alignment_week": "Billing happens every Monday.",
+    "alignment_year": "Billing happens once a year, on the applicable annual billing date.",
+    "alignment_other": "How often the member is charged; each period is billed on its own cycle.",
     "auto_renew_on": "When the paid and bonus periods end, the plan starts a new billing cycle automatically.",
     "auto_renew_off": "When the paid and bonus periods end, the plan does not start a new cycle; it continues at the regular price."
   }

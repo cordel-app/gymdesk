@@ -74,7 +74,7 @@ export function billingDurationExplanations(c: BillingDurationConfig): BillingDu
     out.push({
       key: 'billing_frequency',
       labelKey: 'label_frequency',
-      textKey: rule ? `frequency_${rule}` : 'frequency_other',
+      textKey: rule ? `alignment_${rule}` : 'alignment_other',
     });
   }
   if (c.auto_renew != null) {

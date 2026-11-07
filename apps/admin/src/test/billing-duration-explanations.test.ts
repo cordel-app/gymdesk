@@ -40,8 +40,8 @@ describe('billingDurationExplanations', () => {
   it('has every key in every locale', () => {
     const keys = [
       'label_free', 'label_paid', 'label_prepaid', 'label_bonus', 'label_frequency', 'label_auto_renew',
-      'free', 'paid', 'prepaid', 'bonus', 'frequency_month', 'frequency_four_weeks', 'frequency_week',
-      'frequency_year', 'frequency_other', 'auto_renew_on', 'auto_renew_off',
+      'free', 'paid', 'prepaid', 'bonus', 'alignment_month', 'alignment_four_weeks', 'alignment_week',
+      'alignment_year', 'alignment_other', 'auto_renew_on', 'auto_renew_off',
     ];
     for (const loc of ['en', 'es', 'ca']) {
       const d = JSON.parse(readFileSync(join(__dirname, '..', '..', 'locales', 'base', `${loc}.json`), 'utf8'));
