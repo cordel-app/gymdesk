@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2379 follow-up (Members App → My Progress exercise details listed the principal muscles under Secondary because `GET /me/progress/exercises` reported no `primary_muscles`; it now reports them like `GET /me/training-plans` does, so the viewer shows Primary and Secondary apart. No migration)
 - **Done**: #2333 stage 2 (Cordel → Muscles showed empty Spanish and Catalan names: `muscle_translations` was created empty by migration 371 while exercises label muscles from the Admin locale files. Migration 378 seeds the 18 catalogue muscles' es/ca names from those values with `INSERT IGNORE`, so a name already saved is kept. Exercises still read the locale files; switching them to the table is not built here)
 - **Done**: #1764 follow-up (My Next Bookings: the enlarged-image dialog's Close button did not work because `MemberDialog` rendered inside the card, whose overflow/transform clipped the fixed sheet; `MemberDialog` now renders through a portal into `document.body`. Members App UI only, no API or migration change)
 - **Done**: #2492 (Promotion editor: the global Save and Cancel moved to the very bottom of the expanded editor, after Billing Event Simulation, and the label reads `Save` (new `promotions.save` key in en/es/ca); handlers, validation and section-level actions unchanged; UI only, no API or migration change)
