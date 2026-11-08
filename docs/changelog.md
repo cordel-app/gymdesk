@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: Routine claim guard (the three `claude/issue-N` routines read a claim branch that already carried a merged PR as an abandoned claim — no open PR, last push hours old — and rebuilt merged work as duplicate PRs, #2518 and #2520 duplicating #2485 and #2504; they now check for a merged PR from the branch before the stale rule and continue on a new `-stage-S` branch, and the repository deletes head branches on merge).
 - **Done**: #2487 (a Draft's applied Promotions read their status from the live `promotions` row instead of the application's stored state, and Save & Pay refuses with a 409 naming any Promotion that is no longer active or inside its window; the snapshot written when the Promotion was applied is unchanged and still the confirmed agreement).
 
 - **Done**: #2489 (Review your changes reads as Products contracted / Products cancelled / Initial payment: `splitChanges()` sorts the server's diff into the first two, the initial-payment lines show a direct discount beside the Promotion; presentation only, the amounts remain `commitCharge()`'s; no API or migration change)
