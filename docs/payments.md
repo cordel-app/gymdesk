@@ -271,7 +271,8 @@ called by:
   §B8), both through `settleFromProviderLookup()` with the payment the API **read back**.
   A read is judged by MONEI's raw status through `classifyProviderStatus()`
   (`domain/providerPaymentStatus.ts`) instead of the adapter's four-value map, which reads
-  `PENDING_PROCESSING` and anything unknown as `failed`: asking a moment after the card was
+  `CANCELED`, `REFUNDED`, `PARTIALLY_REFUNDED`, `PAID_OUT` and anything unknown as `failed`
+  (`PENDING_PROCESSING` reads `pending` since the November 2026 fix): asking a moment after the card was
   submitted is exactly when an in-flight status is likely. Only `settled` (completed) and
   `unsuccessful` (failed / expired) move a row; in flight, refunded and unknown write nothing.
 

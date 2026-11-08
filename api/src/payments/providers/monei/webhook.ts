@@ -7,7 +7,8 @@ const MONEI_STATUS_MAP: Record<string, WebhookPayload['status']> = {
   FAILED: 'failed',
   EXPIRED: 'expired',
   PENDING: 'pending',
-  PROCESSING: 'pending',
+  PENDING_PROCESSING: 'pending',
+  PROCESSING: 'pending', // not in MONEI's documented enum; kept for older payloads
   AUTHORIZED: 'pending',
 };
 
