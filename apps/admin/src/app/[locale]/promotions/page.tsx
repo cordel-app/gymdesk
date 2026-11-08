@@ -1971,7 +1971,6 @@ export default function PromotionsPage() {
     // never silently discard that section's unsaved draft.
     const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailFor(promo) },
       {
         label: t('edit'),
         onClick: () => enterEdit(promo),
@@ -1980,6 +1979,7 @@ export default function PromotionsPage() {
       },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
       { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { label: t('details'), onClick: () => setDetailFor(promo) },
     ];
 
     return (
