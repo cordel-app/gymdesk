@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #1764 follow-up (My Next Bookings: the enlarged-image dialog's Close button did not work because `MemberDialog` rendered inside the card, whose overflow/transform clipped the fixed sheet; `MemberDialog` now renders through a portal into `document.body`. Members App UI only, no API or migration change)
 - **Done**: #2492 (Promotion editor: the global Save and Cancel moved to the very bottom of the expanded editor, after Billing Event Simulation, and the label reads `Save` (new `promotions.save` key in en/es/ca); handlers, validation and section-level actions unchanged; UI only, no API or migration change)
 - **Done**: #2125 M4b-0 (every plan-snapshot writer now edits through `ownPlanSnapshotsOfSet()` — `lockDraft()`, the reprice and discount writers — and a Draft is discarded by what it references through `discardDraftSet()`, which hands a snapshot another set still links to that set before the delete; no behaviour change while no snapshot is shared, groundwork for M4b's linking)- **Done**: #2491 (Promotions context menu order is now Edit, Duplicate, Delete, Details; handlers, gates and styling unchanged; UI only, no API or migration change)
 - **Done**: #2251 follow-up (Base Products page fills the window width like Gym Products: its wrapper no longer caps the width at 1000px or adds 24px of padding; UI only, no API or migration change)
