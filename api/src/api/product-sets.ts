@@ -2,6 +2,7 @@ import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { discardDraftSet } from './plan-snapshot-ownership';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -87,7 +88,7 @@ export async function createDraft(tx: Tx, input: {
       await tx.query(
         `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
           WHERE ps.id = ? AND um.status = 'draft'`, [inFlight.id]);
-      await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [inFlight.id]);
+      await discardDraftSet(tx, input.gymId, Number(inFlight.id));
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
     }
@@ -209,7 +210,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   if (row.status === 'draft') {
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
       `SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
-    await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [id]);
+    await discardDraftSet(tx, gymId, id);
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
