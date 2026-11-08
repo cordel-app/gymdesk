@@ -581,6 +581,7 @@ export function MemberExpandedRow({
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
                 changes={draftReview?.changes}
+                items={draftReview?.summary_items}
                 onChanged={reloadConfiguration}
               />
               <ProductsWorkflowActions

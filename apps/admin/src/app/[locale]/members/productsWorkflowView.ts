@@ -26,7 +26,20 @@ export function pendingOneOffCount(purchases: Array<{ status: string }>): number
 /** The review answer reduced to what the mode needs. */
 export interface ReviewSummary {
   changes: unknown[];
+  /** #2446 — every item of the pending set: active, draft and cancelling. */
+  summary_items?: SummaryItemLike[];
   amount_due: number | null;
+}
+
+export interface SummaryItemLike {
+  state: 'active' | 'draft' | 'cancelling';
+  type: 'plan' | 'product';
+  name: string;
+  quantity: number | null;
+  billing_frequency: string | null;
+  regular_price: number | null;
+  promotions: string[];
+  initial_amount?: number | null;
 }
 
 export interface WorkflowInput {
