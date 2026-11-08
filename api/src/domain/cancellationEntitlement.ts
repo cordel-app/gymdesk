@@ -54,3 +54,17 @@ export function cancellationEndDate(input: { paidThrough: string | null; today: 
   const yesterday = addDays(input.today, -1);
   return yesterday < input.assignmentStart ? input.assignmentStart : yesterday;
 }
+
+/**
+ * #2488 — the last day covered by a first payment that includes a Pre-paid Duration: `prepaidPeriods` billing
+ * periods from `startsAt`, using the schedule's own cadence. `null` (the schedule's single-period rule applies)
+ * when fewer than two periods are prepaid, a Free Period comes first (the lump is then owed later, not at the
+ * start) or the cadence is unknown.
+ */
+export function prepaidCoverageEnd(
+  plan: { freePeriods: number; prepaidPeriods: number; interval: number; unit: string | null } | null,
+  startsAt: string,
+): string | null {
+  if (!plan || plan.prepaidPeriods < 2 || plan.freePeriods > 0 || !(plan.interval > 0) || !plan.unit) return null;
+  return addDays(advanceBillingDate(startsAt, plan.interval * plan.prepaidPeriods, plan.unit as BillingDateUnit), -1);
+}

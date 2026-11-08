@@ -1,7 +1,7 @@
 import { loadPaidThrough } from './cancellation-entitlement';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { cancellationEndDate } from '../domain/cancellationEntitlement';
+import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
@@ -299,9 +299,19 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
           AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = billing_events.id)`,
       [gymId, scheduleId, startsAt]);
   }
+  // #2488 — a Pre-paid Duration is paid as one lump on the first period: that event covers every prepaid
+  // period, so its stored end is the last day of the last one (else paid-through stops after period one).
+  const { rows: snap } = await tx.query<any>(
+    `SELECT s.free_periods, s.pay_beforehand_periods, s.recurring_billing_interval, s.recurring_billing_unit
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY s.id ASC LIMIT 1`, [set.id, gymId]);
+  const prepaidEnd = prepaidCoverageEnd(snap[0] ? {
+    freePeriods: Number(snap[0].free_periods ?? 0), prepaidPeriods: Number(snap[0].pay_beforehand_periods ?? 0),
+    interval: Number(snap[0].recurring_billing_interval ?? 0), unit: snap[0].recurring_billing_unit ?? null,
+  } : null, startsAt);
   await tx.query(
-    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, billing_date = ?
-      WHERE id = ?`, [set.id, scheduleId, startsAt, startsAt, ev[0].id]);
+    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, period_end = ?, billing_date = ?
+      WHERE id = ?`, [set.id, scheduleId, startsAt, prepaidEnd, startsAt, ev[0].id]);
 }
 
 /* ── Edit: an assignment write becomes a new version ─────────────────────── */
