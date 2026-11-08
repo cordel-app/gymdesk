@@ -127,7 +127,7 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
     // stays in the body under the fields it belongs to. The main form keeps
     // `renderSectionActions`, which prints `editError` and nothing else.
     for (const call of [
-      /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
+      /sectionBottomActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
       /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, 'membership_fee'\), cancelSectionEdit\)/,
     ]) {
       expect(pageSrc).toMatch(call);
