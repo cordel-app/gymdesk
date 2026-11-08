@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changeMessage, confirmAction, editableLines, planSummary, recurringState } from '../app/[locale]/members/recurringProductsView';
+import { splitChanges, changeMessage, confirmAction, editableLines, planSummary, recurringState } from '../app/[locale]/members/recurringProductsView';
 
 const set = (status: string, expired = false): any => ({ id: 1, status, expired });
 
@@ -48,5 +48,20 @@ describe('lines and change wording', () => {
   it('maps a change to a locale key with its values', () => {
     expect(changeMessage({ kind: 'quantity_changed', line: { name: 'Towel' }, from: 1, to: 3 }))
       .toEqual({ key: 'review_change_quantity', values: { name: 'Towel', from: 1, to: 3 } });
+  });
+});
+
+describe('splitChanges (#2489)', () => {
+  it('keeps contracts and cancellations in separate sections', () => {
+    const line = { name: 'Locker', quantity: 1 };
+    const { contracted, cancelled } = splitChanges([
+      { kind: 'added', line },
+      { kind: 'removed', line },
+      { kind: 'plan_changed', from: 'Gold', to: null },
+      { kind: 'plan_changed', from: 'Gold', to: 'Silver' },
+      { kind: 'promotion_removed', name: 'P' },
+    ] as any);
+    expect(contracted.map((c) => c.kind)).toEqual(['added', 'plan_changed']);
+    expect(cancelled.map((c) => c.kind)).toEqual(['removed', 'plan_changed', 'promotion_removed']);
   });
 });
