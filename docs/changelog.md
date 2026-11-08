@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2479 (stage 1: `GET /members/:id/products` lists the open, unexpired Draft Product Set's recurring lines beside the Active ones: a line the Draft added reads as a Draft row and a line it changed shows the Draft's frozen figures, so a Product added to the Draft appears after Save without a refresh. Applied Product Promotions on recurring lines are not yet shown in that list; not built here)
+
 - **Done**: #2477 (stage 1: `expireDrafts()` now discards each expired Draft through the same `cancelInFlight()` a manual cancel runs, one transaction per Draft with expiry re-checked under the row lock; the Admin Products tab shows a "Draft expires in" countdown driven by the server's `expires_in_seconds`. Members App indicator not built: that app shows no Draft)
 
 - **Done**: #2443 follow-up (Base Payment Methods card: the expanded read-only view shows Name, Description (in the viewer's language), Status and the image instead of the code and per-language lines; the form orders Name, Description, Status, Image and asks for the stable code only when creating. UI only, no API or migration change)
