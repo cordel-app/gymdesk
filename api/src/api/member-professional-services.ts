@@ -71,9 +71,9 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
          FROM professional_services ps
          JOIN gym_professional_services gps
            ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
-        WHERE ps.deleted_at IS NULL
+        WHERE ps.gym_id = ? AND ps.deleted_at IS NULL
         ORDER BY ps.name ASC`,
-      [gymId],
+      [gymId, gymId],
     );
     const balances = new Map(
       (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b]),
@@ -198,8 +198,8 @@ memberProfessionalServicesRouter.post('/:serviceId/adjust', requireModuleWrite('
         `SELECT ps.id FROM professional_services ps
            JOIN gym_professional_services gps
              ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
-          WHERE ps.id = ? AND ps.deleted_at IS NULL`,
-        [gymId, serviceId],
+          WHERE ps.id = ? AND ps.gym_id = ? AND ps.deleted_at IS NULL`,
+        [gymId, serviceId, gymId],
       );
       if (serviceRows.length === 0) return { status: 404 as const, body: { error: 'Professional service not found' } };
 

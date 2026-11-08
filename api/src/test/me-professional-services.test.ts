@@ -104,6 +104,23 @@ describe('GET /me/professional-services', () => {
     expect(res.body.items.find((i: any) => i.professional_service_id === on).remaining).toBe(0);
   });
 
+  it('never lists a platform Base service, even one with an active gym row (#2498)', async () => {
+    await memberIn(gymId, 'mps-base');
+    const { insertId: baseId } = await db.query(
+      `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (NULL, ?, 1, NULL)`,
+      [`Base ${uniq()}`],
+    );
+    await db.query(
+      `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+      [gymId, baseId],
+    );
+    const own = await service(gymId, `Own ${uniq()}`);
+    const res = await asMember(gymId, 'mps-base');
+    const ids = res.body.items.map((i: any) => i.professional_service_id);
+    expect(ids).toContain(own);
+    expect(ids).not.toContain(baseId);
+  });
+
   it('reports name and description in the request locale, falling back to the base text (#2425)', async () => {
     await memberIn(gymId, 'mps-locale');
     const id = await service(gymId, `Base ${uniq()}`);

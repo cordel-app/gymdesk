@@ -26,9 +26,9 @@ export async function memberServiceBalances(gymId: string, memberId: number, loc
        FROM professional_services ps
        JOIN gym_professional_services gps
          ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
-      WHERE ps.deleted_at IS NULL
+      WHERE ps.gym_id = ? AND ps.deleted_at IS NULL
       ORDER BY ps.name ASC`,
-    [gymId],
+    [gymId, gymId],
   );
   // #2425: name and description in the request's locale (the member's language,
   // #1039), falling back to the base text — the #2110 translation junction.
