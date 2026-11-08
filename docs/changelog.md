@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2502 (Admin sidebar: the *Transactions* entry is removed from Payments & Billing, which keeps Dashboard and Billing Events; the `/payments/transactions` page, its routes and API are untouched; UI only, no API or migration change)
 - **Done**: #2487 (a Draft's applied Promotions read their status from the live `promotions` row instead of the application's stored state, and Save & Pay refuses with a 409 naming any Promotion that is no longer active or inside its window; the snapshot written when the Promotion was applied is unchanged and still the confirmed agreement).
 
 - **Done**: #2489 (Review your changes reads as Products contracted / Products cancelled / Initial payment: `splitChanges()` sorts the server's diff into the first two, the initial-payment lines show a direct discount beside the Promotion; presentation only, the amounts remain `commitCharge()`'s; no API or migration change)

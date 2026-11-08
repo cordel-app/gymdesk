@@ -48,11 +48,17 @@ describe('Payments → Dashboard navigation (#674)', () => {
   it('gates the Dashboard entry on its own feature flag, not a sibling page flag', () => {
     const entry = navSrc.slice(
       navSrc.indexOf("href: '/{{locale}}/payments/dashboard'"),
-      navSrc.indexOf("href: '/{{locale}}/payments/transactions'"),
+      navSrc.indexOf("href: '/{{locale}}/payments/billing-events'"),
     );
     expect(entry).toContain("featureKey: 'payments.dashboard'");
     expect(entry).not.toContain('payments.transactions');
     expect(entry).not.toContain('payments.billing_events');
+  });
+
+  it('does not list Transactions in the sidebar (#2502); the page itself stays', () => {
+    const payments = navSrc.slice(navSrc.indexOf("id: 'payments'"), navSrc.indexOf("id: 'financials'"));
+    expect(payments).not.toContain('payments/transactions');
+    expect(payments).toContain("href: '/{{locale}}/payments/billing-events'");
   });
 });
 
