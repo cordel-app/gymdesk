@@ -42,7 +42,7 @@ export function ClassCommunicationModal({ sessionId, sessionName, onClose, onSen
         method: 'POST',
         body: JSON.stringify({ title: title.trim(), message: message.trim() }),
       });
-      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'));
+      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'), 'success');
       onSent?.();
       onClose();
     } catch (err: any) {
