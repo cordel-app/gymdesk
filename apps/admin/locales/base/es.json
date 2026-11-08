@@ -583,7 +583,6 @@
     "clerk_invitation_invited_on": "Invitado · {date}",
     "clerk_invitation_invited": "Invitado",
     "clerk_invitation_none": "Ninguna",
-    "clerk_invitation_external": "Invitado externamente",
     "clerk_invitation_accepted_on": "Aceptada · {date}",
     "clerk_invitation_accepted": "Aceptada",
     "clerk_invitation_cancelled": "Cancelada",
