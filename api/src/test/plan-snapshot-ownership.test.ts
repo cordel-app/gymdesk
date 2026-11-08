@@ -5,7 +5,7 @@ import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
-import { ownPlanSnapshot } from '../api/plan-snapshot-ownership';
+import { ownPlanSnapshot, ownPlanSnapshotsOfSet, discardDraftSet } from '../api/plan-snapshot-ownership';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 
 let gymId: string;
@@ -96,5 +96,29 @@ describe('planSnapshotInheritedSql (#2125 M4a)', () => {
       `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, is_inherited)
        SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at, 0 FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
     expect(await inherited(b, Number(insertId))).toBe(0);
+  });
+});
+
+describe('ownPlanSnapshotsOfSet and discardDraftSet (#2125 M4b-0)', () => {
+  it('owns every shared snapshot of the set, leaving the other set on the original', async () => {
+    const { a, b, snapshot } = await twoSets();
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
+    await db.transaction((tx) => ownPlanSnapshotsOfSet(tx, gymId, b));
+    expect(await linked(a)).toEqual([snapshot]);
+    const mine = await linked(b);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).not.toBe(snapshot);
+  });
+
+  it('discarding a Draft keeps a snapshot another set still links, and only a Draft is deleted', async () => {
+    const { a, b, snapshot } = await twoSets();
+    // The snapshot's own set pointer is the Draft's; the superseded A links it too.
+    await db.query('UPDATE plan_snapshots SET product_set_id = ? WHERE id = ?', [b, snapshot]);
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
+    expect(await db.transaction((tx) => discardDraftSet(tx, gymId, b))).toBe(true);
+    const { rows } = await db.query<any>('SELECT product_set_id FROM plan_snapshots WHERE id = ?', [snapshot]);
+    expect(Number(rows[0].product_set_id)).toBe(a);
+    // A (superseded) is not a Draft: nothing is deleted.
+    expect(await db.transaction((tx) => discardDraftSet(tx, gymId, a))).toBe(false);
   });
 });
