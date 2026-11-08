@@ -854,5 +854,16 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# dia} other {# dies}}"
+  },
+  "booking_detail": {
+    "center": "Centre",
+    "space": "Espai",
+    "trainer": "Entrenador",
+    "status": "Estat de la reserva",
+    "attendees": "Assistents",
+    "waiting_list": "Llista d'espera",
+    "attendees_count": "{count, plural, one {# persona reservada} other {# persones reservades}}",
+    "cancel": "Cancel·la la reserva",
+    "close": "Tanca"
   }
 }
