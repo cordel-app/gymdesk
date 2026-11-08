@@ -664,7 +664,7 @@ export function ClassSessionDetailPanel({
         method: 'POST',
         body: JSON.stringify({ title: commTitle, message: commMessage }),
       });
-      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'));
+      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'), 'success');
       setShowCommunication(false);
       setCommTitle('');
       setCommMessage('');
