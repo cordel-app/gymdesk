@@ -36,10 +36,10 @@ describe('Cancelling a booking asks first', () => {
     });
   }
 
-  it('the Home card offers no cancellation at all (#1764)', () => {
+  it('the Home card cancels only through the shared booking dialog (#2476, supersedes #1764)', () => {
     const src = read('src/app/[locale]/page.tsx');
-    expect(src).not.toContain('CancelBookingConfirmDialog');
-    expect(src).not.toContain('cancel_booking');
+    expect(src).toContain('BookingDetailDialog');
+    expect(src).toContain('CancelBookingConfirmDialog');
     expect(src).not.toContain('BOOKED_ON_KEY');
   });
 

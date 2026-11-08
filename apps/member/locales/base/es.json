@@ -854,5 +854,16 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# día} other {# días}}"
+  },
+  "booking_detail": {
+    "center": "Centro",
+    "space": "Espacio",
+    "trainer": "Entrenador",
+    "status": "Estado de la reserva",
+    "attendees": "Asistentes",
+    "waiting_list": "Lista de espera",
+    "attendees_count": "{count, plural, one {# persona reservada} other {# personas reservadas}}",
+    "cancel": "Cancelar reserva",
+    "close": "Cerrar"
   }
 }
