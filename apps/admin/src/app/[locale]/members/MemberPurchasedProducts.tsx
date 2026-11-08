@@ -187,6 +187,14 @@ export function MemberPurchasedProducts({
       render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
     },
     {
+      // #2494 — what that Promotion gave this purchase, from the purchase's own frozen application.
+      header: t('purchase_col_promotion_benefit'),
+      mobile: 'secondary',
+      render: (item) => (item.promotion
+        ? benefitTreatmentLabel(tp as any, 'promotion', { action: item.promotion.benefit_action, value: item.promotion.benefit_value } as any)
+        : dash),
+    },
+    {
       header: t('purchase_col_direct_discount'),
       mobile: 'secondary',
       render: (item) => formatDirectDiscount(item.direct_discount_percent) ?? dash,
@@ -283,9 +291,9 @@ export function MemberPurchasedProducts({
           onToggleExpand={toggleExpand}
           draftRow={adding ? (() => {
             const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
-            // Same order as `columns`: product, date, end date, price, tax, promotion, discount, final, payment status, status, actions.
+            // Same order as `columns`: product, date, end date, price, tax, promotion, promotion benefit, discount, final, payment status, status, actions.
             const cells: React.ReactNode[] = [
-              c.product, c.date, null, c.price, c.tax, c.promotion, c.discount, c.final, null,
+              c.product, c.date, null, c.price, c.tax, c.promotion, null, c.discount, c.final, null,
               <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />, null,
             ];
             return { cells, form: <AddProductDetails form={addForm} /> };
