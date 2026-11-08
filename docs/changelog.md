@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+
+- **Done**: #2481 (Cancel Membership Plan dialog states the access end date: `GET /user-memberships/:id/cancellation-preview` returns `cancellationEndFor()`, the same function `retireProjected()` applies, so the date shown is the date applied; the ledger wording is gone; actions are Go Back / Cancel Plan)
 - **Done**: #2183 follow-up (an invite refused because Clerk already holds an account for the email is evidence the Member was invited outside Gymdesk: Clerk Invitation reads *Invited externally* (never *None*) beside *Account exists (not linked)*, in both apps, and the refusal stamps `invited_at` as history. No migration)
 - **Done**: #2251 (Cordel → Base Products gains the same Cards | List toggle and responsive `CardGrid` as Products, so the page fills the window width in the default Cards view; Edit from a card switches to List as on Products; UI only, no API or migration change)
 - **Done**: #2501 (Admin Home Dashboard uses the full available content width: the page container no longer caps its width at 1240px; sidebar, widgets and data unchanged; UI only, no API or migration change)

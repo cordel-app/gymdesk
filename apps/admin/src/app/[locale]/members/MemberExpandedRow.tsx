@@ -182,6 +182,16 @@ export function MemberExpandedRow({
   // #1463 — the current ProductSet's frozen products and forecast (read-only).
   const productSetDetail = useProductSetDetail(tab === 'products_services' ? configuration.current_product_set : null, configuration);
   const [cancelling, setCancelling] = useState<MemberPlanRow | null>(null);
+  // #2481: the access end date the server will apply, fetched when the dialog opens.
+  const [cancelEndsOn, setCancelEndsOn] = useState<string | null>(null);
+  useEffect(() => {
+    setCancelEndsOn(null);
+    if (!cancelling || cancelling.status === 'draft') return;
+    let live = true;
+    apiFetch<{ ends_on: string | null }>(`/user-memberships/${cancelling.id}/cancellation-preview`)
+      .then((r) => { if (live) setCancelEndsOn(r.ends_on); }).catch(() => {});
+    return () => { live = false; };
+  }, [cancelling]);
   const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
   // so remounting it is how a change in either section above re-runs it.
@@ -910,9 +920,12 @@ export function MemberExpandedRow({
 
       <ConfirmDialog
         open={cancelling !== null}
-        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft') : t('members.confirm_cancel_plan')}
+        title={cancelling && cancelling.status !== 'draft' ? t('members.cancel_plan_title') : undefined}
+        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft')
+          : cancelEndsOn ? t('members.confirm_cancel_plan_until', { date: formatGymDateOnly(cancelEndsOn, gymFmt) })
+          : t('members.confirm_cancel_plan')}
         confirmLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
-        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel')}
+        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
       />

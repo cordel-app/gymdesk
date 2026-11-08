@@ -416,6 +416,23 @@ export async function reconfigureProjected(
 }
 
 /**
+ * #1196 / #2481: the day a cancelled plan keeps its entitlement through (inclusive) — the end of the last paid
+ * period, or yesterday when nothing was paid. The one computation behind both the cancellation and the
+ * confirmation dialog's preview, so the date shown is the date applied.
+ */
+export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
+  const { rows: info } = await tx.query<any>(
+    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+      WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
+  const paidThrough = await loadPaidThrough(tx, gymId, Number(info[0].root_product_set_id));
+  return cancellationEndDate({
+    paidThrough, today: todayUtc(),
+    assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,
+  });
+}
+
+/**
  * Ends a projected plan: a new, empty, plan-less version. Its activation closes
  * the assignment (the projection), supersedes the previous version and deletes
  * its obsolete future events, so nothing more is billed.
@@ -426,18 +443,7 @@ export async function retireProjected(
 ): Promise<ReconfigureOutcome> {
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
-  // #1196: the plan-less version starts on the day entitlement ends — the end of
-  // the last paid period, or yesterday when nothing was paid — and the
-  // projection closes the assignment with that as its `ends_at`.
-  const { rows: info } = await tx.query<any>(
-    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
-       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-      WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, input.gymId]);
-  const paidThrough = await loadPaidThrough(tx, input.gymId, Number(info[0].root_product_set_id));
-  const endsOn = cancellationEndDate({
-    paidThrough, today: todayUtc(),
-    assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,
-  });
+  const endsOn = await cancellationEndFor(tx, input.gymId, set);
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: null,
     startsAt: endsOn, actor: input.actor,
