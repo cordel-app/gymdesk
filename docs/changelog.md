@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2487 (a Draft's applied Promotions read their status from the live `promotions` row instead of the application's stored state, and Save & Pay refuses with a 409 naming any Promotion that is no longer active or inside its window; the snapshot written when the Promotion was applied is unchanged and still the confirmed agreement).
 
 - **Done**: #2486 (the Billing Event Simulation names its recurring fee line *Membership Fee* (with the plan's name beside it) in the table and the chart details, via `simulationLineName()`; before, the line carried only the plan's name and read as a missing fee. Presentation only: the engine already emits the fee line, so no pricing, API or migration change)
 - **Done**: #2484 (Membership Plan section editors: Save/Cancel already sat at the bottom of each section since #1131; the Billing & Duration, Membership Fee Benefit-style and Benefit sections now all label the button `Save` instead of `Save Changes`. UI label only; no API or migration change)

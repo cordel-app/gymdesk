@@ -212,6 +212,11 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
       [umId, promotionId],
     );
 
+    // #2487: the assignment is still a Draft, whose status is read from the live
+    // Promotion — so the live window is backdated as well. Confirmed plans keep
+    // reading the snapshot alone.
+    await db.query(`UPDATE promotions SET ends_at = '2026-01-31' WHERE id = ?`, [promotionId]);
+
     const res = await listPromotions(gymId, umId);
     const row = res.body.find((r: any) => r.promotion_id === promotionId);
     expect(row.display_status).toBe('expired');
