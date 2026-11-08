@@ -276,6 +276,8 @@ export default function MembershipPage() {
   const [assignNeedsConfirm, setAssignNeedsConfirm] = useState(false);
   // #1184 stage 3b: optional Plan benefits the member unticked, per plan.
   const [declinedPlanBenefits, setDeclinedPlanBenefits] = useState<Record<number, string[]>>({});
+  // #2495 — the server's re-quote of a plan's overview for the declined selection.
+  const [overviewOverrides, setOverviewOverrides] = useState<Record<number, MemberPlanOffer['overview']>>({});
   const [reloadKey, setReloadKey] = useState(0);
   // #1779 — the Professional Services tab. `null` = the read failed.
   const [serviceBalances, setServiceBalances] = useState<MemberServiceBalanceItem[] | null>([]);
@@ -840,11 +842,15 @@ export default function MembershipPage() {
   }
 
   function togglePlanBenefit(planId: number, key: string) {
-    setDeclinedPlanBenefits((prev) => {
-      const current = new Set(prev[planId] ?? []);
-      if (current.has(key)) current.delete(key); else current.add(key);
-      return { ...prev, [planId]: Array.from(current) };
-    });
+    const current = new Set(declinedPlanBenefits[planId] ?? []);
+    if (current.has(key)) current.delete(key); else current.add(key);
+    const next = Array.from(current);
+    setDeclinedPlanBenefits((prev) => ({ ...prev, [planId]: next }));
+    // #2495 — every figure is re-quoted by the engine; nothing is computed here.
+    apiFetch<{ overview: MemberPlanOffer['overview'] }>(
+      `/me/membership-plans/${planId}/overview${next.length ? `?declined=${next.join(',')}` : ''}`,
+    ).then((res) => setOverviewOverrides((prev) => ({ ...prev, [planId]: res.overview })))
+      .catch(() => { /* keep the last quote; the purchase still sends the selection */ });
   }
 
   function openChoosePlan(plan: MemberPlanOffer) {
@@ -931,7 +937,7 @@ export default function MembershipPage() {
   // #2426 — the server's overview of a plan, worded and formatted here; every
   // figure is the engine's (`GET /me/membership-plans`), none is computed.
   function planOverviewView(plan: MemberPlanOffer): PlanOverviewView | null {
-    const o = plan.overview;
+    const o = overviewOverrides[plan.id] ?? plan.overview;
     if (!o) return null;
     const bd = o.billing_duration;
     const freq = (f: string | null) => (f && ['once', 'week', 'four_weeks', 'month', 'year', 'per_session'].includes(f)
@@ -961,7 +967,16 @@ export default function MembershipPage() {
           regular: money(p.original_line_price_incl_tax) ?? '—',
           benefit: note ? t(note.key as any, note.values) : t('membership.plan_ov_no_benefit'),
           finalLabel: t('membership.plan_final_price'),
-          final: money(p.final_line_price_incl_tax) ?? '—',
+          final: p.declined ? '—' : (money(p.final_line_price_incl_tax) ?? '—'),
+          imageUrl: p.image_url ?? null,
+          imageFullUrl: p.image_full_url ?? null,
+          declined: p.declined,
+          placeholder: t('membership.plan_no_image'),
+          checkbox: p.mandatory ? null : {
+            checked: !p.declined,
+            label: t('membership.plan_ov_include'),
+            onToggle: () => togglePlanBenefit(plan.id, `${p.section}:${p.product_id}`),
+          },
         };
       }),
       prepaid: o.prepaid_end_date
@@ -999,14 +1014,16 @@ export default function MembershipPage() {
           : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
         finalPriceLabel: t('membership.plan_final_price'),
         finalPrice: applied ? planFinalPriceText(plan, applied, gymFmt) : null,
-        benefitsHeading: t('membership.plan_benefits_heading'),
-        benefits: (plan.benefits ?? []).map((b) => ({
-          key: planBenefitKey(b),
-          name: b.product_name,
-          mandatory: b.mandatory,
-          checked: !(declinedPlanBenefits[plan.id] ?? []).includes(planBenefitKey(b)),
-          onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
-        })),
+        imageUrl: plan.image_url ?? null,
+        imageFullUrl: plan.image_full_url ?? null,
+        placeholderLabel: t('membership.plan_no_image'),
+        includedLabel: t('membership.plan_included'),
+        included: (overviewOverrides[plan.id] ?? plan.overview)?.products.filter((p) => p.mandatory).map((p) => p.name).join(', ') || null,
+        optionalLabel: t('membership.plan_optional'),
+        optional: (overviewOverrides[plan.id] ?? plan.overview)?.products.filter((p) => !p.mandatory).map((p) => p.name).join(', ') || null,
+        initial: (overviewOverrides[plan.id] ?? plan.overview)?.initial_payment != null
+          ? { label: t('membership.plan_ov_initial'), value: money((overviewOverrides[plan.id] ?? plan.overview)!.initial_payment) ?? '—' }
+          : null,
         overview: planOverviewView(plan),
         promotions: plan.promotions.map((promotion) => {
           const benefit = planPromotionBenefitNote(promotion, gymFmt);

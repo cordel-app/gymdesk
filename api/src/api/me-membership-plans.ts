@@ -55,6 +55,7 @@ meMembershipPlansRouter.use(requireRole('member'), requireFeatureEnabled('member
 
 interface PlanRow {
   id: number; name: string; description: string | null;
+  image_url: string | null; image_thumbnail_url: string | null;
   tax_rate_id: number | null; tax_behavior: string | null;
   billing_interval: number | null; billing_unit: string | null;
 }
@@ -105,7 +106,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
     const memberId = await resolveMemberId(gymId, ctx);
     const today = new Date().toISOString().slice(0, 10);
     const { rows: plans } = await db.query<PlanRow>(
-      `SELECT mp.id, mp.name, mp.description, mp.tax_rate_id, mp.tax_behavior,
+      `SELECT mp.id, mp.name, mp.description, mp.image_url, mp.image_thumbnail_url, mp.tax_rate_id, mp.tax_behavior,
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
          FROM membership_plans mp
@@ -146,6 +147,8 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         id: Number(plan.id),
         name: plan.name,
         description: plan.description,
+        image_url: plan.image_thumbnail_url ?? plan.image_url ?? null,
+        image_full_url: plan.image_url ?? null,
         price_incl_tax: priceInclTax,
         tax_included: priceFields.amount_incl_tax != null,
         billing_interval: plan.billing_interval != null ? Number(plan.billing_interval) : null,
@@ -179,6 +182,38 @@ function parseIds(raw: unknown): number[] | null {
   }
   return ids;
 }
+
+// #2495 — the plan's overview re-quoted for the optional Products the member
+// un-ticked (`?declined=section:product_id,…`). Read-only: nothing is created,
+// and the figures are the engine's (`enrichPlan` + the simulation), never the
+// browser's. A mandatory line named here is simply kept.
+meMembershipPlansRouter.get('/:id/overview', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const planId = Number(req.params.id);
+  if (!Number.isInteger(planId) || planId <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const raw = req.query.declined;
+  const declined = new Set<string>();
+  if (raw !== undefined) {
+    if (typeof raw !== 'string') return res.status(400).json({ error: 'declined must be a comma-separated list' });
+    for (const part of raw.split(',').filter(Boolean)) {
+      if (!/^(session|oneoff|periodical):\d+$/.test(part)) return res.status(400).json({ error: 'Invalid declined entry' });
+      declined.add(part);
+    }
+  }
+  try {
+    await resolveMemberId(gymId, ctx);
+    const { rows } = await db.query<any>(
+      `SELECT * FROM membership_plans
+        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL
+          AND lifecycle_status = 'active' AND enrollment_status = 'public'`,
+      [planId, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
+    const today = new Date().toISOString().slice(0, 10);
+    res.json({ overview: buildMemberPlanOverview(await enrichPlan(rows[0], gymId, { declined }), today) });
+  } catch (err) { next(err); }
+});
 
 meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
   const ctx = getTenantContext(req);
