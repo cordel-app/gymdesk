@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2484 (Membership Plan section editors: Save/Cancel already sat at the bottom of each section since #1131; the Billing & Duration, Membership Fee Benefit-style and Benefit sections now all label the button `Save` instead of `Save Changes`. UI label only; no API or migration change)
 - **Done**: #2481 (Cancel Membership Plan dialog states the access end date: `GET /user-memberships/:id/cancellation-preview` returns `cancellationEndFor()`, the same function `retireProjected()` applies, so the date shown is the date applied; the ledger wording is gone; actions are Go Back / Cancel Plan)
 - **Done**: #2183 follow-up (an invite refused because Clerk already holds an account for the email is evidence the Member was invited outside Gymdesk: Clerk Invitation reads *Invited externally* (never *None*) beside *Account exists (not linked)*, in both apps, and the refusal stamps `invited_at` as history. No migration)
 - **Done**: #2251 (Cordel → Base Products gains the same Cards | List toggle and responsive `CardGrid` as Products, so the page fills the window width in the default Cards view; Edit from a card switches to List as on Products; UI only, no API or migration change)
