@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2486 (the Billing Event Simulation names its recurring fee line *Membership Fee* (with the plan's name beside it) in the table and the chart details, via `simulationLineName()`; before, the line carried only the plan's name and read as a missing fee. Presentation only: the engine already emits the fee line, so no pricing, API or migration change)
 - **Done**: #2484 (Membership Plan section editors: Save/Cancel already sat at the bottom of each section since #1131; the Billing & Duration, Membership Fee Benefit-style and Benefit sections now all label the button `Save` instead of `Save Changes`. UI label only; no API or migration change)
 - **Done**: #2481 (Cancel Membership Plan dialog states the access end date: `GET /user-memberships/:id/cancellation-preview` returns `cancellationEndFor()`, the same function `retireProjected()` applies, so the date shown is the date applied; the ledger wording is gone; actions are Go Back / Cancel Plan)
 - **Done**: #2183 follow-up (an invite refused because Clerk already holds an account for the email is evidence the Member was invited outside Gymdesk: Clerk Invitation reads *Invited externally* (never *None*) beside *Account exists (not linked)*, in both apps, and the refusal stamps `invited_at` as history. No migration)
