@@ -266,6 +266,21 @@ export function billingDateToX(date: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * #2486 — what a simulation line is called. The recurring Membership Fee is its
+ * own line, so it reads "Membership Fee" (with the plan's name beside it) in the
+ * table and the chart alike; a Product keeps its own name. `t` is the page's
+ * translator and must resolve `simulation_membership_fee`.
+ */
+export function simulationLineName(
+  line: BillingEventSimulationLine,
+  t: (key: string) => string,
+): string {
+  if (line.kind !== 'membership_fee') return line.label;
+  const fee = t('simulation_membership_fee');
+  return line.label && line.label !== 'Membership Fee' ? `${fee} · ${line.label}` : fee;
+}
+
 /** Chronological chart points over the dates being listed; the formatters are the page's. */
 export function billingEventChartPoints(
   dates: readonly BillingEventSimulationDate[],

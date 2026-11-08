@@ -98,3 +98,17 @@ describe('continuous monthly timeline (#2090)', () => {
     expect(fillMissingMonths(fourWeekly, fmtD, fmtA)).toEqual(fourWeekly);
   });
 });
+
+describe('simulationLineName (#2486)', () => {
+  const t = (key: string) => (key === 'simulation_membership_fee' ? 'Membership Fee' : key);
+  const base = {
+    product_id: null, mandatory: false, quantity: 1, unit_price: 10, regular_price: 10,
+    actual_charge: 10, prepaid_periods: null, benefits: [],
+  };
+  it('names the recurring fee as the Membership Fee beside the plan, and leaves Products alone', async () => {
+    const { simulationLineName } = await import('@/lib/billingEventSimulation');
+    expect(simulationLineName({ ...base, kind: 'membership_fee', label: 'Gold' } as never, t)).toBe('Membership Fee · Gold');
+    expect(simulationLineName({ ...base, kind: 'membership_fee', label: 'Membership Fee' } as never, t)).toBe('Membership Fee');
+    expect(simulationLineName({ ...base, kind: 'product', label: 'Locker' } as never, t)).toBe('Locker');
+  });
+});

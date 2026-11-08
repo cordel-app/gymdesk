@@ -18,6 +18,7 @@ import {
   fillMissingMonths,
   billingDateToX,
   selectedBillingGroup,
+  simulationLineName,
   visibleBillingDates,
 } from '@/lib/billingEventSimulation';
 
@@ -43,7 +44,7 @@ export function BillingEventSimulationChart({
     () => {
       const total = (value: string) => t('chart_total', { total: value });
       const base = billingEventChartPoints(
-      dates, formatDate, fmtMoney, undefined,
+      dates, formatDate, fmtMoney, (line) => simulationLineName(line, t),
       total,
       (line) => (line.proration
         ? t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days })
