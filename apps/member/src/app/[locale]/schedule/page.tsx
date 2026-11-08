@@ -23,6 +23,7 @@ import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { ImagePreviewButton } from '@/components/ImagePreview';
+import { BookingDetailDialog } from '@/components/BookingDetailDialog';
 
 interface Session {
   id: number;
@@ -38,6 +39,7 @@ interface Session {
   trainer_name: string | null;
   effective_capacity: number;
   booked_count: number;
+  waitlist_count?: number;
   spots_left: number;
   my_booking_status: 'booked' | 'waitlisted' | null;
   my_waitlist_position: number | null;
@@ -293,6 +295,20 @@ export default function MemberSchedulePage() {
                         alt={t('member_schedule.image_alt', { name: s.class_type_name })}
                         title={s.class_type_name}
                         description={s.class_type_description?.trim() || null}
+                        renderDialog={(close) => (
+                          <BookingDetailDialog
+                            booking={{
+                              ...s,
+                              title: s.class_type_name,
+                              whenLabel: `${dayLabel(s.starts_at)} · ${timeOnly(s.starts_at)} – ${timeOnly(s.ends_at)}`,
+                              description: s.class_type_description,
+                              imageUrl: s.class_type_image_url,
+                            }}
+                            busy={pendingSession === s.id}
+                            onClose={close}
+                            onCancel={(bookingId) => { close(); setConfirmCancel({ bookingId, sessionId: s.id }); }}
+                          />
+                        )}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={s.class_type_image_url} alt="" style={styles.cardImage} />
