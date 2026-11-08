@@ -1456,7 +1456,7 @@ export default function PlansPage() {
                           onCancel: cancelDurationEdit,
                           onSave: () => saveDurationEdit(plan.id),
                           saving: durationSaving,
-                          saveLabel: t('plans.save_changes'),
+                          saveLabel: t('plans.save'),
                         })}
                       </div>
                     ) : (
@@ -1546,7 +1546,7 @@ export default function PlansPage() {
                               onCancel: cancelBenefitEdit,
                               onSave: () => saveBenefitEdit(plan.id, endpoint),
                               saving: benefitSaving,
-                              saveLabel: t('plans.save_changes'),
+                              saveLabel: t('plans.save'),
                             })}
                           </div>
                         ) : (
@@ -1621,7 +1621,7 @@ export default function PlansPage() {
                         {sectionSaveActions({
                           onCancel: () => setCentersForPlanId(null),
                           onSave: handleSaveCenters,
-                          saveLabel: t('plans.save_changes'),
+                          saveLabel: t('plans.save'),
                         })}
                       </div>
                     ) : plan.center_access_mode === 'all_centers' || plan.center_access_mode === 'member_default_center' || plan.center_access_mode === 'online' ? (
