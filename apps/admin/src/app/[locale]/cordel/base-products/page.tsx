@@ -437,7 +437,7 @@ export default function BaseProductsPage() {
   );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => { setForm(formFor(null)); setError(null); }}>{t('add')}</button>
