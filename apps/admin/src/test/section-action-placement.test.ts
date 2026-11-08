@@ -128,9 +128,9 @@ describe('Membership Plans: every subsection action is beside its title (#963)',
     expect(plansSrc).toContain("<button onClick={onCancel} style={btnSmall('#888')}>{t('plans.cancel')}</button>");
     expect(plansSrc).toContain('<button onClick={onSave} disabled={saving} style={btnSmall()}>');
     expect(plansSrc).toContain("{saving ? t('plans.saving') : saveLabel}");
-    // PRICING says `Save`, every other section `Save changes` — as before.
-    expect(plansSrc).toContain("saveLabel: t('plans.save'),");
-    expect(plansSrc.match(/saveLabel: t\('plans\.save_changes'\),/g) ?? []).toHaveLength(3);
+    // Every section-level editor says `Save` (#2484).
+    expect(plansSrc.match(/saveLabel: t\('plans\.save'\),/g) ?? []).toHaveLength(4);
+    expect(plansSrc).not.toContain("saveLabel: t('plans.save_changes')");
     expect(plansSrc).toContain('saving: pricingSaving,');
     expect(plansSrc).toContain('saving: durationSaving,');
     expect(plansSrc).toContain('saving: benefitSaving,');
