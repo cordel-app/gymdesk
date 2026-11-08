@@ -55,6 +55,7 @@ import {
 import { saveBenefitSection } from '@/lib/benefitEditing';
 import { billingDurationPayload, directDiscountPayload, durationFormError } from '@/lib/durationEditing';
 import type {
+  AppliedPromotion,
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
   PersonalFeeBenefitAction,
@@ -140,6 +141,12 @@ interface Props {
   /** The assignment's stored status — a terminal one is read-only. */
   planStatus: string;
   snapshot: AssignedPlanSnapshot;
+  /** #2483 — the applied Promotions (each from its own snapshot), to name the ones touching each line and the fee. */
+  promotions?: AppliedPromotion[];
+  /** #2483 — the fee quoted VAT-inclusive and the one the engine resolves for the current cycle. */
+  feeInclTax?: number | null;
+  feeTaxPercent?: number | null;
+  currentFee?: number | null;
   /**
    * Whether the card is in Edit mode (#797/#897). Outside it every section is
    * read-only and carries no `Edit` button at all — absent, not disabled.
@@ -191,9 +198,14 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
  * payload is the point: `toBenefitItems()` sends only the keys a draft row
  * carries, and the assignment's `PUT` takes quantity alone.
  */
-function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
+function toViewRow(
+  b: AssignedPlanSnapshotBenefit, promotionNames: Map<number, string[]>,
+): ProductBenefitRow {
   return {
     ...toDraftRow(b),
+    applied_tax_percent: b.applied_tax_percent ?? null,
+    applied_promotions: promotionNames.get(b.product_id) ?? [],
+    direct_discount_line_incl_tax: b.direct_discount_line_incl_tax ?? null,
     frequency: b.frequency,
     original_price_incl_tax: b.original_price_incl_tax,
     final_price_incl_tax: b.final_price_incl_tax,
@@ -203,7 +215,7 @@ function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, cardEditing, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
@@ -212,6 +224,22 @@ export function AssignedPlanConfiguration({
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
+
+  // #2483 — which applied Promotions grant each Product, and which touch the
+  // Membership Fee. Names only: every amount stays the server's.
+  const applied = promotions.filter((p) => p.status === 'applied');
+  const promotionNamesByProduct = new Map<number, string[]>();
+  for (const p of applied) {
+    for (const g of [...p.session_grants, ...p.oneoff_grants, ...p.periodical_grants]) {
+      if (g.product_id == null) continue;
+      const names = promotionNamesByProduct.get(g.product_id) ?? [];
+      if (!names.includes(p.promotion_name)) names.push(p.promotion_name);
+      promotionNamesByProduct.set(g.product_id, names);
+    }
+  }
+  const feePromotionNames = applied
+    .filter((p) => p.membership_fee_benefits.some((b) => b.enabled && b.action && b.action !== 'no_benefit'))
+    .map((p) => p.promotion_name);
 
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
@@ -511,6 +539,33 @@ export function AssignedPlanConfiguration({
       )}
       </CardSection>
 
+      {/* #2483 — the Membership Fee's own breakdown: what it costs, the tax,
+          the Promotions touching it, the direct benefit (kept apart from them)
+          and the price the billing engine resolves for the current cycle. */}
+      {editing == null && (
+        <CardSection label={t('section_fee_breakdown')}>
+          <CardDetailRow
+            label={t('fee_breakdown_fee')}
+            value={fmtMoney(feeInclTax ?? snapshot.membership_fee_price)}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_tax')}
+            value={feeTaxPercent != null ? `${feeTaxPercent}%` : '—'}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_promotion')}
+            value={feePromotionNames.length > 0 ? feePromotionNames.join(', ') : '—'}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_direct_benefit')}
+            value={snapshot.personal_fee_benefit.action === 'percentage_discount'
+              ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
+              : t('personal_fee_benefit_no_benefit')}
+          />
+          <CardDetailRow label={t('fee_breakdown_final')} value={currentFee != null ? fmtMoney(currentFee) : '—'} />
+        </CardSection>
+      )}
+
       {/* #772 — the Personal Membership Fee Benefit. Its own section, right
           under the fee it discounts: it is neither a Promotion benefit (it
           never expires) nor part of the frozen snapshot (it is agreed with
@@ -603,11 +658,12 @@ export function AssignedPlanConfiguration({
               <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
-                rows={rows.map(toViewRow)}
+                rows={rows.map((r) => toViewRow(r, promotionNamesByProduct))}
                 showFrequency={showFrequency}
                 frequencyColumn={viewFrequencyColumn}
                 benefitContext="plan"
                 showPrices
+                showBreakdown
               />
             )}
           </CardSection>

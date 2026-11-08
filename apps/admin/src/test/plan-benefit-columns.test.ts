@@ -52,8 +52,15 @@ describe('#916: one shared column declaration', () => {
     // what the declaration pins is the order, not the length.
     expect(keysOf([...PRODUCT_BENEFIT_COLUMNS])).toEqual([
       'item', 'quantity', 'frequency', 'action', 'requirement',
-      'original_price', 'final_price', 'mandatory',
+      'original_price', 'tax', 'promotion', 'direct_discount', 'final_price', 'mandatory',
     ]);
+  });
+
+  it('offers the tax / promotion / direct-discount breakdown only when asked (#2483)', () => {
+    const base = { showFrequency: true, showAction: true, showPrices: true };
+    expect(keysOf(productBenefitColumns(base))).not.toContain('tax');
+    expect(keysOf(productBenefitColumns({ ...base, showBreakdown: true })).slice(-4))
+      .toEqual(['tax', 'promotion', 'direct_discount', 'final_price']);
   });
 
   it('puts the Plan benefit Mandatory flag last, beside Actions, and only when asked (#1184)', () => {
