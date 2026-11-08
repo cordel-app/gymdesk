@@ -17,7 +17,9 @@ import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, inlineEditorStyle,
   inlineEditorTitleStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
-import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { MemberImageField, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -86,6 +88,9 @@ export default function BasePaymentMethodsPage() {
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<Method | null>(null);
   const [deleting, setDeleting] = useState<Method | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [imageOf, setImageOf] = useState<Method | null>(null);
+  const [openField, setOpenField] = useState<'name' | 'description' | null>(null);
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -111,7 +116,7 @@ export default function BasePaymentMethodsPage() {
 
   async function save() {
     if (!form) return;
-    if (!form.code.trim() || LOCALES.some((l) => !form.translations[l].name.trim())) {
+    if (!form.code.trim() || !form.translations.en.name.trim()) {
       setError(t('error_required'));
       return;
     }
@@ -182,6 +187,14 @@ export default function BasePaymentMethodsPage() {
     setError(null);
   }
 
+  function toggleExpand(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   function closeForm() {
     setForm(null);
     setStagedImage(null);
@@ -191,8 +204,16 @@ export default function BasePaymentMethodsPage() {
   const editor = form && (
     <div style={inlineEditorStyle}>
       <div style={inlineEditorTitleStyle}>{form.id == null ? t('add') : t('edit')}</div>
-      <label style={formFieldLabelStyle}>{t('code')}</label>
-      <input style={formControlStyle} value={form.code} disabled={form.id != null} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+      <label style={formFieldLabelStyle}>{t('label_name')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.name} maxLength={120} onChange={(e) => setTranslation('en', 'name', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setOpenField('name')} />
+      </div>
+      <label style={formFieldLabelStyle}>{t('label_description')}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input style={{ ...formControlStyle, flex: 1 }} value={form.translations.en.description} maxLength={500} onChange={(e) => setTranslation('en', 'description', e.target.value)} />
+        <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+      </div>
       <label style={formFieldLabelStyle}>{t('status')}</label>
       <select
         style={formControlStyle}
@@ -230,14 +251,27 @@ export default function BasePaymentMethodsPage() {
           );
         })()
       )}
-      {LOCALES.map((l) => (
-        <div key={l}>
-          <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
-          <input style={formControlStyle} value={form.translations[l].name} maxLength={120} onChange={(e) => setTranslation(l, 'name', e.target.value)} />
-          <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-          <input style={formControlStyle} value={form.translations[l].description} maxLength={500} onChange={(e) => setTranslation(l, 'description', e.target.value)} />
-        </div>
-      ))}
+      {form.id == null && (<>
+      <label style={formFieldLabelStyle}>{t('code')}</label>
+      <input style={formControlStyle} value={form.code} disabled={form.id != null} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+      </>)}
+      <FieldTranslationsModal
+        open={openField !== null}
+        title={t('translations_title', { field: openField ? t(openField === 'name' ? 'label_name' : 'label_description') : '' })}
+        locales={LOCALES.map((l) => ({ code: l, label: l.toUpperCase() }))}
+        values={openField ? Object.fromEntries(LOCALES.map((l) => [l, form.translations[l][openField]])) : {}}
+        multiline={openField === 'description'}
+        saveLabel={t('translations_save')}
+        cancelLabel={t('translations_cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel={t('translations_empty')}
+        onSave={(vals) => {
+          const field = openField!;
+          setForm((f) => f && ({ ...f, translations: Object.fromEntries(LOCALES.map((l) => [l, { ...f.translations[l], [field]: vals[l] ?? '' }])) as Translations }));
+          setOpenField(null);
+        }}
+        onClose={() => setOpenField(null)}
+      />
       {error && <div style={formErrorStyle} role="alert">{error}</div>}
       <div style={inlineActionsRowStyle}>
         <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
@@ -250,7 +284,7 @@ export default function BasePaymentMethodsPage() {
   const when = (v: string | null | undefined) => (v ? formatGymDateTime(v, fmt) : dash);
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => openForm(null)}>{t('add')}</button>
@@ -275,33 +309,71 @@ export default function BasePaymentMethodsPage() {
       {form?.id === null && editor}
 
       <div style={{ ...cardSurfaceStyle, marginTop: form?.id === null ? 12 : 0 }}>
-        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((m) => (
-          form?.id === m.id ? (
-            <div key={m.id} style={{ padding: 12, borderTop: '1px solid var(--gd-separator, #eee)' }}>{editor}</div>
-          ) : (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--gd-separator, #eee)' }}>
-              <MemberImagePreview
-                src={memberImagePreviewSrc(m.image_thumbnail_url ?? m.image_url, m.modified_at)}
-                emptyLabel={t('image_none')}
-                size={40}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{m.display_name}</div>
-                <div style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.code}{m.display_description ? ` · ${m.display_description}` : ''}
+        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : rows.map((m) => {
+          const isEditing = form?.id === m.id;
+          const isOpen = expanded.has(m.id) || isEditing;
+          const thumb = memberImagePreviewSrc(m.image_thumbnail_url ?? m.image_url, m.modified_at);
+          return (
+            <div key={m.id} style={{ borderTop: '1px solid var(--gd-separator, #eee)' }}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={isOpen}
+                onClick={() => toggleExpand(m.id)}
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleExpand(m.id); } }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+              >
+                <button
+                  type="button"
+                  aria-label={m.image_url ? m.display_name : t('image_none')}
+                  disabled={!m.image_url}
+                  onClick={(e) => { e.stopPropagation(); if (m.image_url) setImageOf(m); }}
+                  style={{ border: 'none', background: 'none', padding: 0, cursor: m.image_url ? 'zoom-in' : 'default', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, width: 40, height: 40 }}
+                >
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', display: 'block' }} />
+                  ) : (
+                    <span style={{ display: 'block', width: 40, height: 40, borderRadius: '50%', background: 'var(--gd-separator, #eee)' }} />
+                  )}
+                </button>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontWeight: 600, flexShrink: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.display_name}</span>
+                  {m.display_description && (
+                    <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{m.display_description}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>{m.created_by ?? dash}</div>
+                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>{when(m.created_at)}</div>
+                <StatusBadge status={m.status} label={t(m.status)} />
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ContextMenu
+                    items={[
+                      { label: t('edit'), onClick: () => { setExpanded((p) => new Set(p).add(m.id)); openForm(m); } },
+                      { label: t('details'), onClick: () => setDetails(m) },
+                      { label: t('delete'), onClick: () => setDeleting(m), danger: true },
+                    ]}
+                  />
                 </div>
               </div>
-              <StatusBadge status={m.status} label={t(m.status)} />
-              <ContextMenu
-                items={[
-                  { label: t('edit'), onClick: () => openForm(m) },
-                  { label: t('details'), onClick: () => setDetails(m) },
-                  { label: t('delete'), onClick: () => setDeleting(m), danger: true },
-                ]}
-              />
+              {isOpen && (
+                <div style={{ padding: 12 }}>
+                  {isEditing ? editor : (
+                    <div style={{ fontSize: 14 }}>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('label_name')}:</strong> {m.display_name}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('label_description')}:</strong> {m.display_description ?? dash}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>{t('col_status')}:</strong> {t(m.status)}</p>
+                      {m.image_url && thumb && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={memberImagePreviewSrc(m.image_url, m.modified_at) ?? thumb} alt={m.display_name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, marginTop: 8 }} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )
-        ))}
+          );
+        })}
       </div>
 
       <CrudModal
@@ -331,6 +403,14 @@ export default function BasePaymentMethodsPage() {
           </div>
         )}
       </CrudModal>
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
 
       <ConfirmDialog
         open={!!deleting}

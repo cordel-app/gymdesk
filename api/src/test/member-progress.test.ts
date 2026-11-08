@@ -128,3 +128,43 @@ describe('DELETE /members/:memberId/progress/exercises/:exerciseId (#2198)', () 
     await staff(request.delete(`/members/${memberId}/progress/exercises/${ex2}`)).expect(404);
   });
 });
+
+describe('POST /members/:memberId/progress/exercises/:exerciseId/readings (#2198)', () => {
+  let m: number;
+  let ex: number;
+  const url = () => `/members/${m}/progress/exercises/${ex}/readings`;
+
+  beforeAll(async () => {
+    m = (await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'Add Reading Member', `addreading-${Date.now()}@test.com`])).insertId;
+    ex = (await db.query(`INSERT INTO exercises (gym_id, name) VALUES (?, 'Add Reading Press')`, [gymId])).insertId;
+    await logFor(gymId, m, ex, '2026-10-01', 50, 8);
+  });
+
+  it('requires auth and stays inside the gym', async () => {
+    await request.post(url()).set('x-gym-id', gymId).send({ logged_date: '2026-10-05', weight: 1 }).expect(401);
+    await staff(request.post(url()), otherGymId).send({ logged_date: '2026-10-05', weight: 1 }).expect(403);
+  });
+
+  it('appends the reading as the last set of an existing day', async () => {
+    const res = await staff(request.post(url())).send({ logged_date: '2026-10-01', weight: 55, reps: 6 }).expect(201);
+    const day = res.body.readings.filter((r: any) => r.logged_date === '2026-10-01');
+    expect(day).toHaveLength(1);
+    expect(day[0].sets.map((s: any) => [s.set_number, s.weight, s.reps])).toEqual([[1, 50, 8], [2, 55, 6]]);
+  });
+
+  it('creates a reading for a new day', async () => {
+    const res = await staff(request.post(url())).send({ logged_date: '2026-10-04', weight: 70, reps: 3 }).expect(201);
+    const day = res.body.readings.find((r: any) => r.logged_date === '2026-10-04');
+    expect(day.sets).toHaveLength(1);
+    expect(day.sets[0]).toMatchObject({ set_number: 1, weight: 70, reps: 3 });
+  });
+
+  it('refuses invalid input, future dates and exercises with no progress', async () => {
+    await staff(request.post(url())).send({ logged_date: 'nope', weight: 1 }).expect(400);
+    await staff(request.post(url())).send({ logged_date: '2026-10-04' }).expect(400);
+    await staff(request.post(url())).send({ logged_date: '2026-10-04', reps: 2.5 }).expect(400);
+    await staff(request.post(url())).send({ logged_date: '2026-10-04', weight: -1 }).expect(400);
+    await staff(request.post(url())).send({ logged_date: '2099-01-01', weight: 5 }).expect(400);
+    await staff(request.post(`/members/${memberId}/progress/exercises/${ex}/readings`)).send({ logged_date: '2026-10-04', weight: 5 }).expect(404);
+  });
+});

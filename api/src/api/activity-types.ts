@@ -4,10 +4,12 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
+import { materializeScheduleRule } from '../domain/scheduleEngine';
 import {
-  materializeScheduleRule,
-  cancelFutureOccurrencesByActivityType,
-} from '../domain/scheduleEngine';
+  alertActivityDiscontinued,
+  countDiscontinuationImpact,
+  discontinueFutureEvents,
+} from './activity-discontinuation';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 // #986: the Default Trainer is an active Staff record, and which ones those
 // are is decided in one place — the same module `GET /trainers` projects the
@@ -424,8 +426,29 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     }
   }
 
+  // #2324: deactivating an Activity discontinues its future events and tells
+  // the affected members; the admin confirms first.
+  const discontinuing = status === 'inactive' && current.status !== 'inactive';
+  if (discontinuing) {
+    const impact = await countDiscontinuationImpact(db, gymId, req.params.id as string);
+    if (impact.events > 0 && req.body.confirm_discontinue !== true) {
+      return res.status(409).json({
+        error: 'activity_discontinue_confirmation_required',
+        message: `Deactivating this activity removes ${impact.events} future event(s); `
+          + `${impact.booked_events} with bookings will be cancelled, the rest deleted. `
+          + 'Members will be notified. Resend with confirm_discontinue: true to proceed.',
+        impacted_events: impact.events,
+        booked_events: impact.booked_events,
+      });
+    }
+  }
+  let discontinued: Awaited<ReturnType<typeof discontinueFutureEvents>> | null = null;
+
   try {
     await db.transaction(async (tx) => {
+      if (discontinuing) {
+        discontinued = await discontinueFutureEvents(tx, gymId, req.params.id as string, actor);
+      }
       const { rowCount } = await tx.query(
         `UPDATE activity_types SET
           name                           = COALESCE(?, name),
@@ -475,6 +498,11 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         );
       }
     });
+    if (discontinued) {
+      const d = discontinued as Awaited<ReturnType<typeof discontinueFutureEvents>>;
+      await alertActivityDiscontinued(gymId, req.params.id as string, current.name, d.memberIds)
+        .catch((e) => console.error('[activity-types] discontinue alert failed:', e));
+    }
     const { rows } = await db.query(`${SELECT} WHERE at.id = ? AND at.gym_id = ?`, [req.params.id, gymId]);
     // #1373: the image key carries the activity's name, so a rename moves it —
     // after the row has committed, and never by deleting first.
@@ -571,13 +599,30 @@ activityTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
 
-  // Cancel future calendar events from schedule rules (preserve past ones)
-  await cancelFutureOccurrencesByActivityType(parseInt(req.params.id as string, 10), actor);
-
-  await db.query(
-    'UPDATE activity_types SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
-    [actor, actor, req.params.id, gymId],
-  );
+  // #2324: future events are deleted (no bookings) or cancelled (bookings),
+  // members are alerted once, and past events stay — in one transaction with
+  // the soft delete. The admin confirms first.
+  const impact = await countDiscontinuationImpact(db, gymId, req.params.id as string);
+  if (impact.events > 0 && req.body?.confirm_discontinue !== true && req.query.confirm_discontinue !== 'true') {
+    return res.status(409).json({
+      error: 'activity_discontinue_confirmation_required',
+      message: `Deleting this activity removes ${impact.events} future event(s); `
+        + `${impact.booked_events} with bookings will be cancelled, the rest deleted. `
+        + 'Members will be notified. Resend with confirm_discontinue: true to proceed.',
+      impacted_events: impact.events,
+      booked_events: impact.booked_events,
+    });
+  }
+  const result = await db.transaction(async (tx) => {
+    const r = await discontinueFutureEvents(tx, gymId, req.params.id as string, actor);
+    await tx.query(
+      'UPDATE activity_types SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+      [actor, actor, req.params.id, gymId],
+    );
+    return r;
+  });
+  await alertActivityDiscontinued(gymId, req.params.id as string, existing[0].name, result.memberIds)
+    .catch((e) => console.error('[activity-types] discontinue alert failed:', e));
   recordAudit(req, { action: 'delete', entityType: 'activity_type', entityId: req.params.id, entityName: existing[0].name });
   res.status(204).send();
 });

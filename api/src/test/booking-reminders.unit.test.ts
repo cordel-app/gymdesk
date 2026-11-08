@@ -33,6 +33,11 @@ const NOTIFICATIONS = readFileSync(join(API_SRC, 'infra', 'notifications.ts'), '
 const ME = readFileSync(join(API_SRC, 'api', 'me.ts'), 'utf8');
 const STAFF_BOOKINGS = readFileSync(join(API_SRC, 'api', 'bookings.ts'), 'utf8');
 const APP = readFileSync(join(API_SRC, 'app.ts'), 'utf8');
+// The newest migration that rewrites the CHECK list (the superset test reads it).
+const LATEST_CHECK_MIGRATION = readFileSync(
+  join(API_SRC, 'infra', 'migrations', '364_activity_discontinued_notification.js'),
+  'utf8',
+);
 const MIGRATION = readFileSync(
   join(API_SRC, 'infra', 'migrations', '270_staff_message_notification.js'),
   'utf8',
@@ -101,9 +106,9 @@ describe('the reminder is one declaration (#1113 §2)', () => {
       code(NOTIFICATIONS).indexOf('export interface NotificationPayload'),
     );
     const union = [...unionBlock.matchAll(/\|\s*'([a-z0-9_]+)'/g)].map((m) => m[1]);
-    const checkList = MIGRATION.slice(
-      MIGRATION.indexOf('const NOTIFICATION_TYPES'),
-      MIGRATION.indexOf('];', MIGRATION.indexOf('const NOTIFICATION_TYPES')),
+    const checkList = LATEST_CHECK_MIGRATION.slice(
+      LATEST_CHECK_MIGRATION.indexOf('const NOTIFICATION_TYPES'),
+      LATEST_CHECK_MIGRATION.indexOf('];', LATEST_CHECK_MIGRATION.indexOf('const NOTIFICATION_TYPES')),
     );
     const allowed = [...checkList.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
     expect(union).toContain(BOOKING_REMINDER_TYPE);

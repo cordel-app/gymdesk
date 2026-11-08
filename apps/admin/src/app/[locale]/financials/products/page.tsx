@@ -15,6 +15,9 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel } from '@/lib/localeLabels';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CardGrid } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
@@ -50,6 +53,10 @@ import {
   type ProductType,
   type VisibleProductField,
   toProductFormValues,
+  PRODUCT_TEXT_LOCALES,
+  applyProductTextValues,
+  productTextValues,
+  type ProductTextField,
   toTranslationsPayload,
   PRODUCT_TRANSLATION_LOCALES,
   visibleProductSections,
@@ -219,6 +226,12 @@ export default function ProductsPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
+  // #2334: which field's translations modal is open, for which row.
+  const tAll = useTranslations();
+  const [langModal, setLangModal] = useState<{ field: ProductTextField; item: Product } | null>(null);
+  const langLocales = PRODUCT_TEXT_LOCALES.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }));
+  const textFieldLabel = (f: ProductTextField) => t(f === 'name' ? 'label_name' : 'label_description');
+  const globeRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 };
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -227,6 +240,7 @@ export default function ProductsPage() {
 
   const [details, setDetails] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
+  const [imageOf, setImageOf] = useState<Product | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -468,7 +482,8 @@ export default function ProductsPage() {
   async function handleResync(item: Product) {
     try {
       const res = await apiFetch<{ updated: boolean }>(`/products/${item.id}/resync`, { method: 'POST' });
-      toast(res?.updated ? t('resync_success') : t('resync_no_change'));
+      if (res?.updated) toast(t('resync_success'), 'success');
+      else toast(t('resync_no_change'), 'info');
       if (res?.updated) load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -668,22 +683,19 @@ export default function ProductsPage() {
     function renderReadOnlyValue(field: VisibleProductField): React.ReactNode {
       switch (field.key) {
         case 'name':
-          return <div style={productValueStyle}>{item.name}</div>;
+          return (
+            <div style={globeRowStyle}>
+              <div style={{ ...productValueStyle, flex: 1 }}>{item.name}</div>
+              <GlobeButton label={t('translations_open', { field: textFieldLabel('name') })} onClick={() => setLangModal({ field: 'name', item })} />
+            </div>
+          );
         case 'type':
           return <div style={productValueStyle}>{t(`type_${item.type}` as any)}</div>;
         case 'description':
-          return <div style={productValueStyle}>{item.description ?? EMPTY_VALUE}</div>;
-        case 'translations':
           return (
-            <div style={productValueStyle}>
-              {PRODUCT_TRANSLATION_LOCALES.map((l) => (
-                <div key={l}>
-                  <strong>{l.toUpperCase()}:</strong>{' '}
-                  {item.translations?.[l]?.name
-                    ? `${item.translations[l]!.name}${item.translations[l]!.description ? ` — ${item.translations[l]!.description}` : ''}`
-                    : EMPTY_VALUE}
-                </div>
-              ))}
+            <div style={globeRowStyle}>
+              <div style={{ ...productValueStyle, flex: 1 }}>{item.description ?? EMPTY_VALUE}</div>
+              <GlobeButton label={t('translations_open', { field: textFieldLabel('description') })} onClick={() => setLangModal({ field: 'description', item })} />
             </div>
           );
         case 'units':
@@ -760,12 +772,15 @@ export default function ProductsPage() {
       switch (field.key) {
         case 'name':
           return (
-            <input
-              value={editForm.name}
-              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              autoFocus
-              style={formControlStyle}
-            />
+            <div style={globeRowStyle}>
+              <input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                autoFocus
+                style={{ ...formControlStyle, flex: 1 }}
+              />
+              <GlobeButton label={t('translations_open', { field: textFieldLabel('name') })} onClick={() => setLangModal({ field: 'name', item })} />
+            </div>
           );
         case 'type':
           return (
@@ -779,30 +794,14 @@ export default function ProductsPage() {
           );
         case 'description':
           return (
-            <textarea
-              value={editForm.description}
-              onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-              rows={2}
-              style={productTextareaStyle}
-            />
-          );
-        case 'translations':
-          return (
-            <div>
-              {PRODUCT_TRANSLATION_LOCALES.map((l) => (
-                <div key={l}>
-                  <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
-                  <input
-                    style={formControlStyle} maxLength={150} value={editForm.tr[l].name}
-                    onChange={(e) => setEditForm({ ...editForm, tr: { ...editForm.tr, [l]: { ...editForm.tr[l], name: e.target.value } } })}
-                  />
-                  <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-                  <textarea
-                    rows={2} style={productTextareaStyle} value={editForm.tr[l].description}
-                    onChange={(e) => setEditForm({ ...editForm, tr: { ...editForm.tr, [l]: { ...editForm.tr[l], description: e.target.value } } })}
-                  />
-                </div>
-              ))}
+            <div style={globeRowStyle}>
+              <textarea
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                rows={2}
+                style={{ ...productTextareaStyle, flex: 1 }}
+              />
+              <GlobeButton label={t('translations_open', { field: textFieldLabel('description') })} onClick={() => setLangModal({ field: 'description', item })} />
             </div>
           );
         case 'units':
@@ -972,6 +971,7 @@ export default function ProductsPage() {
           sessionNote={sessionNote}
           text={listText}
           onToggle={() => toggleExpand(item.id)}
+          onImageClick={() => setImageOf(item)}
         />
         )}
 
@@ -1050,6 +1050,14 @@ export default function ProductsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <ExerciseViewToggle value={view} onChange={setView} />
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        </div>
+      </div>
+
+      {/* #2251: filters on the left, as on Base Products. */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
           <form onSubmit={handleSearch} style={{ display: 'flex', gap: 6 }}>
             <input
               value={searchQ}
@@ -1073,10 +1081,6 @@ export default function ProductsPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <ExerciseViewToggle value={view} onChange={setView} />
-          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(secondaryBtnStyle, !canWrite)} disabled={!canWrite}>{t('import_system')}</button>
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
-        </div>
       </div>
 
       {view === 'cards' ? (
@@ -1109,6 +1113,25 @@ export default function ProductsPage() {
       )}
 
       {/* Details modal */}
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? t('translations_title', { field: textFieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal
+          ? productTextValues(editForm && editingId === langModal.item.id ? editForm : toProductFormValues(langModal.item), langModal.field)
+          : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={!(langModal && editForm && editingId === langModal.item.id)}
+        saveLabel={t('save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setEditForm((f) => f && { ...f, ...applyProductTextValues(f, langModal.field, vals) });
+          setLangModal(null);
+        }}
+      />
       <CrudModal
         open={details !== null}
         title={t('details_title')}
@@ -1192,6 +1215,14 @@ export default function ProductsPage() {
       </CrudModal>
 
       {/* Delete confirm */}
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
+
       <ConfirmDialog
         open={deleting !== null}
         message={(<div><p style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('confirm_delete_title')}</p><p style={{ margin: 0 }}>{t('confirm_delete_body')}</p></div>) as any}

@@ -4,6 +4,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
+import { centersAvailableToMember, memberEffectiveCenterAccess } from './plan-center-access';
 
 /** Mounted at /members/:memberId/centers (mergeParams: true), like training-plans.ts. */
 export const memberCentersRouter = Router({ mergeParams: true });
@@ -19,6 +20,34 @@ export const memberCentersRouter = Router({ mergeParams: true });
  * active centers has no fallback — there the assignment is explicit, and an
  * empty list really is empty.
  */
+/**
+ * #2381: the centers the Member may pick as Default Center, from their Membership
+ * Plans (the booking hook's own coverage rule). Registered before nothing else
+ * on '/', so the path cannot be read as an id.
+ */
+memberCentersRouter.get('/options', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { memberId } = req.params as { memberId: string };
+  const { rows: memberRows } = await db.query(
+    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [memberId, gymId],
+  );
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+  res.json(await centersAvailableToMember(gymId, memberId));
+});
+
+/** #2422: read-only effective center access, resolved from the Member's live plans. */
+memberCentersRouter.get('/effective-access', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { memberId } = req.params as { memberId: string };
+  const { rows: memberRows } = await db.query(
+    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [memberId, gymId],
+  );
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+  res.json(await memberEffectiveCenterAccess(gymId, memberId));
+});
+
 memberCentersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
@@ -59,11 +88,14 @@ memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, nex
   const { memberId } = req.params as { memberId: string };
   const { center_ids, default_center_id } = req.body as { center_ids: unknown; default_center_id: unknown };
 
-  if (!Array.isArray(center_ids) || center_ids.length === 0) {
+  // #2381: the form no longer assigns centers. A body with only
+  // default_center_id keeps every existing assignment and moves the default.
+  const defaultOnly = center_ids === undefined;
+  if (!defaultOnly && (!Array.isArray(center_ids) || center_ids.length === 0)) {
     return res.status(400).json({ error: 'A member must belong to at least one center' });
   }
-  const ids = center_ids.map((id) => Number(id));
   const defaultId = Number(default_center_id);
+  const ids = defaultOnly ? [defaultId] : (center_ids as unknown[]).map((id) => Number(id));
   if (!defaultId || !ids.includes(defaultId)) {
     return res.status(400).json({ error: 'default_center_id must be one of center_ids' });
   }
@@ -82,8 +114,30 @@ memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, nex
     return res.status(400).json({ error: 'One or more center_ids are invalid for this gym' });
   }
 
+  if (defaultOnly) {
+    const allowed = await centersAvailableToMember(gymId, memberId);
+    if (!allowed.some((c) => c.id === defaultId)) {
+      return res.status(400).json({ error: 'default_center_id is not covered by the member\'s membership plan' });
+    }
+  }
+
   try {
     await db.transaction(async (tx) => {
+      if (defaultOnly) {
+        await tx.query(
+          `UPDATE member_centers SET is_default = 0, modified_at = UTC_TIMESTAMP(), modified_by = ?
+           WHERE member_id = ? AND gym_id = ? AND center_id <> ? AND deleted_at IS NULL`,
+          [actor, memberId, gymId, defaultId],
+        );
+        await tx.query(
+          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, created_by, modified_at, modified_by)
+           VALUES (?, ?, ?, 1, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)
+           ON DUPLICATE KEY UPDATE is_default = 1, deleted_at = NULL, deleted_by = NULL,
+             modified_at = UTC_TIMESTAMP(), modified_by = VALUES(modified_by)`,
+          [gymId, memberId, defaultId, actor, actor],
+        );
+        return;
+      }
       const { rows: current } = await tx.query<{ center_id: number }>(
         'SELECT center_id FROM member_centers WHERE member_id = ? AND gym_id = ? AND deleted_at IS NULL',
         [memberId, gymId],
@@ -111,7 +165,7 @@ memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, nex
     });
   } catch (err) { return next(err); }
 
-  recordAudit(req, { action: 'update', entityType: 'member_centers', entityId: memberId, next: { center_ids: ids, default_center_id: defaultId } });
+  recordAudit(req, { action: 'update', entityType: 'member_centers', entityId: memberId, next: defaultOnly ? { default_center_id: defaultId } : { center_ids: ids, default_center_id: defaultId } });
 
   const { rows } = await db.query(
     `SELECT c.id AS center_id, c.name, c.status, mc.is_default, mc.assigned_at

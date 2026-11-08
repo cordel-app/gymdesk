@@ -6,6 +6,8 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { recordAudit } from '../infra/audit';
 import { resolveMemberId } from './me';
 import { computePriceFields } from './products';
+import { enrichPlan } from './membership-plans';
+import { buildMemberPlanOverview } from '../domain/memberPlanOverview';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import {
   effectivePrice, planAssignabilityError,
@@ -123,6 +125,13 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
     const benefitsByPlan = await loadNamedPlanBenefitLines(gymId, plans.map((p) => Number(p.id)));
     const items = [];
     for (const plan of plans) {
+      // #2426: the overview is the plan's own enriched read (the engine's
+      // output) re-shaped for the member — nothing is priced here.
+      const { rows: fullPlan } = await db.query<any>(
+        'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ?', [plan.id, gymId]);
+      const overview = fullPlan[0]
+        ? buildMemberPlanOverview(await enrichPlan(fullPlan[0], gymId), today)
+        : null;
       const eff = await effectivePrice(Number(plan.id), gymId, today);
       const { effective: taxRate } = selectPlanTaxRates(taxRateRows, plan.tax_rate_id);
       const priceFields = computePriceFields({
@@ -142,6 +151,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         billing_interval: plan.billing_interval != null ? Number(plan.billing_interval) : null,
         billing_unit: plan.billing_unit,
         benefits: benefitsByPlan.get(Number(plan.id)) ?? [],
+        overview,
         promotions: (promotions.get(Number(plan.id)) ?? []).map((p) => ({
           id: Number(p.id),
           name: p.name,
@@ -258,7 +268,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
         startsAt, declinedBenefits: declinedResult.declined, origin: 'members_app',
       });
       await addCoverage(tx, {
-        gymId, rootProductSetId: Number(draft.productSet.root_product_set_id), memberId, isOwner: true,
+        gymId, productSetId: draft.productSet.id, memberId, isOwner: true,
       });
       for (const promotionId of promotionIds) {
         await applyPromotionToProductSet(tx, gymId, actor.name, draft.productSet.id, promotionId);

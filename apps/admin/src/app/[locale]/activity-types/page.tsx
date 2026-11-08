@@ -23,7 +23,7 @@ import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryActionColors, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
@@ -32,8 +32,9 @@ import { ActivityImageField } from '@/components/ActivityImageField';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
+import { PromotionImageModal as ActivityImageModal } from '../promotions/PromotionImageModal';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
-import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
+import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle, secondaryBtnSmall } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,12 @@ interface ActivityType {
   modified_by: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+}
+
+/** The 256 × 256 thumbnail beside a WebP master; a legacy master has none and is drawn as is. */
+function activityThumb(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  return /\.webp(\?.*)?$/i.test(imageUrl) ? imageUrl.replace(/\.webp(\?.*)?$/i, '-thumbnail.webp$1') : imageUrl;
 }
 
 interface ScheduleRule {
@@ -210,6 +217,9 @@ export default function ActivityTypesPage() {
   const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [centerFilter, setCenterFilter] = useState('');
+  const [spaceFilter, setSpaceFilter] = useState('');
+  const [trainerFilter, setTrainerFilter] = useState('');
   // #1389: the page loads every activity once and narrows it here, so the
   // summary cards stay gym-wide whatever the filters say.
   const [search, setSearch] = useState('');
@@ -219,6 +229,7 @@ export default function ActivityTypesPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
   const [loadingRules, setLoadingRules] = useState<Set<number>>(new Set());
+  const [imageFor, setImageFor] = useState<ActivityType | null>(null);
   const [eligibleServicesMap, setEligibleServicesMap] = useState<Map<number, ProfessionalService[]>>(new Map());
 
   // Edit general fields
@@ -256,12 +267,20 @@ export default function ActivityTypesPage() {
   // already-booked future occurrence comes back as 409 booked_occurrences_impacted;
   // these hold the confirmation prompt until staff explicitly proceeds.
   const [editRuleConflict, setEditRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
+  // #2292: trainer/space overlaps need explicit confirmation before the save.
+  const [overlapConflict, setOverlapConflict] = useState<{ actId: number; ruleId: number | null; conflicts: OverlapConflictItem[] } | null>(null);
+  const overlapAcceptedRef = useRef(false);
   const [deleteRuleConflict, setDeleteRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
 
   // #503 stage 3: editing a field that's copied onto future calendar_events (space,
   // trainer, center, color, capacity) comes back as 409 future_events_impacted until
   // staff explicitly confirms the propagation.
   const [saveConflict, setSaveConflict] = useState<{ row: ActivityType; message: string } | null>(null);
+  // #2324: deactivating or deleting an Activity discontinues its future events;
+  // the API answers 409 with the counts until the admin confirms.
+  const [discontinueConflict, setDiscontinueConflict] = useState<
+    { kind: 'save' | 'delete'; row: ActivityType; events: number; booked: number } | null
+  >(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -456,7 +475,7 @@ export default function ActivityTypesPage() {
     setDeleteRuleConflict(null);
   }
 
-  async function handleSave(row: ActivityType, confirmPropagate = false) {
+  async function handleSave(row: ActivityType, confirmPropagate = false, confirmDiscontinue = false) {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
@@ -482,6 +501,7 @@ export default function ActivityTypesPage() {
           public_event: editForm.public_event,
           waitlist_mode: editForm.waitlist_mode,
           ...(confirmPropagate ? { confirm_propagate: true } : {}),
+          ...(confirmDiscontinue ? { confirm_discontinue: true } : {}),
         }),
       });
       await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
@@ -489,12 +509,17 @@ export default function ActivityTypesPage() {
         body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices), ...capacities }),
       });
       setSaveConflict(null);
+      setDiscontinueConflict(null);
       setEditingId(null);
       resetScheduleEditing();
       load();
     } catch (err: any) {
       if (err.status === 409 && err.body?.error === 'future_events_impacted') {
         setSaveConflict({ row, message: err.body.message ?? err.message });
+      } else if (err.status === 409 && err.body?.error === 'activity_discontinue_confirmation_required') {
+        setDiscontinueConflict({
+          kind: 'save', row, events: Number(err.body.impacted_events ?? 0), booked: Number(err.body.booked_events ?? 0),
+        });
       } else {
         setEditError(err.message ?? t('error_generic'));
       }
@@ -521,15 +546,26 @@ export default function ActivityTypesPage() {
 
   // ─── Delete ──────────────────────────────────────────────────────────────────
 
-  async function handleDelete() {
+  async function handleDelete(confirmDiscontinue = false) {
     if (!deleting) return;
     try {
-      await apiFetch(`/activity-types/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/activity-types/${deleting.id}`, {
+        method: 'DELETE',
+        ...(confirmDiscontinue ? { body: JSON.stringify({ confirm_discontinue: true }) } : {}),
+      });
       setDeleting(null);
+      setDiscontinueConflict(null);
       if (editingId === deleting.id) { setEditingId(null); resetScheduleEditing(); }
       setExpanded((prev) => { const s = new Set(prev); s.delete(deleting.id); return s; });
       load();
     } catch (err: any) {
+      if (err.status === 409 && err.body?.error === 'activity_discontinue_confirmation_required') {
+        setDiscontinueConflict({
+          kind: 'delete', row: deleting, events: Number(err.body.impacted_events ?? 0), booked: Number(err.body.booked_events ?? 0),
+        });
+        setDeleting(null);
+        return;
+      }
       setDeleting(null);
       toast(err.message ?? t('error_generic'));
     }
@@ -554,12 +590,12 @@ export default function ActivityTypesPage() {
   // computes alongside the save (window doesn't divide evenly by the
   // activity's duration, or it overlaps another rule's space/trainer) —
   // surfaced as info toasts rather than blocking the save.
-  function showRuleWarnings(saved: { slot_warning?: string | null; overlap_warning?: string | null }) {
+  // The overlap advisory is now a confirmation modal before the save (#2292).
+  function showRuleWarnings(saved: { slot_warning?: string | null }) {
     if (saved.slot_warning) toast(saved.slot_warning, 'info');
-    if (saved.overlap_warning) toast(saved.overlap_warning, 'info');
   }
 
-  async function saveAddRule(actId: number) {
+  async function saveAddRule(actId: number, confirmOverlaps = false) {
     if (addRuleForm.type === 'weekly' && addRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
       return;
@@ -579,13 +615,19 @@ export default function ActivityTypesPage() {
           start_time: addRuleForm.start_time,
           end_time: addRuleForm.end_time,
           member_ids: addRuleMembers.map((m) => m.id),
+          ...(confirmOverlaps ? { confirm_overlaps: true } : {}),
         }),
       });
+      setOverlapConflict(null);
       setAddingRuleFor(null);
       await fetchRules(actId);
       showRuleWarnings(saved);
     } catch (err: any) {
-      setRuleError(err.message ?? t('error_generic'));
+      if (err.status === 409 && err.body?.error === 'schedule_overlap') {
+        setOverlapConflict({ actId, ruleId: null, conflicts: err.body.conflicts ?? [] });
+      } else {
+        setRuleError(err.message ?? t('error_generic'));
+      }
     } finally {
       setRuleSaving(false);
     }
@@ -618,12 +660,13 @@ export default function ActivityTypesPage() {
   }
 
   function cancelEditRule() {
+    overlapAcceptedRef.current = false;
     setEditingRuleId(null);
     setRuleError(null);
     setEditRuleConflict(null);
   }
 
-  async function saveEditRule(actId: number, ruleId: number, confirmCancelBooked = false) {
+  async function saveEditRule(actId: number, ruleId: number, confirmCancelBooked = false, confirmOverlaps = overlapAcceptedRef.current) {
     if (editRuleForm.type === 'weekly' && editRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
       return;
@@ -644,14 +687,19 @@ export default function ActivityTypesPage() {
           end_time: editRuleForm.end_time,
           member_ids: editRuleMembers.map((m) => m.id),
           ...(confirmCancelBooked ? { confirm_cancel_booked: true } : {}),
+          ...(confirmOverlaps ? { confirm_overlaps: true } : {}),
         }),
       });
+      overlapAcceptedRef.current = false;
+      setOverlapConflict(null);
       setEditingRuleId(null);
       setEditRuleConflict(null);
       await fetchRules(actId);
       showRuleWarnings(saved);
     } catch (err: any) {
-      if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
+      if (err.status === 409 && err.body?.error === 'schedule_overlap') {
+        setOverlapConflict({ actId, ruleId, conflicts: err.body.conflicts ?? [] });
+      } else if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
         setEditRuleConflict({ actId, ruleId, message: err.body.message ?? err.message });
       } else {
         setRuleError(err.message ?? t('error_generic'));
@@ -659,6 +707,21 @@ export default function ActivityTypesPage() {
     } finally {
       setRuleSaving(false);
     }
+  }
+
+  function acceptOverlap() {
+    if (!overlapConflict) return;
+    if (overlapConflict.ruleId == null) {
+      saveAddRule(overlapConflict.actId, true);
+    } else {
+      overlapAcceptedRef.current = true;
+      saveEditRule(overlapConflict.actId, overlapConflict.ruleId, false, true);
+    }
+  }
+
+  function cancelOverlap() {
+    overlapAcceptedRef.current = false;
+    setOverlapConflict(null);
   }
 
   function confirmEditRuleConflict() {
@@ -784,10 +847,9 @@ export default function ActivityTypesPage() {
                     }}
                     style={{
                       padding: '5px 10px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
-                      border: `1px solid ${selected ? '#6c63ff' : '#ccc'}`,
-                      background: selected ? '#6c63ff' : '#fff',
-                      color: selected ? '#fff' : '#444',
-                      fontWeight: selected ? 600 : 400,
+                      ...(selected
+                        ? { ...primaryActionColors, border: '1px solid var(--gd-primary-btn, #6c63ff)', fontWeight: 600 }
+                        : { background: 'var(--gd-input-bg, #ffffff)', color: 'var(--gd-text, #444)', border: '1px solid var(--gd-input-border, #d1d5db)', fontWeight: 400 }),
                     }}
                   >
                     {tWeekday(String(w.value))}
@@ -901,6 +963,11 @@ export default function ActivityTypesPage() {
                     <span style={{ flex: 1, color: '#333' }}>{ruleLabel(rule)}</span>
                   )}
                   {editing && (
+                    <button type="button" onClick={() => openEditRule(rule)} style={secondaryBtnSmall}>
+                      {ts('edit_rule')}
+                    </button>
+                  )}
+                  {editing && (
                     <button
                       type="button"
                       onClick={() => deleteRule(row.id, rule.id)}
@@ -934,6 +1001,24 @@ export default function ActivityTypesPage() {
     );
   }
 
+  // #2434: the image opens the shared viewer (full image, description, details).
+  function openImage(row: ActivityType) {
+    setImageFor(row);
+    if (!eligibleServicesMap.has(row.id)) fetchEligibleServices(row.id);
+  }
+  function imageButton(row: ActivityType, child: React.ReactNode, style?: React.CSSProperties) {
+    return (
+      <button
+        type="button"
+        aria-label={t('image_open', { name: row.name })}
+        onClick={(e) => { e.stopPropagation(); openImage(row); }}
+        style={{ border: 'none', background: 'none', padding: 0, cursor: 'zoom-in', display: 'block', ...style }}
+      >
+        {child}
+      </button>
+    );
+  }
+
   // ─── Card header (Cards view, #1389) ─────────────────────────────────────────
 
   // The closed card. The expanded and edit bodies below it are the list row's
@@ -949,7 +1034,7 @@ export default function ActivityTypesPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {row.image_url && (
-          <CardSquareImage src={row.image_url} alt={row.name} version={row.modified_at} placeholder={null} />
+          imageButton(row, <CardSquareImage src={row.image_url} alt={row.name} version={row.modified_at} placeholder={null} />, { width: '100%' })
         )}
         <div style={{ padding: '12px 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1050,6 +1135,11 @@ export default function ActivityTypesPage() {
         /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {row.image_url && (
+              <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
+                {imageButton(row, <MemberAvatar name={row.name} imageUrl={activityThumb(row.image_url)} stamp={row.modified_at} size={28} />)}
+              </span>
+            )}
             {row.name}
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description ?? undefined}>
@@ -1371,7 +1461,13 @@ export default function ActivityTypesPage() {
   const needle = search.trim().toLowerCase();
   const visibleRows = rows.filter((r) =>
     (!statusFilter || r.status === statusFilter)
+    && (!centerFilter || String(r.default_center_id) === centerFilter)
+    && (!spaceFilter || String(r.default_space_id) === spaceFilter)
+    && (!trainerFilter || String(r.default_trainer_membership_id) === trainerFilter)
     && (!needle || r.name.toLowerCase().includes(needle) || (r.description ?? '').toLowerCase().includes(needle)));
+
+  const filterSpaces = centerFilter ? spaces.filter((sp) => String(sp.center_id) === centerFilter) : spaces;
+  const anyFilter = !!(statusFilter || centerFilter || spaceFilter || trainerFilter);
 
   if (gymLoading || !canRead) return null;
 
@@ -1415,6 +1511,31 @@ export default function ActivityTypesPage() {
             />
           </FilterField>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
+          <FilterField label={t('filter_center')} htmlFor="activity-center-filter">
+            <select id="activity-center-filter" value={centerFilter} style={filterControlStyle}
+              onChange={(e) => {
+                const v = e.target.value; setCenterFilter(v);
+                if (v && spaceFilter && !spaces.some((sp) => String(sp.id) === spaceFilter && String(sp.center_id) === v)) setSpaceFilter('');
+              }}>
+              <option value="">{t('filter_all_centers')}</option>
+              {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label={t('filter_space')} htmlFor="activity-space-filter">
+            <select id="activity-space-filter" value={spaceFilter} onChange={(e) => setSpaceFilter(e.target.value)} style={filterControlStyle}>
+              <option value="">{t('filter_all_spaces')}</option>
+              {filterSpaces.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label={t('filter_trainer')} htmlFor="activity-trainer-filter">
+            <select id="activity-trainer-filter" value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)} style={filterControlStyle}>
+              <option value="">{t('filter_all_trainers')}</option>
+              {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+            </select>
+          </FilterField>
+          {anyFilter && (
+            <button type="button" style={secondaryBtnSmall} onClick={() => { setStatusFilter(''); setCenterFilter(''); setSpaceFilter(''); setTrainerFilter(''); }}>{t('filter_clear')}</button>
+          )}
         </div>
         <ExerciseViewToggle value={view} onChange={setView} />
       </FilterBar>
@@ -1545,8 +1666,33 @@ export default function ActivityTypesPage() {
         message={t('confirm_delete')}
         confirmLabel={t('delete')}
         cancelLabel={t('cancel')}
-        onConfirm={handleDelete}
+        onConfirm={() => handleDelete()}
         onCancel={() => setDeleting(null)}
+      />
+
+      {/* #2292: overlap confirmation — schedule rule create/edit */}
+      <ConfirmDialog
+        open={overlapConflict !== null}
+        message={ts('overlap_intro')}
+        details={overlapConflict && (
+          <div>
+            {overlapConflict.conflicts.map((c) => (
+              <div key={c.activity_type_id} style={{ marginBottom: 10 }}>
+                <div style={{ fontWeight: 600 }}>{ts('overlap_activity', { name: c.activity_type_name })}</div>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {c.trainer != null && <li><strong>{ts('overlap_trainer')}:</strong> {c.trainer}</li>}
+                  {c.space != null && <li><strong>{ts('overlap_space')}:</strong> {c.space}</li>}
+                </ul>
+              </div>
+            ))}
+            <p style={{ margin: '12px 0 0', fontSize: 13, lineHeight: 1.5 }}>{ts('overlap_explanation')}</p>
+          </div>
+        )}
+        confirmLabel={ts('overlap_accept')}
+        cancelLabel={ts('cancel')}
+        onConfirm={acceptOverlap}
+        onCancel={cancelOverlap}
+        busy={ruleSaving}
       />
 
       {/* #482: booked-occurrence impact confirm — schedule rule edit */}
@@ -1560,6 +1706,41 @@ export default function ActivityTypesPage() {
         busy={ruleSaving}
       />
 
+      {imageFor && (() => {
+        const services = eligibleServicesMap.get(imageFor.id) ?? [];
+        const info = [
+          { icon: 'capacity' as const, label: t('label_capacity'), value: imageFor.max_capacity ? String(imageFor.max_capacity) : '' },
+          { icon: 'service' as const, label: t('viewer_professional_services'), value: services.map((p) => p.name).join(', ') },
+          { icon: 'trainer' as const, label: t('label_default_trainer'), value: imageFor.default_trainer_name ?? '' },
+          { icon: 'space' as const, label: t('label_default_space'), value: imageFor.default_space_name ?? '' },
+        ].filter((i) => i.value);
+        return (
+          <ActivityImageModal
+            name={imageFor.name}
+            imageUrl={imageFor.image_url}
+            version={imageFor.modified_at}
+            onClose={() => setImageFor(null)}
+            closeLabel={t('close')}
+            noImageLabel={t('image_none')}
+          >
+            {imageFor.description && (
+              <p style={{ margin: '0 0 16px', fontSize: 14, whiteSpace: 'pre-wrap' }}>{imageFor.description}</p>
+            )}
+            {info.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
+                {info.map((i) => (
+                  <div key={i.icon} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ActivityMetaIcon name={i.icon} size={16} />
+                    <span style={{ color: '#888' }}>{i.label}:</span>
+                    <span>{i.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ActivityImageModal>
+        );
+      })()}
+
       {/* #482: booked-occurrence impact confirm — schedule rule delete */}
       <ConfirmDialog
         open={deleteRuleConflict !== null}
@@ -1568,6 +1749,23 @@ export default function ActivityTypesPage() {
         cancelLabel={ts('cancel')}
         onConfirm={confirmDeleteRuleConflict}
         onCancel={() => setDeleteRuleConflict(null)}
+      />
+
+      {/* #2324: discontinuing an Activity (inactive / deleted) */}
+      <ConfirmDialog
+        open={discontinueConflict !== null}
+        message={discontinueConflict
+          ? t('confirm_discontinue', { events: discontinueConflict.events, booked: discontinueConflict.booked })
+          : ''}
+        confirmLabel={t('confirm_discontinue_accept')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (!discontinueConflict) return;
+          if (discontinueConflict.kind === 'save') handleSave(discontinueConflict.row, false, true);
+          else { setDeleting(discontinueConflict.row); handleDelete(true); }
+        }}
+        onCancel={() => setDiscontinueConflict(null)}
+        busy={editSaving}
       />
 
       {/* #503 stage 3: propagating an edited default field to future calendar_events */}
@@ -1585,6 +1783,13 @@ export default function ActivityTypesPage() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+interface OverlapConflictItem {
+  activity_type_id: number;
+  activity_type_name: string;
+  trainer: string | null;
+  space: string | null;
+}
 
 function SectionHeader({ title }: { title: string }) {
   return (

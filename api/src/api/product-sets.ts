@@ -1,6 +1,7 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
+import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -312,30 +313,40 @@ export async function expirePendingPayments(): Promise<number> {
  * set that moved to `pending_payment` between a read and this call survives.
  */
 export async function expireDrafts(): Promise<number> {
-  // #1325 PR 3e: an Admin Draft assignment expires with its version, so no
-  // Draft row is left behind with nothing to edit it.
-  await db.query(
-    `DELETE um FROM user_memberships um
-       JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-      WHERE ps.status = 'draft' AND um.status = 'draft'
-        AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
-  );
-  const { rowCount } = await db.query(
-    `DELETE FROM product_sets
+  const { rows } = await db.query<{ id: number; gym_id: string }>(
+    `SELECT id, gym_id FROM product_sets
       WHERE status = 'draft'
         AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
   );
-  return rowCount;
+  let n = 0;
+  for (const r of rows) {
+    // #2477: the very discard a manual cancel runs (`cancelInFlight`), one
+    // transaction per Draft so a failure leaves the others — and a retry — intact.
+    // Expiry is re-checked under the row lock: a Draft touched or committed since
+    // the read is left alone.
+    const out = await db.transaction(async (tx) => {
+      const { rows: fresh } = await tx.query(
+        `SELECT id FROM product_sets
+          WHERE id = ? AND gym_id = ? AND status = 'draft'
+            AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE FOR UPDATE`,
+        [r.id, r.gym_id]);
+      if (fresh.length === 0) return { kind: 'skipped' };
+      return cancelInFlight(tx, r.gym_id, Number(r.id));
+    }).catch((err) => { console.error(`expireDrafts: draft ${r.id} failed`, err); return { kind: 'failed' }; });
+    if (out.kind === 'cancelled') n += 1;
+  }
+  return n;
 }
 
-/** Covers a member by the chain — never by a copy of a ProductSet (#1325 B1). */
+/** Covers a member on one plan snapshot of a version (#2125 stage 21): the version's primary one by default. */
 export async function addCoverage(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; memberId: number; isOwner: boolean;
+  gymId: string; productSetId: number; memberId: number; isOwner: boolean; planSnapshotId?: number;
 }): Promise<void> {
+  const snapshotId = input.planSnapshotId ?? await primaryPlanSnapshotId(tx, input.gymId, input.productSetId);
+  if (snapshotId == null) return;
   await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-     VALUES (?, ?, ?, ?)`,
-    [input.gymId, input.rootProductSetId, input.memberId, input.isOwner ? 1 : 0],
+    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
+     VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE is_owner = GREATEST(is_owner, VALUES(is_owner))`,
+    [input.gymId, snapshotId, input.memberId, input.isOwner ? 1 : 0],
   );
-  await syncPlanSnapshotsOfChain(tx, input.gymId, input.rootProductSetId);
 }

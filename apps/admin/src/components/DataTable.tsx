@@ -40,6 +40,9 @@ interface DataTableProps<T> {
   renderExpanded?: (row: T) => React.ReactNode;
   expandedRowKeys?: Set<React.Key>;
   onToggleExpand?: (row: T) => void;
+  // #2330: when true, a click anywhere on the row (outside an interactive
+  // control such as a button, link, input or the context menu) toggles it.
+  clickRowToExpand?: boolean;
   // #1807: an unsaved row shown first in the body, before the real rows. `cells`
   // fills its columns (same order as `columns`); `form` is its always-open
   // expanded editor. It is outside `rows`, so a row filter never hides it.
@@ -48,7 +51,7 @@ interface DataTableProps<T> {
 
 export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
-  renderExpanded, expandedRowKeys, onToggleExpand, draftRow,
+  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow,
 }: DataTableProps<T>) {
   if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
   if (rows.length === 0 && !draftRow) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
@@ -100,7 +103,13 @@ export function DataTable<T>({
             const isExpanded = expandable && !!expandedRowKeys?.has(key);
             return (
               <React.Fragment key={key}>
-                <tr style={listRowDividerStyle}>
+                <tr
+                  style={expandable && clickRowToExpand ? { ...listRowDividerStyle, cursor: 'pointer' } : listRowDividerStyle}
+                  onClick={expandable && clickRowToExpand ? (e) => {
+                    if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label, [role="menu"], [role="dialog"]')) return;
+                    onToggleExpand?.(row);
+                  } : undefined}
+                >
                   {expandable && (
                     <td style={{ ...td, textAlign: 'center' }}>
                       <button

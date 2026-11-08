@@ -14,6 +14,7 @@ export interface PsRow {
   name: string;
   description: string | null;
   max_capacity: number | null;
+  min_participants?: number | null;
   image_url?: string | null;
   base_professional_service_id?: number | null;
   image_thumbnail_url?: string | null;
@@ -32,6 +33,9 @@ export interface PsRow {
 export interface Form {
   id: number | null;
   max_capacity: string;
+  /** #2293: Unlimited disables Max Capacity (stored as no capacity, NULL). */
+  unlimited: boolean;
+  min_participants: string;
   texts: Record<Loc, { name: string; description: string }>;
 }
 
@@ -39,6 +43,8 @@ export function emptyForm(): Form {
   return {
     id: null,
     max_capacity: '',
+    unlimited: true,
+    min_participants: '',
     texts: { en: { name: '', description: '' }, es: { name: '', description: '' }, ca: { name: '', description: '' } },
   };
 }
@@ -48,6 +54,8 @@ export function formFor(s: PsRow): Form {
   return {
     id: s.id,
     max_capacity: s.max_capacity == null ? '' : String(s.max_capacity),
+    unlimited: s.max_capacity == null,
+    min_participants: s.min_participants == null ? '' : String(s.min_participants),
     texts: {
       en: { name: s.name, description: s.description ?? '' },
       es: { name: tr.es?.name ?? '', description: tr.es?.description ?? '' },
@@ -63,15 +71,28 @@ export function capacityError(value: string): boolean {
   return !/^\d+$/.test(v) || Number(v) <= 0;
 }
 
+/** True when a non-empty Minimum Participants is not a positive whole number. */
+export function minParticipantsFormatError(value: string): boolean {
+  return capacityError(value);
+}
+
+/** True when the minimum exceeds a limited capacity (an Unlimited one has no ceiling). */
+export function minExceedsCapacity(f: Form): boolean {
+  if (f.unlimited || f.min_participants.trim() === '' || f.max_capacity.trim() === '') return false;
+  return Number(f.min_participants) > Number(f.max_capacity);
+}
+
 /**
  * What stops a save, as a key of the `professional_services` namespace. A Base
  * service needs a name in every language; a gym's own needs the English one and
  * leaves the others to fall back (#2110).
  */
-export function formErrorKey(f: Form, requireAllTranslations: boolean): 'error_name_required' | 'error_required_translations' | 'error_max_capacity' | null {
+export function formErrorKey(f: Form, requireAllTranslations: boolean): 'error_name_required' | 'error_required_translations' | 'error_max_capacity' | 'error_min_participants' | 'error_min_exceeds_capacity' | null {
   if (!f.texts.en.name.trim()) return 'error_name_required';
   if (requireAllTranslations && PS_LOCALES.some((l) => !f.texts[l].name.trim())) return 'error_required_translations';
-  if (capacityError(f.max_capacity)) return 'error_max_capacity';
+  if (!f.unlimited && (f.max_capacity.trim() === '' || capacityError(f.max_capacity))) return 'error_max_capacity';
+  if (minParticipantsFormatError(f.min_participants)) return 'error_min_participants';
+  if (minExceedsCapacity(f)) return 'error_min_exceeds_capacity';
   return null;
 }
 
@@ -80,11 +101,13 @@ export function toPayload(f: Form) {
     name: f.texts[l].name.trim(),
     description: f.texts[l].description.trim() || null,
   });
-  const cap = f.max_capacity.trim();
+  const cap = f.unlimited ? '' : f.max_capacity.trim();
+  const min = f.min_participants.trim();
   return {
     name: f.texts.en.name.trim(),
     description: f.texts.en.description.trim() || null,
     max_capacity: cap === '' ? null : Number(cap),
+    min_participants: min === '' ? null : Number(min),
     translations: { es: tr('es'), ca: tr('ca') },
   };
 }
@@ -95,4 +118,25 @@ export function matchesSearch(s: PsRow, q: string): boolean {
   if (!needle) return true;
   const hay = [s.name, s.description, ...Object.values(s.translations ?? {}).flatMap((t) => [t?.name, t?.description])];
   return hay.some((v) => typeof v === 'string' && v.toLowerCase().includes(needle));
+}
+
+export type PsTextField = 'name' | 'description';
+
+/** `{ locale: value }` of one field across every supported language (#2331). */
+export function textValuesOf(texts: Form['texts'], field: PsTextField): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const l of PS_LOCALES) out[l] = texts[l][field];
+  return out;
+}
+
+/** The read-only row's texts in the form's shape, so one function serves both views. */
+export function textsOfRow(s: PsRow): Form['texts'] {
+  return formFor(s).texts;
+}
+
+/** The form with one field's values from the translations modal applied. */
+export function applyTextValues(f: Form, field: PsTextField, values: Record<string, string>): Form {
+  const texts = { ...f.texts };
+  for (const l of PS_LOCALES) texts[l] = { ...texts[l], [field]: values[l] ?? '' };
+  return { ...f, texts };
 }

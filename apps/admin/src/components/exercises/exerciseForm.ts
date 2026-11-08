@@ -106,6 +106,8 @@ export interface ExerciseFormValues {
   rest_default_seconds: string;
   /** #1360: one of the supported categories, or '' for none. */
   category: string;
+  /** #2362: free-text equipment, picked from the values already in the catalogue. */
+  equipment: string;
   status: string;
 }
 
@@ -114,6 +116,7 @@ export function emptyExerciseForm(): ExerciseFormValues {
     name: '', translations: {}, description: '', short_description: '', description_translations: {},
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '',
     category: '',
+    equipment: '',
     status: 'active',
   };
 }
@@ -137,6 +140,7 @@ export interface ExerciseRowValues {
   sets_default: number | null;
   rest_default_seconds: number | null;
   category?: string | null;
+  equipment?: string | null;
   status: string;
 }
 
@@ -156,6 +160,7 @@ export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
     sets_default: e.sets_default != null ? String(e.sets_default) : '',
     rest_default_seconds: e.rest_default_seconds != null ? String(e.rest_default_seconds) : '',
     category: e.category ?? '',
+    equipment: e.equipment ?? '',
     status: e.status,
   };
 }
@@ -224,6 +229,8 @@ function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds, confi
     rest_default_seconds: intOrNull(form.rest_default_seconds),
     // #1360: the API judges it (absent keeps, null clears, unknown is a 400).
     category: form.category || null,
+    // #2362: the API judges it (absent keeps, null clears).
+    equipment: form.equipment.trim() || null,
     status: form.status,
     muscles: Array.from(muscles.entries()).map(([key, role]) => ({ key, role })),
   };
@@ -349,3 +356,15 @@ export interface ExerciseAuditRow {
   modified_at: string | null;
   modified_by: string | null;
 }
+
+/**
+ * #2362: the muscle list is sorted alphabetically by the label the user reads,
+ * and laid out in up to three columns that fold down on narrow screens
+ * (CSS multi-column: three columns, each at least 170px wide). Both the editor
+ * and the read-only view ask these two, so the screens cannot disagree.
+ */
+export function sortMuscleKeys(keys: string[], label: (key: string) => string): string[] {
+  return [...keys].sort((a, b) => label(a).localeCompare(label(b)));
+}
+
+export const MUSCLE_COLUMNS_STYLE = { columns: '3 170px', columnGap: 16 } as const;

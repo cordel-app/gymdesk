@@ -1376,7 +1376,7 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async 
   const actor = resolveRequestActor(ctx);
 
   const { rows: sessionRows } = await db.query(
-    "SELECT id, status, trainer_membership_id, effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
+    "SELECT id, status, trainer_membership_id, effective_trainer_membership_id, professional_service_id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
   );
   if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -1384,6 +1384,28 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async 
 
   if (session.status === 'completed') return res.status(400).json({ error: 'Session is already completed' });
   if (session.status === 'cancelled') return res.status(400).json({ error: 'Cancelled sessions cannot be completed' });
+
+  // #2293: an activity delivered by a Professional Service with a Minimum
+  // Participants does not take place below it, so it cannot be confirmed as held.
+  // Staff cancel it instead. No minimum (NULL) keeps today's behaviour.
+  if (session.professional_service_id != null) {
+    const { rows: minRows } = await db.query(
+      `SELECT ps.min_participants,
+              (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ? AND ceb.status = 'booked') AS booked_count
+         FROM professional_services ps WHERE ps.id = ?`,
+      [session.id, session.professional_service_id],
+    );
+    const min = minRows[0]?.min_participants;
+    const booked = Number(minRows[0]?.booked_count ?? 0);
+    if (min != null && booked < min) {
+      return res.status(409).json({
+        error: 'Minimum participants not reached',
+        code: 'minimum_participants_not_met',
+        min_participants: min,
+        booked_count: booked,
+      });
+    }
+  }
 
   // #1382: unconfirmed attendance never blocks completion — the panel warns once
   // and lets staff decide. The attendance rows are left exactly as they are

@@ -10,6 +10,7 @@ const AD_HOC = /toLocale(Date|Time)?String\(|Intl\.(DateTime|Number)Format\(/g;
 const ALLOWED: Record<string, number> = {
   'lib/gymFormat.ts': 1, // the formatter itself
   'app/[locale]/training/page.tsx': 2, // weekday names, locale-driven
+  'lib/memberProgress.ts': 1, // gym-time-zone calendar-date key for the My Progress filter (#2284), not displayed
   'app/[locale]/nutrition/page.tsx': 1, // weekday names, locale-driven (one helper)
 };
 

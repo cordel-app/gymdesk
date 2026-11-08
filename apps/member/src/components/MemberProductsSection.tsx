@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { ImagePreviewButton } from './ImagePreview';
 
 /**
  * #1121 stages 1 and 2 — the look of the **Additional Products and Services**
@@ -50,6 +51,13 @@ export interface MemberProductCardPromotion {
   duration?: string | null;
   /** The action, or the applied-state label. The page composes it. */
   action?: ReactNode;
+  /** #2424 — the Promotion's own thumbnail, the master for the preview, and its text. */
+  imageUrl?: string | null;
+  imageFullUrl?: string | null;
+  description?: string | null;
+  /** The preview dialog's title, naming the kind (*Promotion · Name*). */
+  previewTitle?: string;
+  imageAlt?: string;
 }
 
 /** One Product as the card draws it, with every string already resolved. */
@@ -59,6 +67,11 @@ export interface MemberProductCardItem {
   description?: string | null;
   /** #1823 — the Product's picture, drawn on the left; none renders no container. */
   imageUrl?: string | null;
+  /** #2424 — the 1080 × 1080 master for the enlarged preview (never the enlarged thumbnail). */
+  imageFullUrl?: string | null;
+  /** The preview dialog's title, naming the kind (*Product · Name*). */
+  previewTitle?: string;
+  imageAlt?: string;
   /** The price, formatted; `null` renders `—`. */
   price: string | null;
   /**
@@ -81,12 +94,29 @@ export interface MemberProductCardItem {
 }
 
 /** The picture, or nothing: a failed load drops the box rather than showing a broken icon. */
-function ProductImage({ src }: { src?: string | null }) {
+function ProductImage({ src, fullSrc, title, alt, description, size = 64 }: {
+  src?: string | null;
+  fullSrc?: string | null;
+  title?: string;
+  alt?: string;
+  description?: string | null;
+  size?: number;
+}) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) return null;
+  const box: CSSProperties = { width: size, height: size, flexShrink: 0, display: 'block' };
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt="" style={styles.image} onError={() => setBroken(true)} />
+    <span style={box}>
+      <ImagePreviewButton
+        src={fullSrc ?? src}
+        alt={alt ?? ''}
+        title={title ?? alt ?? ''}
+        description={description}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt ?? ''} style={{ ...styles.image, width: size, height: size }} onError={() => setBroken(true)} />
+      </ImagePreviewButton>
+    </span>
   );
 }
 
@@ -106,7 +136,7 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
         <ul style={styles.list}>
           {items.map((item) => (
             <li key={item.key} style={styles.card}>
-              <ProductImage src={item.imageUrl} />
+              <ProductImage src={item.imageUrl} fullSrc={item.imageFullUrl} title={item.previewTitle ?? item.name} alt={item.imageAlt ?? item.name} description={item.description} />
               <div style={styles.body}>
               <div style={styles.head}>
                 <span style={styles.name}>{item.name}</span>
@@ -126,7 +156,17 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
               {(item.promotions ?? []).map((promotion) => (
                 <div key={promotion.key} style={styles.promotion}>
                   <span style={styles.promotionHeading}>{promotion.heading}</span>
-                  <span style={styles.promotionName}>{promotion.name}</span>
+                  <div style={styles.promotionRow}>
+                    <ProductImage
+                      src={promotion.imageUrl}
+                      fullSrc={promotion.imageFullUrl}
+                      title={promotion.previewTitle ?? promotion.name}
+                      alt={promotion.imageAlt ?? promotion.name}
+                      description={promotion.description}
+                      size={40}
+                    />
+                    <span style={styles.promotionName}>{promotion.name}</span>
+                  </div>
                   {(promotion.benefit || promotion.duration) && (
                     <span style={styles.promotionBenefit}>
                       {[promotion.benefit, promotion.duration].filter(Boolean).join(' · ')}
@@ -186,6 +226,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
     textTransform: 'uppercase', color: memberTheme.textMuted,
   },
+  promotionRow: { display: 'flex', alignItems: 'center', gap: 10 },
   promotionName: { fontSize: 13.5, fontWeight: 600, color: memberTheme.text },
   promotionBenefit: { fontSize: 12.5, color: memberTheme.textSecondary },
   // §17: an obvious, reachable action — its own line, at the card's trailing

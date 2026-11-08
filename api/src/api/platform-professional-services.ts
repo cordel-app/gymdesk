@@ -11,7 +11,7 @@ import {
   migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
-import { attachTranslations, writeTranslations } from './professional-service-translations';
+import { attachTranslations, deleteTranslations, writeTranslations } from './professional-service-translations';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { getRequestLocale as resolveLocale } from '../infra/locale';
@@ -19,8 +19,10 @@ import {
   BasePsTranslations,
   parseBaseDescription,
   parseBaseName,
-  parseBasePsTranslations,
+  parsePsTranslations,
   parseMaxCapacity,
+  parseMinParticipants,
+  minParticipantsError,
 } from '../domain/baseProfessionalServices';
 
 /**
@@ -41,6 +43,7 @@ interface Row {
   is_system: number;
   system_key: string | null;
   max_capacity: number | null;
+  min_participants: number | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
   created_at: string;
@@ -53,7 +56,7 @@ const shape = attachTranslations;
 
 async function loadOne(id: unknown, locale: string) {
   const { rows } = await db.query<Row>(
-    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.image_url, ps.image_thumbnail_url,
+    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.image_url, ps.image_thumbnail_url,
             ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
        FROM professional_services ps WHERE ps.id = ? AND ${BASE_WHERE}`,
     [id],
@@ -73,7 +76,7 @@ platformProfessionalServicesRouter.get('/', requireSuperadmin, async (req, res, 
       params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
     const { rows } = await db.query<Row>(
-      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.image_url, ps.image_thumbnail_url,
+      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.image_url, ps.image_thumbnail_url,
               ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
          FROM professional_services ps WHERE ${where} ORDER BY ps.name ASC`,
       params,
@@ -98,7 +101,12 @@ platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res,
   if ('error' in description) return res.status(400).json({ error: description.error });
   const capacity = parseMaxCapacity(body.max_capacity === undefined ? null : body.max_capacity);
   if ('error' in capacity) return res.status(400).json({ error: capacity.error });
-  const translations = parseBasePsTranslations(body.translations);
+  const minParticipants = parseMinParticipants(body.min_participants === undefined ? null : body.min_participants);
+  if ('error' in minParticipants) return res.status(400).json({ error: minParticipants.error });
+  const minVsCap = minParticipantsError(minParticipants.value, capacity.value);
+  if (minVsCap) return res.status(400).json({ error: minVsCap });
+  // #2441: English (the base name) is the only required language.
+  const translations = body.translations === undefined ? { value: {} } : parsePsTranslations(body.translations, { requireAll: false });
   if ('error' in translations) return res.status(400).json({ error: translations.error });
 
   const actor = resolvePlatformActor(req.superadminName);
@@ -106,9 +114,9 @@ platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res,
     const id = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, created_by)
-         VALUES (NULL, ?, ?, 1, NULL, ?, ?)`,
-        [name.value, description.value, capacity.value, actor],
+           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, created_by)
+         VALUES (NULL, ?, ?, 1, NULL, ?, ?, ?)`,
+        [name.value, description.value, capacity.value, minParticipants.value, actor],
       );
       await writeTranslations(tx, insertId, translations.value);
       // A Base service no gym could see would be pointless: give every existing
@@ -154,22 +162,33 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
       if ('error' in p) return res.status(400).json({ error: p.error });
       capacity = p.value;
     }
+    let minParticipants = existing.min_participants;
+    if (body.min_participants !== undefined) {
+      const p = parseMinParticipants(body.min_participants);
+      if ('error' in p) return res.status(400).json({ error: p.error });
+      minParticipants = p.value;
+    }
+    const minVsCap = minParticipantsError(minParticipants, capacity);
+    if (minVsCap) return res.status(400).json({ error: minVsCap });
     let translations: BasePsTranslations | null = null;
+    let clearedLocales: string[] = [];
     if (body.translations !== undefined) {
-      const p = parseBasePsTranslations(body.translations);
+      const p = parsePsTranslations(body.translations, { requireAll: false });
       if ('error' in p) return res.status(400).json({ error: p.error });
       translations = p.value;
+      clearedLocales = Object.keys(body.translations).filter((l) => !(l in p.value));
     }
 
     const actor = resolvePlatformActor(req.superadminName);
     await db.transaction(async (tx) => {
       await tx.query(
         `UPDATE professional_services
-            SET name = ?, description = ?, max_capacity = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+            SET name = ?, description = ?, max_capacity = ?, min_participants = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
-        [name, description, capacity, actor, existing.id],
+        [name, description, capacity, minParticipants, actor, existing.id],
       );
       if (translations) await writeTranslations(tx, existing.id, translations);
+      await deleteTranslations(tx, existing.id, clearedLocales);
     });
     // #2010: the image key carries the service's name, so a rename moves it.
     if (name !== existing.name && existing.image_url) {

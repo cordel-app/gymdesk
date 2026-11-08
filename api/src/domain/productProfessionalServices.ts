@@ -64,13 +64,19 @@ export async function validateProfessionalServiceIds(
   }
   const uniqueIds = Array.from(new Set(ids));
   const marks = uniqueIds.map(() => '?').join(',');
+  // #2440: a service newly linked must be active for this gym (same rule as Activity
+  // Types and Calendar Events). A link the Product already holds stays valid when
+  // sent back, so deactivating a service never blocks an unrelated edit.
   const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM professional_services
-     WHERE id IN (${marks}) AND (gym_id IS NULL OR gym_id = ?) AND deleted_at IS NULL`,
-    [...uniqueIds, gymId],
+    `SELECT ps.id FROM professional_services ps
+     LEFT JOIN gym_professional_services gps
+       ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+     WHERE ps.id IN (${marks}) AND (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL
+       AND (COALESCE(gps.status, 'active') = 'active' OR ps.id IN (${currentIds.length ? currentIds.map(() => '?').join(',') : 'NULL'}))`,
+    [gymId, ...uniqueIds, gymId, ...currentIds],
   );
   if (rows.length !== uniqueIds.length) {
-    return { error: 'One or more professional_service_ids are invalid, or do not belong to this gym' };
+    return { error: 'One or more professional_service_ids are invalid, inactive for this gym, or do not belong to this gym' };
   }
   return null;
 }

@@ -69,3 +69,13 @@ describe('push is the writers\' common rule', () => {
     vi.doUnmock('../infra/db');
   });
 });
+
+describe('senderFirstName (#2452)', () => {
+  it('takes only the first word of the display name', async () => {
+    const { senderFirstName } = await import('../domain/staffCommunication');
+    expect(senderFirstName('John Smith')).toBe('John');
+    expect(senderFirstName('  Ana  ')).toBe('Ana');
+    expect(senderFirstName('')).toBeNull();
+    expect(senderFirstName(null)).toBeNull();
+  });
+});

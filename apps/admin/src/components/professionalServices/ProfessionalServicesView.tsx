@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel } from '@/lib/localeLabels';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -18,6 +20,7 @@ import {
   cardSectionLabelStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle,
   inlineActionsRowStyle, inlineEditorStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
+import { ProfessionalServiceImageModal } from './ProfessionalServiceImageModal';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { MemberImageField } from '@/components/MemberImageField';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
@@ -25,7 +28,7 @@ import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import {
-  PS_LOCALES, emptyForm, formErrorKey, formFor, matchesSearch, toPayload, type Form, type Loc, type PsRow,
+  PS_LOCALES, applyTextValues, emptyForm, formErrorKey, formFor, matchesSearch, textValuesOf, textsOfRow, toPayload, type PsTextField, type Form, type Loc, type PsRow,
 } from './psModel';
 
 /**
@@ -107,10 +110,17 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<PsRow | null>(null);
+  const [imageOf, setImageOf] = useState<PsRow | null>(null);
   const [deleting, setDeleting] = useState<PsRow | null>(null);
   // #2129: the server refuses a delete while records still reference the service.
   const [inUse, setInUse] = useState<{ activities: number; calendar_events: number; product_snapshots: number } | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  // #2331: which field's translations modal is open, and for which text source.
+  const tAll = useTranslations();
+  const [langModal, setLangModal] = useState<{ field: PsTextField; row: PsRow | null } | null>(null);
+  const langLocales = PS_LOCALES.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }));
+  const fieldLabel = (f: PsTextField) => t(f === 'name' ? 'label_name' : 'label_description');
+  const globeRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 };
 
   useEffect(() => { load(); }, [cfg.reloadKey, cfg.apiRoot]);
 
@@ -230,30 +240,45 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
     const item = form.id == null ? null : items.find((r) => r.id === form.id) ?? null;
     return (
       <div style={inlineEditorStyle}>
-        {PS_LOCALES.map((l) => (
-          <div key={l}>
-            <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}{l === 'en' || cfg.requireAllTranslations ? ' *' : ''}</label>
-            <input
-              ref={l === 'en' ? nameRef : undefined}
-              style={formControlStyle} value={form.texts[l].name} maxLength={150}
-              placeholder={l === 'en' ? t('placeholder_name') : undefined}
-              onChange={(e) => setText(l, 'name', e.target.value)}
-            />
-            <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-            <textarea
-              style={{ ...formControlStyle, minHeight: 64 }} value={form.texts[l].description} maxLength={2000}
-              placeholder={l === 'en' ? t('placeholder_description') : undefined}
-              onChange={(e) => setText(l, 'description', e.target.value)}
-            />
-          </div>
-        ))}
+        <label style={formFieldLabelStyle}>{t('label_name')} *</label>
+        <div style={globeRow}>
+          <input
+            ref={nameRef}
+            style={{ ...formControlStyle, flex: 1 }} value={form.texts.en.name} maxLength={150}
+            placeholder={t('placeholder_name')}
+            onChange={(e) => setText('en', 'name', e.target.value)}
+          />
+          <GlobeButton label={t('translations_open', { field: fieldLabel('name') })} onClick={() => setLangModal({ field: 'name', row: null })} />
+        </div>
+        <label style={formFieldLabelStyle}>{t('label_description')}</label>
+        <div style={globeRow}>
+          <textarea
+            style={{ ...formControlStyle, minHeight: 64, flex: 1 }} value={form.texts.en.description} maxLength={2000}
+            placeholder={t('placeholder_description')}
+            onChange={(e) => setText('en', 'description', e.target.value)}
+          />
+          <GlobeButton label={t('translations_open', { field: fieldLabel('description') })} onClick={() => setLangModal({ field: 'description', row: null })} />
+        </div>
         <label style={formFieldLabelStyle}>{t('label_max_capacity')}</label>
         <input
-          style={formControlStyle} inputMode="numeric" value={form.max_capacity}
-          placeholder={t('placeholder_max_capacity')}
+          style={formControlStyle} inputMode="numeric" value={form.unlimited ? '' : form.max_capacity}
+          placeholder={t('placeholder_max_capacity')} disabled={form.unlimited}
           onChange={(e) => setForm({ ...form, max_capacity: e.target.value })}
         />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox" checked={form.unlimited}
+            onChange={(e) => setForm({ ...form, unlimited: e.target.checked })}
+          />
+          {t('label_unlimited')}
+        </label>
         <div style={formHelpTextStyle}>{t('max_capacity_help')}</div>
+        <label style={formFieldLabelStyle}>{t('label_min_participants')}</label>
+        <input
+          style={formControlStyle} inputMode="numeric" value={form.min_participants}
+          onChange={(e) => setForm({ ...form, min_participants: e.target.value })}
+        />
+        <div style={formHelpTextStyle}>{t('min_participants_help')}</div>
         {item && (
           <>
             <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
@@ -287,21 +312,16 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   function renderExpanded(item: PsRow) {
     return (
       <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-        {PS_LOCALES.map((l) => {
-          const name = l === 'en' ? item.name : item.translations?.[l]?.name;
-          const description = l === 'en' ? item.description : item.translations?.[l]?.description;
-          return (
-            <React.Fragment key={l}>
-              <DetailRow label={t('name_in', { locale: l.toUpperCase() })} value={name || dash} />
-              <DetailRow label={t('description_in', { locale: l.toUpperCase() })} value={description || t('no_description')} />
-            </React.Fragment>
-          );
-        })}
+        <DetailRow label={t('label_name')} value={item.name || dash} globe={() => setLangModal({ field: 'name', row: item })} globeLabel={t('translations_open', { field: fieldLabel('name') })} />
+        <DetailRow label={t('label_description')} value={item.description || t('no_description')} globe={() => setLangModal({ field: 'description', row: item })} globeLabel={t('translations_open', { field: fieldLabel('description') })} />
         <DetailRow label={t('label_max_capacity')} value={capacityText(item)} />
+        <DetailRow label={t('label_min_participants')} value={item.min_participants == null ? dash : String(item.min_participants)} />
         {/* Same order as the editor: texts, capacity, then Media (#2241). */}
         <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
         {item.image_url ? (
-          <div style={{ width: 160 }}>
+          <div style={{ width: 160, cursor: 'zoom-in' }} role="button" tabIndex={0} aria-label={item.display_name}
+            onClick={() => setImageOf(item)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setImageOf(item); } }}>
             <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
           </div>
         ) : (
@@ -317,7 +337,11 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {item.image_url && (
-          <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
+          <div role="button" tabIndex={0} aria-label={item.display_name} style={{ cursor: 'zoom-in' }}
+            onClick={() => setImageOf(item)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setImageOf(item); } }}>
+            <CardSquareImage src={item.image_url} alt={item.display_name} version={item.modified_at} placeholder={null} />
+          </div>
         )}
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer' }} onClick={() => toggleExpand(item.id)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -372,7 +396,11 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
             <div className={CELL_CLASS.name} title={item.display_name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
               {/* No image → no thumbnail at all, not an empty placeholder (#2110). */}
               {(item.image_thumbnail_url ?? item.image_url) && (
-                <MemberAvatar name={item.display_name} imageUrl={item.image_thumbnail_url ?? item.image_url ?? null} stamp={item.modified_at} size={36} />
+                <span role="button" tabIndex={0} aria-label={item.display_name} style={{ cursor: 'zoom-in', display: 'inline-flex' }}
+                  onClick={(e) => { e.stopPropagation(); setImageOf(item); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setImageOf(item); } }}>
+                  <MemberAvatar name={item.display_name} imageUrl={item.image_thumbnail_url ?? item.image_url ?? null} stamp={item.modified_at} size={36} />
+                </span>
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -410,7 +438,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   const newEditor = form?.id === null ? <div style={{ marginBottom: 12 }}>{renderEditor()}</div> : null;
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900 }}>
+    <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{cfg.title}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -448,6 +476,30 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         </div>
       )}
 
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? t('translations_title', { field: fieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal ? textValuesOf(langModal.row ? textsOfRow(langModal.row) : (form?.texts ?? emptyForm().texts), langModal.field) : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={langModal?.row != null}
+        saveLabel={t('save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setForm((f) => f && applyTextValues(f, langModal.field, vals));
+          setLangModal(null);
+        }}
+      />
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.display_name, imageUrl: imageOf.image_url, description: imageOf.display_description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
       <CrudModal
         open={details !== null}
         title={t('details_title')}
@@ -462,20 +514,8 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
       >
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {PS_LOCALES.map((l) => (
-              <ModalField
-                key={l}
-                label={`${t('label_name')} (${l.toUpperCase()})`}
-                value={(l === 'en' ? details.name : details.translations?.[l]?.name) || dash}
-              />
-            ))}
-            {PS_LOCALES.map((l) => (
-              <ModalField
-                key={`d-${l}`}
-                label={`${t('label_description')} (${l.toUpperCase()})`}
-                value={(l === 'en' ? details.description : details.translations?.[l]?.description) || t('no_description')}
-              />
-            ))}
+            <ModalField label={t('label_name')} value={details.name || dash} />
+            <ModalField label={t('label_description')} value={details.description || t('no_description')} />
             <ModalField label={t('label_max_capacity')} value={capacityText(details)} />
             {details.status && <ModalField label={t('label_status')} value={tStatus(details.status)} />}
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
@@ -518,11 +558,12 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, globe, globeLabel }: { label: string; value: string; globe?: () => void; globeLabel?: string }) {
   return (
-    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13, alignItems: 'center' }}>
       <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
       <span style={{ color: '#111', flex: 1, whiteSpace: 'pre-wrap' }}>{value}</span>
+      {globe && <GlobeButton label={globeLabel ?? ''} onClick={globe} />}
     </div>
   );
 }

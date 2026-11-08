@@ -101,13 +101,12 @@ describe('the WHERE fragment', () => {
     const { sql, params } = build({ q: 'bench' });
     expect(sql).toContain('exercise_translations');
     expect(sql).not.toContain('slug');
-    expect(params).toEqual(Array(6).fill('%bench%'));
+    expect(params).toEqual(Array(2).fill('%bench%'));
   });
 
-  it('also matches the base and translated descriptions (#1355)', () => {
+  it('does not search descriptions (#2327)', () => {
     const { sql } = build({ q: 'bench' });
-    expect(sql).toContain('e.short_description LIKE ?');
-    expect(sql).toContain('exercise_description_translations');
+    expect(sql).not.toContain('description');
   });
 
   it('ignores a ?slug= parameter', () => {
@@ -147,7 +146,7 @@ describe('the WHERE fragment', () => {
   it('combines the groups with AND (§11)', () => {
     const { sql, params } = build({ q: 'bench', status: 'active', equipment: 'barbell', muscle: 'chest' });
     expect(sql.match(/ AND /g)!.length).toBeGreaterThanOrEqual(4);
-    expect(params).toEqual(['active', ...Array(6).fill('%bench%'), 'barbell', 'chest']);
+    expect(params).toEqual(['active', ...Array(2).fill('%bench%'), 'barbell', 'chest']);
   });
 
   it('binds one placeholder per parameter, in order', () => {

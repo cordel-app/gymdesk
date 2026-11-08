@@ -33,6 +33,7 @@ import {
   startProductPurchase,
 } from './me-products';
 import { loadAppliedPromotionLists, loadPromotionOffersDetailed } from './member-product-promotions';
+import { loadMissingMandatoryProducts } from './promotion-required-products';
 import { shapeMemberProduct, staffProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { isRecurringFrequency } from '../domain/productClassification';
 import {
@@ -166,7 +167,10 @@ memberProductPurchasesRouter.post('/quote', async (req, res, next) => {
       const { status, ...body } = pricingRefusalResponse(priced.refusal);
       return res.status(status).json(body);
     }
+    // #2374 — mandatory Products of the chosen Promotions still to be added (never optional ones).
+    const requiredProducts = await loadMissingMandatoryProducts(gymId, memberId, item.id, promotionIds);
     res.json({
+      required_products: requiredProducts,
       product_id: item.id,
       product_name: item.name,
       recurring: item.recurring,
@@ -180,7 +184,19 @@ memberProductPurchasesRouter.post('/quote', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+/** A `res` stand-in so a required Product can be created through the same handler (#2374). */
+function captureRes() {
+  const out: { status: number; body: any } = { status: 200, body: undefined };
+  const res: any = {
+    status(code: number) { out.status = code; return res; },
+    json(body: any) { out.body = body; return res; },
+  };
+  return { res, out };
+}
+
+memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), (req, res, next) => createPurchase(req, res, next, false));
+
+async function createPurchase(req: any, res: any, next: any, isRequiredExtra: boolean) {
   const tenantCtx = getTenantContext(req);
   const { gymId } = tenantCtx;
   const memberId = memberIdOf(req);
@@ -193,6 +209,35 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     if (!discount) return;
     const promotionIds = promotionIdsFrom(req, res);
     if (!promotionIds) return;
+
+    // #2374 — a Promotion's missing *mandatory* Products are added with it, after the
+    // staff member confirmed; optional ones are never added. Everything is validated
+    // before the first row is written.
+    if (!isRequiredExtra) {
+      const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
+      if (missing.length > 0) {
+        if ((req.body ?? {}).confirm_required_products !== true) {
+          return res.status(409).json({ error: 'promotion_requires_products', products: missing });
+        }
+        const catalogue = await staffCatalogue(gymId, memberId);
+        const plans: { productId: number; promotionIds: number[] }[] = [];
+        for (const m of missing) {
+          const item = catalogue.find((i) => i.id === m.id);
+          const applicable = promotionIds.filter((id) => item?.promotions.some((o) => o.promotion_id === id));
+          if (!item || applicable.length === 0) {
+            return res.status(409).json({ error: 'promotion_not_applicable', message: `This promotion is not available for ${m.name}` });
+          }
+          plans.push({ productId: m.id, promotionIds: applicable });
+        }
+        for (const plan of plans) {
+          const sub = Object.create(req);
+          sub.body = { product_id: plan.productId, promotion_ids: plan.promotionIds, draft: true };
+          const cap = captureRes();
+          await createPurchase(sub, cap.res, (e: unknown) => { throw e; }, true);
+          if (cap.out.status >= 400) return res.status(cap.out.status).json(cap.out.body);
+        }
+      }
+    }
 
     const actorName = resolveRequestActor(tenantCtx) ?? member.name;
     const { rows: productRows } = await db.query<any>(
@@ -312,7 +357,7 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     if (err?.status === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
-});
+}
 
 /**
  * #1657 stage 2 — pay a saved draft: it is re-resolved and re-priced through the
@@ -329,8 +374,14 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     if (!member) return res.status(404).json({ error: 'Member not found' });
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
     const { rows } = await db.query<any>(
-      `SELECT id, product_id, direct_discount_percent FROM member_products_oneoff_snapshot
-        WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+      // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
+      `SELECT id, product_id, direct_discount_percent FROM (
+         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+           FROM product_session_snapshots
+         UNION ALL
+         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+           FROM product_oneoff_snapshots
+       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
       [purchaseId, gymId, memberId],
     );
     const draft = rows[0];

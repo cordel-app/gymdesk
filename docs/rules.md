@@ -502,3 +502,9 @@ Constraints that are purely about how the code is organised stay in `CLAUDE.md` 
 
 - **A cancelled Membership keeps access to the end of what was paid.** It shows as Cancelled at once; the plan's sessions stay usable until the last paid day (or stop immediately if nothing was paid), future renewals are deleted, past and outstanding payments are kept, and purchased session packages are unaffected. (#1196 — `domain/cancellationEntitlement.ts`)
 - **A recurring Product added mid-cycle pays only the days left in the period, then bills with the plan** (#1867 stage 4). A Product joining a running plan is charged the monthly price ÷ 31 × the days until the plan's next billing date (4-week and weekly cadences use their own length), shown as *Prorated: N of M days*, and from then on bills on the plan's dates at the full price; a Product added on a billing date pays the full price. Enforced in `domain/billingSimulation.ts` (`buildServiceStream()`).
+
+- **A Professional Service can require a minimum number of participants** (#2293). `min_participants` is optional, never above a limited Max Capacity, and an event delivered by that service cannot be completed with fewer booked members (staff cancel it instead). Enforced in `domain/baseProfessionalServices.ts` and `POST /class-sessions/:id/complete`.
+
+- **A Membership Plan's center access is Specific centers, All centers (future ones included) or Only the Member's Default Center; a Member's access is the union of their live plans** (#2383) — `api/src/domain/planCenterAccess.ts`.
+
+- **A payment attempt records its method by name and the Billing Event counts attempts** (#2451, migration 376). Every `payment_requests` insert is followed by `recordPaymentAttempt()` (`api/src/api/payment-attempt.ts`, mapping in `domain/paymentAttemptSnapshot.ts`), which copies the catalogue method's English name onto the attempt for good and increments `billing_events.attempt_count` atomically.

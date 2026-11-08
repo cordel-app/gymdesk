@@ -34,6 +34,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
+import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
@@ -226,13 +227,10 @@ export function AssignedPlanConfiguration({
   // discards whatever was being typed — the same thing the card's own Cancel
   // does on the Membership Plan and Promotion cards.
   useEffect(() => {
+    // #2375: entering Edit mode opens nothing by itself (it used to open
+    // Billing & Duration on a Draft, #1814), so every section shows an enabled
+    // `Edit` and staff choose which one to open.
     if (!cardEditing) cancelEdit();
-    // #1814: entering Edit mode on a Draft must show real controls, not a
-    // card of values with a per-section `Edit` button each. Billing & Duration
-    // (the fee and the durations) opens straight away; the other sections keep
-    // their own `Edit`. Keyed on the mode flip only, so saving a section does
-    // not reopen it.
-    else if (editable && planStatus === 'draft') openDurationEdit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardEditing]);
 
@@ -469,7 +467,6 @@ export function AssignedPlanConfiguration({
               cadence beside them is what one period is. */}
           <p style={hintSt}>{t('duration_periods_hint')}</p>
           <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-          <SaveCancel saving={saving} onSave={saveDuration} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
         <div style={{ marginBottom: 10 }}>
@@ -499,6 +496,16 @@ export function AssignedPlanConfiguration({
                 value: fmtMoney(snapshot.membership_fee_price),
               },
             ])}
+          />
+          <BillingDurationExplanations
+            config={{
+              free_periods: snapshot.free_periods,
+              paid_periods: snapshot.paid_periods,
+              pay_beforehand_periods: snapshot.pay_beforehand_periods,
+              bonus_periods: snapshot.bonus_periods,
+              recurring_billing_interval: snapshot.recurring_billing_interval,
+              recurring_billing_unit: snapshot.recurring_billing_unit,
+            }}
           />
         </div>
       )}
@@ -543,7 +550,6 @@ export function AssignedPlanConfiguration({
             )}
           </div>
           <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
-          <SaveCancel saving={saving} onSave={saveFeeBenefit} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
         <CardDetailRow
@@ -580,7 +586,6 @@ export function AssignedPlanConfiguration({
                   benefitContext="plan"
                 />
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-                <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />
               </div>
             ) : (
               /* #924 stage 1 — the one shared grid every Product section
@@ -608,6 +613,25 @@ export function AssignedPlanConfiguration({
           </CardSection>
         );
       })}
+
+      {/* #2391 — the open section editor's Save/Cancel closes the whole
+          configuration block (plan fee + included products), never the middle
+          of it. One pair, committing whichever section is open. */}
+      {editing && (
+        <div style={{ marginTop: 14 }}>
+          <SaveCancel
+            saving={saving}
+            onSave={() => {
+              if (editing === 'billing') return saveDuration();
+              if (editing === 'fee_benefit') return saveFeeBenefit();
+              const spec = BENEFIT_SECTIONS.find((b) => b.section === editing);
+              if (spec) return saveBenefits(spec.endpoint);
+            }}
+            onCancel={cancelEdit}
+            t={t}
+          />
+        </div>
+      )}
     </>
   );
 }

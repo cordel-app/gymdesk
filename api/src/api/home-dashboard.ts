@@ -11,6 +11,7 @@
  * Mounted with auth + tenantContext only (any staff role may open Home); the
  * response simply omits what the caller may not read.
  */
+import { themeHomeImageUrl } from '../domain/themeHomeImage';
 import { effectiveImageUrlSql } from '../domain/effectiveExerciseImage';
 import { assignmentPlanSnapshotId } from './assignment-config';
 import { Router } from 'express';
@@ -64,6 +65,17 @@ async function loadWelcomeImage(gymId: string, zone: string): Promise<{ id: numb
   if (!rows.length) return null;
   const r = rows[welcomeExerciseIndex(rows.length, zone)];
   return { id: Number(r.id), url: r.url };
+}
+
+/** #2287: the gym's active Theme's Home Image, if it has one (else the exercise fallback). */
+async function loadThemeHomeImage(gymId: string): Promise<string | null> {
+  const { rows } = await db.query<any>(
+    `SELECT t.home_image_object_key, t.modified_at
+       FROM gyms g JOIN themes t ON t.id = g.theme_id
+      WHERE g.id = ? AND t.deleted_at IS NULL`,
+    [gymId],
+  );
+  return rows[0] ? themeHomeImageUrl(rows[0]) : null;
 }
 
 const iso = (v: Date | string) => new Date(v).toISOString();
@@ -420,8 +432,9 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       out.pending_payment_members = await loadPendingPaymentMembers(gymId, p.outstanding);
     }
 
-    const welcomeImage = await loadWelcomeImage(gymId, (await loadGymClock(gymId)).zone);
-    out.welcome_image_url = welcomeImage?.url ?? null;
+    const themeImage = await loadThemeHomeImage(gymId);
+    const welcomeImage = themeImage ? null : await loadWelcomeImage(gymId, (await loadGymClock(gymId)).zone);
+    out.welcome_image_url = themeImage ?? welcomeImage?.url ?? null;
     out.welcome_exercise_id = welcomeImage?.id ?? null;
 
     out.cards = cards;

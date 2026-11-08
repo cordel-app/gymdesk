@@ -22,6 +22,13 @@ describe('exercise info view (#2203)', () => {
     expect(exerciseInfoFields(info)).toEqual(['short_description', 'muscles', 'categories']);
   });
 
+  it('opens the clicked gender\'s own full-size image, never the other one (#2306)', () => {
+    const row = { name: 'X', effective_image_url: 'https://x/m.webp', effective_image_male_url: 'https://x/m.webp', effective_image_female_url: 'https://x/f.webp' };
+    expect(buildExerciseInfo(row, 'female').imageUrl).toBe('https://x/f.webp');
+    expect(buildExerciseInfo(row, 'male').imageUrl).toBe('https://x/m.webp');
+    expect(buildExerciseInfo({ name: 'X', effective_image_male_url: 'https://x/m.webp' }, 'female').imageUrl).toBeNull();
+  });
+
   it('survives an exercise with nothing but a name', () => {
     const info = buildExerciseInfo({ name: 'Plank' });
     expect(info.imageUrl).toBeNull();
@@ -44,5 +51,20 @@ describe('exercise info wiring (#2203)', () => {
     const modal = read('components', 'exercises', 'ExerciseInfoModal.tsx');
     expect(modal).toContain('stroke="currentColor"');
     expect(modal).not.toMatch(/<svg[^>]*(fill|stroke)="#/);
+  });
+});
+
+describe('shared Exercise Detail Viewer (#2379)', () => {
+  it('lists equipment between muscles and categories and hides it when absent', () => {
+    const info = buildExerciseInfo({
+      name: 'Squat', equipment: 'barbell', category: 'strength', muscles: [{ key: 'quads', role: 'principal' }],
+    });
+    expect(exerciseInfoFields(info)).toEqual(['muscles', 'equipment', 'categories']);
+    expect(exerciseInfoFields(buildExerciseInfo({ name: 'Squat', equipment: ' ' }))).toEqual([]);
+  });
+  it('is the one viewer every exercise thumbnail opens', () => {
+    expect(read('components', 'exercises', 'ExerciseListThumbnails.tsx')).toContain('ExerciseInfoModal');
+    expect(read('components', 'ExerciseMediaThumbnails.tsx')).toContain('ExerciseInfoModal');
+    expect(read('app', '[locale]', 'members', 'MemberProgress.tsx')).toContain('ExerciseInfoModal');
   });
 });

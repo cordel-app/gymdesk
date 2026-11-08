@@ -22,7 +22,7 @@ import {
   type StagedGenderMedia,
   uploadStagedGenderMedia,
 } from '@/lib/exerciseGenderMedia';
-import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 // #806: the Exercise editor, its form-state hook and the form declaration are
 // shared with the platform Base Exercises page — there is one implementation of
 // the form and this page supplies the gym context's persistence.
@@ -254,6 +254,9 @@ export default function ExercisesPage() {
     }
   }
 
+  const [systemEquipment, setSystemEquipment] = useState<string[]>([]);
+  const editorEquipment = Array.from(new Set([...systemEquipment, ...(facets?.equipment ?? [])]));
+
   async function loadFacets() {
     if (!activeGymId) return;
     try {
@@ -264,6 +267,12 @@ export default function ExercisesPage() {
       setFacets({ equipment: res.equipment ?? [], category: categories });
       setTotal(res.total ?? null);
     } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
+    // #2377: the editor offers the System's equipment vocabulary (the Base
+    // Exercises' values), not only what this gym's own exercises already use.
+    try {
+      const base = await apiFetch<{ equipment: string[] }>('/exercises/base/facets');
+      setSystemEquipment(base.equipment ?? []);
+    } catch { /* the editor falls back to the gym's own values */ }
   }
 
   // ─── Muscle label helper (#806: shared with the Base Exercises page) ──────
@@ -356,6 +365,24 @@ export default function ExercisesPage() {
   function applyExerciseUpdate(updated: Exercise) {
     if (!updated?.id) return;
     setRows((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+  }
+
+  // ─── Resync with System (#2302) ───────────────────────────────────────────
+
+  async function handleResync(ex: Exercise) {
+    try {
+      const res = await apiFetch<{ updated: string[] }>(`/exercises/${ex.id}/resync-with-system`, { method: 'POST' });
+      if (res?.updated?.length) {
+        toast(t('resync_done'), 'success');
+        await load();
+      } else {
+        toast(t('resync_up_to_date'), 'info');
+      }
+    } catch (err: any) {
+      toast(err?.body?.code === 'base_unavailable' ? t('resync_base_gone')
+        : err?.body?.code === 'name_taken' ? t('resync_name_taken')
+        : (err.message ?? t('error_generic')));
+    }
   }
 
   // ─── Duplicate ────────────────────────────────────────────────────────────
@@ -495,6 +522,7 @@ export default function ExercisesPage() {
             nameLocales={nameLocales}
             muscleKeys={muscleKeys}
             muscleLabel={muscleLabel}
+            equipmentOptions={editorEquipment}
             resultTypes={resultTypes}
             nameRef={newNameRef}
             media={<ExerciseGenderMedia
@@ -523,6 +551,7 @@ export default function ExercisesPage() {
           nameLocales={nameLocales}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
+          equipmentOptions={editorEquipment}
           resultTypes={resultTypes}
           nameRef={nameInputRef}
           media={<ExerciseGenderMedia
@@ -556,6 +585,7 @@ export default function ExercisesPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         <ExerciseReadOnlyView
+          nameLocales={nameLocales}
           exercise={ex}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
@@ -584,6 +614,9 @@ export default function ExercisesPage() {
           { label: t('details'), onClick: () => setDetailFor(ex) },
           { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
           { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
+          ...(ex.cloned_from_id != null
+            ? [{ label: t('resync_with_system'), onClick: () => handleResync(ex), disabled: !canWrite, title: readOnlyTitle }]
+            : []),
           ex.status === 'active'
             ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
             : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
@@ -685,7 +718,7 @@ export default function ExercisesPage() {
           {/* #803: the header button names what it imports — the platform's System
               Exercises. The modal's own primary action stays `import`, so the two
               deliberately read differently and need two keys. */}
-          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import_system_exercises')}</button>
+          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('import_system_exercises')}</button>
           {/* #805: opens the inline creation card at the top of the list, never a modal. */}
           <button onClick={openAdd} disabled={!canWrite || addOpen} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
         </div>

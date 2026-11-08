@@ -1,4 +1,6 @@
+import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { addCoverage } from './product-sets';
 import { refreshPlanPriceReference, repriceOnVersion } from './assignment-reprice';
 import { createDraftSetForAssignment } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
@@ -69,6 +71,8 @@ import {
 
 interface PlanRow {
   id: number;
+  center_access_mode?: string;
+  online_access?: number | boolean;
   gym_id: string;
   name: string;
   description: string | null;
@@ -292,7 +296,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
   return rows.length > 0 ? rows[0].id : null;
 }
 
-async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
+export async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   const [prices, bpRows, centers, memberCount, products, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
@@ -895,11 +899,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       });
       for (const memberId of uniqueMemberIds) {
         if (memberId === ownerId) continue;
-        await tx.query(
-          `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-           SELECT gym_id, root_product_set_id, ?, 0 FROM product_sets WHERE id = ?`,
-          [memberId, setId],
-        );
+        await addCoverage(tx, { gymId, productSetId: setId, memberId, isOwner: false });
       }
       await syncDraftAssignment(tx, gymId, setId);
       return { kind: 'created' as const, insertId };
@@ -1005,7 +1005,11 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       // the Activity Type's own `activity_type_eligible_plans` list, which names
       // the original plan — a copy is a new plan and starts off named by none.
 
-      // Copy centers
+      // Copy centers (#2383: and the access mode)
+      await tx.query(
+        'UPDATE membership_plans SET center_access_mode = (SELECT center_access_mode FROM (SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?) src), online_access = (SELECT online_access FROM (SELECT online_access FROM membership_plans WHERE id = ? AND gym_id = ?) src2) WHERE id = ? AND gym_id = ?',
+        [req.params.id, gymId, req.params.id, gymId, insertId, gymId],
+      );
       const { rows: centers } = await tx.query(
         'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
         [req.params.id, gymId],
@@ -1217,9 +1221,27 @@ membershipPlansRouter.get('/:id/centers', async (req, res) => {
 membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { center_ids } = req.body;
-  if (!Array.isArray(center_ids)) return res.status(400).json({ error: 'center_ids must be an array' });
+  const parsed = parseCenterAccessInput(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  // #2383: the two dynamic modes store no center rows. A request that names no
+  // mode keeps the plan's current one (the pre-#2383 body was center_ids alone,
+  // which meant specific centers).
+  let mode = parsed.mode;
+  if (mode === null) {
+    const { rows: cur } = await db.query('SELECT center_access_mode FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    mode = isPlanCenterAccessMode(cur[0]?.center_access_mode) ? cur[0].center_access_mode : 'specific_centers';
+  }
+  const center_ids = mode === 'specific_centers' ? parsed.centerIds : [];
+  // #2406: the legacy On-line flag (plans that combined it with physical
+  // centers) is kept as stored unless the request names it; every other mode
+  // clears it (#2420: On-line is the `online` mode now).
+  let online = mode === 'specific_centers' ? parsed.online : false;
+  if (online === null) {
+    const { rows: cur } = await db.query('SELECT online_access FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    online = Number(cur[0]?.online_access) === 1;
+  }
   try {
+    await db.query('UPDATE membership_plans SET center_access_mode = ?, online_access = ? WHERE id = ? AND gym_id = ?', [mode, online ? 1 : 0, req.params.id, gymId]);
     await db.query('DELETE FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?', [req.params.id, gymId]);
     for (const cid of center_ids) {
       await db.query(

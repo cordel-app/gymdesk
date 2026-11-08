@@ -38,6 +38,7 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { PromotionDetailModal } from './PromotionDetailModal';
+import { PromotionImageModal } from './PromotionImageModal';
 import { mfDurationOptions, promotionTimelineMonths } from './membershipFeeDuration';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 import {
@@ -392,6 +393,25 @@ export default function PromotionsPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const [detailFor, setDetailFor] = useState<Promo | null>(null);
+  // #2410: the listing image's viewer. Loads the card's sub-resources if the
+  // card was never expanded, so the modal shows the saved configuration.
+  const [imageFor, setImageFor] = useState<Promo | null>(null);
+  function openImage(promo: Promo) {
+    setImageFor(promo);
+    if (!cachedSessionB[promo.id]) loadSubResources(promo.id);
+  }
+  function imageButton(promo: Promo, child: React.ReactNode, style?: React.CSSProperties) {
+    return (
+      <button
+        type="button"
+        aria-label={t('image_open', { name: promo.name })}
+        onClick={(e) => { e.stopPropagation(); openImage(promo); }}
+        style={{ border: 'none', background: 'none', padding: 0, cursor: 'zoom-in', display: 'block', ...style }}
+      >
+        {child}
+      </button>
+    );
+  }
   const [deleting, setDeleting] = useState<Promo | null>(null);
 
   const [timeline, setTimeline] = useState<PromotionTimelineResponse | null>(null);
@@ -1850,6 +1870,37 @@ export default function PromotionsPage() {
 
     return (
       <>
+        {/* #2410: General, the read-only half of renderMainFields — same grid,
+            same order, values in place of the controls. */}
+        <CardSectionHeader title={t('section_general')} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+          <div style={{ gridColumn: '1 / -1', marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_name')}</label>
+            <p style={{ margin: 0, fontSize: 14 }}>{promo.name}</p>
+          </div>
+          <div style={{ gridColumn: '1 / -1', marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_description')}</label>
+            <p style={{ margin: 0, fontSize: 14, whiteSpace: 'pre-wrap' }}>{promo.description || '—'}</p>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_starts')}</label>
+            <p style={{ margin: 0, fontSize: 14 }}>{iso(promo.starts_at) || '—'}</p>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_ends')}</label>
+            <p style={{ margin: 0, fontSize: 14 }}>{iso(promo.ends_at) || '—'}</p>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_lifecycle_status')}</label>
+            <StatusBadge status={promo.lifecycle_status} label={tStatus(promo.lifecycle_status)} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelSt}>{t('label_stackable')}</label>
+            <p style={{ margin: 0, fontSize: 14 }}>{promo.stackable ? t('yes') : t('no')}</p>
+            <label style={{ ...inlineLabelSt, marginTop: 8 }}>{t('label_only_applicable_for_new_members')}</label>
+            <p style={{ margin: 0, fontSize: 14 }}>{promo.only_applicable_for_new_members ? t('yes') : t('no')}</p>
+          </div>
+        </div>
 
         {/* #926: read-only, because `⋮ → Edit` is the single entry point into
             everything this card configures — the same field the radio group
@@ -1871,7 +1922,7 @@ export default function PromotionsPage() {
     const image = promo.image_url;
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {image && <CardSquareImage src={image} alt={promo.name} version={promo.modified_at} placeholder={null} />}
+        {image && imageButton(promo, <CardSquareImage src={image} alt={promo.name} version={promo.modified_at} placeholder={null} />, { width: '100%' })}
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {!image && <MemberAvatar name={promo.name} imageUrl={null} stamp={promo.modified_at} size={40} />}
@@ -1920,7 +1971,6 @@ export default function PromotionsPage() {
     // never silently discard that section's unsaved draft.
     const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailFor(promo) },
       {
         label: t('edit'),
         onClick: () => enterEdit(promo),
@@ -1929,6 +1979,7 @@ export default function PromotionsPage() {
       },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
       { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { label: t('details'), onClick: () => setDetailFor(promo) },
     ];
 
     return (
@@ -1938,7 +1989,7 @@ export default function PromotionsPage() {
           <div className={CELL_CLASS.name} title={promo.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(promo.image_thumbnail_url || promo.image_url) && (
               <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
-                <MemberAvatar name={promo.name} imageUrl={promo.image_thumbnail_url ?? promo.image_url} stamp={promo.modified_at} size={28} />
+                {imageButton(promo, <MemberAvatar name={promo.name} imageUrl={promo.image_thumbnail_url ?? promo.image_url} stamp={promo.modified_at} size={28} />)}
               </span>
             )}
             {promo.name}
@@ -2051,6 +2102,27 @@ export default function PromotionsPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
+
+      {imageFor && (
+        <PromotionImageModal
+          name={imageFor.name}
+          imageUrl={imageFor.image_url}
+          version={imageFor.modified_at}
+          onClose={() => setImageFor(null)}
+          closeLabel={t('close')}
+          noImageLabel={t('image_none')}
+        >
+          {PRODUCT_BENEFIT_SECTIONS.map((cfg) => (
+            <div key={cfg.section} style={{ marginBottom: 16 }}>
+              <CardSectionHeader title={t(cfg.titleKey as any)} />
+              {renderProductBenefitView(
+                cfg.emptyKey, productSectionSaved(imageFor.id, cfg.section), cfg.showFrequency,
+                cfg.quantityColumn,
+              )}
+            </div>
+          ))}
+        </PromotionImageModal>
+      )}
 
       {detailFor && (
         <PromotionDetailModal

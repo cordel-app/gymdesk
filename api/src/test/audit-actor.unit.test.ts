@@ -118,6 +118,8 @@ describe('gate: audited tables', () => {
     { file: 'api/base-product-image-storage.ts', table: 'base_products', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/payment-method-image-storage.ts', table: 'base_payment_methods', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff-image-storage.ts', table: 'staff', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/payment-attempt.ts', table: 'billing_events', why: 'attempt_count bookkeeping for the attempt just inserted (#2451); a counter, not a business edit of the event' },
+    { file: 'api/payment-attempt.ts', table: 'payment_requests', why: 'attempt position and payment-method snapshot written right after the same transaction inserted the row (#2451), which carries created_by' },
     { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },
     { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
     { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },
@@ -140,6 +142,7 @@ describe('gate: audited tables', () => {
     { file: 'api/nutrition-goal-image-storage.ts', table: 'nutrition_goals', why: 'moves the image references onto the keys a rename builds, inside the rename PUT that records modified_by' },
     { file: 'api/training-plans.ts', table: 'member_training_plans', why: 'publish-version completes the replaced assignment row; training_plans.modified_by records the actor in the same transaction (#1969)' },
     { file: 'api/training-plans.ts', table: 'members', why: 'publish-version repoints member_training_plan_id to the new assignment; a pointer move, the actor is recorded on training_plans (#1969)' },
+    { file: 'api/membership-plans.ts', table: 'membership_plans', why: 'copies center_access_mode onto the duplicate created in the same transaction, which already carries created_by (#2383)' },
     { file: 'api/member-training-plans.ts', table: 'member_training_plans', why: 'PATCH status/valid_from/valid_to transition; the status_change audit row records the actor' },
   ];
 

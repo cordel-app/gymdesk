@@ -1,3 +1,4 @@
+import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
@@ -687,7 +688,9 @@ export async function applyPromotionToProductSet(
     // eligible; only one added in this Draft is. Enforced here, so no route can
     // bypass what the Admin hides.
     const { rows: inheritedRows } = await tx.query(
-      'SELECT is_inherited FROM plan_snapshots WHERE product_set_id = ? AND gym_id = ?',
+      `SELECT ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
+          FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+        WHERE psj.product_set_id = ? AND s.gym_id = ?`,
       [productSetId, gymId],
     );
     if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
@@ -955,9 +958,10 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   // plan is applied to through a clone, which inherits it), so a spent
   // application is offered for re-applying only where the apply would succeed.
   const { rows: versionRows } = await db.query<any>(
-    `SELECT ps.status, snap.is_inherited
+    `SELECT ps.status, ${planSnapshotInheritedSql('snap', 'ps.id')} AS is_inherited
        FROM product_sets ps
-       LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id AND snap.gym_id = ps.gym_id
+       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+       LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id AND snap.gym_id = ps.gym_id
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );

@@ -58,7 +58,7 @@ beforeAll(async () => {
   const { rows: b } = await db.query<{ id: number }>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umB]);
   setB = b[0].id;
   await db.query("UPDATE product_sets SET status = 'superseded', owner_member_id = ? WHERE id = ?", [owner, setB]);
-  await db.query('INSERT INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) SELECT gym_id, root_product_set_id, ?, 0 FROM product_sets WHERE id = ?', [kid, setA]);
+  await db.query('INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) SELECT gym_id, MIN(id), ?, 0 FROM plan_snapshots WHERE product_set_id = ? GROUP BY gym_id', [kid, setA]);
   const { insertId: prod } = await db.query(
     `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`, [gymId, `PS-Prod-${uniq()}`]);

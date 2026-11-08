@@ -1,3 +1,5 @@
+import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { recordPaymentAttempt } from './payment-attempt';
 import { AttemptMethod } from '../domain/paymentAttemptMethod';
 import { payerCheckoutUrl } from './checkout-url';
 import crypto from 'crypto';
@@ -58,8 +60,10 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
 
 async function carriesInheritedNativePlans(gymId: string, productSetId: number, exec: Exec): Promise<boolean> {
   const { rows } = await exec.query(
-    `SELECT SUM(is_inherited = 1) AS inherited, SUM(is_inherited = 0) AS added
-       FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?`, [gymId, productSetId]);
+    `SELECT SUM(${planSnapshotInheritedSql('s', 'psj.product_set_id')}) AS inherited,
+            SUM(NOT ${planSnapshotInheritedSql('s', 'psj.product_set_id')}) AS added
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ?`, [gymId, productSetId]);
   // A version that adds a plan beside running ones holds both kinds; a plain clone is all inherited.
   return Number(rows[0]?.inherited ?? 0) > 0 && Number(rows[0]?.added ?? 0) > 0;
 }
@@ -222,6 +226,7 @@ export async function createProductSetCheckout(input: {
       [input.gymId, input.memberId, input.charge.amount.toFixed(2), chargeTypeId, billingEventId,
         orderId, result.providerOrderId, pageToken, pageTokenExpires, Number(prev[0]?.n ?? 0) + 1, input.actor],
     );
+    await recordPaymentAttempt(tx, insertId);
     await tx.query('UPDATE product_sets SET payment_request_id = ? WHERE id = ?', [insertId, input.productSetId]);
     return { paymentRequestId: Number(insertId), billingEventId };
   });

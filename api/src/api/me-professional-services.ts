@@ -7,6 +7,7 @@
 // and `total` is remaining + used: every spend, a package's included, writes a
 // ledger row, so the identity holds for every source.
 import { db } from '../infra/db';
+import { attachTranslations } from './professional-service-translations';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 
 export interface MemberServiceBalance {
@@ -19,9 +20,9 @@ export interface MemberServiceBalance {
   remaining: number;
 }
 
-export async function memberServiceBalances(gymId: string, memberId: number): Promise<MemberServiceBalance[]> {
-  const { rows: services } = await db.query(
-    `SELECT ps.id AS professional_service_id, ps.name, ps.description, ps.image_url
+export async function memberServiceBalances(gymId: string, memberId: number, locale: string): Promise<MemberServiceBalance[]> {
+  const { rows: base } = await db.query(
+    `SELECT ps.id AS professional_service_id, ps.id, ps.name, ps.description, ps.image_url
        FROM professional_services ps
        JOIN gym_professional_services gps
          ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
@@ -29,6 +30,11 @@ export async function memberServiceBalances(gymId: string, memberId: number): Pr
       ORDER BY ps.name ASC`,
     [gymId],
   );
+  // #2425: name and description in the request's locale (the member's language,
+  // #1039), falling back to the base text — the #2110 translation junction.
+  const services = (await attachTranslations(base as any[], locale)).map((s: any) => ({
+    ...s, name: s.display_name, description: s.display_description,
+  }));
   const { rows: usedRows } = await db.query(
     `SELECT professional_service_id, COUNT(*) AS n
        FROM professional_service_consumptions

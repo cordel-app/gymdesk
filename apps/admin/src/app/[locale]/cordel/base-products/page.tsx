@@ -10,7 +10,11 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel } from '@/lib/localeLabels';
+import { PRODUCT_TEXT_LOCALES, applyProductTextValues, productTextValues, type ProductTextField } from '../../financials/products/productProfile';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
   ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
@@ -53,6 +57,7 @@ interface BaseProduct {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  sharing_type: 'individual' | 'shared';
   description: string | null;
   notes: string | null;
   package_information: string | null;
@@ -79,6 +84,7 @@ interface Form {
   mandatory: boolean;
   validity_days: string;
   one_time_purchase: boolean;
+  sharing_type: 'individual' | 'shared';
   description: string;
   notes: string;
   package_information: string;
@@ -100,6 +106,7 @@ function formFor(p: BaseProduct | null): Form {
     mandatory: p?.mandatory ?? false,
     validity_days: p?.validity_days != null ? String(p.validity_days) : '',
     one_time_purchase: p?.one_time_purchase ?? false,
+    sharing_type: p?.sharing_type ?? 'individual',
     description: p?.description ?? '',
     notes: p?.notes ?? '',
     package_information: p?.package_information ?? '',
@@ -124,6 +131,7 @@ function payloadFor(f: Form) {
     mandatory: f.mandatory,
     validity_days: f.validity_days.trim() ? Number(f.validity_days) : null,
     one_time_purchase: f.one_time_purchase,
+    sharing_type: f.sharing_type,
     description: f.description.trim() || null,
     notes: f.notes.trim() || null,
     package_information: f.package_information.trim() || null,
@@ -161,6 +169,13 @@ export default function BaseProductsPage() {
   const toggleExpand = (id: number) =>
     setExpanded((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [deleting, setDeleting] = useState<BaseProduct | null>(null);
+  const [imageOf, setImageOf] = useState<BaseProduct | null>(null);
+  // #2334: which field's translations modal is open, for which row (null = the new-row form).
+  const tAll = useTranslations();
+  const [langModal, setLangModal] = useState<{ field: ProductTextField; product: BaseProduct | null } | null>(null);
+  const langLocales = PRODUCT_TEXT_LOCALES.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }));
+  const textFieldLabel = (f: ProductTextField) => tp(f === 'name' ? 'label_name' : 'label_description');
+  const globeRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 };
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -244,10 +259,16 @@ export default function BaseProductsPage() {
 
   function renderValue(p: BaseProduct, field: VisibleProductField): React.ReactNode {
     const v = (x: React.ReactNode) => <div style={productValueStyle}>{x}</div>;
+    const globeValue = (prod: BaseProduct, fld: ProductTextField, x: React.ReactNode) => (
+      <div style={globeRowStyle}>
+        <div style={{ ...productValueStyle, flex: 1 }}>{x}</div>
+        <GlobeButton label={tp('translations_open', { field: textFieldLabel(fld) })} onClick={() => setLangModal({ field: fld, product: prod })} />
+      </div>
+    );
     switch (field.key) {
-      case 'name': return v(p.name);
+      case 'name': return globeValue(p, 'name', p.name);
       case 'type': return v(t(`type_${p.type}`));
-      case 'description': return v(p.description ?? EMPTY_VALUE);
+      case 'description': return globeValue(p, 'description', p.description ?? EMPTY_VALUE);
       case 'units': return v(p.units ?? EMPTY_VALUE);
       case 'status': return v(tStatus(p.status));
       case 'enrollment_status': return v(tStatus(p.enrollment_status));
@@ -265,7 +286,12 @@ export default function BaseProductsPage() {
   function renderControl(f: Form, field: VisibleProductField): React.ReactNode {
     switch (field.key) {
       case 'name':
-        return <input style={formControlStyle} value={f.name} maxLength={150} autoFocus onChange={(e) => set('name', e.target.value)} />;
+        return (
+          <div style={globeRowStyle}>
+            <input style={{ ...formControlStyle, flex: 1 }} value={f.name} maxLength={150} autoFocus onChange={(e) => set('name', e.target.value)} />
+            <GlobeButton label={tp('translations_open', { field: textFieldLabel('name') })} onClick={() => setLangModal({ field: 'name', product: null })} />
+          </div>
+        );
       case 'type':
         return (
           <select style={formControlStyle} value={f.type} onChange={(e) => set('type', e.target.value as Form['type'])}>
@@ -273,7 +299,12 @@ export default function BaseProductsPage() {
           </select>
         );
       case 'description':
-        return <textarea style={productTextareaStyle} rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />;
+        return (
+          <div style={globeRowStyle}>
+            <textarea style={{ ...productTextareaStyle, flex: 1 }} rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />
+            <GlobeButton label={tp('translations_open', { field: textFieldLabel('description') })} onClick={() => setLangModal({ field: 'description', product: null })} />
+          </div>
+        );
       case 'units':
         return <input style={formControlStyle} type="number" min={1} step={1} value={f.units} onChange={(e) => set('units', e.target.value)} />;
       case 'status':
@@ -328,34 +359,25 @@ export default function BaseProductsPage() {
       <label style={formFieldLabelStyle}>{t('charge_type_code')}</label>
       {f ? (
         <>
-          {/* #2254: the name and description in the other languages (EN is the base text). */}
-          <div style={{ ...formHelpTextStyle, marginBottom: 8 }}>{t('translations_help')}</div>
-          {(['es', 'ca'] as const).map((l) => (
-            <div key={l} style={{ marginBottom: 8 }}>
-              <label style={formFieldLabelStyle}>{t('name_in', { locale: l.toUpperCase() })}</label>
-              <input
-                style={formControlStyle} value={f.tr[l].name} maxLength={150}
-                onChange={(e) => set('tr', { ...f.tr, [l]: { ...f.tr[l], name: e.target.value } })}
-              />
-              <label style={formFieldLabelStyle}>{t('description_in', { locale: l.toUpperCase() })}</label>
-              <textarea
-                style={productTextareaStyle} rows={2} value={f.tr[l].description}
-                onChange={(e) => set('tr', { ...f.tr, [l]: { ...f.tr[l], description: e.target.value } })}
-              />
-            </div>
-          ))}
           <input style={formControlStyle} value={f.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
           <div style={{ fontSize: 12, color: 'var(--gd-text-secondary, #666)' }}>{t('charge_type_code_help')}</div>
           <label style={{ ...productCheckboxCellStyle, marginTop: 12 }}>
             <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
             {t('one_time_purchase')}
           </label>
+          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
+          <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
+            <option value="individual">{t('sharing_individual')}</option>
+            <option value="shared">{t('sharing_shared')}</option>
+          </select>
         </>
       ) : (
         <>
           <div style={productValueStyle}>{p?.charge_type_code ?? dash}</div>
           <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('one_time_purchase')}</label>
           <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
+          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
+          <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
         </>
       )}
     </div>
@@ -415,7 +437,7 @@ export default function BaseProductsPage() {
   );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => { setForm(formFor(null)); setError(null); }}>{t('add')}</button>
@@ -445,6 +467,7 @@ export default function BaseProductsPage() {
                   sessionNote={null}
                   text={listText}
                   onToggle={() => toggleExpand(p.id)}
+                  onImageClick={() => setImageOf(p)}
                   menuItems={[
                     { label: t('edit'), onClick: () => { setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
                     { label: t('details'), onClick: () => setDetails(p) },
@@ -469,6 +492,28 @@ export default function BaseProductsPage() {
         )}
       </ProductListFrame>
 
+      <FieldTranslationsModal
+        open={langModal !== null}
+        title={langModal ? tp('translations_title', { field: textFieldLabel(langModal.field) }) : ''}
+        locales={langLocales}
+        values={langModal
+          ? productTextValues(
+              form && (langModal.product == null || form.id === langModal.product.id) ? form : formFor(langModal.product),
+              langModal.field,
+            )
+          : {}}
+        multiline={langModal?.field === 'description'}
+        readOnly={!(langModal && form && (langModal.product == null || form.id === langModal.product.id))}
+        saveLabel={tp('save')}
+        cancelLabel={tp('cancel')}
+        closeLabel={tp('translations_close')}
+        emptyLabel="—"
+        onClose={() => setLangModal(null)}
+        onSave={(vals) => {
+          if (langModal) setForm((f) => f && { ...f, ...applyProductTextValues(f, langModal.field, vals) });
+          setLangModal(null);
+        }}
+      />
       <CrudModal
         open={!!details}
         title={details?.name ?? ''}
@@ -496,6 +541,7 @@ export default function BaseProductsPage() {
             <MemberImagePreview src={memberImagePreviewSrc(details.image_url, details.modified_at)} emptyLabel={t('image_none')} />
             <p><strong>{t('mandatory')}:</strong> {details.mandatory ? t('yes') : t('no')}</p>
             <p><strong>{t('one_time_purchase')}:</strong> {details.one_time_purchase ? t('yes') : t('no')}</p>
+            <p><strong>{t('sharing_type')}:</strong> {details.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</p>
             <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
             <p><strong>{t('created_by')}:</strong> {details.created_by ?? dash}</p>
             <p><strong>{t('modified_at')}:</strong> {when(details.modified_at)}</p>
@@ -503,6 +549,14 @@ export default function BaseProductsPage() {
           </div>
         )}
       </CrudModal>
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel={t('no_description')}
+      />
 
       <ConfirmDialog
         open={!!deleting}

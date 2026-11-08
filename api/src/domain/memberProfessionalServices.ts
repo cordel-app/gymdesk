@@ -272,12 +272,11 @@ export async function loadMemberProfessionalServiceGrants(
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
      WHERE um.gym_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}
-       AND (um.member_id = ?
-            OR EXISTS (SELECT 1 FROM user_membership_members umm
-                       WHERE umm.user_membership_id = um.id AND umm.member_id = ?))
+       AND EXISTS (SELECT 1 FROM user_membership_members umm
+                   WHERE umm.user_membership_id = um.id AND umm.member_id = ?)
        AND um.starts_at <= UTC_DATE()
        AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())`,
-    [gymId, memberId, memberId],
+    [gymId, memberId],
   );
 
   // #1189 stage 3: the sessions already spent from the grants that carry no

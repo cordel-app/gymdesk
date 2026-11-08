@@ -134,7 +134,9 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     // The plan covers two Members and the owner is one of them.
     const over = await auth(request.post(`/product-sets/${id}/members`)).send({ member_id: third });
     expect(over.status).toBe(400);
-    expect((await auth(request.delete(`/product-sets/${id}/members/${memberId}`))).status).toBe(400);
+    // The payer may leave the beneficiaries (#2125 stage 22), which frees a place.
+    expect((await auth(request.delete(`/product-sets/${id}/members/${memberId}`))).status).toBe(200);
+    expect((await auth(request.post(`/product-sets/${id}/members`)).send({ member_id: third })).status).toBe(200);
     expect((await auth(request.delete(`/product-sets/${id}/members/${second}`))).status).toBe(200);
   });
 

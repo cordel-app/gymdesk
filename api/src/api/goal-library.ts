@@ -64,7 +64,7 @@ import {
   clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import { resolveRequestActor } from '../domain/auditActor';
-import { importBasePersonalGoals, listBasePersonalGoalsForGym } from './gym-default-personal-goals';
+import { copyTemplateImages, importBasePersonalGoals, listBasePersonalGoalsForGym } from './gym-default-personal-goals';
 
 /**
  * #947 — a gym's view of one goal catalogue (Personal Goals or Nutrition Goals).
@@ -505,6 +505,86 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
           });
         }
         res.json(result);
+      } catch (err) { next(err); }
+    });
+
+
+    // ─── #2258 — Resync with System ─────────────────────────────────────────
+    // Selective, field-level: name, description (+ their translations) from the
+    // originating Base Personal Goal, and the image only while the copy has none.
+    // Target, unit, assignments, readings, `base_personal_goal_id` and the Base row
+    // itself are never written.
+    router.post('/:id/resync-with-system', requireRole('admin'), requireWrite, async (req, res, next) => {
+      const ctx = getTenantContext(req);
+      const { gymId } = ctx;
+      const actor = resolveRequestActor(ctx);
+      try {
+        const { rows: own } = await db.query<any>(
+          `SELECT id, name, description, image_url, base_personal_goal_id
+             FROM personal_goals WHERE id = ? AND gym_id = ? AND status <> 'deleted'`,
+          [req.params.id, gymId],
+        );
+        if (own.length === 0) return res.status(404).json({ error: 'Goal not found' });
+        const copy = own[0];
+        if (!copy.base_personal_goal_id) {
+          return res.status(400).json({ code: 'no_base_goal', error: 'This goal was not imported from the System catalogue.' });
+        }
+        const { rows: baseRows } = await db.query<any>(
+          'SELECT * FROM base_personal_goals WHERE id = ? AND deleted_at IS NULL',
+          [copy.base_personal_goal_id],
+        );
+        if (baseRows.length === 0) {
+          return res.status(409).json({ code: 'base_unavailable', error: 'The originating System Personal Goal no longer exists.' });
+        }
+        const base = baseRows[0];
+        const { rows: taken } = await db.query(
+          "SELECT id FROM personal_goals WHERE gym_id = ? AND status <> 'deleted' AND name = ? AND id <> ? LIMIT 1",
+          [gymId, base.name, copy.id],
+        );
+        if (taken.length > 0) {
+          return res.status(409).json({ code: 'name_taken', error: 'Another goal in this gym already uses the System name.' });
+        }
+        const { rows: baseTr } = await db.query<any>(
+          'SELECT locale, name, description FROM base_personal_goal_translations WHERE base_personal_goal_id = ? ORDER BY locale',
+          [base.id],
+        );
+        const { rows: ownTr } = await db.query<any>(
+          'SELECT locale, name, description FROM personal_goal_translations WHERE personal_goal_id = ? ORDER BY locale',
+          [copy.id],
+        );
+        const sig = (r: any[]) => JSON.stringify(r.map((x) => [x.locale, x.name, x.description ?? null]));
+        const textChanged = copy.name !== base.name || (copy.description ?? null) !== (base.description ?? null)
+          || sig(baseTr) !== sig(ownTr);
+        const wantsImage = !copy.image_url && !!base.image_url;
+        if (!textChanged && !wantsImage) return res.json({ updated: [], message: 'up_to_date' });
+
+        const updated: string[] = [];
+        if (textChanged) {
+          await db.transaction(async (tx) => {
+            await tx.query(
+              `UPDATE personal_goals SET name = ?, description = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+                WHERE id = ? AND gym_id = ?`,
+              [base.name, base.description, actor, copy.id, gymId],
+            );
+            await tx.query('DELETE FROM personal_goal_translations WHERE personal_goal_id = ?', [copy.id]);
+            await tx.query(
+              `INSERT INTO personal_goal_translations (personal_goal_id, locale, name, description)
+               SELECT ?, locale, name, description FROM base_personal_goal_translations WHERE base_personal_goal_id = ?`,
+              [copy.id, base.id],
+            );
+          });
+          updated.push('name', 'description');
+        }
+        if (wantsImage) {
+          await copyTemplateImages(gymId, base, copy.id);
+          const { rows: after } = await db.query<any>('SELECT image_url FROM personal_goals WHERE id = ? AND gym_id = ?', [copy.id, gymId]);
+          if (after[0]?.image_url) updated.push('image');
+        }
+        recordAudit(req, {
+          action: 'update', entityType, entityId: copy.id, entityName: base.name,
+          next: { resync_with_system: updated },
+        });
+        res.json({ updated, goal: await loadGoal(copy.id, gymId, getRequestLocale(req)) });
       } catch (err) { next(err); }
     });
 

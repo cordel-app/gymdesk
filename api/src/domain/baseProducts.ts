@@ -22,6 +22,9 @@ export const MAX_NAME_LENGTH = 150;
 export const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_TEXT_LENGTH = 20_000;
 export const MAX_CHARGE_TYPE_CODE_LENGTH = 50;
+/** #2393: the two values a Product's `sharing_type` may hold (Base and gym alike). */
+export const PRODUCT_SHARING_TYPES = ['individual', 'shared'] as const;
+
 const MAX_INT = 1_000_000;
 const MAX_AMOUNT = 99_999_999.99;
 
@@ -37,6 +40,7 @@ export type BaseProductInput = {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  sharing_type: (typeof PRODUCT_SHARING_TYPES)[number];
   description: string | null;
   notes: string | null;
   package_information: string | null;
@@ -56,6 +60,7 @@ export type BaseProductRow = {
   mandatory: number | boolean;
   validity_days: number | null;
   one_time_purchase: number | boolean;
+  sharing_type?: string;
   // #2009 stage 1 (migration 335). The image pair is written by the upload
   // pipeline (stage 3), never by a JSON body, so it is on the row only.
   description?: string | null;
@@ -97,7 +102,7 @@ export function parseBaseProductInput(
     : {
         charge_type_code: null, name: '', type: 'fee', units: null, amount: null,
         billing_frequency: 'once', status: 'active', enrollment_status: 'public',
-        mandatory: false, validity_days: null, one_time_purchase: false,
+        mandatory: false, validity_days: null, one_time_purchase: false, sharing_type: 'individual',
         description: null, notes: null, package_information: null, tax_behavior: 'inclusive',
       };
 
@@ -152,6 +157,12 @@ export function parseBaseProductInput(
       if (b === undefined) return { error: `${key} must be a boolean` };
       out[key] = b;
     }
+  }
+  if (has('sharing_type')) {
+    if (!(PRODUCT_SHARING_TYPES as readonly string[]).includes(src.sharing_type)) {
+      return { error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` };
+    }
+    out.sharing_type = src.sharing_type;
   }
   if (has('validity_days')) {
     const days = positiveInt(src.validity_days);

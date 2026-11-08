@@ -21,9 +21,11 @@ import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { IMAGE_PREVIEW_THUMBNAIL_SIZE } from '@/components/imagePreviewFrame';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { localeLabel } from '@/lib/localeLabels';
 import { GoalDetailsModal } from './GoalDetailsModal';
+import { GoalTranslationsModal, TranslationsGlobeButton, TranslatedField, TranslationMap, toFormTranslations } from './GoalTranslationsModal';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
   emptyGoalForm, formatGoalTarget, goalAvailability, goalFormError,
@@ -108,6 +110,8 @@ export function GoalLibrarySection({
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [detailGoal, setDetailGoal] = useState<GoalRow | null>(null);
+  // #2308: clicking a Nutrition Goal's thumbnail opens its full-size image.
+  const [imageGoal, setImageGoal] = useState<GoalRow | null>(null);
   const [deleting, setDeleting] = useState<GoalRow | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -130,6 +134,10 @@ export function GoalLibrarySection({
    * description pair per locale the deployment supports.
    */
   const [translatableLocales, setTranslatableLocales] = useState<string[]>([]);
+  // #2332: the one open translations modal (a field, the map it opened on, what Save does).
+  const [tModal, setTModal] = useState<{
+    field: TranslatedField; translations: TranslationMap; editable: boolean; onSave: (m: TranslationMap) => void;
+  } | null>(null);
   useEffect(() => {
     if (!translated || !ready) return;
     let cancelled = false;
@@ -260,6 +268,18 @@ export function GoalLibrarySection({
     }
   }
 
+  /** #2258: syncs name, description (+ translations) and an absent image from the Base goal. */
+  async function resyncWithSystem(goal: GoalRow) {
+    try {
+      const res = await apiFetch<{ updated?: string[] }>(`${basePath}/${goal.id}/resync-with-system`, { method: 'POST' });
+      if (res?.updated?.length) toast(label('resynced'), 'success');
+      else toast(label('resync_up_to_date'), 'info');
+      load();
+    } catch (e: any) {
+      toast(e?.body?.code === 'base_unavailable' ? label('resync_base_gone') : (e.message ?? label('error_generic')));
+    }
+  }
+
   /**
    * The gym's own availability state for the goal — never the goal's row, and
    * never a soft delete: a System goal deactivated here is still the platform's
@@ -289,6 +309,22 @@ export function GoalLibrarySection({
 
   /* ── Both halves of one body: the inline form, and the read-only view ───── */
 
+  /** #2332: the globe beside a translatable field — absent for a kind with no translations. */
+  function globe(
+    field: TranslatedField, translations: TranslationMap, editable: boolean,
+    onSave: (m: TranslationMap) => void = () => {},
+  ) {
+    if (!translated || translatableLocales.length === 0) return null;
+    const name = label(field === 'name' ? 'label_name' : 'label_description');
+    const title = `${label('label_translations')} — ${name}`;
+    return (
+      <TranslationsGlobeButton
+        title={title}
+        onClick={() => setTModal({ field, translations, editable, onSave })}
+      />
+    );
+  }
+
   function renderInlineForm(
     form: GoalFormValues,
     setForm: (f: GoalFormValues) => void,
@@ -311,7 +347,10 @@ export function GoalLibrarySection({
     return (
       <div style={{ padding: '16px 20px' }}>
         <div style={{ marginBottom: 12 }}>
-          <label style={formFieldLabelStyle}>{label('label_name')} *</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <label style={formFieldLabelStyle}>{label('label_name')} *</label>
+            {globe('name', form.translations ?? {}, true, (m) => setForm({ ...form, translations: toFormTranslations(m) }))}
+          </div>
           <input
             ref={autoFocusRef}
             value={form.name}
@@ -390,7 +429,10 @@ export function GoalLibrarySection({
           </div>
         )}
         <div style={{ marginBottom: 12 }}>
-          <label style={formFieldLabelStyle}>{label('label_description')}</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <label style={formFieldLabelStyle}>{label('label_description')}</label>
+            {globe('description', form.translations ?? {}, true, (m) => setForm({ ...form, translations: toFormTranslations(m) }))}
+          </div>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -398,41 +440,6 @@ export function GoalLibrarySection({
             style={{ ...formControlStyle, resize: 'vertical' }}
           />
         </div>
-        {/* #1623 — one name and description per translatable locale. A blank
-            name reads "not translated" (the base text is the fallback), which is
-            made visible beside the field rather than left to be discovered. */}
-        {translated && translatableLocales.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={formFieldLabelStyle}>{label('label_translations')}</label>
-            <span style={formHelpTextStyle}>{label('help_translations')}</span>
-            {translatableLocales.map((loc) => {
-              const entry = form.translations?.[loc] ?? { name: '', description: '' };
-              const setEntry = (next: { name: string; description: string }) =>
-                setForm({ ...form, translations: { ...(form.translations ?? {}), [loc]: next } });
-              return (
-                <div key={loc} style={{ marginTop: 8 }}>
-                  <span style={{ ...formFieldLabelStyle, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {localeLabel(loc, (key) => tRoot(key as any))}
-                    {!entry.name.trim() && <span style={listNameBadgeStyle}>{label('translation_missing')}</span>}
-                  </span>
-                  <input
-                    value={entry.name}
-                    placeholder={label('label_name')}
-                    onChange={(e) => setEntry({ ...entry, name: e.target.value })}
-                    style={formControlStyle}
-                  />
-                  <textarea
-                    value={entry.description}
-                    placeholder={label('label_description')}
-                    onChange={(e) => setEntry({ ...entry, description: e.target.value })}
-                    rows={2}
-                    style={{ ...formControlStyle, resize: 'vertical', marginTop: 6 }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
         {error && <p style={formErrorStyle}>{error}</p>}
         <div style={inlineActionsRowStyle}>
           <button type="button" onClick={onCancel} style={secondaryBtnSmall}>{label('cancel')}</button>
@@ -447,7 +454,7 @@ export function GoalLibrarySection({
   function renderReadOnly(goal: GoalRow) {
     return (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <ReadOnlyField label={label('label_name')} value={nameOf(goal)} />
+        <ReadOnlyField label={label('label_name')} value={nameOf(goal)} extra={globe('name', goal.translations ?? {}, false)} />
         {measurable && <ReadOnlyField label={label('label_target')} value={formatGoalTarget(goal)} />}
         {hasWebpImage && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -462,17 +469,9 @@ export function GoalLibrarySection({
         <ReadOnlyField
           label={label('label_description')}
           value={displayValue(translated ? (goal.display_description ?? goal.description) : goal.description)}
+          extra={globe('description', goal.translations ?? {}, false)}
           wrap
         />
-        {translated && Object.keys(goal.translations ?? {}).length + translatableLocales.length > 0 && (
-          <ReadOnlyField
-            label={label('label_translations')}
-            value={(translatableLocales.length > 0 ? translatableLocales : Object.keys(goal.translations ?? {}).sort())
-              .map((loc) => `${localeLabel(loc, (key) => tRoot(key as any))}: ${goal.translations?.[loc]?.name || '—'}`)
-              .join('\n')}
-            wrap
-          />
-        )}
         <ReadOnlyField
           label={label('ownership')}
           value={isSystemOriginGoal(goal) ? label('ownership_system') : label('ownership_gym')}
@@ -500,6 +499,10 @@ export function GoalLibrarySection({
               available
                 ? { label: label('deactivate'), onClick: () => setAvailability(goal, 'deactivate'), disabled: !canWrite, title: readOnlyTitle, danger: true }
                 : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #2258 — only a gym copy of a Base Personal Goal carries the link.
+            ...(configurable && goal.base_personal_goal_id ? [
+              { label: label('resync_with_system'), onClick: () => resyncWithSystem(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             ...(writable ? [
               { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
@@ -534,12 +537,25 @@ export function GoalLibrarySection({
       width: 64,
       mobile: 'secondary' as const,
       render: (goal: GoalRow) => (
-        <MemberAvatar
-          name={nameOf(goal)}
-          imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
-          stamp={goal.modified_at ?? goal.created_at}
-          size={40}
-        />
+        kind === 'nutrition' && goal.image_url ? (
+          <button type="button" onClick={(e) => { e.stopPropagation(); setImageGoal(goal); }}
+            aria-label={nameOf(goal)}
+            style={{ border: 0, padding: 0, background: 'none', cursor: 'zoom-in', borderRadius: '50%', display: 'inline-flex' }}>
+            <MemberAvatar
+              name={nameOf(goal)}
+              imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
+              stamp={goal.modified_at ?? goal.created_at}
+              size={40}
+            />
+          </button>
+        ) : (
+          <MemberAvatar
+            name={nameOf(goal)}
+            imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
+            stamp={goal.modified_at ?? goal.created_at}
+            size={40}
+          />
+        )
       ),
     }] : []),
     {
@@ -758,6 +774,31 @@ export function GoalLibrarySection({
         </div>
       )}
 
+      <ProfessionalServiceImageModal
+        target={imageGoal ? {
+          name: nameOf(imageGoal),
+          imageUrl: imageGoal.image_url,
+          description: translated ? (imageGoal.display_description ?? imageGoal.description) : imageGoal.description,
+          version: imageGoal.modified_at ?? imageGoal.created_at,
+        } : null}
+        onClose={() => setImageGoal(null)}
+        closeLabel={label('close')}
+        noImageLabel={label('image_none')}
+        noDescriptionLabel={label('image_modal_no_description')}
+      />
+
+    {tModal && (
+      <GoalTranslationsModal
+        field={tModal.field}
+        title={`${label('label_translations')} — ${label(tModal.field === 'name' ? 'label_name' : 'label_description')}`}
+        locales={translatableLocales}
+        translations={tModal.translations}
+        editable={tModal.editable}
+        label={label}
+        onSave={(m) => { tModal.onSave(m); setTModal(null); }}
+        onClose={() => setTModal(null)}
+      />
+    )}
       {detailGoal && (
         <GoalDetailsModal
           goal={detailGoal}
@@ -783,10 +824,10 @@ export function GoalLibrarySection({
   );
 }
 
-function ReadOnlyField({ label, value, wrap }: { label: string; value: string; wrap?: boolean }) {
+function ReadOnlyField({ label, value, wrap, extra }: { label: string; value: string; wrap?: boolean; extra?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={formFieldLabelStyle}>{label}</span>
+      <span style={formFieldLabelStyle}>{label}{extra}</span>
       {/* `formValueStyle` carries the control's padding and border width, so a value
           sits exactly where its input does when `⋮ → Edit` opens (#929). */}
       <span style={{ ...formValueStyle, ...(wrap ? { whiteSpace: 'pre-wrap' } : {}) }}>{value}</span>

@@ -33,7 +33,7 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
-import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
+import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
@@ -50,6 +50,7 @@ import {
   newMemberValueKey,
   type MemberProfile,
 } from './memberProfile';
+import { MemberCenterAccess } from './MemberCenterAccess';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
@@ -401,12 +402,6 @@ export function MemberExpandedRow({
                     />
                   )}
                   centers={{
-                    assignedLabel: t('members.assigned_centers'),
-                    assigned: (
-                      <p style={profileValueStyle}>
-                        {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join('\n')}
-                      </p>
-                    ),
                     defaultLabel: t('members.default_center'),
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}
@@ -417,6 +412,13 @@ export function MemberExpandedRow({
               </div>
             </Section>
           )}
+
+          {/* #2422: effective center access, resolved by the server from the live plans. */}
+          <Section label={t('members.section_center_access')} divider={!editing}>
+            <div style={card}>
+              <MemberCenterAccess memberId={memberId} refreshKey={centers} />
+            </div>
+          </Section>
 
           {/* Account (Clerk status) */}
           {(clerkStatus || (statuses && statuses.length > 0)) && (
@@ -488,14 +490,6 @@ export function MemberExpandedRow({
             loading={productSetDetail.loading}
             error={productSetDetail.error}
             holdsNothing={productSetDetail.products.oneOff.length + productSetDetail.products.recurring.length === 0}
-            workflow={workflow}
-            canWrite={canWriteMembers && canManagePackages}
-            onDiscarded={reloadConfiguration}
-            onSaveAndPay={() => {
-              const target = saveAndPayTarget(workflow);
-              if (target === 'review') setReviewOpen(true);
-              else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
-            }}
           />
           <Section label={t('members.section_membership_plan')} divider={false}>
             <span id="member-membership-plans-section" />
@@ -578,6 +572,17 @@ export function MemberExpandedRow({
                 canWrite={canWriteMembers && canManagePackages}
                 changes={draftReview?.changes}
                 onChanged={reloadConfiguration}
+              />
+              <ProductsWorkflowActions
+                current={configuration.current_product_set}
+                workflow={workflow}
+                canWrite={canWriteMembers && canManagePackages}
+                onDiscarded={reloadConfiguration}
+                onSaveAndPay={() => {
+                  const target = saveAndPayTarget(workflow);
+                  if (target === 'review') setReviewOpen(true);
+                  else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
               />
             </Section>
           )}

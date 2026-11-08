@@ -54,7 +54,8 @@ export const assignmentLineVersionId = (idExpr: string) =>
  * which plan is meant; the snapshot does. Draft and closed included, as before.
  */
 export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
-  `(SELECT s9.id FROM plan_snapshots s9 JOIN product_sets p9 ON p9.id = s9.product_set_id
+  `(SELECT s9.id FROM product_set_plan_snapshots j9 JOIN plan_snapshots s9 ON s9.id = j9.plan_snapshot_id
+     JOIN product_sets p9 ON p9.id = j9.product_set_id
      WHERE s9.source_user_membership_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
      ORDER BY p9.version DESC, s9.id DESC LIMIT 1)`;
 

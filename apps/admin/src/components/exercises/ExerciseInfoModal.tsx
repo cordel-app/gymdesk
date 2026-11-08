@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
 import {
   buildExerciseInfo, exerciseInfoFields, type ExerciseInfoFieldId, type ExerciseInfoRow,
 } from './exerciseInfoView';
@@ -15,10 +16,12 @@ import {
  * description, affected muscles and categories. Every field is optional.
  */
 const ICON_PATHS: Record<ExerciseInfoFieldId, React.ReactNode> = {
-  short_description: <><path d="M4 7h16" /><path d="M4 12h10" /></>,
-  description: <><path d="M4 6h16" /><path d="M4 11h16" /><path d="M4 16h16" /><path d="M4 21h10" /></>,
-  muscles: <><path d="M6.5 6.5v11" /><path d="M17.5 6.5v11" /><path d="M3 9v6" /><path d="M21 9v6" /><path d="M6.5 12h11" /></>,
-  categories: <><path d="M20 12l-8 8-9-9V4h7z" /><circle cx="7.5" cy="8.5" r="1" /></>,
+  // The Members App's icons (ExerciseInfo.tsx), so both apps read alike.
+  short_description: <path d="M4 7h16M4 12h10" />,
+  description: <path d="M4 6h16M4 10h16M4 14h16M4 18h10" />,
+  muscles: <path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11" />,
+  equipment: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />,
+  categories: <><path d="M20 12l-8 8-9-9V3h8z" /><circle cx="7.5" cy="7.5" r="1" /></>,
 };
 
 /** Monochrome line icon: strokes in `currentColor`, no colour of its own. */
@@ -35,10 +38,12 @@ function FieldIcon({ id }: { id: ExerciseInfoFieldId }) {
   );
 }
 
-export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, onClose }: {
+export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, gender, onClose }: {
   exerciseId: number;
   fallbackName?: string;
   fallbackImageUrl?: string | null;
+  /** The thumbnail that was clicked (#2306): the modal shows that gender's full-size image. */
+  gender?: 'male' | 'female' | null;
   onClose: () => void;
 }) {
   const t = useTranslations('exercise_info');
@@ -61,7 +66,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     return () => { cancelled = true; };
   }, [apiFetch, exerciseId]);
 
-  const info = row ? buildExerciseInfo(row) : null;
+  const info = row ? buildExerciseInfo(row, gender) : null;
   const name = info?.name ?? fallbackName ?? '';
   const imageUrl = info ? info.imageUrl : (fallbackImageUrl ?? null);
   const muscleLabel = (key: string) => (muscleKeys.includes(key)
@@ -82,7 +87,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     <div style={overlayStyle} onClick={onClose}>
       <div
         role="dialog" aria-modal="true" aria-label={name || t('title')}
-        style={{ ...modalStyle, width: 520, maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ ...modalStyle, width: 'min(520px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 style={{ margin: '0 0 12px' }}>{name || t('title')}</h2>
@@ -90,7 +95,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
         {imageUrl && !imageBroken ? (
           <img
             src={imageUrl} alt={name} onError={() => setImageBroken(true)}
-            style={{ display: 'block', width: '100%', maxHeight: 320, objectFit: 'contain', borderRadius: 8, background: '#fafafa' }}
+            style={{ display: 'block', width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', borderRadius: 8, background: '#fafafa' }}
           />
         ) : null}
 
@@ -110,6 +115,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
               </>
             ));
           }
+          if (id === 'equipment') return field(id, t('equipment'), (info.equipment ?? '').split(',').map((e) => e.trim()).filter(Boolean).map((e) => equipmentLabel(e, (k) => tCat(k as any), (v) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))).join(', '));
           return field(id, t('categories'), info.categories
             .map((c) => exerciseCategoryLabel(c, (k) => tCat(k as any), (v) => v.replace(/\b\w/g, (ch) => ch.toUpperCase())))
             .join(', '));

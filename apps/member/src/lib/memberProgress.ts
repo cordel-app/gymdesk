@@ -14,6 +14,16 @@ export interface ProgressSummary {
   exercise_name: string;
   image_url: string | null;
   image_thumbnail_url: string | null;
+  /** #2321 — the instructional video for the member's sex, else the only one; null when none. */
+  video_url?: string | null;
+  video_thumbnail_url?: string | null;
+  /** #2284 — the latest performed day (`YYYY-MM-DD`), and the muscle slugs the exercise works. */
+  last_logged_date: string | null;
+  muscles: string[];
+  short_description?: string | null;
+  description?: string | null;
+  category?: string | null;
+  equipment?: string | null;
   days_exercised: number;
   max_weight: number | null;
   result_kind: { id: number; slug: string } | null;
@@ -28,7 +38,7 @@ export interface ProgressDay {
   sets: ProgressSet[];
 }
 
-export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url'> {
+export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url' | 'video_url' | 'video_thumbnail_url' | 'last_logged_date' | 'muscles'> {
   days: ProgressDay[];
 }
 
@@ -74,4 +84,44 @@ export function daysNewestFirst(days: ProgressDay[]): ProgressDay[] {
 /** Cell value, `—` when the set recorded none. */
 export function formatSetValue(value: number | null, gym: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
   return value === null ? '—' : formatGymNumber(value, gym);
+}
+
+// #2284 — the My Progress filters. Pure: the list is the API's, this only narrows it.
+export type ProgressDateRange = 'all' | 'week' | 'month';
+export interface ProgressFilters { exerciseId: number | null; muscle: string | null; range: ProgressDateRange }
+export const NO_PROGRESS_FILTERS: ProgressFilters = { exerciseId: null, muscle: null, range: 'all' };
+const RANGE_DAYS: Record<Exclude<ProgressDateRange, 'all'>, number> = { week: 7, month: 30 };
+
+/** Today's calendar date (`YYYY-MM-DD`) in the gym's time zone. */
+export function gymToday(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+
+function dayNumber(date: string): number {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
+}
+
+export function filterProgress(
+  items: ProgressSummary[], f: ProgressFilters, today: string,
+): ProgressSummary[] {
+  return items.filter((i) => {
+    if (f.exerciseId !== null && i.exercise_id !== f.exerciseId) return false;
+    if (f.muscle !== null && !(i.muscles ?? []).includes(f.muscle)) return false;
+    if (f.range !== 'all') {
+      if (!i.last_logged_date) return false;
+      const age = dayNumber(today) - dayNumber(i.last_logged_date);
+      if (age < 0 || age >= RANGE_DAYS[f.range]) return false;
+    }
+    return true;
+  });
+}
+
+/** The muscles present in the member's own list, sorted by slug. */
+export function progressMuscles(items: ProgressSummary[]): string[] {
+  return [...new Set(items.flatMap((i) => i.muscles ?? []))].sort();
+}
+
+export function muscleLabel(slug: string): string {
+  const s = slug.replace(/[_-]+/g, ' ').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : slug;
 }

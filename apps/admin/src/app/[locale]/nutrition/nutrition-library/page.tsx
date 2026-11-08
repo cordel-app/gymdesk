@@ -30,9 +30,11 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 // in. #948 moved **Personal Goals** out of the strip to its own section
 // (`/{locale}/personal-goals`), which renders that very same component — a
 // Personal Goal does not depend on Nutrition and is a different entity (§8).
-import { DescriptionTranslationsField } from '@/components/nutritionLibrary/DescriptionTranslationsField';
+import { GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { NutritionFieldTranslations, type NutritionTextField } from '@/components/nutritionLibrary/NutritionFieldTranslations';
 import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
+import { FoodImageModal, type FoodImageTarget } from '@/components/nutritionLibrary/FoodImageModal';
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
@@ -75,6 +77,7 @@ export default function NutritionLibraryPage() {
   const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [imageTarget, setImageTarget] = useState<FoodImageTarget | null>(null);
   const [total, setTotal] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
@@ -94,6 +97,11 @@ export default function NutritionLibraryPage() {
   const [tab, setTab] = useState<LibraryTabId>('foods');
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // #2336: the Description translations modal, for a form being edited or a read-only row.
+  const [langModal, setLangModal] = useState<
+    { field: NutritionTextField; form: EditForm; setForm: (f: EditForm) => void; item?: undefined } |
+    { field: NutritionTextField; item: LibraryItem; form?: undefined; setForm?: undefined } | null
+  >(null);
 
   // `⋮ → Details` — the read-only modal (#799 §9). It renders the list row it is
   // given, so nothing is fetched and nothing can disagree with the expanded card.
@@ -354,25 +362,17 @@ export default function NutritionLibraryPage() {
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('nutrition_library.label_description')}</label>
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder={t('nutrition_library.description_placeholder')}
-            rows={3}
-            style={{ ...inlineInputStyle, resize: 'vertical' }}
-          />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder={t('nutrition_library.description_placeholder')}
+              rows={3}
+              style={{ ...inlineInputStyle, resize: 'vertical', flex: 1 }}
+            />
+            <GlobeButton label={t('nutrition_library.translations_open', { field: t('nutrition_library.label_description') })} onClick={() => setLangModal({ field: 'description', form, setForm })} />
+          </div>
         </div>
-        <DescriptionTranslationsField
-          locales={translatableLocales}
-          values={form.descriptionTranslations}
-          onChange={(next) => setForm({ ...form, descriptionTranslations: next })}
-          localeLabel={localeLabel}
-          label={t('nutrition_library.label_description_translations')}
-          hint={t('nutrition_library.description_translations_hint')}
-          placeholderFor={(language) => t('nutrition_library.description_in', { language })}
-          labelStyle={inlineLabelStyle}
-          inputStyle={inlineInputStyle}
-        />
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('nutrition_library.label_categories')} *</label>
           {renderCategoryCheckboxes(form.categoryIds, (ids) => setForm({ ...form, categoryIds: ids }))}
@@ -395,7 +395,9 @@ export default function NutritionLibraryPage() {
   const columns: Column<LibraryItem>[] = [
     { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
+          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at}
+            label={item.display_name ?? item.name}
+            onClick={() => setImageTarget({ name: item.display_name ?? item.name, imageUrl: item.image_url, version: item.modified_at ?? item.created_at, description: (item as { display_description?: string | null }).display_description ?? item.description })} />
           <strong>{item.display_name ?? item.name}</strong>
           {item.gym_id === null && <span style={listNameBadgeStyle}>{t('nutrition_library.system_badge')}</span>}
         </span>
@@ -444,6 +446,7 @@ export default function NutritionLibraryPage() {
 
   return (
     <div>
+      <FoodImageModal target={imageTarget} onClose={() => setImageTarget(null)} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_library.title')}</h1>
         {/* The Foods tab's own `+ Add` (§7). The goals tab renders its own, which
@@ -525,6 +528,8 @@ export default function NutritionLibraryPage() {
               item={item}
               allCategories={allCategories}
               allQualities={allQualities}
+              nameTranslatable={false}
+              onOpenTranslations={(field) => setLangModal({ field, item })}
               extraRows={
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #888)' }}>
@@ -538,6 +543,7 @@ export default function NutritionLibraryPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
+        clickRowToExpand
       />
 
       {detailItem && (
@@ -554,6 +560,19 @@ export default function NutritionLibraryPage() {
       />
       </>
       )}
+      <NutritionFieldTranslations
+        field={langModal?.field ?? null}
+        baseValue={langModal ? (langModal.item ? langModal.item.description ?? '' : langModal.form!.description) : ''}
+        translations={langModal ? (langModal.item ? langModal.item.description_translations ?? {} : langModal.form!.descriptionTranslations) : {}}
+        locales={translatableLocales}
+        localeLabel={localeLabel}
+        readOnly={langModal?.item !== undefined}
+        onClose={() => setLangModal(null)}
+        onSave={(base, tr) => {
+          if (langModal?.form) langModal.setForm!({ ...langModal.form, description: base, descriptionTranslations: tr });
+          setLangModal(null);
+        }}
+      />
     </div>
   );
 }

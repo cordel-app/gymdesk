@@ -28,6 +28,24 @@ export function parseMaxCapacity(value: unknown): { value: number | null } | { e
   return { value: n };
 }
 
+/**
+ * #2293: `min_participants`. Same shape as `parseMaxCapacity`: `undefined` keeps,
+ * `null`/`''` clears (no minimum), a positive integer sets, anything else is a 400.
+ */
+export function parseMinParticipants(value: unknown): { value: number | null } | { error: string } {
+  if (value === null || value === '') return { value: null };
+  const n = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  if (!Number.isInteger(n) || n <= 0) return { error: 'min_participants must be a positive integer' };
+  if (n > BASE_PS_MAX_CAPACITY) return { error: `min_participants must be at most ${BASE_PS_MAX_CAPACITY}` };
+  return { value: n };
+}
+
+/** #2293: the minimum may not exceed a limited capacity (an unlimited one, `null`, has no ceiling). */
+export function minParticipantsError(min: number | null, capacity: number | null): string | null {
+  if (min != null && capacity != null && min > capacity) return 'min_participants must not exceed max_capacity';
+  return null;
+}
+
 export function parseBaseName(value: unknown): { value: string } | { error: string } {
   if (typeof value !== 'string' || !value.trim()) return { error: 'name is required' };
   const name = value.trim();

@@ -1,5 +1,6 @@
 'use client';
 
+import { memberGenderLabelKey } from '@/lib/memberGender';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -52,7 +53,7 @@ export default function ProfilePage() {
   const {
     isLinked, loading: appLoading,
     gyms, gymId, switchGym,
-    centers, activeCenterId, setActiveCenterId,
+    centers, activeCenterId,
     isSuperadmin,
     member, updateMember,
   } = useApp();
@@ -165,7 +166,7 @@ export default function ProfilePage() {
             fields are omitted rather than shown as placeholders. */}
         <Field label={t('profile.phone')} value={profile.phone || t('profile.not_set')} />
         {profile.date_of_birth && <Field label={t('profile.date_of_birth')} value={formatGymDateOnly(profile.date_of_birth, gymFmt)} />}
-        {profile.gender && <Field label={t('profile.gender')} value={profile.gender} />}
+        {profile.gender && <Field label={t('profile.gender')} value={memberGenderLabelKey(profile.gender) ? t(memberGenderLabelKey(profile.gender) as string) : profile.gender} />}
         {profile.address && <Field label={t('profile.address')} value={profile.address} />}
         {profile.emergency_contact && <Field label={t('profile.emergency_contact')} value={profile.emergency_contact} />}
         {profile.nif_nie_passport && <Field label={t('profile.document_id')} value={profile.nif_nie_passport} />}
@@ -190,14 +191,9 @@ export default function ProfilePage() {
         <div style={styles.editRow}>
           <p style={styles.label}>{t('profile.default_center')}</p>
           {centers.length > 0 ? (
-            <select
-              value={activeCenterId ?? ''}
-              onChange={(e) => setActiveCenterId(Number(e.target.value))}
-              style={styles.select}
-              aria-label={t('common.center_switcher_label')}
-            >
-              {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <p style={styles.value}>
+              {(centers.find((c) => c.id === activeCenterId) ?? centers[0]).name}
+            </p>
           ) : (
             <p style={styles.value}><span style={styles.empty}>{t('profile.no_center')}</span></p>
           )}

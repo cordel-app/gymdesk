@@ -36,7 +36,7 @@ async function activeVersion(owner: number, planId: number, fee: number): Promis
     const d = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: planId, startsAt: TODAY, actor });
     if (d.kind !== 'created') throw new Error(d.kind);
     await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: fee, startsAt: TODAY });
-    await addCoverage(tx, { gymId, rootProductSetId: Number(d.productSet.root_product_set_id), memberId: owner, isOwner: true });
+    await addCoverage(tx, { gymId, productSetId: d.productSet.id, memberId: owner, isOwner: true });
     const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;

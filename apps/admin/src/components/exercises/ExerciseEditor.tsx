@@ -1,15 +1,19 @@
 'use client';
 
+import { exerciseFacetValueLabel } from '@/lib/exerciseFilters';
+import { equipmentLabel } from '@/lib/exerciseEquipment';
+import { sortMuscleKeys, MUSCLE_COLUMNS_STYLE } from './exerciseForm';
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
 // #968: the form's own actions wear the platform's chrome — the left-aligned
 // inline row, the themed primary and the neutral secondary — rather than a
 // right-aligned pair with a grey Cancel of this form's own.
 import { formErrorStyle, inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { FieldTranslationsModal, GlobeButton, translationValues, type TranslatedField } from './FieldTranslationsModal';
 import { localeLabel } from '@/lib/localeLabels';
 import {
   EXERCISE_STATUSES,
@@ -93,6 +97,8 @@ export interface ExerciseEditorProps {
   muscleKeys: string[];
   /** A muscle key's label — `useMuscleLabel()`. */
   muscleLabel: (key: string) => string;
+  /** #2362: the Equipment values already in the catalogue (the facets read). */
+  equipmentOptions?: string[];
   /** The result-type catalogue, as the context's lookup endpoint returned it. */
   resultTypes: ResultTypeRow[];
   /** The Media section's controls — `<ExerciseGenderMedia>`, built by the page. */
@@ -106,7 +112,7 @@ export interface ExerciseEditorProps {
 }
 
 export function ExerciseEditor({
-  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, resultTypes, media, nameRef, saveLabel, onCancel, onSave,
+  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, equipmentOptions = [], resultTypes, media, nameRef, saveLabel, onCancel, onSave,
 }: ExerciseEditorProps) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
@@ -114,80 +120,86 @@ export function ExerciseEditor({
   const { form, setForm } = state;
   const id = (field: string) => `${idPrefix}-${field}`;
   // The static catalog plus any legacy key already on the exercise being edited.
-  const pickerKeys = [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
+  const pickerKeys = sortMuscleKeys(
+    [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))],
+    muscleLabel,
+  );
+  const equipmentText = (v: string) => equipmentLabel(v, (key) => t(key as any), exerciseFacetValueLabel);
+  const equipmentChoices = Array.from(new Set(equipmentOptions)).sort((a, b) => equipmentText(a).localeCompare(equipmentText(b)));
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
   // The base locale is the language `exercises.name` itself is written in, so the
   // field that *is* the base name carries its label; the others are rows in
   // `translations`. One source for both halves, hence one prop.
   const translatableLocales = nameLocales?.translatable ?? [];
   const localeName = (loc: string) => localeLabel(loc, (key) => tCommon(key as any));
+  const [openField, setOpenField] = React.useState<TranslatedField | null>(null);
+  // #2385: show/edit the description fields in the selected app language (base value as the fallback).
+  const viewLocale = useLocale();
+  const viewIsTranslation = translatableLocales.includes(viewLocale);
+  const descValue = (f: 'description' | 'short_description') =>
+    (viewIsTranslation ? form.description_translations[viewLocale]?.[f] || form[f] : form[f]) ?? '';
+  const setDescValue = (f: 'description' | 'short_description', v: string) => {
+    if (viewIsTranslation) {
+      setForm({ ...form, description_translations: { ...form.description_translations, [viewLocale]: { ...(form.description_translations[viewLocale] ?? {}), [f]: v } } });
+    } else setForm({ ...form, [f]: v });
+  };
+  const modalLocales = nameLocales ? [nameLocales.base, ...translatableLocales].map((c) => ({ code: c, label: localeName(c) })) : [];
 
   return (
     <>
       <p style={sectionLabelSt}>{t('section_general')}</p>
       <div style={exerciseFieldGridStyle}>
-        {/* #967 §3: NAME is one input per supported language. The base locale's
-            is the exercise's own `name` — required, uniqueness-checked, and the
-            value every other locale falls back to — and each translatable
-            locale's is optional, so an exercise with one name stays legal (§5).
-            The labels come from the API's locale list, never from a language
-            list declared here. */}
+        {/* #2300: only the base-locale value is shown; the globe opens that field's
+            translations in every supported language. */}
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('name')} style={inlineLabelSt}>
-            {translatableLocales.length > 0 && nameLocales
-              ? `${t('label_name')} — ${localeName(nameLocales.base)} *`
-              : `${t('label_name')} *`}
-          </label>
-          <input id={id('name')} ref={nameRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inlineInputSt} />
-        </div>
-        {translatableLocales.map((loc) => (
-          <div key={loc} style={exerciseFieldWideStyle}>
-            <label htmlFor={id(`name-${loc}`)} style={inlineLabelSt}>
-              {`${t('label_name')} — ${localeName(loc)}`}
-            </label>
-            <input
-              id={id(`name-${loc}`)}
-              value={form.translations[loc] ?? ''}
-              onChange={(e) => setForm({ ...form, translations: { ...form.translations, [loc]: e.target.value } })}
-              style={inlineInputSt}
-            />
+          <label htmlFor={id('name')} style={inlineLabelSt}>{`${t('label_name')} *`}</label>
+          <div style={globeRowSt}>
+            <input id={id('name')} ref={nameRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ ...inlineInputSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_name') })} onClick={() => setOpenField('name')} />
           </div>
-        ))}
-        {translatableLocales.length > 0 && (
-          <p style={{ ...exerciseFieldWideStyle, margin: '-6px 0 12px', fontSize: 12, color: '#888' }}>
-            {t('name_translations_hint')}
-          </p>
-        )}
-        <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
-          <textarea id={id('description')} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={descriptionAreaSt} />
         </div>
         <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
-          <input id={id('short_description')} maxLength={300} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} style={inlineInputSt} />
+          <div style={globeRowSt}>
+            <input id={id('short_description')} maxLength={300} value={descValue('short_description')} onChange={(e) => setDescValue('short_description', e.target.value)} style={{ ...inlineInputSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_short_description') })} onClick={() => setOpenField('short_description')} />
+          </div>
         </div>
-        {/* #1419: the descriptions in every other supported language. Blank = falls back to the base one. */}
-        {translatableLocales.map((loc) => {
-          const entry = form.description_translations[loc] ?? {};
-          const setEntry = (patch: Record<string, string>) =>
-            setForm({ ...form, description_translations: { ...form.description_translations, [loc]: { ...entry, ...patch } } });
-          return (
-            <React.Fragment key={`desc-${loc}`}>
-              <div style={exerciseFieldWideStyle}>
-                <label htmlFor={id(`short_description-${loc}`)} style={inlineLabelSt}>
-                  {`${t('label_short_description')} — ${localeName(loc)}`}
-                </label>
-                <input id={id(`short_description-${loc}`)} maxLength={300} value={entry.short_description ?? ''} onChange={(e) => setEntry({ short_description: e.target.value })} style={inlineInputSt} />
-              </div>
-              <div style={exerciseFieldWideStyle}>
-                <label htmlFor={id(`description-${loc}`)} style={inlineLabelSt}>
-                  {`${t('label_description')} — ${localeName(loc)}`}
-                </label>
-                <textarea id={id(`description-${loc}`)} rows={4} value={entry.description ?? ''} onChange={(e) => setEntry({ description: e.target.value })} style={descriptionAreaSt} />
-              </div>
-            </React.Fragment>
-          );
-        })}
+        <div style={exerciseFieldWideStyle}>
+          <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
+          <div style={globeRowSt}>
+            <textarea id={id('description')} rows={4} value={descValue('description')} onChange={(e) => setDescValue('description', e.target.value)} style={{ ...descriptionAreaSt, flex: 1 }} />
+            <GlobeButton label={t('translations_open', { field: t('label_description') })} onClick={() => setOpenField('description')} />
+          </div>
+        </div>
+        <FieldTranslationsModal
+          open={openField !== null}
+          title={openField ? t('translations_title', { field: t(openField === 'name' ? 'label_name' : openField === 'description' ? 'label_description' : 'label_short_description') }) : ''}
+          locales={modalLocales}
+          values={openField && nameLocales ? translationValues(openField, nameLocales.base, form as any) : {}}
+          multiline={openField === 'description'}
+          saveLabel={t('save')}
+          cancelLabel={t('cancel')}
+          closeLabel={t('translations_close')}
+          emptyLabel="—"
+          onClose={() => setOpenField(null)}
+          onSave={(vals) => {
+            if (!openField || !nameLocales) return;
+            const { base } = nameLocales;
+            const next = { ...form, translations: { ...form.translations }, description_translations: { ...form.description_translations } };
+            if (openField === 'name') {
+              next.name = vals[base] ?? '';
+              for (const loc of translatableLocales) next.translations[loc] = vals[loc] ?? '';
+            } else {
+              next[openField] = vals[base] ?? '';
+              for (const loc of translatableLocales) {
+                next.description_translations[loc] = { ...(next.description_translations[loc] ?? {}), [openField]: vals[loc] ?? '' };
+              }
+            }
+            setForm(next);
+            setOpenField(null);
+          }}
+        />
         <div>
           <label htmlFor={id('category')} style={inlineLabelSt}>{t('label_category')}</label>
           <select id={id('category')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={inlineSelectSt}>
@@ -195,6 +207,15 @@ export function ExerciseEditor({
             {/* A stored legacy value outside the supported set is shown, disabled, so it still reads correctly (#980's pattern). */}
             {form.category && !isExerciseCategory(form.category) && <option value={form.category} disabled>{form.category}</option>}
             {EXERCISE_CATEGORIES.map((c) => <option key={c} value={c}>{t(exerciseCategoryLabelKey(c) as any)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={id('equipment')} style={inlineLabelSt}>{t('label_equipment')}</label>
+          <select id={id('equipment')} value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} style={inlineSelectSt}>
+            <option value="">{t('equipment_none')}</option>
+            {/* A stored value no longer in the catalogue's facets is shown, disabled, so it still reads correctly. */}
+            {form.equipment && !equipmentChoices.includes(form.equipment) && <option value={form.equipment} disabled>{equipmentText(form.equipment)}</option>}
+            {equipmentChoices.map((v) => <option key={v} value={v}>{equipmentText(v)}</option>)}
           </select>
         </div>
         <div>
@@ -243,18 +264,18 @@ export function ExerciseEditor({
 
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_muscles')}</p>
-        <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ maxHeight: 260, overflowY: 'auto', ...MUSCLE_COLUMNS_STYLE }}>
           {pickerKeys.map((key) => {
             const role = state.muscles.get(key);
             return (
-              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <div key={key} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 13, breakInside: 'avoid', marginBottom: 6 }}>
                 <input type="checkbox" checked={!!role}
                   onChange={(ev) => {
                     const next = new Map(state.muscles);
                     if (ev.target.checked) next.set(key, 'principal'); else next.delete(key);
                     state.setMuscles(next);
                   }} />
-                <span style={{ flex: 1 }}>{muscleLabel(key)}</span>
+                <span>{muscleLabel(key)}</span>
                 {role && (
                   <select value={role} onChange={(ev) => { const next = new Map(state.muscles); next.set(key, ev.target.value as MuscleRole); state.setMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
                     <option value="principal">{t('role_principal')}</option>
@@ -323,5 +344,6 @@ const inlineLabelSt = exerciseFieldLabelStyle;
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const descriptionAreaSt: React.CSSProperties = { ...inlineInputSt, fontFamily: 'inherit', resize: 'vertical', minHeight: 96, overflowY: 'auto' };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
+const globeRowSt: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 6 };
 const subSectionSt = exerciseSubSectionStyle;
 const sectionLabelSt = exerciseSectionLabelStyle;

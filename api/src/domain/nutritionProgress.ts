@@ -13,7 +13,9 @@ export const ALL_DAYS_WEEKDAY = 7;
 
 /** Inclusive effective range of the assignment a meal or requirement belongs to (#1957); null = unbounded. */
 export interface DateWindow { from?: string | null; to?: string | null }
-export interface PlanMeal extends DateWindow { id: number; weekday: number }
+export interface PlanMeal extends DateWindow { id: number; weekday: number; plan?: number }
+/** An assignment in force; on a date with several, only the newest (`order` highest) is the one My Nutrition shows (#2338). */
+export interface PlanWindow extends DateWindow { id: number; order: number }
 export interface MealCompletion { mealId: number; date: string }
 export interface ProgressCounts { completed: number; total: number; percent: number }
 export type NutritionDayStatus = 'completed' | 'partial' | 'pending' | 'scheduled' | 'rest';
@@ -24,6 +26,8 @@ export interface PlanRequirements {
   goalIds: number[]; restrictionIds: number[];
   /** Effective range per `goal|id` / `restriction|id` (#1957); absent = every date. */
   windows?: Record<string, DateWindow>;
+  /** Assignments in force, and which one each `goal|id` / `restriction|id` belongs to (#2338). Absent = no narrowing. */
+  plans?: PlanWindow[]; planOf?: Record<string, number>;
 }
 export interface RequirementCompletion { kind: RequirementKind; itemId: number; date: string; level: RequirementLevel }
 
@@ -56,7 +60,7 @@ export function inWindow(w: DateWindow | undefined, date: string): boolean {
 
 /** A meal is scheduled on a date when its assignment covers it and its day is that weekday or "all days". */
 export function isMealScheduledOn(meal: PlanMeal, date: string): boolean {
-  return inWindow(meal, date) && meal.weekday === ALL_DAYS_WEEKDAY || meal.weekday === weekdayOf(date);
+  return inWindow(meal, date) && (meal.weekday === ALL_DAYS_WEEKDAY || meal.weekday === weekdayOf(date));
 }
 
 /** Only today and the past can be marked done. */
@@ -79,6 +83,14 @@ export function nutritionProgress(
   requirements: PlanRequirements = { goalIds: [], restrictionIds: [] },
   requirementLogs: RequirementCompletion[] = [],
 ): NutritionProgress {
+  // #2338: the page shows one plan per date (the newest in force), so only that plan counts.
+  const planWins = (plan: number | undefined, date: string): boolean => {
+    const plans = requirements.plans;
+    if (!plans || plan === undefined) return true;
+    let win: PlanWindow | undefined;
+    for (const p of plans) if (inWindow(p, date) && (!win || p.order > win.order)) win = p;
+    return !win || win.id === plan;
+  };
   const done = new Set(completions.map((c) => `${c.mealId}|${String(c.date).slice(0, 10)}`));
   const isDone = (m: PlanMeal, date: string) => done.has(`${m.id}|${date}`);
   const range = (from: string, to: string): ProgressCounts => {
@@ -86,7 +98,7 @@ export function nutritionProgress(
     for (let d = DateTime.fromISO(from, { zone: 'UTC' }); (d.toISODate() as string) <= to; d = d.plus({ days: 1 })) {
       const date = d.toISODate() as string;
       for (const m of meals) {
-        if (!isMealScheduledOn(m, date)) continue;
+        if (!isMealScheduledOn(m, date) || !planWins(m.plan, date)) continue;
         t++;
         if (isDone(m, date)) c++;
       }
@@ -98,14 +110,14 @@ export function nutritionProgress(
   const reqLevel = new Map(requirementLogs.map((l) => [`${l.kind}|${l.itemId}|${String(l.date).slice(0, 10)}`, l.level]));
   /** Weighted 0..100 score of a date, or null when nothing at all applies to it. */
   const dayScore = (date: string): number | null => {
-    const scheduled = meals.filter((m) => isMealScheduledOn(m, date));
+    const scheduled = meals.filter((m) => isMealScheduledOn(m, date) && planWins(m.plan, date));
     let earned = 0, possible = 0;
     if (scheduled.length > 0) {
       possible += WEIGHT_MEALS;
       earned += WEIGHT_MEALS * (scheduled.filter((m) => isDone(m, date)).length / scheduled.length);
     }
-    const goalIds = requirements.goalIds.filter((id) => inWindow(requirements.windows?.[`goal|${id}`], date));
-    const restrictionIds = requirements.restrictionIds.filter((id) => inWindow(requirements.windows?.[`restriction|${id}`], date));
+    const goalIds = requirements.goalIds.filter((id) => inWindow(requirements.windows?.[`goal|${id}`], date) && planWins(requirements.planOf?.[`goal|${id}`], date));
+    const restrictionIds = requirements.restrictionIds.filter((id) => inWindow(requirements.windows?.[`restriction|${id}`], date) && planWins(requirements.planOf?.[`restriction|${id}`], date));
     if (goalIds.length > 0) {
       possible += WEIGHT_GOALS;
       const done = goalIds.filter((id) => reqLevel.get(`goal|${id}|${date}`) === 'done').length;

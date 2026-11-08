@@ -43,6 +43,11 @@ interface BlockExercise {
   exercise_video_thumbnail_url?: string | null;
   /** #1527: the exercise's full Description, localized by the API. */
   exercise_description?: string | null;
+  exercise_short_description?: string | null;
+  exercise_muscles?: string[] | null;
+  exercise_primary_muscles?: string[] | null;
+  exercise_category?: string | null;
+  exercise_equipment?: string | null;
 }
 
 // #1009: a block carries no `result_type`. Migration 074 (#154) moved the result

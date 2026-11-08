@@ -7,7 +7,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole, requireModuleWrite, requireFeatureWrite } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { recordNotifications } from '../infra/notifications';
-import { parseCommunicationInput, MEMBER_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
+import { parseCommunicationInput, senderFirstName, MEMBER_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { deriveAccessRights } from '../domain/memberAccessRights';
@@ -59,6 +59,10 @@ async function resolveMemberCenters(
   centerIds: unknown,
   defaultCenterId: unknown,
 ): Promise<{ ids: number[]; defaultId: number } | { error: string }> {
+  // #2381: the form sends only the Default Center; it is then the one assignment.
+  if (!(Array.isArray(centerIds) && centerIds.length > 0) && Number(defaultCenterId)) {
+    centerIds = [Number(defaultCenterId)];
+  }
   if (Array.isArray(centerIds) && centerIds.length > 0) {
     const ids = centerIds.map((id) => Number(id));
     const defaultId = Number(defaultCenterId);
@@ -122,7 +126,7 @@ membersRouter.get('/', async (req, res) => {
   const limitClause = q ? 'LIMIT 20' : '';
   const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name,
+    `SELECT m.*,
             CASE
               WHEN m.clerk_user_id IS NOT NULL THEN 'active'
               WHEN m.invitation_id IS NOT NULL THEN 'invited'
@@ -144,7 +148,6 @@ membersRouter.get('/', async (req, res) => {
             -- implementation, domain/memberPaymentStatus.ts.
             ${memberPaymentStatusSql('m')} AS payment_status
      FROM members m
-     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
      WHERE ${where.join(' AND ')}
      ${havingClause}
@@ -299,21 +302,40 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
 
-  const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
+  let { invited_at } = rows[0];
+  const { clerk_user_id, invitation_id, enrolled_at } = rows[0];
   // #2183: an unlinked member whose email already has a Clerk account (the invite is
   // refused with "account already exists") read "None". Report the fact, read-only;
   // linking stays /me/link's job. A lookup failure reports nothing.
+  // #2183 follow-up: Clerk may also hold a pending invitation this row never stored
+  // (the invite was refused with "invitation or account already exists"). Report it
+  // independently of the account, so Clerk Invitation never reads "None" beside it.
   let accountExists = false;
-  if (!clerk_user_id && !invitation_id) {
+  let pendingInvitation = !!invitation_id;
+  if (!clerk_user_id) {
     try {
       const { rows: er } = await db.query<any>(
         'SELECT email FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
       const email = er[0]?.email;
       if (email) {
-        const found = resolveInviteConflict(email, [], listItems(await clerkClient.users.getUserList({ emailAddress: [email] })));
-        accountExists = found.kind === 'account_exists';
+        const users = listItems<any>(await clerkClient.users.getUserList({ emailAddress: [email] }));
+        accountExists = resolveInviteConflict(email, [], users).kind === 'account_exists';
+        if (!pendingInvitation) {
+          const found = resolveInviteConflict(email, await listPendingInvitations(email), []);
+          if (found.kind === 'pending_invitation') {
+            pendingInvitation = true;
+            await db.query(
+              `UPDATE members SET invitation_id = ?, invited_at = COALESCE(invited_at, UTC_TIMESTAMP()),
+                      modified_at = UTC_TIMESTAMP(), modified_by = ?
+                WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invitation_id IS NULL`,
+              [found.invitationId, 'System', req.params.id, gymId],
+            );
+            const { rows: ir } = await db.query<any>('SELECT invited_at FROM members WHERE id = ?', [req.params.id]);
+            invited_at = ir[0]?.invited_at ?? invited_at;
+          }
+        }
       }
-    } catch { /* leave false */ }
+    } catch { /* leave as stored */ }
   }
   // #1234: the dates are history, reported as stored and independent of the status.
   // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
@@ -331,13 +353,13 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
     has_payment_token: !!tokenRows[0],
     invited_at: invited_at ?? null,
     enrolled_at: enrolled_at ?? null,
-    has_pending_invitation: !!invitation_id,
+    has_pending_invitation: pendingInvitation,
     enrolled: !!clerk_user_id,
     account_exists: accountExists,
   };
 
   if (!clerk_user_id) {
-    return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null, ...dates });
+    return res.json({ status: pendingInvitation ? 'invited' : 'not_enrolled', userId: null, ...dates });
   }
 
   try {
@@ -353,7 +375,7 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const tenantCtx = getTenantContext(req);
   const { gymId } = tenantCtx;
-  const { name, email, phone, fare_id, center_ids, default_center_id, nif_nie_passport } = req.body;
+  const { name, email, phone, center_ids, default_center_id, nif_nie_passport } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
 
   const centers = await resolveMemberCenters(gymId, center_ids, default_center_id);
@@ -368,8 +390,8 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [name, email, phone ?? null, fare_id ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
+        'INSERT INTO members (name, email, phone, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?)',
+        [name, email, phone ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
       );
       for (const centerId of centers.ids) {
         await tx.query(
@@ -596,7 +618,11 @@ membersRouter.post(
         type: 'staff_message',
         entityType: null,
         entityId: null,
-        payload: { title: parsed.title, message: parsed.message },
+        payload: {
+          title: parsed.title,
+          message: parsed.message,
+          sender_first_name: senderFirstName(getTenantContext(req).actorName),
+        },
       }]);
 
       recordAudit(req, {

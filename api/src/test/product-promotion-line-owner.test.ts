@@ -47,8 +47,7 @@ async function buy(memberId: number, productId: number, promotionIds: number[]) 
 async function activate(setId: number, owner: number, first: boolean) {
   await db.transaction(async (tx) => {
     if (first) {
-      const { rows } = await tx.query<any>('SELECT root_product_set_id FROM product_sets WHERE id = ?', [setId]);
-      await addCoverage(tx, { gymId, rootProductSetId: Number(rows[0].root_product_set_id), memberId: owner, isOwner: true });
+      await addCoverage(tx, { gymId, productSetId: setId, memberId: owner, isOwner: true });
     }
     const out = await activateWithEvents(tx, { gymId, productSetId: setId, today: TODAY });
     if (out.kind !== 'ok') throw new Error(out.kind);

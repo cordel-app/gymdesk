@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -166,9 +167,9 @@ export async function bookMemberOnSession(
       }
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by)
-         VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
-        [gymId, session[0].center_id, memberId, sessionId, position, actor],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by, professional_service_id)
+         VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?, ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, position, actor, chosenServiceId],
       );
       return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
     }
@@ -206,9 +207,9 @@ export async function bookMemberOnSession(
 
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
-      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by)
-       VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
-      [gymId, session[0].center_id, memberId, sessionId, position, actor],
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by, professional_service_id)
+       VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?, ?)`,
+      [gymId, session[0].center_id, memberId, sessionId, position, actor, chosenServiceId],
     );
     return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
   };
@@ -224,7 +225,7 @@ export async function cancelBooking(
 ) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
-      `SELECT ceb.id, ceb.member_id, ceb.calendar_event_id, ceb.status, ceb.user_class_package_id,
+      `SELECT ceb.id, ceb.member_id, ceb.calendar_event_id, ceb.status, ceb.user_class_package_id, ceb.professional_service_id,
               ce.starts_at AS session_starts_at,
               TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ce.starts_at) AS seconds_until_start
        FROM calendar_event_bookings ceb
@@ -270,12 +271,30 @@ export async function cancelBooking(
       return { promoted: null, promotedMemberId: null, previousStatus: b.status as string, memberId: Number(b.member_id) };
     }
 
-    const { rows: waitRows } = await tx.query(
-      `SELECT id, member_id, waitlist_position FROM calendar_event_bookings
+    // #1984 stage 2b-4: a waiting-list place belongs to the Professional Service
+    // the member chose, so a freed place goes to the first entry that can use
+    // it: one with no service (the event's own capacity) or whose service has
+    // room now. A full service's queue is skipped, never emptied.
+    const { rows: queue } = await tx.query(
+      `SELECT id, member_id, waitlist_position, professional_service_id FROM calendar_event_bookings
        WHERE calendar_event_id = ? AND status = 'waitlisted'
-       ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
+       ORDER BY waitlist_position ASC FOR UPDATE`,
       [b.calendar_event_id],
     );
+    const { rows: capRows } = await tx.query(
+      `SELECT COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+         FROM calendar_events ce JOIN activity_types at ON at.id = ce.activity_type_id WHERE ce.id = ?`,
+      [b.calendar_event_id],
+    );
+    const waitRows: any[] = [];
+    for (const w of queue as any[]) {
+      if (w.professional_service_id != null) {
+        const svc = await loadServiceOccupancy(tx, gymId, Number(b.calendar_event_id), Number(w.professional_service_id), Number(capRows[0].effective_capacity));
+        if (isServiceFull(svc.occupied, svc.capacity)) continue;
+      }
+      waitRows.push(w);
+      break;
+    }
     if (waitRows.length === 0) {
       return { promoted: null, promotedMemberId: null, previousStatus: b.status as string, memberId: Number(b.member_id) };
     }
@@ -319,12 +338,66 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
   );
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
+  // #1984 stage 2b-3: a replacement attendee stands in for an absent booked
+  // participant of the same occurrence. It joins the original's group, so the
+  // one session is spent once and charged to the original booker.
+  const rawReplaces = req.body.replaces_booking_id;
+  const replacesId = rawReplaces == null || rawReplaces === '' ? null : Number(rawReplaces);
+  if (replacesId !== null && (!Number.isInteger(replacesId) || replacesId <= 0)) {
+    return res.status(400).json({ error: 'replaces_booking_id must be a positive integer' });
+  }
+  if (replacesId !== null && (waitlist || force)) {
+    return res.status(400).json({ error: 'A replacement attendee cannot be waitlisted or forced' });
+  }
+
   try {
-    const result = await bookMemberOnSession(
-      gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist),
-      undefined, Boolean(override_eligibility), resolveRequestActor(getTenantContext(req)),
-      chosenService,
-    );
+    const actor = resolveRequestActor(getTenantContext(req));
+    const result = await db.transaction(async (tx) => {
+      let original: any = null;
+      if (replacesId !== null) {
+        const { rows: orig } = await tx.query(
+          `SELECT id, member_id, calendar_event_id, status, attendance_status, booking_group_id, booked_by_member_id
+             FROM calendar_event_bookings WHERE id = ? AND gym_id = ? FOR UPDATE`,
+          [replacesId, gymId],
+        );
+        original = orig[0];
+        if (!original) throw Object.assign(new Error('Booking to replace not found'), { status: 404 });
+        if (Number(original.calendar_event_id) !== Number(class_session_id)) {
+          throw Object.assign(new Error('The booking to replace belongs to another session'), { status: 400 });
+        }
+        if (original.status !== 'booked' || original.attendance_status !== 'absent') {
+          throw Object.assign(new Error('Only an absent, booked participant can be replaced'), { status: 409, code: 'replacement_requires_absent' });
+        }
+        if (Number(original.member_id) === Number(member_id)) {
+          throw Object.assign(new Error('A member cannot replace themselves'), { status: 400 });
+        }
+        const { rows: dup } = await tx.query(
+          'SELECT id FROM calendar_event_bookings WHERE gym_id = ? AND replaces_booking_id = ? AND status <> ? LIMIT 1',
+          [gymId, replacesId, 'cancelled'],
+        );
+        if (dup.length > 0) throw Object.assign(new Error('This booking already has a replacement'), { status: 409, code: 'already_replaced' });
+      }
+      const r = await bookMemberOnSession(
+        // A replacement takes the seat of the absent participant, so capacity is not re-checked.
+        gymId, member_id, class_session_id, Boolean(force) || original != null, Boolean(waitlist),
+        tx, Boolean(override_eligibility), actor, chosenService,
+      );
+      if (original) {
+        const groupId: string = original.booking_group_id ?? crypto.randomUUID();
+        const bookedBy = original.booked_by_member_id ?? original.member_id;
+        if (!original.booking_group_id) {
+          await tx.query(
+            'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+            [groupId, bookedBy, actor, original.id, gymId],
+          );
+        }
+        await tx.query(
+          'UPDATE calendar_event_bookings SET replaces_booking_id = ?, booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+          [original.id, groupId, bookedBy, actor, r.id, gymId],
+        );
+      }
+      return r;
+    });
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
     // the Members App). This is the staff-side half, which raised nothing at all

@@ -21,6 +21,8 @@ export interface MuscleImageCandidate {
   name: string;
   image_url: string | null;
   image_thumbnail_url: string | null;
+  image_male_url?: string | null;
+  image_female_url?: string | null;
   image_male_thumbnail_url?: string | null;
   image_female_thumbnail_url?: string | null;
 }
@@ -31,6 +33,9 @@ export interface EffectiveImage {
   /** #1704: the thumbnail shown in the male / female position, each falling back on its own to the primary muscle's image of that sex. */
   effective_image_male_thumbnail_url: string | null;
   effective_image_female_thumbnail_url: string | null;
+  /** #2306: the full-size master of the male / female position, with the same per-position fallback (never a thumbnail). */
+  effective_image_male_url: string | null;
+  effective_image_female_url: string | null;
 }
 
 /** The principal muscles of exercise alias `alias` that have an image. */
@@ -38,6 +43,8 @@ export const primaryMuscleImagesSql = (alias = 'e', tables: ExerciseTables = LEG
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pm.id, 'name', pm.name,
                                       'image_url', COALESCE(pm.image_male_url, pm.image_female_url),
                                       'image_thumbnail_url', IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail),
+                                      'image_male_url', pm.image_male_url,
+                                      'image_female_url', pm.image_female_url,
                                       'image_male_thumbnail_url', pm.image_male_url_thumbnail,
                                       'image_female_thumbnail_url', pm.image_female_url_thumbnail))
      FROM ${tables.muscles} pem
@@ -65,7 +72,14 @@ export function resolveEffectiveImage(
     : sorted.find((m) => m.image_male_thumbnail_url)?.image_male_thumbnail_url ?? null;
   const female = own.image_female_url ? imageThumbnailUrlFor(own.image_female_url)
     : sorted.find((m) => m.image_female_thumbnail_url)?.image_female_thumbnail_url ?? null;
-  const genders = { effective_image_male_thumbnail_url: male, effective_image_female_thumbnail_url: female };
+  const maleMaster = own.image_male_url || (sorted.find((m) => m.image_male_url)?.image_male_url ?? null);
+  const femaleMaster = own.image_female_url || (sorted.find((m) => m.image_female_url)?.image_female_url ?? null);
+  const genders = {
+    effective_image_male_thumbnail_url: male,
+    effective_image_female_thumbnail_url: female,
+    effective_image_male_url: maleMaster,
+    effective_image_female_url: femaleMaster,
+  };
   const ownUrl = own.image_male_url || own.image_female_url || null;
   if (ownUrl) {
     return { effective_image_url: ownUrl, effective_image_thumbnail_url: imageThumbnailUrlFor(ownUrl), ...genders };

@@ -59,6 +59,16 @@ export function isDraftExpired(lastActivityAtMs: number, nowMs: number): boolean
   return nowMs - lastActivityAtMs > DRAFT_TTL_MINUTES * 60_000;
 }
 
+/**
+ * Seconds a Draft has left, from the database's own clock (#2477). `null` for a
+ * row that is not a Draft; never negative — an expired Draft reports 0.
+ */
+export function draftExpiresInSeconds(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+}
+
 /** What a cancel of a pending checkout may do, from its payment attempts. */
 export interface PendingAttempt {
   /** The provider's own reference; NULL when the provider was never called. */

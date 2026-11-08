@@ -1,3 +1,4 @@
+import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { purchaseValidityState } from '../domain/productValidity';
@@ -490,31 +491,77 @@ async function loadRecurringPurchases(
   // #1882 — a line of the Active version that the member's open Draft no longer
   // carries (matched by `line_ref`, which a clone keeps) is pending termination:
   // the Draft only registers the removal, the Active version is untouched.
+  // #2479 — the open (unexpired) Draft's own lines are listed too: a line the
+  // Draft added shows as a Draft row, and a line it changed shows the Draft's
+  // frozen figures, so the list reflects the Product Set being edited.
   const { rows: draftRows } = await db.query<any>(
-    `SELECT s.product_set_id, COALESCE(s.line_ref, s.id) AS line_ref
+    `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
+            s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
+            s.currency, s.starts_at, s.created_at, s.origin,
+            COALESCE(s.line_ref, s.id) AS line_ref, ps.created_by AS set_created_by
        FROM product_sets ps
        JOIN member_products_recurrent_snapshot s
          ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
-        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())`,
+        AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
+      ORDER BY s.created_at DESC, s.id DESC`,
     [gymId, memberId],
   );
   const hasDraft = draftRows.length > 0 || (await db.query<any>(
     `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' LIMIT 1`,
     [gymId, memberId],
   )).rows.length > 0;
-  const draftLineRefs = new Set(draftRows.map((r: any) => Number(r.line_ref)));
-  return rows.map((row: any) => {
+  const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
+  const activeRefs = new Set(rows.map((r: any) => Number(r.line_ref)));
+  const draftLineRefs = new Set(draftByRef.keys());
+  const figures = (row: any) => {
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
     const amount = Math.round(unit * quantity * 100) / 100;
     const listUnit = row.list_unit_price == null ? null : Number(row.list_unit_price);
     const listPrice = listUnit == null ? null : Math.round(listUnit * quantity * 100) / 100;
     const pct = row.direct_discount_percent == null ? null : Number(row.direct_discount_percent);
+    return { amount, listPrice, pct };
+  };
+  const draftOnly: MemberPurchasedProduct[] = draftRows
+    .filter((r: any) => !activeRefs.has(Number(r.line_ref)))
+    .map((row: any) => {
+      const { amount, listPrice, pct } = figures(row);
+      return {
+        id: -Number(row.id),
+        product_id: Number(row.product_id),
+        status: 'draft' as const,
+        product_name: row.item_name,
+        product_type: row.item_type,
+        billing_frequency: row.item_billing_frequency ?? null,
+        units: null,
+        amount,
+        currency: row.currency ?? 'EUR',
+        purchased_at: row.starts_at ?? null,
+        created_at: row.created_at ?? null,
+        created_by: row.set_created_by ?? null,
+        origin: toItemOrigin(row.origin),
+        regular_amount: listPrice ?? amount,
+        promotion: null,
+        promotions: [],
+        list_price: listPrice,
+        direct_discount_percent: pct,
+        direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
+        tax_rate_percent: null,
+        payment_status: null,
+        billing_event_id: null,
+        source: 'recurring' as const,
+        pending_termination: false,
+      };
+    });
+  const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
+    const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
+    const { amount, listPrice, pct } = figures(row);
     return {
-      id: -Number(row.id),
+      id: -Number(active.id),
       product_id: Number(row.product_id),
-      status: row.set_status === 'active' ? 'active' : 'pending_payment',
+      status: active.set_status === 'active' ? 'active' : 'pending_payment',
       product_name: row.item_name,
       product_type: row.item_type,
       billing_frequency: row.item_billing_frequency ?? null,
@@ -523,7 +570,7 @@ async function loadRecurringPurchases(
       currency: row.currency ?? 'EUR',
       purchased_at: row.starts_at ?? null,
       created_at: row.created_at ?? null,
-      created_by: row.set_created_by ?? null,
+      created_by: active.set_created_by ?? null,
       origin: toItemOrigin(row.origin),
       regular_amount: listPrice ?? amount,
       promotion: null,
@@ -532,10 +579,11 @@ async function loadRecurringPurchases(
       direct_discount_percent: pct,
       direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
       tax_rate_percent: null,
-      payment_status: row.payment_status ?? null,
-      billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      payment_status: active.payment_status ?? null,
+      billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       source: 'recurring' as const,
-      pending_termination: row.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(row.line_ref)),
+      pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
     };
   });
+  return [...activeRows, ...draftOnly];
 }

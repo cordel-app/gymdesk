@@ -589,6 +589,15 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
       'SELECT product_set_id, schedule_id FROM member_products_recurrent_snapshot WHERE id = ?', [lineId]);
     const line = rows[0];
     expect(line.schedule_id).not.toBeNull();
+    // The schedule bills on the 1st: a fixture period starting on a 1st would collide with the line's own
+    // scheduled billing event (billing_events_schedule_period_key), so step off it (date-dependent flake).
+    // Any day the schedule already bills on collides, not only the 1st (the anchor is the line's start day).
+    for (;;) {
+      const clash = await db.query(
+        'SELECT 1 FROM billing_events WHERE schedule_id = ? AND period_start = ?', [line.schedule_id, dayOffset(start)]);
+      if (clash.rows.length === 0 && !dayOffset(start).endsWith('-01')) break;
+      start += 1;
+    }
     const m = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
     const memberId = m.rows[0].member_id;
     const ev = await db.query(

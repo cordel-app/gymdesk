@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { recordPaymentAttempt } from './payment-attempt';
 import { db, type Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -371,6 +372,7 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
          VALUES (?, ?, ?, 'EUR', ?, ?, ?, ?, ?, 'manual', ?, ?, ?, UTC_TIMESTAMP()${done ? ', UTC_TIMESTAMP()' : ''})`,
         [gymId, memberId, charge.amount.toFixed(2), chargeTypeId, eventId, done ? 'completed' : 'pending',
           token?.provider ?? 'monei', orderId, attempt, done ? flow.attemptMethod : 'provider', actor]);
+      await recordPaymentAttempt(tx, insertId);
       await tx.query('UPDATE product_sets SET payment_request_id = ? WHERE id = ?', [insertId, Number(set.id)]);
       if (done) {
         const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor });
@@ -445,13 +447,14 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
     if (!ev[0]) return { kind: 'no_open_event' as const };
     const { rows: prev } = await tx.query<{ n: number }>(
       'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [ev[0].id]);
-    await tx.query(
+    const { insertId: cashAttemptId } = await tx.query(
       `INSERT INTO payment_requests
          (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
           source, attempt, method, created_by, created_at, completed_at)
        VALUES (?, ?, ?, 'EUR', ?, ?, 'completed', 'monei', 'manual', ?, 'cash', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
       [gymId, Number(set.owner_member_id), ev[0].amount, ct[0]?.id ?? null, ev[0].id,
         Number(prev[0]?.n ?? 0) + 1, actorOf(req).name]);
+    await recordPaymentAttempt(tx, cashAttemptId);
     const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name });
     return { kind: activated.kind, billingEventId: Number(ev[0].id) };
   });
@@ -618,7 +621,11 @@ meProductSetsRouter.get('/', async (req, res) => {
     `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-         OR ps.root_product_set_id IN (SELECT root_product_set_id FROM product_set_members WHERE gym_id = ? AND member_id = ?)
+         OR ps.root_product_set_id IN (
+              SELECT ps2.root_product_set_id FROM plan_snapshot_beneficiaries b
+                JOIN plan_snapshots s ON s.id = b.plan_snapshot_id
+                JOIN product_sets ps2 ON ps2.id = s.product_set_id
+               WHERE b.gym_id = ? AND b.member_id = ?)
       ORDER BY ps.root_product_set_id, ps.version DESC`,
     [ctx.gymId, memberId, ctx.gymId, memberId]);
   res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId).map(shape));

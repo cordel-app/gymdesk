@@ -1,7 +1,7 @@
 import { loadPaidThrough } from './cancellation-entitlement';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { cancellationEndDate } from '../domain/cancellationEntitlement';
+import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
@@ -51,7 +51,8 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   // The primary one is not yet the contract of any assignment (the successor takes its own at
   // activation), so it does not carry the predecessor's.
   const { rows: plans } = await tx.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, fromSetId]);
+    `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`, [gymId, fromSetId]);
   for (const [index, plan] of plans.entries()) {
     await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), toSetId, { keepAssignment: index > 0 });
   }
@@ -298,9 +299,19 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
           AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = billing_events.id)`,
       [gymId, scheduleId, startsAt]);
   }
+  // #2488 — a Pre-paid Duration is paid as one lump on the first period: that event covers every prepaid
+  // period, so its stored end is the last day of the last one (else paid-through stops after period one).
+  const { rows: snap } = await tx.query<any>(
+    `SELECT s.free_periods, s.pay_beforehand_periods, s.recurring_billing_interval, s.recurring_billing_unit
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY s.id ASC LIMIT 1`, [set.id, gymId]);
+  const prepaidEnd = prepaidCoverageEnd(snap[0] ? {
+    freePeriods: Number(snap[0].free_periods ?? 0), prepaidPeriods: Number(snap[0].pay_beforehand_periods ?? 0),
+    interval: Number(snap[0].recurring_billing_interval ?? 0), unit: snap[0].recurring_billing_unit ?? null,
+  } : null, startsAt);
   await tx.query(
-    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, billing_date = ?
-      WHERE id = ?`, [set.id, scheduleId, startsAt, startsAt, ev[0].id]);
+    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, period_end = ?, billing_date = ?
+      WHERE id = ?`, [set.id, scheduleId, startsAt, prepaidEnd, startsAt, ev[0].id]);
 }
 
 /* ── Edit: an assignment write becomes a new version ─────────────────────── */
@@ -318,6 +329,29 @@ export async function projectedSetFor(tx: Tx, gymId: string, userMembershipId: n
     `SELECT id, owner_member_id, membership_plan_id FROM product_sets
       WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' FOR UPDATE`, [gymId, userMembershipId]);
   return rows[0] ? { id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id), membership_plan_id: rows[0].membership_plan_id != null ? Number(rows[0].membership_plan_id) : null } : null;
+}
+
+/**
+ * The Active set an edit of this assignment is a new version of (#2125 stage 21): the one it projects, else the
+ * one holding a plan snapshot that names it as its contract (a plan added beside the version's linked one).
+ * `linked` is the assignment the set projects, which the next version keeps projecting.
+ */
+async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
+  const direct = await projectedSetFor(tx, gymId, userMembershipId);
+  if (direct) return { ...direct, linked: userMembershipId };
+  const { rows } = await tx.query<any>(
+    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.user_membership_id
+       FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.status = 'active'
+        AND EXISTS (SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+                     WHERE psj.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_user_membership_id = ?)
+      FOR UPDATE`, [gymId, userMembershipId]);
+  if (!rows[0]) return null;
+  return {
+    id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id),
+    membership_plan_id: rows[0].membership_plan_id != null ? Number(rows[0].membership_plan_id) : null,
+    linked: rows[0].user_membership_id != null ? Number(rows[0].user_membership_id) : userMembershipId,
+  };
 }
 
 /**
@@ -346,7 +380,7 @@ export async function reconfigureProjected(
     return { kind: 'ok', productSetId: locked.id };
   }
 
-  const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
+  const set = await editableSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
   // A closed assignment is not a live projection whatever its set says: the
   // legacy route refuses the edit with the reason it always gave.
@@ -374,7 +408,7 @@ export async function reconfigureProjected(
   if ('kind' in edited) return edited;
 
   // The new version takes over the same assignment (it is the same contract).
-  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [input.userMembershipId, draftId]);
+  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [set.linked, draftId]);
   await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [set.id]);
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };

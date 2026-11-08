@@ -1,3 +1,4 @@
+import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
@@ -145,11 +146,12 @@ export async function loadProductSetSimulationAssignments(
     `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
-            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date, s.is_inherited
-       FROM plan_snapshots s
+            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date, ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
+       FROM product_set_plan_snapshots psj
+       JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
+      WHERE s.gym_id = ? AND psj.product_set_id = ?
       ORDER BY s.id`,
     [gymId, productSetId],
   );
@@ -197,9 +199,10 @@ export async function loadPlanSnapshotScheduleKeys(
 ): Promise<Array<string | null>> {
   const { rows } = await exec.query(
     `SELECT sch.schedule_key
-       FROM plan_snapshots s
+       FROM product_set_plan_snapshots psj
+       JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
+      WHERE s.gym_id = ? AND psj.product_set_id = ?
       ORDER BY s.id`,
     [gymId, productSetId],
   );
@@ -211,6 +214,8 @@ export async function loadPlanSnapshotInheritance(
   gymId: string, productSetId: number, exec: Exec = db,
 ): Promise<boolean[]> {
   const { rows } = await exec.query(
-    'SELECT is_inherited FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ? ORDER BY id', [gymId, productSetId]);
+    `SELECT ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`, [gymId, productSetId]);
   return (rows as any[]).map((r) => Number(r.is_inherited) === 1);
 }

@@ -11,7 +11,6 @@
 import React, { useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { commitProductSetVersion } from '@/lib/productSetCommit';
 import { cardHintStyle, cardSubLabelStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
@@ -78,7 +77,7 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], onCha
             )}
           </div>
           {canWrite && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            ps.status === 'pending_payment' && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {ps.status === 'pending_payment' && (
                 <>
                   <button
@@ -105,27 +104,6 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], onCha
                   </button>
                 </>
               )}
-              {ps.status === 'draft' && !ps.expired && (
-                <button
-                  disabled={busyId === ps.id}
-                  style={primaryBtnSmall()}
-                  onClick={() => run(ps.id, async () => {
-                    const url = await commitProductSetVersion(apiFetch, ps.id);
-                    if (url) setLink({ id: ps.id, url });
-                  })}
-                >
-                  {t('product_set_action_commit')}
-                </button>
-              )}
-              <button
-                disabled={busyId === ps.id}
-                style={secondaryBtnSmall}
-                onClick={() => run(ps.id, async () => {
-                  await apiFetch(`/product-sets/${ps.id}`, { method: 'DELETE' });
-                })}
-              >
-                {t('product_set_action_discard')}
-              </button>
             </div>
           )}
         </div>

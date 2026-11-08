@@ -1,3 +1,5 @@
+import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -750,6 +752,11 @@ export async function regularMembershipFee(
 userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { member_id, membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at } = req.body;
+  // #2125 stage 22: the payer is a beneficiary of the plan unless the request says otherwise.
+  if (req.body?.owner_is_beneficiary !== undefined && typeof req.body.owner_is_beneficiary !== 'boolean') {
+    return res.status(400).json({ error: 'owner_is_beneficiary must be a boolean' });
+  }
+  const ownerIsBeneficiary = req.body?.owner_is_beneficiary !== false;
   if (!member_id || !membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'member_id, membership_plan_id and starts_at are required' });
   }
@@ -822,7 +829,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       // #635 stage 2 — freeze the Plan's commercial configuration onto the
       // assignment, in the same transaction so it can never commit without one.
       // #1325 PR 3e: the Draft is a ProductSet Draft from birth; edits go to it.
-      await createDraftSetForAssignment(tx, {
+      const createdSetId = await createDraftSetForAssignment(tx, {
         gymId, userMembershipId: insertId, ownerMemberId: Number(member_id),
         membershipPlanId: Number(membership_plan_id),
         startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
@@ -833,6 +840,10 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
       });
+      if (!ownerIsBeneficiary) {
+        const planSnapshotId = await primaryPlanSnapshotId(tx, gymId, createdSetId);
+        if (planSnapshotId != null) await setOwnerIsBeneficiary(tx, gymId, planSnapshotId, false);
+      }
       return { kind: 'created' as const, insertId };
     });
     const created = await loadAssignmentRow(gymId, outcome.insertId, false);
@@ -1214,7 +1225,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       if (open) {
         const { rows: prev } = await tx.query<{ n: number }>(
           'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId]);
-        await tx.query(
+        const { insertId: cashAttemptId } = await tx.query(
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
@@ -1223,6 +1234,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
           [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
+        await recordPaymentAttempt(tx, cashAttemptId);
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
@@ -1901,7 +1913,7 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
   const { gymId } = getTenantContext(req);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { add_member: req.body?.member_id },
-    mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id)),
+    mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id), { userMembershipId: Number(req.params.id) }),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 201,
   })) return;
@@ -1916,7 +1928,7 @@ userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYME
   const { gymId } = getTenantContext(req);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { remove_member: req.params.memberId },
-    mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId)),
+    mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId), { userMembershipId: Number(req.params.id) }),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 204,
   })) return;

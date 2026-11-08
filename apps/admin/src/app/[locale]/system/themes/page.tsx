@@ -35,6 +35,7 @@ import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeToke
 import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { ThemeLogoSymbolField } from '@/components/ThemeLogoSymbolField';
+import { ThemeHomeImageField } from '@/components/ThemeHomeImageField';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
@@ -61,6 +62,7 @@ interface Theme {
   logo_updated_at: string | null;
   /** #2157: the symbol-only logo, used as the favicon. */
   logo_symbol_url: string | null;
+  home_image_url: string | null;
   logo_contains_gym_name: boolean;
   /** #732: one nullable URL per Members App background slot; six, always. */
   members_images: MembersImages;
@@ -733,6 +735,15 @@ export default function ThemesPage() {
                   t={t}
                 />
               )}
+              homeImage={!isNew && (
+                <ThemeHomeImageField
+                  basePath="/platform/themes"
+                  themeId={id}
+                  url={themes.find((th) => th.id === id)?.home_image_url ?? null}
+                  onChanged={refreshThemes}
+                  t={t}
+                />
+              )}
               autoFocusName={isNew}
             >
               {/* Status is platform-only: on the Custom Themes screen a theme's
@@ -819,6 +830,7 @@ export default function ThemesPage() {
     has_logo: false,
     logo_updated_at: null,
     logo_symbol_url: null,
+    home_image_url: null,
     logo_contains_gym_name: true,
     members_images: emptyMembersImages(),
     tokens: DEFAULT_TOKENS,

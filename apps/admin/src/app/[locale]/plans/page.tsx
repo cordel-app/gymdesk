@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { BILLING_FREQUENCY_NAMESPACE } from '@/lib/billingFrequency';
 import { useRouter } from 'next/navigation';
@@ -25,12 +25,15 @@ import {
 } from '@/components/listChrome';
 import { AssignPlanToMembersEditor } from './AssignPlanToMembersEditor';
 import { PlanDetailModal } from './PlanDetailModal';
+import { PlanImageDetails } from './PlanImageDetails';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { PlanCard } from './PlanCard';
 import { PlanViewToggle, usePlanViewMode } from './PlanViewToggle';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
-import { BillingEventSimulation } from '@/components/BillingEventSimulation';
-import { BillingEventSimulationChart } from '@/components/BillingEventSimulationChart';
+import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
+import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   ProductBenefitEditor,
@@ -123,6 +126,8 @@ interface Plan extends PlanGeneralRow {
   promotion_count: number;
   billing_policy: BillingPolicy | null;
   centers: Center[];
+  center_access_mode?: 'specific_centers' | 'all_centers' | 'member_default_center' | 'online';
+  online_access?: number | boolean;
   price_history: PriceRow[];
   image_url?: string | null;
   image_thumbnail_url?: string | null;
@@ -344,8 +349,6 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   // #1810: the Billing Event Simulation is collapsed by default; the "Show €0"
   // choice is shared with the chart under it.
-  const [simulationOpen, setSimulationOpen] = useState<Record<number, boolean>>({});
-  const [simulationShowZero, setSimulationShowZero] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   // Status filter (aligned with the Promotions list header — the list endpoint
@@ -375,6 +378,8 @@ export default function PlansPage() {
 
   // Details modal (#512)
   const [detailFor, setDetailFor] = useState<Plan | null>(null);
+  // #2408: the plan image viewer (full image + description, pricing, billing, products).
+  const [imageOf, setImageOf] = useState<Plan | null>(null);
 
   // Pricing sub-form (inline, per plan) — price is always VAT-inclusive (#547)
   const [pricingForm, setPricingForm] = useState({ price: '', tax_rate_id: '' });
@@ -385,6 +390,7 @@ export default function PlansPage() {
 
   // Centers sub-form (inline, per plan)
   const [centersForPlanId, setCentersForPlanId] = useState<number | null>(null);
+  const [centerAccessMode, setCenterAccessMode] = useState<'specific_centers' | 'all_centers' | 'member_default_center' | 'online'>('specific_centers');
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
@@ -681,6 +687,7 @@ export default function PlansPage() {
     }
     setCentersForPlanId(plan.id);
     setSelectedCenterIds((plan.centers ?? []).map((c) => c.id));
+    setCenterAccessMode(plan.center_access_mode ?? 'specific_centers');
   }
 
   async function handleSaveCenters() {
@@ -688,7 +695,10 @@ export default function PlansPage() {
     try {
       await apiFetch(`/membership-plans/${centersForPlanId}/centers`, {
         method: 'PUT',
-        body: JSON.stringify({ center_ids: selectedCenterIds }),
+        body: JSON.stringify({
+          center_access_mode: centerAccessMode,
+          ...(centerAccessMode === 'specific_centers' ? { center_ids: selectedCenterIds } : {}),
+        }),
       });
       setCentersForPlanId(null);
       load();
@@ -1059,6 +1069,7 @@ export default function PlansPage() {
                 <PlanCard
                   key={plan.id}
                   active={editingId === plan.id}
+                  onImageClick={() => setImageOf(plan)}
                   menuItems={planMenuItems(plan)}
                   plan={{
                     id: plan.id,
@@ -1106,8 +1117,16 @@ export default function PlansPage() {
               <div key={plan.id} id={`plan-row-${plan.id}`} style={cardStyle(false)}>
                 {/* Row header */}
                 <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(plan.id)}>
-                  <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {plan.name}
+                  <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* #2408: circular thumbnail left of the name; no image, no container. */}
+                    {(plan.image_thumbnail_url ?? plan.image_url) && (
+                      <span role="button" tabIndex={0} aria-label={plan.name} style={{ cursor: 'zoom-in', display: 'inline-flex', flexShrink: 0 }}
+                        onClick={(e) => { e.stopPropagation(); setImageOf(plan); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setImageOf(plan); } }}>
+                        <MemberAvatar name={plan.name} imageUrl={plan.image_thumbnail_url ?? plan.image_url ?? null} stamp={plan.modified_at} size={36} />
+                      </span>
+                    )}
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.name}</span>
                   </div>
                   <div className={CELL_CLASS.description} style={{ fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {descText}
@@ -1473,6 +1492,17 @@ export default function PlansPage() {
                               },
                             ])}
                           />
+                          <BillingDurationExplanations
+                            config={{
+                              free_periods: plan.free_periods,
+                              paid_periods: plan.paid_periods,
+                              pay_beforehand_periods: plan.pay_beforehand_periods,
+                              bonus_periods: plan.bonus_periods,
+                              recurring_billing_interval: plan.billing_policy?.recurring_billing_interval,
+                              recurring_billing_unit: plan.billing_policy?.recurring_billing_unit,
+                              auto_renew: plan.billing_policy != null ? !!plan.billing_policy.auto_renew : undefined,
+                            }}
+                          />
                           {plan.billing_policy == null && (
                             <p style={{ ...hintSt, marginTop: 6 }}>{t('plans.no_billing')}</p>
                           )}
@@ -1552,20 +1582,41 @@ export default function PlansPage() {
                     />
                     {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        {allCenters.map((c) => (
-                          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                        {(['all_centers', 'member_default_center', 'specific_centers', 'online'] as const).map((m) => (
+                          <Fragment key={m}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0' }}>
                             <input
-                              type="checkbox"
-                              id={`center_${plan.id}_${c.id}`}
-                              checked={selectedCenterIds.includes(c.id)}
-                              onChange={(e) => {
-                                setSelectedCenterIds((prev) =>
-                                  e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
-                                );
-                              }}
+                              type="radio"
+                              name={`center_mode_${plan.id}`}
+                              id={`center_mode_${plan.id}_${m}`}
+                              checked={centerAccessMode === m}
+                              onChange={() => setCenterAccessMode(m)}
                             />
-                            <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
+                            <label htmlFor={`center_mode_${plan.id}_${m}`} style={{ fontSize: 13, cursor: 'pointer' }}>
+                              <strong>{t(`plans.center_mode_${m}`)}</strong>
+                              <div style={{ opacity: 0.7 }}>{t(`plans.center_mode_${m}_help`)}</div>
+                            </label>
                           </div>
+                          {m === 'specific_centers' && centerAccessMode === 'specific_centers' && (
+                            <div style={{ paddingLeft: 24 }}>
+                              {allCenters.map((c) => (
+                                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                                  <input
+                                    type="checkbox"
+                                    id={`center_${plan.id}_${c.id}`}
+                                    checked={selectedCenterIds.includes(c.id)}
+                                    onChange={(e) => {
+                                      setSelectedCenterIds((prev) =>
+                                        e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
+                                      );
+                                    }}
+                                  />
+                                  <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          </Fragment>
                         ))}
                         {sectionSaveActions({
                           onCancel: () => setCentersForPlanId(null),
@@ -1573,10 +1624,15 @@ export default function PlansPage() {
                           saveLabel: t('plans.save_changes'),
                         })}
                       </div>
-                    ) : (plan.centers ?? []).length === 0 ? (
+                    ) : plan.center_access_mode === 'all_centers' || plan.center_access_mode === 'member_default_center' || plan.center_access_mode === 'online' ? (
+                      <DetailRow label="" value={t(`plans.center_mode_${plan.center_access_mode}`)} />
+                    ) : (plan.centers ?? []).length === 0 && Number(plan.online_access) !== 1 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />
                     ) : (
-                      (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
+                      <>
+                        {(plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)}
+                        {Number(plan.online_access) === 1 && <DetailRow label="" value={t('plans.center_online')} />}
+                      </>
                     )}
 
                     {/* MEDIA (#1514) — the plan's image. Read-only outside Edit mode;
@@ -1707,52 +1763,29 @@ export default function PlansPage() {
                         the run does not make. Nothing is persisted and nothing
                         is charged. */}
                     {(() => {
-                      const simOpen = simulationOpen[plan.id] === true;
-                      const showZero = simulationShowZero[plan.id] === true;
                       const simT = (key: string, values?: Record<string, string | number>) =>
                         t(`plans.${key}` as any, values as any);
-                      const simDate = (date: string) => fmtTimelineDate(date, gymFmt);
                       return (
                         <>
-                          <SectionHeader title={t('plans.section_billing_event_chart')} />
-                          <BillingEventSimulationChart
+                          {/* #2470 — heading, chart, then the collapsed details. */}
+                          <SectionHeader title={t('plans.section_billing_event_simulation')} />
+                          <BillingEventSimulationPanel
                             simulation={plan.billing_event_simulation}
-                            showZero={showZero}
+                            zeroToggle
                             t={simT}
-                            formatDate={simDate}
+                            formatDate={(date) => fmtTimelineDate(date, gymFmt)}
+                            detailsTitle={t('plans.section_billing_simulation_details')}
+                            cycleNote={(() => {
+                              // #1130 stage 3 — the same marker the Membership Fee
+                              // Simulation above carries, from the same rule and the
+                              // same key: the two sections tell one story (§3).
+                              const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
+                              return key ? t(`plans.${key}` as any) : null;
+                            })()}
                           />
-                          <div style={subSectionSt}>
-                            <button
-                              type="button"
-                              aria-expanded={simOpen}
-                              onClick={() => setSimulationOpen((prev) => ({ ...prev, [plan.id]: !simOpen }))}
-                              style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                            >
-                              <span aria-hidden="true" style={{ color: '#888', fontSize: 11, width: 10 }}>{simOpen ? '▾' : '▸'}</span>
-                              <CardSectionHeader title={t('plans.section_billing_event_simulation')} />
-                            </button>
-                          </div>
-                          {simOpen && (
-                            <BillingEventSimulation
-                              simulation={plan.billing_event_simulation}
-                              zeroToggle
-                              showZero={showZero}
-                              onShowZeroChange={(next) => setSimulationShowZero((prev) => ({ ...prev, [plan.id]: next }))}
-                              t={simT}
-                              formatDate={simDate}
-                              cycleNote={(() => {
-                                // #1130 stage 3 — the same marker the Membership Fee
-                                // Simulation above carries, from the same rule and the
-                                // same key: the two sections tell one story (§3).
-                                const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
-                                return key ? t(`plans.${key}` as any) : null;
-                              })()}
-                            />
-                          )}
                         </>
                       );
                     })()}
-
                   </div>
                 )}
               </div>
@@ -1792,6 +1825,16 @@ export default function PlansPage() {
       {detailFor && (
         <PlanDetailModal plan={detailFor} onClose={() => setDetailFor(null)} />
       )}
+
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.name, imageUrl: imageOf.image_url, description: imageOf.description, version: imageOf.modified_at } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('plans.details_close')}
+        noImageLabel={t('plans.image_none')}
+        noDescriptionLabel={t('plans.viewer_no_description')}
+      >
+        {imageOf && <PlanImageDetails plan={imageOf} />}
+      </ProfessionalServiceImageModal>
     </div>
   );
 }

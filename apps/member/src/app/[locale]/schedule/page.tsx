@@ -59,6 +59,9 @@ interface PastBooking {
   booking_status: 'booked' | 'waitlisted' | 'cancelled';
   attendance_status: 'pending' | 'present' | 'absent';
   cancelled_at: string | null;
+  /** #2326 — the event's own image, else the Activity's. */
+  class_type_image_url?: string | null;
+  class_type_description?: string | null;
 }
 
 interface FilterOption { id: number; name: string }
@@ -392,11 +395,25 @@ export default function MemberSchedulePage() {
             return (
               <div
                 key={`p-${item.booking_id}`}
-                style={styles.card}
+                style={{ ...styles.sessionCard, marginBottom: 10 }}
                 onClick={() => setExpandedPast(isExpanded ? null : item.booking_id)}
                 role="button"
                 tabIndex={0}
               >
+                {item.class_type_image_url?.trim() && (
+                  <div style={styles.imageCol}>
+                    <ImagePreviewButton
+                      src={item.class_type_image_url}
+                      alt={t('member_schedule.image_alt', { name: item.title })}
+                      title={item.title}
+                      description={item.class_type_description?.trim() || null}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={item.class_type_image_url} alt="" style={styles.cardImage} />
+                    </ImagePreviewButton>
+                  </div>
+                )}
+                <div style={{ ...styles.cardBody, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <span style={styles.time}>{dayLabel(item.starts_at)} · {timeOnly(item.starts_at)}</span>
                   <span style={item.booking_status === 'cancelled' ? styles.pillFull : styles.pillBooked}>
@@ -412,6 +429,7 @@ export default function MemberSchedulePage() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             );
           })}

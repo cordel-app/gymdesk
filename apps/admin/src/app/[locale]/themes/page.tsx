@@ -19,6 +19,7 @@ import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeToke
 import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { ThemeLogoSymbolField } from '@/components/ThemeLogoSymbolField';
+import { ThemeHomeImageField } from '@/components/ThemeHomeImageField';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import { storageCauseSuggestsInitialize, storageFailureCause } from '@/lib/storageFailureCause';
@@ -75,6 +76,7 @@ interface Theme {
   logo_url: string | null;
   /** #2157: the symbol-only logo, used as the favicon. */
   logo_symbol_url: string | null;
+  home_image_url: string | null;
   logo_contains_gym_name: boolean;
   /** #725: one nullable URL per Members App background slot; six, always. */
   members_images: MembersImages;
@@ -873,6 +875,17 @@ export default function GymThemesPage() {
                   basePath="/system/themes"
                   themeId={theme.id}
                   url={theme.logo_symbol_url}
+                  disabledReason={storageBlock ? t(`logo_upload_${storageBlock}`) : null}
+                  onChanged={refreshThemes}
+                  t={t}
+                />
+              )}
+              homeImage={(
+                <ThemeHomeImageField
+                  basePath="/system/themes"
+                  themeId={theme.id}
+                  url={theme.home_image_url}
+                  readOnly={isBase}
                   disabledReason={storageBlock ? t(`logo_upload_${storageBlock}`) : null}
                   onChanged={refreshThemes}
                   t={t}

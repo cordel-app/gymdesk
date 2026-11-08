@@ -1,4 +1,5 @@
 import { resolvePayerFor } from './payer-resolution';
+import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
@@ -33,6 +34,8 @@ import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
+import { cancelGroupPartners, membersShareCoverage } from './duo-booking';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
@@ -564,10 +567,8 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
  */
 export async function loadMemberProfile(gymId: string, memberId: number): Promise<Record<string, any> | null> {
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id,
-            p.name AS fare_name
+    `SELECT m.*
      FROM members m
-     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
     [gymId, memberId],
   );
@@ -813,6 +814,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
+              -- #2471: the occurrence's own description wins over the Activity Type's.
+              COALESCE(NULLIF(TRIM(ce.description), ''), at.description) AS event_description,
               -- #1637: the event's own image (#1382), else the Activity Type's.
               COALESCE(NULLIF(TRIM(ce.image_url), ''), NULLIF(TRIM(at.image_url), '')) AS class_type_image_url,
               at.is_shareable,
@@ -915,20 +918,20 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 JOIN class_type_user_memberships ctum
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
                 WHERE um.gym_id = ce.gym_id AND um.status = 'active'
-                  AND (um.member_id = ? OR EXISTS (
+                  AND EXISTS (
                     SELECT 1 FROM user_membership_members umm
                     WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-                  ))
+                  )
                   AND ctum.activity_type_id = ce.activity_type_id
               ) AS access_locked
        FROM calendar_events ce
-       JOIN activity_types at ON at.id = ce.activity_type_id
+       LEFT JOIN activity_types at ON at.id = ce.activity_type_id
        LEFT JOIN centers c ON c.id = ce.center_id
        LEFT JOIN spaces sp ON sp.id = ce.space_id
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ce.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
     const shaped = rows.map((r: any) => {
@@ -1048,7 +1051,35 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx), chosenService);
+    // #1984 stage 2b-1: an optional second participant makes this a Duo booking,
+    // written as one unit in one transaction.
+    const parsed = parseParticipantIds(req.body.participant_member_ids, memberId);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const actor = resolveRequestActor(ctx);
+    let result;
+    if (parsed.partnerIds.length === 0) {
+      result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, actor, chosenService);
+    } else {
+      const partnerId = parsed.partnerIds[0];
+      result = await db.transaction(async (tx) => {
+        const { rows: partner } = await tx.query(
+          'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [partnerId, gymId]);
+        if (partner.length === 0 || !(await membersShareCoverage(tx, gymId, memberId, partnerId))) {
+          throw Object.assign(new Error('The participant is not linked to you through plan coverage'), { status: 403, code: 'participant_not_linked' });
+        }
+        const first = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        if (first.status !== 'booked' || second.status !== 'booked') {
+          // A Duo has no waiting-list path: both places or neither.
+          throw Object.assign(new Error('There are not enough places for two participants'), { status: 409, code: 'duo_requires_places' });
+        }
+        const groupId = newBookingGroupId();
+        await tx.query(
+          'UPDATE calendar_event_bookings SET booking_group_id = ?, booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id IN (?, ?) AND gym_id = ?',
+          [groupId, memberId, actor, first.id, second.id, gymId]);
+        return { ...first, booking_group_id: groupId, partner_booking_id: second.id };
+      });
+    }
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1115,7 +1146,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT ceb.id, ceb.status, ceb.calendar_event_id AS class_session_id, ce.starts_at,
+      `SELECT ceb.id, ceb.status, ceb.booking_group_id, ceb.calendar_event_id AS class_session_id, ce.starts_at,
               at.name AS title,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
@@ -1145,8 +1176,17 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     // #1189 stage 3: a member's cancellation that reaches here was allowed
     // free of charge (outside the notice window, or inside the grace period).
     const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false, actor: resolveRequestActor(ctx) });
-    if (cancelResult.promotedMemberId) {
-      sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
+    const promoted = cancelResult.promotedMemberId ? [Number(cancelResult.promotedMemberId)] : [];
+    // #1984 stage 2b-1: cancelling one participant of a Duo cancels the group
+    // and tells the other participant.
+    if (rows[0].booking_group_id) {
+      const grp = await cancelGroupPartners(gymId, rows[0].booking_group_id, Number(req.params.id), resolveRequestActor(ctx), {
+        sessionId: Number(rows[0].class_session_id), title: rows[0].title, starts_at: rows[0].starts_at,
+      });
+      promoted.push(...grp.promotedMemberIds);
+    }
+    for (const pid of promoted) {
+      sendNotification(gymId, pid, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
     }
     res.status(204).send();
@@ -1426,16 +1466,31 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
  * with an `end_date`), each with its assignment's inclusive date range. A date's meals are therefore
  * those of the assignment effective on it, never the current plan's for every date.
  */
-async function planMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number; from: string | null; to: string | null }[]> {
+async function planMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number; from: string | null; to: string | null; plan: number }[]> {
   const { rows } = await db.query(
-    `SELECT m.id, d.weekday, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date
+    `SELECT m.id, d.weekday, p.id AS plan_id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date
      FROM member_nutrition_plans p
      JOIN member_nutrition_plan_days d ON d.member_nutrition_plan_id = p.id AND d.gym_id = p.gym_id
      JOIN member_nutrition_plan_meals m ON m.member_nutrition_plan_day_id = d.id AND m.gym_id = p.gym_id
      WHERE p.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`,
     [gymId, memberId],
   );
-  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday), from: r.from_date, to: r.to_date }));
+  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday), from: r.from_date, to: r.to_date, plan: r.plan_id }));
+}
+
+/**
+ * #2338: the assignments in force, ranked as `GET /me/nutrition-plan` picks the one it shows
+ * (newest `created_at` first, `LIMIT 1`): on a date with several, only the highest `order` counts.
+ */
+async function planWindows(gymId: string, memberId: number): Promise<{ id: number; order: number; from: string | null; to: string | null }[]> {
+  const { rows } = await db.query(
+    `SELECT id, DATE_FORMAT(start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(end_date, '%Y-%m-%d') AS to_date
+     FROM member_nutrition_plans
+     WHERE gym_id = ? AND member_id = ? AND (status = 'active' OR (status = 'completed' AND end_date IS NOT NULL))
+     ORDER BY created_at ASC, id ASC`,
+    [gymId, memberId],
+  );
+  return (rows as any[]).map((r, i) => ({ id: r.id, order: i, from: r.from_date, to: r.to_date }));
 }
 
 /**
@@ -1445,13 +1500,14 @@ async function planMeals(gymId: string, memberId: number): Promise<{ id: number;
 async function planRequirements(gymId: string, memberId: number): Promise<PlanRequirements> {
   const plans = `JOIN member_nutrition_plans p ON p.id = x.member_nutrition_plan_id AND p.gym_id = x.gym_id
      WHERE x.gym_id = ? AND p.member_id = ? AND (p.status = 'active' OR (p.status = 'completed' AND p.end_date IS NOT NULL))`;
-  const cols = `x.id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date`;
+  const cols = `x.id, x.member_nutrition_plan_id AS plan_id, DATE_FORMAT(p.start_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(p.end_date, '%Y-%m-%d') AS to_date`;
   const { rows: g } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_goals x ${plans}`, [gymId, memberId]);
   const { rows: r } = await db.query(`SELECT ${cols} FROM member_nutrition_plan_restrictions x ${plans}`, [gymId, memberId]);
   const windows: Record<string, { from: string | null; to: string | null }> = {};
-  for (const x of g as any[]) windows[`goal|${x.id}`] = { from: x.from_date, to: x.to_date };
-  for (const x of r as any[]) windows[`restriction|${x.id}`] = { from: x.from_date, to: x.to_date };
-  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id), windows };
+  const planOf: Record<string, number> = {};
+  for (const x of g as any[]) { windows[`goal|${x.id}`] = { from: x.from_date, to: x.to_date }; planOf[`goal|${x.id}`] = x.plan_id; }
+  for (const x of r as any[]) { windows[`restriction|${x.id}`] = { from: x.from_date, to: x.to_date }; planOf[`restriction|${x.id}`] = x.plan_id; }
+  return { goalIds: (g as any[]).map((x) => x.id), restrictionIds: (r as any[]).map((x) => x.id), windows, planOf, plans: await planWindows(gymId, memberId) };
 }
 
 /**
@@ -2086,7 +2142,8 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
                 COALESCE(pss.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit
            FROM product_sets ps
            LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-           LEFT JOIN plan_snapshots pss ON pss.product_set_id = ps.id
+           LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+           LEFT JOIN plan_snapshots pss ON pss.id = psj.plan_snapshot_id
            LEFT JOIN billing_policies bp ON bp.membership_plan_id = ps.membership_plan_id AND bp.gym_id = ps.gym_id
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
           ORDER BY ps.id DESC LIMIT 1`,
@@ -2525,6 +2582,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       [gymId, um.id, memberId, payer.payerMemberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
+    await recordPaymentAttempt(db, insertId);
     const checkoutUrl = await payerCheckoutUrl({ gymId, memberId, pageToken, requestLocale: getRequestLocale(req) });
     res.status(201).json({ id: insertId, checkoutUrl });
   } catch (err: any) {
@@ -2725,7 +2783,10 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
       `SELECT ceb.id AS booking_id,
               ce.id AS entity_id, at.name AS title,
               ce.starts_at, ce.ends_at, ceb.status AS booking_status,
-              ceb.attendance_status, ceb.cancelled_at
+              ceb.attendance_status, ceb.cancelled_at,
+              -- #2326: the event's own image, else the Activity's (as upcoming bookings).
+              COALESCE(NULLIF(TRIM(ce.image_url), ''), NULLIF(TRIM(at.image_url), '')) AS class_type_image_url,
+              at.description AS class_type_description
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        JOIN activity_types at ON at.id = ce.activity_type_id
@@ -2767,7 +2828,8 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              (SELECT pr.payment_method_name FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'
@@ -2859,7 +2921,7 @@ meRouter.get(
     const { gymId } = ctx;
     try {
       const memberId = await resolveMemberId(gymId, ctx);
-      res.json({ items: await memberServiceBalances(gymId, memberId) });
+      res.json({ items: await memberServiceBalances(gymId, memberId, getRequestLocale(req)) });
     } catch (err) {
       next(err);
     }

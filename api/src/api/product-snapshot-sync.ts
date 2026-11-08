@@ -14,6 +14,7 @@
  *     Promotions frozen onto it.
  */
 import type { Tx } from '../infra/db';
+import { linkPurchaseToBillingEvent, syncProductSnapshotJunctions } from './snapshot-junction-sync';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -25,7 +26,7 @@ const GRANT_SOURCES: Array<{ kind: string; source: string }> = [
 
 /** Re-derives the recurring Product snapshots of one ProductSet version from its legacy rows. */
 export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  // A line that no longer exists takes its snapshot, promotions and grants with it (cascade).
+  // A line that no longer exists takes its snapshot, promotions, grants and junction row with it (cascade).
   await tx.query(
     `DELETE FROM product_periodical_snapshots
       WHERE gym_id = ? AND product_set_id = ?
@@ -112,6 +113,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
          value = VALUES(value), requirement = VALUES(requirement)`,
       [gymId, productSetId]);
   }
+  await syncProductSnapshotJunctions(tx, gymId, productSetId);
 }
 
 const PURCHASE_TABLES = ['product_session_snapshots', 'product_oneoff_snapshots'] as const;
@@ -178,6 +180,7 @@ export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, pu
       WHERE pp.gym_id = ? AND pp.member_product_id = ?
         AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots x WHERE x.source_purchase_promotion_id = pp.id)`,
     [gymId, purchaseId]);
+  await linkPurchaseToBillingEvent(tx, gymId, purchaseId);
 }
 
 /** The purchase a payment request belongs to, if any (the webhook and cleanup know the request, not the purchase). */

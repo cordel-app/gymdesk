@@ -4,7 +4,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { parseMaxCapacity, parsePsTranslations } from '../domain/baseProfessionalServices';
+import { parseMaxCapacity, parseMinParticipants, minParticipantsError, parsePsTranslations } from '../domain/baseProfessionalServices';
 import { getRequestLocale } from '../infra/locale';
 import { attachTranslations, copyTranslations, deleteTranslations, writeTranslations } from './professional-service-translations';
 import {
@@ -30,6 +30,7 @@ const SELECT = `
     ps.is_system,
     ps.system_key,
     ps.max_capacity,
+    ps.min_participants,
     ps.image_url,
     ps.image_thumbnail_url,
     ps.base_professional_service_id,
@@ -39,9 +40,9 @@ const SELECT = `
     ps.modified_at,
     ps.modified_by,
     ps.deleted_by,
-    gps.status
+    COALESCE(gps.status, 'active') AS status
   FROM professional_services ps
-  JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+  LEFT JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
 `;
 
 /** One row (or none) shaped with its translations and the request locale's display values (#2110). */
@@ -62,9 +63,9 @@ professionalServicesRouter.get('/', async (req, res, next) => {
   }
   try {
     const params: unknown[] = [gymId];
-    let sql = `${SELECT} WHERE (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL`;
+    let sql = `${SELECT} WHERE ps.gym_id = ? AND ps.deleted_at IS NULL`;
     params.push(gymId);
-    if (status) { sql += ' AND gps.status = ?'; params.push(status); }
+    if (status) { sql += " AND COALESCE(gps.status, 'active') = ?"; params.push(status); }
     if (search) {
       sql += ` AND (ps.name LIKE ? OR ps.description LIKE ? OR EXISTS (
         SELECT 1 FROM professional_service_translations t
@@ -86,7 +87,7 @@ professionalServicesRouter.get('/base', requireRole('admin'), async (req, res, n
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   try {
     const params: unknown[] = [gymId];
-    let sql = `SELECT b.id, b.name, b.description, b.max_capacity,
+    let sql = `SELECT b.id, b.name, b.description, b.max_capacity, b.min_participants,
                       c.id AS imported_professional_service_id
                  FROM professional_services b
                  LEFT JOIN professional_services c
@@ -100,6 +101,7 @@ professionalServicesRouter.get('/base', requireRole('admin'), async (req, res, n
       name: r.name,
       description: r.description,
       max_capacity: r.max_capacity,
+      min_participants: r.min_participants,
       imported: r.imported_professional_service_id !== null,
       imported_professional_service_id: r.imported_professional_service_id,
     })));
@@ -126,7 +128,7 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
     const prefix = await gymStorageFolderPrefix(gymId);
     for (const baseId of [...new Set<number>(ids)]) {
       const { rows } = await db.query(
-        `SELECT id, name, description, max_capacity, image_url, image_thumbnail_url FROM professional_services
+        `SELECT id, name, description, max_capacity, min_participants, image_url, image_thumbnail_url FROM professional_services
           WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
         [baseId],
       );
@@ -142,9 +144,9 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
         const { insertId } = await db.transaction(async (tx) => {
           const { insertId: serviceId } = await tx.query(
             `INSERT INTO professional_services
-               (gym_id, name, description, is_system, system_key, max_capacity, base_professional_service_id, created_by)
-             VALUES (?, ?, ?, 0, NULL, ?, ?, ?)`,
-            [gymId, base.name, base.description, base.max_capacity, base.id, actor],
+               (gym_id, name, description, is_system, system_key, max_capacity, min_participants, base_professional_service_id, created_by)
+             VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+            [gymId, base.name, base.description, base.max_capacity, base.min_participants, base.id, actor],
           );
           await tx.query(
             `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
@@ -198,6 +200,10 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const capacity = parseMaxCapacity(req.body.max_capacity === undefined ? null : req.body.max_capacity);
   if ('error' in capacity) return res.status(400).json({ error: capacity.error });
+  const minParticipants = parseMinParticipants(req.body.min_participants === undefined ? null : req.body.min_participants);
+  if ('error' in minParticipants) return res.status(400).json({ error: minParticipants.error });
+  const minVsCap = minParticipantsError(minParticipants.value, capacity.value);
+  if (minVsCap) return res.status(400).json({ error: minVsCap });
   // #2110: a gym's own service carries the same per-locale name/description as a
   // Base one; a locale left out or blank simply falls back to the base text.
   let translations: Record<string, { name: string; description: string | null }> = {};
@@ -211,9 +217,9 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, created_by)
-         VALUES (?, ?, ?, 0, NULL, ?, ?)`,
-        [gymId, name.trim(), description?.trim() || null, capacity.value, actor],
+           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, created_by)
+         VALUES (?, ?, ?, 0, NULL, ?, ?, ?)`,
+        [gymId, name.trim(), description?.trim() || null, capacity.value, minParticipants.value, actor],
       );
       await writeTranslations(tx, serviceId, translations);
       await tx.query(
@@ -230,7 +236,7 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
       entityType: 'professional_service',
       entityId: String(insertId),
       entityName: name.trim(),
-      next: { name: name.trim(), description: description ?? null, max_capacity: capacity.value },
+      next: { name: name.trim(), description: description ?? null, max_capacity: capacity.value, min_participants: minParticipants.value },
     });
     res.status(201).json(await shapeOne(req, rows[0]));
   } catch (err: any) {
@@ -251,6 +257,9 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
   const capacityGiven = req.body.max_capacity !== undefined;
   const capacity = capacityGiven ? parseMaxCapacity(req.body.max_capacity) : { value: null };
   if ('error' in capacity) return res.status(400).json({ error: capacity.error });
+  const minGiven = req.body.min_participants !== undefined;
+  const minParticipants = minGiven ? parseMinParticipants(req.body.min_participants) : { value: null };
+  if ('error' in minParticipants) return res.status(400).json({ error: minParticipants.error });
   // Absent keeps the stored translations; a locale given blank clears it (#2110).
   let translations: Record<string, { name: string; description: string | null }> | null = null;
   let clearedLocales: string[] = [];
@@ -263,12 +272,18 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
 
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, is_system, gym_id FROM professional_services WHERE id = ? AND deleted_at IS NULL',
+      'SELECT id, is_system, gym_id, max_capacity, min_participants FROM professional_services WHERE id = ? AND deleted_at IS NULL',
       [req.params.id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
     if (existing[0].is_system) return res.status(403).json({ error: 'System Professional Services cannot be edited.' });
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
+    // The pair is judged as it will be stored: a field not sent keeps its stored value.
+    const minVsCap = minParticipantsError(
+      minGiven ? minParticipants.value : existing[0].min_participants,
+      capacityGiven ? capacity.value : existing[0].max_capacity,
+    );
+    if (minVsCap) return res.status(400).json({ error: minVsCap });
 
     await db.transaction(async (tx) => {
       await tx.query(
@@ -276,10 +291,11 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
            name                    = COALESCE(?, name),
            description             = COALESCE(?, description),
            max_capacity            = IF(?, ?, max_capacity),
+           min_participants        = IF(?, ?, min_participants),
            modified_at             = UTC_TIMESTAMP(),
            modified_by             = ?
          WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-        [name?.trim() ?? null, description ?? null, capacityGiven ? 1 : 0, capacity.value, actor, req.params.id, gymId],
+        [name?.trim() ?? null, description ?? null, capacityGiven ? 1 : 0, capacity.value, minGiven ? 1 : 0, minParticipants.value, actor, req.params.id, gymId],
       );
       if (translations) {
         await writeTranslations(tx, existing[0].id, translations);
@@ -307,6 +323,7 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
       next: {
         name, description,
         ...(capacityGiven ? { max_capacity: capacity.value } : {}),
+        ...(minGiven ? { min_participants: minParticipants.value } : {}),
         ...(translations ? { translations } : {}),
       },
     });
@@ -449,7 +466,7 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: source } = await db.query(
-      `SELECT id, name, description, max_capacity, image_url, image_thumbnail_url FROM professional_services
+      `SELECT id, name, description, max_capacity, min_participants, image_url, image_thumbnail_url FROM professional_services
        WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND deleted_at IS NULL`,
       [req.params.id, gymId],
     );
@@ -460,11 +477,11 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, image_url, image_thumbnail_url, created_by)
-         VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, image_url, image_thumbnail_url, created_by)
+         VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
         // #2010: the copy inherits the source's image *references*. No object is
         // copied or re-processed, so one object may be referenced by several rows.
-        [gymId, newName, src.description, src.max_capacity, src.image_url ?? null, src.image_thumbnail_url ?? null, actor],
+        [gymId, newName, src.description, src.max_capacity, src.min_participants, src.image_url ?? null, src.image_thumbnail_url ?? null, actor],
       );
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)

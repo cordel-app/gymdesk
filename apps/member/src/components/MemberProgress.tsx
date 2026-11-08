@@ -1,17 +1,21 @@
 'use client';
 
+import { ExerciseDetailsModal } from './ExerciseDetailsDialog';
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { LineChart } from '@gymdesk/charts';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDayMonth } from '@/lib/gymFormat';
-import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
-import { memberTheme, noticeStyle } from '@/lib/memberChrome';
+import { MemberGoalCard } from '@/components/MemberGoalCard';
+import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
+import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
+import { inputStyle, memberTheme, noticeStyle } from '@/lib/memberChrome';
 import {
   type ProgressDetail, type ProgressSummary,
-  daysNewestFirst, formatBestResult, formatMaxWeight, formatSetValue,
-  progressChartPoints, resultUnitKey,
+  NO_PROGRESS_FILTERS, daysNewestFirst, filterProgress, formatBestResult, formatMaxWeight, formatSetValue,
+  gymToday, muscleLabel, progressChartPoints, progressMuscles, resultUnitKey,
+  type ProgressDateRange, type ProgressFilters,
 } from '@/lib/memberProgress';
 
 /**
@@ -27,6 +31,9 @@ export function MemberProgress() {
   const gym = useGymFormatSettings();
   const [items, setItems] = useState<ProgressSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [filters, setFilters] = useState<ProgressFilters>(NO_PROGRESS_FILTERS);
+  const [openId, setOpenId] = useState<Record<number, boolean>>({});
+  const [videoItem, setVideoItem] = useState<ProgressSummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,27 +48,100 @@ export function MemberProgress() {
   if (items === null) return <p style={styles.hint}>{t('progress.loading')}</p>;
   if (items.length === 0) return <p style={styles.hint}>{t('progress.empty')}</p>;
 
+  const visible = filterProgress(items, filters, gymToday(new Date(), gym.time_zone));
+  const muscles = progressMuscles(items);
+  const filtered = filters.exerciseId !== null || filters.muscle !== null || filters.range !== 'all';
+
+  // #2321 — the same Play control as My Training Plan (▶, external pages open in a tab).
+  const playButton = (item: ProgressSummary) => {
+    const url = item.video_url;
+    const kind = exerciseVideoKind(url);
+    if (!url || !kind) return undefined;
+    const label = t('exercise_media.play_video_of', { name: item.exercise_name });
+    return kind === 'external'
+      ? <a href={url} target="_blank" rel="noreferrer" aria-label={label} style={styles.playBtn}>▶</a>
+      : <button type="button" onClick={() => setVideoItem(item)} aria-label={label} style={styles.playBtn}>▶</button>;
+  };
+
   return (
     <div>
-      {items.map((item) => {
+      <div style={styles.filters}>
+        <label style={styles.filterField}>
+          <span style={styles.statLabel}>{t('progress.filter_exercise')}</span>
+          <select
+            style={inputStyle}
+            value={filters.exerciseId ?? ''}
+            onChange={(e) => setFilters({ ...filters, exerciseId: e.target.value === '' ? null : Number(e.target.value) })}
+          >
+            <option value="">{t('progress.filter_all_exercises')}</option>
+            {items.map((i) => <option key={i.exercise_id} value={i.exercise_id}>{i.exercise_name}</option>)}
+          </select>
+        </label>
+        {muscles.length > 0 && (
+          <label style={styles.filterField}>
+            <span style={styles.statLabel}>{t('progress.filter_muscle')}</span>
+            <select
+              style={inputStyle}
+              value={filters.muscle ?? ''}
+              onChange={(e) => setFilters({ ...filters, muscle: e.target.value === '' ? null : e.target.value })}
+            >
+              <option value="">{t('progress.filter_all_muscles')}</option>
+              {muscles.map((m) => <option key={m} value={m}>{muscleLabel(m)}</option>)}
+            </select>
+          </label>
+        )}
+        <label style={styles.filterField}>
+          <span style={styles.statLabel}>{t('progress.filter_date')}</span>
+          <select
+            style={inputStyle}
+            value={filters.range}
+            onChange={(e) => setFilters({ ...filters, range: e.target.value as ProgressDateRange })}
+          >
+            <option value="all">{t('progress.range_all')}</option>
+            <option value="week">{t('progress.range_week')}</option>
+            <option value="month">{t('progress.range_month')}</option>
+          </select>
+        </label>
+      </div>
+      {visible.length === 0 && <p style={styles.hint}>{t('progress.no_matches')}</p>}
+      {visible.map((item) => {
         const unitKey = resultUnitKey(item.best_result?.slug);
         const best = formatBestResult(item.best_result, unitKey ? t(unitKey) : null, gym);
+        const thumb = item.image_thumbnail_url ?? item.image_url;
         return (
-          <MemberCollapsibleCard
-            key={item.exercise_id}
-            title={item.exercise_name}
-            summary={t('progress.summary', { days: item.days_exercised })}
-            cardStyle={styles.solidCard}
-          >
-            <div style={styles.stats}>
-              <Stat label={t('progress.days_exercised')} value={String(item.days_exercised)} />
-              <Stat label={t('progress.max_weight')} value={formatMaxWeight(item.max_weight, t('progress.unit_kg'), gym)} />
-              <Stat label={t('progress.best_result')} value={best} />
-            </div>
-            <ExerciseDetail item={item} />
-          </MemberCollapsibleCard>
+          <div key={item.exercise_id} style={{ marginTop: 16 }}>
+            <MemberGoalCard
+              title={item.exercise_name}
+              summary={t('progress.summary', { days: item.days_exercised })}
+              expanded={Boolean(openId[item.exercise_id])}
+              onToggle={() => setOpenId((o) => ({ ...o, [item.exercise_id]: !o[item.exercise_id] }))}
+              imageUrl={thumb}
+              previewUrl={item.image_url ?? thumb}
+              imageFallback={thumb ? t('nutrition.no_image') : undefined}
+              actions={playButton(item)}
+              imageDialog={(close) => <ExerciseDetailsModal name={item.exercise_name} src={item.image_url ?? thumb ?? null} info={item} onClose={close} />}
+            >
+              <div style={styles.stats}>
+                <Stat label={t('progress.days_exercised')} value={String(item.days_exercised)} />
+                <Stat label={t('progress.max_weight')} value={formatMaxWeight(item.max_weight, t('progress.unit_kg'), gym)} />
+                <Stat label={t('progress.best_result')} value={best} />
+              </div>
+              <ExerciseDetail item={item} />
+            </MemberGoalCard>
+          </div>
         );
       })}
+      {videoItem?.video_url && (
+        <ExerciseVideoViewer
+          url={videoItem.video_url}
+          poster={exerciseVideoPosterUrl({ exercise_video_url: videoItem.video_url, exercise_video_thumbnail_url: videoItem.video_thumbnail_url })}
+          name={videoItem.exercise_name}
+          onClose={() => setVideoItem(null)}
+        />
+      )}
+      {filtered && visible.length === 0 && (
+        <button type="button" style={styles.clear} onClick={() => setFilters(NO_PROGRESS_FILTERS)}>{t('progress.clear_filters')}</button>
+      )}
     </div>
   );
 }
@@ -139,7 +219,10 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
 }
 
 const styles: Record<string, CSSProperties> = {
-  solidCard: { background: memberTheme.surface },
+  playBtn: { flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', padding: 0, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, textDecoration: 'none', background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
+  filters: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 },
+  filterField: { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', minWidth: 0 },
+  clear: { background: 'none', border: 'none', color: memberTheme.textSecondary, textDecoration: 'underline', cursor: 'pointer', display: 'block', margin: '0 auto', font: 'inherit' },
   readingsToggle: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
     background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', font: 'inherit', textAlign: 'left',

@@ -22,7 +22,7 @@ import { supersedeApplications } from './one-active-plan';
  *    the predecessor and its Promotion applications stay as history;
  *  - a **plan-less** version has no assignment at all, and a previous one is
  *    closed;
- *  - family coverage is copied from `product_set_members`.
+ *  - coverage is each plan snapshot's own beneficiaries (#2125 stage 21).
  *
  * The projection is removed with the legacy commercial columns in the final
  * stage; nothing may start reading it as the commercial owner.
@@ -93,7 +93,8 @@ const SET_SELECT = `
          snap.discount_reason, snap.discount_expires_at,
          sch.cadence_interval, sch.cadence_unit
     FROM product_sets ps
-    LEFT JOIN plan_snapshots snap ON snap.product_set_id = ps.id
+    LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+    LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id
     LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
    WHERE ps.id = ? AND ps.gym_id = ?`;
 

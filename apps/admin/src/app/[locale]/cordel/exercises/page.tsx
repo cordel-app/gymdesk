@@ -354,6 +354,7 @@ export default function CordelExercisesPage() {
     return (
       <div style={{ padding: '16px 20px' }}>
         <ExerciseReadOnlyView
+          nameLocales={nameLocales}
           exercise={exercise}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
@@ -461,6 +462,7 @@ export default function CordelExercisesPage() {
               nameLocales={nameLocales}
               muscleKeys={muscleKeys}
               muscleLabel={muscleLabel}
+              equipmentOptions={facets?.equipment}
               resultTypes={resultTypes}
               nameRef={newNameRef}
               media={renderEditorMedia(null)}
@@ -486,6 +488,7 @@ export default function CordelExercisesPage() {
                     nameLocales={nameLocales}
                     muscleKeys={muscleKeys}
                     muscleLabel={muscleLabel}
+                    equipmentOptions={facets?.equipment}
                     resultTypes={resultTypes}
                     nameRef={nameInputRef}
                     media={renderEditorMedia(row)}
@@ -528,6 +531,7 @@ export default function CordelExercisesPage() {
                 nameLocales={nameLocales}
               muscleKeys={muscleKeys}
                 muscleLabel={muscleLabel}
+                equipmentOptions={facets?.equipment}
                 resultTypes={resultTypes}
                 nameRef={nameInputRef}
                 media={renderEditorMedia(row)}
@@ -539,6 +543,7 @@ export default function CordelExercisesPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(row) => toggleExpand(row.id)}
+        clickRowToExpand
       />}
 
       {detailFor && (

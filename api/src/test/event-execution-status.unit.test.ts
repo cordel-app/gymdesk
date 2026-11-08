@@ -112,7 +112,9 @@ describe('the status is derived, not stored (#977)', () => {
     // stored copy would need a nightly sweep, and a night the sweep missed
     // would report yesterday's empty slots as still Scheduled.
     expect(router).not.toMatch(/execution_status\s*=/);
-    const migrations = readdirSync(join(API_SRC, 'infra', 'migrations'));
+    const migrations = readdirSync(join(API_SRC, 'infra', 'migrations'), { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
     const offenders = migrations.filter((file) =>
       readFileSync(join(API_SRC, 'infra', 'migrations', file), 'utf-8').includes('execution_status'));
     expect(offenders, 'a migration names execution_status — the status is derived on read').toEqual([]);
