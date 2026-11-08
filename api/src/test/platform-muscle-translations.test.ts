@@ -39,6 +39,15 @@ describe('muscle translations (#2402)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('lists the seeded muscles with their Spanish and Catalan names (#2333 backfill)', async () => {
+    const res = await request.get('/platform/muscles').set(H);
+    expect(res.status).toBe(200);
+    const chest = res.body.find((m: any) => m.slug === 'chest');
+    expect(chest).toBeTruthy();
+    expect(chest.translations.es).toBe('Pecho');
+    expect(chest.translations.ca).toBe('Pit');
+  });
+
   it('stores translations on create, reports them, keeps them on a name-only edit and replaces them on request', async () => {
     const created = await request.post('/platform/muscles').set(H)
       .send({ name: NAME, translations: { es: 'Músculo prueba', ca: 'Múscul prova' } });
