@@ -196,7 +196,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
  */
 export type ProductBenefitColumnKey =
   'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
-  | 'tax' | 'promotion' | 'direct_discount' | 'final_price'
+  | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
   | 'mandatory';
 
 export interface ProductBenefitColumn {
