@@ -20,6 +20,7 @@ export interface ProgressSummary {
   /** #2284 — the latest performed day (`YYYY-MM-DD`), and the muscle slugs the exercise works. */
   last_logged_date: string | null;
   muscles: string[];
+  primary_muscles?: string[];
   short_description?: string | null;
   description?: string | null;
   category?: string | null;
@@ -38,7 +39,7 @@ export interface ProgressDay {
   sets: ProgressSet[];
 }
 
-export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url' | 'video_url' | 'video_thumbnail_url' | 'last_logged_date' | 'muscles'> {
+export interface ProgressDetail extends Omit<ProgressSummary, 'image_url' | 'image_thumbnail_url' | 'video_url' | 'video_thumbnail_url' | 'last_logged_date' | 'muscles' | 'primary_muscles'> {
   days: ProgressDay[];
 }
 

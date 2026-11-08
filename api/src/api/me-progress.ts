@@ -92,7 +92,8 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
               ${effectiveVideoPosterSql('e', sex)} AS video_thumbnail_url,
               ${allowedTypesSql},
               ${localizedDescriptionExprs('e', getRequestLocale(req))}, ${exerciseFactSql('e', 'category')} AS category, ${exerciseFactSql('e', 'equipment')} AS equipment,
-              (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles
+              (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id) mm WHERE mm.exercise_id = e.id) AS muscles,
+              (SELECT JSON_ARRAYAGG(mm.slug) FROM (SELECT DISTINCT em.exercise_id, m.slug FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id WHERE em.role = 'principal') mm WHERE mm.exercise_id = e.id) AS primary_muscles
        FROM exercise_catalogue e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
@@ -115,6 +116,8 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
         category: ex.category ?? null,
         equipment: ex.equipment ?? null,
         muscles: ((json(ex.muscles) ?? []) as string[]).slice().sort(),
+        // #2379 — the principal subset, so a viewer lists it apart from the secondary muscles.
+        primary_muscles: ((json(ex.primary_muscles) ?? []) as string[]).slice().sort(),
         ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], allowed),
       };
     }).filter((ex: any) => ex.days_exercised > 0)

@@ -1602,6 +1602,19 @@ export default function PromotionsPage() {
     );
   }
 
+  // #2493 — the Session / One-off / Periodical sections' pair, rendered as the
+  // last element of the open editor (after the fields and `+ Add`).
+  function sectionBottomActions(onSave: () => void, onCancel: () => void) {
+    return (
+      <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
+        <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+        <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
+          {editSaving ? t('saving') : t('save_changes')}
+        </button>
+      </div>
+    );
+  }
+
   // That pair's error line, on its own: a failed section save reports itself
   // under the fields, never under the main form (#897).
   function renderSectionError(error: string | null) {
@@ -1635,9 +1648,6 @@ export default function PromotionsPage() {
         {renderSectionHeader(
           cfg.titleKey,
           isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, cfg.section) : null,
-          editing
-            ? sectionHeaderActions(() => handleSaveBenefitSection(promo.id, cfg.section), cancelSectionEdit)
-            : null,
         )}
         {editing ? (
           <>
@@ -1650,6 +1660,8 @@ export default function PromotionsPage() {
               quantityColumn: cfg.quantityColumn,
             })}
             {renderSectionError(sectionError)}
+            {/* #2493: Save / Cancel close the editor, after the + Add button. */}
+            {sectionBottomActions(() => handleSaveBenefitSection(promo.id, cfg.section), cancelSectionEdit)}
           </>
         ) : renderProductBenefitView(
           cfg.emptyKey, productSectionSaved(promo.id, cfg.section), cfg.showFrequency,
