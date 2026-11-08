@@ -102,7 +102,9 @@ describe('verifyAndParseWebhook()', () => {
       FAILED: 'failed',
       EXPIRED: 'expired',
       PENDING: 'pending',
-      PROCESSING: 'pending',
+      PENDING_PROCESSING: 'pending',
+      AUTHORIZED: 'pending',
+      CANCELED: 'failed',
     };
 
     for (const [moneiStatus, expected] of Object.entries(statuses)) {
