@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 - **Done**: #N (…)` bullet; a ticket shipped in stages keeps one bullet per stage.
 
 ## November 2026
+- **Done**: #2251 follow-up (Cordel → Base Products page no longer caps its width at 1000px or adds its own padding, so it fills the window like Gym Products. UI only, no API or migration change)
 - **Done**: #2491 (Promotions context menu order is now Edit, Duplicate, Delete, Details; handlers, gates and styling unchanged; UI only, no API or migration change)
 - **Done**: #2479 (stage 1: `GET /members/:id/products` lists the open, unexpired Draft Product Set's recurring lines beside the Active ones: a line the Draft added reads as a Draft row and a line it changed shows the Draft's frozen figures, so a Product added to the Draft appears after Save without a refresh. Applied Product Promotions on recurring lines are not yet shown in that list; not built here)
 
