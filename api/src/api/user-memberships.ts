@@ -981,6 +981,26 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
 });
 
 /**
+ * #2481: the access end date the cancellation confirmation shows. Read-only; it calls the very function
+ * `retireProjected()` applies, so the dialog and the cancellation cannot disagree. `ends_on` is null for an
+ * assignment no ProductSet projects (the dialog then falls back to its generic wording).
+ */
+userMembershipsRouter.get('/:id/cancellation-preview', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const out = await db.transaction(async (tx) => {
+      const { rows } = await tx.query('SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      if (rows.length === 0) return null;
+      const { projectedSetFor, cancellationEndFor } = await import('./product-set-bridge');
+      const set = await projectedSetFor(tx, gymId, Number(req.params.id));
+      return { ends_on: set ? await cancellationEndFor(tx, gymId, set) : null };
+    });
+    if (!out) return res.status(404).json({ error: 'Not found' });
+    res.json(out);
+  } catch (err) { next(err); }
+});
+
+/**
  * #1240 — **Cancel on a Draft is a hard delete.** A Draft is not the member's
  * plan (#1108): it has billed nothing, booked nothing and has no Billing Events,
  * so discarding it removes the row and its snapshot children (every FK to

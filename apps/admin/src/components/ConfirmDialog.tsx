@@ -6,6 +6,8 @@ import { overlayStyle, modalStyle, btnStyle } from './ui';
 interface ConfirmDialogProps {
   open: boolean;
   message: string;
+  /** #2481: an optional heading above the message. */
+  title?: string;
   /**
    * Anything the lead sentence alone cannot carry, rendered under it in the
    * same dialog — #956 stage 2's replacement warning names both Membership
@@ -26,12 +28,13 @@ interface ConfirmDialogProps {
   busy?: boolean;
 }
 
-export function ConfirmDialog({ open, message, details, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, message, details, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
   if (!open) return null;
 
   return (
     <div style={overlayStyle} onClick={onCancel}>
       <div style={{ ...modalStyle, width: 380 }} onClick={(e) => e.stopPropagation()}>
+        {title && <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>{title}</h3>}
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>{message}</p>
         {details && <div style={{ marginTop: 14 }}>{details}</div>}
 
