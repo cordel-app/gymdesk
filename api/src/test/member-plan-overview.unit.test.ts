@@ -39,3 +39,21 @@ describe('buildMemberPlanOverview (#2426)', () => {
     expect(o.billing_duration.auto_renew).toBe(false);
   });
 });
+
+describe('declined optional Products (#2495)', () => {
+  const row = (id: number, mandatory: number) => ({ product_id: id, product_name: `P${id}`, quantity: 1, mandatory,
+    product_image_thumbnail_url: `t${id}`, product_image_url: `f${id}` });
+  const enriched = {
+    oneoff_benefits: [row(1, 1), row(2, 0)], session_benefits: [], periodical_benefits: [],
+    declined_benefit_keys: ['oneoff:1', 'oneoff:2'],
+    billing_event_simulation: { available: true, dates: [] },
+  };
+  it('flags only the optional line as declined, never a mandatory one, and keeps it listed', () => {
+    const { products } = buildMemberPlanOverview(enriched, '2026-11-07');
+    expect(products.map((p) => [p.product_id, p.declined])).toEqual([[1, false], [2, true]]);
+  });
+  it('reports each product thumbnail and full image', () => {
+    const { products } = buildMemberPlanOverview(enriched, '2026-11-07');
+    expect(products[1]).toMatchObject({ image_url: 't2', image_full_url: 'f2' });
+  });
+});

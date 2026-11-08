@@ -58,6 +58,7 @@ export interface MemberPlanOverviewData {
     mandatory: boolean; action: string | null; value: number | null;
     original_price_incl_tax: number | null; final_price_incl_tax: number | null;
     original_line_price_incl_tax: number | null; final_line_price_incl_tax: number | null;
+    declined: boolean; image_url: string | null; image_full_url: string | null;
   }>;
   prepaid_end_date: string | null;
   initial_payment: number | null;
@@ -75,6 +76,8 @@ export interface MemberPlanOffer {
   id: number;
   name: string;
   description: string | null;
+  image_url?: string | null;
+  image_full_url?: string | null;
   price_incl_tax: number | null;
   tax_included: boolean;
   billing_interval: number | null;

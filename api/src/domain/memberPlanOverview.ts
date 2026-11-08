@@ -31,6 +31,11 @@ export interface MemberPlanOverviewProduct {
   final_price_incl_tax: number | null;
   original_line_price_incl_tax: number | null;
   final_line_price_incl_tax: number | null;
+  /** #2495 — an optional line the member un-ticked: shown, but charged nowhere. */
+  declined: boolean;
+  /** #2495 — the Product's thumbnail and full image, for the circular thumbnail. */
+  image_url: string | null;
+  image_full_url: string | null;
 }
 
 export interface MemberPlanOverview {
@@ -92,6 +97,7 @@ export function buildMemberPlanOverview(enriched: any, startsAt: string): Member
     ['session', enriched.session_benefits ?? []],
     ['periodical', enriched.periodical_benefits ?? []],
   ];
+  const declinedKeys = new Set<string>(Array.isArray(enriched.declined_benefit_keys) ? enriched.declined_benefit_keys : []);
   const products: MemberPlanOverviewProduct[] = [];
   for (const [section, rows] of sections) {
     for (const r of rows) {
@@ -108,7 +114,12 @@ export function buildMemberPlanOverview(enriched: any, startsAt: string): Member
         final_price_incl_tax: numOrNull(r.final_price_incl_tax),
         original_line_price_incl_tax: numOrNull(r.original_line_price_incl_tax),
         final_line_price_incl_tax: numOrNull(r.final_line_price_incl_tax),
+        declined: false,
+        image_url: r.product_image_thumbnail_url ?? r.product_image_url ?? null,
+        image_full_url: r.product_image_url ?? null,
       });
+      const last = products[products.length - 1];
+      last.declined = !last.mandatory && declinedKeys.has(`${section}:${last.product_id}`);
     }
   }
 

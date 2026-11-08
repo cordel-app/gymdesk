@@ -296,7 +296,13 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
   return rows.length > 0 ? rows[0].id : null;
 }
 
-export async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
+export async function enrichPlan(
+  plan: PlanRow, gymId: string,
+  // #2495 — optional Products the member un-ticked in the Add Plan card
+  // (`section:product_id`). They stay in the section reads, so the card can
+  // show them struck through, and leave only the Billing Event Simulation.
+  opts: { declined?: ReadonlySet<string> } = {},
+): Promise<object> {
   const [prices, bpRows, centers, memberCount, products, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
@@ -479,14 +485,15 @@ export async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> 
     membershipFeeInclTax: priceFields.amount_incl_tax
       ?? (currentPrice ? parseFloat(currentPrice.price) : null),
     items: planSimulationItems([
-      { category: 'oneoff', rows: oneoffSection },
-      { category: 'session', rows: sessionSection },
-      { category: 'periodical', rows: periodicalSection },
+      { category: 'oneoff', rows: withoutDeclined('oneoff', oneoffSection, opts.declined) },
+      { category: 'session', rows: withoutDeclined('session', sessionSection, opts.declined) },
+      { category: 'periodical', rows: withoutDeclined('periodical', periodicalSection, opts.declined) },
     ], products),
   });
 
   return {
     ...plan,
+    declined_benefit_keys: [...(opts.declined ?? [])],
     current_price: currentPrice ? currentPrice.price : null,
     price_history: priceHistory,
     billing_policy: billingPolicy,
@@ -505,6 +512,15 @@ export async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> 
     // #915: the same — computed on every read, persisted nowhere, charges nothing.
     billing_event_simulation: billingEventSimulation,
   };
+}
+
+/** #2495 — drops the optional lines a member declined; a mandatory one never leaves. */
+function withoutDeclined(section: string, rows: any[], declined?: ReadonlySet<string>): any[] {
+  if (!declined || declined.size === 0) return rows;
+  return rows.filter((r) => {
+    const mandatory = r.mandatory === undefined ? true : Boolean(Number(r.mandatory)) || r.mandatory === true;
+    return mandatory || !declined.has(`${section}:${Number(r.product_id)}`);
+  });
 }
 
 async function planExists(planId: string | string[], gymId: string): Promise<boolean> {
@@ -1597,6 +1613,7 @@ function selectPlanProductBenefits(table: string): string {
   return `SELECT b.*, gc.name AS product_name, gc.type AS product_type,
                  gc.billing_frequency AS product_billing_frequency, gc.status AS product_status,
                  gc.mandatory AS product_mandatory,
+                 gc.image_url AS product_image_url, gc.image_thumbnail_url AS product_image_thumbnail_url,
                  gc.amount AS product_amount, gc.tax_behavior AS product_tax_behavior,
                  tr.rate_percent AS product_tax_rate_percent
           FROM ${table} b
