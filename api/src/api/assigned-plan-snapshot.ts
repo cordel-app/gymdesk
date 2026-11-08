@@ -114,6 +114,10 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   frequency: SessionBenefitFrequency | null;
   /** #1184 stage 2 — whether the member could decline this benefit when it was assigned. */
   mandatory: boolean;
+  /** #2483 — the tax rate (%) the line is quoted at; `null` when none is configured. */
+  applied_tax_percent: number | null;
+  /** #2483 — what the line's own treatment took off the line total, VAT included. */
+  direct_discount_line_incl_tax: number | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -196,6 +200,15 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
   // A snapshot row came from a Membership Plan section, so it is read with
   // the Plan's option set — the three of §16 and no more.
   const benefit = toProductBenefit('plan', row.action, row.value);
+  const prices = productBenefitPrices('plan', {
+    product_id: row.product_id,
+    quantity: row.quantity,
+    action: benefit.action,
+    value: benefit.value,
+    product_amount: row.unit_price,
+    product_tax_behavior: row.product_tax_behavior,
+    product_tax_rate_percent: row.product_tax_rate_percent,
+  });
   return {
     id: row.id,
     user_membership_id: row.user_membership_id,
@@ -221,15 +234,16 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
      * figures cannot disagree with what the assignment bills: both end at
      * `applyLineBenefit()`.
      */
-    ...productBenefitPrices('plan', {
-      product_id: row.product_id,
-      quantity: row.quantity,
-      action: benefit.action,
-      value: benefit.value,
-      product_amount: row.unit_price,
-      product_tax_behavior: row.product_tax_behavior,
-      product_tax_rate_percent: row.product_tax_rate_percent,
-    }),
+    ...prices,
+    // #2483 — the breakdown beside the price: the tax rate the line is quoted
+    // at and what its own treatment took off the line (both from the figures
+    // above, never a second calculation). Promotions are named by the card from
+    // the application snapshots it already holds.
+    applied_tax_percent: row.product_tax_rate_percent != null ? Number(row.product_tax_rate_percent) : null,
+    direct_discount_line_incl_tax:
+      prices.original_line_price_incl_tax != null && prices.final_line_price_incl_tax != null
+        ? Math.round((prices.original_line_price_incl_tax - prices.final_line_price_incl_tax) * 100) / 100
+        : null,
   };
 }
 

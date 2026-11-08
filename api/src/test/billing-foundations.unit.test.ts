@@ -36,8 +36,8 @@ describe('provider payment status (#1325)', () => {
     const v1 = crypto.createHmac('sha256', secret).update(`${t}.${body.toString('utf8')}`).digest('hex');
     const parsed = verifyAndParseWebhook({ 'monei-signature': `t=${t},v1=${v1}` }, body, secret);
     expect(parsed.providerStatus).toBe('PENDING_PROCESSING');
-    // The internal mapping still collapses it — which is why the raw one exists.
-    expect(parsed.status).toBe('failed');
+    // In flight, never a failure: a `failed` here would close the request while the money may still settle.
+    expect(parsed.status).toBe('pending');
   });
 });
 

@@ -7,6 +7,7 @@ import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
+import { ownPlanSnapshotsOfSet } from './plan-snapshot-ownership';
 import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
@@ -56,6 +57,8 @@ export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<Lock
   if (!r) return { kind: 'not_found' };
   if (r.status !== 'draft') return { kind: 'not_a_draft', status: String(r.status) };
   if (Number(r.expired) === 1) return { kind: 'expired' };
+  // #2125 M4b-0: every Draft write edits snapshots the Draft owns, never one another set shares.
+  await ownPlanSnapshotsOfSet(tx, gymId, Number(r.id));
   return {
     id: Number(r.id), gym_id: String(r.gym_id), owner_member_id: Number(r.owner_member_id),
     root_product_set_id: Number(r.root_product_set_id), membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,

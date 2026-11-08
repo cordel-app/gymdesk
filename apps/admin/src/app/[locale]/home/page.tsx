@@ -119,7 +119,7 @@ export default function HomePage() {
     Math.max(1, Math.round((new Date(k.ends_at).getTime() - new Date(k.starts_at).getTime()) / 60000));
 
   return (
-    <div style={{ padding: 24, maxWidth: 1240 }}>
+    <div style={{ padding: 24 }}>
       <InlineStyle css={homeFocusCss} />
       <HomeHeader
         greeting={name ? t('greeting', { name }) : t('greeting_anonymous')}

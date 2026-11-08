@@ -3,6 +3,7 @@ import { Tx } from '../infra/db';
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import { reconfigureProjected } from './product-set-bridge';
+import { ownPlanSnapshotsOfSet, ownAssignmentSnapshots } from './plan-snapshot-ownership';
 
 /**
  * #1325 PR 3e-2 — the Plan's *Apply new price to assigned plans* writes the new
@@ -30,6 +31,7 @@ async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: numbe
 }
 
 async function writePrice(tx: Tx, gymId: string, setId: number, price: number, planPriceId: number | null) {
+  await ownPlanSnapshotsOfSet(tx, gymId, setId);
   await tx.query(
     `UPDATE plan_snapshots
         SET membership_fee_price = ?, base_price = ?, plan_price_id = ?
@@ -74,6 +76,7 @@ export async function repriceOnVersion(tx: Tx, input: {
 export async function refreshPlanPriceReference(tx: Tx, input: {
   gymId: string; userMembershipId: number; price: number; planPriceId: number | null;
 }): Promise<void> {
+  await ownAssignmentSnapshots(tx, input.gymId, input.userMembershipId);
   // MySQL cannot update a table through a subquery on itself: resolve the snapshot first.
   const { rows } = await tx.query<{ id: number | null }>(
     `SELECT ${assignmentPlanSnapshotId('?')} AS id`, [input.userMembershipId]);

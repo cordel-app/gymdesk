@@ -68,7 +68,7 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
       productBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
         .map((c) => c.key),
     ).toEqual(
-      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement' && k !== 'mandatory'),
+      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => !['requirement', 'mandatory', 'tax', 'promotion', 'direct_discount'].includes(k)),
     );
   });
 
@@ -104,8 +104,8 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
   it('maps the frozen line into the shared row rather than re-reading the entity', () => {
     // One mapping, built on the editor's own (#797): the half that reads and the
     // half that writes cannot disagree about what a line is.
-    expect(configSrc).toMatch(/function toViewRow\([\s\S]{0,200}\.\.\.toDraftRow\(b\)/);
-    expect(configSrc).toContain('rows={rows.map(toViewRow)}');
+    expect(configSrc).toMatch(/function toViewRow\([\s\S]{0,300}\.\.\.toDraftRow\(b\)/);
+    expect(configSrc).toContain('toViewRow(r, promotionNamesByProduct)');
     for (const field of [
       'original_price_incl_tax', 'final_price_incl_tax',
       'original_line_price_incl_tax', 'final_line_price_incl_tax',

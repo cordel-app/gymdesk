@@ -9,6 +9,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusFilter } from '@/components/StatusFilter';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
 import { localeLabel } from '@/lib/localeLabels';
@@ -17,7 +19,7 @@ import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/c
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
-  ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
+  ProductCardHeader, ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
 } from '@/components/products/ProductListChrome';
 import { ProductLayout, productValueStyle, productTextareaStyle, productCheckboxCellStyle } from '../../financials/products/ProductLayout';
 import {
@@ -157,6 +159,7 @@ export default function BaseProductsPage() {
   const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
+  const [view, setView] = useExerciseViewMode();
   const [rows, setRows] = useState<BaseProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -437,10 +440,13 @@ export default function BaseProductsPage() {
   );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ExerciseViewToggle value={view} onChange={setView} />
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => { setForm(formFor(null)); setError(null); }}>{t('add')}</button>
+        </div>
       </div>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: '#666' }}>{t('subtitle')}</p>
 
@@ -456,8 +462,33 @@ export default function BaseProductsPage() {
 
       {newEditor}
 
-      <ProductListFrame showHeader={rows.length > 0} t={tp as any}>
-        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : (
+      {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : view === 'cards' ? (
+        <CardGrid>
+          {rows.map((p) => (
+            <div key={p.id} style={productCardStyle}>
+              <ProductCardHeader
+                item={rowData(p)}
+                isExpanded={expanded.has(p.id)}
+                text={listText}
+                onToggle={() => toggleExpand(p.id)}
+                menuItems={[
+                  { label: t('edit'), onClick: () => { setView('list'); setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
+                  { label: t('details'), onClick: () => setDetails(p) },
+                  { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                ]}
+              />
+              {expanded.has(p.id) && (
+                <div style={productExpandedBodyStyle}>
+                  {layoutFor(null, p)}
+                  {extras(null, p)}
+                </div>
+              )}
+            </div>
+          ))}
+        </CardGrid>
+      ) : (
+      <ProductListFrame showHeader t={tp as any}>
+        {(
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: form?.id === null ? 12 : 0 }}>
             {rows.map((p) => (
               <div key={p.id} style={productCardStyle}>
@@ -491,6 +522,7 @@ export default function BaseProductsPage() {
           </div>
         )}
       </ProductListFrame>
+      )}
 
       <FieldTranslationsModal
         open={langModal !== null}

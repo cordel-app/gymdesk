@@ -1,6 +1,7 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { memberTheme } from '@/lib/memberChrome';
 
 /**
@@ -36,7 +37,12 @@ export function MemberDialog({
   actions: ReactNode;
   labelledBy: string;
 }) {
-  return (
+  // #1764 — rendered in `document.body`, never inside the caller's DOM: a dialog
+  // opened from a card (My Next Bookings' image) otherwise sits under that
+  // card's `overflow: hidden` / transform / filter, which clips a `position:
+  // fixed` sheet and leaves its Close button unreachable. React events still
+  // bubble through the portal to the caller, which is how the card stops them.
+  const dialog = (
     <div
       style={styles.backdrop}
       onClick={onClose}
@@ -55,6 +61,7 @@ export function MemberDialog({
       </div>
     </div>
   );
+  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body);
 }
 
 const styles: Record<string, CSSProperties> = {

@@ -854,5 +854,16 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# day} other {# days}}"
+  },
+  "booking_detail": {
+    "center": "Center",
+    "space": "Space",
+    "trainer": "Trainer",
+    "status": "Booking status",
+    "attendees": "Attendees",
+    "waiting_list": "Waiting list",
+    "attendees_count": "{count, plural, one {# person booked} other {# people booked}}",
+    "cancel": "Cancel booking",
+    "close": "Close"
   }
 }

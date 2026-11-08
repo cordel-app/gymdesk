@@ -184,12 +184,12 @@ describe('Promotions: every subsection action is beside its title (#963)', () =>
     );
   });
 
-  it('puts each section editor\'s Save/Cancel in that section\'s header', () => {
+  it('puts each section editor\'s Save/Cancel in that section\'s header (Membership Fee) or at its bottom (#2493)', () => {
     expect(promotionsSrc).toContain(
       'function renderSectionHeader(titleKey: string, onEdit: (() => void) | null, actions?: React.ReactNode)',
     );
     expect(promotionsSrc).toMatch(
-      /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
+      /sectionBottomActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
     );
     expect(promotionsSrc).toMatch(
       /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, 'membership_fee'\), cancelSectionEdit\)/,
