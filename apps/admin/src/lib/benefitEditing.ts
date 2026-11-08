@@ -111,6 +111,8 @@ export interface ProductBenefitRow {
   /** #2483 — the line's applied tax rate (%), the names of the Promotions granting the same Product and what its own treatment took off the line. */
   applied_tax_percent?: number | null;
   applied_promotions?: string[];
+  /** #2494 — the benefit each of those Promotions gives this line, in the same order. */
+  applied_promotion_benefits?: string[];
   direct_discount_line_incl_tax?: number | null;
 }
 

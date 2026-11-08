@@ -36,6 +36,7 @@ import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
 import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
+import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -200,11 +201,13 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
  */
 function toViewRow(
   b: AssignedPlanSnapshotBenefit, promotionNames: Map<number, string[]>,
+  promotionBenefits: Map<number, string[]>,
 ): ProductBenefitRow {
   return {
     ...toDraftRow(b),
     applied_tax_percent: b.applied_tax_percent ?? null,
     applied_promotions: promotionNames.get(b.product_id) ?? [],
+    applied_promotion_benefits: promotionBenefits.get(b.product_id) ?? [],
     direct_discount_line_incl_tax: b.direct_discount_line_incl_tax ?? null,
     frequency: b.frequency,
     original_price_incl_tax: b.original_price_incl_tax,
@@ -221,6 +224,7 @@ export function AssignedPlanConfiguration({
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
   // the stored pair ("1 × Month").
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
+  const tp = useTranslations('promotions');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
@@ -229,12 +233,19 @@ export function AssignedPlanConfiguration({
   // Membership Fee. Names only: every amount stays the server's.
   const applied = promotions.filter((p) => p.status === 'applied');
   const promotionNamesByProduct = new Map<number, string[]>();
+  const promotionBenefitsByProduct = new Map<number, string[]>();
   for (const p of applied) {
     for (const g of [...p.session_grants, ...p.oneoff_grants, ...p.periodical_grants]) {
       if (g.product_id == null) continue;
       const names = promotionNamesByProduct.get(g.product_id) ?? [];
-      if (!names.includes(p.promotion_name)) names.push(p.promotion_name);
+      const benefits = promotionBenefitsByProduct.get(g.product_id) ?? [];
+      if (!names.includes(p.promotion_name)) {
+        names.push(p.promotion_name);
+        // The grant's own frozen action/value (#635 §16), worded in the Promotion's voice.
+        benefits.push(benefitTreatmentLabel(tp as any, 'promotion', { action: g.action, value: g.value } as any));
+      }
       promotionNamesByProduct.set(g.product_id, names);
+      promotionBenefitsByProduct.set(g.product_id, benefits);
     }
   }
   const feePromotionNames = applied
@@ -658,7 +669,7 @@ export function AssignedPlanConfiguration({
               <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
-                rows={rows.map((r) => toViewRow(r, promotionNamesByProduct))}
+                rows={rows.map((r) => toViewRow(r, promotionNamesByProduct, promotionBenefitsByProduct))}
                 showFrequency={showFrequency}
                 frequencyColumn={viewFrequencyColumn}
                 benefitContext="plan"
