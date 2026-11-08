@@ -196,7 +196,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
  */
 export type ProductBenefitColumnKey =
   'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
-  | 'tax' | 'promotion' | 'direct_discount' | 'final_price'
+  | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
   | 'mandatory';
 
 export interface ProductBenefitColumn {
@@ -227,6 +227,8 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   // Rendered only where a caller asks (`showBreakdown`), read from the server.
   { key: 'tax', labelKey: 'col_applied_tax', width: 90, align: 'right' },
   { key: 'promotion', labelKey: 'col_applied_promotion', width: 170, align: 'left' },
+  // #2494 — what the applied Promotion does to this line, from the application's own frozen grant.
+  { key: 'promotion_benefit', labelKey: 'col_promotion_benefit', width: 150, align: 'left' },
   { key: 'direct_discount', labelKey: 'col_direct_discount', width: 120, align: 'right' },
   { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
   // #1184 stage 2: a Membership Plan benefit's own Mandatory Yes/No is the last
@@ -300,7 +302,7 @@ export function productBenefitColumns(opts: {
     if (col.key === 'requirement') return opts.showRequirement === true;
     if (col.key === 'mandatory') return opts.showPlanMandatory === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
-    if (col.key === 'tax' || col.key === 'promotion' || col.key === 'direct_discount') {
+    if (col.key === 'tax' || col.key === 'promotion' || col.key === 'promotion_benefit' || col.key === 'direct_discount') {
       return opts.showPrices && opts.showBreakdown === true;
     }
     return true;
@@ -771,6 +773,9 @@ export function ProductBenefitView({
       case 'promotion':
         return row.applied_promotions && row.applied_promotions.length > 0
           ? row.applied_promotions.join(', ') : '—';
+      case 'promotion_benefit':
+        return row.applied_promotion_benefits && row.applied_promotion_benefits.length > 0
+          ? row.applied_promotion_benefits.join(', ') : '—';
       case 'direct_discount':
         return row.direct_discount_line_incl_tax != null && row.direct_discount_line_incl_tax > 0
           ? <BenefitPriceCell t={t} unit={row.direct_discount_line_incl_tax} line={null} />
