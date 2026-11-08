@@ -1621,7 +1621,7 @@ export default function PromotionsPage() {
         <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
-            {editSaving ? t('saving') : t('save_changes')}
+            {editSaving ? t('saving') : t('save')}
           </button>
         </div>
       </>
@@ -1680,7 +1680,6 @@ export default function PromotionsPage() {
         {/* #1387: Billing & Duration and Suitable Membership Plans belong to this
             section; they follow the card's Edit mode and its main Save. */}
         {cardEditing ? renderPlanScopeFields() : renderPlanScopeView(promo)}
-        {cardEditing && renderSectionActions(() => handleSaveMain(promo.id))}
       </div>
     );
   }
@@ -1738,7 +1737,7 @@ export default function PromotionsPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {editing
-          ? <>{renderMainFields()}{!cardTargetsMembershipPlan(promo) && renderSectionActions(() => handleSaveMain(promo.id))}</>
+          ? renderMainFields()
           : renderMainView(promo)}
 
         {renderMediaSection(promo)}
@@ -1768,6 +1767,9 @@ export default function PromotionsPage() {
             stays for both targets. */}
         {cardTargetsMembershipPlan(promo) && renderTimeline()}
         {renderBillingEventSimulation(promo)}
+
+        {/* #2492: the global Save / Cancel close the whole editor. */}
+        {editing && renderSectionActions(() => handleSaveMain(promo.id))}
       </div>
     );
   }
