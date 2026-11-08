@@ -702,6 +702,12 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
           return res.status(409).json({ ...conflict, reconciled: 'pending_invitation', has_pending_invitation: true });
         }
         if (found.kind === 'account_exists') {
+          // The refusal is the evidence the member was invited outside Gymdesk: keep it as history.
+          await db.query(
+            `UPDATE members SET invited_at = COALESCE(invited_at, UTC_TIMESTAMP()), modified_at = UTC_TIMESTAMP(), modified_by = ?
+              WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invited_at IS NULL`,
+            [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
+          );
           return res.status(409).json({ ...conflict, reconciled: 'account_exists' });
         }
       } catch {
