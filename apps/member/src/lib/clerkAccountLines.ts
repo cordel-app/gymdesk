@@ -58,6 +58,9 @@ export function clerkInvitationLine(f: ClerkAccountFields, locale: string, setti
     const date = formatClerkDate(f.invited_at, locale, settings);
     return { key: date ? 'clerk_invitation_invited_on' : 'clerk_invitation_invited', date };
   }
+  // #2183: an unlinked member whose email already has a Clerk account was invited (or
+  // registered) outside Gymdesk; the refused invite is the evidence, so never "None".
+  if (!(f.enrolled ?? !!f.clerk_user_id) && f.account_exists) return { key: 'clerk_invitation_external', date: null };
   if (f.invited_at) {
     const enrolled = f.enrolled ?? !!f.clerk_user_id;
     if (enrolled) {
