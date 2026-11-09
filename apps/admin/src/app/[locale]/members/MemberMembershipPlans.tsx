@@ -133,7 +133,7 @@ export function MemberMembershipPlans({
   const live = plans.filter((p) => p.is_live);
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
-  const history = plans.filter((p) => !p.is_live);
+  const history = plans.filter((p) => !p.is_live && !p.is_current);
   // #2125: a Member may hold several plans — the same plan twice included — so the picker offers
   // every assignable Plan; whether the new one is added beside the live ones or replaces them is
   // the Add-or-Replace dialog's question.

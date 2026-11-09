@@ -26,7 +26,8 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   const live = plans.filter((p) => p.is_live);
   const inFlight = live.filter(isInFlightPlan);
   if (inFlight.length > 0) return { rows: inFlight, heading: 'draft', showInFlightList: false };
-  return { rows: live, heading: 'active', showInFlightList: true };
+  // #2549: a cancelled plan stays in Active until its end date passes (status badge unchanged).
+  return { rows: plans.filter((p) => p.is_live || p.is_current), heading: 'active', showInFlightList: true };
 }
 
 /**

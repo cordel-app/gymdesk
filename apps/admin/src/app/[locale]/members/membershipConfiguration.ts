@@ -53,6 +53,8 @@ export interface MemberPlanRow {
    * #634 — but nothing can be attached to them.
    */
   is_live: boolean;
+  /** #2549 — live, or cancelled with an effective end date not yet passed: the Active/Past split. */
+  is_current?: boolean;
   /**
    * #634 §3 — whether a Promotion flagged "Only applicable for new members"
    * would be accepted on this plan: the Member held no other Membership Plan
