@@ -16,7 +16,7 @@ const fmt: EventTimeFormat = {
 
 const form = (over: Partial<CalendarEventForm> = {}): CalendarEventForm => ({
   title: 'Open day', activity_type_id: '', space_id: '', center_id: '', trainer_membership_id: '',
-  professional_service_id: '', color: '', starts_at: '2026-10-24T10:00', ends_at: '2026-10-24T11:30',
+  professional_service_id: '', event_type: 'public', capacity: '', eligible_professional_service_ids: [], color: '', starts_at: '2026-10-24T10:00', ends_at: '2026-10-24T11:30',
   all_day: false, description: '', status: 'scheduled', ...over,
 });
 
@@ -29,6 +29,15 @@ const lookups = {
 };
 
 describe('custom event view', () => {
+  it('lists the Professional Services of a Professional Services Based event and hides capacity (#2559)', () => {
+    const v = customEventView(form({ event_type: 'professional_services', eligible_professional_service_ids: ['7'], capacity: '9' }), lookups);
+    expect(v).toMatchObject({ professionalService: 'Physio', capacity: null });
+  });
+
+  it('shows the capacity of a Public event (#2559)', () => {
+    expect(customEventView(form({ capacity: '12' }), lookups).capacity).toEqual({ enrolled: 0, total: 12 });
+  });
+
   it('resolves the stored ids through the page lookups, including the Professional Service', () => {
     const v = customEventView(form({
       activity_type_id: '3', space_id: '4', center_id: '5', trainer_membership_id: '6', professional_service_id: '7',
