@@ -51,7 +51,7 @@ function refuse(res: Response, r: DraftRefusal) {
 const isRef = (o: any): o is DraftRefusal => o != null && typeof o.kind === 'string' && !('ok' in o);
 
 /** Runs `fn` on the locked Draft in one transaction and answers uniformly. */
-async function edit(req: any, res: Response, action: string,
+export async function edit(req: any, res: Response, action: string,
   fn: (tx: any, draft: LockedDraft) => Promise<{ ok: true; [k: string]: unknown } | DraftRefusal>,
   next: (err: unknown) => void, detail?: Record<string, unknown>) {
   const { gymId } = getTenantContext(req);
@@ -157,7 +157,7 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));
 
-productSetDraftRouter.get('/billing-event-simulation', async (req, res, next) => {
+export async function simulationHandler(req: any, res: any, next: any) {
   const { gymId } = getTenantContext(req);
   try {
     const id = Number((req.params as any).id);
@@ -195,6 +195,7 @@ productSetDraftRouter.get('/billing-event-simulation', async (req, res, next) =>
 
     res.json(composeDraftSimulation({ base, initial, oneOffs, today: new Date().toISOString().slice(0, 10) }));
   } catch (err) { next(err); }
-});
+}
+productSetDraftRouter.get('/billing-event-simulation', simulationHandler);
 
 export { emptyBillingEventSimulation };
