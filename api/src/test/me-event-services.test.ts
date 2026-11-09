@@ -21,10 +21,10 @@ afterAll(async () => {
 
 const asMember = () => ({ Authorization: TEST_AUTH_HEADER, 'x-impersonate-as': `member:${memberId}`, 'x-gym-id': gymId });
 
-async function service(name: string, status: 'active' | 'inactive' = 'active'): Promise<number> {
+async function service(name: string, status: 'active' | 'inactive' = 'active', max = 1): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO professional_services (gym_id, name, description, image_url, is_system) VALUES (?, ?, 'About', 'https://img.test/x.webp', 0)`,
-    [gymId, `${name} ${uniq()}`],
+    `INSERT INTO professional_services (gym_id, name, description, image_url, is_system, max_capacity) VALUES (?, ?, 'About', 'https://img.test/x.webp', 0, ?)`,
+    [gymId, `${name} ${uniq()}`, max],
   );
   await db.query(`INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, ?)`, [gymId, insertId, status]);
   return insertId;
@@ -36,13 +36,13 @@ beforeAll(async () => {
     `INSERT INTO activity_types (gym_id, name, max_capacity, status, public_event) VALUES (?, 'EventSvc Activity', 10, 'active', 1)`,
     [gymId],
   );
-  duo = await service('Duo');
-  single = await service('Single');
-  off = await service('Off', 'inactive');
-  for (const [id, cap] of [[duo, 2], [single, 1], [off, 3]] as const) {
+  duo = await service('Duo', 'active', 2);
+  single = await service('Single', 'active', 1);
+  off = await service('Off', 'inactive', 3);
+  for (const id of [duo, single, off]) {
     await db.query(
-      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id, capacity) VALUES (?, ?, ?, ?)`,
-      [gymId, at, id, cap],
+      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)`,
+      [gymId, at, id],
     );
   }
   const { insertId: m } = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'EventSvc Member', ?)`, [gymId, `es-${uniq()}@test.com`]);
