@@ -101,9 +101,9 @@ export const musclesRouter = Router();
 export const exercisesRouter = Router();
 
 /* ---- Muscles: read-only static catalog ---- */
-musclesRouter.get('/', async (_req, res, next) => {
+musclesRouter.get('/', async (req, res, next) => {
   try {
-    res.json((await listMuscles()).map(({ key }) => ({ key })));
+    res.json((await listMuscles(getRequestLocale(req))).map(({ key, display_name }) => ({ key, display_name })));
   } catch (err) { next(err); }
 });
 
