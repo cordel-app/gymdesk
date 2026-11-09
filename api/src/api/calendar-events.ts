@@ -43,6 +43,7 @@ import {
   isActivityImageRefusal, parseActivityImageRequest,
 } from './activity-image-storage';
 import { clearEventImage, storeEventImage } from './calendar-event-image-storage';
+import { parseCalendarEventType, parseEventCapacity, parseEventServiceIds } from '../domain/calendarEventType';
 import { parseWaitlistModeInput, waitlistModeClosesQueue, type WaitlistMode } from '../domain/waitlistMode';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -1423,6 +1424,7 @@ const EVENT_SELECT = `
     at.name   AS activity_type_name,
     at.color  AS activity_type_color,
     ps.name   AS professional_service_name,
+    ${ELIGIBLE_SERVICES_JSON_SQL},
     sp.name   AS space_name,
     c.name    AS center_name,
     gm.name   AS trainer_name,
@@ -1439,6 +1441,32 @@ const EVENT_SELECT = `
   LEFT JOIN centers          c   ON c.id    = ce.center_id
   LEFT JOIN gym_memberships gm   ON gm.id   = ce.trainer_membership_id
 `;
+
+/**
+ * #2559: the event-type fields of a manual event's body, judged once for POST
+ * and PUT. `undefined` means the request did not mention the type (legacy
+ * clients keep the old behaviour); otherwise the columns it implies — a
+ * Professional Services Based event carries its service list and no capacity,
+ * Public and Private carry a capacity and no list.
+ */
+async function parseEventTypeFields(gymId: string, body: any):
+  Promise<{ error: string } | { fields?: { type: string | null; capacity: number | null; serviceIds: number[]; primaryServiceId: number | null } }> {
+  if (!('event_type' in body)) return {};
+  const t = parseCalendarEventType(body.event_type);
+  if ('error' in t) return t;
+  const cap = parseEventCapacity(body.capacity);
+  if ('error' in cap) return cap;
+  const svc = parseEventServiceIds(body.eligible_professional_service_ids);
+  if ('error' in svc) return svc;
+  if (t.type === 'professional_services') {
+    for (const id of svc.ids) {
+      const err = await validateProfessionalServiceId(gymId, id);
+      if (err) return { error: err };
+    }
+    return { fields: { type: t.type, capacity: null, serviceIds: svc.ids, primaryServiceId: svc.ids[0] ?? null } };
+  }
+  return { fields: { type: t.type, capacity: t.type ? cap.capacity : null, serviceIds: [], primaryServiceId: null } };
+}
 
 /** Validates that a center_id (when provided) belongs to the current gym and isn't soft-deleted. */
 async function isValidCenterId(gymId: string, centerId: number): Promise<boolean> {
@@ -1518,6 +1546,10 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
   const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
   if (serviceErr) return res.status(400).json({ error: serviceErr });
 
+  const typed = await parseEventTypeFields(gymId, req.body);
+  if ('error' in typed) return res.status(400).json({ error: typed.error });
+  const tf = typed.fields;
+
   if (space_id) {
     const conflict = await checkConflict(gymId, 'space_id', space_id, starts_at, ends_at);
     if (conflict) return res.status(409).json({ error: 'Space is already booked during this time.' });
@@ -1528,18 +1560,22 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
   }
 
   try {
-    const { insertId } = await db.query(
-      `INSERT INTO calendar_events
-       (gym_id, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
-        starts_at, ends_at, all_day, description, status, professional_service_id,
-        created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
-       trainer_membership_id ?? null, color ?? null,
-       starts_at, ends_at, all_day ? 1 : 0,
-       description ?? null, status ?? 'scheduled', parsedService.id,
-       actor],
-    );
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId: newId } = await tx.query(
+        `INSERT INTO calendar_events
+         (gym_id, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
+          starts_at, ends_at, all_day, description, status, professional_service_id,
+          event_type, capacity, eligible_services_override, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
+         trainer_membership_id ?? null, color ?? null,
+         starts_at, ends_at, all_day ? 1 : 0,
+         description ?? null, status ?? 'scheduled', tf ? tf.primaryServiceId : parsedService.id,
+         tf ? tf.type : null, tf ? tf.capacity : null, tf?.type === 'professional_services' ? 1 : 0, actor],
+      );
+      if (tf?.type === 'professional_services') await writeEligibleServices(tx, gymId, String(newId), tf.serviceIds);
+      return newId;
+    });
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [insertId]);
     recordAudit(req, { action: 'create', entityType: 'calendar_event', entityId: String(insertId), entityName: title.trim(), next: rows[0] });
     res.status(201).json(shapeRow(rows[0]));
@@ -1585,6 +1621,11 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
     serviceId = parsedService.id;
   }
 
+  const typed = await parseEventTypeFields(gymId, req.body);
+  if ('error' in typed) return res.status(400).json({ error: typed.error });
+  const tf = typed.fields;
+  if (tf) serviceId = tf.primaryServiceId;
+
   const resolvedSpaceId   = 'space_id'              in req.body ? (space_id ?? null)              : existing[0].space_id;
   const resolvedTrainerId = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : existing[0].trainer_membership_id;
   const selfId = Number(req.params.id);
@@ -1613,6 +1654,9 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         description            = IF(?, ?, description),
         status                 = COALESCE(?, status),
         professional_service_id = IF(?, ?, professional_service_id),
+        event_type = IF(?, ?, event_type),
+        capacity = IF(?, ?, capacity),
+        eligible_services_override = IF(?, ?, eligible_services_override),
         modified_at = UTC_TIMESTAMP(),
         modified_by = ?
        WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL`,
@@ -1629,10 +1673,18 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         'description' in req.body ? 1 : 0, description ?? null,
         status ?? null,
         serviceId !== undefined ? 1 : 0, serviceId ?? null,
+        tf ? 1 : 0, tf?.type ?? null,
+        tf ? 1 : 0, tf?.capacity ?? null,
+        tf ? 1 : 0, tf?.type === 'professional_services' ? 1 : 0,
         actor,
         req.params.id, gymId,
       ],
     );
+    if (tf) {
+      await db.transaction(async (tx) => {
+        await writeEligibleServices(tx, gymId, String(req.params.id), tf.type === 'professional_services' ? tf.serviceIds : null);
+      });
+    }
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [req.params.id]);
     recordAudit(req, { action: 'update', entityType: 'calendar_event', entityId: req.params.id, entityName: rows[0].title, next: rows[0] });
     res.json(shapeRow(rows[0]));
