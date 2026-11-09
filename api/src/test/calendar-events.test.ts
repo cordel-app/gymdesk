@@ -551,3 +551,62 @@ describe('GET /calendar-events?center_id (#930)', () => {
     expect(res.body).toEqual([]);
   });
 });
+
+// ── #2559: event type ───────────────────────────────────────────────────────
+describe('event type (#2559)', () => {
+  let svcA: number;
+  let svcB: number;
+  const WHEN = { starts_at: '2025-08-01T10:00:00', ends_at: '2025-08-01T11:00:00' };
+
+  beforeAll(async () => {
+    for (const name of ['Type PT A', 'Type PT B']) {
+      const { insertId } = await db.query(
+        `INSERT INTO professional_services (gym_id, name, is_system) VALUES (?, ?, 0)`, [gymId, name]);
+      await db.query(
+        `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+        [gymId, insertId]);
+      if (name.endsWith('A')) svcA = insertId; else svcB = insertId;
+    }
+  });
+
+  it('a Private event stores its capacity and reads it back', async () => {
+    const res = await request.post(BASE).set(headers())
+      .send({ title: 'Private', ...WHEN, event_type: 'private', capacity: 4 });
+    expect(res.status).toBe(201);
+    expect(res.body.event_type).toBe('private');
+    expect(res.body.capacity).toBe(4);
+    const get = await request.get(`${BASE}/${res.body.id}`).set(headers());
+    expect(get.body.event_type).toBe('private');
+    expect(get.body.capacity).toBe(4);
+  });
+
+  it('a Professional Services Based event stores its services and no capacity', async () => {
+    const res = await request.post(BASE).set(headers())
+      .send({ title: 'PS based', ...WHEN, event_type: 'professional_services', capacity: 9,
+              eligible_professional_service_ids: [svcA, svcB] });
+    expect(res.status).toBe(201);
+    expect(res.body.capacity).toBeNull();
+    expect(res.body.eligible_professional_services.map((s: any) => s.id).sort()).toEqual([svcA, svcB].sort());
+  });
+
+  it('switching to Public clears the services', async () => {
+    const created = await request.post(BASE).set(headers())
+      .send({ title: 'Switch', ...WHEN, event_type: 'professional_services', eligible_professional_service_ids: [svcA] });
+    const res = await request.put(`${BASE}/${created.body.id}`).set(headers())
+      .send({ event_type: 'public', capacity: 6 });
+    expect(res.status).toBe(200);
+    expect(res.body.event_type).toBe('public');
+    expect(res.body.capacity).toBe(6);
+    expect(res.body.eligible_professional_services).toEqual([]);
+  });
+
+  it('rejects an unknown type and another gym\'s service', async () => {
+    const bad = await request.post(BASE).set(headers()).send({ title: 'x', ...WHEN, event_type: 'vip' });
+    expect(bad.status).toBe(400);
+    const { insertId: foreign } = await db.query(
+      `INSERT INTO professional_services (gym_id, name, is_system) VALUES (?, 'Foreign', 0)`, [otherGymId]);
+    const res = await request.post(BASE).set(headers())
+      .send({ title: 'x', ...WHEN, event_type: 'professional_services', eligible_professional_service_ids: [foreign] });
+    expect(res.status).toBe(400);
+  });
+});
