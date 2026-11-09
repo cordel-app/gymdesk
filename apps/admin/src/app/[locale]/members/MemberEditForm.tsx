@@ -6,7 +6,6 @@ import { primaryBtnStyle } from '@/components/ui';
 import {
   cardSectionLabelStyle,
   formActionsRowStyle,
-  formCheckboxLabelStyle,
   formControlStyle,
   formErrorStyle,
   formFieldErrorStyle,
@@ -24,7 +23,7 @@ import {
   type MemberEditableFieldSpec,
   type MemberEditFormValues,
 } from './memberProfile';
-import { MemberProfileLayout, NewMemberValue } from './MemberProfileLayout';
+import { MemberProfileLayout, NewMemberValue, statusChipRowStyle, newMemberChipStyle } from './MemberProfileLayout';
 import { MemberImageField } from '@/components/MemberImageField';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
@@ -157,11 +156,22 @@ export function MemberEditForm({
           fieldLabel={(field) => t(field.editLabelKey)}
           renderField={renderField}
           renderCalculated={() => (
-            <NewMemberValue
-              isNewMember={isNewMember}
-              label={t(newMemberValueKey(isNewMember))}
-              announce={t(newMemberAnnounceKey(isNewMember))}
-            />
+            <span style={statusChipRowStyle}>
+              <NewMemberValue
+                isNewMember={isNewMember}
+                label={t(newMemberValueKey(isNewMember))}
+                announce={t(newMemberAnnounceKey(isNewMember))}
+              />
+              <label style={{ ...newMemberChipStyle(welcomed.checked), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={welcomed.checked}
+                  disabled={welcomed.busy || saving}
+                  onChange={(e) => welcomed.onChange(e.target.checked)}
+                />
+                {t('label_welcomed')}
+              </label>
+            </span>
           )}
           centers={
             showCenters
@@ -184,15 +194,6 @@ export function MemberEditForm({
           }
         />
 
-        <label style={{ ...formCheckboxLabelStyle, marginTop: 12 }}>
-          <input
-            type="checkbox"
-            checked={welcomed.checked}
-            disabled={welcomed.busy || saving}
-            onChange={(e) => welcomed.onChange(e.target.checked)}
-          />
-          {t('label_welcomed')}
-        </label>
         {welcomed.error && <p style={formErrorStyle}>{welcomed.error}</p>}
 
         {error && <p style={formErrorStyle}>{error}</p>}

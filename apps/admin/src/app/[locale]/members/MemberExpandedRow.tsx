@@ -51,7 +51,7 @@ import {
   type MemberProfile,
 } from './memberProfile';
 import { MemberCenterAccess } from './MemberCenterAccess';
-import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
+import { MemberProfileLayout, NewMemberValue, WelcomedValue, statusChipRowStyle, profileValueStyle } from './MemberProfileLayout';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
@@ -405,20 +405,24 @@ export function MemberExpandedRow({
                      so the Profile, the member header's badge and the Promotion
                      apply paths can never disagree about who is new. */
                   renderCalculated={() => (
-                    <NewMemberValue
-                      isNewMember={member.is_new_member}
-                      label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
-                      announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
-                    />
+                    <span style={statusChipRowStyle}>
+                      <NewMemberValue
+                        isNewMember={member.is_new_member}
+                        label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
+                        announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
+                      />
+                      <WelcomedValue
+                        welcomed={!!member.welcomed_at}
+                        label={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
+                        announce={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
+                      />
+                    </span>
                   )}
                   centers={{
                     defaultLabel: t('members.default_center'),
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}
                 />
-                <p style={{ ...profileValueStyle, marginTop: 12 }} data-testid="member-welcomed">
-                  {t('members.label_welcomed')}: {member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}
-                </p>
               </div>
             </Section>
           )}
