@@ -29,8 +29,7 @@ import { recordAudit } from '../infra/audit';
 import { recordNotifications, sendBulkNotification } from '../infra/notifications';
 import { parseCommunicationInput, STAFF_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
 import { bookMemberOnSession } from './bookings';
-import { loadServiceCapacityViews, writeServiceCapacityOverrides } from './service-capacity';
-import { parseServiceCapacitiesInput } from '../domain/serviceCapacity';
+import { loadServiceCapacityViews } from './service-capacity';
 import { spendSessionForBooking } from './service-consumption';
 import { resolveRequestActor } from '../domain/auditActor';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
@@ -646,16 +645,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
   }
 
-  // #1984 — the occurrence's own capacity per Professional Service. An absent
-  // key keeps the overrides, `{ "<id>": null }` follows the Activity Type's
-  // value again and a positive integer overrides it; anything else is a 400.
-  let serviceCapacities: Map<number, number | null> | undefined;
-  if ('service_capacities' in req.body) {
-    const parsedCaps = parseServiceCapacitiesInput(req.body.service_capacities);
-    if (!parsedCaps.ok) return res.status(400).json({ error: parsedCaps.error });
-    serviceCapacities = parsedCaps.capacities;
-  }
-
   // #980 stage 3 §2 — the occurrence's own Eligible Professional Services.
   // Three answers, #896's for #896's reason: an absent key keeps what the
   // occurrence has (its own list, or its Activity Type's), an explicit `null`
@@ -724,20 +713,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
     const cur = withEligibleServices(existingRows[0]);
     (cur as any).service_capacity_summary = await serviceCapacitySummary(gymId, String(req.params.id));
-
-    // #1984: an override may only name a service the occurrence will offer.
-    if (serviceCapacities) {
-      const offered = new Set<number>(
-        eligibleIds === undefined
-          ? cur.eligible_professional_services.map((svc: EligibleService) => Number(svc.id))
-          : eligibleIds === null
-            ? parseServiceJson(existingRows[0].activity_eligible_services_json).map((svc) => Number(svc.id))
-            : eligibleIds,
-      );
-      for (const id of serviceCapacities.keys()) {
-        if (!offered.has(id)) return res.status(400).json({ error: 'service_capacities may only name a service the occurrence offers' });
-      }
-    }
 
     // #986's rule, one relation over: a service the occurrence is already
     // subject to (its own, or inherited) is not a *selection*, so re-sending
@@ -809,7 +784,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
           ],
         );
         await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
-        if (serviceCapacities) await writeServiceCapacityOverrides(tx, gymId, String(req.params.id), serviceCapacities);
 
         return waitlistModeClosesQueue(waitlistMode)
           ? emptyWaitlistQueue(tx, gymId, String(req.params.id), actor)
@@ -857,7 +831,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       );
       if (rowCount === 0) return { rowCount, removed: [] as number[] };
       await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
-      if (serviceCapacities) await writeServiceCapacityOverrides(tx, gymId, String(req.params.id), serviceCapacities);
       const removed = waitlistModeClosesQueue(waitlistMode)
         ? await emptyWaitlistQueue(tx, gymId, String(req.params.id), actor)
         : [];

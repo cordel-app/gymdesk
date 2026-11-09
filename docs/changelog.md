@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2499 (a Professional Service's own `max_capacity` is the capacity of its places on every Activity and Calendar Event, capped by the event capacity: the per-service Event capacity input and the Activity/occurrence capacity overrides are gone, and each eligible service reads `Name (min N - max M)` in the Activity and Calendar Event editors)
+
 - **Done**: #2538 (Members → Products: the `+ Add Product` draft row now fills its Promotion Benefit cell from each chosen Promotion's own action, value and duration through `benefitTreatmentLabel()`, e.g. "50% discount · 1 period"; it was always empty. No API change, no pricing change)
 - **Done**: #2536 (Cordel → Base Products form: Mandatory, One-time purchase and Sharing type share one wrapping row, in both the edit form and the read-only card, and the Charge type code field, its help text and its Details line are gone from the UI; the value is still loaded and sent back unchanged, so the column, API and seeded System Products are untouched; admin UI only, no API or migration change)
 - **Done**: #2490 stage 2 (a Membership Plan's Product lines carry their own Direct Discount: the existing per-line `% Discount` benefit, already independent per line, snapshotted and priced by the billing engine, is now labelled *Direct discount* / *Descuento directo* / *Descompte directe* in the Plans editor (copy only, no API, migration or engine change, so there is no second discount mechanism); related to #2490)
