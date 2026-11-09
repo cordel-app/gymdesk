@@ -446,7 +446,7 @@
     "promo_desc_fixed_discount_periods": "{value} de descompte – {periods, plural, one {# període} other {# períodes}}",
     "promo_desc_fixed_price": "Preu {value}",
     "promo_desc_fixed_price_periods": "Preu {value} – {periods, plural, one {# període} other {# períodes}}",
-    "add_product_direct_discount": "Descompte directe (%)",
+    "add_product_direct_discount": "Descompte directe %",
     "add_product_direct_discount_help": "S'aplica al preu amb IVA després de les promocions. Només administradors.",
     "quote_list_price": "Preu original (IVA incl.)",
     "quote_promotion": "Promoció: {name}",
