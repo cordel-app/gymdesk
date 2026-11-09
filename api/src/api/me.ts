@@ -669,18 +669,14 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?'];
     const params: any[] = [gymId, memberId];
-    if (centerId != null) {
+    if ((centerId ?? defaultCenterId) != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
     const { rows } = await db.query(
       `SELECT ceb.id, ceb.status, ceb.waitlist_position, ceb.booked_at AS booked_on, ceb.cancelled_at,
@@ -776,7 +772,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
     if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     // #503 stage 6: an optional calendar-local center filter, independent from
     // the x-center-id header driving the rest of the app (#478's global
     // CenterSwitcher). It narrows within — never widens past — the header's
@@ -785,15 +781,9 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const filterCenterId = req.query.center_id as string | undefined;
     if (filterCenterId) {
       const requested = Number(filterCenterId);
-      if (allowedCenterIds && !allowedCenterIds.includes(requested)) {
-        return res.status(403).json({ error: 'You are not assigned to this center' });
-      }
-      if (centerId != null && centerId !== requested) {
-        return res.status(403).json({ error: 'You are not assigned to this center' });
-      }
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(requested);
-    } else if (centerId != null) {
+    } else if ((centerId ?? defaultCenterId) != null) {
       // A NULL center_id means the occurrence (or its activity type) was never
       // assigned to a specific center — e.g. a schedule-rule-materialized
       // session whose activity type has no default_center_id set. Such an
@@ -801,11 +791,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       // regardless of which center is selected/assigned, instead of silently
       // vanishing from every member's calendar (#478).
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
 
     const { rows } = await db.query(
@@ -2723,21 +2709,17 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     const now = new Date().toISOString();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     const where: string[] = [
       'ceb.gym_id = ?', 'ceb.member_id = ?', "ceb.status = 'booked'",
       "ce.status = 'scheduled'", 'ce.starts_at >= ?', 'ce.starts_at <= ?',
     ];
     const params: any[] = [gymId, memberId, now, future];
-    if (centerId != null) {
+    if ((centerId ?? defaultCenterId) != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
 
     const { rows: sessionRows } = await db.query(
@@ -2771,7 +2753,7 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const memberId = await resolveMemberId(gymId, ctx);
     const cutoff = new Date().toISOString();
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?', 'ce.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
     if (centerId != null) {
@@ -2779,10 +2761,6 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json({ items: [], limit, offset });
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
     }
 
     const { rows: sessionRows } = await db.query(
