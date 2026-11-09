@@ -1016,7 +1016,6 @@ export default function MembershipPage() {
         finalPrice: applied ? planFinalPriceText(plan, applied, gymFmt) : null,
         imageUrl: plan.image_url ?? null,
         imageFullUrl: plan.image_full_url ?? null,
-        placeholderLabel: t('membership.plan_no_image'),
         includedLabel: t('membership.plan_included'),
         included: (overviewOverrides[plan.id] ?? plan.overview)?.products.filter((p) => p.mandatory).map((p) => p.name).join(', ') || null,
         optionalLabel: t('membership.plan_optional'),

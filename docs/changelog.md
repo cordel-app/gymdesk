@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2579 (Members App → My Products → Add Plan: a plan with an image shows it flush against the card's left edge, filling the full height of the card's content and cropped (`object-fit: cover`) instead of letting it float inside padding; a plan without one no longer draws a "No image" placeholder or reserves any space, so its text starts at the card's left padding. Layout only; no API, data or image-loading change)
+
 - **Done**: #2577 (Product translations: only the English name is required; a non-English entry with a description but no name is treated as not provided instead of failing with `translations.<locale>.name is required`)
 - **Done**: #1985 follow-up (Members App, Calendar and My Bookings: a member is no longer restricted to "assigned" centers, which #2383 removed, so every future event of the gym is visible, including for a member with no `member_centers` row in a multi-center gym (the impersonation report). `centerContext` reports `allowedCenterIds = null` for every role and a member's `defaultCenterId`; `GET /me/schedule`, `/me/bookings` and `/me/upcoming` filter by the named center (`x-center-id` / `center_id`), else by the member's default center, else show all. An `x-center-id` of another center of the gym is allowed; a center outside the gym is a 404. No migration)
 - **Done**: #2561 (Admin → Members: the list's *Enrollment* column reads *Plan* and its filter *Plan status* (en/es/ca); in the Member Profile the Clerk Status, Clerk Invitation and Payment Token chips use the same 13px as the other status badges. Label and typography only; no status logic or data change)

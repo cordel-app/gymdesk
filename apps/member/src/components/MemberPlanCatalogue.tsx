@@ -40,7 +40,6 @@ export interface MemberPlanCardItem {
   /** #2495 — the plan's picture (thumbnail, full size); `null` draws the placeholder. */
   imageUrl?: string | null;
   imageFullUrl?: string | null;
-  placeholderLabel?: string;
   /** #2495 — the collapsed summary: included and optional Products, Initial Payment. */
   includedLabel?: string;
   included?: string | null;
@@ -96,17 +95,17 @@ function PlanCard({ item }: { item: MemberPlanCardItem }) {
   return (
     <li style={styles.card}>
       <div style={styles.cardRow}>
+        {showImage && (
         <div style={styles.imageCol} onClick={(e) => e.stopPropagation()}>
-          {showImage ? (
             <ImagePreviewButton
               src={item.imageFullUrl ?? item.imageUrl} alt={item.name} title={item.name}
-              description={item.description ?? null} style={{ height: '100%', display: 'block' }}
+              description={item.description ?? null} style={{ position: 'absolute', inset: 0, display: 'block', padding: 0, border: 'none' }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={item.imageUrl!} alt={item.name} style={styles.planImage} onError={() => setBroken(true)} />
             </ImagePreviewButton>
-          ) : <span style={styles.imagePlaceholder}>{item.placeholderLabel}</span>}
         </div>
+        )}
         <div style={styles.summary}>
           <div
             role="button" tabIndex={0} aria-expanded={open}
@@ -131,7 +130,7 @@ function PlanCard({ item }: { item: MemberPlanCardItem }) {
         </div>
       </div>
       {open && (
-        <div>
+        <div style={styles.details}>
           {item.description && <p style={styles.description}>{item.description}</p>}
               {item.overview && <MemberPlanOverview view={item.overview} />}
               {(item.promotions ?? []).map((promotion) => (
@@ -164,12 +163,12 @@ const styles: Record<string, CSSProperties> = {
   heading: { margin: 0, fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   closeBtn: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-  card: { ...sectionCardStyle, padding: '12px 14px' },
-  cardRow: { display: 'flex', gap: 12, alignItems: 'stretch' },
-  imageCol: { width: 96, flexShrink: 0, display: 'flex', alignItems: 'stretch', justifyContent: 'center' },
-  planImage: { height: '100%', width: '100%', objectFit: 'contain', display: 'block' },
-  imagePlaceholder: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minHeight: 72, fontSize: 11, color: memberTheme.textMuted, textAlign: 'center', border: `1px dashed ${memberTheme.separator}`, borderRadius: 8 },
-  summary: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 },
+  card: { ...sectionCardStyle, padding: 0, overflow: 'hidden' },
+  details: { padding: '0 14px 12px' },
+  cardRow: { display: 'flex', alignItems: 'stretch' },
+  imageCol: { width: 96, flexShrink: 0, position: 'relative', alignSelf: 'stretch' },
+  planImage: { height: '100%', width: '100%', objectFit: 'cover', display: 'block' },
+  summary: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px' },
   summaryButton: { display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' },
   line: { fontSize: 12.5, color: memberTheme.textSecondary },
   head: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
