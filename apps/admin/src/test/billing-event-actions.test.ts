@@ -39,7 +39,6 @@ const REQUIRED_KEYS = [
   'det_created_by',
   'det_modified_at',
   'det_modified_by',
-  'det_next_payment',
   'det_failure_reason',
   'actor_system',
   'cash_modal_title',

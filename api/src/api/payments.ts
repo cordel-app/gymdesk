@@ -303,6 +303,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       latest_tx_status: string | null;
       event_billing_date: Date | string | null; is_scheduled: number | boolean;
       from_product_set: number | boolean;
+      latest_provider_status: string | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
               ps_um.id AS user_membership_id,
@@ -313,7 +314,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               ps_um.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              (SELECT pr.provider_status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_provider_status
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN product_sets ps ON ps.id = be.product_set_id
@@ -339,6 +343,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
+      /** #2565: same value the detail read reports. */
+      normalized_payment_status: string | null;
       /** #640: whether Retry Payment / Manual payment apply to this row. */
       payment_actions_available: boolean;
       /** #1459: the individual actions the row's `⋮` menu offers. */
@@ -372,6 +378,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
         next_payment_date: r.membership_status === 'active' ? (derivedByUm.get(Number(r.user_membership_id))?.next_billing_date ?? null) : null,
+        normalized_payment_status: normalizePaymentStatus(r.latest_provider_status),
         amount: r.amount,
         event_type: r.event_type,
         status,
