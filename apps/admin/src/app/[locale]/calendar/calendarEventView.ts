@@ -123,7 +123,9 @@ export function customEventView(
     endsAt: form.ends_at,
     allDay: form.all_day,
     activity: byId(lookups.activityTypes, form.activity_type_id),
-    professionalService: byId(lookups.professionalServices, form.professional_service_id),
+    professionalService: form.event_type === 'professional_services' && form.eligible_professional_service_ids.length > 0
+      ? form.eligible_professional_service_ids.map((id) => byId(lookups.professionalServices, id)).filter(Boolean).join(', ') || null
+      : byId(lookups.professionalServices, form.professional_service_id),
     trainer: form.trainer_membership_id
       ? lookups.trainers.find((t) => String(t.gym_membership_id) === form.trainer_membership_id)?.name ?? null
       : null,
@@ -131,7 +133,7 @@ export function customEventView(
     space: byId(lookups.spaces, form.space_id),
     center: byId(lookups.centers, form.center_id),
     status: form.status,
-    capacity: null,
+    capacity: form.event_type !== 'professional_services' && form.capacity ? Number(form.capacity) : null,
   };
 }
 
