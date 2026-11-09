@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2551 (Admin → Members: an *Access Rights* filter beside Welcomed, All by default, over the existing derived `access_rights` value. `GET /members?access_rights=granted|to_be_reviewed|revoked` filters on the derived value, combined with the other filters; the URL keeps it. No migration or change to how access rights are calculated)
 - **Done**: #2550 stage 2 (Members list: Access Rights is its own *Access* column instead of a chip beside the name, per the owner's comment. UI only)
 - **Done**: #2496 stage 1 (API: the member's own Draft Product Set. `POST /me/product-sets/draft` reuses `ensureRecurringDraft()` (idempotent, edit lock, `409 in_flight`), `POST/PUT/DELETE /me/product-sets/:id/services` add, re-quantify and remove a Product through the Admin's `addService()`/`setServiceQuantity()`/`removeService()` on the Draft the session's member owns (only a Product of the member catalogue, only `product_id` + `quantity` accepted), and `GET /me/product-sets/:id/review` and `/billing-event-simulation` reuse the Admin handlers; another member's or gym's Draft is a 404. No pricing path, migration or Billing Event; Plans on the shared Draft, snapshot-backed reads, UI and Save & Pay are stages 2–5)
 - **Done**: #2550 (Admin → Members list: the Member's existing Access Rights value (`access_rights`, as the API reports it) is shown as a status badge beside the name, next to New Member. UI only; no calculation, API or migration change)

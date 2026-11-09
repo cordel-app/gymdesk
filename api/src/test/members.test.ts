@@ -166,6 +166,42 @@ describe('GET /members', () => {
   });
 });
 
+describe('GET /members — access_rights filter (#2551)', () => {
+  let gymId: string;
+  let grantedId: number;
+  let revokedId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Access Filter Gym');
+    await createTestMembership(gymId, 'admin');
+    grantedId = await createMember(gymId);
+    revokedId = await createMember(gymId);
+    await db.query("UPDATE members SET access_rights = 'revoked' WHERE id = ?", [revokedId]);
+  });
+
+  it('returns only members with the selected access rights', async () => {
+    const res = await request.get('/members?access_rights=revoked')
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(revokedId);
+    expect(ids).not.toContain(grantedId);
+  });
+
+  it('combines with the other filters (AND)', async () => {
+    const res = await request.get('/members?access_rights=granted&welcomed=true')
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.map((m: any) => m.id)).not.toContain(revokedId);
+  });
+
+  it('rejects an unknown value', async () => {
+    const res = await request.get('/members?access_rights=bogus')
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── account_status derivation ────────────────────────────────────────────────
 
 describe('account_status derivation', () => {

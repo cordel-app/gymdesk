@@ -591,6 +591,8 @@
     "label_welcomed": "Welcomed",
     "welcomed_yes": "Yes",
     "welcomed_no": "No",
+    "filter_access_rights": "Access Rights",
+    "all_access_rights": "All",
     "filter_welcomed": "Welcomed",
     "all_welcomed": "All",
     "product_set_card_title": "Recurring",

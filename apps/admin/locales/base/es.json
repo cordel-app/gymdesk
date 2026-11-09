@@ -591,6 +591,8 @@
     "label_welcomed": "Bienvenida realizada",
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
+    "filter_access_rights": "Derechos de acceso",
+    "all_access_rights": "Todos",
     "filter_welcomed": "Bienvenida",
     "all_welcomed": "Todos",
     "product_set_card_title": "Recurrente",
