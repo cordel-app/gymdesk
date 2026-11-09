@@ -93,7 +93,7 @@ describe('#1051: one Assigned Plans list, rendered by both screens', () => {
 describe('#1051: Active and Past are two instances of that list (§4)', () => {
   it('splits on is_live and renders a table for each', () => {
     expect(sectionSrc).toContain('const live = plans.filter((p) => p.is_live)');
-    expect(sectionSrc).toContain('const history = plans.filter((p) => !p.is_live)');
+    expect(sectionSrc).toContain('const history = plans.filter((p) => !p.is_live && !p.is_current)');
     expect((sectionSrc.match(/<AssignedPlansTable/g) ?? []).length).toBe(2);
     expect(sectionSrc).toContain('rows={visible.rows}');
     expect(sectionSrc).toContain('rows={history}');
