@@ -258,7 +258,11 @@ export default function BaseProductsPage() {
   const sectionsFor = (type: string) =>
     visibleProductSections({ isSystem: false, isSessionType: false })
       .filter((sec) => sec.key !== 'professional_services')
-      .map((sec) => ({ ...sec, fields: sec.fields.filter((f) => type === 'sessions' || f.key !== 'units') }));
+      .map((sec) => ({
+        ...sec,
+        // Mandatory is drawn by `extras`, in one row with the two base-only flags (#2536).
+        fields: sec.fields.filter((f) => f.key !== 'mandatory' && (type === 'sessions' || f.key !== 'units')),
+      }));
 
   function renderValue(p: BaseProduct, field: VisibleProductField): React.ReactNode {
     const v = (x: React.ReactNode) => <div style={productValueStyle}>{x}</div>;
@@ -357,34 +361,47 @@ export default function BaseProductsPage() {
   }
 
   /** The base-only fields (not on a gym Product), in the template's own section. */
-  const extras = (f: Form | null, p: BaseProduct | null) => (
-    <div style={{ marginTop: 12 }}>
-      <label style={formFieldLabelStyle}>{t('charge_type_code')}</label>
-      {f ? (
-        <>
-          <input style={formControlStyle} value={f.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
-          <div style={{ fontSize: 12, color: 'var(--gd-text-secondary, #666)' }}>{t('charge_type_code_help')}</div>
-          <label style={{ ...productCheckboxCellStyle, marginTop: 12 }}>
-            <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
-            {t('one_time_purchase')}
-          </label>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
-          <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
-            <option value="individual">{t('sharing_individual')}</option>
-            <option value="shared">{t('sharing_shared')}</option>
-          </select>
-        </>
-      ) : (
-        <>
-          <div style={productValueStyle}>{p?.charge_type_code ?? dash}</div>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('one_time_purchase')}</label>
-          <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
-          <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
-        </>
-      )}
-    </div>
-  );
+  const extras = (f: Form | null, p: BaseProduct | null) => {
+    const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: '12px 24px', alignItems: 'flex-start' };
+    const cell: React.CSSProperties = { flex: '1 1 200px', minWidth: 0 };
+    return (
+      <div style={{ ...rowStyle, marginTop: 12 }}>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{tp('label_mandatory')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.mandatory} onChange={(e) => set('mandatory', e.target.checked)} />
+              {f.mandatory ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.mandatory ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
+              {f.one_time_purchase ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
+          {f ? (
+            <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
+              <option value="individual">{t('sharing_individual')}</option>
+              <option value="shared">{t('sharing_shared')}</option>
+            </select>
+          ) : (
+            <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const mediaFor = (id: number) => (
     <div style={{ margin: '12px 0 4px' }}>
@@ -558,7 +575,6 @@ export default function BaseProductsPage() {
       >
         {details && (
           <div style={{ fontSize: 14 }}>
-            <p><strong>{t('charge_type_code')}:</strong> {details.charge_type_code ?? dash}</p>
             <p><strong>{t('type')}:</strong> {t(`type_${details.type}`)}</p>
             <p><strong>{t('units')}:</strong> {details.units ?? dash}</p>
             <p><strong>{t('amount')}:</strong> {price(details)}</p>
