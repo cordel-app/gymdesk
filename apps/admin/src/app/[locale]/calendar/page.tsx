@@ -42,7 +42,7 @@ interface Space { id: number; name: string; status?: string; center_id?: number 
 interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 // #980 stage 3: the Professional Services the session panel's Eligible list picks from.
-interface ProfessionalService { id: number; name: string; status: 'active' | 'inactive' }
+interface ProfessionalService { id: number; name: string; status: 'active' | 'inactive'; max_capacity?: number | null; min_participants?: number | null; display_name?: string | null }
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 

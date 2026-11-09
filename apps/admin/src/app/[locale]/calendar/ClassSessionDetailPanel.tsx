@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { serviceOccupancyLabel, type ServiceCapacityRow } from '@/lib/serviceCapacity';
+import { serviceOccupancyLabel, serviceNameWithCapacity, type ServiceCapacityRow } from '@/lib/serviceCapacity';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
@@ -98,7 +98,7 @@ interface Booking {
 
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
 interface Trainer { gym_membership_id: number; name: string }
-interface ProfessionalServiceOption { id: number; name: string; status: 'active' | 'inactive' }
+interface ProfessionalServiceOption { id: number; name: string; status: 'active' | 'inactive'; max_capacity?: number | null; min_participants?: number | null; display_name?: string | null }
 
 interface Props {
   sessionId: number;
@@ -217,6 +217,10 @@ export function ClassSessionDetailPanel({
   sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices,
 }: Props) {
   const t = useTranslations('calendar');
+  const tAt = useTranslations('activity_types');
+  // #2499: a service's own capacity beside its name (never typed on the event).
+  const svcLabel = (svc: ProfessionalServiceOption) =>
+    serviceNameWithCapacity(svc.display_name || svc.name, svc, (key, values) => tAt(key as any, values as any));
   const gymFormat = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -570,7 +574,7 @@ export function ClassSessionDetailPanel({
     const activeIds = new Set(active.map((svc) => svc.id));
     const storedInactive = current.eligible_professional_services
       .filter((svc) => !activeIds.has(svc.id))
-      .map((svc) => ({ id: svc.id, name: svc.name, status: 'inactive' as const }));
+      .map((svc) => ({ id: svc.id, name: svc.name, status: 'inactive' as const, max_capacity: (svc as any).max_capacity, min_participants: (svc as any).min_participants }));
     return [...active, ...storedInactive];
   }
 
@@ -982,7 +986,7 @@ export function ClassSessionDetailPanel({
                       }}
                       style={{ width: 15, height: 15 }}
                     />
-                    {svc.name}
+                    {svcLabel(svc)}
                   </label>
                 ))}
               </div>

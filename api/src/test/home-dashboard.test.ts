@@ -196,10 +196,10 @@ describe('GET /dashboard/home — incomplete classes (#1984 stage 3)', () => {
       `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Incomplete Act', 10, 'active')`, [gymA]);
     const mkSvc = async (name: string, cap: number) => {
       const { insertId } = await db.query(
-        'INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)', [gymA, `${name} ${u}`]);
+        'INSERT INTO professional_services (gym_id, name, is_system, system_key, max_capacity) VALUES (?, ?, 0, NULL, ?)', [gymA, `${name} ${u}`, cap]);
       await db.query(
-        `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id, capacity) VALUES (?, ?, ?, ?)`,
-        [gymA, at, insertId, cap]);
+        `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)`,
+        [gymA, at, insertId]);
       return insertId;
     };
     const duo = await mkSvc('Duo', 2);

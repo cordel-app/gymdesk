@@ -3,7 +3,7 @@ import { incompleteServiceRows } from '../domain/incompleteClasses';
 import { serviceCapacityView } from '../domain/serviceCapacity';
 
 const view = (id: number, name: string, cap: number, occ: number) =>
-  serviceCapacityView({ id, name }, { override: null, activityDefault: cap, eventCapacity: 10 }, occ);
+  serviceCapacityView({ id, name }, { serviceMax: cap, eventCapacity: 10 }, occ);
 
 describe('incompleteServiceRows', () => {
   it('lists only services with some, not all, places taken', () => {
