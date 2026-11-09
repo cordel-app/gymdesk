@@ -35,7 +35,7 @@ describe('custom event view', () => {
   });
 
   it('shows the capacity of a Public event (#2559)', () => {
-    expect(customEventView(form({ capacity: '12' }), lookups).capacity).toBe(12);
+    expect(customEventView(form({ capacity: '12' }), lookups).capacity).toEqual({ enrolled: 0, total: 12 });
   });
 
   it('resolves the stored ids through the page lookups, including the Professional Service', () => {

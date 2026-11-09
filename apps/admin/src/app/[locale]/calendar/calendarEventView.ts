@@ -133,7 +133,7 @@ export function customEventView(
     space: byId(lookups.spaces, form.space_id),
     center: byId(lookups.centers, form.center_id),
     status: form.status,
-    capacity: form.event_type !== 'professional_services' && form.capacity ? Number(form.capacity) : null,
+    capacity: form.event_type !== 'professional_services' && form.capacity ? { enrolled: 0, total: Number(form.capacity) } : null,
   };
 }
 
