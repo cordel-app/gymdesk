@@ -206,7 +206,7 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       expect(sessionIds).toContain(futureSessionInCenterA);
     });
 
-    it('rejects an x-center-id the impersonated member is not assigned to', async () => {
+    it('accepts an x-center-id of another center of the gym (#1985: no assigned-center restriction)', async () => {
       const res = await request
         .get('/me/bookings')
         .set('Authorization', TEST_AUTH_HEADER)
@@ -214,7 +214,7 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
         .set('x-impersonate-as', `member:${memberId}`)
         .set('x-center-id', String(centerBId));
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
   });
 
@@ -291,7 +291,7 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       expect(entityIds).toContain(pastSessionNoCenter);
     });
 
-    it('rejects an x-center-id the impersonated member is not assigned to', async () => {
+    it('accepts an x-center-id of another center of the gym (#1985: no assigned-center restriction)', async () => {
       const res = await request
         .get('/me/activity-history')
         .set('Authorization', TEST_AUTH_HEADER)
@@ -299,7 +299,7 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
         .set('x-impersonate-as', `member:${memberId}`)
         .set('x-center-id', String(centerBId));
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
   });
 
