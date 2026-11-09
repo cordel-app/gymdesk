@@ -107,6 +107,8 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
   { key: 'payment_status', labelKey: 'col_payment_status', width: 110, mobile: 'secondary' },
   { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110, mobile: 'keep' },
+  // #2550: the Member's access rights, a column rather than a chip by the name.
+  { key: 'access_rights', labelKey: 'col_access_rights', width: 110, mobile: 'secondary' },
   // Wide enough for the longest translated title ("ACCIONES") next to the
   // chevron and the ⋮ menu the cell also holds.
   { key: 'actions', labelKey: 'col_actions', width: 84, mobile: 'actions' },
@@ -692,10 +694,6 @@ export default function MembersPage() {
             {m.is_new_member && (
               <span style={listNameBadgeAccentStyle}>{t('members.new_member_badge')}</span>
             )}
-            {/* #2550: the Member's existing access rights, read as reported
-                by the API (granted / to_be_reviewed / revoked) — no second
-                calculation here. */}
-            <StatusBadge status={m.access_rights ?? 'granted'} label={t(`members.access_rights_${m.access_rights ?? 'granted'}`)} />
           </div>
           {/* The track is fixed now, so an over-long address ellipsises inside
               its own column; `title` keeps the whole of it reachable. */}
@@ -710,6 +708,9 @@ export default function MembersPage() {
             {m.enrollment_status
               ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
               : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
+          </div>
+          <div className={CELL_CLASS.access_rights} style={badgeCellStyle}>
+            <StatusBadge status={m.access_rights ?? 'granted'} label={t(`members.access_rights_${m.access_rights ?? 'granted'}`)} />
           </div>
           <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             {/* Decorative: the row itself carries the expanded state and the
