@@ -5,8 +5,13 @@ import { getTenantContext } from './tenantContext';
 export interface CenterContext {
   /** Selected/active center for this request (from x-center-id), or null = "all centers in gym". */
   centerId: number | null;
-  /** For role === 'member': the set of center ids they're assigned to. null for admin/coach/staff (unrestricted). */
+  /**
+   * Always null: no role is restricted to "assigned" centers any more (#2383 removed
+   * that concept; which centers a member may *use* is their plans' center access).
+   */
   allowedCenterIds: number[] | null;
+  /** For role === 'member': their default center (member_centers.is_default), else null. */
+  defaultCenterId: number | null;
 }
 
 /**
@@ -43,41 +48,33 @@ export async function centerContext(req: Request, res: Response, next: NextFunct
   const headerRaw = req.headers['x-center-id'] as string | undefined;
   const headerCenterId = headerRaw ? Number(headerRaw) : null;
 
-  let allowedCenterIds: number[] | null = null;
+  let defaultCenterId: number | null = null;
 
+  // #1985 / #2383: a member is not restricted to "assigned" centers — every
+  // future event of the gym is visible to them. Their default center is only
+  // the default *filter* of the calendar and My Bookings when no center is named.
   if (role === 'member') {
     // Under member impersonation, effectiveUserId is members.id, not a Clerk
-    // user id — match on the member row directly rather than the (superadmin's)
-    // raw userId, or an impersonated member's centers would resolve to none.
+    // user id — match on the member row directly.
     const { rows } = effectiveType === 'member'
       ? await db.query<{ center_id: number }>(
           `SELECT mc.center_id FROM member_centers mc
            JOIN members m ON m.id = mc.member_id
-           WHERE m.id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
+           WHERE m.id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL AND mc.is_default = 1
+           LIMIT 1`,
           [Number(effectiveUserId), gymId],
         )
       : await db.query<{ center_id: number }>(
           `SELECT mc.center_id FROM member_centers mc
            JOIN members m ON m.id = mc.member_id
-           WHERE m.clerk_user_id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
+           WHERE m.clerk_user_id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL AND mc.is_default = 1
+           LIMIT 1`,
           [userId, gymId],
         );
-    allowedCenterIds = rows.map((r) => r.center_id);
+    defaultCenterId = rows[0]?.center_id ?? null;
+  }
 
-    // No member_centers row doesn't necessarily mean "assigned to zero centers" —
-    // gyms with only one center commonly never populate member_centers at all.
-    // Fall back to the gym's sole center, mirroring resolveCenterId()'s existing
-    // single-center fallback for writes, so such members keep seeing their gym's
-    // schedule instead of nothing.
-    if (allowedCenterIds.length === 0) {
-      const soleId = await soleActiveCenterId(gymId);
-      if (soleId != null) allowedCenterIds = [soleId];
-    }
-
-    if (headerCenterId != null && !allowedCenterIds.includes(headerCenterId)) {
-      return res.status(403).json({ error: 'You are not assigned to this center' });
-    }
-  } else if (headerCenterId != null) {
+  if (headerCenterId != null) {
     const { rows } = await db.query(
       'SELECT 1 FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [headerCenterId, gymId],
@@ -85,7 +82,8 @@ export async function centerContext(req: Request, res: Response, next: NextFunct
     if (rows.length === 0) return res.status(404).json({ error: 'Center not found' });
   }
 
-  req.centerCtx = { centerId: headerCenterId, allowedCenterIds };
+  const allowedCenterIds: number[] | null = null;
+  req.centerCtx = { centerId: headerCenterId, allowedCenterIds, defaultCenterId };
   next();
 }
 
