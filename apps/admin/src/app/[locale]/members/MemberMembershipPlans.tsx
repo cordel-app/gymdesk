@@ -47,7 +47,9 @@
 // `⋮ → Details` with the audit link — which is where #799 puts an actor.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
+import { viewBillingEventsPath } from '@/components/assignedPlan/assignedPlanBillingEvents';
 import { useApiClient } from '@/lib/apiClient';
 import type { AssignablePlan } from '../plans/AssignPlanToMembersEditor';
 import { apiErrorMessage } from '@/lib/apiClient';
@@ -84,6 +86,8 @@ export function MemberMembershipPlans({
   memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
+  const locale = useLocale();
+  const router = useRouter();
   const { apiFetch } = useApiClient();
   const optionsLoadedRef = useRef(false);
 
@@ -191,7 +195,17 @@ export function MemberMembershipPlans({
           : []),
       ]
       : [];
-    return [...lifecycleItems, { label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) }];
+    return [
+      ...lifecycleItems,
+      { label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) },
+      // #2553: shared with the Assigned Plans page.
+      {
+        label: t('action_view_billing_events'),
+        onClick: () => router.push(viewBillingEventsPath(locale, {
+          id: plan.id, plan_name: plan.plan_name, member_id: memberId, member_name: memberName,
+        })),
+      },
+    ];
   }
 
   return (

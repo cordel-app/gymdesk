@@ -1,5 +1,5 @@
 import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
-import { eventAssignmentSql } from '../domain/billingEventOwnership';
+import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
@@ -267,6 +267,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     member_id: z.coerce.number().int().positive().optional(),
     // #1521: one specific event (the Member card's *View billing event*).
     id: z.coerce.number().int().positive().optional(),
+    // #2553: every event of one Assigned Membership Plan, across all the
+    // ProductSet versions of its chain (the same predicate as the card's ledger).
+    user_membership_id: z.coerce.number().int().positive().optional(),
     status: billingEventStatusParam,
     from: z.string().optional(),
     to: z.string().optional(),
@@ -283,6 +286,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const params: any[] = [gymId];
     if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
     if (q.id !== undefined) { where.push('be.id = ?'); params.push(q.id); }
+    if (q.user_membership_id !== undefined) {
+      where.push(eventsOfAssignmentSql());
+      params.push(...eventsOfAssignmentParams(gymId, q.user_membership_id));
+    }
     if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
     if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
     const whereSql = where.join(' AND ');

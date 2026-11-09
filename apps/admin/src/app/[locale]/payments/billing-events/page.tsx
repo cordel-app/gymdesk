@@ -173,6 +173,11 @@ export default function BillingEventsPage() {
     searchParams.get('memberId') ? Number(searchParams.get('memberId')) : null,
   );
   const [memberName, setMemberName] = useState<string>(searchParams.get('memberName') ?? '');
+  // #2553: one Assigned Plan's events (`?userMembershipId=`), shown as a chip.
+  const [userMembershipId, setUserMembershipId] = useState<number | null>(
+    searchParams.get('userMembershipId') ? Number(searchParams.get('userMembershipId')) : null,
+  );
+  const [planName] = useState<string>(searchParams.get('planName') ?? '');
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
   const [status, setStatus] = useState<string[]>(
@@ -199,14 +204,16 @@ export default function BillingEventsPage() {
   const [retryingId, setRetryingId] = useState<number | null>(null);
 
   // Sync filter state to URL
-  function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[] }) {
+  function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[]; userMembershipId?: number | null }) {
     const p = new URLSearchParams();
+    const umId = params.userMembershipId !== undefined ? params.userMembershipId : userMembershipId;
     const mId = params.memberId !== undefined ? params.memberId : memberId;
     const mName = params.memberName !== undefined ? params.memberName : memberName;
     const f = params.from !== undefined ? params.from : from;
     const t2 = params.to !== undefined ? params.to : to;
     const s = params.status !== undefined ? params.status : status;
     if (mId) { p.set('memberId', String(mId)); p.set('memberName', mName); }
+    if (umId) { p.set('userMembershipId', String(umId)); if (planName) p.set('planName', planName); }
     if (f) p.set('from', f);
     if (t2) p.set('to', t2);
     if (s.length > 0) p.set('status', s.join(','));
@@ -221,6 +228,7 @@ export default function BillingEventsPage() {
     try {
       const p = new URLSearchParams({ limit: String(DEFAULT_LIMIT), offset: String(off) });
       if (memberId) p.set('member_id', String(memberId));
+      if (userMembershipId) p.set('user_membership_id', String(userMembershipId));
       if (from) p.set('from', from);
       if (to) p.set('to', to);
       for (const s of status) p.append('status', s);
@@ -239,7 +247,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, memberId, from, to, status, order, eventId]);
+  }, [activeGymId, memberId, userMembershipId, from, to, status, order, eventId]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
@@ -436,10 +444,26 @@ export default function BillingEventsPage() {
             onChange={(next) => { setStatus(next); pushParams({ status: next }); }}
           />
         </div>
-        {(memberId || from || to || status.length > 0) && (
+        {userMembershipId && (
+          <div>
+            <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+              {t('billing_events_page.filter_plan')}
+            </label>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
+              {planName || `#${userMembershipId}`}
+              <button
+                type="button"
+                aria-label={t('billing_events_page.filter_plan_remove')}
+                onClick={() => { setUserMembershipId(null); pushParams({ userMembershipId: null }); }}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: '#6b7280' }}
+              >✕</button>
+            </span>
+          </div>
+        )}
+        {(memberId || userMembershipId || from || to || status.length > 0) && (
           <button
             onClick={() => {
-              setMemberId(null); setMemberName(''); setFrom(''); setTo(''); setStatus([]);
+              setMemberId(null); setMemberName(''); setUserMembershipId(null); setFrom(''); setTo(''); setStatus([]);
               router.replace(`/${locale}/payments/billing-events`, { scroll: false });
             }}
             style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: 6, alignSelf: 'flex-end' }}
