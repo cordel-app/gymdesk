@@ -30,8 +30,9 @@ export function AssignedGoalCard({
   subtitle?: string;
   /** One already-formatted line: target and progress. */
   summary: string;
-  status: string;
-  statusLabel: string;
+  /** Header badge; omitted where the status is shown elsewhere (Member card, #2564). */
+  status?: string;
+  statusLabel?: string;
   open: boolean;
   onToggle: () => void;
   /** The row's `⋮` menu, when the caller has one. */
@@ -53,7 +54,7 @@ export function AssignedGoalCard({
             <strong style={ellipsis}>{title}{subtitle ? ` · ${subtitle}` : ''}</strong>
             <span style={{ ...ellipsis, fontSize: 12.5, opacity: 0.75 }}>{summary}</span>
           </span>
-          <StatusBadge status={status} label={statusLabel} />
+          {status && statusLabel && <StatusBadge status={status} label={statusLabel} />}
         </button>
         {actions}
       </div>
