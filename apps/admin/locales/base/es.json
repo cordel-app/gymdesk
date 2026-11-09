@@ -925,7 +925,17 @@
     "modal_accept": "Aceptar",
     "modal_close": "Cerrar",
     "modal_working": "Procesando…",
-    "waive_success": "El importe se ha condonado."
+    "waive_success": "El importe se ha condonado.",
+    "det_normalized_payment_status": "Estado de pago normalizado",
+    "det_payment_status": "Estado de pago (proveedor)",
+    "col_tx_provider_status": "Estado del proveedor",
+    "normalized_completed": "Completado",
+    "normalized_pending": "Pendiente",
+    "normalized_failed": "Fallido",
+    "normalized_expired": "Caducado",
+    "normalized_canceled": "Cancelado",
+    "normalized_refunded": "Reembolsado",
+    "normalized_partially_refunded": "Reembolsado parcialmente"
   },
   "payment_providers": {
     "title": "Proveedores de pago",

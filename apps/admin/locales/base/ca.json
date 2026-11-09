@@ -926,7 +926,17 @@
     "modal_accept": "Accepta",
     "modal_close": "Tanca",
     "modal_working": "Processant…",
-    "waive_success": "L'import s'ha condonat."
+    "waive_success": "L'import s'ha condonat.",
+    "det_normalized_payment_status": "Estat de pagament normalitzat",
+    "det_payment_status": "Estat de pagament (proveïdor)",
+    "col_tx_provider_status": "Estat del proveïdor",
+    "normalized_completed": "Completat",
+    "normalized_pending": "Pendent",
+    "normalized_failed": "Fallit",
+    "normalized_expired": "Caducat",
+    "normalized_canceled": "Cancel·lat",
+    "normalized_refunded": "Reemborsat",
+    "normalized_partially_refunded": "Reemborsat parcialment"
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",
