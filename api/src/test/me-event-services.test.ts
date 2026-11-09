@@ -2,9 +2,24 @@
 // with its own effective capacity (never the event's total), and never one the
 // gym has switched off.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, request, TEST_AUTH_HEADER } from './helpers';
+
+// Impersonating a member needs a superadmin caller.
+vi.mock('@clerk/backend', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@clerk/backend')>();
+  return {
+    ...actual,
+    verifyToken: vi.fn().mockResolvedValue({ sub: 'test-user-id' }),
+    createClerkClient: vi.fn(() => ({
+      users: {
+        getUser: vi.fn().mockResolvedValue({ publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super Admin', firstName: 'Super', lastName: 'Admin' }),
+        getUserList: vi.fn().mockResolvedValue({ data: [], totalCount: 0 }),
+      },
+    })),
+  };
+});
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 let gymId: string;
