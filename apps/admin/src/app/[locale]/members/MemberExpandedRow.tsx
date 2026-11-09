@@ -456,7 +456,7 @@ export function MemberExpandedRow({
                 return (
                   <p key={label as string} style={profileValueStyle}>
                     <strong>{t(`members.${label as string}`)}:</strong>{' '}
-                    <span style={positive ? listNameBadgeAccentStyle : listNameBadgeStyle}>{t(`members.${chipKey}`)}</span>
+                    <span style={{ ...(positive ? listNameBadgeAccentStyle : listNameBadgeStyle), fontSize: 13 }}>{t(`members.${chipKey}`)}</span>
                     {l.date ? <span> {l.date}</span> : null}
                   </p>
                 );
@@ -464,7 +464,7 @@ export function MemberExpandedRow({
               {clerkStatus && (
                 <p style={profileValueStyle} data-testid="member-payment-token">
                   <strong>{t('members.label_payment_token')}:</strong>{' '}
-                  <span style={clerkStatus.has_payment_token ? listNameBadgeAccentStyle : listNameBadgeStyle}>
+                  <span style={{ ...(clerkStatus.has_payment_token ? listNameBadgeAccentStyle : listNameBadgeStyle), fontSize: 13 }}>
                     {t(clerkStatus.has_payment_token ? 'members.payment_token_available' : 'members.payment_token_unavailable')}
                   </span>
                 </p>
