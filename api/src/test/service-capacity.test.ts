@@ -180,7 +180,8 @@ describe('service capacity: booking', () => {
     expect((await book(a, sessionId, duo)).status).toBe(201);
     const res = await book(b, sessionId, duo);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('session_full_waitlist_not_open');
+    // The event capacity (1) caps the service's maximum (2), so the service is full.
+    expect(res.body.code).toBe('service_full');
   });
 
   it('never overbooks a service under concurrent attempts', async () => {
