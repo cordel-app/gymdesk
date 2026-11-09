@@ -869,5 +869,11 @@
     "attendees_count": "{count, plural, one {# person booked} other {# people booked}}",
     "cancel": "Cancel booking",
     "close": "Close"
+  },
+  "event_services": {
+    "title": "Professional Services",
+    "capacity": "{n, plural, one {# place} other {# places}}",
+    "image_alt": "Image of {name}",
+    "no_image": "No image"
   }
 }
