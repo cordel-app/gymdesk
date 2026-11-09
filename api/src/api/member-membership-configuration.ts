@@ -91,7 +91,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             um.member_id AS owner_member_id,
             p.name AS plan_name,
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
-            um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
+            um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live,
+            (um.status = 'cancelled' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
@@ -233,6 +234,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       // the same contract as `linked`; the owner sees `primary`.
       assignment_relationship: assignmentRelationship(memberId, p.owner_member_id),
       is_live: Number(p.is_live) === 1,
+      // #2549 — a cancelled plan is still valid until its effective end date (`ends_at`, the last
+      // paid day, #1196): the Active/Past split reads this, the stored `status` is unchanged.
+      is_current: Number(p.is_live) === 1 || Number(p.is_cancelled_valid) === 1,
       new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
     })),
     services: services.map((s) => ({ ...s, plan_name: planNameById.get(s.user_membership_id) ?? null })),

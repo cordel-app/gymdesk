@@ -52,3 +52,12 @@ describe('#1538 stage 3 canEditLivePlan', () => {
     expect(canEditLivePlan({ ...base, membership_plan_id: null })).toBe(false);
   });
 });
+
+describe('#2549: cancelled plans with a future end date stay Active', () => {
+  it('lists them in Active rows, keeps past ones out', () => {
+    const cancelledValid = { id: 1, status: 'cancelled', is_live: false, is_current: true } as any;
+    const cancelledPast = { id: 2, status: 'cancelled', is_live: false, is_current: false } as any;
+    const active = plan(3, 'active');
+    expect(visiblePlans([cancelledValid, cancelledPast, active]).rows.map((p: any) => p.id)).toEqual([1, 3]);
+  });
+});
