@@ -869,5 +869,11 @@
     "attendees_count": "{count, plural, one {# persona reservada} other {# personas reservadas}}",
     "cancel": "Cancelar reserva",
     "close": "Cerrar"
+  },
+  "event_services": {
+    "title": "Servicios profesionales",
+    "capacity": "{n, plural, one {# plaza} other {# plazas}}",
+    "image_alt": "Imagen de {name}",
+    "no_image": "Sin imagen"
   }
 }

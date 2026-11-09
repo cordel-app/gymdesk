@@ -23,6 +23,7 @@ import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { ImagePreviewButton } from '@/components/ImagePreview';
+import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { BookingDetailDialog } from '@/components/BookingDetailDialog';
 
 interface Session {
@@ -50,6 +51,8 @@ interface Session {
   booked_on: string | null;
   cancellation_block: CancellationBlock;
   professional_service: boolean;
+  /** #2500 — each accepted service with its own capacity. */
+  professional_services?: EventService[];
 }
 
 interface PastBooking {
@@ -324,6 +327,10 @@ export default function MemberSchedulePage() {
                       <span style={styles.pillBooked}>{t('member_schedule.status_booked')}</span>
                     ) : myStatus === 'waitlisted' ? (
                       <span style={styles.pillWait}>{t('member_schedule.waitlist_pos', { pos: s.my_waitlist_position ?? '?' })}</span>
+                    ) : (s.professional_services?.length ?? 0) > 0 ? (
+                      /* #2500 — a single event capacity would mislead when each
+                         service has its own; the list below carries them. */
+                      null
                     ) : spots > 0 ? (
                       <span style={styles.spots}>{t('member_schedule.spots_left', { n: spots })}</span>
                     ) : (
@@ -353,12 +360,15 @@ export default function MemberSchedulePage() {
                       <span>{value.trim()}</span>
                     </div>
                   ) : null))}
+                  <EventServicesList services={s.professional_services} />
                   {isExpanded && (
                     <div style={styles.details}>
                       {s.class_type_description && <div style={styles.sub}>{s.class_type_description}</div>}
-                      <div style={styles.sub}>
-                        {t('member_schedule.capacity_detail', { booked: s.booked_count, capacity: s.effective_capacity })}
-                      </div>
+                      {(s.professional_services?.length ?? 0) === 0 && (
+                        <div style={styles.sub}>
+                          {t('member_schedule.capacity_detail', { booked: s.booked_count, capacity: s.effective_capacity })}
+                        </div>
+                      )}
                       {s.my_booking_id && s.booked_on && (
                         <div style={styles.sub}>{t(BOOKED_ON_KEY, { date: `${dayLabel(s.booked_on)} · ${timeOnly(s.booked_on)}` })}</div>
                       )}

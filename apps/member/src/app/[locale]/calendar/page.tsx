@@ -26,6 +26,7 @@ import {
 } from '@/lib/memberChrome';
 import { CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
+import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import {
   EVENT_STATUS_CHIP_STYLE,
@@ -67,6 +68,8 @@ interface ScheduleSession {
   booked_on: string | null;
   cancellation_block: CancellationBlock;
   professional_service: boolean;
+  /** #2500 — each accepted service with its own capacity. */
+  professional_services?: EventService[];
   my_booking_status: 'booked' | 'waitlisted' | null;
   /** #1382 — the member's own attendance, read-only; `pending` is unconfirmed and shows nothing. */
   my_attendance_status?: 'pending' | 'present' | 'absent' | null;
@@ -617,7 +620,7 @@ export default function MemberCalendarPage() {
                 <span style={statusPillStyle(memberStatusChip(selected)!.tone)}>{t(memberStatusChip(selected)!.key)}</span>
               )}
               <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status])}>
-                {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
+                {t(`occupancy_${selected.occupancy_status}`)}{(selected.professional_services?.length ?? 0) === 0 && ` · ${t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}`}
               </span>
               {selected.waitlist_status !== 'disabled' && (
                 <span style={badgeStyle(memberTheme.primaryButton)}>
@@ -636,6 +639,7 @@ export default function MemberCalendarPage() {
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
             )}
+            <EventServicesList services={selected.professional_services} />
             {serviceOptions.length > 0 && (
               <div role="radiogroup" aria-label={t('select_service_prompt')} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
                 {serviceOptions.map((o) => (

@@ -21,6 +21,7 @@ import { getTenantContext, requireRole, TenantContext } from '../infra/tenantCon
 import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import { loadMemberEventServices } from './service-capacity';
 import {
   memberCancellation,
   professionalServiceLinkedSql,
@@ -698,9 +699,11 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
     );
     // #1162 — `booked_on` is the row's own `booked_at`, and whether the booking
     // can still be cancelled is decided from the same numbers the DELETE uses.
+    const services = await loadMemberEventServices(db, gymId, rows.map((r: any) => Number(r.class_session_id)));
     res.json(rows.map((r: any) => ({
       ...withoutCancellationTiming(r),
       professional_service: !!Number(r.professional_service),
+      professional_services: services.get(Number(r.class_session_id)) ?? [],
       ...memberCancellation(r),
     })));
   } catch (err) {
@@ -934,6 +937,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
+    const eventServices = await loadMemberEventServices(db, gymId, rows.map((r: any) => Number(r.id)));
     const shaped = rows.map((r: any) => {
       const booked = Number(r.booked_count);
       const cap = Number(r.effective_capacity);
@@ -977,6 +981,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         ...memberCancellation(r, r.my_booking_status ?? null),
         my_attendance_status: r.my_attendance_status ?? null,
         professional_service: !!Number(r.professional_service),
+        // #2500 — each accepted service with its own capacity; the event's total is no substitute.
+        professional_services: eventServices.get(Number(r.id)) ?? [],
         availability_state,
         // #503 stage 5: unified member read model — additive next to
         // availability_state, which stays as the source of booking-action UI.

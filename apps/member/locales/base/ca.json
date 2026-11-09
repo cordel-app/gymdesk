@@ -869,5 +869,11 @@
     "attendees_count": "{count, plural, one {# persona reservada} other {# persones reservades}}",
     "cancel": "Cancel·la la reserva",
     "close": "Tanca"
+  },
+  "event_services": {
+    "title": "Serveis professionals",
+    "capacity": "{n, plural, one {# plaça} other {# places}}",
+    "image_alt": "Imatge de {name}",
+    "no_image": "Sense imatge"
   }
 }

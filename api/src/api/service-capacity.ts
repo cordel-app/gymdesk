@@ -145,3 +145,58 @@ export async function writeServiceCapacityOverrides(
     }
   }
 }
+
+/** #2500 — what a member is shown of one Professional Service an occurrence accepts. */
+export interface MemberEventService {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+  /** The effective capacity for this occurrence (#1984), never the event's total. */
+  capacity: number;
+}
+
+/**
+ * The Professional Services each occurrence accepts, for the Members App's
+ * My Bookings and Calendar. The service list and each capacity are
+ * `loadServiceCapacityViews()`'s (no second rule); this only adds what a member
+ * sees (description and images) and drops a service the gym has switched off.
+ * An occurrence that names no service has an empty list.
+ */
+export async function loadMemberEventServices(
+  q: Queryable, gymId: string, eventIds: number[],
+): Promise<Map<number, MemberEventService[]>> {
+  const result = new Map<number, MemberEventService[]>();
+  if (eventIds.length === 0) return result;
+  const views = await loadServiceCapacityViews(q, gymId, eventIds);
+  const serviceIds = [...new Set([...views.values()].flat().map((v) => v.id))];
+  if (serviceIds.length === 0) return result;
+  const { rows } = await q.query(
+    `SELECT ps.id, ps.description, ps.image_url, ps.image_thumbnail_url
+       FROM professional_services ps
+       LEFT JOIN gym_professional_services gps
+         ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+      WHERE ps.id IN (${placeholders(serviceIds.length)}) AND ps.deleted_at IS NULL
+        AND COALESCE(gps.status, 'active') = 'active'`,
+    [gymId, ...serviceIds],
+  );
+  const info = new Map<number, any>(rows.map((r: any) => [Number(r.id), r]));
+  for (const [eventId, list] of views) {
+    const shown = list
+      .filter((v) => info.has(v.id))
+      .map((v) => {
+        const r = info.get(v.id);
+        return {
+          id: v.id,
+          name: v.name,
+          description: r.description?.trim() ? r.description : null,
+          image_url: r.image_url || null,
+          image_thumbnail_url: r.image_thumbnail_url || null,
+          capacity: v.capacity,
+        };
+      });
+    if (shown.length) result.set(eventId, shown);
+  }
+  return result;
+}
