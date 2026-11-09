@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FormLabel, FormInput } from '@/components/CrudModal';
 import { primaryActionColors } from '@/components/ui';
-import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
+import { toDateTimeLocal, EVENT_TYPES, type CalendarEventForm } from './CalendarEventModal';
 import { EventImageControl } from './EventImageControl';
 import { EventPanelHeader, eventPanelSurfaceStyle } from './EventPanelChrome';
 import { CalendarEventHeader, CalendarEventInfoCard } from './CalendarEventDetails';
@@ -110,6 +110,18 @@ export function EventDetailsPanel({
 
   function field(key: keyof CalendarEventForm, value: any) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  // #2559: Center comes first and the Spaces offered follow it; a Space the
+  // chosen Center does not hold is cleared when the Center changes.
+  const visibleSpaces = spaces.filter((sp: any) =>
+    !form.center_id || sp.center_id == null || String(sp.center_id) === form.center_id || String(sp.id) === form.space_id);
+  function onCenterChange(centerId: string) {
+    setForm((f) => {
+      const sp: any = spaces.find((x) => String(x.id) === f.space_id);
+      const keep = !centerId || !sp || sp.center_id == null || String(sp.center_id) === centerId;
+      return { ...f, center_id: centerId, space_id: keep ? f.space_id : '' };
+    });
   }
 
   const selectedActivityType = form.activity_type_id
@@ -286,16 +298,16 @@ export function EventDetailsPanel({
           {t('event_all_day')}
         </label>
 
-        <FormLabel>{t('event_space')}</FormLabel>
-        <select value={form.space_id} onChange={(e) => field('space_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
-          <option value="">—</option>
-          {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-
-        <div style={{ marginTop: 12 }}><FormLabel>{t('event_center')}</FormLabel></div>
-        <select value={form.center_id} onChange={(e) => field('center_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
+        <FormLabel>{t('event_center')}</FormLabel>
+        <select value={form.center_id} onChange={(e) => onCenterChange(e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
           <option value="">—</option>
           {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+
+        <div style={{ marginTop: 12 }}><FormLabel>{t('event_space')}</FormLabel></div>
+        <select value={form.space_id} onChange={(e) => field('space_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
+          <option value="">—</option>
+          {visibleSpaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
 
         <div style={{ marginTop: 12 }}><FormLabel>{t('event_trainer')}</FormLabel></div>
@@ -304,15 +316,46 @@ export function EventDetailsPanel({
           {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
         </select>
 
-        <div style={{ marginTop: 12 }}><FormLabel>{t('event_professional_service')}</FormLabel></div>
-        <select value={form.professional_service_id} onChange={(e) => field('professional_service_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
-          <option value="">—</option>
-          {professionalServices
-            .filter((ps) => ps.status === 'active' || String(ps.id) === form.professional_service_id)
-            .map((ps) => (
-              <option key={ps.id} value={ps.id} disabled={ps.status !== 'active'}>{ps.name}</option>
-            ))}
-        </select>
+        {/* #2559: the event type replaces the standalone Professional service field. */}
+        <div style={{ marginTop: 12 }}><FormLabel>{t('event_type')}</FormLabel></div>
+        <div role="radiogroup" aria-label={t('event_type')} style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 8 }}>
+          {EVENT_TYPES.map((ty) => (
+            <label key={ty} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+              <input type="radio" name="event_type" checked={form.event_type === ty}
+                onChange={() => field('event_type', ty)} disabled={!canWrite || busy} />
+              {t(`event_type_${ty}`)}
+            </label>
+          ))}
+        </div>
+        {form.event_type !== 'professional_services' ? (
+          <>
+            <FormLabel>{t('event_max_capacity')}</FormLabel>
+            <FormInput type="number" min={1} value={form.capacity}
+              onChange={(e) => field('capacity', e.target.value)} disabled={!canWrite || busy} />
+          </>
+        ) : (
+          <>
+            <FormLabel>{t('event_professional_services')}</FormLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              {professionalServices
+                .filter((ps) => ps.status === 'active' || form.eligible_professional_service_ids.includes(String(ps.id)))
+                .map((ps) => {
+                  const id = String(ps.id);
+                  const checked = form.eligible_professional_service_ids.includes(id);
+                  return (
+                    <label key={ps.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={checked} disabled={!canWrite || busy || (ps.status !== 'active' && !checked)}
+                        onChange={(e) => field('eligible_professional_service_ids',
+                          e.target.checked
+                            ? [...form.eligible_professional_service_ids, id]
+                            : form.eligible_professional_service_ids.filter((x) => x !== id))} />
+                      {ps.name}
+                    </label>
+                  );
+                })}
+            </div>
+          </>
+        )}
 
         <div style={{ marginTop: 12 }}><FormLabel>{t('event_status')}</FormLabel></div>
         <select value={form.status} onChange={(e) => field('status', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
