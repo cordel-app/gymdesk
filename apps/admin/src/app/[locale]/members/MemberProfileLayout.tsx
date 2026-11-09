@@ -139,6 +139,21 @@ export function NewMemberValue({
   );
 }
 
+/** #2547: New Member and Welcomed sit side by side on one wrapping row. */
+export const statusChipRowStyle: React.CSSProperties = {
+  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+};
+
+/** Read-only Welcomed chip: the same pill as New Member, accent when welcomed. */
+export function WelcomedValue({ welcomed, label, announce }: { welcomed: boolean; label: string; announce: string }) {
+  return (
+    <span
+      style={{ ...(welcomed ? listNameBadgeAccentStyle : listNameBadgeStyle), marginLeft: 0 }}
+      role="img" aria-label={announce} data-testid="member-welcomed"
+    >{label}</span>
+  );
+}
+
 /**
  * The chip's look, borrowed whole from the list's metadata pill so nothing here
  * declares a size, a radius or a colour. The pill carries a left margin for the
