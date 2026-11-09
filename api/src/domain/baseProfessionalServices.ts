@@ -84,7 +84,9 @@ export function parsePsTranslations(
   for (const locale of BASE_PS_TRANSLATION_LOCALES) {
     const entry = input[locale];
     const blank = !entry || typeof entry !== 'object' || (typeof entry.name === 'string' && !entry.name.trim() && !entry.description);
-    if (!opts.requireAll && blank) continue;
+    // #2577: an optional language with no name is simply not provided (English is the fallback).
+    const nameless = !entry || typeof entry !== 'object' || typeof entry.name !== 'string' || !entry.name.trim();
+    if (!opts.requireAll && (blank || nameless)) continue;
     if (!entry || typeof entry !== 'object') return { error: `translations.${locale}.name is required` };
     const name = parseBaseName(entry.name);
     if ('error' in name) return { error: `translations.${locale}.${name.error}` };
