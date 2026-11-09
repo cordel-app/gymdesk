@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2558 (Activity form: the Public Event checkbox is replaced by a Public Event / Requires Professional Services / Private radio group. Max Capacity moves under it and shows for Public Event and Private; the Eligible Professional Services list shows only for Requires Professional Services. No API or migration change: the type is derived from `public_event` plus the eligible services list, and Private is `public_event = false` with none)
 - **Done**: #2556 (Activity: the Default Center and Default Space labels read Center and Space in en/es/ca. Label change only; no field, value or behaviour change)
 - **Done**: #2551 (Admin → Members: an *Access Rights* filter beside Welcomed, All by default, over the existing derived `access_rights` value. `GET /members?access_rights=granted|to_be_reviewed|revoked` filters on the derived value, combined with the other filters; the URL keeps it. No migration or change to how access rights are calculated)
 - **Done**: #2550 stage 2 (Members list: Access Rights is its own *Access* column instead of a chip beside the name, per the owner's comment. UI only)

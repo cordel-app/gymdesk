@@ -112,6 +112,8 @@ const emptyEditForm = {
   default_trainer_membership_id: '',
   color: '',
   public_event: true,
+  /** #2558: derived from public_event + eligible services; saved back as those two. */
+  booking_type: 'public' as 'public' | 'services' | 'private',
   waitlist_mode: 'disabled' as ActivityType['waitlist_mode'],
 };
 type EditForm = typeof emptyEditForm;
@@ -426,6 +428,7 @@ export default function ActivityTypesPage() {
       default_trainer_membership_id: row.default_trainer_membership_id ? String(row.default_trainer_membership_id) : '',
       color: row.color ?? '',
       public_event: row.public_event,
+      booking_type: row.public_event ? 'public' : 'private',
       waitlist_mode: row.waitlist_mode,
     });
     setEditError(null);
@@ -433,6 +436,7 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
     const services = eligibleServicesMap.get(row.id) ?? (await fetchEligibleServices(row.id));
     setEditSelectedServices(new Set(services.map((p) => p.id)));
+    setEditForm((f) => (f.public_event || services.length === 0 ? f : { ...f, booking_type: 'services' }));
     // The row is rendered by now (List view, expanded, editing): bring it into view.
     requestAnimationFrame(() => {
       document.getElementById(`activity-card-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -479,6 +483,9 @@ export default function ActivityTypesPage() {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
+    if (editForm.booking_type === 'services' && editSelectedServices.size === 0) {
+      setEditError(t('error_services_required')); return;
+    }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/activity-types/${row.id}`, {
@@ -495,7 +502,7 @@ export default function ActivityTypesPage() {
           default_trainer_membership_id: editForm.default_trainer_membership_id
             ? parseInt(editForm.default_trainer_membership_id, 10) : null,
           color: editForm.color || null,
-          public_event: editForm.public_event,
+          public_event: editForm.booking_type === 'public',
           waitlist_mode: editForm.waitlist_mode,
           ...(confirmPropagate ? { confirm_propagate: true } : {}),
           ...(confirmDiscontinue ? { confirm_discontinue: true } : {}),
@@ -503,7 +510,7 @@ export default function ActivityTypesPage() {
       });
       await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
         method: 'PUT',
-        body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices) }),
+        body: JSON.stringify({ professional_service_ids: editForm.booking_type === 'services' ? Array.from(editSelectedServices) : [] }),
       });
       setSaveConflict(null);
       setDiscontinueConflict(null);
@@ -1201,10 +1208,6 @@ export default function ActivityTypesPage() {
                 <input type="number" min="1" step="1" value={editForm.duration_minutes} onChange={(e) => setEditForm({ ...editForm, duration_minutes: e.target.value })} style={inlineInputStyle} />
               </div>
               <div>
-                <label style={inlineLabelStyle}>{t('label_capacity')} *</label>
-                <input type="number" min="1" step="1" value={editForm.max_capacity} onChange={(e) => setEditForm({ ...editForm, max_capacity: e.target.value })} style={inlineInputStyle} />
-              </div>
-              <div>
                 <label style={inlineLabelStyle}>{t('label_intensity')}</label>
                 <input type="number" min="1" max="5" step="1" value={editForm.intensity_level} onChange={(e) => setEditForm({ ...editForm, intensity_level: e.target.value })} style={inlineInputStyle} />
               </div>
@@ -1265,20 +1268,29 @@ export default function ActivityTypesPage() {
             </div>
 
             <SectionHeader title={t('section_booking_access')} />
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
-                <input
-                  type="checkbox"
-                  checked={editForm.public_event}
-                  onChange={(e) => setEditForm({ ...editForm, public_event: e.target.checked })}
-                  style={{ width: 15, height: 15 }}
-                />
-                {t('label_public_event')}
-              </label>
+            <div role="radiogroup" style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {(['public', 'services', 'private'] as const).map((bt) => (
+                <label key={bt} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                  <input
+                    type="radio"
+                    name={`booking-type-${row.id}`}
+                    checked={editForm.booking_type === bt}
+                    onChange={() => setEditForm({ ...editForm, booking_type: bt, public_event: bt === 'public' })}
+                    style={{ width: 15, height: 15 }}
+                  />
+                  {bt === 'public' ? t('label_public_event') : t(`booking_type_${bt}` as any)}
+                </label>
+              ))}
               <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>
-                {editForm.public_event ? t('public_event_hint_public') : t('public_event_hint_restricted')}
+                {editForm.booking_type === 'public' ? t('public_event_hint_public') : t(`booking_type_hint_${editForm.booking_type}` as any)}
               </p>
             </div>
+            {editForm.booking_type !== 'services' && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={inlineLabelStyle}>{t('label_capacity')} *</label>
+                <input type="number" min="1" step="1" value={editForm.max_capacity} onChange={(e) => setEditForm({ ...editForm, max_capacity: e.target.value })} style={inlineInputStyle} />
+              </div>
+            )}
             <div style={{ marginBottom: 10 }}>
               <label style={inlineLabelStyle}>{t('label_waitlist_mode')}</label>
               <select
@@ -1292,7 +1304,7 @@ export default function ActivityTypesPage() {
                 {t(`waitlist_mode_hint_${editForm.waitlist_mode}` as any)}
               </p>
             </div>
-            {!editForm.public_event && (
+            {editForm.booking_type === 'services' && (
               <div style={{ marginBottom: 12 }}>
                 <label style={inlineLabelStyle}>{t('label_eligible_services')}</label>
                 {selectableServices(row.id).length === 0 ? (
