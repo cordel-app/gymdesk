@@ -16,7 +16,7 @@ import {
   Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
-import { diffConfigurations } from '../domain/productSetDiff';
+import { diffConfigurations, summaryItems } from '../domain/productSetDiff';
 import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
@@ -600,6 +600,16 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
       status: String(set.status),
       has_previous: set.previous_product_set_id != null,
       changes,
+      // The engine's own initial-charge line (matched by item name) gives a draft item its
+      // discount and the amount asked today; nothing is priced here.
+      summary_items: summaryItems(before, after).map((i) => {
+        const l = lines.find((x) => x.item_name === i.name);
+        return {
+          ...i,
+          promotions: i.promotions.length > 0 ? i.promotions : l?.promotion_name ? [l.promotion_name] : [],
+          initial_amount: i.state === 'draft' && l ? l.amount : null,
+        };
+      }),
       amount_due: amountDue,
       payment_required: amountDue != null && amountDue > 0,
       immediate_lines: lines,

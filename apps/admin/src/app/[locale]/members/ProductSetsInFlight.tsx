@@ -15,17 +15,20 @@ import { cardHintStyle, cardSubLabelStyle, formErrorStyle, secondaryBtnSmall } f
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
 import { changeMessage, type ChangeLike } from './recurringProductsView';
+import type { SummaryItemLike } from './productsWorkflowView';
 
 interface Props {
   productSets: ProductSetRow[];
   canWrite: boolean;
   /** The Draft's review diff (#1660): what the Summary lists as added / removed. */
   changes?: unknown[];
+  /** #2446 — every item of the pending set with its economic conditions. */
+  items?: SummaryItemLike[];
   /** Re-reads the Member's configuration after an action. */
   onChanged: () => void;
 }
 
-export function ProductSetsInFlight({ productSets, canWrite, changes = [], onChanged }: Props) {
+export function ProductSetsInFlight({ productSets, canWrite, changes = [], items = [], onChanged }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -69,6 +72,26 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], onCha
                     ? '#15803d'
                     : c.kind === 'removed' || c.kind === 'promotion_removed' ? '#b91c1c' : undefined;
                   return <li key={i} data-change-kind={c.kind} style={tone ? { color: tone } : undefined}>{t(m.key as any, m.values as any)}</li>;
+                })}
+              </ul>
+            )}
+            {ps.status === 'draft' && items.length > 0 && (
+              <ul data-summary-items style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                {items.map((i, n) => {
+                  const parts = [
+                    t(i.type === 'plan' ? 'summary_type_plan' : 'summary_type_product'),
+                    i.quantity != null ? `× ${i.quantity}` : null,
+                    i.billing_frequency ? i.billing_frequency.replace('_', ' ') : null,
+                    i.regular_price != null ? `${i.regular_price.toFixed(2)} €` : null,
+                    i.promotions.length > 0 ? i.promotions.join(', ') : null,
+                    i.initial_amount != null ? `${t('summary_initial')}: ${i.initial_amount.toFixed(2)} €` : null,
+                  ].filter(Boolean).join(' · ');
+                  const tone = i.state === 'draft' ? '#15803d' : i.state === 'cancelling' ? '#b91c1c' : undefined;
+                  return (
+                    <li key={n} data-summary-item-state={i.state} style={tone ? { color: tone } : undefined}>
+                      <strong>{i.name}</strong> <span style={cardHintStyle}>({t(`summary_state_${i.state}` as any)})</span> — {parts}
+                    </li>
+                  );
                 })}
               </ul>
             )}
