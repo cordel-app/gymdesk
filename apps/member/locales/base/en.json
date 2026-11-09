@@ -343,7 +343,7 @@
     "type_booking_reminder_2h": "Training reminder",
     "detail_booking_reminder_2h": "You have this training booked in 2 hours.",
     "type_staff_message": "Message from your gym",
-    "type_staff_message_from": "Message from {name}",
+    "type_staff_message_from": "Message from <nameTag>{name}</nameTag>",
     "category_all": "All",
     "category_staff": "Staff",
     "category_auto": "Auto",
