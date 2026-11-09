@@ -291,9 +291,15 @@ export function MemberPurchasedProducts({
           onToggleExpand={toggleExpand}
           draftRow={adding ? (() => {
             const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
+            // #2538 — the benefit of each chosen Promotion, from the Promotion's own action/value/duration.
+            const chosen = (addForm.product?.promotions ?? []).filter((pr) => addForm.promotionIds.includes(pr.promotion_id));
+            const draftBenefit = chosen.length === 0 ? dash : chosen.map((pr) => [
+              benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
+              pr.duration_cycles != null ? t('purchase_promotion_cycles', { count: pr.duration_cycles }) : null,
+            ].filter(Boolean).join(' · ')).join(', ');
             // Same order as `columns`: product, date, end date, price, tax, promotion, promotion benefit, discount, final, payment status, status, actions.
             const cells: React.ReactNode[] = [
-              c.product, c.date, null, c.price, c.tax, c.promotion, null, c.discount, c.final, null,
+              c.product, c.date, null, c.price, c.tax, c.promotion, draftBenefit, c.discount, c.final, null,
               <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />, null,
             ];
             return { cells, form: <AddProductDetails form={addForm} /> };
