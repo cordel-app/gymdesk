@@ -692,6 +692,10 @@ export default function MembersPage() {
             {m.is_new_member && (
               <span style={listNameBadgeAccentStyle}>{t('members.new_member_badge')}</span>
             )}
+            {/* #2550: the Member's existing access rights, read as reported
+                by the API (granted / to_be_reviewed / revoked) — no second
+                calculation here. */}
+            <StatusBadge status={m.access_rights ?? 'granted'} label={t(`members.access_rights_${m.access_rights ?? 'granted'}`)} />
           </div>
           {/* The track is fixed now, so an over-long address ellipsises inside
               its own column; `title` keeps the whole of it reachable. */}
