@@ -62,10 +62,15 @@ beforeAll(async () => {
   }
   const { insertId: m } = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'EventSvc Member', ?)`, [gymId, `es-${uniq()}@test.com`]);
   memberId = m;
+  const { insertId: center } = await db.query('INSERT INTO centers (gym_id, name) VALUES (?, ?)', [gymId, `ES-${uniq()}`]);
+  await db.query(
+    `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at) VALUES (?, ?, ?, 1, UTC_TIMESTAMP())`,
+    [gymId, memberId, center],
+  );
   const { insertId: s } = await db.query(
-    `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, capacity, status)
-     VALUES (?, 'EventSvc', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 72 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 73 HOUR), 10, 'scheduled')`,
-    [gymId, at],
+    `INSERT INTO calendar_events (gym_id, center_id, title, activity_type_id, starts_at, ends_at, capacity, status)
+     VALUES (?, ?, 'EventSvc', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 72 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 73 HOUR), 10, 'scheduled')`,
+    [gymId, center, at],
   );
   sessionId = s;
   await db.query(
