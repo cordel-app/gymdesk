@@ -270,6 +270,7 @@
     "event_receipt": "Receipt",
     "col_payment_status": "Payment",
     "col_enrollment_status": "Enrollment",
+    "col_access_rights": "Access",
     "payment_status_pending": "Pending",
     "payment_status_completed": "Paid",
     "payment_status_failed": "Failed",

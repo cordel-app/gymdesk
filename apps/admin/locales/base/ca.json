@@ -140,6 +140,7 @@
     "payments": "Pagaments",
     "col_payment_status": "Pagament",
     "col_enrollment_status": "Inscripció",
+    "col_access_rights": "Accés",
     "payment_status_pending": "Pendent",
     "payment_status_completed": "Pagat",
     "payment_status_failed": "Fallit",
