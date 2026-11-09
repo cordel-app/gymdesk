@@ -38,6 +38,7 @@ describe('optional translations (#2441)', () => {
   it('a Base service needs only its English name: blank or missing locales are accepted', () => {
     expect(parsePsTranslations({}, { requireAll: false })).toEqual({ value: {} });
     expect(parsePsTranslations({ es: { name: '', description: '' } }, { requireAll: false })).toEqual({ value: {} });
+    expect(parsePsTranslations({ es: { name: '', description: 'solo descripción' } }, { requireAll: false })).toEqual({ value: {} });
     expect('error' in parsePsTranslations({ fr: { name: 'z' } }, { requireAll: false })).toBe(true);
   });
 });
