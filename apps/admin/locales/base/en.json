@@ -925,7 +925,17 @@
     "modal_accept": "Accept",
     "modal_close": "Close",
     "modal_working": "Working…",
-    "waive_success": "The amount was waived."
+    "waive_success": "The amount was waived.",
+    "det_normalized_payment_status": "Normalized payment status",
+    "det_payment_status": "Payment status (provider)",
+    "col_tx_provider_status": "Provider status",
+    "normalized_completed": "Completed",
+    "normalized_pending": "Pending",
+    "normalized_failed": "Failed",
+    "normalized_expired": "Expired",
+    "normalized_canceled": "Canceled",
+    "normalized_refunded": "Refunded",
+    "normalized_partially_refunded": "Partially refunded"
   },
   "payment_providers": {
     "title": "Payment Providers",

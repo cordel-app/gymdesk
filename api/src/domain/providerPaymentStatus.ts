@@ -63,3 +63,28 @@ export function classifyProviderStatus(raw: string | null): ProviderStatusClass 
       return LEGACY_PENDING.has(value) ? 'in_flight' : 'unknown';
   }
 }
+
+/**
+ * #2533 — the provider-independent reading of a provider status, kept beside
+ * the raw value (never instead of it). `null` is an absent or unrecognised
+ * status: it is reported as unresolved and never defaulted to `failed`.
+ */
+export const NORMALIZED_PAYMENT_STATUSES = [
+  'completed', 'pending', 'failed', 'expired', 'canceled', 'refunded', 'partially_refunded',
+] as const;
+export type NormalizedPaymentStatus = (typeof NORMALIZED_PAYMENT_STATUSES)[number];
+
+export function normalizePaymentStatus(raw: string | null | undefined): NormalizedPaymentStatus | null {
+  const value = normaliseProviderStatus(raw ?? null);
+  if (value === null) return null;
+  switch (value) {
+    case 'SUCCEEDED': case 'PAID_OUT': return 'completed';
+    case 'PENDING': case 'PENDING_PROCESSING': case 'AUTHORIZED': case 'PROCESSING': return 'pending';
+    case 'FAILED': return 'failed';
+    case 'EXPIRED': return 'expired';
+    case 'CANCELED': return 'canceled';
+    case 'REFUNDED': return 'refunded';
+    case 'PARTIALLY_REFUNDED': return 'partially_refunded';
+    default: return null;
+  }
+}
