@@ -593,12 +593,12 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
     expect(ids).not.toContain(shareableSessionId);
   });
 
-  it('GET /me/schedule?center_id= returns 403 for a center the member is not assigned to', async () => {
+  it('GET /me/schedule?center_id= returns 200 for another center of the gym (#1985: no assigned-center restriction)', async () => {
     const res = await request
       .get(`/me/schedule?center_id=${outsideCenterId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it('GET /me/schedule?trainer_membership_id= narrows to that trainer\'s sessions', async () => {

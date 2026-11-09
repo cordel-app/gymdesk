@@ -15,6 +15,9 @@ interface ActivityType {
 interface Space { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
+export type EventType = 'public' | 'private' | 'professional_services';
+export const EVENT_TYPES: EventType[] = ['public', 'private', 'professional_services'];
+
 export interface CalendarEventForm {
   title: string;
   activity_type_id: string;
@@ -23,6 +26,12 @@ export interface CalendarEventForm {
   trainer_membership_id: string;
   /** #1891: the Professional Service a custom event delivers (empty = none). */
   professional_service_id: string;
+  /** #2559: Public | Private | Professional Services Based. */
+  event_type: EventType;
+  /** Max Capacity of a Public or Private event (empty = none). */
+  capacity: string;
+  /** The Professional Services of a Professional Services Based event. */
+  eligible_professional_service_ids: string[];
   color: string;
   starts_at: string;
   ends_at: string;
@@ -206,5 +215,6 @@ export function toDateLocal(d: Date): string {
 
 export const EMPTY_FORM: CalendarEventForm = {
   title: '', activity_type_id: '', space_id: '', center_id: '', trainer_membership_id: '', professional_service_id: '',
+  event_type: 'public', capacity: '', eligible_professional_service_ids: [],
   color: '', starts_at: '', ends_at: '', all_day: false, description: '', status: 'scheduled',
 };
