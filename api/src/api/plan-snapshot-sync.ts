@@ -7,7 +7,7 @@
 import { syncPlanSnapshotJunction } from './snapshot-junction-sync';
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-import { primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
@@ -26,36 +26,45 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  *     and linked assignment;
  *   - the primary snapshot's beneficiaries are the owner plus whoever the chain covers, and its
  *     Membership Plan Promotion applications are derived from the version's applications.
+ *
+ * Since M4b-1 the snapshots a version holds are the ones the junction links (`product_set_plan_snapshots`),
+ * never the ones whose column names it, and **a snapshot linked by more than one Product Set is not
+ * written at all** (`planSnapshotSharedSql()`): it is immutable to every set that links it and keeps the
+ * state it had, which is Oscar's rule for an unmodified plan a Draft reuses from the active set. A writer
+ * that needs to change such a snapshot owns it first (`ownPlanSnapshot()`), after which it is the set's
+ * alone and this sync moves it again.
  */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
   // M2: the Product Set <-> plan snapshot junction follows the snapshots the version holds.
   await syncPlanSnapshotJunction(tx, gymId, productSetId);
+  // Status and closed_at of every snapshot the version links and no other set does.
   await tx.query(
     `UPDATE plan_snapshots s
-       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
+       JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ?
+       JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
         SET s.status = CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
                             ELSE ps.status END,
             s.closed_at = um.closed_at
-      WHERE s.gym_id = ? AND s.product_set_id = ?`,
-    [gymId, productSetId]);
+      WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
+    [productSetId, gymId]);
 
   const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (snapshotId == null) return;
+  // A primary snapshot another set links is that set's contract too: nothing below may move it.
+  if (await isPlanSnapshotShared(tx, productSetId, snapshotId)) return;
   await tx.query(
     `UPDATE plan_snapshots s
-       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
+       JOIN product_sets ps ON ps.id = ? AND ps.gym_id = s.gym_id
         SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
             s.starts_at = ps.starts_at, s.ends_at = ps.ends_at,
             s.source_user_membership_id = COALESCE(ps.user_membership_id, s.source_user_membership_id)
       WHERE s.id = ?`,
-    [snapshotId]);
-  const { rows: snap } = await tx.query<{ id: number; member_id: number; root_product_set_id: number }>(
-    `SELECT s.id, s.member_id, ps.root_product_set_id
-       FROM plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
-      WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, gymId]);
+    [productSetId, snapshotId]);
+  const { rows: snap } = await tx.query<{ id: number; member_id: number }>(
+    'SELECT s.id, s.member_id FROM plan_snapshots s WHERE s.id = ? AND s.gym_id = ?', [snapshotId, gymId]);
 
   // Beneficiaries (#2125 stage 21): each snapshot's own; the sync only guarantees the owner's row.
   // The owner's row follows the plan's own choice (#2125 stage 22): a payer who is not a beneficiary has none.

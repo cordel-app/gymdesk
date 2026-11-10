@@ -2,11 +2,16 @@
  * #2125 / #2126 M2 — the many-to-many junctions between a Product Set and the immutable snapshots it is
  * assembled from (migration 366), written beside the columns the snapshot tables still carry.
  *
- * Until M3 moves the readers and M4 makes a new Product Set link unchanged snapshots instead of
- * copying them, a snapshot belongs to exactly one set through its own `product_set_id`, so the junction
- * is that column spelled as a pair. This module is the **one writer** of the junctions: it re-derives a
- * set's rows from the columns (idempotent `INSERT IGNORE`, stale rows removed). The snapshot side of every
- * junction is `ON DELETE CASCADE` (migration 375), so a deleted snapshot takes its links with it.
+ * Until M3 moved the readers, a snapshot belonged to exactly one set through its own `product_set_id`,
+ * so every junction was that column spelled as a pair: this module re-derives a set's rows from the
+ * columns (idempotent `INSERT IGNORE`, stale rows removed). The snapshot side of every junction is
+ * `ON DELETE CASCADE` (migration 375), so a deleted snapshot takes its links with it.
+ *
+ * Since M4b-1 the **plan** junction is the record of the link rather than a spelling of the column: a
+ * Product Set may link a plan snapshot whose column names another set (the sharing M4b introduces), so
+ * `syncPlanSnapshotJunction()` only adds the link a snapshot's column implies and never removes one — a
+ * link is released by its writer (`ownPlanSnapshot()`, `discardDraftSet()`) or by the cascade. The
+ * Product junctions still follow the column until #2126 stage 3 moves the recurring lines.
  *
  *   plan snapshots          -> product_set_plan_snapshots
  *   recurring Product lines -> product_set_periodical_snapshots
@@ -38,9 +43,17 @@ async function syncOne(tx: Conn, gymId: string, productSetId: number, j: SetJunc
     [gymId, productSetId]);
 }
 
-/** The Membership Plan snapshots of a Product Set. */
+/**
+ * The Membership Plan snapshots of a Product Set (M4b-1): a snapshot whose column names the set is linked
+ * if it is not yet (a fixture or a legacy path that wrote the column alone), and no existing link is
+ * touched — the junction, not the column, says which snapshots a set holds.
+ */
 export async function syncPlanSnapshotJunction(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  await syncOne(tx, gymId, productSetId, SET_JUNCTIONS[0]);
+  const j = SET_JUNCTIONS[0];
+  await tx.query(
+    `INSERT IGNORE INTO ${j.junction} (product_set_id, ${j.snapshotCol})
+     SELECT s.product_set_id, s.id FROM ${j.table} s WHERE s.gym_id = ? AND s.product_set_id = ?`,
+    [gymId, productSetId]);
 }
 
 /** The recurring Product snapshots of a Product Set (and any session / one-off snapshot that names it). */

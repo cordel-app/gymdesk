@@ -76,3 +76,20 @@ export const planSnapshotInheritedSql = (snap: string, setExpr: string): string 
   `(${snap}.is_inherited = 1 OR EXISTS (
       SELECT 1 FROM product_sets cur_ JOIN product_set_plan_snapshots jp_ ON jp_.product_set_id = cur_.previous_product_set_id
        WHERE cur_.id = ${setExpr} AND jp_.plan_snapshot_id = ${snap}.id))`;
+
+/**
+ * SQL for "a Product Set other than `setExpr` links the plan snapshot `snapIdExpr`" — a shared snapshot,
+ * immutable to every set that links it. `setExpr` may be `NULL` to ask whether anyone else at all links it.
+ */
+export const planSnapshotSharedSql = (snapIdExpr: string, setExpr: string): string =>
+  `EXISTS (SELECT 1 FROM product_set_plan_snapshots sh_
+            WHERE sh_.plan_snapshot_id = ${snapIdExpr} AND NOT (sh_.product_set_id <=> ${setExpr}))`;
+
+/** Whether a Product Set other than `productSetId` links the plan snapshot. */
+export async function isPlanSnapshotShared(
+  tx: Pick<Tx, 'query'>, productSetId: number, planSnapshotId: number,
+): Promise<boolean> {
+  const { rows } = await tx.query<{ shared: number }>(
+    `SELECT ${planSnapshotSharedSql('?', '?')} AS shared`, [planSnapshotId, productSetId]);
+  return Number(rows[0]?.shared ?? 0) === 1;
+}
