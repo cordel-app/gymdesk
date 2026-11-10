@@ -41,3 +41,32 @@ describe('#2567 stage 3 invoice rules', () => {
     }
   });
 });
+
+import { formatRectifyingNumber, parseRectificationReason, negateLines, negateTotals } from '../domain/billingInvoice';
+
+describe('#2567 stage 4 rectifying invoices', () => {
+  it('has its own R series', () => {
+    expect(formatRectifyingNumber(2026, 3)).toBe('R-2026-0003');
+    expect(parseFiscalSeq('R-2026-0003')).toBe(3);
+  });
+  it('requires a reason', () => {
+    expect(parseRectificationReason({ reason: '  ' }).ok).toBe(false);
+    expect(parseRectificationReason({ reason: ' wrong NIF ' })).toEqual({ ok: true, value: 'wrong NIF' });
+  });
+  it('negates every figure so the pair nets to zero', () => {
+    const lines = [{ name: 'x', quantity: 1, amount: 121, amountExclTax: 100, taxRate: 21 }];
+    expect(negateLines(lines)[0]).toMatchObject({ amount: -121, amountExclTax: -100, quantity: 1 });
+    expect(negateTotals({ net: 100, tax: 21, total: 121 })).toEqual({ net: -100, tax: -21, total: -121 });
+  });
+  it('renders a rectifying PDF', async () => {
+    const pdf = await generateInvoicePdf({
+      type: 'full', state: 'not-paid', lang: 'es', number: 'R-2026-0001', issuedAt: new Date(),
+      gym: { name: 'G', legalName: null, cif: null, fiscalAddress: null, fiscalPhone: null },
+      customer: { name: 'A', taxId: 'B1', address: 'St' },
+      lines: negateLines([{ name: 'x', quantity: 1, amount: 121, amountExclTax: null, taxRate: 21 }]),
+      totals: negateTotals({ net: 100, tax: 21, total: 121 }), currency: 'EUR',
+      rectifies: { number: 'F-2026-0001', reason: 'error' },
+    });
+    expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});
