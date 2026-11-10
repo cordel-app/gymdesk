@@ -4809,6 +4809,7 @@
     "translations_help": "Traduccions (opcional — si un idioma queda buit s'usa l'anglès)",
     "label_translations": "Traduccions",
     "one_time_purchase": "Compra única",
+    "one_per_member": "Un per membre",
     "sharing_type": "Tipus d'ús compartit",
     "sharing_individual": "Individual",
     "sharing_shared": "Compartit"
@@ -5631,6 +5632,7 @@
     "validity_days": "Validesa (dies)",
     "mandatory": "Obligatori",
     "one_time_purchase": "Compra única",
+    "one_per_member": "Un per membre",
     "sharing_type": "Tipus d'ús compartit",
     "sharing_individual": "Individual",
     "sharing_shared": "Compartit",

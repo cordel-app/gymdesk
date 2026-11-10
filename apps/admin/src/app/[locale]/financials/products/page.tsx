@@ -125,6 +125,7 @@ interface Product {
   mandatory: number;
   /** #1349: 0/1 from MySQL; a badge only, never derived from billing_frequency. */
   one_time_purchase?: number;
+  one_per_member?: number;
   sharing_type?: 'individual' | 'shared';
   description: string | null;
   translations?: Partial<Record<'es' | 'ca', { name: string; description: string | null }>>;
@@ -455,6 +456,7 @@ export default function ProductsPage() {
           tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
           mandatory: editForm.mandatory,
           one_time_purchase: editForm.one_time_purchase,
+          one_per_member: editForm.one_per_member,
           sharing_type: editForm.sharing_type,
           professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
         }),
@@ -721,6 +723,10 @@ export default function ProductsPage() {
                 <div style={productValueStyle}>{item.one_time_purchase ? t('yes') : t('no')}</div>
               </div>
               <div>
+                <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+                <div style={productValueStyle}>{item.one_per_member ? t('yes') : t('no')}</div>
+              </div>
+              <div>
                 <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
                 <div style={productValueStyle}>{item.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
               </div>
@@ -870,6 +876,16 @@ export default function ProductsPage() {
                   yesLabel={t('yes')}
                   noLabel={t('no')}
                   ariaLabel={t('one_time_purchase')}
+                />
+              </div>
+              <div>
+                <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+                <YesNoToggle
+                  checked={editForm.one_per_member}
+                  onChange={(v) => setEditForm({ ...editForm, one_per_member: v })}
+                  yesLabel={t('yes')}
+                  noLabel={t('no')}
+                  ariaLabel={t('one_per_member')}
                 />
               </div>
               <div>

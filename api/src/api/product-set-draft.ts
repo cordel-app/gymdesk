@@ -11,6 +11,7 @@ import { ownPlanSnapshotsOfSet } from './plan-snapshot-ownership';
 import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
+import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
 
 /**
  * #1325 PR 4 — editing a Draft ProductSet's configuration.
@@ -432,6 +433,12 @@ export async function addService(
       const message = 'This service is already attached to the Assigned Plan for that period';
       return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'invalid', message };
     }
+  }
+
+  // #2607: One per Member — refused on every path that attaches a recurring line.
+  if (await violatesOnePerMember(tx, draft.gym_id, draft.owner_member_id, productId, { draftSetId: draft.id })) {
+    const message = ONE_PER_MEMBER_MESSAGE;
+    return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'conflict', error: 'one_per_member', message };
   }
 
   const { insertId } = await tx.query(
