@@ -445,7 +445,7 @@
     "promo_desc_fixed_discount_periods": "{value} discount – {periods, plural, one {# period} other {# periods}}",
     "promo_desc_fixed_price": "Price {value}",
     "promo_desc_fixed_price_periods": "Price {value} – {periods, plural, one {# period} other {# periods}}",
-    "add_product_direct_discount": "Direct discount (%)",
+    "add_product_direct_discount": "Direct discount %",
     "add_product_direct_discount_help": "Applied to the VAT-inclusive price after promotions. Admin only.",
     "quote_list_price": "Original price (incl. VAT)",
     "quote_promotion": "Promotion: {name}",
