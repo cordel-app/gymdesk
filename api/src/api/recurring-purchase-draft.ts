@@ -108,6 +108,8 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   confirmFrequencyChange?: boolean;
   actor: Actor;
   today: string;
+  /** #2609: the family member the line is for (resolved by the caller; `addService()` judges it again). */
+  assignedMemberId?: number | null;
 }): Promise<RecurringDraftOutcome> {
   const ensured = await ensureRecurringDraft(tx, input);
   if (ensured.kind === 'in_flight') return ensured;
@@ -137,7 +139,7 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   // Buying a recurring Product the member already has is a line of its own
   // (#1865 stage 2): its own price, discount, schedule and lifecycle, so
   // changing or removing one purchase never touches another.
-  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt }, { recurringByFrequency: true, allowRepeat: true });
+  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt, assigned_member_id: input.assignedMemberId ?? null }, { recurringByFrequency: true, allowRepeat: true });
   if ('kind' in added) return added;
 
   if (input.directDiscountPercent != null) {

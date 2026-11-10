@@ -33,6 +33,7 @@ import { loadMemberPurchases } from './member-product-promotions';
 
 import { payerCheckoutUrl } from './checkout-url';
 import { violatesOnePerMember } from './one-per-member';
+import { resolveAssignedMember } from './product-assignee';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -105,7 +106,7 @@ function professionalServiceFilterSql(ids: number[]): string {
 export const PRODUCT_COLUMNS = `
   p.id, p.name, p.description, p.type, p.units,
   p.billing_frequency, p.amount, p.currency, p.charge_type_id,
-  p.tax_behavior, p.validity_days, p.image_url, p.image_thumbnail_url,
+  p.tax_behavior, p.validity_days, p.image_url, p.image_thumbnail_url, p.sharing_type,
   tr.rate_percent AS tax_rate_percent`;
 
 /**
@@ -280,6 +281,12 @@ export interface StartPurchaseInput {
    * the pricing refuses.
    */
   fromDraftId?: number;
+  /**
+   * #2609 — the family member the Product is for, as the request named it (raw:
+   * absent or `null` is the purchaser). Judged by `resolveAssignedMember()` inside
+   * `resolvePurchase()`, so every path stores the same answer.
+   */
+  assignedMemberInput?: unknown;
 }
 
 export interface StartPurchaseResult {
@@ -356,6 +363,8 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
   // #1864: holding the Product already is no reason to refuse; each purchase is its own row.
   const block = productPurchaseBlock(item, pending);
   if (block) throw new PurchaseRefused(block);
+  // #2609: who the Product is for — the purchaser, or a member of their family; nothing for a shared one.
+  const assignedMemberId = await resolveAssignedMember(db, input.gymId, input.memberId, input.productId, input.assignedMemberInput);
 
   // #1118 §5 / #1521 — what was applied, re-read and re-priced now. Every
   // Promotion is re-resolved through the loader that produced the offer, and
@@ -402,7 +411,7 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
     tax_rate_percent: taxRate,
   });
 
-  return { row, snapshot, price, actorName };
+  return { row, snapshot, price, actorName, assignedMemberId };
 }
 
 /**
@@ -414,7 +423,7 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
 export async function saveProductPurchaseDraft(
   input: StartPurchaseInput,
 ): Promise<{ purchaseId: number; amount: number; currency: string }> {
-  const { snapshot, price, actorName } = await resolvePurchase(input);
+  const { snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input);
   const purchaseId = await db.transaction(async (tx) => {
     const { insertId } = await tx.query(
       `INSERT INTO member_products_oneoff_snapshot
@@ -422,8 +431,8 @@ export async function saveProductPurchaseDraft(
           product_name, product_type, billing_frequency, units,
           amount, currency, tax_rate_percent,
           payment_request_id, created_by,
-          list_price, direct_discount_percent, direct_discount_amount, origin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+          list_price, direct_discount_percent, direct_discount_amount, origin, assigned_member_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
       [
         input.gymId, input.memberId, input.productId, DRAFT_PURCHASE_STATUS,
         snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -433,6 +442,7 @@ export async function saveProductPurchaseDraft(
         price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
         price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
         originOf(!!input.staff),
+        assignedMemberId,
       ],
     );
     for (const step of price.promotions) {
@@ -528,7 +538,7 @@ async function hasDraftPurchase(
 export async function startProductPurchase(
   input: StartPurchaseInput,
 ): Promise<StartPurchaseResult> {
-  const { row, snapshot, price, actorName } = await resolvePurchase(input, input.fromDraftId);
+  const { row, snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input, input.fromDraftId);
 
   const orderId = crypto.randomUUID();
   const pageToken = crypto.randomUUID();
@@ -610,8 +620,8 @@ export async function startProductPurchase(
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
             payment_request_id, created_by,
-            list_price, direct_discount_percent, direct_discount_amount, validity_days, origin)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            list_price, direct_discount_percent, direct_discount_amount, validity_days, origin, assigned_member_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -623,6 +633,7 @@ export async function startProductPurchase(
           // #1693: the validity agreed at purchase time.
           row.validity_days == null ? null : Number(row.validity_days),
           originOf(!!input.staff),
+          assignedMemberId,
         ],
       );
 

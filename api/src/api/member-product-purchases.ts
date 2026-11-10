@@ -48,6 +48,7 @@ import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLock } from './product-set-checkout';
+import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
 
@@ -108,6 +109,8 @@ async function staffCatalogue(gymId: string, memberId: number) {
     .map((row: any) => ({
       ...shapeMemberProduct(row, grossPrice(row)),
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
+      // #2609: a shared Product is the family's and takes no assigned member.
+      sharing_type: row.sharing_type ?? 'individual',
     }))
     // A Product with no price has nothing to charge or to simulate.
     .filter((item) => item.price_incl_tax != null && item.price_incl_tax > 0);
@@ -122,6 +125,20 @@ async function staffCatalogue(gymId: string, memberId: number) {
     unavailable_promotions: skipped.get(item.id) ?? [],
   }));
 }
+
+/**
+ * #2609 — the family members a Product bought for this member may be assigned to:
+ * the member's family (themself included), or `[]` when they belong to none, in
+ * which case the Admin shows no selector and the purchase is theirs.
+ */
+memberProductPurchasesRouter.get('/assignees', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    res.json({ members: await loadEligibleAssignees(db, gymId, memberId) });
+  } catch (err) { next(err); }
+});
 
 memberProductPurchasesRouter.get('/catalogue', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -240,6 +257,8 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     }
 
     const actorName = resolveRequestActor(tenantCtx) ?? member.name;
+    // #2609: the family member the Product is for (absent = this member).
+    const assignedMemberInput = (req.body ?? {}).assigned_member_id;
     const { rows: productRows } = await db.query<any>(
       `SELECT p.id, p.billing_frequency FROM products p
         WHERE p.gym_id = ? AND p.id = ? AND ${staffProductCatalogueSql('p')}`,
@@ -259,10 +278,11 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
           promotionIds,
           directDiscountPercent: discount.percent,
           staff: { actorName },
+          assignedMemberInput,
         });
         recordAudit(req, {
           action: 'create', entityType: 'member', entityId: memberId,
-          next: { product_purchase_draft: saved.purchaseId, product_id: productId, direct_discount_percent: discount.percent },
+          next: { product_purchase_draft: saved.purchaseId, product_id: productId, direct_discount_percent: discount.percent, assigned_member_id: assignedMemberInput ?? null },
         });
         return res.status(201).json({ kind: 'one_time_draft', purchaseId: saved.purchaseId, amount: saved.amount, currency: saved.currency });
       }
@@ -275,10 +295,11 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
         promotionIds,
         directDiscountPercent: discount.percent,
         staff: { actorName },
+        assignedMemberInput,
       });
       recordAudit(req, {
         action: 'create', entityType: 'member', entityId: memberId,
-        next: { product_purchase: result.purchaseId, product_id: productId, direct_discount_percent: discount.percent },
+        next: { product_purchase: result.purchaseId, product_id: productId, direct_discount_percent: discount.percent, assigned_member_id: assignedMemberInput ?? null },
       });
       return res.status(201).json({ kind: 'one_time', ...result });
     }
@@ -305,6 +326,9 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
       return res.status(status).json(body);
     }
 
+    // Resolved here so a refusal carries its code; `addService()` asks the same rule again.
+    const assignedMemberId = await resolveAssignedMember(db, gymId, memberId, productId, assignedMemberInput);
+
     const today = todayUtc();
     const blocking = await loadEditLock(gymId, memberId, today);
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
@@ -319,7 +343,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
         const r = await startRecurringPurchaseDraft(tx, {
           gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
           confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
-          actor: { name: actorName }, today,
+          actor: { name: actorName }, today, assignedMemberId,
         });
         if (r.kind !== 'ok') throw new DraftRefusal(r);
         return r;
@@ -336,7 +360,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
 
     recordAudit(req, {
       action: 'create', entityType: 'product_set', entityId: out.productSetId,
-      next: { recurring_purchase_product_id: productId, direct_discount_percent: discount.percent },
+      next: { recurring_purchase_product_id: productId, direct_discount_percent: discount.percent, assigned_member_id: assignedMemberId },
     });
     res.status(201).json({ kind: 'recurring_draft', product_set_id: out.productSetId, price: priced.price });
   } catch (err: any) {
@@ -354,6 +378,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     if (err instanceof BillingFrequencyDiffers) {
       return res.status(409).json({ error: 'billing_frequency_differs', existing: err.existing, incoming: err.incoming });
     }
+    if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
     if (err?.status === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
@@ -375,11 +400,11 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
     const { rows } = await db.query<any>(
       // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
-      `SELECT id, product_id, direct_discount_percent FROM (
-         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+      `SELECT id, product_id, direct_discount_percent, assigned_member_id FROM (
+         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
            FROM product_session_snapshots
          UNION ALL
-         SELECT source_id AS id, product_id, direct_discount_percent, gym_id, member_id, status
+         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
            FROM product_oneoff_snapshots
        ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
       [purchaseId, gymId, memberId],
@@ -397,6 +422,8 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
       directDiscountPercent: draft.direct_discount_percent == null ? null : Number(draft.direct_discount_percent),
       staff: { actorName: resolveRequestActor(tenantCtx) ?? member.name },
       fromDraftId: purchaseId,
+      // #2609: the draft's assignee carries over to the paid purchase.
+      assignedMemberInput: draft.assigned_member_id ?? null,
     });
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: memberId,
@@ -415,6 +442,7 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     if (err instanceof PromotionRefused) {
       return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
     }
+    if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
     if (err?.status === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
