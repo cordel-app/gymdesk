@@ -1067,7 +1067,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
           throw Object.assign(new Error('The participant is not linked to you through plan coverage'), { status: 403, code: 'participant_not_linked' });
         }
         const first = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, tx, false, actor, chosenService);
-        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService, false);
         if (first.status !== 'booked' || second.status !== 'booked') {
           // A Duo has no waiting-list path: both places or neither.
           throw Object.assign(new Error('There are not enough places for two participants'), { status: 409, code: 'duo_requires_places' });

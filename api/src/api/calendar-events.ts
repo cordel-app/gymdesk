@@ -983,6 +983,12 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
+  // #2605: a cancelled event holds no Professional Service units.
+  await db.transaction(async (tx) => {
+    const sr = await import('./service-reservation');
+    await sr.releaseEventReservations(tx, gymId, Number(req.params.id));
+  });
+
   if (!pastEvent) {
     const { rows: bookedRows } = await db.query(
       "SELECT member_id FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked'",
