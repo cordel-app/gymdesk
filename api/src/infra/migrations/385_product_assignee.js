@@ -21,20 +21,24 @@ const TABLES = [
 exports.up = async (knex) => {
   for (const [table, abbr] of TABLES) {
     if (await knex.schema.hasColumn(table, 'assigned_member_id')) continue;
-    await knex.raw(`ALTER TABLE ${table} ADD COLUMN assigned_member_id INT UNSIGNED NULL`);
-    await knex.raw(`ALTER TABLE ${table} ADD INDEX ${abbr}_index (assigned_member_id)`);
-    await knex.raw(
-      `ALTER TABLE ${table} ADD CONSTRAINT ${abbr}_fk FOREIGN KEY (assigned_member_id) `
-      + 'REFERENCES members (id) ON DELETE SET NULL',
-    );
+    // One statement per table, so a failure leaves nothing half-added behind the hasColumn guard
+    // (migration 357's shape). ADD CONSTRAINT rebuilds the table under ALGORITHM=COPY.
+    await knex.raw(`
+      ALTER TABLE ${table}
+        ADD COLUMN assigned_member_id INT UNSIGNED NULL,
+        ADD KEY ${abbr}_index (assigned_member_id),
+        ADD CONSTRAINT ${abbr}_fk FOREIGN KEY (assigned_member_id)
+          REFERENCES members (id) ON DELETE SET NULL`);
   }
 };
 
 exports.down = async (knex) => {
   for (const [table, abbr] of TABLES) {
     if (!(await knex.schema.hasColumn(table, 'assigned_member_id'))) continue;
-    await knex.raw(`ALTER TABLE ${table} DROP FOREIGN KEY ${abbr}_fk`);
-    await knex.raw(`ALTER TABLE ${table} DROP INDEX ${abbr}_index`);
-    await knex.raw(`ALTER TABLE ${table} DROP COLUMN assigned_member_id`);
+    await knex.raw(`
+      ALTER TABLE ${table}
+        DROP FOREIGN KEY ${abbr}_fk,
+        DROP KEY ${abbr}_index,
+        DROP COLUMN assigned_member_id`);
   }
 };
