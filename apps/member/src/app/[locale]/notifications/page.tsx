@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -109,9 +109,13 @@ export default function NotificationsPage() {
     } catch {}
   }
 
-  function typeLabel(type: string, payload?: Notification['payload']): string {
+  function typeLabel(type: string, payload?: Notification['payload']): ReactNode {
     if (type === 'staff_message' && payload?.sender_first_name) {
-      return t('type_staff_message_from', { name: payload.sender_first_name });
+      return t.rich('type_staff_message_from', {
+        name: payload.sender_first_name,
+        // The sender's first name is highlighted (#2452 follow-up).
+        nameTag: (chunks) => <strong style={styles.senderName}>{chunks}</strong>,
+      });
     }
     const key = `type_${type}` as any;
     try { return t(key); } catch { return type; }
@@ -208,6 +212,7 @@ const styles: Record<string, React.CSSProperties> = {
   itemUnread: { background: `color-mix(in srgb, ${memberTheme.primaryButton} 8%, ${memberTheme.surface})` },
   itemTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   typeLabel: { fontSize: 12, fontWeight: 600, color: memberTheme.primaryButton, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  senderName: { fontWeight: 800, color: memberTheme.text },
   timeLabel: { fontSize: 12, color: memberTheme.textMuted },
   title2: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
   sub: { fontSize: 13, color: memberTheme.textMuted, marginTop: 2 },
