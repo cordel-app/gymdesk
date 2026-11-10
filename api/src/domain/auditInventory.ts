@@ -115,6 +115,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "promotion_periodical": ["parent", "promotions"],
   "promotion_session": ["parent", "promotions"],
   "receipt_documents": ["ledger", "stored receipt PDFs (#2567), created_by only"],
+  "professional_service_reservations": ["ledger", "one reservation per booking (#2605), status moves reserved to released or consumed; created_by only"],
   "receipt_sequences": ["technical", "gapless counter per gym and year"],
   "recurring_booking_run_log": ["ledger", "system run log"],
   "resources": ["legacy", "legacy table, no reader or writer"],
