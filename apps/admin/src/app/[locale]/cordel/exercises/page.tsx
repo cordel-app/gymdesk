@@ -120,11 +120,12 @@ export default function CordelExercisesPage() {
   // `/muscles` + `/result-types`, which sit behind a gym's module access and
   // feature flags — a platform screen must not depend on those.
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
+  const [muscleNames, setMuscleNames] = useState<Record<string, string>>({});
   const [resultTypes, setResultTypes] = useState<ResultTypeRow[]>([]);
   // #967 §3: and the languages a Base Exercise's name is entered in, which that
   // same read carries — no language list in this page either.
   const [nameLocales, setNameLocales] = useState<ExerciseNameLocales | null>(null);
-  const muscleLabel = useMuscleLabel(muscleKeys);
+  const muscleLabel = useMuscleLabel(muscleKeys, muscleNames);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
@@ -191,12 +192,13 @@ export default function CordelExercisesPage() {
     (async () => {
       try {
         const lookups = await apiFetch<{
-          muscles: { key: string }[];
+          muscles: { key: string; display_name?: string }[];
           result_types: ResultTypeRow[];
           base_locale: string;
           translatable: string[];
         }>(`${API_BASE}/lookups`);
         setMuscleKeys(lookups.muscles.map((m) => m.key));
+        setMuscleNames(Object.fromEntries(lookups.muscles.filter((m) => m.display_name).map((m) => [m.key, m.display_name as string])));
         setResultTypes(lookups.result_types);
         setNameLocales({ base: lookups.base_locale, translatable: lookups.translatable });
       } catch { /* non-critical */ }

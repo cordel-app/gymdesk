@@ -119,7 +119,7 @@ describe('AC2/AC3 — the same sections, fields and labels on both screens', () 
   it('labels the muscles through one helper, so neither page humanises keys itself', () => {
     expect(hook).toContain('export function useMuscleLabel(');
     for (const [name, page] of [['gym', gymPage], ['base', basePage]] as const) {
-      expect(page, name).toContain('useMuscleLabel(muscleKeys)');
+      expect(page, name).toContain('useMuscleLabel(muscleKeys, muscleNames)');
       expect(page, name).not.toContain("useTranslations('muscles')");
     }
   });

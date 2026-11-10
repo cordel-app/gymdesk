@@ -33,6 +33,7 @@ describe('GET /members/:id/tab-counts', () => {
     expect(res.status).toBe(200);
     expect(res.body.products_services).toBe(0);
     expect(res.body.payments).toBe(0);
+    expect(res.body.professional_services).toBe(0);
     expect((await staff(request.get(`/members/${memberId}/tab-counts`), otherGymId)).status).toBe(404);
   });
 

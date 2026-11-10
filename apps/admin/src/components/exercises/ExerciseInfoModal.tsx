@@ -52,6 +52,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
   const { apiFetch } = useApiClient();
   const [row, setRow] = useState<ExerciseInfoRow | null>(null);
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
+  const [muscleNames, setMuscleNames] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
 
@@ -60,8 +61,12 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     apiFetch<ExerciseInfoRow>(`/exercises/${exerciseId}`)
       .then((r) => { if (!cancelled) setRow(r); })
       .catch(() => { if (!cancelled) setFailed(true); });
-    apiFetch<{ key: string }[]>('/muscles')
-      .then((m) => { if (!cancelled) setMuscleKeys(m.map((x) => x.key)); })
+    apiFetch<{ key: string; display_name?: string }[]>('/muscles')
+      .then((m) => {
+        if (cancelled) return;
+        setMuscleKeys(m.map((x) => x.key));
+        setMuscleNames(Object.fromEntries(m.filter((x) => x.display_name).map((x) => [x.key, x.display_name as string])));
+      })
       .catch(() => { /* labels fall back to the humanised key */ });
     return () => { cancelled = true; };
   }, [apiFetch, exerciseId]);
@@ -69,7 +74,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
   const info = row ? buildExerciseInfo(row, gender) : null;
   const name = info?.name ?? fallbackName ?? '';
   const imageUrl = info ? info.imageUrl : (fallbackImageUrl ?? null);
-  const muscleLabel = (key: string) => (muscleKeys.includes(key)
+  const muscleLabel = (key: string) => (muscleNames[key] ? muscleNames[key] : muscleKeys.includes(key)
     ? tMuscles(key as any)
     : key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 
