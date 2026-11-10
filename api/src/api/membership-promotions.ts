@@ -738,6 +738,13 @@ export async function applyPromotionToProductSet(
     'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
     ? Number(own[0].user_membership_id) : null;
+  // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
+  // that plan first — `syncPlanSnapshot()` writes the application onto the primary snapshot only when
+  // no other set shares it.
+  if (!opts.productTarget) {
+    const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
+    await ownPrimaryPlanSnapshot(tx, gymId, productSetId);
+  }
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions

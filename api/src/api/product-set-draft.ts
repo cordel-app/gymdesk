@@ -7,8 +7,8 @@ import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
-import { ownPlanSnapshotsOfSet } from './plan-snapshot-ownership';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
@@ -58,8 +58,9 @@ export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<Lock
   if (!r) return { kind: 'not_found' };
   if (r.status !== 'draft') return { kind: 'not_a_draft', status: String(r.status) };
   if (Number(r.expired) === 1) return { kind: 'expired' };
-  // #2125 M4b-0: every Draft write edits snapshots the Draft owns, never one another set shares.
-  await ownPlanSnapshotsOfSet(tx, gymId, Number(r.id));
+  // #2125 M4b-2: locking copies nothing. A plan snapshot another set shares stays shared until a writer
+  // edits that plan, which owns it (`ownPlanSnapshot()`) right before its write — so a Draft that reuses
+  // an unmodified plan keeps linking the active set's snapshot, and only the plan being edited is copied.
   return {
     id: Number(r.id), gym_id: String(r.gym_id), owner_member_id: Number(r.owner_member_id),
     root_product_set_id: Number(r.root_product_set_id), membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
@@ -79,10 +80,13 @@ export async function syncMandatoryQuantities(
   tx: Tx, gymId: string, productSetId: number, _rootProductSetId?: number,
 ): Promise<void> {
   // #2125 stage 21: the number of Members is each plan snapshot's own beneficiaries.
+  // M4b-2: a snapshot another set links is immutable to this one; its quantities were derived when it
+  // was written, and the beneficiary change that moves them owns the plan first.
   const { rows: snaps } = await tx.query<{ id: number; n: number }>(
     `SELECT s.id, (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id AND b.gym_id = s.gym_id) AS n
        FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ?`, [productSetId, gymId]);
+      WHERE psj.product_set_id = ? AND s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
+    [productSetId, gymId]);
   for (const snap of snaps) {
     const count = Math.max(1, Number(snap.n ?? 0));
     for (const category of PLAN_LINE_CATEGORIES) {
@@ -178,12 +182,14 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (mismatched) return { kind: 'invalid', message: `Product ${mismatched.id} does not belong in the '${category}' category` };
   }
 
+  // M4b-2: the plan is being edited, so the Draft takes its own copy of it now (a no-op unless shared).
+  const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
   if (parsed.length === 0) {
-    await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, snapshotId]);
+    await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, target]);
   } else {
     await tx.query(
       `DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id NOT IN (${parsed.map(() => '?').join(',')})`,
-      [draft.gym_id, snapshotId, ...parsed.map((p) => p.product_id)]);
+      [draft.gym_id, target, ...parsed.map((p) => p.product_id)]);
   }
   for (const p of parsed) {
     // Columns this line's request named; everything else is left as stored.
@@ -196,7 +202,7 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
       await tx.query(
         `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''}
           WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
-        [p.quantity, ...extraParams, draft.gym_id, snapshotId, p.product_id]);
+        [p.quantity, ...extraParams, draft.gym_id, target, p.product_id]);
     } else {
       await tx.query(
         `INSERT INTO ${table}
@@ -204,11 +210,11 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
          SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
            FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
           WHERE gc.id = ? AND gc.gym_id = ?`,
-        [draft.gym_id, snapshotId, p.quantity, p.product_id, draft.gym_id]);
+        [draft.gym_id, target, p.quantity, p.product_id, draft.gym_id]);
       if (extra.length) {
         await tx.query(
           `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
-          [...extraParams, draft.gym_id, snapshotId, p.product_id]);
+          [...extraParams, draft.gym_id, target, p.product_id]);
       }
     }
   }
@@ -252,8 +258,9 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
   if (prepaid > paid) return { kind: 'invalid', message: 'pay_beforehand_periods cannot exceed paid_periods' };
 
   const sets = Object.keys(patch).map((k) => `${k} = ?`).join(', ');
-  await tx.query(`UPDATE plan_snapshots SET ${sets} WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
-    [...Object.values(patch), draft.id, draft.gym_id]);
+  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  await tx.query(`UPDATE plan_snapshots SET ${sets} WHERE id = ? AND gym_id = ?`,
+    [...Object.values(patch), target, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -287,9 +294,10 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     'SELECT schedule_id FROM plan_snapshots WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?) FOR UPDATE',
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
+  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
   await tx.query(
-    'UPDATE plan_snapshots SET recurring_billing_interval = ?, recurring_billing_unit = ? WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)',
-    [interval, unit, draft.id, draft.gym_id]);
+    'UPDATE plan_snapshots SET recurring_billing_interval = ?, recurring_billing_unit = ? WHERE id = ? AND gym_id = ?',
+    [interval, unit, target, draft.gym_id]);
   if (rows[0].schedule_id != null) {
     await tx.query(
       'UPDATE product_set_schedules SET cadence_interval = ?, cadence_unit = ? WHERE id = ? AND gym_id = ? AND root_product_set_id = ?',
@@ -310,9 +318,10 @@ export async function setMembershipFeePrice(tx: Tx, draft: LockedDraft, raw: unk
   if (price != null && (!Number.isFinite(price) || price < 0)) {
     return { kind: 'invalid', message: 'membership_fee_price must be a non-negative number' };
   }
-  await tx.query(
-    'UPDATE plan_snapshots SET membership_fee_price = ? WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)',
-    [price, draft.id, draft.gym_id]);
+  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
+  await tx.query('UPDATE plan_snapshots SET membership_fee_price = ? WHERE id = ? AND gym_id = ?',
+    [price, target, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -328,11 +337,13 @@ export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): P
   if (expires != null && expires !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(expires))) {
     return { kind: 'invalid', message: 'discount_expires_at must be YYYY-MM-DD' };
   }
+  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   await tx.query(
     `UPDATE plan_snapshots
         SET membership_fee_price = ?, discount_reason = ?, discount_expires_at = ?
-      WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
-    [price, reason, expires ? String(expires) : null, draft.id, draft.gym_id]);
+      WHERE id = ? AND gym_id = ?`,
+    [price, reason, expires ? String(expires) : null, target, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -350,10 +361,12 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
     if (!Number.isFinite(raw) || raw < 0 || raw > 100) return { kind: 'invalid', message: 'value must be a percentage between 0 and 100' };
     value = Math.round(raw * 100) / 100;
   }
+  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   await tx.query(
     `UPDATE plan_snapshots SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
-      WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
-    [action, value, draft.id, draft.gym_id]);
+      WHERE id = ? AND gym_id = ?`,
+    [action, value, target, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -548,12 +561,14 @@ export async function addCoveredMember(
   }
   // #2125: a Member already on a plan of their own (or covered by another) may be covered by this one
   // too; "already covered by *this* plan" above is the only duplicate a coverage change refuses.
+  // M4b-2: this plan is being edited, so the Draft takes its own copy of it (a no-op unless shared).
+  const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
   if (memberId === draft.owner_member_id) {
-    await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, true);
+    await setOwnerIsBeneficiary(tx, draft.gym_id, target, true);
   } else {
     await tx.query(
       `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
-      [draft.gym_id, snapshotId, memberId]);
+      [draft.gym_id, target, memberId]);
   }
   await touch(tx, draft);
   return { ok: true };
@@ -570,13 +585,15 @@ export async function removeCoveredMember(
       'SELECT 1 FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? LIMIT 1',
       [draft.gym_id, snapshotId, memberId]);
     if (has.length === 0) return { kind: 'not_found' };
-    await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+    const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
+    await setOwnerIsBeneficiary(tx, draft.gym_id, target, false);
     await touch(tx, draft);
     return { ok: true };
   }
+  const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
   const { rowCount } = await tx.query(
     'DELETE FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? AND is_owner = 0',
-    [draft.gym_id, snapshotId, memberId]);
+    [draft.gym_id, target, memberId]);
   if (rowCount === 0) return { kind: 'not_found' };
   await touch(tx, draft);
   return { ok: true };

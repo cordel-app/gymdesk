@@ -486,6 +486,9 @@ export function applyPromotionMutator(gymId: string, actor: string | null, promo
  */
 export function revokePromotionMutator(promotionId: number, actor: string | null) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
+    // M4b-2: revoking changes the plan's applied Promotions, so the version takes its own copy of the plan.
+    const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
+    await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
     const { rowCount } = await tx.query(
       `UPDATE user_membership_promotions
           SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
