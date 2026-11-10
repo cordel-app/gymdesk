@@ -1,4 +1,5 @@
-import { Tx } from '../infra/db';
+import { Tx, db } from '../infra/db';
+import { spendSessionForBooking } from './service-consumption';
 import { loadRequiredServices } from './activity-eligibility';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
 import { chooseSpendGrant } from '../domain/serviceConsumption';
@@ -95,4 +96,52 @@ export async function settleReservationOnCancel(tx: Tx, gymId: string, bookingId
   );
   if (rows.length > 0) await markReservationConsumed(tx, gymId, bookingId);
   else await releaseReservation(tx, gymId, bookingId);
+}
+
+/** Cap per pass; the rest is picked up by the next one (a reservation stays `reserved`). */
+export const EVENT_START_CONVERSION_MAX_PER_RUN = 500;
+
+export interface EventStartConversion {
+  candidates: number;
+  consumed: number;
+  released: number;
+}
+
+/**
+ * #2604: at event start the reservation becomes the consumption. Walks every
+ * `reserved` row of a booked booking on a scheduled occurrence that has started
+ * and spends it through `spendSessionForBooking()` — the one writer, idempotent
+ * per booking — then marks the reservation `consumed`. A cancelled event or an
+ * in-time cancellation already released its row, so it is never a candidate;
+ * a booking whose spend finds nothing to spend (no service, no balance) releases
+ * its reservation so the pass cannot loop on it. A repeated pass changes nothing.
+ */
+export async function convertStartedReservations(): Promise<EventStartConversion> {
+  const { rows } = await db.query(
+    `SELECT r.gym_id, r.calendar_event_booking_id AS booking_id
+       FROM professional_service_reservations r
+       JOIN calendar_event_bookings ceb ON ceb.id = r.calendar_event_booking_id
+       JOIN calendar_events ce ON ce.id = r.calendar_event_id
+      WHERE r.status = 'reserved'
+        AND ceb.status = 'booked'
+        AND ce.status = 'scheduled'
+        AND ce.deleted_at IS NULL
+        AND ce.starts_at <= UTC_TIMESTAMP()
+      ORDER BY ce.starts_at
+      LIMIT ${EVENT_START_CONVERSION_MAX_PER_RUN}`,
+  );
+  const out: EventStartConversion = { candidates: rows.length, consumed: 0, released: 0 };
+  for (const row of rows as { gym_id: string; booking_id: number }[]) {
+    await db.transaction(async (tx: Tx) => {
+      const res = await spendSessionForBooking(tx, row.gym_id, Number(row.booking_id), 'event_start', 'System');
+      if (res.spent || res.skipped === 'already_spent') {
+        await markReservationConsumed(tx, row.gym_id, Number(row.booking_id));
+        if (res.spent) out.consumed++;
+      } else {
+        await releaseReservation(tx, row.gym_id, Number(row.booking_id));
+        out.released++;
+      }
+    });
+  }
+  return out;
 }

@@ -200,6 +200,7 @@
     "prof_services_history_attendance": "Session used (attended)",
     "prof_services_history_late_cancel": "Session used (late cancellation)",
     "prof_services_history_no_show": "Session used (no-show)",
+    "prof_services_history_event_start": "Session used (event started)",
     "prof_services_history_returned": "Session returned",
     "prof_services_history_consumption": "Session used",
     "prof_services_history_plan_renewal": "Plan allowance renewed",

@@ -50,7 +50,7 @@ interface HistoryEntry {
   actor: string | null;
 }
 
-const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'returned'];
+const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'event_start', 'returned'];
 
 export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   const t = useTranslations('members');

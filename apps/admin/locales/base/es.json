@@ -332,6 +332,7 @@
     "prof_services_history_attendance": "Sesión usada (asistencia)",
     "prof_services_history_late_cancel": "Sesión usada (cancelación tardía)",
     "prof_services_history_no_show": "Sesión usada (no presentado)",
+    "prof_services_history_event_start": "Sesión usada (evento iniciado)",
     "prof_services_history_returned": "Sesión devuelta",
     "prof_services_history_consumption": "Sesión usada",
     "prof_services_history_plan_renewal": "Asignación del plan renovada",
