@@ -63,6 +63,7 @@ import {
   MEMBER_CURRENT_ASSIGNMENT_ORDER,
   memberBillingEventForecast,
 } from './me-billing-forecast';
+import { AssigneeRefused } from './product-assignee';
 import {
   PurchaseRefused,
   memberProductCatalogue,
@@ -3008,6 +3009,8 @@ meRouter.post(
         promotionId,
         promotionIds,
         requestLocale: getRequestLocale(req),
+        // #2609: the family member the Product is for; the server refuses anyone outside the family.
+        assignedMemberInput: body.assigned_member_id,
       });
       req.log.info(
         { memberId, productId, purchaseId: result.purchaseId },
@@ -3032,6 +3035,7 @@ meRouter.post(
           message: 'This promotion is no longer available for this product',
         });
       }
+      if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
       if (err.status) return res.status(err.status).json({ error: err.message });
       req.log.error({ err: (err as Error).message }, 'Member product purchase failed');
       next(err);

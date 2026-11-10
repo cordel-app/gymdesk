@@ -38,11 +38,11 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
-        origin, schedule_id, line_ref, created_at)
+        origin, schedule_id, line_ref, created_at, assigned_member_id)
      SELECT s.gym_id, ps.owner_member_id, s.product_set_id, s.product_id, s.id, ps.status, s.is_inherited,
             COALESCE(s.item_name, p.name), COALESCE(s.item_type, p.type), s.item_billing_frequency, s.quantity,
             s.currency, s.unit_price, s.list_unit_price, s.direct_discount_percent, s.starts_at, s.ends_at,
-            s.origin, s.schedule_id, s.line_ref, s.created_at
+            s.origin, s.schedule_id, s.line_ref, s.created_at, s.assigned_member_id
        FROM member_products_recurrent_snapshot s
        JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
        JOIN products p ON p.id = s.product_id
@@ -54,7 +54,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
        unit_price = VALUES(unit_price), list_price = VALUES(list_price),
        direct_discount_percent = VALUES(direct_discount_percent), starts_at = VALUES(starts_at),
        ends_at = VALUES(ends_at), origin = VALUES(origin), schedule_id = VALUES(schedule_id),
-       line_ref = VALUES(line_ref), modified_at = UTC_TIMESTAMP()`,
+       line_ref = VALUES(line_ref), assigned_member_id = VALUES(assigned_member_id), modified_at = UTC_TIMESTAMP()`,
     [gymId, productSetId]);
 
   // Product-target applications owned by a line of this version.
@@ -141,11 +141,11 @@ export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, pu
        (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
         billing_frequency, units, quantity, currency, unit_price, list_price, direct_discount_percent,
         direct_discount_amount, tax_rate_percent, origin, member_product_id, purchased_at, validity_days,
-        valid_until, cancelled_on, created_at, created_by, modified_at, modified_by)
+        valid_until, cancelled_on, created_at, created_by, modified_at, modified_by, assigned_member_id)
      SELECT mp.gym_id, mp.member_id, NULL, mp.product_id, mp.id, mp.status, 0, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, 1, mp.currency, mp.amount, mp.list_price, mp.direct_discount_percent,
             mp.direct_discount_amount, mp.tax_rate_percent, mp.origin, mp.id, mp.purchased_at, mp.validity_days,
-            mp.valid_until, mp.cancelled_on, mp.created_at, mp.created_by, mp.modified_at, mp.modified_by
+            mp.valid_until, mp.cancelled_on, mp.created_at, mp.created_by, mp.modified_at, mp.modified_by, mp.assigned_member_id
        FROM member_products_oneoff_snapshot mp
       WHERE mp.id = ? AND mp.gym_id = ?
      ON DUPLICATE KEY UPDATE
@@ -156,6 +156,7 @@ export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, pu
        direct_discount_amount = VALUES(direct_discount_amount), tax_rate_percent = VALUES(tax_rate_percent),
        origin = VALUES(origin), purchased_at = VALUES(purchased_at), validity_days = VALUES(validity_days),
        valid_until = VALUES(valid_until), cancelled_on = VALUES(cancelled_on),
+       assigned_member_id = VALUES(assigned_member_id),
        modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
     [purchaseId, gymId]);
 

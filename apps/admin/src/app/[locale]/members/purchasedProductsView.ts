@@ -60,6 +60,9 @@ export interface PurchasedProduct {
   source?: 'one_off' | 'recurring';
   /** #1882 — removed in the open Draft, still Active until Save & Pay. */
   pending_termination?: boolean;
+  /** #2609 — the family member the Product is for (the purchaser when none was chosen). */
+  assigned_member_id?: number | null;
+  assigned_member_name?: string | null;
 }
 
 /** The statuses `payment_requests.status` can hold (chk_payment_requests_status). */
@@ -122,6 +125,25 @@ export interface PurchasableProductOption {
   promotions: PurchasableProductPromotion[];
   /** #1655 — hidden only by the new-members-only rule; explanatory, never applicable. */
   unavailable_promotions?: { promotion_id: number; promotion_name: string; reason: 'new_members_only' }[];
+  /** #2609 — `shared` takes no assigned family member. */
+  sharing_type?: string | null;
+}
+
+/** #2609 — a family member a Product bought for this member may be assigned to. */
+export interface EligibleAssignee {
+  member_id: number;
+  name: string;
+  is_owner: boolean;
+}
+
+/**
+ * #2609 — whether the Add Product form offers an *Assigned to* selector: only when
+ * the member belongs to a family (two or more eligible members) and the chosen
+ * Product is not shared. With no family the purchase is the member's own and the
+ * selector would ask a question with one answer.
+ */
+export function showsAssigneeSelector(assignees: readonly EligibleAssignee[] | null, product: { sharing_type?: string | null } | null): boolean {
+  return !!product && (assignees?.length ?? 0) > 1 && product.sharing_type !== 'shared';
 }
 
 export interface PurchasableProductPromotion {
@@ -160,6 +182,7 @@ const PURCHASE_ERROR_CODES = [
   'final_price_not_positive', 'purchase_pending', 'edit_locked',
   'duplicate_submission', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
   'nothing_to_pay', 'draft_expired',
+  'assignee_not_in_family', 'assignee_not_allowed', 'assignee_invalid',
 ] as const;
 
 /** The locale-key suffix for an answered error code; `null` falls back to the generic message. */

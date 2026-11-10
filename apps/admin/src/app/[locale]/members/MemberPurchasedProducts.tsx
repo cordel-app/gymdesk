@@ -156,6 +156,12 @@ export function MemberPurchasedProducts({
       render: (item) => <div style={{ fontWeight: 500 }}>{item.product_name}</div>,
     },
     {
+      // #2609 — who the Product is for; the server answers the purchaser when nobody was chosen.
+      header: t('purchase_col_assigned_to'),
+      mobile: 'secondary',
+      render: (item) => item.assigned_member_name ?? dash,
+    },
+    {
       header: t('purchase_col_date'),
       mobile: 'secondary',
       render: (item) => (
@@ -368,6 +374,7 @@ function PurchaseFacts({
   return (
     <div style={{ padding: '8px 0' }}>
       <CardDetailRow label={t('purchase_col_product')} value={item.product_name} />
+      <CardDetailRow label={t('purchase_col_assigned_to')} value={item.assigned_member_name ?? dash} />
       <CardDetailRow label={t('purchase_col_date')} value={date(purchaseDate(item), gymFmt)} />
       <CardDetailRow label={t('purchase_cancelled_on')} value={formatGymDateOnly(item.cancelled_on, gymFmt)} />
       <CardDetailRow label={t('purchase_valid_until')} value={formatGymDateOnly(item.valid_until, gymFmt)} />

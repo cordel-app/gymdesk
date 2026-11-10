@@ -1,4 +1,5 @@
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { assignedMemberSql } from '../domain/productAssignee';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { purchaseValidityState } from '../domain/productValidity';
@@ -378,6 +379,13 @@ export interface MemberPurchasedProduct {
   source?: 'one_off' | 'recurring';
   /** #1882 — removed in the member's open Draft; still Active until Save & Pay. */
   pending_termination?: boolean;
+  /**
+   * #2609 — the family member the Product is for: the stored assignee, else the
+   * purchaser / Product Set owner (a row written before the column existed, or a
+   * shared Product, which the purchaser holds for the family).
+   */
+  assigned_member_id: number | null;
+  assigned_member_name: string | null;
 }
 
 /**
@@ -405,7 +413,9 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
-            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
+            ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
        FROM member_products_oneoff_snapshot mp
        LEFT JOIN payment_requests pr
               ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
@@ -453,6 +463,8 @@ export async function loadMemberPurchases(
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+      assigned_member_name: row.assigned_member_name ?? null,
     };
   });
   const recurring = await loadRecurringPurchases(gymId, memberId);
@@ -547,7 +559,9 @@ async function loadRecurringPurchases(
             s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status,
             COALESCE(s.line_ref, s.id) AS line_ref,
             ps.created_by AS set_created_by,
-            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
+            ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
        JOIN member_products_recurrent_snapshot s
          ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
@@ -569,7 +583,9 @@ async function loadRecurringPurchases(
     `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
             s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
             s.currency, s.starts_at, s.created_at, s.origin,
-            COALESCE(s.line_ref, s.id) AS line_ref, ps.created_by AS set_created_by
+            COALESCE(s.line_ref, s.id) AS line_ref, ps.created_by AS set_created_by,
+            ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
        JOIN member_products_recurrent_snapshot s
          ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
@@ -636,6 +652,8 @@ async function loadRecurringPurchases(
         billing_event_id: null,
         source: 'recurring' as const,
         pending_termination: false,
+        assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+        assigned_member_name: row.assigned_member_name ?? null,
       };
     });
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
@@ -668,6 +686,8 @@ async function loadRecurringPurchases(
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       source: 'recurring' as const,
       pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
+      assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+      assigned_member_name: row.assigned_member_name ?? null,
     };
   });
   return [...activeRows, ...draftOnly];

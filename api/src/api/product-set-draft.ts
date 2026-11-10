@@ -12,6 +12,7 @@ import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, planSn
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
+import { AssigneeRefused, resolveAssignedMember } from './product-assignee';
 
 /**
  * #1325 PR 4 — editing a Draft ProductSet's configuration.
@@ -454,13 +455,22 @@ export async function addService(
     return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'conflict', error: 'one_per_member', message };
   }
 
+  // #2609: who the line is for — the owner, or a member of their family; nothing for a shared Product.
+  let assignedMemberId: number | null;
+  try {
+    assignedMemberId = await resolveAssignedMember(tx, draft.gym_id, draft.owner_member_id, productId, body?.assigned_member_id);
+  } catch (err) {
+    if (err instanceof AssigneeRefused) return { kind: 'invalid', message: err.message };
+    throw err;
+  }
+
   const { insertId } = await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, origin)
-     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, 'admin'
+       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, origin, assigned_member_id)
+     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, 'admin', ?
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
-    [draft.gym_id, draft.id, quantity, startsAt, productId, draft.gym_id]);
+    [draft.gym_id, draft.id, quantity, startsAt, assignedMemberId, productId, draft.gym_id]);
   await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
