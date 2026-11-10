@@ -421,8 +421,8 @@ export async function planScheduledEvents(
      UNION
      SELECT p.product_id, sch.schedule_key
        FROM plan_periodical_snapshots p JOIN product_set_schedules sch ON sch.id = p.schedule_id
-       JOIN plan_snapshots ps2 ON ps2.id = p.plan_snapshot_id
-      WHERE p.gym_id = ? AND ps2.product_set_id = ?`,
+       JOIN product_set_plan_snapshots psj2 ON psj2.plan_snapshot_id = p.plan_snapshot_id
+      WHERE p.gym_id = ? AND psj2.product_set_id = ?`,
     [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));

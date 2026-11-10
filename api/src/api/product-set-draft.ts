@@ -8,7 +8,7 @@ import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../dom
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, primaryPlanSnapshotSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
@@ -250,7 +250,7 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
   if (Object.keys(patch).length === 0) return { kind: 'invalid', message: 'No Billing & Duration fields to update' };
 
   const { rows } = await tx.query<any>(
-    'SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?) FOR UPDATE',
+    `SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = ${primaryPlanSnapshotSql('?', '?')} FOR UPDATE`,
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   const paid = 'paid_periods' in patch ? Number(patch.paid_periods ?? 0) : Number(rows[0].paid_periods ?? 0);
@@ -278,7 +278,7 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     // not being changed is not a refusal; only an actual change on a later
     // version (which shares the chain's schedule) is.
     const { rows: cur } = await tx.query<any>(
-      'SELECT recurring_billing_interval, recurring_billing_unit FROM plan_snapshots WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)',
+      `SELECT recurring_billing_interval, recurring_billing_unit FROM plan_snapshots WHERE id = ${primaryPlanSnapshotSql('?', '?')}`,
       [draft.id, draft.gym_id]);
     const sameInterval = cur[0] && Number(cur[0].recurring_billing_interval) === Number(body?.recurring_billing_interval);
     const sameUnit = cur[0] && (cur[0].recurring_billing_unit ?? null) === (body?.recurring_billing_unit ?? null);
@@ -291,7 +291,7 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     return { kind: 'invalid', message: `Billing frequency must be one of: ${describeAcceptedPlanCadences()}` };
   }
   const { rows } = await tx.query<any>(
-    'SELECT schedule_id FROM plan_snapshots WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?) FOR UPDATE',
+    `SELECT schedule_id FROM plan_snapshots WHERE id = ${primaryPlanSnapshotSql('?', '?')} FOR UPDATE`,
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);

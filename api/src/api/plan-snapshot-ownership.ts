@@ -5,8 +5,11 @@
  * own: when the snapshot is linked by any *other* Product Set, it is copied (lines, beneficiaries,
  * Promotions) and the set's link is moved to the copy; otherwise it is returned unchanged.
  *
- * Today `cloneConfiguration()` still copies, so no snapshot is shared and this is a no-op; M4b stops the
- * copying and routes every plan-snapshot writer through it. `planSnapshotSharedSql()` in
+ * Since M4b-3 `cloneConfiguration()` links instead of copying, so every plan a Draft reuses unchanged is
+ * shared with the previous Product Set and every plan-snapshot writer comes through here. The copy
+ * **takes the link's place**: the set's existing junction row is re-pointed at the copy rather than
+ * replaced, because a link's id is a plan's place in the set (`primaryPlanSnapshotId()` is the first
+ * link) and a new row would move an edited primary plan to the end. `planSnapshotSharedSql()` in
  * `plan-snapshot-lines.ts` is the one spelling of "another Product Set links this snapshot" (M4b-1): the
  * sync and the owner both ask it, so a shared snapshot is never written by anything.
  */
@@ -20,10 +23,12 @@ export async function ownPlanSnapshot(
 ): Promise<number> {
   if (!(await isPlanSnapshotShared(tx, productSetId, planSnapshotId))) return planSnapshotId;
 
-  // The set stops using the shared snapshot and takes a copy of it (kept as the same assignment's contract).
-  await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
-    [productSetId, planSnapshotId]);
-  return copyPlanSnapshotToVersion(tx, gymId, planSnapshotId, productSetId, { keepAssignment: true });
+  // The set stops using the shared snapshot and takes a copy of it (kept as the same assignment's
+  // contract), in the place the shared one held: the link is re-pointed, never re-created.
+  const copyId = await copyPlanSnapshotToVersion(tx, gymId, planSnapshotId, productSetId, { keepAssignment: true, link: false });
+  await tx.query('UPDATE product_set_plan_snapshots SET plan_snapshot_id = ? WHERE product_set_id = ? AND plan_snapshot_id = ?',
+    [copyId, productSetId, planSnapshotId]);
+  return copyId;
 }
 
 /**
