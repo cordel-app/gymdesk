@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2585 (Staff Remove of an enrolled Member from a Calendar Event now gives the Professional Service session back: `DELETE /bookings/:id` returns the booking's unreturned consumption once, in the cancel's transaction, and no longer spends a late-cancel session; a repeated Remove is refused and restores nothing more. No migration. Closes #2585)
 - **Done**: #2574 (A Member's Payment Status is derived on read from their Billing Events instead of the latest payment requests: none → `None`, every event settled → `Paid`, otherwise the Normalized Payment Status of the most recent unsettled event, so an older failure never overrides a newer one and a settled retry flips it back at once. One SQL rule, `memberPaymentStatusSql()`, serves the Members list and its filter, the Member header and Home; the filter gains Canceled, Refunded and Partially refunded. No migration, no change to Billing Event or payment processing. Closes #2574)
 - **Done**: #2576 stage 2 (A recurring Product line read through `GET /members/:id/products` now reports the Promotions applied to it and the final price: `loadRecurringLinePromotions()` prices each application from its own frozen grant snapshot, in order, with the direct discount last; the line's `unit_price` and billing are untouched. Before, those rows hardcoded `promotions: []` and showed the list price. Closes #2576)
 

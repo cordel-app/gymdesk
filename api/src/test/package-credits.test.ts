@@ -227,7 +227,7 @@ describe('Package-credit consumption (#372)', () => {
     expect((await ledger(bookRes.body.id))[0].returned_at).not.toBeNull();
   });
 
-  it('a staff cancellation inside the notice window spends the session as a late cancel', async () => {
+  it('a staff Remove inside the notice window spends nothing (#2585)', async () => {
     const memberId = await createMember(gymId, centerId);
     const packageId = await assignPackage(gymId, memberId, classPackageId, 5);
     const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 HOUR)');
@@ -240,8 +240,31 @@ describe('Package-credit consumption (#372)', () => {
       .set('x-gym-id', gymId);
     expect(cancelRes.status).toBe(204);
 
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
-    expect((await ledger(bookRes.body.id))[0].reason).toBe('late_cancel');
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
+    expect(await ledger(bookRes.body.id)).toHaveLength(0);
+  });
+
+  it('a staff Remove returns the session an attendance already spent, once (#2585)', async () => {
+    const memberId = await createMember(gymId, centerId);
+    const otherPackageId = await assignPackage(gymId, memberId, classPackageId, 3);
+    const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
+    const bookRes = await book(memberId, sessionId);
+    const mark = await request
+      .post(`/bookings/${bookRes.body.id}/attendance`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'present' });
+    expect(mark.status).toBe(200);
+    expect(Number((await getPackage(otherPackageId)).sessions_remaining)).toBe(2);
+
+    const del = () => request.delete(`/bookings/${bookRes.body.id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect((await del()).status).toBe(204);
+    expect(Number((await getPackage(otherPackageId)).sessions_remaining)).toBe(3);
+    expect((await ledger(bookRes.body.id))[0].returned_at).not.toBeNull();
+
+    // A repeated Remove is refused and restores nothing more.
+    expect((await del()).status).toBe(400);
+    expect(Number((await getPackage(otherPackageId)).sessions_remaining)).toBe(3);
   });
 
   it('rejects a manual refund with the wrong role', async () => {
@@ -265,8 +288,8 @@ describe('Package-credit consumption (#372)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(403);
-    // The 1-hour-ahead cancellation above was a late cancel and spent one.
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    // The staff Remove above returns rather than spends (#2585).
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
   });
 
   it('walk-in attendance (no prior booking) consumes a credit', async () => {
