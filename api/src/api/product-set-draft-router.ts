@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -149,6 +150,8 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
   edit(req, res, 'update', async (tx, draft) => {
     // A Draft has charged nothing, so removing an application deletes it (and
     // its grant snapshots, by the FK) — there is no history to preserve yet.
+    // M4b-2: the plan's applied Promotions change, so the Draft takes its own copy of the plan.
+    await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
     const { rowCount } = await tx.query(
       'DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ? AND product_set_id = ?',
       [Number(req.params.applicationId), draft.gym_id, draft.id]);

@@ -11,9 +11,9 @@
  * sync and the owner both ask it, so a shared snapshot is never written by anything.
  */
 import type { Tx } from '../infra/db';
-import { assignmentVersionId } from './assignment-config';
+import { assignmentPlanSnapshotId } from './assignment-config';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
-import { isPlanSnapshotShared } from './plan-snapshot-lines';
+import { isPlanSnapshotShared, planSnapshotOfAssignment, primaryPlanSnapshotId } from './plan-snapshot-lines';
 
 export async function ownPlanSnapshot(
   tx: Tx, gymId: string, productSetId: number, planSnapshotId: number,
@@ -27,21 +27,42 @@ export async function ownPlanSnapshot(
 }
 
 /**
- * Makes the set own every plan snapshot it links (see `ownPlanSnapshot()`). The one call a writer that
- * addresses a set's snapshots by set (not by snapshot id) makes before its UPDATE.
+ * M4b-2 — a writer owns exactly the plan snapshot it is about to write, and only when it writes. Until
+ * M4b-2 `lockDraft()` owned every snapshot the Draft linked (`ownPlanSnapshotsOfSet()`), which copied the
+ * plans nobody was editing and made Oscar's "an unmodified plan is reused, not copied" impossible. The
+ * three resolvers below answer the snapshot a writer addresses — the version's primary one, the one that
+ * is a named assignment's contract, or the one an assignment's configuration is read from — own it, and
+ * return the id to write: the copy's when the snapshot was shared, the snapshot's own otherwise. A writer
+ * writes **by that id**, never through a `MIN(plan_snapshot_id)` subselect, because the copy carries a
+ * higher id than the snapshot it replaces.
  */
-export async function ownPlanSnapshotsOfSet(tx: Tx, gymId: string, productSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number }>(
-    `SELECT psj.plan_snapshot_id AS id FROM product_set_plan_snapshots psj
-       JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY psj.plan_snapshot_id`, [productSetId, gymId]);
-  for (const r of rows) await ownPlanSnapshot(tx, gymId, productSetId, Number(r.id));
+export async function ownPrimaryPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<number | null> {
+  const id = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  return id == null ? null : ownPlanSnapshot(tx, gymId, productSetId, id);
 }
 
-/** Owns the snapshots of the version an assignment's configuration is currently on (M4b-0). */
-export async function ownAssignmentSnapshots(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number | null }>(`SELECT ${assignmentVersionId('?')} AS id`, [userMembershipId]);
-  if (rows[0]?.id != null) await ownPlanSnapshotsOfSet(tx, gymId, Number(rows[0].id));
+export async function ownAssignmentPlanSnapshot(
+  tx: Tx, gymId: string, productSetId: number, userMembershipId: number | null,
+): Promise<number | null> {
+  const id = await planSnapshotOfAssignment(tx, gymId, productSetId, userMembershipId);
+  return id == null ? null : ownPlanSnapshot(tx, gymId, productSetId, id);
+}
+
+/**
+ * Owns the plan snapshot an assignment's configuration is read from (`assignmentPlanSnapshotId()`), for the
+ * latest version linked to the assignment that links it; `null` for an assignment with none.
+ */
+export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershipId: number): Promise<number | null> {
+  const { rows } = await tx.query<{ set_id: number; id: number }>(
+    `SELECT j.product_set_id AS set_id, s.id
+       FROM plan_snapshots s
+       JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
+       JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = s.gym_id AND p.user_membership_id = ?
+      WHERE s.id = ${assignmentPlanSnapshotId('?', '?')}
+      ORDER BY p.version DESC, p.id DESC LIMIT 1`,
+    [userMembershipId, userMembershipId, gymId]);
+  if (!rows[0]) return null;
+  return ownPlanSnapshot(tx, gymId, Number(rows[0].set_id), Number(rows[0].id));
 }
 
 /**
