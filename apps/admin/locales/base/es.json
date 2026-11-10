@@ -4779,7 +4779,11 @@
     "name_in": "Nombre ({locale})",
     "description_in": "Descripción ({locale})",
     "translations_help": "Traducciones (opcional — si un idioma queda vacío se usa el inglés)",
-    "label_translations": "Traducciones"
+    "label_translations": "Traducciones",
+    "one_time_purchase": "Compra única",
+    "sharing_type": "Tipo de uso compartido",
+    "sharing_individual": "Individual",
+    "sharing_shared": "Compartido"
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descuento (%)",

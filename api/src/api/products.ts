@@ -557,7 +557,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory, sharing_type,
+    mandatory, sharing_type, one_time_purchase,
   } = req.body;
 
   if (type && !VALID_TYPES.includes(type)) {
@@ -584,6 +584,10 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     return res.status(400).json({ error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` });
   }
   const mandatoryProvided = mandatory !== undefined && mandatory !== null;
+  // #2606: One-time Purchase is edited like Mandatory — absent keeps, a boolean or 0/1 sets.
+  const oneTimeErr = validateMandatory(one_time_purchase)?.replace('mandatory', 'one_time_purchase') ?? null;
+  if (oneTimeErr) return res.status(400).json({ error: oneTimeErr });
+  const oneTimeProvided = one_time_purchase !== undefined && one_time_purchase !== null;
   // #2254: absent keeps the stored translations; a locale given blank clears it.
   let translations: Record<string, { name: string; description: string | null }> | null = null;
   let cleared: string[] = [];
@@ -661,6 +665,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
          -- mandatoryProvided, the shape PUT /promotions/:id uses for
          -- only_applicable_for_new_members.
          mandatory                 = IF(?, ?, mandatory),
+         one_time_purchase         = IF(?, ?, one_time_purchase),
          sharing_type              = COALESCE(?, sharing_type),
          notes                     = ?,
          name                      = COALESCE(IF(? = 0, ?, NULL), name),
@@ -681,6 +686,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         status ?? null,
         enrollment_status ?? null,
         mandatoryProvided ? 1 : 0, mandatory ? 1 : 0,
+        oneTimeProvided ? 1 : 0, one_time_purchase ? 1 : 0,
         sharing_type ?? null,
         notes ?? null,
         isSystem, name?.trim() ?? null,

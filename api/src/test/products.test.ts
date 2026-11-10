@@ -2009,3 +2009,39 @@ describe('#832 mandatory attribute', () => {
     expect(res.body.mandatory).toBe(1);
   });
 });
+
+describe('#2606 one_time_purchase and sharing_type through PUT', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Product Flags Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  const send = (method: 'post' | 'put', url: string, body: Record<string, unknown>) => request[method](url)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
+
+  it('toggles One-time Purchase both ways, keeps it when absent and refuses a non-boolean', async () => {
+    const created = await send('post', '/products', { name: 'Flags Product', type: 'service' });
+    expect(created.status).toBe(201);
+    const id = created.body.id as number;
+    expect(created.body.one_time_purchase).toBe(0);
+
+    const on = await send('put', `/products/${id}`, { one_time_purchase: true, sharing_type: 'shared' });
+    expect(on.status).toBe(200);
+    expect(on.body.one_time_purchase).toBe(1);
+    expect(on.body.sharing_type).toBe('shared');
+
+    const untouched = await send('put', `/products/${id}`, { amount: 10 });
+    expect(untouched.body.one_time_purchase).toBe(1);
+
+    const off = await send('put', `/products/${id}`, { one_time_purchase: false });
+    expect(off.body.one_time_purchase).toBe(0);
+
+    const bad = await send('put', `/products/${id}`, { one_time_purchase: 'no' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain('one_time_purchase');
+  });
+});

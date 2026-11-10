@@ -45,12 +45,12 @@ describe('Products: Mandatory attribute (#832)', () => {
     }
   });
 
-  it('renders a checkbox, not a dropdown or a text field, in both forms', () => {
+  it('renders a Yes/No toggle, not a dropdown or a text field, in both forms (#2606)', () => {
     const controls = [...page.matchAll(/checked=\{(inlineNew|editForm)\.mandatory\}/g)].map((m) => m[1]);
     expect(controls).toContain('inlineNew');
     expect(controls).toContain('editForm');
-    // Each checked= binding belongs to an <input type="checkbox">.
-    expect([...page.matchAll(/type="checkbox"\s*\n\s*checked=\{(inlineNew|editForm)\.mandatory\}/g)]).toHaveLength(2);
+    // Each checked= binding belongs to a YesNoToggle, whose input is a checkbox switch.
+    expect([...page.matchAll(/<YesNoToggle\s*\n\s*checked=\{(inlineNew|editForm)\.mandatory\}/g)]).toHaveLength(2);
     expect(page).not.toMatch(/value=\{(inlineNew|editForm)\.mandatory\}/);
   });
 
@@ -74,7 +74,7 @@ describe('Products: Mandatory attribute (#832)', () => {
     const enclosing = page.lastIndexOf('{!isSystem && (', control);
     if (enclosing > -1) {
       // The nearest preceding `!isSystem` block must have closed before the
-      // checkbox — otherwise the control is hidden for System items.
+      // toggle — otherwise the control is hidden for System items.
       expect(page.slice(enclosing, control)).toContain(')}');
     }
   });

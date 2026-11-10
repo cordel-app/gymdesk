@@ -237,6 +237,9 @@ export interface ProductFormRow {
   validity_days: number | null;
   tax_rate_id: number | null;
   mandatory: number;
+  /** #2606: 0/1 from MySQL. */
+  one_time_purchase?: number;
+  sharing_type?: ProductSharingType;
   professional_services?: { id: number }[];
 }
 
@@ -256,6 +259,8 @@ export interface ProductFormValues {
   validity_days: string;
   tax_rate_id: string;
   mandatory: boolean;
+  one_time_purchase: boolean;
+  sharing_type: ProductSharingType;
   professionalServiceIds: number[];
 }
 
@@ -283,9 +288,14 @@ export function toProductFormValues(item: ProductFormRow): ProductFormValues {
     validity_days: item.validity_days != null ? String(item.validity_days) : '',
     tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
     mandatory: Boolean(item.mandatory),
+    one_time_purchase: Boolean(item.one_time_purchase),
+    sharing_type: item.sharing_type ?? 'individual',
     professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
   };
 }
+
+/** #2606: how a Product is shared between Members; the API's `PRODUCT_SHARING_TYPES`. */
+export type ProductSharingType = 'individual' | 'shared';
 
 /** #2334: the languages a Product's name and description exist in; English is the base text. */
 export const PRODUCT_TEXT_LOCALES = ['en', 'es', 'ca'] as const;

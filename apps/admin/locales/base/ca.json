@@ -4806,7 +4806,11 @@
     "name_in": "Nom ({locale})",
     "description_in": "Descripció ({locale})",
     "translations_help": "Traduccions (opcional — si un idioma queda buit s'usa l'anglès)",
-    "label_translations": "Traduccions"
+    "label_translations": "Traduccions",
+    "one_time_purchase": "Compra única",
+    "sharing_type": "Tipus d'ús compartit",
+    "sharing_individual": "Individual",
+    "sharing_shared": "Compartit"
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descompte (%)",
