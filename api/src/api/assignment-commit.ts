@@ -1,4 +1,5 @@
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { assertPlanOnePerMember } from './one-per-member';
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
 import { ConflictResolution, LiveAssignment, addSharesOwnerChain, supersedeStartsAtError } from '../domain/oneActivePlan';
@@ -172,7 +173,6 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   const row = await lockAssignment(tx, input.gymId, input.userMembershipId);
   if (!row) return { kind: 'not_found' };
   if (!input.fromStatuses.includes(row.status)) return { kind: 'not_committable', status: row.status };
-
   // #2125: a plan awaiting payment only stands in the way of a *replacement*; adding beside it is fine.
   const pending = (input.resolution ?? (row.replace_on_activation ? 'replace' : null)) === 'replace'
     ? await pendingConflicts(tx, input.gymId, row) : [];
@@ -194,6 +194,12 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   }
   // A Pending Payment row was asked at Save & Pay; with no recorded choice it was an add.
   const conflicts = resolution === 'replace' ? targets : [];
+  // #2607 stage 2: One per Member is asked before a Draft becomes the member's plan (the plans a
+  // Replace supersedes do not count); a Pending Payment row was asked at Save & Pay and is never
+  // refused once the money has arrived.
+  if (row.status === DRAFT_STATUS) {
+    await assertPlanOnePerMember(tx, input.gymId, Number(row.id), conflicts.map((c) => Number(c.id)));
+  }
   // Replacing some of the owner's plans while others stay: those others are merged into this Draft
   // (without the replaced ones), exactly as an Add does, or activating it would end their billing.
   if (conflicts.length > 0 && survivingOwnPlans(found, conflicts, row.member_id).length > 0) {
@@ -247,7 +253,6 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   const row = await lockAssignment(tx, input.gymId, input.userMembershipId);
   if (!row) return { kind: 'not_found' };
   if (row.status !== DRAFT_STATUS) return { kind: 'not_committable', status: row.status };
-
   // #2487: a Draft reads Promotions from the live `promotions` row, so Save & Pay
   // revalidates each standing application against it. The snapshot (written when
   // the Promotion was applied) is the agreement, not the current eligibility.
@@ -291,6 +296,12 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
       }
     }
   }
+
+  // #2607 stage 2: a plan that would give a beneficiary a second One per Member Product is refused
+  // here, before the member pays; the plans a Replace will supersede do not count.
+  const replaced = input.resolution === 'replace' && conflicts.length > 0
+    ? replacementTargets(conflicts, row.replaces_user_membership_id).map((c) => Number(c.id)) : [];
+  await assertPlanOnePerMember(tx, input.gymId, Number(row.id), replaced);
 
   const { rowCount } = await tx.query(
     `UPDATE user_memberships
