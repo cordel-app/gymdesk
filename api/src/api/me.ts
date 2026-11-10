@@ -680,7 +680,7 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
     }
     const { rows } = await db.query(
       `SELECT ceb.id, ceb.status, ceb.waitlist_position, ceb.booked_at AS booked_on, ceb.cancelled_at,
-              ceb.calendar_event_id AS class_session_id,
+              ceb.calendar_event_id AS class_session_id, ceb.professional_service_id AS my_professional_service_id,
               ce.starts_at, ce.ends_at, ce.status AS session_status,
               at.name AS class_name, at.description,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
@@ -885,6 +885,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status = 'booked'
                 LIMIT 1
               ) AS my_attendance_status,
+              -- #2587: the Professional Service the member's own booking uses.
+              (
+                SELECT ceb.professional_service_id FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status = 'booked'
+                LIMIT 1
+              ) AS my_professional_service_id,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${professionalServiceLinkedSql('ce')} AS professional_service,
               (
@@ -920,7 +926,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ce.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
     const eventServices = await loadMemberEventServices(db, gymId, rows.map((r: any) => Number(r.id)));
@@ -966,6 +972,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         // waiting-list place is leavable until the event starts.
         ...memberCancellation(r, r.my_booking_status ?? null),
         my_attendance_status: r.my_attendance_status ?? null,
+        my_professional_service_id: r.my_professional_service_id != null ? Number(r.my_professional_service_id) : null,
         professional_service: !!Number(r.professional_service),
         // #2500 — each accepted service with its own capacity; the event's total is no substitute.
         professional_services: eventServices.get(Number(r.id)) ?? [],

@@ -21,6 +21,7 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { BookingDetailDialog } from '@/components/BookingDetailDialog';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
@@ -49,6 +50,9 @@ interface UpcomingBooking {
   can_cancel?: boolean;
   cancellation_block?: 'already_started' | 'window_closed' | null;
   professional_service?: boolean;
+  /** #2587 — the booking's own Professional Service, shown with a Booked chip. */
+  my_professional_service_id?: number | null;
+  professional_services?: EventService[];
 }
 
 interface Membership {
@@ -319,6 +323,9 @@ export default function HomePage() {
                       <span>{value.trim()}</span>
                     </p>
                   ) : null)}
+                  {nextBooking.my_booking_status === 'booked' && nextBooking.my_professional_service_id != null && (
+                    <EventServicesList services={nextBooking.professional_services} bookedId={nextBooking.my_professional_service_id} />
+                  )}
                   {sameDayMore > 0 && (
                     <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
                   )}

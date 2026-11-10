@@ -18,6 +18,8 @@ import {
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { serviceChoices, defaultChoice, selectionMissing } from '@/lib/serviceSelection';
+import { useServiceBalances } from '@/lib/useServiceBalances';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
@@ -45,6 +47,8 @@ interface Session {
   my_booking_status: 'booked' | 'waitlisted' | null;
   my_waitlist_position: number | null;
   my_booking_id: number | null;
+  /** #2587 — the Professional Service the member's own booking uses. */
+  my_professional_service_id?: number | null;
   access_locked: boolean;
   can_cancel: boolean;
   /** #1162 — when the member's own booking was created, and why it cannot be cancelled when it cannot. */
@@ -95,6 +99,17 @@ export default function MemberSchedulePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [unlockServiceIds, setUnlockServiceIds] = useState<number[]>([]);
   const [expandedSession, setExpandedSession] = useState<number | null>(null);
+  // #2587 — the service picked inline per session, and the session whose Book
+  // was tapped with none picked (the validation line stands above that button).
+  const [chosenService, setChosenService] = useState<Record<number, number>>({});
+  const [attemptedSession, setAttemptedSession] = useState<number | null>(null);
+  const serviceBalances = useServiceBalances();
+  function choicesFor(s: Session) {
+    return s.my_booking_id ? [] : serviceChoices(s.professional_services, serviceBalances);
+  }
+  function chosenFor(s: Session): number | null {
+    return chosenService[s.id] ?? defaultChoice(choicesFor(s));
+  }
 
   const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
   const [pastLoading, setPastLoading] = useState(true);
@@ -160,10 +175,16 @@ export default function MemberSchedulePage() {
   }, [filterAtId, filterCenterId, filterTrainerId]);
 
   async function bookSession(sessionId: number) {
+    const session = sessions.find((x) => x.id === sessionId);
+    const serviceId = session ? chosenFor(session) : null;
+    if (session && selectionMissing(choicesFor(session), serviceId)) {
+      setAttemptedSession(sessionId);
+      return;
+    }
     setPendingSession(sessionId); setMessage(null); setUnlockServiceIds([]);
     try {
       const result: any = await apiFetch('/me/bookings', {
-        method: 'POST', body: JSON.stringify({ class_session_id: sessionId }),
+        method: 'POST', body: JSON.stringify({ class_session_id: sessionId, ...(serviceId != null ? { professional_service_id: serviceId } : {}) }),
       });
       setMessage(result.status === 'waitlisted'
         ? t('member_schedule.waitlisted_at', { pos: result.waitlist_position ?? '?' })
@@ -360,7 +381,15 @@ export default function MemberSchedulePage() {
                       <span>{value.trim()}</span>
                     </div>
                   ) : null))}
-                  <EventServicesList services={s.professional_services} />
+                  <EventServicesList
+                    services={s.professional_services}
+                    bookedId={s.my_booking_id ? (s.my_professional_service_id ?? null) : null}
+                    choose={choicesFor(s).length > 0 ? {
+                      choices: choicesFor(s),
+                      chosenId: chosenFor(s),
+                      onChoose: (id) => { setChosenService((m) => ({ ...m, [s.id]: id })); setAttemptedSession(null); },
+                    } : null}
+                  />
                   {isExpanded && (
                     <div style={styles.details}>
                       {s.class_type_description && <div style={styles.sub}>{s.class_type_description}</div>}
@@ -374,7 +403,7 @@ export default function MemberSchedulePage() {
                       )}
                     </div>
                   )}
-                  <div style={{ marginTop: 10, display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
                       <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id })}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
@@ -386,9 +415,14 @@ export default function MemberSchedulePage() {
                         <strong>{t(CANCELLATION_NOTICE_TITLE_KEY)}</strong> {t(cancellationNoticeKey(s)!)}
                       </div>
                     ) : myStatus ? null : spots > 0 ? (
+                      <>
+                      {attemptedSession === s.id && selectionMissing(choicesFor(s), chosenFor(s)) && (
+                        <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.select_service_validation')}</p>
+                      )}
                       <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
                         {isBusy ? '…' : t('member_schedule.book')}
                       </button>
+                      </>
                     ) : (
                       <button style={styles.btnWait} disabled={isBusy} onClick={() => bookSession(s.id)}>
                         {isBusy ? '…' : t('member_schedule.join_waitlist')}
