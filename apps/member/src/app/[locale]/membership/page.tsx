@@ -574,7 +574,7 @@ export default function MembershipPage() {
         labels={{
           empty: t('membership.services_empty'),
           error: t('membership.services_error'),
-          available: (count: number) => t('membership.services_available', { count }),
+          balance: ({ remaining, available, booked }) => t('membership.services_balance', { total: remaining, available, booked }),
           close: t('membership.services_close'),
           imageAlt: t('membership.services_image_alt'),
         }}

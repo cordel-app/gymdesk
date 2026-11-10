@@ -13,7 +13,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
-import { serviceChoices, defaultChoice, selectionMissing, bookedService } from '@/lib/serviceSelection';
+import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
@@ -330,7 +330,9 @@ export default function MemberCalendarPage() {
       }
       setUnlockServiceIds(requiredServiceIds(e));
       const names = requiredServiceNames(e);
-      setActionMsg(names.length ? t('service_required_message', { services: names.join(', ') }) : (e.message ?? t('error_generic')));
+      setActionMsg(names.length ? t('service_required_message', { services: names.join(', ') })
+        : e?.code === 'no_available_balance' ? t('no_available_balance')
+        : (e.message ?? t('error_generic')));
     } finally { setActionLoading(false); }
   }
 
@@ -677,9 +679,13 @@ export default function MemberCalendarPage() {
             {selectionAttempted && selectionMissing(serviceChoiceList, chosenServiceId) && (
               <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('select_service_validation')}</p>
             )}
+            {/* #2605 §3: every unit is already booked — the explanation stands where the action was. */}
+            {noAvailableBalance(serviceChoiceList) && (
+              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('no_available_balance')}</p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
+                <button onClick={book} disabled={actionLoading || noAvailableBalance(serviceChoiceList)} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

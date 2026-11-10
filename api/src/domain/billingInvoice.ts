@@ -42,6 +42,32 @@ export function parseCustomerInput(body: unknown): { ok: true; value: CustomerIn
 export function formatFiscalNumber(type: InvoiceType, year: number, seq: number): string {
   return `${type === 'simplified' ? 'S' : 'F'}-${year}-${String(seq).padStart(4, '0')}`;
 }
+/** `R-2026-0001`: the rectifying series, one per gym and year, whatever the original's type. */
+export function formatRectifyingNumber(year: number, seq: number): string {
+  return `R-${year}-${String(seq).padStart(4, '0')}`;
+}
+
+/** A rectification needs a reason; returns the cleaned text or the error. */
+export function parseRectificationReason(body: unknown): { ok: true; value: string } | { ok: false; error: string } {
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  if (!reason) return { ok: false, error: 'reason is required' };
+  if (reason.length > 500) return { ok: false, error: 'reason is too long' };
+  return { ok: true, value: reason };
+}
+
+/** The rectifying invoice cancels the original in full: every figure is negated. */
+export function negateLines(lines: LineInput[]): LineInput[] {
+  return lines.map((l) => ({
+    ...l,
+    amount: -l.amount,
+    amountExclTax: l.amountExclTax == null ? null : -l.amountExclTax,
+  }));
+}
+export function negateTotals(t: TaxBreakdown): TaxBreakdown {
+  return { net: -t.net, tax: -t.tax, total: -t.total };
+}
+
 export function parseFiscalSeq(number: string): number {
   const m = /-(\d+)$/.exec(number);
   return m ? parseInt(m[1], 10) : 0;
