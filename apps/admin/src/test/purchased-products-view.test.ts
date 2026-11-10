@@ -6,6 +6,8 @@ import {
   hasBillingEvent,
   paymentStatusKey,
   purchaseDate,
+  purchaseErrorKey,
+  showsAssigneeSelector,
 } from '@/app/[locale]/members/purchasedProductsView';
 
 // #1521 — the Products card's pure rules: stored values only, `null` where the
@@ -49,5 +51,26 @@ describe('filterPurchasesByStatus (#1654)', () => {
   it('shows everything for all and one status when chosen', () => {
     expect(filterPurchasesByStatus(rows, '')).toHaveLength(4);
     expect(filterPurchasesByStatus(rows, 'cancelled')).toEqual([{ status: 'cancelled' }]);
+  });
+});
+
+// #2609 stage 1 — the *Assigned to* selector exists only where there is a choice.
+describe('assigned family member (#2609)', () => {
+  const family = [{ member_id: 1, name: 'Owner', is_owner: true }, { member_id: 2, name: 'Kid', is_owner: false }];
+
+  it('is offered for an individual Product of a member with a family, and nowhere else', () => {
+    expect(showsAssigneeSelector(family, { sharing_type: 'individual' })).toBe(true);
+    expect(showsAssigneeSelector(family, { sharing_type: null })).toBe(true);
+    expect(showsAssigneeSelector(family, { sharing_type: 'shared' })).toBe(false);
+    expect(showsAssigneeSelector([family[0]], { sharing_type: 'individual' })).toBe(false);
+    expect(showsAssigneeSelector([], { sharing_type: 'individual' })).toBe(false);
+    expect(showsAssigneeSelector(null, { sharing_type: 'individual' })).toBe(false);
+    expect(showsAssigneeSelector(family, null)).toBe(false);
+  });
+
+  it('maps the server refusals to their own messages', () => {
+    expect(purchaseErrorKey('assignee_not_in_family')).toBe('assignee_not_in_family');
+    expect(purchaseErrorKey('assignee_not_allowed')).toBe('assignee_not_allowed');
+    expect(purchaseErrorKey('assignee_invalid')).toBe('assignee_invalid');
   });
 });
