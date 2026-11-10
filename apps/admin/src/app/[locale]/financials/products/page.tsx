@@ -27,7 +27,6 @@ import { primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui
 import { filterControlStyle } from '@/components/FilterBar';
 import {
   cardMutedTextStyle,
-  formCheckboxLabelStyle,
   formControlStyle,
   formErrorStyle,
   formFieldLabelStyle,
@@ -38,8 +37,9 @@ import {
 } from '@/components/formChrome';
 import {
   ProductLayout,
-  productCheckboxCellStyle,
+  productFlagsColumnStyle,
   productTextareaStyle,
+  YesNoToggle,
   productValueStyle,
 } from './ProductLayout';
 import {
@@ -125,6 +125,7 @@ interface Product {
   mandatory: number;
   /** #1349: 0/1 from MySQL; a badge only, never derived from billing_frequency. */
   one_time_purchase?: number;
+  sharing_type?: 'individual' | 'shared';
   description: string | null;
   translations?: Partial<Record<'es' | 'ca', { name: string; description: string | null }>>;
   display_name?: string;
@@ -453,6 +454,8 @@ export default function ProductsPage() {
           validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
           tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
           mandatory: editForm.mandatory,
+          one_time_purchase: editForm.one_time_purchase,
+          sharing_type: editForm.sharing_type,
           professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
         }),
       });
@@ -610,14 +613,14 @@ export default function ProductsPage() {
               tracks above keep their widths. The inline editor below renders
               the same control, against the same `label_mandatory`. */}
           <div style={{ marginBottom: 12 }}>
-            <label style={formCheckboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={inlineNew.mandatory}
-                onChange={(e) => setInlineNew({ ...inlineNew, mandatory: e.target.checked })}
-              />
-              {t('label_mandatory')}
-            </label>
+            <label style={formFieldLabelStyle}>{t('label_mandatory')}</label>
+            <YesNoToggle
+              checked={inlineNew.mandatory}
+              onChange={(v) => setInlineNew({ ...inlineNew, mandatory: v })}
+              yesLabel={t('yes')}
+              noLabel={t('no')}
+              ariaLabel={t('label_mandatory')}
+            />
           </div>
           {inlineNew.type === SESSION_TYPE && (
             <div style={{ marginBottom: 12 }}>
@@ -709,7 +712,20 @@ export default function ProductsPage() {
         case 'enrollment_status':
           return <div style={productValueStyle}>{tStatus(item.enrollment_status)}</div>;
         case 'mandatory':
-          return <div style={productValueStyle}>{isMandatory ? t('yes') : t('no')}</div>;
+          // #2606: the three flags, one below the other, as the Base Products form draws them.
+          return (
+            <div style={productFlagsColumnStyle}>
+              <div style={productValueStyle}>{isMandatory ? t('yes') : t('no')}</div>
+              <div>
+                <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+                <div style={productValueStyle}>{item.one_time_purchase ? t('yes') : t('no')}</div>
+              </div>
+              <div>
+                <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
+                <div style={productValueStyle}>{item.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
+              </div>
+            </div>
+          );
         case 'amount':
           // #942: the figure, then the line that says what it covers. The note
           // is the row's own (`sessionPackageNote`), so the collapsed cell and
@@ -838,14 +854,36 @@ export default function ProductsPage() {
           // #832: offered on a System item too — the flag is written outside
           // `PUT /:id`'s `is_system` guard, unlike the three fields above it.
           return (
-            <label style={productCheckboxCellStyle}>
-              <input
-                type="checkbox"
+            <div style={productFlagsColumnStyle}>
+              <YesNoToggle
                 checked={editForm.mandatory}
-                onChange={(e) => setEditForm({ ...editForm, mandatory: e.target.checked })}
+                onChange={(v) => setEditForm({ ...editForm, mandatory: v })}
+                yesLabel={t('yes')}
+                noLabel={t('no')}
+                ariaLabel={t('label_mandatory')}
               />
-              {editForm.mandatory ? t('yes') : t('no')}
-            </label>
+              <div>
+                <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+                <YesNoToggle
+                  checked={editForm.one_time_purchase}
+                  onChange={(v) => setEditForm({ ...editForm, one_time_purchase: v })}
+                  yesLabel={t('yes')}
+                  noLabel={t('no')}
+                  ariaLabel={t('one_time_purchase')}
+                />
+              </div>
+              <div>
+                <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
+                <select
+                  style={formControlStyle}
+                  value={editForm.sharing_type}
+                  onChange={(e) => setEditForm({ ...editForm, sharing_type: e.target.value as 'individual' | 'shared' })}
+                >
+                  <option value="individual">{t('sharing_individual')}</option>
+                  <option value="shared">{t('sharing_shared')}</option>
+                </select>
+              </div>
+            </div>
           );
         case 'amount':
           return (

@@ -131,3 +131,50 @@ export const productCheckboxCellStyle: React.CSSProperties = {
   border: formValueStyle.border,
   minHeight: formValueStyle.minHeight,
 };
+
+/**
+ * #2606: a Yes/No switch. The answer is always printed beside it, and it is a
+ * real checkbox underneath (`role="switch"`), so the keyboard and a screen
+ * reader get the same control a click does. Colours are the Theme's primary.
+ */
+export function YesNoToggle({
+  checked, onChange, yesLabel, noLabel, ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  yesLabel: string;
+  noLabel: string;
+  ariaLabel: string;
+}) {
+  return (
+    <label style={{ ...productCheckboxCellStyle, position: 'relative', cursor: 'pointer', gap: 10 }}>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={ariaLabel}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+      />
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'relative', width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+          background: checked ? 'var(--gd-primary-btn, var(--brand, #6c63ff))' : 'var(--gd-input-border, #ccc)',
+          transition: 'background 120ms',
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute', top: 2, left: checked ? 18 : 2, width: 16, height: 16,
+            borderRadius: '50%', background: '#fff', transition: 'left 120ms',
+          }}
+        />
+      </span>
+      {checked ? yesLabel : noLabel}
+    </label>
+  );
+}
+
+/** #2606: Mandatory, One-time Purchase and Sharing Type, one below the other, in that order. */
+export const productFlagsColumnStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12 };
