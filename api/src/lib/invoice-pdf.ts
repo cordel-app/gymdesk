@@ -13,12 +13,14 @@ export interface InvoicePdfData {
   lines: LineInput[];
   totals: TaxBreakdown;
   currency: string;
+  /** Set on a rectifying invoice: the original it corrects and why. It carries no PAID stamp. */
+  rectifies?: { number: string; reason: string };
 }
 
 const T: Record<InvoiceLanguage, Record<string, string>> = {
-  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', concept: 'Concept', qty: 'Qty', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
-  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', concept: 'Concepto', qty: 'Cant.', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
-  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', concept: 'Concepte', qty: 'Quant.', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
+  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', rectifying: 'RECTIFYING INVOICE', rectifies: 'Rectifies invoice', reason: 'Reason', concept: 'Concept', qty: 'Qty', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
+  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', reason: 'Motivo', concept: 'Concepto', qty: 'Cant.', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
+  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', reason: 'Motiu', concept: 'Concepte', qty: 'Quant.', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
 };
 
 // pdf-lib's standard fonts are WinAnsi: drop anything they cannot encode.
@@ -43,7 +45,7 @@ export async function generateInvoicePdf(d: InvoicePdfData): Promise<Buffer> {
   // Diagonal payment stamp, drawn first so the content stays readable on top.
   const stamp = stampText(d.lang, d.state);
   const stampColor = d.state === 'paid' ? rgb(0.75, 0.9, 0.75) : rgb(0.95, 0.75, 0.75);
-  page.drawText(stamp, { x: 110, y: 280, size: 90, font: bold, color: stampColor, rotate: degrees(40), opacity: 0.5 });
+  if (!d.rectifies) page.drawText(stamp, { x: 110, y: 280, size: 90, font: bold, color: stampColor, rotate: degrees(40), opacity: 0.5 });
 
   text(d.gym.legalName ?? d.gym.name, margin, y, 16, true); y -= 20;
   if (d.gym.cif) { text(`CIF: ${d.gym.cif}`, margin, y, 10, false, grey); y -= 14; }
@@ -51,10 +53,15 @@ export async function generateInvoicePdf(d: InvoicePdfData): Promise<Buffer> {
   if (d.gym.fiscalPhone) { text(`Tel: ${d.gym.fiscalPhone}`, margin, y, 10, false, grey); y -= 14; }
   y -= 10; line(y); y -= 20;
 
-  text(t[d.type], margin, y, 13, true); y -= 18;
+  text(d.rectifies ? t.rectifying : t[d.type], margin, y, 13, true); y -= 18;
   text(`Nº ${d.number}`, margin, y, 11);
   text(`${t.date}: ${d.issuedAt.toISOString().slice(0, 10)}`, width - margin - 150, y, 11);
-  y -= 24; line(y); y -= 20;
+  y -= 18;
+  if (d.rectifies) {
+    text(`${t.rectifies}: ${d.rectifies.number}`, margin, y, 10, false, grey); y -= 14;
+    text(`${t.reason}: ${d.rectifies.reason.replace(/\s+/g, ' ').slice(0, 80)}`, margin, y, 10, false, grey); y -= 14;
+  }
+  y -= 6; line(y); y -= 20;
 
   text(`${t.customer}:`, margin, y, 10, false, grey); y -= 14;
   text(d.customer.name, margin, y, 11, true); y -= 14;

@@ -13,7 +13,7 @@ import {
   buildInvoiceKey, invoiceKeyColumn, INVOICE_TYPES, type InvoiceType, type InvoicePaymentState,
 } from '../domain/billingDocumentKeys';
 import {
-  formatFiscalNumber, invoiceLanguage, parseCustomerInput, parseFiscalSeq, representationToCreate,
+  formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
   taxBreakdown, type LineInput,
 } from '../domain/billingInvoice';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
@@ -43,7 +43,9 @@ async function loadEvent(gymId: string, eventId: number): Promise<EventCtx | nul
   };
 }
 
-async function renderRepresentation(inv: any, ev: EventCtx, state: InvoicePaymentState): Promise<string> {
+async function renderRepresentation(
+  inv: any, ev: EventCtx, state: InvoicePaymentState, rectifies?: { number: string; reason: string },
+): Promise<string> {
   const { rows: gymRows } = await db.query<any>(
     'SELECT name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?', [ev.gym_id]);
   const gym = gymRows[0];
@@ -68,7 +70,9 @@ async function renderRepresentation(inv: any, ev: EventCtx, state: InvoicePaymen
     customer: type === 'full'
       ? { name: inv.customer_name, taxId: inv.customer_tax_id, address: inv.customer_address }
       : { name: ev.memberName ?? '', taxId: null, address: null },
-    lines, totals: taxBreakdown(lines, ev.amount, fallbackRate), currency: 'EUR',
+    lines: rectifies ? negateLines(lines) : lines,
+    totals: rectifies ? negateTotals(taxBreakdown(lines, ev.amount, fallbackRate)) : taxBreakdown(lines, ev.amount, fallbackRate),
+    currency: 'EUR', rectifies,
   });
   const key = buildInvoiceKey(ev.gym_id, gym.name, inv.id, type, state);
   try {
@@ -93,7 +97,7 @@ async function issueInvoice(
   await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
   const year = new Date().getUTCFullYear();
   const { rows } = await tx.query<any>(
-    'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND invoice_type = ? AND fiscal_year = ?',
+    'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND invoice_type = ? AND fiscal_year = ? AND related_invoice_id IS NULL',
     [gymId, type, year]);
   const seq = rows.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
   const { insertId } = await tx.query(
@@ -141,7 +145,7 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
     const ev = await loadEvent(gymId, eventId);
     if (!ev) return res.status(404).json({ error: 'Billing event not found' });
     const { rows } = await db.query<any>(
-      `SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status, related_invoice_id,
+      `SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status, related_invoice_id, rectification_reason,
               simplified_not_paid_pdf_key IS NOT NULL AS has_simplified_not_paid,
               simplified_paid_pdf_key IS NOT NULL AS has_simplified_paid,
               full_not_paid_pdf_key IS NOT NULL AS has_full_not_paid,
@@ -219,5 +223,60 @@ billingInvoicesRouter.get('/invoices/:id/pdf', requireModuleAccess('PAYMENTS'), 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="factura-${inv.fiscal_number}.pdf"`);
     res.send(doc.body);
+  } catch (err) { next(err); }
+});
+
+// POST /invoices/:id/rectify — { reason }. A rectifying invoice is its own row
+// and number (R series), linked to the original, which it cancels in full.
+// The original is never edited; one rectification per original.
+billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  try {
+    const tctx = getTenantContext(req);
+    const { gymId } = tctx;
+    const id = parseInt(String(req.params.id), 10);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const parsed = parseRectificationReason(req.body);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    if (!isPrivateStorageConfigured()) return res.status(503).json({ error: 'Private document storage is not configured' });
+
+    const actor = resolveRequestActor(tctx);
+    let outcome: { status: number; error?: string; id?: number } = { status: 0 };
+    await db.transaction(async (tx) => {
+      const { rows } = await tx.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ? FOR UPDATE', [id, gymId]);
+      const orig = rows[0];
+      if (!orig) { outcome = { status: 404, error: 'Invoice not found' }; return; }
+      if (orig.status !== 'issued') { outcome = { status: 409, error: 'Only an issued invoice can be rectified' }; return; }
+      if (orig.related_invoice_id) { outcome = { status: 409, error: 'A rectifying invoice cannot be rectified' }; return; }
+      const { rows: existing } = await tx.query<any>(
+        'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
+      if (existing[0]) { outcome = { status: 409, error: 'Invoice already rectified' }; return; }
+      await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
+      const year = new Date().getUTCFullYear();
+      const { rows: nums } = await tx.query<any>(
+        'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND fiscal_year = ? AND related_invoice_id IS NOT NULL', [gymId, year]);
+      const seq = nums.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
+      const { insertId } = await tx.query(
+        `INSERT INTO invoices (gym_id, billing_event_id, invoice_type, status, fiscal_number, fiscal_year,
+            customer_name, customer_tax_id, customer_address, issued_at, payment_status,
+            related_invoice_id, rectification_reason, created_by)
+         VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?)`,
+        [gymId, orig.billing_event_id, orig.invoice_type, formatRectifyingNumber(year, seq), year,
+          orig.customer_name, orig.customer_tax_id, orig.customer_address, orig.payment_status,
+          id, parsed.value, actor],
+      );
+      outcome = { status: 201, id: insertId as number };
+    });
+    if (outcome.error) return res.status(outcome.status).json({ error: outcome.error });
+
+    const { rows: invRows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [outcome.id, gymId]);
+    const { rows: origRows } = await db.query<any>('SELECT fiscal_number FROM invoices WHERE id = ? AND gym_id = ?', [id, gymId]);
+    const inv = invRows[0];
+    const ev = await loadEvent(gymId, inv.billing_event_id);
+    if (!ev) return res.status(404).json({ error: 'Billing event not found' });
+    await renderRepresentation(inv, ev, 'not-paid', { number: origRows[0].fiscal_number, reason: parsed.value });
+    recordAudit(req, { action: 'rectify_invoice', entityType: 'billing_event', entityId: inv.billing_event_id,
+      next: { invoice_id: inv.id, rectifies_invoice_id: id, fiscal_number: inv.fiscal_number } });
+    res.status(201).json({ id: inv.id, invoice_type: inv.invoice_type, status: inv.status,
+      fiscal_number: inv.fiscal_number, related_invoice_id: id, rectification_reason: parsed.value });
   } catch (err) { next(err); }
 });
