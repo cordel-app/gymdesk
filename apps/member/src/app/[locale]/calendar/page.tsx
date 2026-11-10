@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import FullCalendar from '@fullcalendar/react';
@@ -13,6 +13,8 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
+import { serviceChoices, defaultChoice, selectionMissing, bookedService } from '@/lib/serviceSelection';
+import { useServiceBalances } from '@/lib/useServiceBalances';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -71,6 +73,8 @@ interface ScheduleSession {
   /** #2500 — each accepted service with its own capacity. */
   professional_services?: EventService[];
   my_booking_status: 'booked' | 'waitlisted' | null;
+  /** #2587 — the Professional Service the member's own booking uses. */
+  my_professional_service_id?: number | null;
   /** #1382 — the member's own attendance, read-only; `pending` is unconfirmed and shows nothing. */
   my_attendance_status?: 'pending' | 'present' | 'absent' | null;
   my_waitlist_position: number | null;
@@ -157,6 +161,8 @@ export default function MemberCalendarPage() {
   // #1985: services to choose between, inline in the booking flow.
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [chosenServiceId, setChosenServiceId] = useState<number | null>(null);
+  const [selectionAttempted, setSelectionAttempted] = useState(false);
+  const serviceBalances = useServiceBalances(true, selected?.id);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -281,16 +287,31 @@ export default function MemberCalendarPage() {
     }
   }
 
+  // #2587 — the accepted services with the member's balance, shown inline.
+  const serviceChoiceList = useMemo(
+    () => (selected && !selected.my_booking_status ? serviceChoices(selected.professional_services, serviceBalances) : []),
+    [selected, serviceBalances],
+  );
+  useEffect(() => {
+    if (chosenServiceId == null) setChosenServiceId(defaultChoice(serviceChoiceList));
+  }, [serviceChoiceList]);
+
   function handleEventClick(info: any) {
     setActionMsg(null);
     setUnlockServiceIds([]);
     setServiceOptions([]);
     setChosenServiceId(null);
+    setSelectionAttempted(false);
     setSelected(info.event.extendedProps as ScheduleSession);
   }
 
   async function book() {
     if (!selected) return;
+    if (selectionMissing(serviceChoiceList, chosenServiceId)) {
+      // #2587 §3 — nothing is booked or spent; the line above the button says why.
+      setSelectionAttempted(true);
+      return;
+    }
     setActionLoading(true);
     setActionMsg(null);
     try {
@@ -639,17 +660,11 @@ export default function MemberCalendarPage() {
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
             )}
-            <EventServicesList services={selected.professional_services} />
-            {serviceOptions.length > 0 && (
-              <div role="radiogroup" aria-label={t('select_service_prompt')} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                {serviceOptions.map((o) => (
-                  <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: memberTheme.text }}>
-                    <input type="radio" name="professional_service" checked={chosenServiceId === o.id} onChange={() => setChosenServiceId(o.id)} />
-                    {o.name}
-                  </label>
-                ))}
-              </div>
-            )}
+            <EventServicesList
+              services={selected.professional_services}
+              bookedId={selected.my_booking_status ? (selected.my_professional_service_id ?? null) : null}
+              choose={serviceChoiceList.length > 0 ? { choices: serviceChoiceList, chosenId: chosenServiceId, onChoose: (id) => { setChosenServiceId(id); setSelectionAttempted(false); } } : null}
+            />
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
@@ -659,9 +674,12 @@ export default function MemberCalendarPage() {
               </button>
             )}
 
+            {selectionAttempted && selectionMissing(serviceChoiceList, chosenServiceId) && (
+              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('select_service_validation')}</p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading || (serviceOptions.length > 0 && chosenServiceId == null)} style={actionBtn()}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

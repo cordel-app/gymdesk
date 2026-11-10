@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ImagePreviewButton } from './ImagePreview';
 import { ActivityMetaIcon } from './ActivityMetaIcon';
 import { memberTheme } from '@/lib/memberChrome';
+import type { ServiceChoice } from '@/lib/serviceSelection';
 
 /**
  * #2500 — the Professional Services an event accepts, each with its own
@@ -24,15 +25,35 @@ export interface EventService {
 
 const SIZE = 40;
 
-export function EventServicesList({ services }: { services: EventService[] | null | undefined }) {
+/**
+ * #2587 — `bookedId` shows only the service the member's booking used, with a
+ * `Booked` chip; `choose` makes each row a selectable option with its balance
+ * (a zero balance is disabled) and the validation line above the action.
+ */
+export interface ServiceChooser {
+  choices: ServiceChoice[];
+  chosenId: number | null;
+  onChoose: (id: number) => void;
+}
+
+export function EventServicesList({ services, bookedId = null, choose = null }: {
+  services: EventService[] | null | undefined;
+  bookedId?: number | null;
+  choose?: ServiceChooser | null;
+}) {
   const t = useTranslations('event_services');
   if (!services || services.length === 0) return null;
+  if (bookedId != null) {
+    const used = services.find((s) => s.id === bookedId);
+    if (used) services = [used]; else bookedId = null;
+  }
   return (
     <div style={styles.wrap} onClick={(e) => e.stopPropagation()}>
       <div style={styles.title}>
         <ActivityMetaIcon name="service" size={15} />
         <span>{t('title')}</span>
       </div>
+      <div role={choose ? 'radiogroup' : undefined} aria-label={choose ? t('title') : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {services.map((s) => {
         const thumb = (s.image_thumbnail_url || s.image_url || '').trim();
         const full = (s.image_url || s.image_thumbnail_url || '').trim();
@@ -44,8 +65,10 @@ export function EventServicesList({ services }: { services: EventService[] | nul
             <ActivityMetaIcon name="service" size={18} />
           </span>
         );
-        return (
-          <div key={s.id} style={styles.row}>
+        const choice = choose?.choices.find((c) => c.id === s.id) ?? null;
+        const selected = !!choose && choose.chosenId === s.id;
+        const rowEl = (
+          <>
             <div style={styles.thumb}>
               {full ? (
                 <ImagePreviewButton
@@ -60,10 +83,35 @@ export function EventServicesList({ services }: { services: EventService[] | nul
               ) : circle}
             </div>
             <span style={styles.name}>{s.name}</span>
-            <span style={styles.capacity}>{t('capacity', { n: s.capacity })}</span>
+            {bookedId != null && <span style={styles.chip}>{t('booked')}</span>}
+            {choice ? (
+              <span style={styles.capacity}>{choice.balance == null ? '' : t('balance', { n: choice.balance })}</span>
+            ) : (
+              <span style={styles.capacity}>{t('capacity', { n: s.capacity })}</span>
+            )}
+          </>
+        );
+        if (!choose || !choice) return <div key={s.id} style={styles.row}>{rowEl}</div>;
+        return (
+          <div
+            key={s.id}
+            role="radio"
+            aria-checked={selected}
+            aria-disabled={choice.disabled}
+            tabIndex={choice.disabled ? -1 : 0}
+            onClick={() => { if (!choice.disabled) choose.onChoose(s.id); }}
+            onKeyDown={(e) => { if (!choice.disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose.onChoose(s.id); } }}
+            style={{
+              ...styles.row, ...styles.option,
+              ...(selected ? styles.optionSelected : null),
+              ...(choice.disabled ? styles.optionDisabled : null),
+            }}
+          >
+            {rowEl}
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -76,5 +124,9 @@ const styles: Record<string, React.CSSProperties> = {
   img: { width: SIZE, height: SIZE, objectFit: 'cover', display: 'block', borderRadius: '50%' },
   placeholder: { width: SIZE, height: SIZE, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, color: memberTheme.textMuted },
   name: { flex: 1, minWidth: 0, fontSize: 14, color: memberTheme.text, overflowWrap: 'anywhere' },
+  chip: { flex: '0 0 auto', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: memberTheme.pageBackground, color: memberTheme.textSecondary, border: `1px solid ${memberTheme.separator}` },
+  option: { padding: 8, borderRadius: 10, border: `1px solid ${memberTheme.separator}`, cursor: 'pointer' },
+  optionSelected: { borderColor: memberTheme.primaryButton, boxShadow: `0 0 0 2px ${memberTheme.primaryButton}` },
+  optionDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   capacity: { flex: '0 0 auto', fontSize: 13, color: memberTheme.textSecondary, whiteSpace: 'nowrap' },
 };
