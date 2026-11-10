@@ -34,3 +34,46 @@ export function reservationBalance(total: number, booked: number): { total: numb
   const b = Math.min(t, Math.max(0, Number(booked)));
   return { total: t, booked: b, available: t - b };
 }
+
+/** Reserved rows counted per Professional Service (the service the booking named). */
+export interface BookedByService {
+  professional_service_id: number;
+  booked: number;
+}
+
+export interface ServiceBalanceView {
+  professional_service_id: number;
+  /** Remaining entitlement: available + booked (the wallet's own `sessions`). */
+  total: number;
+  /** Units held by future bookings (`reserved` rows). */
+  booked: number;
+  /** Units a new booking may still take: total - booked, never below zero. */
+  available: number;
+}
+
+/**
+ * #2605 stage 3: the one place the three figures a balance is shown as are
+ * derived — `Training Individual: 5 items (0 available + 5 booked)`. `total`
+ * is the wallet's remaining balance (grants minus consumption), `booked` the
+ * member's `reserved` rows naming that service, `available` the difference.
+ * Nothing is stored; a service with reservations but no balance reads 0/0/0.
+ */
+export function serviceBalanceViews(
+  balances: Array<{ professional_service_id: number; sessions: number }>,
+  bookedByService: BookedByService[],
+): Map<number, ServiceBalanceView> {
+  const booked = new Map<number, number>();
+  for (const b of bookedByService) {
+    const id = Number(b.professional_service_id);
+    booked.set(id, (booked.get(id) ?? 0) + Number(b.booked));
+  }
+  const out = new Map<number, ServiceBalanceView>();
+  for (const b of balances) {
+    const id = Number(b.professional_service_id);
+    out.set(id, { professional_service_id: id, ...reservationBalance(Number(b.sessions), booked.get(id) ?? 0) });
+  }
+  for (const [id, n] of booked) {
+    if (!out.has(id)) out.set(id, { professional_service_id: id, ...reservationBalance(0, n) });
+  }
+  return out;
+}

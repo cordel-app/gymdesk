@@ -1495,7 +1495,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 
 ### Operator scripts (`api/src/scripts/`)
 
-One-off and repeatable data jobs — `exercises:import-free-db`, `nutrition:base-images`, `storage:rewrite-urls`, `memberships:multi-active` — run through `npm run` in `api/`. Two rules, both learned the hard way in #964:
+One-off and repeatable data jobs — `exercises:import-free-db`, `nutrition:base-images`, `storage:rewrite-urls`, `memberships:multi-active`, `reservations:backfill` — run through `npm run` in `api/`. Two rules, both learned the hard way in #964:
 
 - **`import 'dotenv/config';` goes first, before any `../` import.** `infra/db.ts` builds its pool at module scope and throws `CORDEL_FITNESS_DB_HOST, _USER, _PASSWORD and _NAME environment variables are required` when they are missing, and imports run before a module body — so the `import { config } from 'dotenv'` + `config()` form every script carried until #964 was reached only *after* the pool had already failed. `npm run exercises:import-free-db` with a correct `api/.env` therefore died before reading a row, which is why #964's catalogue had not been imported despite the importer being merged. `src/app.ts` and `src/infra/seed.ts` had the bare side-effect import all along; `api/src/test/script-env-loading.unit.test.ts` is the gate.
 - **Running one against a deployed database means running it from the VPS**, invoking the **compiled** file (`node dist/scripts/<name>.js`): `tsx` is a devDependency and `src/` is not copied into the runner image, so the `npm run` entry point does not exist there. No workflow does it any more (the `exercises-*` and `billing-reset-dev` workflows were removed), so it is a manual step on the host.

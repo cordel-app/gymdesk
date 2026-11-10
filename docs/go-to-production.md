@@ -255,6 +255,7 @@ Tick items off in the PR that completes them.
       snapshots — while any row holds `optional`: unlike 205's nullable column, a
       rollback-and-re-apply here would not leave the value empty but rewrite it as
       `mandatory`, which tells the member the opposite of what was configured.
+- [ ] **Run `npm run reservations:backfill` once after migration 381 is live** (#2605 stage 3). Dry run first, then `-- --execute`, from the VPS as the compiled `node dist/scripts/backfill-service-reservations.js`: it gives every future booking made before the reservation model its held unit, so Admin → Members → Professional Services reads the right `available + booked` split and the event-start pass can consume those bookings. A member whose remaining balance is already fully booked is reported, not reserved. Repeatable; a second run finds nothing.
 - [ ] **Run `npm run memberships:multi-active` before migration 213 — and read what it
       says** (#956). 213 restores the one-active-Membership-per-Member UNIQUE index, and
       it cannot be created while a Member owns two live rows, so the migration cancels

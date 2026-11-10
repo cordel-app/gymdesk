@@ -315,7 +315,7 @@
     "section_professional_services": "Serveis professionals",
     "prof_services_loading": "Carregant…",
     "prof_services_empty": "No hi ha serveis professionals actius en aquest gimnàs.",
-    "prof_services_available": "Sessions disponibles",
+    "prof_services_balance_line": "{total, plural, one {# sessió} other {# sessions}} ({available} disponibles + {booked} reservades)",
     "prof_services_close": "Tanca",
     "prof_services_no_image": "No hi ha cap imatge disponible.",
     "prof_services_no_description": "No hi ha cap descripció disponible.",

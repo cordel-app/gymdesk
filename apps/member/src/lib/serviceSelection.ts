@@ -7,7 +7,12 @@
 // server still validates and spends (#1985); this only decides what is offered.
 
 export interface AcceptedService { id: number; name: string }
-export interface ServiceBalance { professional_service_id: number; remaining: number }
+/**
+ * #2605 stage 3: `available` is remaining minus the units the member's future
+ * bookings already hold, the figure the gate refuses on; a reader older than
+ * the field falls back to `remaining`.
+ */
+export interface ServiceBalance { professional_service_id: number; remaining: number; available?: number; booked?: number }
 
 export interface ServiceChoice {
   id: number;
@@ -20,7 +25,7 @@ export interface ServiceChoice {
 
 export function serviceChoices(accepted: AcceptedService[] | null | undefined, balances: ServiceBalance[] | null): ServiceChoice[] {
   if (!accepted || accepted.length === 0) return [];
-  const byId = new Map((balances ?? []).map((b) => [Number(b.professional_service_id), Number(b.remaining)]));
+  const byId = new Map((balances ?? []).map((b) => [Number(b.professional_service_id), Number(b.available ?? b.remaining)]));
   return accepted.map((s) => {
     const balance = balances ? (byId.get(s.id) ?? 0) : null;
     return { id: s.id, name: s.name, balance, disabled: balance !== null && balance <= 0 };
@@ -31,6 +36,15 @@ export function serviceChoices(accepted: AcceptedService[] | null | undefined, b
 export function defaultChoice(choices: ServiceChoice[]): number | null {
   const open = choices.filter((c) => !c.disabled);
   return open.length === 1 ? open[0].id : null;
+}
+
+/**
+ * #2605 §3: every accepted service is known and none has a unit left to book
+ * (all of the member's entitlement is already booked). The screen says so and
+ * offers no Book; the server would refuse with `no_available_balance` anyway.
+ */
+export function noAvailableBalance(choices: ServiceChoice[]): boolean {
+  return choices.length > 0 && choices.every((c) => c.balance !== null && c.disabled);
 }
 
 /** Whether a booking must wait for a selection: some service is selectable and none is chosen. */
