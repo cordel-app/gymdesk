@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2579 (Members App → My Products → Add Plan: a plan with an image shows it flush against the card's left edge, filling the full height of the card's content and cropped (`object-fit: cover`) instead of letting it float inside padding; a plan without one no longer draws a "No image" placeholder or reserves any space, so its text starts at the card's left padding. Layout only; no API, data or image-loading change)
+
 - **Done**: #2576 (stage 1: the Add Product form's direct discount reads **Direct discount %** in en/es/ca with a `%` symbol beside the input; the value is still a percentage, unchanged calculation. The promotion-snapshot/final-price part is not yet reproduced and stays open.)
 - **Done**: #2333 stage 3 (exercise screens read muscle names from `muscle_translations`): `GET /muscles` and `GET /platform/exercises/lookups` report `display_name` in the request locale (`listMuscles(locale)`, falling back to `muscles.name`), and the gym and Base Exercises pages plus the exercise info modal label muscles with it (`useMuscleLabel(keys, names)`), so Cordel → Muscles is the one source; the `muscles.<key>` locale values remain only as a fallback.
 - **Done**: #2586 (Admin → Members: the Professional Services tab badge counts only services the wallet lists (active for the gym, not deleted) with a positive available balance, so it matches the rows and their `Available Items`; the balance itself is still `resolveMemberProfessionalServices()`. No migration)
