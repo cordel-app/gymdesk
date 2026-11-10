@@ -152,6 +152,7 @@ export default function ExercisesPage() {
 
   const [rows, setRows] = useState<Exercise[]>([]);
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
+  const [muscleNames, setMuscleNames] = useState<Record<string, string>>({});
   const [resultTypes, setResultTypes] = useState<ResultType[]>([]);
   const [loading, setLoading] = useState(true);
   // #1386: Cards by default, the saved choice afterwards. Presentation only — the
@@ -231,11 +232,12 @@ export default function ExercisesPage() {
   async function loadLookups() {
     try {
       const [mu, rt, loc] = await Promise.all([
-        apiFetch<{ key: string }[]>('/muscles'),
+        apiFetch<{ key: string; display_name?: string }[]>('/muscles'),
         apiFetch<ResultType[]>('/result-types'),
         apiFetch<{ base_locale: string; translatable: string[] }>('/exercises/locales'),
       ]);
       setMuscleKeys(mu.map((m) => m.key));
+      setMuscleNames(Object.fromEntries(mu.filter((m) => m.display_name).map((m) => [m.key, m.display_name as string])));
       setResultTypes(rt);
       setNameLocales({ base: loc.base_locale, translatable: loc.translatable });
     } catch { /* non-critical */ }
@@ -277,7 +279,7 @@ export default function ExercisesPage() {
 
   // ─── Muscle label helper (#806: shared with the Base Exercises page) ──────
 
-  const muscleLabel = useMuscleLabel(muscleKeys);
+  const muscleLabel = useMuscleLabel(muscleKeys, muscleNames);
 
   // ─── Expand / Edit ────────────────────────────────────────────────────────
 

@@ -44,7 +44,17 @@ export async function loadMemberTabCounts(
     out.products_services = n(rows[0]?.c);
   })());
   jobs.push((async () => {
-    out.professional_services = (await resolveMemberProfessionalServices(gymId, memberId)).length;
+    // Same set the wallet lists (gym-active, non-deleted services) and only
+    // those with a usable balance, so the badge cannot disagree with the rows.
+    const { rows } = await db.query(
+      `SELECT ps.id FROM professional_services ps
+         JOIN gym_professional_services gps
+           ON gps.professional_service_id = ps.id AND gps.gym_id = ? AND gps.status = 'active'
+        WHERE ps.gym_id = ? AND ps.deleted_at IS NULL`,
+      [gymId, gymId]);
+    const active = new Set<number>(rows.map((r: { id: number }) => Number(r.id)));
+    out.professional_services = (await resolveMemberProfessionalServices(gymId, memberId))
+      .filter((b) => b.sessions > 0 && active.has(b.professional_service_id)).length;
   })());
 
   if (may('NUTRITION')) {
