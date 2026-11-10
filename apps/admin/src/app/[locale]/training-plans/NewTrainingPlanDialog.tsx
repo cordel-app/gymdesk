@@ -10,8 +10,8 @@ import { modalActionsRowStyle } from '@/components/formChrome';
  * #67: the New Training Plan dialog shared by the Training Plans page and the
  * templates page's "Assign Plan to Member" shortcut (presetTemplate skips the
  * mode step). POSTs to /training-plans; a 409 means the member already has
- * Active plans, which swaps the footer for the keep-vs-expire prompt and the
- * chosen answer is retried as on_existing_active.
+ * an active plan, which swaps the footer for the superseding confirmation (#2573);
+ * confirming retries with confirm: true.
  */
 
 interface TemplateOption { id: number; name: string }
@@ -76,7 +76,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, presetMember, onCl
     }
   }
 
-  async function save(onExisting?: 'keep' | 'expire') {
+  async function save(confirm = false) {
     if (!memberId) { setError(t('training_plans.error_member_required')); return; }
     if (mode === 'template' && !templateId) { setError(t('training_plans.error_template_required')); return; }
     if (mode === 'scratch' && !name.trim()) { setError(t('training_plans.error_name_required')); return; }
@@ -90,7 +90,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, presetMember, onCl
           template_id: mode === 'template' ? parseInt(templateId, 10) : null,
           name: name.trim() || null,
           start_date: startDate,
-          on_existing_active: onExisting ?? null,
+          confirm,
         }),
       });
       onCreated(plan);
@@ -130,11 +130,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, presetMember, onCl
               {t('training_plans.conflict_message', { count: conflict })}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => save('keep')} disabled={saving} style={choiceStyle}>
-                <span style={{ fontWeight: 600 }}>{t('training_plans.conflict_keep')}</span>
-                <span style={{ color: '#666', fontSize: 13 }}>{t('training_plans.conflict_keep_hint')}</span>
-              </button>
-              <button onClick={() => save('expire')} disabled={saving} style={choiceStyle}>
+              <button onClick={() => save(true)} disabled={saving} style={choiceStyle}>
                 <span style={{ fontWeight: 600, color: '#b26a00' }}>{t('training_plans.conflict_expire')}</span>
                 <span style={{ color: '#666', fontSize: 13 }}>{t('training_plans.conflict_expire_hint')}</span>
               </button>
