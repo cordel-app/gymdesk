@@ -521,7 +521,7 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
-  const { member_id, name, start_date } = req.body;
+  const { member_id, name, start_date, confirm } = req.body;
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
 
   try {
@@ -547,6 +547,7 @@ nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION')
       templateId: src.id,
       name: name ?? null,
       startDate: start_date ?? null,
+      confirmReplace: confirm === true,
     }));
 
     const { rows } = await db.query(
@@ -555,7 +556,10 @@ nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION')
     );
     recordAudit(req, { action: 'create', entityType: 'member_nutrition_plan', entityId: newPlanId, next: rows[0] });
     res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err.status === 409 && err.body) return res.status(409).json(err.body);
+    next(err);
+  }
 });
 
 /* ---- Days ---- */

@@ -122,7 +122,7 @@ describe('the illustration follows the goal', () => {
       [gymId, `${memberUserId}@test.com`, memberUserId],
     );
     const planRes = await request.post('/member-nutrition-plans').set(h())
-      .send({ member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
+      .send({ confirm: true, member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
     expect(planRes.status).toBe(201);
     const planHier = await request.get(`/member-nutrition-plans/${planRes.body.id}/hierarchy`).set(h());
     expect(planHier.body.goals[0].nutrition_library_item_id).toBe(foodId);
@@ -145,7 +145,7 @@ describe('illustrating an existing goal of an assigned plan', () => {
       [gymId, `ngi-plan-${uniq()}@test.com`],
     );
     const planRes = await request.post('/member-nutrition-plans').set(h())
-      .send({ member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
+      .send({ confirm: true, member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
     expect(planRes.status).toBe(201);
     const hier = await request.get(`/member-nutrition-plans/${planRes.body.id}/hierarchy`).set(h());
     return { planId: planRes.body.id, goalId: hier.body.goals[0].id };

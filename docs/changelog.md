@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2572 (A Member holds one active assigned Nutrition Plan: `createNutritionPlanTx()` locks the member and answers `409 active_plan_exists` unless `confirm: true`, then completes the previous plan the day before the new one starts; Assign and New Nutrition Plan share it and the admin dialogs show one confirmation)
+
 - **Done**: #2571 (Member card → Payments renders Billing Events through the same shared header and payment actions as Payments → Billing Events: `payments/billing-events/BillingEventShared.tsx` holds the status/normalized-status badges, amount label and the Pay Cash / Pay Card / Retry / Waive flow (`useBillingEventActions`, API flags decide), used by both the table page and the Member card, beside the already-shared `ExpandedRow`; the Member context, filtering and unresolved/past grouping are unchanged. Frontend only; closes #2571)
 - **Done**: #2565 (Billing Events list: the Next Payment column and detail field are removed, and the main table shows the Normalized Payment Status the details already reported — `GET /payments/billing-events` now carries `normalized_payment_status` from the same `normalizePaymentStatus()`; no billing or payment logic changed.)
 - **Done**: #2452 follow-up (Members App, Alerts: the sender's first name in a staff message's "Message from <name>" label is highlighted (bold, text colour) through a rich-text locale tag. Presentation only; no API or migration change)
