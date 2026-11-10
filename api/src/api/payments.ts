@@ -10,6 +10,7 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
+import { billingInvoicesRouter, generatePaidRepresentations } from './billing-invoices';
 import { receiptPdf } from './receipt-documents';
 import {
   BILLING_EVENT_STATUSES,
@@ -706,6 +707,7 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
     const { result } = outcome;
+    generatePaidRepresentations(gymId, result.billing_event_id).catch(() => {});
     recordAudit(req, {
       action: 'manual_payment',
       entityType: 'billing_event',
@@ -871,3 +873,6 @@ paymentsRouter.get('/:id/receipt', async (req, res, next) => {
     next(err);
   }
 });
+
+// #2567 stage 3: fiscal invoices of a Billing Event.
+paymentsRouter.use('/', billingInvoicesRouter);
