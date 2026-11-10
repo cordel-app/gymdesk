@@ -101,15 +101,18 @@ describe('one-time purchase', () => {
   });
 
   it('refuses a member outside the family and a garbage id', async () => {
-    const outside = await auth(request.post(base(owner))).send({ product_id: oneOff, draft: true, assigned_member_id: stranger });
+    // A Product of its own: the owner already holds a draft of `oneOff` (first test),
+    // which would answer 409 draft_exists before the assignee is judged.
+    const fresh = await product(`Towel ${uniq()}`);
+    const outside = await auth(request.post(base(owner))).send({ product_id: fresh, draft: true, assigned_member_id: stranger });
     expect(outside.status).toBe(400);
     expect(outside.body.error).toBe('assignee_not_in_family');
-    const bad = await auth(request.post(base(owner))).send({ product_id: oneOff, draft: true, assigned_member_id: 'x' });
+    const bad = await auth(request.post(base(owner))).send({ product_id: fresh, draft: true, assigned_member_id: 'x' });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toBe('assignee_invalid');
     const { rows } = await db.query<any>(
-      'SELECT id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ?', [gymId, owner, oneOff]);
-    expect(rows.length).toBe(1); // only the kid's draft from the first test
+      'SELECT id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ?', [gymId, owner, fresh]);
+    expect(rows.length).toBe(0); // nothing written for either refusal
   });
 
   it('stores no assignee for a shared Product (read as the purchaser) and refuses naming one', async () => {
