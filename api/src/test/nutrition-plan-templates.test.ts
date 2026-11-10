@@ -1117,7 +1117,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: testMemberId });
+      .send({ confirm: true, member_id: testMemberId });
     expect(assignRes.status).toBe(201);
     expect(Number(assignRes.body.member_id)).toBe(testMemberId);
     expect(Number(assignRes.body.template_id)).toBe(Number(tplRes.body.id));
@@ -1143,7 +1143,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplId}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: testMemberId });
+      .send({ confirm: true, member_id: testMemberId });
     expect(assignRes.status).toBe(201);
 
     // Verify the day was copied into the member plan
@@ -1167,7 +1167,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: testMemberId, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: testMemberId, start_date: '2026-01-01' });
     expect(assignRes.status).toBe(201);
     expect(assignRes.body.start_date).toBeTruthy();
   });
@@ -1184,7 +1184,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({});
+      .send({ confirm: true,});
     expect(res.status).toBe(400);
   });
 
@@ -1200,7 +1200,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: 999999 });
+      .send({ confirm: true, member_id: 999999 });
     expect(res.status).toBe(404);
   });
 
@@ -1226,7 +1226,7 @@ describe('assign', () => {
       .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: testMemberId, name: customName });
+      .send({ confirm: true, member_id: testMemberId, name: customName });
     expect(assignRes.status).toBe(201);
     expect(assignRes.body.name).toBe(customName);
   });

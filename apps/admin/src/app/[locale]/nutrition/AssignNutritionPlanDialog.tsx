@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface TemplateOption { id: number; name: string }
 interface MemberOption { id: number; name: string }
@@ -23,6 +24,7 @@ export function AssignNutritionPlanDialog({ open, template, onClose, onAssigned 
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -39,17 +41,19 @@ export function AssignNutritionPlanDialog({ open, template, onClose, onAssigned 
 
   if (!open || !template) return null;
 
-  async function save() {
+  async function save(confirm = false) {
     if (!memberId) { setError(t('nutrition_plans.error_member_required')); return; }
     if (!name.trim()) { setError(t('nutrition_plans.error_name_required')); return; }
     setSaving(true); setError(null);
     try {
       const plan = await apiFetch<AssignedNutritionPlan>(`/nutrition-plan-templates/${template!.id}/assign`, {
         method: 'POST',
-        body: JSON.stringify({ member_id: parseInt(memberId, 10), name: name.trim() }),
+        body: JSON.stringify({ member_id: parseInt(memberId, 10), name: name.trim(), ...(confirm ? { confirm: true } : {}) }),
       });
+      setConflict(null);
       onAssigned(plan);
     } catch (err: any) {
+      if (err.status === 409 && err.body?.code === 'active_plan_exists') { setConflict(err.body.current_plan?.name ?? ''); return; }
       setError(err.message ?? t('nutrition_plans.error_generic'));
     } finally {
       setSaving(false);
@@ -81,11 +85,21 @@ export function AssignNutritionPlanDialog({ open, template, onClose, onAssigned 
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
           <button onClick={onClose} style={btnStyle('#aaa')} disabled={saving}>{t('nutrition_plans.cancel')}</button>
-          <button onClick={save} style={btnStyle()} disabled={saving}>
+          <button onClick={() => save()} style={btnStyle()} disabled={saving}>
             {saving ? t('nutrition_plans.saving') : t('nutrition_plans.assign')}
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={conflict !== null}
+        title={t('nutrition_plans.replace_confirm_title')}
+        message={t('nutrition_plans.replace_confirm', { name: conflict ?? '' })}
+        confirmLabel={t('nutrition_plans.replace_confirm_btn')}
+        cancelLabel={t('nutrition_plans.cancel')}
+        busy={saving}
+        onConfirm={() => { setConflict(null); void save(true); }}
+        onCancel={() => setConflict(null)}
+      />
     </div>
   );
 }
