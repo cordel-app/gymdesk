@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2576 stage 2 (A recurring Product line read through `GET /members/:id/products` now reports the Promotions applied to it and the final price: `loadRecurringLinePromotions()` prices each application from its own frozen grant snapshot, in order, with the direct discount last; the line's `unit_price` and billing are untouched. Before, those rows hardcoded `promotions: []` and showed the list price. Closes #2576)
+
 - **Done**: #2572 (A Member holds one active assigned Nutrition Plan: `createNutritionPlanTx()` locks the member and answers `409 active_plan_exists` unless `confirm: true`, then completes the previous plan the day before the new one starts; Assign and New Nutrition Plan share it and the admin dialogs show one confirmation)
 
 - **Done**: #2571 (Member card → Payments renders Billing Events through the same shared header and payment actions as Payments → Billing Events: `payments/billing-events/BillingEventShared.tsx` holds the status/normalized-status badges, amount label and the Pay Cash / Pay Card / Retry / Waive flow (`useBillingEventActions`, API flags decide), used by both the table page and the Member card, beside the already-shared `ExpandedRow`; the Member context, filtering and unresolved/past grouping are unchanged. Frontend only; closes #2571)

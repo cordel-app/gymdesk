@@ -495,6 +495,25 @@ describe('#1923 — a Promotion leaves the recurring line in the Draft', () => {
   });
 });
 
+describe('#2576 — a recurring line reads back with its Promotion and final price', () => {
+  it('lists the applied Promotion and the discounted amount, then the direct discount on top', async () => {
+    const m = await member();
+    const item = await product({ name: 'Locker Rental 2576', frequency: 'month', amount: '20.00', type: 'service' });
+    const promo = await promotion({ name: 'Rec 2576' });
+    await grant(promo, item, 'periodical', 'percentage_discount', 50);
+    const ok = await auth(request.post(base(m))).send({ product_id: item, promotion_ids: [promo], direct_discount_percent: 10 });
+    expect(ok.status).toBe(201);
+    const list = await auth(request.get(`/members/${m}/products`));
+    expect(list.status).toBe(200);
+    const row = (list.body.items ?? list.body).find((r: any) => r.source === 'recurring' && r.product_id === item);
+    expect(row.promotions).toHaveLength(1);
+    expect(row.promotions[0].benefit_action).toBe('percentage_discount');
+    expect(row.promotions[0].final_amount).toBe(10);
+    expect(row.amount).toBe(9);
+    expect(row.list_price).toBe(20);
+  });
+});
+
 describe('#1923 — a promoted line survives the next Draft clone', () => {
   it('carries the line and its application into a Draft cloned from the Active version', async () => {
     const m = await member();

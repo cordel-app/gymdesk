@@ -18,6 +18,7 @@ import { resolveTimeZone } from '../domain/homeDashboard';
 import { db, type Tx } from '../infra/db';
 import { isNewMemberStatus } from './new-member-eligibility';
 import { type ProductBenefitCategory } from '../domain/productClassification';
+import { toProductBenefit } from '../domain/productBenefitActions';
 import {
   type AppliedPromotion,
   type MemberProductPromotionOffer,
@@ -26,6 +27,8 @@ import {
   offerCategoryFor,
   promotionGrantTableFor,
   promotionApplicationSnapshot,
+  promotionalPrice,
+  promotionDurationCycles,
   shapeAppliedPromotion,
   shapePromotionOffer,
 } from '../domain/memberProductPromotion';
@@ -458,6 +461,74 @@ export async function loadMemberPurchases(
   );
 }
 
+
+/**
+ * #2576 — the Promotions applied to recurring lines, keyed by line id, priced
+ * from each application's own frozen grant (`user_membership_promotion_*_snapshot`),
+ * never the live Promotion. Each step's `regular_amount` is the running price it
+ * was applied to, as for a one-time purchase; the direct discount comes last.
+ */
+async function loadRecurringLinePromotions(
+  gymId: string,
+  lines: readonly { id: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
+): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null }>> {
+  const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null }>();
+  if (lines.length === 0) return out;
+  const ids = lines.map((l) => l.id);
+  const { rows } = await db.query<any>(
+    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.applied_at, ump.snapshot
+       FROM user_membership_promotions ump
+      WHERE ump.gym_id = ? AND ump.status = 'applied'
+        AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY ump.id ASC`,
+    [gymId, ...ids],
+  );
+  if (rows.length === 0) return out;
+  const appIds = rows.map((r: any) => Number(r.id));
+  const marks = appIds.map(() => '?').join(',');
+  const grants = new Map<string, { action: unknown; value: unknown; quantity: unknown; category: ProductBenefitCategory }>();
+  for (const category of ['session', 'oneoff', 'periodical'] as const) {
+    const { rows: g } = await db.query<any>(
+      `SELECT user_membership_promotion_id AS app_id, product_id, \`action\`, \`value\`, quantity
+         FROM user_membership_promotion_${category}_snapshot
+        WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`,
+      [gymId, ...appIds],
+    );
+    for (const r of g as any[]) grants.set(`${r.app_id}:${r.product_id}`, { ...r, category });
+  }
+  const lineById = new Map(lines.map((l) => [l.id, l]));
+  const running = new Map<number, number>();
+  for (const row of rows as any[]) {
+    const lineId = Number(row.recurrent_snapshot_id);
+    const line = lineById.get(lineId)!;
+    const grant = grants.get(`${row.id}:${line.productId}`);
+    if (!grant) continue;
+    const snap = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
+    const benefit = toProductBenefit('promotion', grant.action, grant.value);
+    const before = running.get(lineId) ?? line.listUnit;
+    const after = promotionalPrice(before, benefit);
+    if (after == null) continue;
+    running.set(lineId, after);
+    const entry = out.get(lineId) ?? { promotions: [], final: null };
+    entry.promotions.push(shapeAppliedPromotion({
+      id: row.id, promotion_id: row.promotion_id, promotion_name: snap?.name ?? `Promotion #${row.promotion_id}`,
+      benefit_action: benefit.action, benefit_value: benefit.value,
+      duration_cycles: promotionDurationCycles(grant.category, grant.quantity),
+      regular_amount: Math.round(before * line.quantity * 100) / 100,
+      final_amount: Math.round(after * line.quantity * 100) / 100,
+      applied_at: row.applied_at ?? null,
+    }));
+    out.set(lineId, entry);
+  }
+  for (const [lineId, entry] of out) {
+    const line = lineById.get(lineId)!;
+    const afterPromos = running.get(lineId) ?? line.listUnit;
+    const net = line.pct != null ? afterPromos * (1 - line.pct / 100) : afterPromos;
+    entry.final = Math.round(net * line.quantity * 100) / 100;
+  }
+  return out;
+}
+
 /**
  * #1661 — the recurring Products of the member's Active (or Pending Payment)
  * ProductSet, in the purchase shape. A recurring purchase writes no
@@ -515,6 +586,16 @@ async function loadRecurringPurchases(
   const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
   const activeRefs = new Set(rows.map((r: any) => Number(r.line_ref)));
   const draftLineRefs = new Set(draftByRef.keys());
+  const lineInputs = [...rows, ...draftRows].map((r: any) => {
+    const quantity = Number(r.quantity) || 1;
+    const unit = Number(r.unit_price);
+    const listUnit = r.list_unit_price == null ? unit : Number(r.list_unit_price);
+    return {
+      id: Number(r.id), productId: Number(r.product_id), listUnit, quantity,
+      pct: r.direct_discount_percent == null ? null : Number(r.direct_discount_percent),
+    };
+  });
+  const linePromos = await loadRecurringLinePromotions(gymId, lineInputs);
   const figures = (row: any) => {
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
@@ -527,7 +608,9 @@ async function loadRecurringPurchases(
   const draftOnly: MemberPurchasedProduct[] = draftRows
     .filter((r: any) => !activeRefs.has(Number(r.line_ref)))
     .map((row: any) => {
-      const { amount, listPrice, pct } = figures(row);
+      const { amount: baseAmount, listPrice, pct } = figures(row);
+      const lp = linePromos.get(Number(row.id));
+      const amount = lp?.final ?? baseAmount;
       return {
         id: -Number(row.id),
         product_id: Number(row.product_id),
@@ -543,11 +626,11 @@ async function loadRecurringPurchases(
         created_by: row.set_created_by ?? null,
         origin: toItemOrigin(row.origin),
         regular_amount: listPrice ?? amount,
-        promotion: null,
-        promotions: [],
+        promotion: lp?.promotions[0] ?? null,
+        promotions: lp?.promotions ?? [],
         list_price: listPrice,
         direct_discount_percent: pct,
-        direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
+        direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
         tax_rate_percent: null,
         payment_status: null,
         billing_event_id: null,
@@ -557,7 +640,9 @@ async function loadRecurringPurchases(
     });
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
     const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
-    const { amount, listPrice, pct } = figures(row);
+    const { amount: baseAmount, listPrice, pct } = figures(row);
+    const lp = linePromos.get(Number(row.id));
+    const amount = lp?.final ?? baseAmount;
     return {
       id: -Number(active.id),
       product_id: Number(row.product_id),
@@ -573,11 +658,11 @@ async function loadRecurringPurchases(
       created_by: active.set_created_by ?? null,
       origin: toItemOrigin(row.origin),
       regular_amount: listPrice ?? amount,
-      promotion: null,
-      promotions: [],
+      promotion: lp?.promotions[0] ?? null,
+      promotions: lp?.promotions ?? [],
       list_price: listPrice,
       direct_discount_percent: pct,
-      direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
+      direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
       tax_rate_percent: null,
       payment_status: active.payment_status ?? null,
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
