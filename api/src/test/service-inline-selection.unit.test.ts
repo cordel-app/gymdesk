@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serviceChoices, defaultChoice, selectionMissing, bookedService } from '../../../apps/member/src/lib/serviceSelection';
+import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '../../../apps/member/src/lib/serviceSelection';
 
 const accepted = [{ id: 1, name: 'PT Duo' }, { id: 2, name: 'PT Individual' }, { id: 3, name: 'Pilates' }];
 
@@ -48,5 +48,23 @@ describe('#2587 inline Professional Service selection', () => {
   it('after booking only the service used is found', () => {
     expect(bookedService(accepted, 2)).toEqual({ id: 2, name: 'PT Individual' });
     expect(bookedService(accepted, null)).toBeNull();
+  });
+
+  // #2605 stage 3: what may still be booked is `available` (remaining minus the
+  // units future bookings hold), and a sheet with nothing left says so itself.
+  it('offers the available balance, not the remaining one, and falls back for an older reader', () => {
+    const c = serviceChoices(accepted, [
+      { professional_service_id: 1, remaining: 4, available: 0, booked: 4 },
+      { professional_service_id: 2, remaining: 3 },
+    ]);
+    expect(c[0]).toEqual({ id: 1, name: 'PT Duo', balance: 0, disabled: true });
+    expect(c[1]).toEqual({ id: 2, name: 'PT Individual', balance: 3, disabled: false });
+  });
+
+  it('says every unit is booked only when the balances are known and none is left', () => {
+    expect(noAvailableBalance(serviceChoices(accepted, [{ professional_service_id: 1, remaining: 4, available: 0, booked: 4 }]))).toBe(true);
+    expect(noAvailableBalance(serviceChoices(accepted, [{ professional_service_id: 1, remaining: 4, available: 1, booked: 3 }]))).toBe(false);
+    expect(noAvailableBalance(serviceChoices(accepted, null))).toBe(false);
+    expect(noAvailableBalance([])).toBe(false);
   });
 });

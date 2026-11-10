@@ -314,7 +314,7 @@
     "section_professional_services": "Servicios profesionales",
     "prof_services_loading": "Cargando…",
     "prof_services_empty": "No hay servicios profesionales activos en este gimnasio.",
-    "prof_services_available": "Sesiones disponibles",
+    "prof_services_balance_line": "{total, plural, one {# sesión} other {# sesiones}} ({available} disponibles + {booked} reservadas)",
     "prof_services_close": "Cerrar",
     "prof_services_no_image": "No hay imagen disponible.",
     "prof_services_no_description": "No hay descripción disponible.",

@@ -6,9 +6,12 @@
 // of spends not returned (`professional_service_consumptions`, #1189 stage 3)
 // and `total` is remaining + used: every spend, a package's included, writes a
 // ledger row, so the identity holds for every source.
+// #2605 stage 3: `booked` is the units the member's future bookings hold
+// (`reserved` rows) and `available` is remaining - booked, the figure the
+// booking sheet offers and the gate refuses on (`loadServiceBalanceViews()`).
 import { db } from '../infra/db';
 import { attachTranslations } from './professional-service-translations';
-import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
+import { loadServiceBalanceViews } from './service-reservation';
 
 export interface MemberServiceBalance {
   professional_service_id: number;
@@ -18,6 +21,8 @@ export interface MemberServiceBalance {
   total: number;
   used: number;
   remaining: number;
+  booked: number;
+  available: number;
 }
 
 export async function memberServiceBalances(gymId: string, memberId: number, locale: string): Promise<MemberServiceBalance[]> {
@@ -43,17 +48,19 @@ export async function memberServiceBalances(gymId: string, memberId: number, loc
     [gymId, memberId],
   );
   const used = new Map<number, number>(usedRows.map((r: any) => [Number(r.professional_service_id), Number(r.n)]));
-  const balances = new Map(
-    (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b.sessions]),
-  );
+  const views = await loadServiceBalanceViews(gymId, memberId);
   const out: MemberServiceBalance[] = [];
   for (const s of services as Array<{ professional_service_id: number; name: string; description: string | null; image_url: string | null }>) {
     const id = Number(s.professional_service_id);
-    const remaining = Math.max(0, balances.get(id) ?? 0);
+    const view = views.get(id);
+    const remaining = view?.total ?? 0;
     const spent = used.get(id) ?? 0;
     // #1824: the page is the gym's catalogue of active services; a balance of
     // zero is information about a service, never a reason to leave it out.
-    out.push({ professional_service_id: id, name: s.name, description: s.description ?? null, image_url: s.image_url ?? null, total: remaining + spent, used: spent, remaining });
+    out.push({
+      professional_service_id: id, name: s.name, description: s.description ?? null, image_url: s.image_url ?? null,
+      total: remaining + spent, used: spent, remaining, booked: view?.booked ?? 0, available: view?.available ?? 0,
+    });
   }
   return out;
 }

@@ -18,7 +18,7 @@ import {
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
-import { serviceChoices, defaultChoice, selectionMissing } from '@/lib/serviceSelection';
+import { serviceChoices, defaultChoice, selectionMissing, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
@@ -192,7 +192,9 @@ export default function MemberSchedulePage() {
       load();
     } catch (err: any) {
       setUnlockServiceIds(requiredServiceIds(err));
-      setMessage(err.message?.includes('plan_required') ? t('member_schedule.plan_required') : (err.message ?? t('common.error')));
+      setMessage(err.message?.includes('plan_required') ? t('member_schedule.plan_required')
+        : err?.code === 'no_available_balance' ? t('member_calendar.no_available_balance')
+        : (err.message ?? t('common.error')));
     } finally { setPendingSession(null); }
   }
 
@@ -419,7 +421,11 @@ export default function MemberSchedulePage() {
                       {attemptedSession === s.id && selectionMissing(choicesFor(s), chosenFor(s)) && (
                         <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.select_service_validation')}</p>
                       )}
-                      <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
+                      {/* #2605 §3: every unit is already booked — say so and offer no Book. */}
+                      {noAvailableBalance(choicesFor(s)) && (
+                        <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.no_available_balance')}</p>
+                      )}
+                      <button style={styles.btnBook} disabled={isBusy || noAvailableBalance(choicesFor(s))} onClick={() => bookSession(s.id)}>
                         {isBusy ? '…' : t('member_schedule.book')}
                       </button>
                       </>

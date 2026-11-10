@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { availableGrants, reservationBalance } from '../domain/serviceReservation';
+import { availableGrants, reservationBalance, serviceBalanceViews } from '../domain/serviceReservation';
 import { chooseSpendGrant } from '../domain/serviceConsumption';
 
 const grant = (reference_id: number, sessions: number) => ({
@@ -22,5 +22,22 @@ describe('professional service reservations (#2605)', () => {
   it('formats total = available + booked', () => {
     expect(reservationBalance(5, 5)).toEqual({ total: 5, booked: 5, available: 0 });
     expect(reservationBalance(2, 9)).toEqual({ total: 2, booked: 2, available: 0 });
+  });
+  // #2605 stage 3: `5 items (0 available + 5 booked)` is one derivation.
+  it('views a service as total = available + booked, from the wallet and the reserved rows', () => {
+    const views = serviceBalanceViews(
+      [{ professional_service_id: 7, sessions: 5 }, { professional_service_id: 8, sessions: 2 }],
+      [{ professional_service_id: 7, booked: 5 }],
+    );
+    expect(views.get(7)).toEqual({ professional_service_id: 7, total: 5, booked: 5, available: 0 });
+    expect(views.get(8)).toEqual({ professional_service_id: 8, total: 2, booked: 0, available: 2 });
+  });
+  it('never reports more booked than the balance, and a service with reservations but no balance reads 0/0/0', () => {
+    const views = serviceBalanceViews(
+      [{ professional_service_id: 7, sessions: 1 }],
+      [{ professional_service_id: 7, booked: 3 }, { professional_service_id: 9, booked: 2 }],
+    );
+    expect(views.get(7)).toEqual({ professional_service_id: 7, total: 1, booked: 1, available: 0 });
+    expect(views.get(9)).toEqual({ professional_service_id: 9, total: 0, booked: 0, available: 0 });
   });
 });

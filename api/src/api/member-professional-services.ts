@@ -6,6 +6,8 @@ import { attachTranslations } from './professional-service-translations';
 import { getRequestLocale } from '../infra/locale';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { resolveRequestActor } from '../domain/auditActor';
+import { reservationBalance } from '../domain/serviceReservation';
+import { loadBookedByService, loadServiceBalanceViews } from './service-reservation';
 import {
   BalanceHistoryEntry,
   parseAdjustmentInput,
@@ -50,6 +52,9 @@ memberProfessionalServicesRouter.get('/', async (req, res, next) => {
  * #1227 stage 1: the Member's Professional Services section. One row per
  * service the gym has switched on, with the balance the booking gate itself
  * reads (`resolveMemberProfessionalServices`) — never a second balance.
+ * #2605 stage 3: `total_items` is that balance, `booked_items` the units held
+ * by future bookings and `available_items` what is left to book
+ * (`5 items (0 available + 5 booked)`), all from `loadServiceBalanceViews()`.
  */
 memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -78,6 +83,7 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
     const balances = new Map(
       (await resolveMemberProfessionalServices(gymId, memberId)).map((b) => [b.professional_service_id, b]),
     );
+    const views = await loadServiceBalanceViews(gymId, memberId);
     // #2297: the full-size image and the description in the request locale, for the image modal.
     const localized = await attachTranslations(
       services.map((s: { professional_service_id: number; name: string; description: string | null }) => ({ ...s, id: s.professional_service_id })),
@@ -95,7 +101,9 @@ memberProfessionalServicesRouter.get('/wallet', async (req, res, next) => {
       image_thumbnail_url: imagesById.get(s.professional_service_id)?.image_thumbnail_url ?? null,
       image_url: imagesById.get(s.professional_service_id)?.image_url ?? null,
       display_description: s.display_description ?? null,
-      available_items: balances.get(s.professional_service_id)?.sessions ?? 0,
+      total_items: views.get(s.professional_service_id)?.total ?? 0,
+      booked_items: views.get(s.professional_service_id)?.booked ?? 0,
+      available_items: views.get(s.professional_service_id)?.available ?? 0,
       sources: balances.get(s.professional_service_id)?.sources ?? [],
     })));
   } catch (err) { next(err); }
@@ -205,8 +213,16 @@ memberProfessionalServicesRouter.post('/:serviceId/adjust', requireModuleWrite('
 
       const before = (await resolveMemberProfessionalServices(gymId, memberId))
         .find((b) => b.professional_service_id === serviceId)?.sessions ?? 0;
+      // #2605 stage 3: staff set the total (remaining) balance; what is
+      // available is that less the units future bookings already hold.
+      const booked = (await loadBookedByService(tx, gymId, memberId))
+        .find((b) => b.professional_service_id === serviceId)?.booked ?? 0;
+      const view = (total: number) => {
+        const v = reservationBalance(total, booked);
+        return { total_items: v.total, booked_items: v.booked, available_items: v.available };
+      };
       const delta = input.new_balance - before;
-      if (delta === 0) return { status: 200 as const, body: { professional_service_id: serviceId, available_items: before, changed: false } };
+      if (delta === 0) return { status: 200 as const, body: { professional_service_id: serviceId, ...view(before), changed: false } };
 
       await tx.query(
         `INSERT INTO professional_service_adjustments
@@ -214,7 +230,7 @@ memberProfessionalServicesRouter.post('/:serviceId/adjust', requireModuleWrite('
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, memberId, serviceId, delta, before, input.new_balance, input.reason, resolveRequestActor(ctx)],
       );
-      return { status: 200 as const, body: { professional_service_id: serviceId, available_items: input.new_balance, changed: true } };
+      return { status: 200 as const, body: { professional_service_id: serviceId, ...view(input.new_balance), changed: true } };
     });
     res.status(result.status).json(result.body);
   } catch (err) { next(err); }

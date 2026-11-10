@@ -182,7 +182,7 @@
     "section_professional_services": "Professional Services",
     "prof_services_loading": "Loading…",
     "prof_services_empty": "No Professional Services are enabled for this gym.",
-    "prof_services_available": "Available Items",
+    "prof_services_balance_line": "{total, plural, one {# item} other {# items}} ({available} available + {booked} booked)",
     "prof_services_close": "Close",
     "prof_services_no_image": "No image available.",
     "prof_services_no_description": "No description available.",
