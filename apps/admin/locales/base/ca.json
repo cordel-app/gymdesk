@@ -333,6 +333,7 @@
     "prof_services_history_attendance": "Sessió usada (assistència)",
     "prof_services_history_late_cancel": "Sessió usada (cancel·lació tardana)",
     "prof_services_history_no_show": "Sessió usada (no presentat)",
+    "prof_services_history_event_start": "Sessió usada (esdeveniment iniciat)",
     "prof_services_history_returned": "Sessió retornada",
     "prof_services_history_consumption": "Sessió usada",
     "prof_services_history_plan_renewal": "Assignació del pla renovada",
