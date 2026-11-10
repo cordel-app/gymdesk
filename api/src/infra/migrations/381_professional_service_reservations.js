@@ -16,7 +16,8 @@ exports.up = async (knex) => {
       .references('id').inTable('gyms').onDelete('CASCADE');
     t.integer('member_id').unsigned().notNullable()
       .references('id').inTable('members').onDelete('CASCADE');
-    t.integer('calendar_event_booking_id').unsigned().notNullable()
+    t.integer('calendar_event_booking_id').unsigned().notNullable();
+    t.foreign('calendar_event_booking_id', 'fk_psr_booking')
       .references('id').inTable('calendar_event_bookings').onDelete('CASCADE');
     t.integer('calendar_event_id').unsigned().notNullable();
     t.integer('professional_service_id').unsigned().notNullable();
