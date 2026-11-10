@@ -15,6 +15,11 @@ async function serviceConsumption() {
   if (!serviceConsumptionModule) serviceConsumptionModule = await import('./service-consumption');
   return serviceConsumptionModule;
 }
+let reservationModule: typeof import('./service-reservation') | null = null;
+async function serviceReservation() {
+  if (!reservationModule) reservationModule = await import('./service-reservation');
+  return reservationModule;
+}
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
   if (!packageCreditsModule) packageCreditsModule = await import('./package-credits');
@@ -116,6 +121,8 @@ export async function bookMemberOnSession(
   actor: string | null = null,
   /** #1985: the Professional Service the member chose to consume, when several qualify. */
   professionalServiceId?: number | null,
+  /** #2605: a Duo partner's row holds no reservation of its own (one unit per group, the booker's). */
+  reserveService = true,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -195,6 +202,19 @@ export async function bookMemberOnSession(
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?, ?)`,
         [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId, negativeBalanceOk ? 1 : 0],
       );
+      // #2605: a booking reserves one Professional Service unit. Staff overrides
+      // and accepted negative balances book without one.
+      if (reserveService && !negativeBalanceOk) {
+        const sr = await serviceReservation();
+        const outcome = await sr.reserveForBooking(
+          tx, gymId, memberId, insertId, Number(session[0].id), Number(session[0].activity_type_id),
+          chosenServiceId, actor,
+        );
+        if (outcome === 'no_available' && !overrideAccess && !force) {
+          throw Object.assign(new Error('No Professional Service sessions are available: all of them are already booked'),
+            { status: 409, code: 'no_available_balance' });
+        }
+      }
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
 
@@ -254,6 +274,12 @@ export async function cancelBooking(
     } else if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
       const sc = await serviceConsumption();
       await sc.spendSessionForBooking(tx, gymId, bookingId, 'late_cancel', opts.actor ?? null);
+    }
+    // #2605: the reservation follows the booking. A spend (late cancellation)
+    // turns it into the consumption; any other cancellation releases it, once.
+    if (b.status === 'booked' || b.status === 'waitlisted') {
+      const sr = await serviceReservation();
+      await sr.settleReservationOnCancel(tx, gymId, bookingId);
     }
 
     if (b.user_class_package_id) {
