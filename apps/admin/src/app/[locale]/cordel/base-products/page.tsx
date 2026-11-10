@@ -59,6 +59,7 @@ interface BaseProduct {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  one_per_member: boolean;
   sharing_type: 'individual' | 'shared';
   description: string | null;
   notes: string | null;
@@ -86,6 +87,7 @@ interface Form {
   mandatory: boolean;
   validity_days: string;
   one_time_purchase: boolean;
+  one_per_member: boolean;
   sharing_type: 'individual' | 'shared';
   description: string;
   notes: string;
@@ -108,6 +110,7 @@ function formFor(p: BaseProduct | null): Form {
     mandatory: p?.mandatory ?? false,
     validity_days: p?.validity_days != null ? String(p.validity_days) : '',
     one_time_purchase: p?.one_time_purchase ?? false,
+    one_per_member: p?.one_per_member ?? false,
     sharing_type: p?.sharing_type ?? 'individual',
     description: p?.description ?? '',
     notes: p?.notes ?? '',
@@ -133,6 +136,7 @@ function payloadFor(f: Form) {
     mandatory: f.mandatory,
     validity_days: f.validity_days.trim() ? Number(f.validity_days) : null,
     one_time_purchase: f.one_time_purchase,
+    one_per_member: f.one_per_member,
     sharing_type: f.sharing_type,
     description: f.description.trim() || null,
     notes: f.notes.trim() || null,
@@ -362,7 +366,8 @@ export default function BaseProductsPage() {
 
   /** The base-only fields (not on a gym Product), in the template's own section. */
   const extras = (f: Form | null, p: BaseProduct | null) => {
-    const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: '12px 24px', alignItems: 'flex-start' };
+    // #2607: the four flags sit one below the other, in this order.
+    const rowStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' };
     const cell: React.CSSProperties = { flex: '1 1 200px', minWidth: 0 };
     return (
       <div style={{ ...rowStyle, marginTop: 12 }}>
@@ -386,6 +391,17 @@ export default function BaseProductsPage() {
             </label>
           ) : (
             <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.one_per_member} onChange={(e) => set('one_per_member', e.target.checked)} />
+              {f.one_per_member ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.one_per_member ? tp('yes') : tp('no')}</div>
           )}
         </div>
         <div style={cell}>
@@ -589,6 +605,7 @@ export default function BaseProductsPage() {
             <MemberImagePreview src={memberImagePreviewSrc(details.image_url, details.modified_at)} emptyLabel={t('image_none')} />
             <p><strong>{t('mandatory')}:</strong> {details.mandatory ? t('yes') : t('no')}</p>
             <p><strong>{t('one_time_purchase')}:</strong> {details.one_time_purchase ? t('yes') : t('no')}</p>
+            <p><strong>{t('one_per_member')}:</strong> {details.one_per_member ? t('yes') : t('no')}</p>
             <p><strong>{t('sharing_type')}:</strong> {details.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</p>
             <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
             <p><strong>{t('created_by')}:</strong> {details.created_by ?? dash}</p>

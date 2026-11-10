@@ -41,6 +41,7 @@ export type BaseProductInput = {
   validity_days: number | null;
   one_time_purchase: boolean;
   sharing_type: (typeof PRODUCT_SHARING_TYPES)[number];
+  one_per_member: boolean;
   description: string | null;
   notes: string | null;
   package_information: string | null;
@@ -61,6 +62,7 @@ export type BaseProductRow = {
   validity_days: number | null;
   one_time_purchase: number | boolean;
   sharing_type?: string;
+  one_per_member?: number | boolean;
   // #2009 stage 1 (migration 335). The image pair is written by the upload
   // pipeline (stage 3), never by a JSON body, so it is on the row only.
   description?: string | null;
@@ -102,7 +104,7 @@ export function parseBaseProductInput(
     : {
         charge_type_code: null, name: '', type: 'fee', units: null, amount: null,
         billing_frequency: 'once', status: 'active', enrollment_status: 'public',
-        mandatory: false, validity_days: null, one_time_purchase: false, sharing_type: 'individual',
+        mandatory: false, validity_days: null, one_time_purchase: false, sharing_type: 'individual', one_per_member: false,
         description: null, notes: null, package_information: null, tax_behavior: 'inclusive',
       };
 
@@ -151,7 +153,7 @@ export function parseBaseProductInput(
     }
     out.enrollment_status = src.enrollment_status;
   }
-  for (const key of ['mandatory', 'one_time_purchase'] as const) {
+  for (const key of ['mandatory', 'one_time_purchase', 'one_per_member'] as const) {
     if (has(key)) {
       const b = strictBoolean(src[key]);
       if (b === undefined) return { error: `${key} must be a boolean` };

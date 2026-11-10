@@ -89,7 +89,9 @@ export type PurchaseBlock =
   | 'recurring_not_supported'
   | 'purchase_pending'
   // #1657: staff already hold an unsaved-for-payment draft of this Product.
-  | 'draft_exists';
+  | 'draft_exists'
+  // #2607: the Product is One per Member and the member already holds it.
+  | 'one_per_member';
 
 /** The columns a purchase decision needs from a catalogue row. */
 export interface PurchasableProduct {
@@ -227,6 +229,12 @@ export function purchaseBlockResponse(block: PurchaseBlock): { status: number; e
         status: 409,
         error: block,
         message: 'This product already has a draft for this member',
+      };
+    case 'one_per_member':
+      return {
+        status: 409,
+        error: block,
+        message: 'A member can only have one assignment of this product',
       };
     case 'recurring_not_supported':
       return {
