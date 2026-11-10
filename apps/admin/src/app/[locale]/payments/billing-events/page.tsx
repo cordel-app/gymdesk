@@ -14,7 +14,7 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';
-import { ExpandedRow, StatusBadge, fmtDate, fmtDateTime, fmtScheduledDate, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
+import { ExpandedRow, StatusBadge, fmtDate, fmtDateTime, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
 import { PaymentActionModal } from './PaymentActionModal';
 import { PaymentActionKind, actionRequest } from './paymentActions';
 
@@ -32,8 +32,8 @@ interface BillingEvent {
   billing_date: string;
   /** ISO datetime the ledger row was created; null for projected (virtual) rows. */
   created_at: string | null;
-  /** YYYY-MM-DD the membership's next payment is scheduled for; null when none. */
-  next_payment_date: string | null;
+  /** #2565: the latest attempt's normalized payment status (same as the details). */
+  normalized_payment_status?: string | null;
   amount: string | null;
   event_type: string;
   status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
@@ -487,9 +487,9 @@ export default function BillingEventsPage() {
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_plan')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_date')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_created')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_next_payment')}</th>
                 <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_status')}</th>
+                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_normalized_payment_status')}</th>
                 <th style={{ padding: '8px 12px', width: 48 }}>{t('billing_events_page.col_actions')}</th>
               </tr>
             </thead>
@@ -526,14 +526,16 @@ export default function BillingEventsPage() {
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtDateTime(row.created_at, gymFmt)}
                       </td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtScheduledDate(row.next_payment_date, gymFmt)}
-                      </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtAmount(row.amount)} {row.currency ?? ''}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <StatusBadge status={row.status} label={row.event_type === 'waived_billing' ? t('billing_events_page.status_waived') : (statusLabel[row.status] ?? row.status)} />
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        {row.normalized_payment_status
+                          ? <StatusBadge status={row.normalized_payment_status === 'completed' ? 'paid' : row.normalized_payment_status === 'pending' ? 'pending' : 'failed'} label={t(`billing_events_page.normalized_${row.normalized_payment_status}` as any)} />
+                          : '—'}
                       </td>
                       <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
                         {isExpandable && (

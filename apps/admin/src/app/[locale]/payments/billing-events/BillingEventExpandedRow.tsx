@@ -57,7 +57,6 @@ interface BillingEventDetails {
   created_by: string | null;
   modified_at: string | null;
   modified_by: string | null;
-  next_payment_date: string | null;
   failure_reason: string | null;
   /** #1474: the event's priced components, read-only. */
   lines?: { id: number; kind: string; item_name: string; quantity: number; unit_amount: string | null; promotion_name: string | null; amount: string | null }[];
@@ -278,9 +277,6 @@ export function ExpandedRow({
               </DetailField>
               <DetailField label={t('billing_events_page.det_modified_at')}>{fmtDateTime(details.modified_at, gymFmt)}</DetailField>
               <DetailField label={t('billing_events_page.det_modified_by')}>{details.modified_by ?? '—'}</DetailField>
-              <DetailField label={t('billing_events_page.det_next_payment')}>
-                {fmtScheduledDate(details.next_payment_date, gymFmt)}
-              </DetailField>
               <DetailField label={t('billing_events_page.det_receipt')}>{details.receipt_number ?? '—'}</DetailField>
               {details.failure_reason && (
                 <DetailField label={t('billing_events_page.det_failure_reason')}>
