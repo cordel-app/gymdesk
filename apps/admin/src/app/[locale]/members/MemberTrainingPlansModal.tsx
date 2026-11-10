@@ -55,7 +55,15 @@ export function MemberTrainingPlansModal({ memberId, memberName, onClose }: { me
       ? { template_id: parseInt(templateId, 10) }
       : { name: name.trim(), description: description.trim() || null };
     try {
-      await apiFetch(base, { method: 'POST', body: JSON.stringify(body) });
+      try {
+        await apiFetch(base, { method: 'POST', body: JSON.stringify(body) });
+      } catch (err: any) {
+        // #2573: one active plan per member; the same confirmation as the New Training Plan dialog.
+        if (err.status === 409 && err.body?.code === 'active_plan_exists') {
+          if (!window.confirm(t('training_plans.conflict_message', { count: 1 }))) return;
+          await apiFetch(base, { method: 'POST', body: JSON.stringify({ ...body, confirm: true }) });
+        } else throw err;
+      }
       setTemplateId(''); setName(''); setDescription('');
       load();
     } catch (err: any) { setError(err.message ?? t('member_training_plans.error_generic')); }
