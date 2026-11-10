@@ -221,7 +221,7 @@ export async function cancelBooking(
   gymId: string,
   bookingId: number,
   _actorMembershipId?: number | null,
-  opts: { actor?: string | null; spendLateCancel?: boolean } = {},
+  opts: { actor?: string | null; spendLateCancel?: boolean; returnService?: boolean } = {},
 ) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
@@ -246,7 +246,12 @@ export async function cancelBooking(
     // (booking itself never does). A waiting-list place is not a booking, and a
     // caller that has already allowed the cancellation free of charge — a
     // member inside the grace period — passes `spendLateCancel: false`.
-    if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
+    // #2585: staff removing an attendee gives the session back instead — the
+    // ledger row of the booking (if any) is returned once, in this transaction.
+    if (b.status === 'booked' && opts.returnService) {
+      const sc = await serviceConsumption();
+      await sc.returnSessionForBooking(tx, gymId, bookingId, opts.actor ?? null);
+    } else if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
       const sc = await serviceConsumption();
       await sc.spendSessionForBooking(tx, gymId, bookingId, 'late_cancel', opts.actor ?? null);
     }
@@ -442,7 +447,7 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
         WHERE ceb.id = ? AND ceb.gym_id = ?`,
       [req.params.id, gymId],
     );
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { actor: resolveRequestActor(getTenantContext(req)) });
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { actor: resolveRequestActor(getTenantContext(req)), returnService: true });
     if (cancelResult.promotedMemberId && sessionRows.length > 0) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
