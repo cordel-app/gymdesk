@@ -507,6 +507,8 @@
     "pt_slots_status_full": "Full",
     "pt_slots_status_already_booked": "Booked",
     "pt_slots_selected_count": "{count} slots selected",
+    "pt_slots_edit": "Edit",
+    "pt_slots_cancel": "Cancel",
     "pt_slots_save": "Save selection",
     "pt_slots_saved": "Weekly slot selection saved.",
     "pt_slots_book": "Book",

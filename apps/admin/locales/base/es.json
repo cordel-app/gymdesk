@@ -507,6 +507,8 @@
     "pt_slots_status_full": "Completa",
     "pt_slots_status_already_booked": "Reservada",
     "pt_slots_selected_count": "{count} franjas seleccionadas",
+    "pt_slots_edit": "Editar",
+    "pt_slots_cancel": "Cancelar",
     "pt_slots_save": "Guardar selección",
     "pt_slots_saved": "Selección semanal de franjas guardada.",
     "pt_slots_book": "Reservar",
