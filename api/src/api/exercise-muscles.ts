@@ -1,6 +1,10 @@
 import { db, Tx } from '../infra/db';
 import { ExerciseTables, LEGACY_EXERCISE_TABLES } from '../domain/exerciseTables';
 
+import { BASE_LOCALE, SupportedLocale } from '../infra/locale';
+import { translatedNameExpr } from '../domain/nameTranslations';
+import { MUSCLE_TRANSLATIONS } from '../domain/muscleTranslations';
+
 /**
  * #1368 stage 2 — `muscles` is the catalogue, `exercise_muscles.muscle_id` the link.
  *
@@ -49,7 +53,15 @@ export async function insertExerciseMuscle(
 }
 
 /** The catalogue as the pickers and `GET /muscles` offer it. */
-export async function listMuscles(): Promise<{ key: string; name: string }[]> {
-  const { rows } = await db.query('SELECT slug, name FROM muscles ORDER BY id ASC');
-  return (rows as { slug: string; name: string }[]).map((r) => ({ key: r.slug, name: r.name }));
+export async function listMuscles(
+  locale: SupportedLocale = BASE_LOCALE,
+): Promise<{ key: string; name: string; display_name: string }[]> {
+  // #2333: the name in the request's language comes from `muscle_translations`
+  // (what Cordel → Muscles edits), falling back to `muscles.name`.
+  const { rows } = await db.query(
+    `SELECT m.slug, m.name, ${translatedNameExpr(MUSCLE_TRANSLATIONS, 'm', locale, 'display_name')}
+       FROM muscles m ORDER BY m.id ASC`,
+  );
+  return (rows as { slug: string; name: string; display_name: string }[])
+    .map((r) => ({ key: r.slug, name: r.name, display_name: r.display_name }));
 }
