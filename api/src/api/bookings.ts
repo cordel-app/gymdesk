@@ -537,8 +537,10 @@ bookingsRouter.post('/:id/refund-balance', requireRole('admin', 'front_desk', 't
       );
       if (rows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
       const b = rows[0];
-      if (b.status !== 'booked' || b.attendance_status !== 'absent') {
-        throw Object.assign(new Error('Only an attendee explicitly marked absent can be refunded'), { status: 400, code: 'not_absent' });
+      // #2588: any booked attendee (attended, absent or unconfirmed, on a past or future event)
+      // whose booking spent a session may be refunded; the ledger row decides.
+      if (b.status !== 'booked') {
+        throw Object.assign(new Error('Only a booked attendee can be refunded'), { status: 400, code: 'not_booked' });
       }
       const { rows: ledger } = await tx.query(
         'SELECT id, returned_at FROM professional_service_consumptions WHERE calendar_event_booking_id = ? AND gym_id = ? FOR UPDATE',

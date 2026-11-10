@@ -1047,9 +1047,9 @@ export function ClassSessionDetailPanel({
                       )}
                     </div>
                   )}
-                  {/* #1382 §5 — only for an explicitly absent attendee whose booking
+                  {/* #1382 §5 / #2588 — for any attendee (past or future event) whose booking
                       spent a session that has not been given back. */}
-                  {canWrite && !isCancelled && b.attendance_status === 'absent' && !!b.service_consumed && !b.service_returned && (
+                  {canWrite && !isCancelled && !!b.service_consumed && !b.service_returned && (
                     <button
                       onClick={() => refundBalance(b)}
                       disabled={refundBusyId !== null}
