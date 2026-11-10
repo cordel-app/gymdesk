@@ -10,7 +10,7 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
-import { generateReceiptPdf } from '../lib/receipt-pdf';
+import { receiptPdf } from './receipt-documents';
 import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
@@ -809,19 +809,6 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
       return res.status(400).json({ error: 'Billing event has no valid amount' });
     }
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-
-    // Fetch gym's system tax rate (is_system=1); fall back to 21% if none configured
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
     // Allocate receipt number if not yet issued
     let receiptNumber = ev.receipt_number as string | null;
     let issuedAt = ev.receipt_issued_at ? new Date(ev.receipt_issued_at) : null;
@@ -837,21 +824,10 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
       }
     }
 
-    const pdfBuffer = await generateReceiptPdf({
-      receiptNumber,
-      issuedAt: issuedAt!,
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+    const pdfBuffer = await receiptPdf({
+      gymId, eventId, receiptNumber, issuedAt: issuedAt!,
+      memberName: ev.member_name, chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -882,32 +858,10 @@ paymentsRouter.get('/:id/receipt', async (req, res, next) => {
     const ev = evRows[0];
     if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
-    const pdfBuffer = await generateReceiptPdf({
-      receiptNumber: ev.receipt_number,
-      issuedAt: new Date(ev.receipt_issued_at),
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+    const pdfBuffer = await receiptPdf({
+      gymId, eventId, receiptNumber: ev.receipt_number, issuedAt: new Date(ev.receipt_issued_at),
+      memberName: ev.member_name, chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');
