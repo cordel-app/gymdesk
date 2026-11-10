@@ -7,18 +7,17 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
-import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { ContextMenu } from '@/components/ContextMenu';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { useToast } from '@/components/Toast';
-import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';
 import { ExpandedRow, StatusBadge, fmtDate, fmtDateTime, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
-import { PaymentActionModal } from './PaymentActionModal';
-import { PaymentActionKind, actionRequest } from './paymentActions';
+import {
+  BILLING_EVENT_STATUS_VALUES, BillingEventStatusBadge, NormalizedPaymentStatusBadge, billingEventAmountLabel, useBillingEventActions,
+} from './BillingEventShared';
 
-const STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded'] as const;
+const STATUS_VALUES = BILLING_EVENT_STATUS_VALUES;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,12 +53,6 @@ interface PageResult {
   total: number;
   limit: number;
   offset: number;
-}
-
-interface RetryResult {
-  new_status: string;
-  attempts: { attempt: number; status: string }[];
-  membership_paused: boolean;
 }
 
 interface MemberHit { id: number; name: string; email: string }
@@ -165,8 +158,6 @@ export default function BillingEventsPage() {
   const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
-  const { toast } = useToast();
-  const { canWrite, readOnlyTitle } = useModuleAccess('PAYMENTS');
 
   // Filter state — synced with URL params
   const [memberId, setMemberId] = useState<number | null>(
@@ -197,12 +188,6 @@ export default function BillingEventsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  /** #1459: the confirmation open for a Pay Cash / Pay Card / Waive (at most one). */
-  const [pending, setPending] = useState<{ kind: PaymentActionKind; row: BillingEvent } | null>(null);
-  const [actionBusy, setActionBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [retryingId, setRetryingId] = useState<number | null>(null);
-
   // Sync filter state to URL
   function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[]; userMembershipId?: number | null }) {
     const p = new URLSearchParams();
@@ -240,7 +225,7 @@ export default function BillingEventsPage() {
       setOffset(off);
       // collapse all on new page/filter — except the one event opened by link
       setExpanded(new Set(eventId && data.items.some((i) => i.id === eventId) ? [eventId] : []));
-      setPending(null);
+      closePendingRef.current();
     } catch {
       setError('Failed to load billing events.');
     } finally {
@@ -266,61 +251,12 @@ export default function BillingEventsPage() {
     setExpanded((prev) => new Set(prev).add(id));
   }
 
-  function openAction(kind: PaymentActionKind, row: BillingEvent) {
-    setActionError(null);
-    setPending({ kind, row });
-  }
-
-  /**
-   * #1459: Accept is the only thing that records anything. The request is the
-   * server's to authorise and to refuse a second time (409); the busy flag only
-   * keeps this client from sending it twice.
-   */
-  async function acceptAction(input: { reason: string }) {
-    if (!pending || actionBusy) return;
-    const { kind, row } = pending;
-    const req = actionRequest(kind, {
-      id: row.id!, user_membership_id: row.user_membership_id, first_payment: row.first_payment,
-    }, input);
-    setActionBusy(true);
-    setActionError(null);
-    try {
-      await apiFetch(req.path, { method: 'POST', body: JSON.stringify(req.body) });
-      toast(t(kind === 'waive' ? 'billing_events_page.waive_success' : 'billing_events_page.manual_success'), 'success');
-      setPending(null);
-      openDetails(row.id!);
-      reloadCurrentPage();
-    } catch (err: any) {
-      setActionError(err.message ?? t('billing_events_page.action_error'));
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  /**
-   * #640 §3: one click fires the provider charge and, on rejection, once more
-   * (server-side). Two rejections pause the assigned plan, which the toast
-   * says explicitly — it is a status change the admin did not ask for.
-   */
-  async function retryPayment(id: number) {
-    setRetryingId(id);
-    try {
-      const result = await apiFetch<RetryResult>(`/payments/billing-events/${id}/retry`, { method: 'POST' });
-      if (result.new_status === 'paid') {
-        toast(t('billing_events_page.retry_success'), 'success');
-      } else if (result.membership_paused) {
-        toast(t('billing_events_page.retry_failed_paused', { attempts: result.attempts.length }));
-      } else {
-        toast(t('billing_events_page.retry_failed', { attempts: result.attempts.length }));
-      }
-      openDetails(id);
-      reloadCurrentPage();
-    } catch (err: any) {
-      toast(err.message ?? t('billing_events_page.action_error'));
-    } finally {
-      setRetryingId(null);
-    }
-  }
+  const { menuItems, modal, closePending, canWrite, readOnlyTitle } = useBillingEventActions<BillingEvent>({
+    onChanged: reloadCurrentPage,
+    openDetails,
+  });
+  const closePendingRef = useRef(closePending);
+  closePendingRef.current = closePending;
 
   const statusLabel: Record<string, string> = {
     paid: t('billing_events_page.status_paid'),
@@ -330,64 +266,9 @@ export default function BillingEventsPage() {
     recorded: t('billing_events_page.status_recorded'),
   };
 
-  function menuItems(row: BillingEvent): ContextMenuItem[] {
-    const id = row.id!;
-    const items: ContextMenuItem[] = [
-      { label: t('billing_events_page.action_details'), onClick: () => openDetails(id) },
-    ];
-    // §1: payment actions are hidden — not merely disabled — where the API's
-    // flags say they don't apply. There is deliberately no Cancel item: closing
-    // a confirmation never alters the outstanding obligation (#1459 §2).
-    const busy = retryingId === id;
-    if (row.can_pay_cash) {
-      items.push({
-        label: t('billing_events_page.action_pay_cash'),
-        onClick: () => openAction('cash', row),
-        disabled: !canWrite,
-        title: readOnlyTitle,
-      });
-    }
-    if (row.can_pay_card) {
-      items.push({
-        label: t('billing_events_page.action_pay_card'),
-        onClick: () => openAction('card', row),
-        disabled: !canWrite,
-        title: readOnlyTitle,
-      });
-    }
-    if (row.can_retry) {
-      items.push({
-        label: busy ? t('billing_events_page.retry_running') : t('billing_events_page.action_retry'),
-        onClick: () => retryPayment(id),
-        disabled: !canWrite || busy,
-        title: readOnlyTitle,
-      });
-    }
-    if (row.can_waive) {
-      items.push({
-        label: t('billing_events_page.action_waive'),
-        onClick: () => openAction('waive', row),
-        disabled: !canWrite,
-        title: readOnlyTitle,
-        danger: true,
-      });
-    }
-    return items;
-  }
-
   return (
     <div>
-      {pending && (
-        <PaymentActionModal
-          kind={pending.kind}
-          memberName={pending.row.member_name ?? '—'}
-          amountLabel={`${fmtAmount(pending.row.amount)} ${pending.row.currency ?? 'EUR'}`}
-          busy={actionBusy}
-          error={actionError}
-          onAccept={acceptAction}
-          onClose={() => setPending(null)}
-        />
-      )}
+      {modal}
       <h1 style={{ margin: '0 0 16px' }}>{t('billing_events_page.title')}</h1>
 
       {/* Filter bar */}
@@ -527,15 +408,13 @@ export default function BillingEventsPage() {
                         {fmtDateTime(row.created_at, gymFmt)}
                       </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtAmount(row.amount)} {row.currency ?? ''}
+                        {billingEventAmountLabel(row)}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        <StatusBadge status={row.status} label={row.event_type === 'waived_billing' ? t('billing_events_page.status_waived') : (statusLabel[row.status] ?? row.status)} />
+                        <BillingEventStatusBadge row={row} t={t} />
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        {row.normalized_payment_status
-                          ? <StatusBadge status={row.normalized_payment_status === 'completed' ? 'paid' : row.normalized_payment_status === 'pending' ? 'pending' : 'failed'} label={t(`billing_events_page.normalized_${row.normalized_payment_status}` as any)} />
-                          : '—'}
+                        <NormalizedPaymentStatusBadge status={row.normalized_payment_status} t={t} />
                       </td>
                       <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
                         {isExpandable && (
