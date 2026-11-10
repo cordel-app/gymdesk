@@ -876,12 +876,14 @@ describe('days', () => {
 
   it('returns 404 when deleting a dayId belonging to a different plan', async () => {
     const planA = await createTestPlan();
-    const planB = await createTestPlan();
+    // Add the day while planA is still active: creating planB completes planA (#2572).
     const dayRes = await request
       .post(`/member-nutrition-plans/${planA.id}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ weekday: 5 });
+    expect(dayRes.status).toBe(201);
+    const planB = await createTestPlan();
 
     const res = await request
       .delete(`/member-nutrition-plans/${planB.id}/days/${dayRes.body.id}`)
