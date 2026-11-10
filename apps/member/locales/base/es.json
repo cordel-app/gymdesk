@@ -280,6 +280,7 @@
     "action_book": "Reservar",
     "buy_sessions_cta": "Compra sesiones para reservar esta clase",
     "select_service_prompt": "Elige qué servicio usar para esta reserva.",
+    "select_service_validation": "Selecciona un servicio profesional antes de reservar.",
     "service_required_message": "No tienes ninguno de los servicios profesionales necesarios para esta reserva: {services}. Visita Mis productos para comprar uno de ellos.",
     "action_join_waitlist": "Unirse a lista de espera",
     "action_cancel_booking": "Cancelar reserva",
@@ -871,6 +872,8 @@
     "close": "Cerrar"
   },
   "event_services": {
+    "booked": "Reservado",
+    "balance": "{n, plural, one {# sesión disponible} other {# sesiones disponibles}}",
     "title": "Servicios profesionales",
     "capacity": "{n, plural, one {# plaza} other {# plazas}}",
     "image_alt": "Imagen de {name}",
