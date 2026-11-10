@@ -32,6 +32,7 @@ import { loadMemberPurchases } from './member-product-promotions';
 //    constrained on `(gym_id, member_id)`.
 
 import { payerCheckoutUrl } from './checkout-url';
+import { violatesOnePerMember } from './one-per-member';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -346,6 +347,11 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
   // that draft is the one place it is expected.
   if (input.staff && (await hasDraftPurchase(input.gymId, input.memberId, input.productId, ignoreDraftId))) {
     throw new PurchaseRefused('draft_exists');
+  }
+  // #2607: a One per Member Product is refused while the member holds one (checked in the
+  // statement that already scopes the gym; the row's own flag is read here, not trusted from the client).
+  if (await violatesOnePerMember(db, input.gymId, input.memberId, input.productId)) {
+    throw new PurchaseRefused('one_per_member');
   }
   // #1864: holding the Product already is no reason to refuse; each purchase is its own row.
   const block = productPurchaseBlock(item, pending);

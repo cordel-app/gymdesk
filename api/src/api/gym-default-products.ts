@@ -81,6 +81,7 @@ function configurationValues(product: DefaultGymProduct) {
 function templateExtras(template: BaseProductRow) {
   return [
     template.sharing_type === 'shared' ? 'shared' : 'individual',
+    template.one_per_member ? 1 : 0,
     template.description ?? null,
     template.notes ?? null,
     template.package_information ?? null,
@@ -136,9 +137,9 @@ export async function insertProductFromTemplate(
       `INSERT IGNORE INTO products
 (gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
    status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, sharing_type, description, notes, package_information, image_url, image_thumbnail_url,
+   one_time_purchase, sharing_type, one_per_member, description, notes, package_information, image_url, image_thumbnail_url,
    tax_rate_id, tax_behavior, created_at, modified_at, created_by)
-       SELECT ?, ct.id, ?, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
+       SELECT ?, ct.id, ?, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
          ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
        FROM charge_types ct WHERE ct.code = ?`,
       [gymId, template.id, declared.type, ...configurationValues(declared), ...templateExtras(template), gymId, taxBehaviorOf(template), actor, declared.chargeTypeCode],
@@ -150,9 +151,9 @@ export async function insertProductFromTemplate(
     `INSERT IGNORE INTO products
 (gym_id, charge_type_id, base_product_id, name, type, units, amount, currency, billing_frequency,
    status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, sharing_type, description, notes, package_information, image_url, image_thumbnail_url,
+   one_time_purchase, sharing_type, one_per_member, description, notes, package_information, image_url, image_thumbnail_url,
    tax_rate_id, tax_behavior, created_at, modified_at, created_by)
-     SELECT ?, NULL, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
+     SELECT ?, NULL, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SYSTEM_TAX_RATE},
        ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
      FROM DUAL
      WHERE NOT EXISTS (

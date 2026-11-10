@@ -239,6 +239,7 @@ export interface ProductFormRow {
   mandatory: number;
   /** #2606: 0/1 from MySQL. */
   one_time_purchase?: number;
+  one_per_member?: number;
   sharing_type?: ProductSharingType;
   professional_services?: { id: number }[];
 }
@@ -260,6 +261,7 @@ export interface ProductFormValues {
   tax_rate_id: string;
   mandatory: boolean;
   one_time_purchase: boolean;
+  one_per_member: boolean;
   sharing_type: ProductSharingType;
   professionalServiceIds: number[];
 }
@@ -289,6 +291,7 @@ export function toProductFormValues(item: ProductFormRow): ProductFormValues {
     tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
     mandatory: Boolean(item.mandatory),
     one_time_purchase: Boolean(item.one_time_purchase),
+    one_per_member: Boolean(item.one_per_member),
     sharing_type: item.sharing_type ?? 'individual',
     professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
   };
