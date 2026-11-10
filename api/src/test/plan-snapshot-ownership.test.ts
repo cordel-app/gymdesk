@@ -1,4 +1,5 @@
 // #2125 M4a — a Product Set edits only the plan snapshots it owns, and "inherited" can be derived from a link.
+// M4b-1 — the sync reads a set's plans from the junction and never writes a snapshot another set links.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -7,6 +8,7 @@ import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ownPlanSnapshot, ownPlanSnapshotsOfSet, discardDraftSet } from '../api/plan-snapshot-ownership';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
+import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 
 let gymId: string;
 let seq = 0;
@@ -120,5 +122,56 @@ describe('ownPlanSnapshotsOfSet and discardDraftSet (#2125 M4b-0)', () => {
     expect(Number(rows[0].product_set_id)).toBe(a);
     // A (superseded) is not a Draft: nothing is deleted.
     expect(await db.transaction((tx) => discardDraftSet(tx, gymId, a))).toBe(false);
+  });
+});
+
+describe('syncPlanSnapshot and a shared plan snapshot (#2125 M4b-1)', () => {
+  const state = async (snapId: number) => {
+    const { rows } = await db.query<any>(
+      `SELECT status, starts_at, ends_at, closed_at, member_id, source_user_membership_id,
+              (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id) AS beneficiaries
+         FROM plan_snapshots s WHERE id = ?`, [snapId]);
+    return rows[0];
+  };
+
+  it('keeps a link the column disagrees with, and leaves a snapshot two sets link exactly as it is', async () => {
+    const { a, b, snapshot } = await twoSets();
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, a));
+    const before = await state(snapshot);
+    expect(before.status).toBe('superseded');
+
+    // The Draft B reuses A's plan unchanged: a link, not a copy. The snapshot's own column still names A.
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
+    await db.query('UPDATE product_sets SET starts_at = DATE_ADD(starts_at, INTERVAL 7 DAY) WHERE id = ?', [b]);
+
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, b));
+    // The junction is the record of the link: the sync does not drop it because the column says A.
+    expect(await linked(b)).toEqual([snapshot]);
+    expect(await linked(a)).toEqual([snapshot]);
+    // Shared, so immutable: no status, date, member, assignment or beneficiary of it moved for B...
+    expect(await state(snapshot)).toEqual(before);
+    // ...nor for A, which also links it.
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, a));
+    expect(await state(snapshot)).toEqual(before);
+  });
+
+  it('moves a snapshot again once the set owns it alone', async () => {
+    const { a, b, snapshot } = await twoSets();
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, a));
+    const before = await state(snapshot);
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
+    await db.query('UPDATE product_sets SET starts_at = DATE_ADD(starts_at, INTERVAL 7 DAY) WHERE id = ?', [b]);
+
+    const own = await db.transaction((tx) => ownPlanSnapshot(tx, gymId, b, snapshot));
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, b));
+    expect(await linked(b)).toEqual([own]);
+    const copy = await state(own);
+    expect(copy.status).toBe('draft');
+    const { rows: setB } = await db.query<any>('SELECT starts_at FROM product_sets WHERE id = ?', [b]);
+    expect(copy.starts_at).toEqual(setB[0].starts_at);
+    expect(copy.starts_at).not.toEqual(before.starts_at);
+    // The original is still A's alone and untouched.
+    expect(await linked(a)).toEqual([snapshot]);
+    expect(await state(snapshot)).toEqual(before);
   });
 });

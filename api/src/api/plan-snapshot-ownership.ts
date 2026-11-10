@@ -6,19 +6,19 @@
  * Promotions) and the set's link is moved to the copy; otherwise it is returned unchanged.
  *
  * Today `cloneConfiguration()` still copies, so no snapshot is shared and this is a no-op; M4b stops the
- * copying and routes every plan-snapshot writer through it.
+ * copying and routes every plan-snapshot writer through it. `planSnapshotSharedSql()` in
+ * `plan-snapshot-lines.ts` is the one spelling of "another Product Set links this snapshot" (M4b-1): the
+ * sync and the owner both ask it, so a shared snapshot is never written by anything.
  */
 import type { Tx } from '../infra/db';
 import { assignmentVersionId } from './assignment-config';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
+import { isPlanSnapshotShared } from './plan-snapshot-lines';
 
 export async function ownPlanSnapshot(
   tx: Tx, gymId: string, productSetId: number, planSnapshotId: number,
 ): Promise<number> {
-  const { rows } = await tx.query<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM product_set_plan_snapshots WHERE plan_snapshot_id = ? AND product_set_id <> ?',
-    [planSnapshotId, productSetId]);
-  if (Number(rows[0]?.n ?? 0) === 0) return planSnapshotId;
+  if (!(await isPlanSnapshotShared(tx, productSetId, planSnapshotId))) return planSnapshotId;
 
   // The set stops using the shared snapshot and takes a copy of it (kept as the same assignment's contract).
   await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
