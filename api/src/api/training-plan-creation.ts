@@ -59,9 +59,10 @@ export async function supersedeActivePlansTx(
   );
   await tx.query(
     `UPDATE member_training_plans SET status = 'completed',
-            valid_to = DATE_SUB(COALESCE(?, CURRENT_DATE()), INTERVAL 1 DAY)
+            valid_to = DATE_SUB(COALESCE(?, CURRENT_DATE()), INTERVAL 1 DAY),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE training_plan_id IN (${marks}) AND gym_id = ? AND status = 'active'`,
-    [startDate, ...ids, gymId],
+    [startDate, actor, ...ids, gymId],
   );
   return ids;
 }
