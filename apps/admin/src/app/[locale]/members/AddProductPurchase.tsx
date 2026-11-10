@@ -210,6 +210,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
     tax: quote && quote.tax_rate_percent != null ? `${quote.tax_rate_percent}%` : '—',
     promotion: quote && quote.promotions.length > 0 ? quote.promotions.map((p) => p.promotion_name).join(', ') : '—',
     discount: f.isAdmin ? (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
       <input
         id="add-product-discount"
         aria-label={t('add_product_direct_discount')}
@@ -220,6 +221,8 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
         onChange={(e) => f.setDiscount(e.target.value)}
         title={t('add_product_direct_discount_help')}
       />
+      <span aria-hidden="true" data-direct-discount-percent>%</span>
+      </span>
     ) : '—',
     final: <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{quote ? money(quote.final_price, quote.currency) : '—'}</span>,
   };

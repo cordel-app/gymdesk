@@ -10,6 +10,7 @@ import {
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { primaryBtnSmall } from '@/components/ui';
+import { StatusBadge } from '@/components/StatusBadge';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { AssignedGoalCard } from './AssignedGoalCard';
 import { AddReadingModal } from './AddReadingModal';
@@ -227,8 +228,21 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
           title={nameOfGoal(row)}
           imageUrl={row.goal_image_thumbnail_url ?? row.goal_image_url ?? null}
           summary={`${t('col_target')}: ${formatTarget(row)} · ${t('col_progress')}: ${formatProgress(row.progress_percent)}`}
-          status={row.status}
-          statusLabel={t(`status_${row.status}` as any)}
+          actions={canEdit && editingId !== row.id ? (
+            // #2564: Edit sits in the header like the other Member Profile sections.
+            <button
+              type="button"
+              style={primaryBtnSmall()}
+              onClick={() => {
+                setOpenIds((prev) => new Set(prev).add(row.id));
+                setEditingId(row.id);
+                setEditForm(toAssignedPersonalGoalFormValues(row));
+                setEditError(null);
+              }}
+            >
+              {t('edit')}
+            </button>
+          ) : undefined}
           open={openIds.has(row.id) || editingId === row.id}
           onToggle={() => setOpenIds((prev) => {
             if (editingId === row.id) return prev; // never collapse the card being edited
@@ -264,20 +278,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                 unit={row.target_unit}
                 summary={row}
                 label={(key) => t(key as any)}
-                trailing={canEdit ? (
-                  // #1518: the item's own Edit, as on Professional Services.
-                  <button
-                    type="button"
-                    style={primaryBtnSmall()}
-                    onClick={() => {
-                      setEditingId(row.id);
-                      setEditForm(toAssignedPersonalGoalFormValues(row));
-                      setEditError(null);
-                    }}
-                  >
-                    {t('edit')}
-                  </button>
-                ) : undefined}
+                trailing={<StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />}
               />
               {/* The card's own `Label: Value` row (#929), never a second one. */}
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
