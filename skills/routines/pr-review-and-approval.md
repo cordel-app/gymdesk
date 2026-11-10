@@ -56,6 +56,10 @@ A file-count alone does not tell the two apart: three PRs today conflicted in do
 - If CI is green, sanity-check the PR before merging: typecheck (`npx tsc --noEmit`) in any workspace touched, and skim the diff for anything that looks unfinished, unsafe, or out of scope. Start from the PR description and file list rather than pulling the full patch for every file — only fetch a specific file's diff if something in it looks questionable. If it looks safe, squash-merge the PR.
 - If CI is red, investigate the actual failure (read the job logs, not just the status). Fetch a small tail (~100-150 lines) first, not the full log — the error is almost always right before the step fails, and post-failure cleanup output (git/docker teardown, etc.) is noise. If it's a genuine, fixable problem introduced by the PR itself (e.g. a wrong assertion, a missed edge case) — and not something that needs a design decision — fix it, push the fix to the PR's branch, and re-check CI. Repeat until CI is green or the failure can't be safely fixed this way. If the failing test is **not** one the PR touched, or `main`'s own CI is red, it is a red `main`: see **A red main is yours to fix**.
 
+## Never merge on a failing check
+
+A squash-merge needs **every** check on the head commit to be `SUCCESS`: one `FAILURE`, `CANCELLED` or still-pending check is a no. #2575 merged with API shard 3 red and put eight PRs behind a broken `main`. `main` is now branch-protected (the five checks `API (shard 1/3)`, `API (shard 2/3)`, `API (shard 3/3)`, `Admin`, `Payment page`, up to date with `main`), so GitHub refuses such a merge; if it answers 405 for that reason, fix the failure or sync, never bypass it with `--admin`.
+
 ## A red main is yours to fix
 
 A failure the PR did not cause is still your problem, because **every open PR inherits it and none can merge** (2026-11-09: commit 7b22880e removed the 403 for unassigned centers but left three tests asserting it, `main`'s CI went red, and eight PRs sat blocked while each run called the failure "pre-existing" and moved on). Nobody else fixes it, so do not park and do not wait:
