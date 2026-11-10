@@ -69,7 +69,8 @@ const emptyForm = {
   nif_nie_passport: '',
 };
 
-const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
+// #2574: the Normalized Payment Status vocabulary of the latest unsettled Billing Event.
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired', 'canceled', 'refunded', 'partially_refunded'] as const;
 const ACCESS_RIGHTS = ['granted', 'to_be_reviewed', 'revoked'] as const;
 const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 

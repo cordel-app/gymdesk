@@ -1,76 +1,79 @@
 /**
- * A Member's aggregated Payment Status (#1235): "is there any payment problem
- * with anything this Member is being charged for?". It is the worst status
- * found across every billable concept, each concept contributing its latest
- * payment request — the membership plan (one concept per Assigned Plan) and
- * each Product bought on its own. Pure: the SQL fragment is built here so the
- * list read and any later reader share one severity order.
+ * A Member's Payment Status (#2574, replacing #1235's payment-request read):
+ * derived on read from the Member's **Billing Events**, which are the source
+ * of truth, and reported in the Normalized Payment Status vocabulary (#2533).
+ *
+ *  - no Billing Events            → `null` (the screens read it as "None")
+ *  - every event settled          → `completed` (the screens read it as "Paid")
+ *  - some event not settled       → the Normalized Payment Status of the **most
+ *    recent** unsettled event; an older unsettled event never overrides it.
+ *
+ * Nothing is stored, so a created, settled or failed event is reflected by the
+ * next read with no recalculation step. One SQL fragment serves the Members
+ * list (and its filter), the Member Profile header and Home.
+ *
+ * Which events count: the ledger's own obligations. A card verification moves
+ * no money, a status change is not an event, a waiver forgives the amount, an
+ * adjustment records no payment and a persisted obligation not yet attempted
+ * (`is_scheduled`) has no payment status yet — none of those is either paid or
+ * unsettled. The event's own status is `deriveBillingEventStatus()`'s rule,
+ * spelled in SQL here for the same reason the list spells it.
  */
 
-/** Worst first. Every `payment_requests.status` value must appear. */
-export const PAYMENT_STATUS_SEVERITY = ['failed', 'expired', 'pending', 'completed'] as const;
+import { eventAssignmentSql } from './billingEventOwnership';
 
-export type PaymentRequestStatus = (typeof PAYMENT_STATUS_SEVERITY)[number];
-
-/** Sources that carry no fee: a card verification moves no money (#788). */
+/** Sources that carry no fee: a card verification moves no money (#788). Kept for callers. */
 export const NON_BILLABLE_SOURCES = ['card_update'] as const;
 
-/** The worst of the given statuses; `null` when there are none. */
-export function worstPaymentStatus(statuses: ReadonlyArray<string | null | undefined>): string | null {
-  let worst: string | null = null;
-  let worstRank = Infinity;
-  for (const s of statuses) {
-    if (!s) continue;
-    const idx = (PAYMENT_STATUS_SEVERITY as readonly string[]).indexOf(s);
-    // An unknown status ranks below every known one, but is still reported
-    // when it is all there is.
-    const rank = idx === -1 ? PAYMENT_STATUS_SEVERITY.length : idx;
-    if (rank < worstRank) {
-      worst = s;
-      worstRank = rank;
-    }
-  }
-  return worst;
-}
+/** Event types that are neither paid nor unsettled (see above). */
+export const PAYMENT_STATUS_EXCLUDED_EVENT_TYPES = ['status_changed', 'card_verification', 'waived_billing'] as const;
 
-function severityOrderSql(column: string): string {
-  const whens = PAYMENT_STATUS_SEVERITY.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' ');
-  return `CASE ${column} ${whens} ELSE ${PAYMENT_STATUS_SEVERITY.length} END`;
-}
+const LATEST_ATTEMPT = (column: string) => `(SELECT pr.${column} FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1)`;
+
+/** `deriveBillingEventStatus()` in SQL: paid | failed | pending | recorded. */
+const EVENT_STATUS_SQL = `CASE ${LATEST_ATTEMPT('status')}
+      WHEN 'completed' THEN 'paid'
+      WHEN 'failed' THEN 'failed'
+      WHEN 'expired' THEN 'failed'
+      WHEN 'pending' THEN 'pending'
+      ELSE CASE be.event_type
+        WHEN 'recurring_payment' THEN 'paid'
+        WHEN 'payment_recorded' THEN 'paid'
+        WHEN 'failed_billing' THEN 'failed'
+        ELSE 'recorded' END
+    END`;
+
+/** `normalizePaymentStatus()` in SQL over the latest attempt's raw provider status. */
+const NORMALIZED_SQL = `CASE UPPER(TRIM(${LATEST_ATTEMPT('provider_status')}))
+      WHEN 'SUCCEEDED' THEN 'completed' WHEN 'PAID_OUT' THEN 'completed'
+      WHEN 'PENDING' THEN 'pending' WHEN 'PENDING_PROCESSING' THEN 'pending'
+      WHEN 'AUTHORIZED' THEN 'pending' WHEN 'PROCESSING' THEN 'pending'
+      WHEN 'FAILED' THEN 'failed' WHEN 'EXPIRED' THEN 'expired'
+      WHEN 'CANCELED' THEN 'canceled' WHEN 'REFUNDED' THEN 'refunded'
+      WHEN 'PARTIALLY_REFUNDED' THEN 'partially_refunded'
+      ELSE NULL END`;
 
 /**
- * The billable concept a payment request belongs to: its Assigned Plan, else
- * the Product it bought, else its source.
+ * Correlated subquery: the Payment Status of `members` row `memberAlias`.
+ * The ORDER BY puts every unsettled event before every settled one, newest
+ * first, so the first row is the latest unsettled event, else a settled one.
  */
-function conceptSql(alias: string): string {
-  return `COALESCE(CONCAT('um:', ${alias}.user_membership_id),
-            CONCAT('mp:', (SELECT mp.product_id FROM member_products_oneoff_snapshot mp
-                           WHERE mp.payment_request_id = ${alias}.id)),
-            CONCAT('src:', ${alias}.source))`;
-}
-
-function scopeSql(alias: string, memberAlias: string): string {
-  const sources = NON_BILLABLE_SOURCES.map((s) => `'${s}'`).join(', ');
-  // #640: a covered member follows the Memberships they are covered by.
-  return `${alias}.gym_id = ${memberAlias}.gym_id
-          AND ${alias}.source NOT IN (${sources})
-          AND (${alias}.member_id = ${memberAlias}.id
-               OR ${alias}.user_membership_id IN (
-                    SELECT umm.user_membership_id FROM user_membership_members umm
-                    WHERE umm.member_id = ${memberAlias}.id AND umm.gym_id = ${memberAlias}.gym_id))`;
-}
-
-/** Correlated subquery: the aggregated Payment Status of `members` row `memberAlias`. */
 export function memberPaymentStatusSql(memberAlias: string): string {
-  return `(SELECT pr.status
-           FROM payment_requests pr
-           WHERE ${scopeSql('pr', memberAlias)}
-             AND NOT EXISTS (
-               SELECT 1 FROM payment_requests pr2
-               WHERE ${scopeSql('pr2', memberAlias)}
-                 AND ${conceptSql('pr2')} = ${conceptSql('pr')}
-                 AND (pr2.created_at > pr.created_at
-                      OR (pr2.created_at = pr.created_at AND pr2.id > pr.id)))
-           ORDER BY ${severityOrderSql('pr.status')}, pr.created_at DESC, pr.id DESC
+  const excluded = PAYMENT_STATUS_EXCLUDED_EVENT_TYPES.map((t) => `'${t}'`).join(', ');
+  return `(SELECT CASE WHEN ${EVENT_STATUS_SQL} = 'paid' THEN 'completed'
+                       ELSE COALESCE(${NORMALIZED_SQL}, ${LATEST_ATTEMPT('status')}, 'failed') END
+           FROM billing_events be
+           WHERE be.gym_id = ${memberAlias}.gym_id
+             AND (be.member_id = ${memberAlias}.id
+                  -- #640: a covered Member follows the Membership they are covered by.
+                  OR ${eventAssignmentSql('be')} IN (
+                       SELECT umm.user_membership_id FROM user_membership_members umm
+                       WHERE umm.member_id = ${memberAlias}.id AND umm.gym_id = ${memberAlias}.gym_id))
+             AND be.is_scheduled = 0
+             AND be.event_type NOT IN (${excluded})
+             AND ${EVENT_STATUS_SQL} <> 'recorded'
+           ORDER BY (${EVENT_STATUS_SQL} = 'paid'), be.created_at DESC, be.id DESC
            LIMIT 1)`;
 }

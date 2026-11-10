@@ -669,7 +669,71 @@ async function insertPaymentRequest(
              ?, 'monei', UUID(), UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test', 'admin')`,
     [gymId, userMembershipId, memberId, chargeTypeId, status],
   );
+  // #2574: the Payment Status is read from the Member's Billing Events.
+  const { insertId: eventId } = await db.query(
+    `INSERT INTO billing_events (gym_id, member_id, event_type, source, created_by, amount)
+     VALUES (?, ?, 'product_purchase', 'admin', 'test', '10.00')`,
+    [gymId, memberId],
+  );
+  await db.query(
+    `UPDATE payment_requests SET billing_event_id = ? WHERE gym_id = ? AND member_id = ? AND billing_event_id IS NULL`,
+    [eventId, gymId, memberId],
+  );
 }
+
+describe('payment_status derived from Billing Events (#2574)', () => {
+  let gymId: string;
+
+  async function addEvent(memberId: number, attemptStatus: string, providerStatus: string | null, createdAt: string) {
+    const { insertId } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, source, created_by, amount, created_at)
+       VALUES (?, ?, 'product_purchase', 'admin', 'test', '10.00', ?)`,
+      [gymId, memberId, createdAt],
+    );
+    await db.query(
+      `INSERT INTO payment_requests
+         (gym_id, member_id, amount, currency, billing_event_id, status, provider_status, provider,
+          provider_order, page_token, page_token_expires, initiated_by, source, created_at)
+       VALUES (?, ?, '10.00', 'EUR', ?, ?, ?, 'monei', UUID(), UUID(),
+               DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test', 'admin', ?)`,
+      [gymId, memberId, insertId, attemptStatus, providerStatus, createdAt],
+    );
+    return insertId as number;
+  }
+
+  async function statusOf(memberId: number): Promise<string | null> {
+    const res = await request.get('/members').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    return res.body.find((m: any) => m.id === memberId).payment_status;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Derived Payment Status Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('the most recent unsuccessful event decides; older ones do not override it', async () => {
+    const m = await createMember(gymId);
+    await addEvent(m, 'completed', 'SUCCEEDED', '2026-01-01 10:00:00');
+    await addEvent(m, 'failed', 'FAILED', '2026-02-01 10:00:00');
+    await addEvent(m, 'expired', 'EXPIRED', '2026-03-01 10:00:00');
+    expect(await statusOf(m)).toBe('expired');
+  });
+
+  it('is completed once every event is settled', async () => {
+    const m = await createMember(gymId);
+    const failed = await addEvent(m, 'failed', 'FAILED', '2026-01-01 10:00:00');
+    expect(await statusOf(m)).toBe('failed');
+    await db.query(
+      `INSERT INTO payment_requests
+         (gym_id, member_id, amount, currency, billing_event_id, status, provider_status, provider,
+          provider_order, page_token, page_token_expires, initiated_by, source, created_at)
+       VALUES (?, ?, '10.00', 'EUR', ?, 'completed', 'SUCCEEDED', 'monei', UUID(), UUID(),
+               DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test', 'admin', '2026-01-02 10:00:00')`,
+      [gymId, m, failed],
+    );
+    expect(await statusOf(m)).toBe('completed');
+  });
+});
 
 describe('payment_status (#346)', () => {
   let gymId: string;
@@ -693,7 +757,7 @@ describe('payment_status (#346)', () => {
     await insertPaymentRequest(gymId, pendingUmId,   pendingMemberId,   chargeTypeId, 'pending');
   });
 
-  it('returns payment_status null when member has no payment requests', async () => {
+  it('returns payment_status null when member has no Billing Events', async () => {
     const res = await request
       .get('/members')
       .set('Authorization', TEST_AUTH_HEADER)
