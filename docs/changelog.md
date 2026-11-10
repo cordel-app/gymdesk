@@ -7,6 +7,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2576 stage 2 (A recurring Product line read through `GET /members/:id/products` now reports the Promotions applied to it and the final price: `loadRecurringLinePromotions()` prices each application from its own frozen grant snapshot, in order, with the direct discount last; the line's `unit_price` and billing are untouched. Before, those rows hardcoded `promotions: []` and showed the list price. Closes #2576)
+
 - **Done**: #2573 (A Member holds at most one active Assigned Training Plan: `createTrainingPlanTx()` locks the member row and, without `confirm: true`, answers `409 { code: 'active_plan_exists', current_plan }` changing nothing; with it the previous plan becomes `completed` (`end_date` = day before the new start, member assignment closed too, history kept) in the same transaction. Shared by `POST /training-plans`, `POST /members/:id/member-training-plans` and `POST /training-plan-templates/:id/assign`; the old keep-vs-expire choice is gone. Admin: one superseding confirmation in the New Training Plan dialog and the Member Training Plans modal; closes #2573)
 - **Done**: #2572 (A Member holds one active assigned Nutrition Plan: `createNutritionPlanTx()` locks the member and answers `409 active_plan_exists` unless `confirm: true`, then completes the previous plan the day before the new one starts; Assign and New Nutrition Plan share it and the admin dialogs show one confirmation)
 
