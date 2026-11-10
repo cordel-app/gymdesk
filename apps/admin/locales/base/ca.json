@@ -508,6 +508,8 @@
     "pt_slots_status_full": "Completa",
     "pt_slots_status_already_booked": "Reservada",
     "pt_slots_selected_count": "{count} franges seleccionades",
+    "pt_slots_edit": "Editar",
+    "pt_slots_cancel": "Cancel·lar",
     "pt_slots_save": "Desar selecció",
     "pt_slots_saved": "Selecció setmanal de franges desada.",
     "pt_slots_book": "Reservar",
