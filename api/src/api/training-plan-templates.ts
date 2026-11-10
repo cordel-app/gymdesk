@@ -364,7 +364,7 @@ trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), 
   const ctx = getTenantContext(req);
   const { gymId, gymMembershipId } = ctx;
   const actor = resolveRequestActor(ctx);
-  const { member_id, name, description, start_date, valid_to } = req.body;
+  const { member_id, name, description, start_date, valid_to, confirm } = req.body;
   const { id } = req.params as { id: string };
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
   try {
@@ -379,11 +379,16 @@ trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), 
         description: description ?? null,
         startDate: start_date ?? null,
         validTo: valid_to ?? null,
+        confirmReplace: confirm === true,
       });
     });
+    for (const sid of result.supersededIds) {
+      recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: sid,
+        previous: { status: 'active' }, next: { status: 'completed', replaced_by: result.planId } });
+    }
     res.status(201).json({ id: result.planId, member_id, mtp_id: result.mtpId, name: result.planName });
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json(err.code ? { error: err.message, code: err.code, current_plan: err.current_plan } : { error: err.message });
     next(err);
   }
 });

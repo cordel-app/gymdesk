@@ -22,12 +22,53 @@ export type CreateTrainingPlanArgs = {
   description: string | null | undefined; // undefined/null -> inherit template's when cloning
   startDate: string | null; // YYYY-MM-DD; null -> today (also used as the assignment's valid_from)
   validTo: string | null;
+  /** #2573: true once staff confirmed that an existing active plan is superseded. */
+  confirmReplace?: boolean;
 };
 
 export type CreateTrainingPlanResult = { planId: number; mtpId: number; planName: string };
 
-export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs): Promise<CreateTrainingPlanResult> {
+/**
+ * #2573: a Member holds at most one active Assigned Training Plan. Locks the member row (so two
+ * concurrent assignments serialise), then either refuses with `409 active_plan_exists`
+ * (no confirmation) or completes the active plan(s): `end_date` = the day before the new start
+ * (never before the plan's own start), history kept. Runs in the caller's transaction.
+ */
+export async function supersedeActivePlansTx(
+  tx: Tx, gymId: string, memberId: string | number, actor: string | null, startDate: string | null, confirm: boolean,
+): Promise<number[]> {
+  await tx.query('SELECT id FROM members WHERE id = ? AND gym_id = ? FOR UPDATE', [memberId, gymId]);
+  const { rows } = await tx.query(
+    "SELECT id, name FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active' ORDER BY id FOR UPDATE",
+    [memberId, gymId],
+  );
+  if (rows.length === 0) return [];
+  if (!confirm) {
+    throw Object.assign(new Error('Member already has an active training plan'), {
+      status: 409, code: 'active_plan_exists', current_plan: { id: rows[0].id, name: rows[0].name },
+    });
+  }
+  const ids = rows.map((r: any) => r.id);
+  const marks = ids.map(() => '?').join(',');
+  await tx.query(
+    `UPDATE training_plans SET status = 'completed',
+            end_date = GREATEST(start_date, DATE_SUB(COALESCE(?, CURRENT_DATE()), INTERVAL 1 DAY)),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE id IN (${marks}) AND gym_id = ?`,
+    [startDate, actor, ...ids, gymId],
+  );
+  await tx.query(
+    `UPDATE member_training_plans SET status = 'completed',
+            valid_to = DATE_SUB(COALESCE(?, CURRENT_DATE()), INTERVAL 1 DAY)
+     WHERE training_plan_id IN (${marks}) AND gym_id = ? AND status = 'active'`,
+    [startDate, ...ids, gymId],
+  );
+  return ids;
+}
+
+export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs): Promise<CreateTrainingPlanResult & { supersededIds: number[] }> {
   const { gymId, memberId, gymMembershipId, actor, templateId, name, description, startDate, validTo } = args;
+  const supersededIds = await supersedeActivePlansTx(tx, gymId, memberId, actor, startDate, args.confirmReplace === true);
   let planId: number;
   let planName: string;
   let planDescription: string | null;
@@ -115,5 +156,5 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
 
   await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);
 
-  return { planId, mtpId, planName };
+  return { planId, mtpId, planName, supersededIds };
 }

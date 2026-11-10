@@ -143,6 +143,7 @@ describe('gate: audited tables', () => {
     { file: 'api/training-plans.ts', table: 'member_training_plans', why: 'publish-version completes the replaced assignment row; training_plans.modified_by records the actor in the same transaction (#1969)' },
     { file: 'api/training-plans.ts', table: 'members', why: 'publish-version repoints member_training_plan_id to the new assignment; a pointer move, the actor is recorded on training_plans (#1969)' },
     { file: 'api/membership-plans.ts', table: 'membership_plans', why: 'copies center_access_mode onto the duplicate created in the same transaction, which already carries created_by (#2383)' },
+    { file: 'api/training-plan-creation.ts', table: 'member_training_plans', why: 'status/valid_to when a confirmed new plan supersedes the active one (#2573); the actor is recorded on training_plans.modified_by in the same transaction' },
     { file: 'api/member-training-plans.ts', table: 'member_training_plans', why: 'PATCH status/valid_from/valid_to transition; the status_change audit row records the actor' },
   ];
 

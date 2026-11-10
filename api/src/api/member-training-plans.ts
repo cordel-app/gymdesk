@@ -53,7 +53,7 @@ memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, 
   const { gymId, gymMembershipId } = ctx;
   const actor = resolveRequestActor(ctx);
   const { memberId } = req.params as { memberId: string };
-  const { template_id, name, description, valid_to } = req.body;
+  const { template_id, name, description, valid_to, confirm } = req.body;
 
   if (!(await memberExists(memberId, gymId))) return res.status(404).json({ error: 'Member not found' });
 
@@ -70,6 +70,7 @@ memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, 
         description,
         startDate: null,
         validTo: valid_to ?? null,
+        confirmReplace: confirm === true,
       }),
     );
 
@@ -82,9 +83,13 @@ memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, 
       action: 'assign', entityType: 'member_training_plan', entityId: result.mtpId,
       next: { member_id: memberId, training_plan_id: result.planId, template_id: template_id ?? null },
     });
+    for (const id of result.supersededIds) {
+      recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: id,
+        previous: { status: 'active' }, next: { status: 'completed', replaced_by: result.planId } });
+    }
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json(err.code ? { error: err.message, code: err.code, current_plan: err.current_plan } : { error: err.message });
     next(err);
   }
 });
