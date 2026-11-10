@@ -126,10 +126,16 @@ export function useExerciseEditorState(): ExerciseEditorState {
  * humanised from the key itself, so it can never render as a raw slug or as a
  * missing translation key.
  */
-export function useMuscleLabel(muscleKeys: string[]): (key: string) => string {
+export function useMuscleLabel(
+  muscleKeys: string[],
+  displayNames: Record<string, string> = {},
+): (key: string) => string {
   const tMuscles = useTranslations('muscles');
   return useCallback((key: string) => {
+    // #2333: the name Cordel → Muscles maintains (`muscle_translations`) wins;
+    // the locale files only cover a catalogue row the API reported no name for.
+    if (displayNames[key]) return displayNames[key];
     if (muscleKeys.includes(key)) return tMuscles(key as any);
     return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }, [muscleKeys, tMuscles]);
+  }, [muscleKeys, displayNames, tMuscles]);
 }
