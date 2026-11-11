@@ -50,9 +50,10 @@ async function syncOne(tx: Conn, gymId: string, productSetId: number, j: SetJunc
  */
 export async function syncPlanSnapshotJunction(tx: Conn, gymId: string, productSetId: number): Promise<void> {
   const j = SET_JUNCTIONS[0];
+  // In snapshot order: a set's first link is its primary plan (`primaryPlanSnapshotId()`).
   await tx.query(
     `INSERT IGNORE INTO ${j.junction} (product_set_id, ${j.snapshotCol})
-     SELECT s.product_set_id, s.id FROM ${j.table} s WHERE s.gym_id = ? AND s.product_set_id = ?`,
+     SELECT s.product_set_id, s.id FROM ${j.table} s WHERE s.gym_id = ? AND s.product_set_id = ? ORDER BY s.id`,
     [gymId, productSetId]);
 }
 

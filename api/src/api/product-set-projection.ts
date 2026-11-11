@@ -1,5 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 
@@ -17,9 +18,11 @@ import { supersedeApplications } from './one-active-plan';
  *  - `next_billing_date` is left NULL, so the assignment-driven nightly pass
  *    (which selects `next_billing_date IS NOT NULL`) never charges a projected
  *    assignment; the persisted events of the ProductSet are what bill;
- *  - every new version opens its own assignment and closes the previous one
- *    (#1995 stage 2; before it a same-plan version updated the row in place), so
- *    the predecessor and its Promotion applications stay as history;
+ *  - a new version that **changed** its plan opens its own assignment and closes
+ *    the previous one (#1995 stage 2), so the predecessor and its Promotion
+ *    applications stay as history; one that reuses the predecessor's plan
+ *    unchanged — the same snapshot, linked (#2125 M4b-3) — keeps the
+ *    predecessor's assignment, since the contract did not move;
  *  - a **plan-less** version has no assignment at all, and a previous one is
  *    closed;
  *  - coverage is each plan snapshot's own beneficiaries (#2125 stage 21).
@@ -121,6 +124,24 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
     [umId, gymId, productSetId]);
 }
 
+/**
+ * Whether the version's primary plan snapshot is the predecessor's own — linked by
+ * `previous_product_set_id` too — and the contract of the predecessor's assignment.
+ */
+async function reusesPredecessorsContract(
+  tx: Tx, gymId: string, set: SetRow, previousUmId: number,
+): Promise<boolean> {
+  if (set.previous_product_set_id == null) return false;
+  const primary = await primaryPlanSnapshotId(tx, gymId, Number(set.id));
+  if (primary == null) return false;
+  const { rows } = await tx.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM plan_snapshots s
+       JOIN product_set_plan_snapshots prev ON prev.plan_snapshot_id = s.id AND prev.product_set_id = ?
+      WHERE s.id = ? AND s.gym_id = ? AND s.source_user_membership_id = ?`,
+    [set.previous_product_set_id, primary, gymId, previousUmId]);
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
 /** Projects the (just activated) version onto its operational assignment. */
 export async function projectActiveProductSet(
   tx: Tx, gymId: string, productSetId: number, actorArg?: string | null,
@@ -155,8 +176,17 @@ export async function projectActiveProductSet(
 
   // The version's own Draft assignment (the Admin creates it set-first, PR 3e)
   // is activated in place: it is this version's row, not a predecessor's.
-  if (set.user_membership_id != null) {
-    const umId = Number(set.user_membership_id);
+  // #2125 M4b-3: so is the predecessor's assignment when this version reuses its
+  // plan **unchanged** — the primary plan snapshot is the predecessor's own (a
+  // link, never a copy, since `cloneConfiguration()` links) and that snapshot is
+  // the contract of the predecessor's assignment. Nothing about the plan moved,
+  // so the assignment continues rather than being closed for a same-plan
+  // successor; a plan the version edited was copied for it (`ownPlanSnapshot()`),
+  // names no predecessor link, and opens its own assignment below as before.
+  const continuedUmId = set.user_membership_id == null && previousUmId != null
+    && await reusesPredecessorsContract(tx, gymId, set, previousUmId) ? previousUmId : null;
+  if (set.user_membership_id != null || continuedUmId != null) {
+    const umId = Number(set.user_membership_id ?? continuedUmId);
     await tx.query(
       `UPDATE user_memberships
           SET ends_at = ?, status = IF(status IN ('cancelled','expired','superseded'), status, 'active'),
@@ -166,6 +196,7 @@ export async function projectActiveProductSet(
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
     await attachApplications(tx, gymId, productSetId, umId);
+    if (continuedUmId != null) await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
     return umId;
   }
 

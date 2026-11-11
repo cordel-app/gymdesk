@@ -1,12 +1,17 @@
 // #2125 M4a — a Product Set edits only the plan snapshots it owns, and "inherited" can be derived from a link.
 // M4b-1 — the sync reads a set's plans from the junction and never writes a snapshot another set links.
 // M4b-2 — locking a Draft copies nothing; a writer copies only the plan it edits, right before writing it.
+// M4b-3 — `cloneConfiguration()` links the predecessor's plans; the primary plan is the set's first link and
+// survives its own copy-on-write; a version that reuses a plan unchanged keeps the plan's assignment.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
-import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
+import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
+import { addCoverage } from '../api/product-sets';
+import { cloneConfiguration } from '../api/product-set-bridge';
+import { primaryPlanSnapshotId, primaryPlanSnapshotSql } from '../api/plan-snapshot-lines';
 import { ownPlanSnapshot, discardDraftSet } from '../api/plan-snapshot-ownership';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { addCoveredMember, isRefusal, lockDraft, setMembershipFeePrice, type LockedDraft } from '../api/product-set-draft';
@@ -20,7 +25,11 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const actor = { name: 'T', type: 'staff' };
 
 beforeAll(async () => { gymId = await createTestGym('Snapshot ownership gym'); });
-afterAll(async () => { await cleanupTestGyms(); await db.end(); });
+afterAll(async () => {
+  await db.query('DELETE FROM billing_events WHERE gym_id = ?', [gymId]);
+  await cleanupTestGyms();
+  await db.end();
+});
 
 async function member(): Promise<number> {
   const { insertId } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'M', `own-${uniq()}@example.com`]);
@@ -58,6 +67,9 @@ async function twoSets(): Promise<{ a: number; b: number; snapshot: number }> {
 }
 const linked = async (setId: number) =>
   (await db.query<any>('SELECT plan_snapshot_id AS s FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY 1', [setId])).rows.map((r: any) => Number(r.s));
+/** The set's links in the order they were made — the first is its primary plan (M4b-3). */
+const linkedInOrder = async (setId: number) =>
+  (await db.query<any>('SELECT plan_snapshot_id AS s FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY id', [setId])).rows.map((r: any) => Number(r.s));
 
 describe('ownPlanSnapshot (#2125 M4a)', () => {
   it('returns the snapshot untouched when no other Product Set uses it', async () => {
@@ -225,5 +237,148 @@ describe('syncPlanSnapshot and a shared plan snapshot (#2125 M4b-1)', () => {
     // The original is still A's alone and untouched.
     expect(await linked(a)).toEqual([snapshot]);
     expect(await state(snapshot)).toEqual(before);
+  });
+});
+
+describe('cloneConfiguration links the predecessor\'s plans (#2125 M4b-3)', () => {
+  /** A with two plans (its own and a second one), active; B a Draft after it, cloned from A. */
+  async function cloned(): Promise<{ a: number; b: number; snapshot: number; second: number }> {
+    const { a, b, snapshot } = await twoSets();
+    await db.query("UPDATE product_sets SET status = 'active' WHERE id = ?", [a]);
+    const second = await db.transaction((tx) => copyPlanSnapshotToVersion(tx, gymId, snapshot, a));
+    await db.transaction((tx) => cloneConfiguration(tx, gymId, a, b));
+    return { a, b, snapshot, second };
+  }
+  const snapshotCount = async () =>
+    Number((await db.query<any>('SELECT COUNT(*) AS n FROM plan_snapshots WHERE gym_id = ?', [gymId])).rows[0].n);
+  const fee = async (snapId: number) =>
+    Number((await db.query<any>('SELECT membership_fee_price AS f FROM plan_snapshots WHERE id = ?', [snapId])).rows[0].f);
+
+  it('a Draft cloned from the active set links the same snapshots, in the same order, and copies none', async () => {
+    const { a, b, snapshot } = await twoSets();
+    await db.query("UPDATE product_sets SET status = 'active' WHERE id = ?", [a]);
+    await db.transaction((tx) => syncPlanSnapshot(tx, gymId, a));
+    const second = await db.transaction((tx) => copyPlanSnapshotToVersion(tx, gymId, snapshot, a));
+    const before = await snapshotCount();
+    await db.transaction((tx) => cloneConfiguration(tx, gymId, a, b));
+    // Until M4b-3 the clone copied every plan as an inherited snapshot of B.
+    expect(await snapshotCount()).toBe(before);
+    expect(await linkedInOrder(b)).toEqual([snapshot, second]);
+    expect(await linkedInOrder(a)).toEqual([snapshot, second]);
+    expect(await db.transaction((tx) => primaryPlanSnapshotId(tx, gymId, b))).toBe(snapshot);
+    // Seen from B, both carry over from A.
+    const { rows } = await db.query<any>(
+      `SELECT ${planSnapshotInheritedSql('s', '?')} AS i FROM plan_snapshots s WHERE s.id IN (?, ?) ORDER BY s.id`, [b, snapshot, second]);
+    expect(rows.map((r: any) => Number(r.i))).toEqual([1, 1]);
+    // The shared snapshot keeps the state it had: still the active set's, not the Draft's.
+    const { rows: st } = await db.query<any>('SELECT status FROM plan_snapshots WHERE id = ?', [snapshot]);
+    expect(st[0].status).toBe('active');
+  });
+
+  it('editing the primary plan keeps it primary although its copy carries the highest id', async () => {
+    const { a, b, snapshot, second } = await cloned();
+    await db.transaction(async (tx) => {
+      const d = await lockDraft(tx, gymId, b);
+      if (isRefusal(d)) throw new Error(d.kind);
+      expect(await setMembershipFeePrice(tx, d, 30)).toEqual({ ok: true });
+    });
+    const mine = await linkedInOrder(b);
+    expect(mine).toHaveLength(2);
+    const copy = mine[0];
+    expect(copy).not.toBe(snapshot);
+    expect(copy).toBeGreaterThan(second);
+    // The copy took the link's place: first link, so still the primary — by both spellings.
+    expect(mine).toEqual([copy, second]);
+    expect(await db.transaction((tx) => primaryPlanSnapshotId(tx, gymId, b))).toBe(copy);
+    const { rows } = await db.query<any>(`SELECT ${primaryPlanSnapshotSql('?', '?')} AS id`, [b, gymId]);
+    expect(Number(rows[0].id)).toBe(copy);
+    expect(await fee(copy)).toBe(30);
+    expect(await fee(snapshot)).toBe(20);
+    // A is untouched: its own two plans, in its own order.
+    expect(await linkedInOrder(a)).toEqual([snapshot, second]);
+  });
+
+  it('discarding the Draft leaves the shared snapshots to the active set and deletes only its own copy', async () => {
+    const { a, b, snapshot, second } = await cloned();
+    await db.transaction(async (tx) => {
+      const d = await lockDraft(tx, gymId, b);
+      if (isRefusal(d)) throw new Error(d.kind);
+      await setMembershipFeePrice(tx, d, 30);
+    });
+    const [copy] = await linkedInOrder(b);
+    expect(await db.transaction((tx) => discardDraftSet(tx, gymId, b))).toBe(true);
+    const { rows } = await db.query<any>('SELECT id FROM plan_snapshots WHERE id IN (?, ?, ?) ORDER BY id', [snapshot, second, copy]);
+    expect(rows.map((r: any) => Number(r.id))).toEqual([snapshot, second]);
+    expect(await linkedInOrder(a)).toEqual([snapshot, second]);
+  });
+});
+
+describe('activating a version that reuses the plan unchanged keeps its assignment (#2125 M4b-3)', () => {
+  async function activeSet(): Promise<{ owner: number; planId: number; a: number; um: number; snapshot: number }> {
+    const owner = await member();
+    const planId = await plan();
+    const a = await db.transaction(async (tx) => {
+      const d = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: planId, startsAt: TODAY, actor });
+      if (d.kind !== 'created') throw new Error(d.kind);
+      await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: 20, startsAt: TODAY });
+      await addCoverage(tx, { gymId, productSetId: d.productSet.id, memberId: owner, isOwner: true });
+      const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
+      if (out.kind !== 'ok') throw new Error(out.kind);
+      return d.productSet.id;
+    });
+    const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [a]);
+    const snapshot = (await linked(a))[0];
+    return { owner, planId, a, um: Number(rows[0].user_membership_id), snapshot };
+  }
+  /** A successor Draft cloned from A, optionally with its fee edited, then activated. */
+  async function successor(owner: number, planId: number, a: number, edit: boolean): Promise<number> {
+    return db.transaction(async (tx) => {
+      const d = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: planId, startsAt: TODAY, actor });
+      if (d.kind !== 'created') throw new Error(d.kind);
+      await cloneConfiguration(tx, gymId, a, d.productSet.id);
+      if (edit) {
+        const locked = await lockDraft(tx, gymId, d.productSet.id);
+        if (isRefusal(locked)) throw new Error(locked.kind);
+        await setMembershipFeePrice(tx, locked, 30);
+      }
+      const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
+      if (out.kind !== 'ok') throw new Error(out.kind);
+      return d.productSet.id;
+    });
+  }
+  const assignments = async (owner: number) =>
+    (await db.query<any>('SELECT id, status FROM user_memberships WHERE member_id = ? AND gym_id = ? ORDER BY id', [owner, gymId])).rows
+      .map((r: any) => ({ id: Number(r.id), status: String(r.status) }));
+  const snapshotState = async (snapId: number) => {
+    const { rows } = await db.query<any>('SELECT status, source_user_membership_id AS um FROM plan_snapshots WHERE id = ?', [snapId]);
+    return { status: String(rows[0].status), um: rows[0].um == null ? null : Number(rows[0].um) };
+  };
+
+  it('an unchanged plan: the successor takes the assignment over, closes nothing, and the snapshot stays shared', async () => {
+    const { owner, planId, a, um, snapshot } = await activeSet();
+    const b = await successor(owner, planId, a, false);
+    // Until M4b-3 every successor closed the assignment as superseded and opened a same-plan one.
+    expect(await assignments(owner)).toEqual([{ id: um, status: 'active' }]);
+    const { rows } = await db.query<any>('SELECT id, status, user_membership_id AS um FROM product_sets WHERE id IN (?, ?) ORDER BY id', [a, b]);
+    expect(rows.map((r: any) => [String(r.status), Number(r.um)])).toEqual([['superseded', um], ['active', um]]);
+    expect(await linked(a)).toEqual([snapshot]);
+    expect(await linked(b)).toEqual([snapshot]);
+    expect(await snapshotState(snapshot)).toEqual({ status: 'active', um });
+  });
+
+  it('an edited plan: the successor opens its own assignment and the predecessor keeps the original', async () => {
+    const { owner, planId, a, um, snapshot } = await activeSet();
+    const b = await successor(owner, planId, a, true);
+    const rows = await assignments(owner);
+    expect(rows.map((r) => r.status)).toEqual(['superseded', 'active']);
+    expect(rows[0].id).toBe(um);
+    const successorUm = rows[1].id;
+    const { rows: setB } = await db.query<any>('SELECT user_membership_id AS um FROM product_sets WHERE id = ?', [b]);
+    expect(Number(setB[0].um)).toBe(successorUm);
+    const [copy] = await linked(b);
+    expect(copy).not.toBe(snapshot);
+    expect(await linked(a)).toEqual([snapshot]);
+    expect(await snapshotState(copy)).toEqual({ status: 'active', um: successorUm });
+    expect((await snapshotState(snapshot)).um).toBe(um);
   });
 });
