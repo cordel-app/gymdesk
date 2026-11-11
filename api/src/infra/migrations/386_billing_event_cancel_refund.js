@@ -26,6 +26,15 @@
  * both columns are in an FK referential action (MySQL error 3823), so the one
  * writer (`api/src/api/billing-event-refunds.ts`) keeps it.
  *
+ * `fk_payment_requests_refund_of` is ON DELETE CASCADE on purpose: a RESTRICT
+ * self-FK breaks a plain bulk `DELETE FROM payment_requests` (test cleanup, the
+ * dev billing reset), and no route hard-deletes a completed attempt, which is
+ * the only kind a refund can name. `provider_refund_ref` is not UNIQUE: Monei's
+ * refund reference is the payment id, shared by every partial refund of it.
+ *
+ * `down()` deletes every refund row: it is for dev only, never a rollback on
+ * an environment holding real refunds.
+ *
  * Nothing is backfilled: every existing row is a `payment` and no event is
  * cancelled. Cost: `ADD CONSTRAINT … CHECK` rebuilds `payment_requests` under
  * ALGORITHM=COPY (same window as migration 271).
@@ -65,7 +74,7 @@ exports.up = async (knex) => {
       payment_request_id INT UNSIGNED NOT NULL,
       billing_event_line_id INT UNSIGNED NOT NULL,
       amount DECIMAL(10,2) NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT (UTC_TIMESTAMP()),
       created_by VARCHAR(255) NULL,
       UNIQUE KEY uq_prl_refund_line (payment_request_id, billing_event_line_id),
       KEY idx_prl_line (billing_event_line_id),
@@ -85,7 +94,10 @@ exports.down = async (knex) => {
   await knex.raw("DELETE FROM feature_flags WHERE feature_key = 'payments.billing_events.refund'");
   await knex.raw('DROP TABLE IF EXISTS payment_refund_lines');
   await knex.raw("DELETE FROM payment_requests WHERE transaction_type = 'refund'");
-  await knex.raw(`ALTER TABLE payment_requests DROP CHECK ${CHECK}`).catch(() => {});
+  const [[d]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_requests' AND CONSTRAINT_NAME = ?`, [CHECK]);
+  if (Number(d.cnt) > 0) await knex.raw(`ALTER TABLE payment_requests DROP CHECK ${CHECK}`);
   if (await hasCol(knex, 'payment_requests', 'transaction_type')) {
     await knex.raw(`ALTER TABLE payment_requests
       DROP FOREIGN KEY fk_payment_requests_refund_of,
