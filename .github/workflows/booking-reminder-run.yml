@@ -18,6 +18,11 @@ name: Booking Reminder Run
 # makes a repeated pass safe is that the alert row *is* the record — a booking
 # whose reminder exists is no longer a candidate (§5) — so a missed pass costs
 # punctuality and nothing else, and a duplicate pass costs nothing at all.
+#
+# #2477 stage 2: the same pass discards ProductSet Drafts idle past their two
+# hours (`expireDrafts()`, reported as `drafts_expired`, idempotent per Draft),
+# so an abandoned Draft is gone within a quarter of an hour. A failure there is
+# a `failures[]` entry and turns the run red like a reminder failure does.
 on:
   schedule:
     # Every 15 minutes. GitHub's cron is best-effort and runs late under load,
