@@ -12,6 +12,7 @@ import {
 } from '../domain/billingSimulation';
 import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/productClassification';
 import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
+import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
@@ -49,6 +50,11 @@ const toDateOnly = (v: unknown): string =>
  * The schedule `(root, key)`, created on first use and **never re-anchored**:
  * schedule identity is stable across the versions of a chain, so a new version
  * finds the row its predecessor made and keeps billing on the same dates.
+ *
+ * #2125 M5c — a new schedule is anchored on its cadence's billing calendar (the
+ * 1st of the month, the 4-week grid, Mondays; a yearly one on its own date),
+ * the grid date on or before `anchorDate`: a start between two grid dates pays a
+ * prorated first stretch and then bills on the grid (`alignTo`).
  */
 export async function ensureSchedule(tx: Tx, input: {
   gymId: string; rootProductSetId: number; key: string; anchorDate: string;
@@ -58,7 +64,9 @@ export async function ensureSchedule(tx: Tx, input: {
     `INSERT IGNORE INTO product_set_schedules
        (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.gymId, input.rootProductSetId, input.key, input.anchorDate, input.cadenceInterval, input.cadenceUnit],
+    [input.gymId, input.rootProductSetId, input.key,
+      calendarAnchorOnOrBefore({ interval: input.cadenceInterval, unit: input.cadenceUnit }, input.anchorDate),
+      input.cadenceInterval, input.cadenceUnit],
   );
   const { rows } = await tx.query<{ id: number }>(
     `SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = ?`,
@@ -272,7 +280,7 @@ export async function loadProductSetSimulationAssignment(
             snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
             snap.pay_beforehand_periods, snap.auto_renew,
             snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
-            sch.cadence_interval, sch.cadence_unit
+            sch.cadence_interval, sch.cadence_unit, sch.anchor_date
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
@@ -363,6 +371,10 @@ export async function loadProductSetSimulationAssignment(
       cadence, row.auto_renew,
     ),
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+    // #2125 M5c — the same alignment `loadProductSetSimulationAssignments()` gives the plan, so a
+    // forecast read through this loader shows the dates the persisted obligations fall on.
+    ...(row.anchor_date != null && toDateOnly(row.anchor_date) < startsAt
+      ? { alignTo: toDateOnly(row.anchor_date) } : {}),
   };
 }
 

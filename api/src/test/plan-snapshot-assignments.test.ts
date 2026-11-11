@@ -20,6 +20,8 @@ const day = (offset: number) => {
   const d = new Date(); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10);
 };
 const TODAY = day(0);
+// #2125 M5c — the next 1st: a monthly plan starting there sits on its schedule's grid and is not prorated.
+const NEXT_FIRST = (() => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10); })();
 
 async function member(): Promise<number> {
   const { insertId } = await db.query(
@@ -109,7 +111,7 @@ describe('loadProductSetSimulationAssignments', () => {
     const first = await plan({ price: 50, periodical: [{ productId: locker }] });
     const second = await plan({ price: 30 });
     const owner = await member();
-    const set = await newVersion(owner, first, TODAY, 50);
+    const set = await newVersion(owner, first, NEXT_FIRST, 50);
     const before = await loadProductSetSimulationAssignments(gymId, set.id);
 
     const { rows: snap } = await db.query<any>(
@@ -119,7 +121,7 @@ describe('loadProductSetSimulationAssignments', () => {
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
        VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
-      [gymId, owner, second, TODAY, snap[0].schedule_id]);
+      [gymId, owner, second, NEXT_FIRST, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id, Number(added));
 
     const list = await loadProductSetSimulationAssignments(gymId, set.id);
@@ -168,7 +170,7 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
     const first = await plan({ price: 50 });
     const second = await plan({ price: 30 });
     const owner = await member();
-    const set = await newVersion(owner, first, TODAY, 50);
+    const set = await newVersion(owner, first, NEXT_FIRST, 50);
 
     const alone = await planScheduledEvents(gymId, set.id, TODAY, 2);
     const aloneFees = alone.map((e) => e.lines.filter((l) => l.kind === 'membership_fee').length);
@@ -180,7 +182,7 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
        VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
-      [gymId, owner, second, TODAY, snap[0].schedule_id]);
+      [gymId, owner, second, NEXT_FIRST, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id, Number(added));
 
     const both = await planScheduledEvents(gymId, set.id, TODAY, 2);

@@ -1,3 +1,4 @@
+import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
@@ -167,11 +168,18 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
   // (a replacement keeps the chain's dates) — but a first version that has not
   // been committed yet is the only thing that anchored them, so moving its start
   // date moves them with it.
+  // #2125 M5c — the anchors are calendar-grid dates, so a schedule moves when its anchor is the grid
+  // date of the old start, and moves to the grid date of the new one.
   if (oldStart && newStart && oldStart !== newStart && Number(before[0]?.root_product_set_id) === draft.id) {
-    await tx.query(
-      `UPDATE product_set_schedules SET anchor_date = ?
-        WHERE gym_id = ? AND root_product_set_id = ? AND anchor_date = ?`,
-      [newStart, gymId, draft.id, oldStart]);
+    const { rows: schedules } = await tx.query<any>(
+      `SELECT id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
+        WHERE gym_id = ? AND root_product_set_id = ?`, [gymId, draft.id]);
+    for (const s of schedules) {
+      const cadence = { interval: Number(s.cadence_interval), unit: String(s.cadence_unit) };
+      if (dateOnly(s.anchor_date) !== calendarAnchorOnOrBefore(cadence, oldStart)) continue;
+      await tx.query('UPDATE product_set_schedules SET anchor_date = ? WHERE id = ?',
+        [calendarAnchorOnOrBefore(cadence, newStart), s.id]);
+    }
   }
 }
 

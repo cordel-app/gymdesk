@@ -539,6 +539,38 @@ Duration charged on the first of its periods (#946), an applied Promotion's Memb
 Benefit, the Personal Membership Fee Benefit — is therefore in the persisted amount, and a
 zero amount is a cycle the contract waives.
 
+### B4b. When obligations fall: the billing calendar (#2125 M5c)
+
+Decided by Oscar on 2026-11-11 (Option B on #2125). A schedule is anchored on its
+cadence's calendar grid, never on a start date: **monthly** on the 1st, **every 4 weeks**
+on the 28-day grid anchored on Monday 2026-11-02, **weekly** on Mondays, **yearly** on the
+obligation's own anniversary (any other stored cadence keeps its own date too).
+`calendarAnchorOnOrBefore()` (`api/src/domain/calendarSchedule.ts`) is the one rule, applied
+by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
+
+- **A plan starting off the grid** (`alignTo`, #2125 stage 8's mechanism) is charged, on its
+  start date, the stretch to the next grid date prorated by the existing proration rule
+  (`prorate()`: monthly price ÷ 31 × days) **plus its whole Pre-paid Duration**; its Billing &
+  Duration (free, pre-paid, paid, bonus) is counted from that next grid date, so the stretch
+  consumes no period, and regular billing starts on the grid. A plan starting on a grid date
+  is not prorated. Example: €31/month, 3 pre-paid, starting 17 Nov → €14 + €93 on 17 Nov,
+  nothing on 1 Dec, 1 Jan or 1 Feb, €31 from 1 Mar.
+- **Existing schedules** are moved by `npm run schedules:realign`
+  (`api/src/api/schedule-realignment.ts`, dry run unless `--execute`, one transaction per
+  chain, run from the VPS as `node dist/scripts/realign-billing-schedules.js`): each
+  off-grid anchor moves to the grid date on or before it, its future obligations with no
+  `payment_requests` row are deleted and regenerated from the Active version by
+  `materialiseScheduledEvents()`, and a future obligation that already has an attempt is
+  **kept and listed**. No transition proration, credit or refund; past events, attempts and
+  receipts are untouched; a second run changes nothing.
+- **Not yet**: consolidating two schedules of one cadence in a chain into one, and the
+  `(owner, periodicity)` schedule identity. The script lists such chains; until then their
+  schedules both sit on the grid and bill on the same dates as separate events.
+- **Known gap**: the per-date pricers (`priceMembershipFeeOn()`, used by My Membership's
+  current fee) still count Billing & Duration from the plan's own start, so for an aligned
+  plan with a configured duration they may show a different period status than the
+  persisted obligations, which are the engine's.
+
 ### B5. Outcomes
 
 Per due event, under the event's row lock, exactly one of these:

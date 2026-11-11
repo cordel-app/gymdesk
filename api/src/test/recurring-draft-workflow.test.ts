@@ -24,7 +24,7 @@ vi.mock('../payments', async (importOriginal) => {
 
 import { advanceBillingDate } from '../domain/billingDate';
 import { daysBetween } from '../domain/proration';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 
 const SECRET = 'test-1537-webhook';
 let gymId: string;
@@ -217,7 +217,7 @@ describe('Review your changes (#1537)', () => {
     expect(review.body.changes).toEqual([
       expect.objectContaining({ kind: 'added', line: expect.objectContaining({ productId: towel, quantity: 2 }) }),
     ]);
-    expect(review.body.amount_due).toBe(10);
+    expect(review.body.amount_due).toBe(proratedToNextFirst(10));
     expect(review.body.payment_required).toBe(true);
     // #2446 stage 3 — the new line's per-period price is the engine's, and the
     // Summary's amount payable is the amount Save & Pay charges.
