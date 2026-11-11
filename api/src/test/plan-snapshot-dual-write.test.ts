@@ -59,7 +59,7 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     const rows = await snapshots(setId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('draft');
-    expect(rows[0].is_inherited).toBe(0);
+    expect(rows[0].copied_from_plan_snapshot_id).toBeNull();
     expect(rows[0].member_id).toBe(owner);
     const { rows: ben } = await db.query<any>('SELECT member_id FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?', [rows[0].id]);
     expect(ben.map((b) => b.member_id)).toEqual([owner]);
