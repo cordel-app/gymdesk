@@ -60,6 +60,13 @@ export interface AssignedPlanSnapshotBenefit {
   /** #2483 — tax rate (%) and what the line's own treatment took off its total, from the server. */
   applied_tax_percent?: number | null;
   direct_discount_line_incl_tax?: number | null;
+  /**
+   * #2478 — the Product's image URLs and description, for the circular
+   * thumbnail and its detail modal. Display only; `null` when it has none.
+   */
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  description?: string | null;
 }
 
 /** The assignment's frozen commercial configuration (#635 §11–§17). */
@@ -171,6 +178,11 @@ export interface AppliedPromotion {
   session_grants: AppliedPromotionGrant[];
   oneoff_grants: AppliedPromotionGrant[];
   periodical_grants: AppliedPromotionGrant[];
+  /** #2478 — the Promotion's image URLs (the live row's; display only). */
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
+  /** #2478 — the Membership Plans the Promotion targets, for its detail modal. */
+  included_plans?: Array<{ id: number; name: string }>;
 }
 
 /**

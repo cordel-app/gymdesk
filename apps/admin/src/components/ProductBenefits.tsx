@@ -673,11 +673,23 @@ function BenefitPriceCell({
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
-  showRequirement = false, showPlanMandatory = false,
+  showRequirement = false, showPlanMandatory = false, renderItemPrefix, renderNestedRow,
 }: {
   t: Translate;
   emptyKey: string;
   rows: ProductBenefitRow[];
+  /**
+   * #2478 — drawn immediately left of a row's Product name (the circular
+   * thumbnail). Whatever it returns owns its own click; `null` draws nothing
+   * and reserves no space.
+   */
+  renderItemPrefix?: (row: ProductBenefitRow, index: number) => React.ReactNode;
+  /**
+   * #2478 — content drawn in a full-width row directly under a row (the
+   * Promotions applied to that Product). `null` adds no row, so the grid's
+   * columns stay aligned.
+   */
+  renderNestedRow?: (row: ProductBenefitRow, index: number) => React.ReactNode;
   showFrequency: boolean;
   /** #918 — see `BenefitFrequencyColumn`. The read-only half of the same column. */
   frequencyColumn?: BenefitFrequencyColumn;
@@ -725,10 +737,11 @@ export function ProductBenefitView({
     showPlanMandatory, quantityColumn,
   });
 
-  const cell = (col: ProductBenefitColumn, row: ProductBenefitRow): React.ReactNode => {
+  const cell = (col: ProductBenefitColumn, row: ProductBenefitRow, index: number): React.ReactNode => {
     switch (col.key) {
-      case 'item':
-        return (
+      case 'item': {
+        const prefix = renderItemPrefix ? renderItemPrefix(row, index) : null;
+        const name = (
           <>
             {row.product_name}{row.product_status !== 'active' && ` ${t('inactive_item_tag')}`}
             {enforceMandatory && isMandatoryBenefitRow(row) && (
@@ -736,6 +749,10 @@ export function ProductBenefitView({
             )}
           </>
         );
+        return prefix
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{prefix}<span>{name}</span></span>
+          : name;
+      }
       case 'quantity':
         // #1135: a Duration reads as what it means — `3 months` rather than `3`,
         // from the item's own frequency. The stored number is the fallback, for
@@ -812,13 +829,23 @@ export function ProductBenefitView({
               render rows whose Product is gone — an applied Promotion's
               grants keep the item's identity after it is deleted, and two such
               lines would otherwise share one key. */}
-          {rows.map((r, idx) => (
-            <tr key={`${r.product_id}-${idx}`}>
-              {columns.map((col) => (
-                <td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((r, idx) => {
+            const nested = renderNestedRow ? renderNestedRow(r, idx) : null;
+            return (
+              <React.Fragment key={`${r.product_id}-${idx}`}>
+                <tr>
+                  {columns.map((col) => (
+                    <td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r, idx)}</td>
+                  ))}
+                </tr>
+                {nested != null && (
+                  <tr>
+                    <td colSpan={columns.length} style={{ ...tdSt, paddingTop: 0 }}>{nested}</td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

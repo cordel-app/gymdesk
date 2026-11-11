@@ -34,9 +34,8 @@ export const ASSIGNED_PLAN_SECTION_ORDER = [
   'benefits_oneoff',
   'benefits_session',
   'benefits_period',
-  // §3/§6 — the Promotions this assignment was agreed with, each from its own
-  // snapshot.
-  'section_promotions',
+  // #2478 — no `section_promotions`: each applied Promotion is drawn under the
+  // Product line it affects (or the Membership Fee) inside the sections above.
   // §7 then §8: one row per billing *period* about the Membership Fee, then one
   // group per billing *date* listing every line that falls on it. Same order as
   // the Plan card's Example Timeline and Billing Event Simulation, and neither

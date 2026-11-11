@@ -131,9 +131,9 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
     expect(src).toMatch(/disabled=\{editing !== null\}/);
   });
 
-  it('introduces no modal', () => {
+  it('introduces no editing modal (the #2478 detail modals only read)', () => {
     expect(src).not.toContain('CrudModal');
-    expect(src).not.toContain('Modal');
+    expect(src.replace(/\b(ProductDetailModal|PromotionDetailModal)\b/g, '')).not.toContain('Modal');
   });
 
   it('adds no Product-keyed Membership Fee Benefits section (§6)', () => {
