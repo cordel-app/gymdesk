@@ -7,7 +7,7 @@ import { taxBreakdown, type LineInput, type TaxBreakdown } from '../domain/billi
 
 export async function loadInvoiceFigures(
   exec: Tx, gymId: string, eventId: number, eventAmount: number,
-): Promise<{ lines: LineInput[]; totals: TaxBreakdown }> {
+): Promise<{ lines: LineInput[]; totals: TaxBreakdown; fallbackRate: number }> {
   const { rows: taxRows } = await exec.query<any>(
     "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1", [gymId]);
   const fallbackRate = taxRows[0] ? parseFloat(taxRows[0].rate) : 21;
@@ -21,5 +21,5 @@ export async function loadInvoiceFigures(
         taxRate: l.tax_rate_percent == null ? null : parseFloat(l.tax_rate_percent),
       }))
     : [{ name: 'Membership', quantity: 1, amount: eventAmount, amountExclTax: null, taxRate: null }];
-  return { lines, totals: taxBreakdown(lines, eventAmount, fallbackRate) };
+  return { lines, totals: taxBreakdown(lines, eventAmount, fallbackRate), fallbackRate };
 }
