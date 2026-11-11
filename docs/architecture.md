@@ -1053,6 +1053,10 @@ All requests go through `apiFetch()` (from `useApiClient()`), which:
 
 **Header allow-list gotcha (#362)**: the proxy route (`app/api/proxy/[...path]/route.ts` in both `apps/admin` and `apps/member`) only forwards headers on an explicit allow-list (`authorization`, `x-gym-id`, `x-center-id`, `x-impersonate-as`, `content-type`). Any new request header the frontend needs the backend to see (e.g. a future context header) must be added to this allow-list in **both** apps' proxy routes, or it is silently dropped and the backend never sees it — this is exactly what broke impersonation end-to-end until #362 fixed the member app's proxy.
 
+### Tax & Compliance (#2647)
+
+One Gym = one legal entity = one taxpayer, so there is no `legal_entities` table: the fiscal identity is columns of `gyms` — migration 114's `legal_name`, `cif` (the tax identification number, whatever its type) and `fiscal_address`, plus migration 390's `country_code`, `tax_id_type`, `fiscal_address_line2`, `fiscal_postal_code`, `fiscal_city`, `fiscal_region` and `tax_registration_date`. `api/src/domain/taxProfile.ts` (pure) decides the fiscal countries, the identifier types each offers and how an identifier is normalised and validated; a country is added there and nowhere else (no CHECK on `gyms`). `api/src/api/tax-compliance.ts` is mounted at `/system/tax-compliance` behind `requireModuleAccess('SYSTEM')`, writes behind `requireModuleWrite('SYSTEM')`. `compliance_audit_events` is the gym's append-only compliance history, written only through `recordComplianceEvent()` (`api/src/api/compliance-audit-events.ts`) in the transaction of the change it records; its `metadata` names what changed and never carries a secret. Stages 2–3 add `gym_tax_configs`, `compliance_integrations` and `compliance_credentials` beside it.
+
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:
 ```ts

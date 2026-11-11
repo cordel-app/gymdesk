@@ -42,15 +42,15 @@ exports.up = async (knex) => {
   if (!(await knex.schema.hasTable('compliance_audit_events'))) {
     await knex.raw(`
       CREATE TABLE compliance_audit_events (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         gym_id CHAR(36) NOT NULL,
-        integration_id BIGINT UNSIGNED NULL,
+        integration_id INT UNSIGNED NULL,
         provider VARCHAR(50) NULL,
         event_type VARCHAR(50) NOT NULL,
         description VARCHAR(500) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'success',
         metadata JSON NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME NOT NULL DEFAULT (UTC_TIMESTAMP()),
         created_by VARCHAR(255) NULL,
         KEY idx_cae_gym_created (gym_id, created_at),
         CONSTRAINT fk_cae_gym FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
