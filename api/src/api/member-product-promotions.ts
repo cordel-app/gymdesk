@@ -257,11 +257,33 @@ export async function writePurchasePromotionStep(
   );
 }
 
-/** The columns every read of an application projects. */
+/**
+ * #2126 stage 3g — the Promotions frozen onto each purchase, read from
+ * `product_promotion_snapshots` (kept equal to `member_products_oneoff_promotion_snapshot`
+ * by stage 2's dual-write, `syncProductSnapshotForPurchase()`), through the purchase's
+ * own Product snapshot (a Sessions package or any other one-off). `id` is still the
+ * legacy application id (`source_purchase_promotion_id`) and `member_product_id` the
+ * purchase id (the parent snapshot's `source_id`), so the shapes and the order (by
+ * application id) are unchanged.
+ */
 const APPLICATION_COLUMNS = `
-  mpp.id, mpp.member_product_id, mpp.promotion_id, mpp.promotion_name,
-  mpp.benefit_action, mpp.benefit_value, mpp.duration_cycles,
-  mpp.regular_amount, mpp.final_amount, mpp.applied_at`;
+  pp.source_purchase_promotion_id AS id, par.source_id AS member_product_id,
+  pp.promotion_id, pp.promotion_name, pp.benefit_action, pp.benefit_value,
+  pp.duration_cycles, pp.regular_amount, pp.final_amount, pp.applied_at`;
+
+function purchaseApplicationsSql(placeholders: string): string {
+  const arm = (parent: string, parentCol: string) => `
+    SELECT ${APPLICATION_COLUMNS}
+      FROM product_promotion_snapshots pp
+      JOIN ${parent} par ON par.id = pp.${parentCol} AND par.gym_id = pp.gym_id
+     WHERE pp.gym_id = ? AND pp.source_purchase_promotion_id IS NOT NULL
+       AND par.source_id IN (${placeholders})`;
+  return `SELECT * FROM (
+    ${arm('product_session_snapshots', 'product_session_snapshot_id')}
+    UNION ALL
+    ${arm('product_oneoff_snapshots', 'product_oneoff_snapshot_id')}
+  ) mpp ORDER BY mpp.id ASC`;
+}
 
 /**
  * The Promotion applied to each of these purchases, keyed by purchase id.
@@ -284,11 +306,8 @@ export async function loadAppliedPromotionLists(
   const ids = Array.from(new Set(memberProductIds.map(Number))).filter((id) => Number.isFinite(id));
   if (ids.length === 0) return byPurchase;
   const { rows } = await db.query<any>(
-    `SELECT ${APPLICATION_COLUMNS}
-       FROM member_products_oneoff_promotion_snapshot mpp
-      WHERE mpp.gym_id = ? AND mpp.member_product_id IN (${ids.map(() => '?').join(',')})
-      ORDER BY mpp.id ASC`,
-    [gymId, ...ids],
+    purchaseApplicationsSql(ids.map(() => '?').join(',')),
+    [gymId, ...ids, gymId, ...ids],
   );
   for (const row of rows as any[]) {
     const key = Number(row.member_product_id);
@@ -306,10 +325,8 @@ export async function loadAppliedPromotions(
   if (ids.length === 0) return byPurchase;
 
   const { rows } = await db.query<any>(
-    `SELECT ${APPLICATION_COLUMNS}
-       FROM member_products_oneoff_promotion_snapshot mpp
-      WHERE mpp.gym_id = ? AND mpp.member_product_id IN (${ids.map(() => '?').join(',')})`,
-    [gymId, ...ids],
+    purchaseApplicationsSql(ids.map(() => '?').join(',')),
+    [gymId, ...ids, gymId, ...ids],
   );
   for (const row of rows as any[]) {
     // A purchase may now carry several (#1521); this older single-valued read
@@ -551,29 +568,34 @@ export async function loadRecurringLinePromotions(
  * whose own frozen columns (`unit_price`, `list_unit_price`,
  * `direct_discount_percent`) are what is read — never the live catalogue.
  * Nothing is written; this is a projection.
+ *
+ * #2126 stage 3g: the lines are read from `product_periodical_snapshots` (kept
+ * equal to each version's lines by stage 2's dual-write), with the legacy line
+ * id (`source_id`) still reported as each line's `id`.
  */
 async function loadRecurringPurchases(
   gymId: string,
   memberId: number,
 ): Promise<MemberPurchasedProduct[]> {
   const { rows } = await db.query<any>(
-    `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
-            s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
+    `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
+            s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
+            s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
             s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status,
-            COALESCE(s.line_ref, s.id) AS line_ref,
+            COALESCE(s.line_ref, s.source_id) AS line_ref,
             ps.created_by AS set_created_by,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
-       JOIN member_products_recurrent_snapshot s
-         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
+       JOIN product_periodical_snapshots s
+         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
        LEFT JOIN payment_requests pr
               ON pr.id = ps.payment_request_id AND pr.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
         AND ps.status IN ('active', 'pending_payment')
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
-      ORDER BY s.created_at DESC, s.id DESC`,
+      ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],
   );
   // #1882 — a line of the Active version that the member's open Draft no longer
@@ -583,19 +605,20 @@ async function loadRecurringPurchases(
   // Draft added shows as a Draft row, and a line it changed shows the Draft's
   // frozen figures, so the list reflects the Product Set being edited.
   const { rows: draftRows } = await db.query<any>(
-    `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
-            s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
+    `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
+            s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
+            s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
             s.currency, s.starts_at, s.created_at, s.origin,
-            COALESCE(s.line_ref, s.id) AS line_ref, ps.created_by AS set_created_by,
+            COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
-       JOIN member_products_recurrent_snapshot s
-         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
+       JOIN product_periodical_snapshots s
+         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
-      ORDER BY s.created_at DESC, s.id DESC`,
+      ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],
   );
   const hasDraft = draftRows.length > 0 || (await db.query<any>(
