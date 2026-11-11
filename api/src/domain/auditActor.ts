@@ -202,4 +202,6 @@ export const AUDITED_TABLES: readonly string[] = [
   // #2647 stage 2 (migration 392)
   'compliance_integrations',
   'gym_tax_configs',
+  // #2647 stage 3 (migration 393)
+  'compliance_credentials',
 ];
