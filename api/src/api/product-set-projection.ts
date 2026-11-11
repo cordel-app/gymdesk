@@ -3,6 +3,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
+import { cancellationStatusFor } from '../domain/assignmentStatus';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -64,25 +65,33 @@ async function closeAssignment(
   /** `superseded` when a successor takes the plan over, `cancelled` when the member is left with none (#1991). */
   closedAs: 'cancelled' | 'superseded' = 'cancelled',
 ) {
-  const { rows: before } = await tx.query<{ status: string; member_id: number }>(
-    `SELECT status, member_id FROM user_memberships
+  const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
+    `SELECT status, member_id, ends_at FROM user_memberships
       WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
     [id, gymId]);
   if (!before[0]) return;
+  // #2659 stage 2: a member's cancellation keeps the plan running to its last
+  // paid day (`ends_at`) as `active_cancel_at_period_end` when that day is today
+  // or later; the end-of-period sweep moves it to `cancelled` afterwards.
+  const current = dateOnly(before[0].ends_at);
+  const newEndsAt = current != null && current < endsAt ? current : endsAt;
+  const status = closedAs === 'superseded'
+    ? 'superseded'
+    : cancellationStatusFor(newEndsAt, new Date().toISOString().slice(0, 10));
   await tx.query(
     `UPDATE user_memberships
         SET status = ?, closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
-            ends_at = LEAST(COALESCE(ends_at, ?), ?),
+            ends_at = ?,
             modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ?`,
-    [closedAs, endsAt, endsAt, actor, id, gymId],
+    [status, newEndsAt, actor, id, gymId],
   );
   if (closedAs === 'superseded') await supersedeApplications(tx, gymId, id, actor);
   // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
   const { recordStatusChange } = await import('./billing-events');
   await recordStatusChange(tx, {
     gymId, userMembershipId: id, memberId: Number(before[0].member_id),
-    previousStatus: before[0].status, newStatus: closedAs, source: 'system', actorUserId: null,
+    previousStatus: before[0].status, newStatus: status, source: 'system', actorUserId: null,
   });
 }
 

@@ -544,11 +544,11 @@ describe('GET /me/membership — a plan that cancels on its end date (#2660)', (
     const memberId = await createCallingMember(gymId);
     planId = await createPlan(gymId, { interval: 1, unit: 'month' });
     const pastPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
-    // Cancelled, but paid through a day still ahead: the Admin reads it
+    // Cancelled, but paid through a day still ahead (stored as such since #2659 stage 2): the Admin reads it
     // `cancels_on_end_date` (LIFECYCLE_STATUS_SQL), so the member must too.
     await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, base_price)
-       VALUES (?, ?, ?, 'cancelled', '2026-06-01', DATE_ADD(UTC_DATE(), INTERVAL 20 DAY), NOW(), 60)`,
+       VALUES (?, ?, ?, 'active_cancel_at_period_end', '2026-06-01', DATE_ADD(UTC_DATE(), INTERVAL 20 DAY), NOW(), 60)`,
       [gymId, memberId, planId],
     );
     // An expired plan sorts ahead of a cancelled one in the ordering.
