@@ -114,7 +114,8 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
  */
 export async function copyPlanSnapshotToVersion(
   tx: Tx, gymId: string, fromSnapshotId: number, toSetId: number,
-  opts: { keepAssignment?: boolean } = { keepAssignment: true },
+  /** `link: false` leaves the junction to the caller (`ownPlanSnapshot()` re-points an existing link). */
+  opts: { keepAssignment?: boolean; link?: boolean } = { keepAssignment: true },
 ): Promise<number> {
   const { insertId } = await tx.query(
     `INSERT INTO plan_snapshots
@@ -130,7 +131,9 @@ export async function copyPlanSnapshotToVersion(
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, toSetId, fromSnapshotId, gymId]);
-  await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
+  if (opts.link !== false) {
+    await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
+  }
   await tx.query(
     `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
      SELECT gym_id, ?, member_id, is_owner FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
@@ -185,7 +188,7 @@ export async function mergeActiveVersionIntoDraft(
   const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
     `SELECT s.id, s.source_user_membership_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`,
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id`,
     [gymId, activeSetId]);
   for (const plan of plans) {
     if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;

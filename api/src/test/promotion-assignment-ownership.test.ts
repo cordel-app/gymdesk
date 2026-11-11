@@ -123,28 +123,30 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     expect(copies.length).toBe(1);
   });
 
-  it('activation opens a successor assignment that owns its copies and keeps the predecessor\'s as history', async () => {
+  it('activation of a version that leaves the plan unchanged keeps the assignment, which owns the copies; the predecessor\'s are history (M4b-3)', async () => {
     const owner = await member();
     const promo = await promotion();
-    const umV1 = await assignmentOf(await commit(owner, [promo]));
+    const v1 = await commit(owner, [promo]);
+    const umV1 = await assignmentOf(v1);
     const draftId = await draftFrom(owner);
     await db.transaction(async (tx) => {
       const out = await activateWithEvents(tx, { gymId, productSetId: draftId, today: TODAY });
       if (out.kind !== 'ok') throw new Error(out.kind);
     });
+    // Until M4b-3 every successor opened its own assignment; the plan here is the predecessor's own
+    // snapshot (linked, not copied), so its assignment continues and the successor's copies are its.
     const umV2 = await assignmentOf(draftId);
-    expect(umV2).not.toBe(umV1);
-    expect(await names(umV2)).toEqual([promo]);
-    // #1991: the predecessor and its application are `superseded`, snapshots untouched.
-    expect(await names(umV1)).toEqual([]);
+    expect(umV2).toBe(umV1);
+    expect(await names(umV1)).toEqual([promo]);
+    const { rows: own } = await db.query<any>(
+      'SELECT product_set_id, status FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
+    expect(own.map((r: any) => [Number(r.product_set_id), r.status])).toEqual([[draftId, 'applied']]);
+    // #1991: the predecessor's application is `superseded`, kept as that version's history, snapshot untouched.
     const { rows: kept } = await db.query<any>(
-      'SELECT promotion_id, status, snapshot IS NOT NULL AS has_snapshot FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
-    expect(kept.map((r: any) => [Number(r.promotion_id), r.status, Number(r.has_snapshot)])).toEqual([[promo, 'superseded', 1]]);
+      'SELECT promotion_id, status, user_membership_id, snapshot IS NOT NULL AS has_snapshot FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
+    expect(kept.map((r: any) => [Number(r.promotion_id), r.status, r.user_membership_id, Number(r.has_snapshot)])).toEqual([[promo, 'superseded', null, 1]]);
     const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [umV1]);
-    expect(rows[0].status).toBe('superseded');
-    const { rows: ids } = await db.query<any>(
-      'SELECT COUNT(DISTINCT id) AS n FROM user_membership_promotions WHERE user_membership_id IN (?, ?)', [umV1, umV2]);
-    expect(Number(ids[0].n)).toBe(2);
+    expect(rows[0].status).toBe('active');
   });
 
   it('keeps the agreed terms when the catalogue Promotion is later edited or soft-deleted', async () => {

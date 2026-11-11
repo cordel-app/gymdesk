@@ -5,6 +5,7 @@ import { createDraft, addCoverage } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ensureRecurringDraft } from '../api/recurring-purchase-draft';
 import { addPlanSnapshotToVersion } from '../api/plan-snapshot-add';
+import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 
 // #2125 stage 9 — a version holds a second Membership Plan: it survives sync and cloning, and
 // activating the version bills both plans, so adding one never ends the first plan's billing.
@@ -75,9 +76,13 @@ describe('adding a second Membership Plan to an active version', () => {
       return out.productSetId;
     });
 
+    // M4b-3: the first plan is the predecessor's own snapshot, linked (inherited by the link, not a
+    // flagged copy); the second is the version's own. Both read through the junction, in link order.
     const { rows: snaps } = await db.query<any>(
-      'SELECT membership_plan_id, is_inherited, status FROM plan_snapshots WHERE product_set_id = ? ORDER BY id', [v2]);
-    expect(snaps.map((s: any) => [Number(s.membership_plan_id), s.is_inherited, s.status]))
+      `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited, s.status
+         FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? ORDER BY j.id`, [v2]);
+    expect(snaps.map((s: any) => [Number(s.membership_plan_id), Number(s.is_inherited), s.status]))
       .toEqual([[first, 1, 'active'], [second, 0, 'active']]);
 
     const after = await feeLines(v2);
@@ -112,9 +117,13 @@ describe('adding a second Membership Plan to an active version', () => {
       if (out.kind !== 'ok') throw new Error(out.kind);
       return out.productSetId;
     });
+    // M4b-3: the further clone links both of v2's plans (the native one included) and copies neither.
     const { rows } = await db.query<any>(
-      'SELECT membership_plan_id, is_inherited FROM plan_snapshots WHERE product_set_id = ? ORDER BY id', [v3]);
-    expect(rows.map((r: any) => [Number(r.membership_plan_id), r.is_inherited])).toEqual([[first, 1], [second, 1]]);
+      `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited,
+              (s.product_set_id = j.product_set_id) AS own
+         FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? ORDER BY j.id`, [v3]);
+    expect(rows.map((r: any) => [Number(r.membership_plan_id), Number(r.is_inherited), Number(r.own)])).toEqual([[first, 1, 0], [second, 1, 0]]);
     expect(v3).not.toBe(v2);
   });
 });

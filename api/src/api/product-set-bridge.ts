@@ -1,5 +1,4 @@
 import { loadPaidThrough } from './cancellation-entitlement';
-import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
@@ -46,16 +45,16 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 
 /** The configuration of `fromSetId`, copied onto `toSetId` (a fresh Draft). */
 export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: number, toSetId: number): Promise<void> {
-  // #2125 stage 17: the plan snapshots are the configuration — every plan of the predecessor is
-  // copied (its included Products, beneficiaries and Promotions with it) as an inherited snapshot.
-  // The primary one is not yet the contract of any assignment (the successor takes its own at
-  // activation), so it does not carry the predecessor's.
-  const { rows: plans } = await tx.query<{ id: number }>(
-    `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY s.id`, [gymId, fromSetId]);
-  for (const [index, plan] of plans.entries()) {
-    await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), toSetId, { keepAssignment: index > 0 });
-  }
+  // #2125 M4b-3: the plan snapshots are the configuration, and a plan the new version does not change
+  // is the **same** snapshot — the predecessor's, linked, not copied (Oscar's M4b rule: "an unmodified
+  // Membership Plan: the Draft reuses the exact same snapshot referenced by the active Product Set").
+  // It stays immutable to both sets; the first writer that edits one plan owns it for the new version
+  // (`ownPlanSnapshot()`, M4b-2), which is when, and only when, a copy is made. The predecessor's order
+  // is kept so its primary plan is the new version's primary (the first link).
+  await tx.query(
+    `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
+     SELECT ?, psj.plan_snapshot_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id`, [toSetId, gymId, fromSetId]);
 
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
@@ -304,7 +303,7 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   const { rows: snap } = await tx.query<any>(
     `SELECT s.free_periods, s.pay_beforehand_periods, s.recurring_billing_interval, s.recurring_billing_unit
        FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY s.id ASC LIMIT 1`, [set.id, gymId]);
+      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY psj.id ASC LIMIT 1`, [set.id, gymId]);
   const prepaidEnd = prepaidCoverageEnd(snap[0] ? {
     freePeriods: Number(snap[0].free_periods ?? 0), prepaidPeriods: Number(snap[0].pay_beforehand_periods ?? 0),
     interval: Number(snap[0].recurring_billing_interval ?? 0), unit: snap[0].recurring_billing_unit ?? null,
