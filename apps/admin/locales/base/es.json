@@ -1582,6 +1582,7 @@
     "active": "Activo",
     "inactive": "Inactivo",
     "paused": "Pausado",
+    "cancels_on_end_date": "Se cancela en la fecha de fin",
     "cancelled": "Cancelado",
     "superseded": "Reemplazado",
     "expired": "Caducado",
