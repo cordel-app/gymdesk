@@ -42,6 +42,7 @@ import {
 } from './AssignedPlanPromotions';
 import { placePromotionsUnderProducts, thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
+import { PlanUnitAssignees } from './PlanUnitAssignees';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle,
@@ -707,6 +708,16 @@ export function AssignedPlanConfiguration({
           </CardSection>
         );
       })}
+
+      {/* #2609 stage 3 — who each unit of the Individual Products is for. */}
+      <PlanUnitAssignees
+        assignedPlanId={assignedPlanId}
+        snapshot={snapshot}
+        cardEditing={cardEditing && editing === null}
+        canWrite={canWrite}
+        readOnlyTitle={readOnlyTitle}
+        onChanged={onChanged}
+      />
 
       {/* #2391 — the open section editor's Save/Cancel closes the whole
           configuration block (plan fee + included products), never the middle

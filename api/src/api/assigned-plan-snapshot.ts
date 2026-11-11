@@ -7,6 +7,7 @@ import { toPlanDurationRepeats } from '../domain/planDuration';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ProductBenefit, toProductBenefit } from '../domain/productBenefitActions';
+import { withUnitAssignees, type UnitAssigneeMember } from './plan-unit-assignees';
 import {
   SessionBenefitFrequency,
   toSessionBenefitFrequency,
@@ -128,6 +129,13 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   image_url: string | null;
   image_thumbnail_url: string | null;
   description: string | null;
+  /** #2609 stage 3 — the Product's sharing type, read live (`individual` | `shared`). */
+  sharing_type: string | null;
+  /**
+   * #2609 stage 3 — the family member each unit of the line is for, one entry per unit
+   * (`domain/planUnitAssignees.ts`); `null` for a shared Product.
+   */
+  unit_assignees: UnitAssigneeMember[] | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -200,7 +208,8 @@ function selectSnapshotSection(table: string): string {
                  tr.rate_percent AS product_tax_rate_percent,
                  gc.image_url AS product_image_url,
                  gc.image_thumbnail_url AS product_image_thumbnail_url,
-                 gc.description AS product_description
+                 gc.description AS product_description,
+                 gc.sharing_type AS product_sharing_type
           FROM ${table} b
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
@@ -260,6 +269,9 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     image_url: row.product_image_url ?? null,
     image_thumbnail_url: row.product_image_thumbnail_url ?? row.product_image_url ?? null,
     description: row.product_description ?? null,
+    // #2609 stage 3 — the family member each unit is for (`null` for a shared Product).
+    sharing_type: row.product_sharing_type ?? null,
+    unit_assignees: row.unit_assignees ?? null,
   };
 }
 
@@ -286,7 +298,9 @@ export async function loadAssignedPlanSnapshot(
     )),
   ]);
   const um = umRows[0] ?? {};
-  const [session, oneoff, periodical] = benefitResults.map((r) => r.rows.map((row: any) => shapeBenefit({ ...row, user_membership_id: umId })));
+  // #2609 stage 3: each line carries the family member every unit is for.
+  const [session, oneoff, periodical] = await Promise.all(benefitResults.map(async (r) =>
+    (await withUnitAssignees(gymId, r.rows as any[])).map((row: any) => shapeBenefit({ ...row, user_membership_id: umId }))));
 
   const billing: AssignedPlanBillingSnapshot = {
     free_periods: um.free_periods ?? null,
@@ -321,7 +335,7 @@ export async function loadAssignedPlanBenefitSection(
   const { rows } = await db.query(
     selectSnapshotSection(PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]), [umId, gymId],
   );
-  return rows.map((row: any) => shapeBenefit({ ...row, user_membership_id: umId }));
+  return (await withUnitAssignees(gymId, rows as any[])).map((row: any) => shapeBenefit({ ...row, user_membership_id: umId }));
 }
 
 /**
