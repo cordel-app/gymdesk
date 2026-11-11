@@ -327,7 +327,9 @@ async function backfillPlanSnapshots(knex) {
   // Membership Plan Promotion applications only. A plan application belongs to its assignment
   // (#1995) or, on a not-yet-projected Draft, to its version; the snapshot it lands on is the
   // version's own, else the assignment's latest version carrying a plan.
-  counts.plan_promotion_snapshots = await run(`
+  // Migration 388 (#2125 M5b) drops `plan_snapshots.product_set_id`; from then on `syncPlanSnapshot()` is the
+  // only writer of these rows and there is nothing left for a backfill to copy.
+  counts.plan_promotion_snapshots = !(await knex.schema.hasColumn('plan_snapshots', 'product_set_id')) ? 0 : await run(`
     INSERT INTO plan_promotion_snapshots
       (gym_id, plan_snapshot_id, source_id, promotion_id, status, is_inherited, snapshot, applied_at, applied_by,
        consumed_at, revoked_at, created_at, created_by, modified_at, modified_by)
