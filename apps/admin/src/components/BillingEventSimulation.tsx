@@ -91,6 +91,13 @@ interface Props {
   /** #1810 — lets a host share the toggle with the chart under the section. */
   showZero?: boolean;
   onShowZeroChange?: (next: boolean) => void;
+  /**
+   * #2627 — whether this component draws its own "Billing Simulation Details"
+   * accordion (#2448). `BillingEventSimulationPanel` already wraps it in that
+   * accordion, so it passes `false` and the content renders directly, with no
+   * second, nested one. Omitted, the section keeps its own (the Promotion card).
+   */
+  collapsible?: boolean;
 }
 
 export function fmtMoney(amount: number): string {
@@ -276,6 +283,7 @@ function BillingPeriodCard({
 
 export function BillingEventSimulation({
   simulation, t, formatDate, cycleNote, zeroToggle, showZero: controlledShowZero, onShowZeroChange,
+  collapsible = true,
 }: Props) {
   const [localShowZero, setLocalShowZero] = useState(false);
   const showZero = controlledShowZero ?? localShowZero;
@@ -323,16 +331,18 @@ export function BillingEventSimulation({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setDetailsOpen((v) => !v)}
-        aria-expanded={detailsOpen}
-        style={detailsHeader}
-      >
-        <span aria-hidden="true" style={chevron}>{detailsOpen ? '▾' : '▸'}</span>
-        {t('simulation_details')}
-      </button>
-      {detailsOpen && (
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((v) => !v)}
+          aria-expanded={detailsOpen}
+          style={detailsHeader}
+        >
+          <span aria-hidden="true" style={chevron}>{detailsOpen ? '▾' : '▸'}</span>
+          {t('simulation_details')}
+        </button>
+      )}
+      {(!collapsible || detailsOpen) && (
       <div>
       {zeroToggle && (
         <label style={zeroToggleStyle}>
