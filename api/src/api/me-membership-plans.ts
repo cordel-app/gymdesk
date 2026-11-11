@@ -171,7 +171,72 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
   }
 });
 
-function parseIds(raw: unknown): number[] | null {
+/**
+ * #2496 stage 4 — everything the Members App's plan purchase checks before it
+ * writes anything, shared by the immediate purchase (`POST /:id/assign`) and the
+ * shared Draft (`POST /me/product-sets/:id/plans`), so the two cannot accept
+ * different plans, Promotions or declined benefits:
+ *  - a member who holds a live or pending plan is refused (#1288 §28: a plan is
+ *    never replaced or added beside another from the Members App);
+ *  - the plan must be assignable (`planAssignabilityError()`, active and public);
+ *  - each Promotion is the staff editor's own validation and must be about a
+ *    Membership Plan;
+ *  - a declined benefit is #1184's one rule.
+ */
+export async function judgeMemberPlanChoice(
+  gymId: string, memberId: number, planId: number, promotionIds: number[], declinedRaw: unknown,
+): Promise<
+  | { error: true; status: number; body: Record<string, unknown> }
+  | { startsAt: string; eff: NonNullable<Awaited<ReturnType<typeof effectivePrice>>>;
+      declinedResult: { declined: Array<{ section: string; product_id: number }> } }
+> {
+  const fail = (status: number, body: Record<string, unknown>) => ({ error: true as const, status, body });
+  const statusMarks = [...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS].map(() => '?').join(',');
+  const { rows: held } = await db.query<{ status: string }>(
+    `SELECT um.status FROM user_memberships um
+      WHERE um.gym_id = ? AND um.status IN (${statusMarks})
+        AND (um.member_id = ? OR EXISTS (SELECT 1 FROM user_membership_members umm
+                                          WHERE umm.user_membership_id = um.id AND umm.gym_id = um.gym_id AND umm.member_id = ?))
+      ORDER BY FIELD(um.status, ?) DESC LIMIT 1`,
+    [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],
+  );
+  if (held[0]) {
+    return held[0].status === PENDING_PAYMENT_STATUS
+      ? fail(409, { error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' })
+      : fail(409, { error: 'plan_change_via_gym', message: 'To change your plan, please contact your gym.' });
+  }
+
+  const planError = await planAssignabilityError(gymId, planId);
+  if (planError) return fail(planError.status, { error: planError.error });
+  const startsAt = new Date().toISOString().slice(0, 10);
+  const eff = await effectivePrice(planId, gymId, startsAt);
+  if (!eff) return fail(404, { error: 'Plan not found' });
+
+  // §4/§5: only a Promotion compatible with this plan, for this member, may
+  // be applied — the same validation the staff editor runs. A Promotion
+  // about a Product, or one for new members only when this member is not
+  // one, is refused here rather than silently dropped.
+  const selectionError = await validatePromotionSelection(gymId, planId, promotionIds, memberId);
+  if (selectionError) return fail(selectionError.status, { error: selectionError.error });
+  if (promotionIds.length > 0) {
+    const marks = promotionIds.map(() => '?').join(',');
+    const { rows: targets } = await db.query<{ id: number }>(
+      `SELECT id FROM promotions WHERE id IN (${marks}) AND gym_id = ? AND applies_to = ?`,
+      [...promotionIds, gymId, PLAN_PROMOTION_TARGET],
+    );
+    if (targets.length !== promotionIds.length) {
+      return fail(400, { error: 'One or more promotions are not about a Membership Plan' });
+    }
+  }
+
+  // #1184 stage 3: the same rule the staff paths run — a mandatory benefit
+  // cannot be declined and an unknown Product cannot be injected.
+  const declinedResult = await resolveDeclinedBenefits(gymId, planId, declinedRaw);
+  if (declinedResult.error !== undefined) return fail(400, { error: declinedResult.error });
+  return { startsAt, eff, declinedResult: { declined: declinedResult.declined ?? [] } };
+}
+
+export function parseIds(raw: unknown): number[] | null {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return null;
   const ids: number[] = [];
@@ -229,19 +294,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     );
     if (!memberRows[0]) return res.status(404).json({ error: 'Member profile not found' });
 
-    // #1288 §28: a member never replaces a plan from the Members App — the
-    // change is the gym's, through the Admin workflows. Enforced here, not by
-    // hiding the button; `confirm` is no longer read at all. A plan already
-    // awaiting payment blocks a second one for the same reason.
-    const statusMarks = [...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS].map(() => '?').join(',');
-    const { rows: held } = await db.query<{ status: string }>(
-      `SELECT um.status FROM user_memberships um
-        WHERE um.gym_id = ? AND um.status IN (${statusMarks})
-          AND (um.member_id = ? OR EXISTS (SELECT 1 FROM user_membership_members umm
-                                            WHERE umm.user_membership_id = um.id AND umm.gym_id = um.gym_id AND umm.member_id = ?))
-        ORDER BY FIELD(um.status, ?) DESC LIMIT 1`,
-      [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],
-    );
+    // #1288 §28: no plan is replaced from the Members App, and a Draft or a
+    // payment already in flight blocks a second purchase (stage 4's shared Draft
+    // takes a plan through `POST /me/product-sets/:id/plans` instead).
     const { rows: inFlight } = await db.query<{ id: number }>(
       `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')
         AND NOT (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
@@ -250,39 +305,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     if (inFlight[0]) {
       return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
     }
-    if (held[0]) {
-      return held[0].status === PENDING_PAYMENT_STATUS
-        ? res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' })
-        : res.status(409).json({ error: 'plan_change_via_gym', message: 'To change your plan, please contact your gym.' });
-    }
-
-    const planError = await planAssignabilityError(gymId, planId);
-    if (planError) return res.status(planError.status).json({ error: planError.error });
-    const startsAt = new Date().toISOString().slice(0, 10);
-    const eff = await effectivePrice(planId, gymId, startsAt);
-    if (!eff) return res.status(404).json({ error: 'Plan not found' });
-
-    // §4/§5: only a Promotion compatible with this plan, for this member, may
-    // be applied — the same validation the staff editor runs. A Promotion
-    // about a Product, or one for new members only when this member is not
-    // one, is refused here rather than silently dropped.
-    const selectionError = await validatePromotionSelection(gymId, planId, promotionIds, memberId);
-    if (selectionError) return res.status(selectionError.status).json({ error: selectionError.error });
-    if (promotionIds.length > 0) {
-      const marks = promotionIds.map(() => '?').join(',');
-      const { rows: targets } = await db.query<{ id: number }>(
-        `SELECT id FROM promotions WHERE id IN (${marks}) AND gym_id = ? AND applies_to = ?`,
-        [...promotionIds, gymId, PLAN_PROMOTION_TARGET],
-      );
-      if (targets.length !== promotionIds.length) {
-        return res.status(400).json({ error: 'One or more promotions are not about a Membership Plan' });
-      }
-    }
-
-    // #1184 stage 3: the same rule the staff paths run — a mandatory benefit
-    // cannot be declined and an unknown Product cannot be injected.
-    const declinedResult = await resolveDeclinedBenefits(gymId, planId, req.body?.declined_benefits);
-    if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
+    const choice = await judgeMemberPlanChoice(gymId, memberId, planId, promotionIds, req.body?.declined_benefits);
+    if ('error' in choice) return res.status(choice.status).json(choice.body);
+    const { startsAt, eff, declinedResult } = choice;
 
     // #1325 PR 3a: the member's plan is a ProductSet version, not an assignment
     // Draft. The Draft is created with its frozen plan, its declined benefits and

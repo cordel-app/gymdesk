@@ -11,7 +11,8 @@ import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
 import { loadMemberProductSetView } from './me-product-set-lines';
 import { productSetDraftRouter, edit as editDraft, simulationHandler } from './product-set-draft-router';
-import { addService, removeService, setServiceQuantity } from './product-set-draft';
+import { addMemberPlanToDraft, addService, removeMemberPlanFromDraft, removeService, setServiceQuantity } from './product-set-draft';
+import { judgeMemberPlanChoice, parseIds } from './me-membership-plans';
 import { memberProductCatalogueParams, memberProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
 import { activePlanConflictBody, addPlanUnsupportedBody, parseConflictResolution } from '../domain/oneActivePlan';
@@ -779,4 +780,41 @@ meProductSetsRouter.delete('/:id/services/:serviceId', async (req, res, next) =>
   if (!(await ownedSet(req, res))) return;
   return editDraft(req, res, 'update', (tx, d) => removeService(tx, d, Number(req.params.serviceId)), next,
     { remove_service: Number(req.params.serviceId), source: 'members_app' });
+});
+
+/**
+ * #2496 stage 4 — Add Plan on the member's shared Draft: the member's first
+ * Membership Plan joins the Draft their Products are on, so the selection is one
+ * purchase. Judged by the very checks the immediate plan purchase runs
+ * (`judgeMemberPlanChoice()`); written by `addMemberPlanToDraft()` under the
+ * Draft's lock. The body names a plan, its Promotions and its declined optional
+ * benefits — never a price, a fee or another member.
+ */
+meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
+  const owned = await ownedSet(req, res);
+  if (!owned) return;
+  const { gymId } = getTenantContext(req);
+  const planId = Number(req.body?.membership_plan_id);
+  if (!Number.isInteger(planId) || planId <= 0) return res.status(400).json({ error: 'membership_plan_id must be a positive integer' });
+  const promotionIds = parseIds(req.body?.promotion_ids);
+  if (promotionIds === null) return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
+  try {
+    const choice = await judgeMemberPlanChoice(gymId, owned.memberId, planId, promotionIds, req.body?.declined_benefits);
+    if ('error' in choice) return res.status(choice.status).json(choice.body);
+    const actor = actorOf(req)?.name ?? null;
+    return editDraft(req, res, 'update', (tx, d) => addMemberPlanToDraft(tx, d, {
+      membershipPlanId: planId,
+      membershipFeePrice: choice.eff.plan_price_id != null ? choice.eff.price : null,
+      declinedBenefits: choice.declinedResult.declined,
+      promotionIds, actor,
+    }), next, { add_plan: planId, promotion_ids: promotionIds, declined_benefits: choice.declinedResult.declined, source: 'members_app' });
+  } catch (err) { next(err); }
+});
+
+meProductSetsRouter.delete('/:id/plans/:planSnapshotId', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  const snapshotId = Number(req.params.planSnapshotId);
+  if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
+  return editDraft(req, res, 'update', (tx, d) => removeMemberPlanFromDraft(tx, d, snapshotId), next,
+    { remove_plan: snapshotId, source: 'members_app' });
 });
