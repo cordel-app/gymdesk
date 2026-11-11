@@ -19,7 +19,7 @@ import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
  *
- * `domain/billingEventEditLock.ts` decides; this reads the chain's events and
+ * `domain/billingEventEditLock.ts` decides; this reads the owner's events and
  * their latest attempts, and writes the initial obligation and its payment
  * request. Like `plan-checkout.ts` it writes the **initial real Billing Event
  * before the money moves**, so the ledger already shows the charge pending and
@@ -28,7 +28,11 @@ import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
  * the set. A return from the hosted page activates nothing.
  */
 
-/** The unresolved, past-due events of the owner's **active** chain, if any. */
+/**
+ * The unresolved, past-due events of an owner who holds an **active** Product
+ * Set, if any. #2125 M5d-2: every Product Set of the owner (their whole
+ * history), not one chain — there is no chain identity any more.
+ */
 export async function loadEditLock(gymId: string, ownerMemberId: number, today: string): Promise<BlockingEvent[]> {
   const { rows } = await db.query<any>(
     `SELECT be.id, be.billing_date, be.is_scheduled,
@@ -42,9 +46,8 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
        FROM billing_events be
        JOIN product_sets ps ON ps.id = be.product_set_id
       WHERE be.gym_id = ? AND ps.owner_member_id = ?
-        AND ps.root_product_set_id = (
-              SELECT a.root_product_set_id FROM product_sets a
-               WHERE a.gym_id = ? AND a.owner_member_id = ? AND a.status = 'active' LIMIT 1)
+        AND EXISTS (SELECT 1 FROM product_sets a
+                     WHERE a.gym_id = ? AND a.owner_member_id = ? AND a.status = 'active')
         AND be.event_type NOT IN ('status_changed')`,
     [gymId, ownerMemberId, gymId, ownerMemberId],
   );
@@ -161,13 +164,11 @@ export async function ensureInitialEvent(tx: Tx, input: {
     [input.gymId, input.productSetId]);
   if (existing[0]) return Number(existing[0].id);
 
-  const { rows: setRows } = await tx.query<{ root_product_set_id: number }>(
-    'SELECT root_product_set_id FROM product_sets WHERE id = ?', [input.productSetId]);
   let scheduleId: number | null = null;
   if (input.charge.scheduleKey) {
     const { rows } = await tx.query<{ id: number }>(
       `SELECT id FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`,
-      [setRows[0].root_product_set_id, input.charge.scheduleKey]);
+      [input.productSetId, input.charge.scheduleKey]);
     scheduleId = rows[0] ? Number(rows[0].id) : null;
   }
   const { insertId } = await tx.query(

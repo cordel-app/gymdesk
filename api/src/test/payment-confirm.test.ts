@@ -126,7 +126,7 @@ async function setStatus(id: number): Promise<string> {
 async function eventCount(setId: number): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
     `SELECT COUNT(*) AS n FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
-      WHERE ps.root_product_set_id = (SELECT root_product_set_id FROM product_sets WHERE id = ?)`, [setId]);
+      WHERE ps.owner_member_id = (SELECT owner_member_id FROM product_sets WHERE id = ?)`, [setId]);
   return Number(rows[0].n);
 }
 

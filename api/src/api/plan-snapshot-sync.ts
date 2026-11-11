@@ -127,13 +127,6 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
   }
 }
 
-/** Re-derives every version of a chain: coverage follows the chain, so a coverage change touches them all. */
-export async function syncPlanSnapshotsOfChain(tx: Tx, gymId: string, rootProductSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE gym_id = ? AND root_product_set_id = ?', [gymId, rootProductSetId]);
-  for (const r of rows) await syncPlanSnapshot(tx, gymId, Number(r.id));
-}
-
 /** Re-derives the versions linked to an assignment — its status moved (paused, cancelled, expired). */
 export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number }>(

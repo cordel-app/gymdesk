@@ -40,7 +40,6 @@ export interface LockedDraft {
   id: number;
   gym_id: string;
   owner_member_id: number;
-  root_product_set_id: number;
   membership_plan_id: number | null;
   previous_product_set_id: number | null;
   starts_at: string;
@@ -51,7 +50,7 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 /** Locks the Draft; the caller's edit then cannot race a commit or a cancel. */
 export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<LockedDraft | DraftRefusal> {
   const { rows } = await tx.query<any>(
-    `SELECT id, gym_id, owner_member_id, root_product_set_id, previous_product_set_id, membership_plan_id, starts_at, status,
+    `SELECT id, gym_id, owner_member_id, previous_product_set_id, membership_plan_id, starts_at, status,
             (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
@@ -65,7 +64,7 @@ export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<Lock
   // an unmodified plan keeps linking the active set's snapshot, and only the plan being edited is copied.
   return {
     id: Number(r.id), gym_id: String(r.gym_id), owner_member_id: Number(r.owner_member_id),
-    root_product_set_id: Number(r.root_product_set_id), membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
+    membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
     previous_product_set_id: r.previous_product_set_id != null ? Number(r.previous_product_set_id) : null, starts_at: dateOnly(r.starts_at),
   };
 }
@@ -79,7 +78,7 @@ export const isRefusal = (v: LockedDraft | DraftRefusal): v is DraftRefusal => '
  * (a section save, a coverage change), so no writer can leave it stale.
  */
 export async function syncMandatoryQuantities(
-  tx: Tx, gymId: string, productSetId: number, _rootProductSetId?: number,
+  tx: Tx, gymId: string, productSetId: number,
 ): Promise<void> {
   // #2125 stage 21: the number of Members is each plan snapshot's own beneficiaries.
   // M4b-2: a snapshot another set links is immutable to this one; its quantities were derived when it
@@ -105,7 +104,7 @@ export async function syncMandatoryQuantities(
 
 async function touch(tx: Tx, draft: LockedDraft) {
   await touchDraft(tx, draft.gym_id, draft.id);
-  await syncMandatoryQuantities(tx, draft.gym_id, draft.id, draft.root_product_set_id);
+  await syncMandatoryQuantities(tx, draft.gym_id, draft.id);
   await syncProductSnapshotsOfVersion(tx, draft.gym_id, draft.id);
 }
 
@@ -276,12 +275,13 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
 /**
  * #1949 — the Billing frequency of a **first** Draft version. Its plan schedule
  * was created with the Draft and has no events or other version behind it, so the
- * cadence can still move with the snapshot. A later version of a chain keeps the
- * chain's schedule (never re-anchored), so there the cadence stays fixed.
+ * cadence can still move with the snapshot (only a schedule this Draft opened,
+ * `opened_by_product_set_id`). A Product Set that follows another keeps the
+ * owner's schedule (never re-anchored), so there the cadence stays fixed.
  */
 export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
-  if (draft.previous_product_set_id != null || draft.root_product_set_id !== draft.id) {
+  if (draft.previous_product_set_id != null) {
     // #1982 — the editor saves every Billing & Duration field, so a pair that is
     // not being changed is not a refusal; only an actual change on a later
     // version (which shares the chain's schedule) is.
@@ -308,7 +308,7 @@ export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): 
     [interval, unit, target, draft.gym_id]);
   if (rows[0].schedule_id != null) {
     await tx.query(
-      'UPDATE product_set_schedules SET cadence_interval = ?, cadence_unit = ? WHERE id = ? AND gym_id = ? AND root_product_set_id = ?',
+      'UPDATE product_set_schedules SET cadence_interval = ?, cadence_unit = ? WHERE id = ? AND gym_id = ? AND opened_by_product_set_id = ?',
       [interval, unit, rows[0].schedule_id, draft.gym_id, draft.id]);
   }
   await touch(tx, draft);

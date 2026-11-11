@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { recordNotifications } from '../infra/notifications';
 import { convertStartedReservations } from './service-reservation';
 import { expireDrafts } from './product-sets';
+import { submitPendingVerifactuRecords } from './verifactu-submission';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import {
   BOOKING_REMINDER_LEAD_MINUTES,
@@ -133,7 +134,27 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       failures.push({ gym_id: '*', error: `draft expiry: ${(err as Error).message}` });
     }
 
+    // #2648 stage 4: the same pass submits pending VERI*FACTU records to the
+    // AEAT. Invoicing never waits for it; a record AEAT could not take is
+    // retried with back-off on a later pass, so a temporary AEAT outage is not a
+    // failure of this run. Only an unexpected error (a gym's pass throwing) is.
+    let verifactu: Awaited<ReturnType<typeof submitPendingVerifactuRecords>> | null = null;
+    try {
+      verifactu = await submitPendingVerifactuRecords();
+      for (const f of verifactu.failures) failures.push({ gym_id: f.gym_id, error: `verifactu: ${f.error}` });
+    } catch (err) {
+      failures.push({ gym_id: '*', error: `verifactu: ${(err as Error).message}` });
+    }
+
     const body = {
+      ...(verifactu ? {
+        verifactu: {
+          gyms: verifactu.gyms, batches: verifactu.batches, records_sent: verifactu.records_sent,
+          accepted: verifactu.accepted, accepted_with_errors: verifactu.accepted_with_errors,
+          rejected: verifactu.rejected, rejected_locally: verifactu.rejected_locally,
+          retry_pending: verifactu.retry_pending, blocked: verifactu.blocked,
+        },
+      } : {}),
       ...(draftsExpired != null ? { drafts_expired: draftsExpired } : {}),
       ...(conversion ? { reservations_consumed: conversion.consumed, reservations_released: conversion.released } : {}),
       candidates: candidates.length,

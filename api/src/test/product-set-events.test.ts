@@ -146,7 +146,7 @@ describe('persisted Scheduled Billing Events (#1325 PR 2b)', () => {
       const allocation = allocateSchedule({ cadence: cadenceForFrequency('month')!, purchaseDate: TODAY, schedules: [] });
       expect(allocation.kind).toBe('new');
       const scheduleId = await ensureSchedule(tx, {
-        gymId, rootProductSetId: d.productSet.id, key: allocation.key, anchorDate: TODAY,
+        gymId, productSetId: d.productSet.id, key: allocation.key, anchorDate: TODAY,
         cadenceInterval: 1, cadenceUnit: 'month',
       });
       await addProductSetService(tx, { gymId, productSetId: d.productSet.id, productId: locker, quantity: 1, startsAt: TODAY, scheduleId });

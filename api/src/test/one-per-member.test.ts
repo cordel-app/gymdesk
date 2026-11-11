@@ -88,7 +88,6 @@ describe('One per Member', () => {
       const s = await db.query(
         `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, ?, '2019-01-01')`,
         [gymId, owner, status]);
-      await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [s.insertId]);
       await db.query(
         `INSERT INTO member_products_recurrent_snapshot
            (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,

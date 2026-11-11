@@ -23,6 +23,7 @@ import { projectActiveProductSet } from './product-set-projection';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { productSetHistoryIds } from './product-set-history';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -59,7 +60,8 @@ const toDateOnly = (v: unknown): string =>
  * prorated first stretch and then bills on the grid (`alignTo`).
  */
 export async function ensureSchedule(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; key: string; anchorDate: string;
+  /** The Product Set the schedule is opened for (any of the owner's; recorded as its opener). */
+  gymId: string; productSetId: number; key: string; anchorDate: string;
   cadenceInterval: number; cadenceUnit: string;
 }): Promise<number> {
   const cadence = { interval: input.cadenceInterval, unit: input.cadenceUnit };
@@ -69,14 +71,17 @@ export async function ensureSchedule(tx: Tx, input: {
   // key is reused when it is the same schedule; when it is not (another cadence,
   // or another yearly anniversary) it is re-keyed out of the way, untouched, and
   // this chain opens its own. A mismatch inside the same chain keeps today's
-  // behaviour: the chain's schedule is returned as it is.
+  // behaviour: the chain's schedule is returned as it is. #2125 M5d-2: "the same
+  // chain" is a schedule this Product Set or one of its predecessors opened
+  // (`previous_product_set_id`, `productSetHistoryIds()`).
   const { rows: found } = await tx.query<any>(
-    `SELECT id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit
+    `SELECT id, opened_by_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit
        FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ? FOR UPDATE`,
-    [input.rootProductSetId, input.key]);
+    [input.productSetId, input.key]);
   const existing = found[0];
   if (existing) {
-    const sameChain = Number(existing.root_product_set_id) === Number(input.rootProductSetId);
+    const sameChain = existing.opened_by_product_set_id != null
+      && (await productSetHistoryIds(tx, input.gymId, input.productSetId)).includes(Number(existing.opened_by_product_set_id));
     const same = findScheduleWithIdentity([{
       id: Number(existing.id), key: String(existing.schedule_key), anchorDate: toDateOnly(existing.anchor_date),
       cadence: { interval: Number(existing.cadence_interval), unit: String(existing.cadence_unit) },
@@ -87,10 +92,10 @@ export async function ensureSchedule(tx: Tx, input: {
   }
   const { insertId } = await tx.query(
     `INSERT INTO product_set_schedules
-       (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+       (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
      SELECT ?, ?, ps.owner_member_id, ?, ?, ?, ? FROM product_sets ps WHERE ps.id = ?`,
-    [input.gymId, input.rootProductSetId, input.key, anchor, input.cadenceInterval, input.cadenceUnit,
-      input.rootProductSetId],
+    [input.gymId, input.productSetId, input.key, anchor, input.cadenceInterval, input.cadenceUnit,
+      input.productSetId],
   );
   return Number(insertId);
 }
@@ -104,12 +109,12 @@ export async function ensureSchedule(tx: Tx, input: {
  * Nothing moves: every line keeps the schedule it bills on.
  */
 async function adoptScheduleAsPlan(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; anchorDate: string; cadenceInterval: number; cadenceUnit: string;
+  gymId: string; productSetId: number; anchorDate: string; cadenceInterval: number; cadenceUnit: string;
 }): Promise<void> {
   const { rows } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
        FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND gym_id = ? ORDER BY id FOR UPDATE`,
-    [input.rootProductSetId, input.gymId]);
+    [input.productSetId, input.gymId]);
   if (rows.some((r: any) => String(r.schedule_key) === PLAN_SCHEDULE_KEY)) return;
   const cadence = { interval: input.cadenceInterval, unit: input.cadenceUnit };
   const match = findScheduleWithIdentity(rows.map((r: any) => ({
@@ -141,10 +146,9 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   origin?: ItemOrigin | null;
 }): Promise<void> {
   const { gymId, productSetId, membershipPlanId } = input;
-  const { rows: setRows } = await tx.query<{ root_product_set_id: number | null }>(
-    'SELECT root_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+  const { rows: setRows } = await tx.query<{ id: number }>(
+    'SELECT id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   if (!setRows[0]) throw new Error('ProductSet not found');
-  const rootId = Number(setRows[0].root_product_set_id ?? productSetId);
 
   const { rows: planRows } = await tx.query(
     `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
@@ -159,11 +163,11 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   let scheduleId: number | null = null;
   if (plan.recurring_billing_interval != null && plan.recurring_billing_unit != null) {
     await adoptScheduleAsPlan(tx, {
-      gymId, rootProductSetId: rootId, anchorDate: input.startsAt,
+      gymId, productSetId, anchorDate: input.startsAt,
       cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
     });
     scheduleId = await ensureSchedule(tx, {
-      gymId, rootProductSetId: rootId, key: PLAN_SCHEDULE_KEY, anchorDate: input.startsAt,
+      gymId, productSetId, key: PLAN_SCHEDULE_KEY, anchorDate: input.startsAt,
       cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
     });
   }
@@ -249,14 +253,13 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
  */
 export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   const { rows: setRows } = await tx.query<any>(
-    'SELECT root_product_set_id, starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+    'SELECT starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   if (!setRows[0]) return;
-  const rootId = Number(setRows[0].root_product_set_id ?? productSetId);
   const setStart = toDateOnly(setRows[0].starts_at);
 
   const { rows: sched } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [rootId]);
+       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [productSetId]);
   const schedules: ExistingSchedule[] = sched.map((r: any) => ({
     id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
@@ -279,7 +282,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
       let scheduleId: number | null = null;
       if (allocation.kind === 'new') {
         scheduleId = await ensureSchedule(tx, {
-          gymId, rootProductSetId: rootId, key: allocation.key, anchorDate: allocation.anchorDate,
+          gymId, productSetId, key: allocation.key, anchorDate: allocation.anchorDate,
           cadenceInterval: cadence.interval, cadenceUnit: cadence.unit,
         });
         schedules.push({ id: scheduleId, key: allocation.key, anchorDate: allocation.anchorDate, cadence });
@@ -542,16 +545,15 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   actor?: string | null;
 }): Promise<{ created: number }> {
   const { gymId, productSetId, today } = input;
-  const { rows: setRows } = await tx.query<{ owner_member_id: number; root_product_set_id: number }>(
-    'SELECT owner_member_id, root_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
+  const { rows: setRows } = await tx.query<{ owner_member_id: number }>(
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?',
     [productSetId, gymId]);
   if (!setRows[0]) return { created: 0 };
-  const rootId = Number(setRows[0].root_product_set_id);
 
   const planned = await planScheduledEvents(gymId, productSetId, today, input.cycles, tx);
   const scheduleIds = new Map<string, number>();
   const { rows: schedules } = await tx.query<{ id: number; schedule_key: string }>(
-    `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [rootId]);
+    `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [productSetId]);
   for (const s of schedules) scheduleIds.set(String(s.schedule_key), Number(s.id));
 
   const actor = input.actor === undefined ? SYSTEM_ACTOR : input.actor;

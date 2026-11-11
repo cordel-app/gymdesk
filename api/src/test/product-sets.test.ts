@@ -34,13 +34,13 @@ afterAll(async () => {
 });
 
 describe('ProductSet versioning (#1325)', () => {
-  it('creates a plan-less v1 chain whose root is itself', async () => {
+  it('creates a plan-less first Product Set with no predecessor and no chain root (#2125 M5d-2)', async () => {
     const out = await db.transaction((tx) => createDraft(tx, {
       gymId, ownerMemberId: memberId, membershipPlanId: null, startsAt: today(), actor }));
     expect(out.kind).toBe('created');
     if (out.kind !== 'created') return;
     expect(out.productSet.previous_product_set_id).toBeNull();
-    expect(Number(out.productSet.root_product_set_id)).toBe(Number(out.productSet.id));
+    expect(out.productSet).not.toHaveProperty('root_product_set_id');
     expect(out.productSet.membership_plan_id).toBeNull();
     await db.transaction((tx) => cancelInFlight(tx, gymId, out.productSet.id));
   });

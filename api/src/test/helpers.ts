@@ -211,7 +211,6 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
        VALUES (?, ?, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
       [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
     await db.query("UPDATE product_sets SET created_by = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
-    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     setId = Number(insertId);
   }
   const { rows: snap } = await db.query<{ id: number }>(
@@ -493,7 +492,6 @@ export async function ensureTestProductSet(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
        VALUES (?, ?, 'superseded', '2000-01-01', ?)`,
       [gymId, memberId, userMembershipId]);
-    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     await adoptConfigHolder(Number(insertId), userMembershipId);
     await followAssignmentDates(Number(insertId), userMembershipId);
     return Number(insertId);
@@ -511,7 +509,6 @@ export async function ensureTestProductSet(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
        VALUES (?, ?, 'active', '2000-01-01', ?)`,
       [gymId, memberId, userMembershipId]);
-    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     await adoptConfigHolder(Number(insertId), userMembershipId);
     await followAssignmentDates(Number(insertId), userMembershipId);
     return Number(insertId);
@@ -542,15 +539,15 @@ export async function seedScheduledEvent(
 /** Removes every scheduled event of the member's Active ProductSet. */
 /**
  * #1325 PR 3d: `billing_events.user_membership_id` is gone, so a test reads an
- * assignment's events the way the API does — through its ProductSet chain.
+ * assignment's events the way the API does — through its owner's Product Sets.
  */
 export async function billingEventsOfAssignment<T = any>(gymId: string, umId: number, columns = '*'): Promise<T[]> {
   const { rows } = await db.query<T>(
     `SELECT ${columns} FROM billing_events be
       WHERE be.gym_id = ? AND be.product_set_id IN (
               SELECT ps.id FROM product_sets ps
-               WHERE ps.gym_id = ? AND ps.root_product_set_id IN (
-                       SELECT p2.root_product_set_id FROM product_sets p2
+               WHERE ps.gym_id = ? AND ps.owner_member_id IN (
+                       SELECT p2.owner_member_id FROM product_sets p2
                         WHERE p2.gym_id = ? AND p2.user_membership_id = ?))
       ORDER BY be.id ASC`,
     [gymId, gymId, gymId, umId],

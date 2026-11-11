@@ -15,10 +15,11 @@ function sources(dir: string, out: string[] = []): string[] {
 }
 
 describe('billingEventOwnership', () => {
-  it('reads an event\'s assignment through the latest linked version of its chain', () => {
+  it('reads an event\'s assignment through the owner\'s latest linked Product Set (#2125 M5d-2)', () => {
     const sql = eventAssignmentSql('x');
     expect(sql).toContain('x.product_set_id');
-    expect(sql).toContain('p2.root_product_set_id = p1.root_product_set_id');
+    expect(sql).toContain('p2.owner_member_id = p1.owner_member_id');
+    expect(sql).not.toContain('root_product_set_id');
     expect(sql).toContain('p2.user_membership_id IS NOT NULL');
     expect(sql).toMatch(/ORDER BY p2\.id DESC\s+LIMIT 1/);
   });

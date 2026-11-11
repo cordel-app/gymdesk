@@ -368,10 +368,10 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
         <div style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
           <span style={{ width: 70, flexShrink: 0, ...cardSectionLabelStyle }}>{t('members.progress_col_date')}</span>
           <div style={{ ...rowGrid, flex: 1 }}>
-            {['progress_col_set', 'progress_reps', 'progress_weight'].map((k) => (
+            {['progress_col_set', 'progress_reps', 'progress_weight', 'progress_notes'].map((k) => (
               <span key={k} style={{ ...cardSectionLabelStyle, padding: '2px 12px 2px 0' }}>{t(`members.${k}`)}</span>
             ))}
-            <span /><span />
+            <span />
           </div>
         </div>
         {groupReadingsByDate(detail.readings).map((group) => {

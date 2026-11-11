@@ -97,7 +97,6 @@ describe('DELETE /professional-services/:id with references', () => {
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'superseded', '2026-01-01')`,
       [gymId, memberId],
     );
-    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
     await db.query(
       `INSERT INTO member_products_recurrent_snapshot
          (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price)

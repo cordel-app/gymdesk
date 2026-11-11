@@ -36,7 +36,6 @@ interface SetRow {
   id: number;
   gym_id: string;
   owner_member_id: number;
-  root_product_set_id: number;
   previous_product_set_id: number | null;
   membership_plan_id: number | null;
   starts_at: Date | string;
@@ -96,7 +95,7 @@ async function closeAssignment(
 }
 
 const SET_SELECT = `
-  SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.root_product_set_id, ps.previous_product_set_id,
+  SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.previous_product_set_id,
          ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
          ps.created_by,
          snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,

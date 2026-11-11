@@ -283,7 +283,7 @@ export async function activeProductSetIdForMember(
  */
 export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows: sets } = await tx.query<any>(
-    `SELECT id, root_product_set_id, starts_at FROM product_sets
+    `SELECT id, starts_at FROM product_sets
       WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' LIMIT 1`, [gymId, userMembershipId]);
   const set = sets[0];
   if (!set) return;
@@ -295,7 +295,7 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   const startsAt = dateOnly(set.starts_at);
   const { rows: sch } = await tx.query<any>(
     `SELECT id FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`,
-    [set.root_product_set_id, PLAN_SCHEDULE_KEY]);
+    [set.id, PLAN_SCHEDULE_KEY]);
   const scheduleId = sch[0] ? Number(sch[0].id) : null;
   if (scheduleId != null) {
     await tx.query(
@@ -428,10 +428,10 @@ export async function reconfigureProjected(
  */
 export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
   const { rows: info } = await tx.query<any>(
-    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+    `SELECT um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
        FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
       WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
-  const paidThrough = await loadPaidThrough(tx, gymId, Number(info[0].root_product_set_id));
+  const paidThrough = await loadPaidThrough(tx, gymId, set.id);
   return cancellationEndDate({
     paidThrough, today: todayUtc(),
     assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,

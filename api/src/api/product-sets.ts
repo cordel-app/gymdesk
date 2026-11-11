@@ -1,6 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import {
@@ -27,13 +27,12 @@ export interface ProductSetRow {
   id: number;
   gym_id: string;
   owner_member_id: number;
-  root_product_set_id: number | null;
   previous_product_set_id: number | null;
   status: string;
   membership_plan_id: number | null;
 }
 
-const COLUMNS = `id, gym_id, owner_member_id, root_product_set_id, previous_product_set_id,
+const COLUMNS = `id, gym_id, owner_member_id, previous_product_set_id,
                  status, membership_plan_id`;
 
 const FRESH_DRAFT_SQL = `last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`;
@@ -96,16 +95,13 @@ export async function createDraft(tx: Tx, input: {
   const active = await lockActive(tx, input.gymId, input.ownerMemberId);
   const { insertId } = await tx.query(
     `INSERT INTO product_sets
-       (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, status,
+       (gym_id, owner_member_id, previous_product_set_id, status,
         membership_plan_id, starts_at, created_by)
-     VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`,
-    [input.gymId, input.ownerMemberId, active ? active.root_product_set_id : null,
+     VALUES (?, ?, ?, 'draft', ?, ?, ?)`,
+    [input.gymId, input.ownerMemberId,
       active ? active.id : null, input.membershipPlanId, input.startsAt,
       input.actor.name],
   );
-  if (!active) {
-    await tx.query(`UPDATE product_sets SET root_product_set_id = id WHERE id = ?`, [insertId]);
-  }
   const { rows } = await tx.query<ProductSetRow>(`SELECT ${COLUMNS} FROM product_sets WHERE id = ?`, [insertId]);
   return { kind: 'created', productSet: rows[0] };
 }

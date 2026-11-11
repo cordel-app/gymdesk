@@ -94,7 +94,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
       WHERE id = ${primaryPlanSnapshotSql('?', '?')}`,
     [input.planPriceId, input.basePrice, input.discountReason, input.discountExpiresAt, setId, input.gymId],
   );
-  await syncMandatoryQuantities(tx, input.gymId, setId, created.productSet.root_product_set_id ?? setId);
+  await syncMandatoryQuantities(tx, input.gymId, setId);
   // #2659 stage 3: Add Membership Plan's Draft carries the owner's plans cancelling at their period
   // end, for entitlement only (never billed, charged or projected). The Active plans join it at the
   // commit, as before (`mergeActiveVersionIntoDraft()`).
@@ -164,7 +164,7 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
   if (!um) return;
   const dateOnly = (v: unknown) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
   const { rows: before } = await tx.query<any>(
-    'SELECT starts_at, root_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?', [draft.id, gymId]);
+    'SELECT starts_at, previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?', [draft.id, gymId]);
   const oldStart = dateOnly(before[0]?.starts_at);
   const newStart = dateOnly(um.starts_at);
   await tx.query('UPDATE product_sets SET starts_at = ?, ends_at = ? WHERE id = ? AND gym_id = ?',
@@ -175,10 +175,10 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
   // date moves them with it.
   // #2125 M5c — the anchors are calendar-grid dates, so a schedule moves when its anchor is the grid
   // date of the old start, and moves to the grid date of the new one.
-  if (oldStart && newStart && oldStart !== newStart && Number(before[0]?.root_product_set_id) === draft.id) {
+  if (oldStart && newStart && oldStart !== newStart && before[0] && before[0].previous_product_set_id == null) {
     const { rows: schedules } = await tx.query<any>(
       `SELECT id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
-        WHERE gym_id = ? AND root_product_set_id = ?`, [gymId, draft.id]);
+        WHERE gym_id = ? AND opened_by_product_set_id = ?`, [gymId, draft.id]);
     for (const s of schedules) {
       const cadence = { interval: Number(s.cadence_interval), unit: String(s.cadence_unit) };
       if (dateOnly(s.anchor_date) !== calendarAnchorOnOrBefore(cadence, oldStart)) continue;

@@ -29,7 +29,6 @@ async function makeFamily(owner: number, ...others: number[]) {
 async function scheduledEvent(beneficiary: number) {
   const s = await db.query(
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'active', ?)`, [gymId, beneficiary, TODAY]);
-  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [s.insertId]);
   const e = await db.query(
     `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, billing_date, is_scheduled)
      VALUES (?, ?, 'charge_created', 'system', 25, ?, '2999-01-01', 1)`, [gymId, beneficiary, s.insertId]);

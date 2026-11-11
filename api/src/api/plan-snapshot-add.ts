@@ -35,9 +35,8 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
 }): Promise<number> {
   const { gymId, productSetId, membershipPlanId } = input;
   const { rows: setRows } = await tx.query<any>(
-    'SELECT root_product_set_id, status FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+    'SELECT status FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   if (!setRows[0]) throw new Error('ProductSet not found');
-  const rootId = Number(setRows[0].root_product_set_id ?? productSetId);
 
   const { rows: planRows } = await tx.query<any>(
     `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
@@ -54,7 +53,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
     const cadence = { interval: Number(plan.recurring_billing_interval), unit: plan.recurring_billing_unit } as const;
     const { rows: sched } = await tx.query<any>(
       `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-         FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [rootId]);
+         FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [productSetId]);
     const schedules: ExistingSchedule[] = sched.map((r: any) => ({
       id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
       cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
@@ -62,7 +61,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
     const allocation = allocateSchedule({ cadence, purchaseDate: input.startsAt, schedules });
     if (allocation.kind === 'new') {
       scheduleId = await ensureSchedule(tx, {
-        gymId, rootProductSetId: rootId, key: allocation.key, anchorDate: allocation.anchorDate,
+        gymId, productSetId, key: allocation.key, anchorDate: allocation.anchorDate,
         cadenceInterval: cadence.interval, cadenceUnit: cadence.unit,
       });
     } else {
