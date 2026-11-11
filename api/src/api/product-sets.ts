@@ -29,13 +29,12 @@ export interface ProductSetRow {
   owner_member_id: number;
   root_product_set_id: number | null;
   previous_product_set_id: number | null;
-  version: number;
   status: string;
   membership_plan_id: number | null;
 }
 
 const COLUMNS = `id, gym_id, owner_member_id, root_product_set_id, previous_product_set_id,
-                 version, status, membership_plan_id`;
+                 status, membership_plan_id`;
 
 const FRESH_DRAFT_SQL = `last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`;
 
@@ -95,14 +94,13 @@ export async function createDraft(tx: Tx, input: {
   }
 
   const active = await lockActive(tx, input.gymId, input.ownerMemberId);
-  const version = active ? Number(active.version) + 1 : 1;
   const { insertId } = await tx.query(
     `INSERT INTO product_sets
-       (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, version, status,
+       (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, status,
         membership_plan_id, starts_at, created_by)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`,
     [input.gymId, input.ownerMemberId, active ? active.root_product_set_id : null,
-      active ? active.id : null, version, input.membershipPlanId, input.startsAt,
+      active ? active.id : null, input.membershipPlanId, input.startsAt,
       input.actor.name],
   );
   if (!active) {

@@ -20,7 +20,7 @@ describe('billingEventOwnership', () => {
     expect(sql).toContain('x.product_set_id');
     expect(sql).toContain('p2.root_product_set_id = p1.root_product_set_id');
     expect(sql).toContain('p2.user_membership_id IS NOT NULL');
-    expect(sql).toMatch(/ORDER BY p2\.version DESC, p2\.id DESC\s+LIMIT 1/);
+    expect(sql).toMatch(/ORDER BY p2\.id DESC\s+LIMIT 1/);
   });
 
   it('binds gym, gym, assignment for the events-of-assignment predicate', () => {

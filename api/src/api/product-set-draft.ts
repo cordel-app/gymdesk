@@ -42,7 +42,7 @@ export interface LockedDraft {
   owner_member_id: number;
   root_product_set_id: number;
   membership_plan_id: number | null;
-  version: number;
+  previous_product_set_id: number | null;
   starts_at: string;
 }
 
@@ -51,7 +51,7 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 /** Locks the Draft; the caller's edit then cannot race a commit or a cancel. */
 export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<LockedDraft | DraftRefusal> {
   const { rows } = await tx.query<any>(
-    `SELECT id, gym_id, owner_member_id, root_product_set_id, membership_plan_id, version, starts_at, status,
+    `SELECT id, gym_id, owner_member_id, root_product_set_id, previous_product_set_id, membership_plan_id, starts_at, status,
             (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
@@ -66,7 +66,7 @@ export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<Lock
   return {
     id: Number(r.id), gym_id: String(r.gym_id), owner_member_id: Number(r.owner_member_id),
     root_product_set_id: Number(r.root_product_set_id), membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
-    version: Number(r.version), starts_at: dateOnly(r.starts_at),
+    previous_product_set_id: r.previous_product_set_id != null ? Number(r.previous_product_set_id) : null, starts_at: dateOnly(r.starts_at),
   };
 }
 
@@ -280,7 +280,7 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
  */
 export async function setBillingCadence(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
-  if (draft.version !== 1 || draft.root_product_set_id !== draft.id) {
+  if (draft.previous_product_set_id != null || draft.root_product_set_id !== draft.id) {
     // #1982 — the editor saves every Billing & Duration field, so a pair that is
     // not being changed is not a refusal; only an actual change on a later
     // version (which shares the chain's schedule) is.

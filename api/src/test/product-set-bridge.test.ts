@@ -50,7 +50,7 @@ async function assign(memberId: number, planId: number): Promise<number> {
 }
 async function setsOf(memberId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, version, status, user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY version', [memberId]);
+    'SELECT id, previous_product_set_id, status, user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY id', [memberId]);
   return rows;
 }
 async function um(id: number) {
@@ -91,7 +91,7 @@ describe('a committed assignment becomes a ProductSet version (#1325 PR 5)', () 
 
     const sets = await setsOf(memberId);
     expect(sets).toHaveLength(1);
-    expect(sets[0]).toMatchObject({ version: 1, status: 'active' });
+    expect(sets[0]).toMatchObject({ previous_product_set_id: null, status: 'active' });
     expect(Number(sets[0].user_membership_id)).toBe(umId);
     expect((await scheduled(sets[0].id)).length).toBeGreaterThan(0);
 

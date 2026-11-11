@@ -50,7 +50,7 @@ async function assignments(owner: number) {
     `SELECT um.id, um.status, um.membership_plan_id,
             (SELECT s.membership_fee_price FROM product_sets ps
                JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-              WHERE ps.user_membership_id = um.id ORDER BY ps.version DESC, ps.id DESC LIMIT 1) AS membership_fee_price
+              WHERE ps.user_membership_id = um.id ORDER BY ps.id DESC LIMIT 1) AS membership_fee_price
        FROM user_memberships um WHERE um.member_id = ? ORDER BY um.id`, [owner]);
   return rows;
 }
