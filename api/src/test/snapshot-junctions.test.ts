@@ -53,7 +53,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
       return d.productSet.id;
     });
 
-    const { rows: snaps } = await db.query<any>('SELECT id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+    const { rows: snaps } = await db.query<any>('SELECT id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [setId]);
     expect(snaps).toHaveLength(1);
     expect(await pairs('product_set_plan_snapshots', 'plan_snapshot_id', setId)).toEqual([Number(snaps[0].id)]);
 

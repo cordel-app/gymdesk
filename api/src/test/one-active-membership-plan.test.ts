@@ -522,7 +522,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const { rows: sets } = await db.query<any>(
       "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
     expect(sets).toHaveLength(1);
-    const { rows: snaps } = await db.query<any>('SELECT COUNT(*) AS n FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    const { rows: snaps } = await db.query<any>('SELECT COUNT(*) AS n FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [sets[0].id]);
     expect(Number(snaps[0].n)).toBe(2);
   });
 
@@ -583,7 +583,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const { rows: sets } = await db.query<any>(
       "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
     expect(sets).toHaveLength(1);
-    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [sets[0].id]);
     expect(snaps.map((r: any) => Number(r.membership_plan_id))).toEqual([c]);
     const { rows: billed } = await db.query<any>(
       `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
@@ -634,7 +634,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const { rows: sets } = await db.query<any>(
       "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
     expect(sets).toHaveLength(1);
-    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE product_set_id = ?', [sets[0].id]);
+    const { rows: snaps } = await db.query<any>('SELECT membership_plan_id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [sets[0].id]);
     expect(snaps.map((r: any) => Number(r.membership_plan_id)).sort()).toEqual([a, c].sort());
     const { rows: billed } = await db.query<any>(
       `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id

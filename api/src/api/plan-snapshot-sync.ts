@@ -4,7 +4,6 @@
  * from). What is left to keep in step is derived from the version and its neighbours: status,
  * dates and the linked assignment, coverage, and the Membership Plan Promotion applications.
  */
-import { syncPlanSnapshotJunction } from './snapshot-junction-sync';
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
@@ -28,7 +27,7 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  *     Membership Plan Promotion applications are derived from the version's applications.
  *
  * Since M4b-1 the snapshots a version holds are the ones the junction links (`product_set_plan_snapshots`),
- * never the ones whose column names it, and **a snapshot linked by more than one Product Set is not
+ * (since M5b a snapshot names no set at all), and **a snapshot linked by more than one Product Set is not
  * written at all** (`planSnapshotSharedSql()`): it is immutable to every set that links it and keeps the
  * state it had, which is Oscar's rule for an unmodified plan a Draft reuses from the active set. A writer
  * that needs to change such a snapshot owns it first (`ownPlanSnapshot()`), after which it is the set's
@@ -37,8 +36,6 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
-  // M2: the Product Set <-> plan snapshot junction follows the snapshots the version holds.
-  await syncPlanSnapshotJunction(tx, gymId, productSetId);
   // Status and closed_at of every snapshot the version links and no other set does.
   await tx.query(
     `UPDATE plan_snapshots s

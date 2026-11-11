@@ -145,26 +145,35 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
         SET membership_plan_id = COALESCE(membership_plan_id,
               (SELECT membership_plan_id FROM user_memberships WHERE id = ?))
       WHERE id = ?`, [umId, setId]);
-  const { rows: own } = await db.query('SELECT id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+  const { rows: own } = await db.query('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
   if (own.length > 0) return;
   const { rows: holder } = await db.query<{ id: number }>(
-    `SELECT s.id FROM plan_snapshots s JOIN product_sets ps ON ps.id = s.product_set_id
-      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, s.id DESC LIMIT 1`, [umId, setId]);
+    `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
+      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
   if (!holder[0]) return;
   const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
   const scols = ASSIGNMENT_CONFIG_COLUMNS.map((c) => `s.${c}`).join(', ');
-  await db.query(
+  const { insertId: adopted } = await db.query(
     `INSERT INTO plan_snapshots
-       (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id, ${cols})
-     SELECT s.gym_id, ps.id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at,
+       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id, ${cols})
+     SELECT s.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at,
             ps.user_membership_id, ${scols}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [setId, holder[0].id]);
+  await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, adopted]);
   // The Active version is the assignment's now: a holder only existed to carry
-  // what the fixture wrote before one did.
+  // what the fixture wrote before one did. M5b: its snapshots go by reference.
   await db.query(
     'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by = ?',
     [umId, setId, FIXTURE_HOLDER]);
+  await deleteUnlinkedPlanSnapshots();
   await syncFixtureSnapshot(setId);
+}
+
+/** #2125 M5b: a fixture that deletes a set by hand deletes the plan snapshots no set links any more. */
+export async function deleteUnlinkedPlanSnapshots(): Promise<void> {
+  await db.query(
+    `DELETE s FROM plan_snapshots s
+      WHERE NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)`);
 }
 
 /** #2125 stage 5: readers use `plan_snapshots`, so a fixture writing the legacy row re-derives it as the routes do. */
@@ -178,7 +187,8 @@ export async function getAssignmentConfig(umId: number): Promise<Record<string, 
   const { rows } = await db.query<any>(
     `SELECT snap.*, ps.id AS product_set_id, ps.status AS product_set_status
        FROM product_sets ps
-       LEFT JOIN plan_snapshots snap ON snap.id = (SELECT MIN(s2.id) FROM plan_snapshots s2 WHERE s2.product_set_id = ps.id)
+       LEFT JOIN plan_snapshots snap ON snap.id = (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2
+                                                    WHERE j2.product_set_id = ps.id ORDER BY j2.id LIMIT 1)
       WHERE ps.user_membership_id = ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId]);
   return rows[0] ?? {};
 }
@@ -204,15 +214,16 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     setId = Number(insertId);
   }
   const { rows: snap } = await db.query<{ id: number }>(
-    'SELECT MIN(id) AS id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+    'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [setId]);
   let snapshotId = snap[0]?.id != null ? Number(snap[0].id) : null;
   if (snapshotId == null) {
     const { insertId } = await db.query(
       `INSERT INTO plan_snapshots
-         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id)
-       SELECT ps.gym_id, ps.id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ps.user_membership_id
+         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id)
+       SELECT ps.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ps.user_membership_id
          FROM product_sets ps WHERE ps.id = ?`, [setId]);
     snapshotId = Number(insertId);
+    await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapshotId]);
   }
   const defined = keys.filter((k) => patch[k] !== undefined);
   await db.query(
@@ -270,7 +281,7 @@ async function versionOfAssignment(userMembershipId: number): Promise<number> {
 }
 
 const PRIMARY_SNAPSHOT_OF_VERSION = (versionExpr: string) =>
-  `(SELECT s9.id FROM plan_snapshots s9 WHERE s9.product_set_id = ${versionExpr} ORDER BY s9.id LIMIT 1)`;
+  `(SELECT j9.plan_snapshot_id FROM product_set_plan_snapshots j9 WHERE j9.product_set_id = ${versionExpr} ORDER BY j9.id LIMIT 1)`;
 
 export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): Promise<any> {
   const queue = [...params];
@@ -299,16 +310,17 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       for (const c of columns) resolved[c] = value(c);
       const versionId = await versionOfAssignment(Number(resolved.user_membership_id));
       const { rows } = await db.query<{ id: number }>(
-        `SELECT id FROM plan_snapshots WHERE product_set_id = ?
-          ORDER BY (source_user_membership_id = ?) DESC, id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
+        `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+          WHERE j.product_set_id = ?
+          ORDER BY (s.source_user_membership_id = ?) DESC, j.id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
       if (!rows[0]) {
         // A version with no plan snapshot yet (a bare fixture): give it the assignment's own.
         const { rows: um } = await db.query<any>(
           'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
-          `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
-           VALUES (?, ?, ?, ?, 'draft', ?, 'admin', ?)`,
-          [resolved.gym_id, versionId, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
+          `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
+           VALUES (?, ?, ?, 'draft', ?, 'admin', ?)`,
+          [resolved.gym_id, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
         await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
         rows.push({ id: Number(insertId) });
       }
@@ -332,7 +344,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     if (isLineTable) {
       await syncFixtureSnapshot(versionId);
       const { rows: snap } = await db.query<{ id: number }>(
-        'SELECT id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [versionId]);
+        'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [versionId]);
       if (!snap[0]) throw new Error(`legacy child fixture: version ${versionId} has no plan snapshot`);
       queue[placeholders] = snap[0].id;
       columns[at] = 'plan_snapshot_id';
@@ -567,6 +579,8 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM product_sets WHERE gym_id IN (${marks})`, ids);
   await db.query(
     `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);
+  // #2125 M5b: a plan snapshot names no set, so none went with them; `member_id` is RESTRICT.
+  await db.query(`DELETE FROM plan_snapshots WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products_oneoff_snapshot WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);

@@ -58,7 +58,7 @@ beforeAll(async () => {
   const { rows: b } = await db.query<{ id: number }>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umB]);
   setB = b[0].id;
   await db.query("UPDATE product_sets SET status = 'superseded', owner_member_id = ? WHERE id = ?", [owner, setB]);
-  await db.query('INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) SELECT gym_id, MIN(id), ?, 0 FROM plan_snapshots WHERE product_set_id = ? GROUP BY gym_id', [kid, setA]);
+  await db.query('INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) SELECT gym_id, MIN(id), ?, 0 FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?) GROUP BY gym_id', [kid, setA]);
   const { insertId: prod } = await db.query(
     `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`, [gymId, `PS-Prod-${uniq()}`]);
@@ -85,7 +85,9 @@ beforeAll(async () => {
 
 describe('plan snapshots (#2125)', () => {
   it('copies one snapshot per version with the frozen commercial values and owner as member', async () => {
-    const { rows } = await db.query<any>('SELECT * FROM plan_snapshots WHERE gym_id = ? ORDER BY product_set_id', [gymId]);
+    const { rows } = await db.query<any>(
+      `SELECT s.*, j.product_set_id FROM plan_snapshots s JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
+        WHERE s.gym_id = ? ORDER BY j.product_set_id`, [gymId]);
     expect(rows).toHaveLength(2);
     const a = rows.find((r) => r.product_set_id === setA);
     expect(a.member_id).toBe(owner);
@@ -104,14 +106,14 @@ describe('plan snapshots (#2125)', () => {
   it('records the owner and the chain-covered member as beneficiaries', async () => {
     const { rows } = await db.query<any>(
       `SELECT b.member_id, b.is_owner FROM plan_snapshot_beneficiaries b
-         JOIN plan_snapshots s ON s.id = b.plan_snapshot_id WHERE s.product_set_id = ? ORDER BY b.member_id`, [setA]);
+         JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = b.plan_snapshot_id WHERE j.product_set_id = ? ORDER BY b.member_id`, [setA]);
     expect(rows.map((r) => [r.member_id, r.is_owner])).toEqual([[owner, 1], [kid, 0]].sort((x, y) => x[0] - y[0]));
   });
 
   // The included Products are the snapshot's own lines since migration 355 (no legacy table to backfill from).
   it('copies promotion applications under their snapshot', async () => {
     const { rows: promo } = await db.query<any>(
-      `SELECT p.*, s.product_set_id FROM plan_promotion_snapshots p JOIN plan_snapshots s ON s.id = p.plan_snapshot_id WHERE p.gym_id = ?`, [gymId]);
+      `SELECT p.*, j.product_set_id FROM plan_promotion_snapshots p JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = p.plan_snapshot_id WHERE p.gym_id = ?`, [gymId]);
     expect(promo).toHaveLength(1);
     expect(promo[0].product_set_id).toBe(setA);
     expect(promo[0].status).toBe('revoked');
@@ -124,10 +126,10 @@ describe('plan snapshots (#2125)', () => {
   });
 
   it('is repeatable: a second run inserts nothing and rewrites nothing', async () => {
-    await db.query("UPDATE plan_snapshots SET membership_fee_price = 1.00 WHERE product_set_id = ?", [setA]);
+    await db.query("UPDATE plan_snapshots SET membership_fee_price = 1.00 WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)", [setA]);
     const counts = await migration.backfillPlanSnapshots(knex);
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    const { rows } = await db.query<any>('SELECT membership_fee_price FROM plan_snapshots WHERE product_set_id = ?', [setA]);
+    const { rows } = await db.query<any>('SELECT membership_fee_price FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [setA]);
     expect(Number(rows[0].membership_fee_price)).toBe(1);
   });
 });
