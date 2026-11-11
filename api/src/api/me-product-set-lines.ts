@@ -2,6 +2,7 @@ import { db } from '../infra/db';
 import { draftExpiresInSeconds, DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { loadRecurringLinePromotions } from './member-product-promotions';
 import { assignedMemberSql } from '../domain/productAssignee';
+import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -127,8 +128,25 @@ export async function loadMemberProductSetView(gymId: string, set: { id: number;
     expiresIn = draftExpiresInSeconds(rows[0]?.s);
   }
 
+  // #2496 stage 4 — the version's Membership Plans, in link order: `added` for
+  // a plan this Draft took (the Members App's Add Plan, removable), `inherited`
+  // for the plan the member already holds.
+  const { rows: planRows } = await db.query<any>(
+    `SELECT s.id AS plan_snapshot_id, s.membership_plan_id, mp.name AS plan_name,
+            ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS inherited
+       FROM product_set_plan_snapshots j
+       JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = ?
+       LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
+      WHERE j.product_set_id = ? ORDER BY j.id`, [gymId, Number(set.id)]);
+
   return {
     expires_in_seconds: expiresIn,
+    plans: planRows.map((r) => ({
+      plan_snapshot_id: Number(r.plan_snapshot_id),
+      membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
+      plan_name: r.plan_name ?? null,
+      change: Number(r.inherited) === 1 ? 'inherited' as const : 'added' as const,
+    })),
     lines: lines.map((r) => shapeLine(r, set.previous_product_set_id != null && previousRefs.has(Number(r.line_ref)) ? 'inherited' : 'added')),
     removed_lines: previous
       .filter((r) => !currentRefs.has(Number(r.line_ref)))

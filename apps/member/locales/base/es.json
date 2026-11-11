@@ -504,14 +504,19 @@
     "product_remove_from_draft": "Quitar",
     "product_in_draft": "Añadido",
     "product_state_held": "En tus productos",
-    "draft_selection_count": "{count, plural, one {# producto añadido a tu selección.} other {# productos añadidos a tu selección.}}",
+    "draft_selection_count": "{count, plural, one {# elemento añadido a tu selección.} other {# elementos añadidos a tu selección.}}",
     "draft_expires_in": "El borrador caduca en",
     "draft_discard": "Descartar selección",
     "draft_error_in_flight": "Ya tienes un cambio pendiente de pago. Complétalo o cancélalo primero.",
     "draft_error_locked": "Todavía se está procesando un pago. Inténtalo más tarde.",
     "draft_error_duplicate": "Este producto se acaba de añadir. Espera un momento.",
     "draft_error_expired": "Tu selección ha caducado. Vuelve a añadir el producto.",
-    "draft_error_generic": "No se ha podido actualizar tu selección. Inténtalo de nuevo."
+    "draft_error_generic": "No se ha podido actualizar tu selección. Inténtalo de nuevo.",
+    "plan_add_to_draft": "Añadir a mi selección",
+    "plan_in_draft": "En tu selección",
+    "plan_remove_from_draft": "Quitar",
+    "draft_error_has_plan": "Tu selección ya incluye un plan.",
+    "draft_error_plan_via_gym": "Para cambiar tu plan, contacta con tu gimnasio."
   },
   "payments": {
     "title": "Pagos",
