@@ -168,6 +168,9 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
   }
 });
 
+/** The statuses the list may be filtered by (#2661); `deleted` is never listed. */
+const LISTABLE_PLAN_STATUSES = ['active', 'draft', 'completed'];
+
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
 memberNutritionPlansRouter.get('/', async (req, res, next) => {
@@ -176,10 +179,22 @@ memberNutritionPlansRouter.get('/', async (req, res, next) => {
   if (memberId !== null && !Number.isInteger(memberId)) {
     return res.status(400).json({ error: 'member_id must be an integer' });
   }
+  // #2661: the list's Status filter is a closed set (a deleted plan is never
+  // listed), the Member filter a free-text, partial match on the member's name.
+  const status = typeof req.query.status === 'string' && req.query.status !== '' ? req.query.status : null;
+  if (status !== null && !LISTABLE_PLAN_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${LISTABLE_PLAN_STATUSES.join(', ')}` });
+  }
+  const memberName = typeof req.query.member === 'string' ? req.query.member.trim() : '';
   try {
     const where: string[] = ["mnp.gym_id = ?", "mnp.status != 'deleted'"];
     const params: any[] = [gymId];
     if (memberId !== null) { where.push('mnp.member_id = ?'); params.push(memberId); }
+    if (status !== null) { where.push('mnp.status = ?'); params.push(status); }
+    if (memberName) {
+      where.push('m.name LIKE ?');
+      params.push(`%${memberName}%`);
+    }
 
     const { rows } = await db.query(
       `${PLAN_SELECT} WHERE ${where.join(' AND ')} ORDER BY mnp.created_at DESC`,
