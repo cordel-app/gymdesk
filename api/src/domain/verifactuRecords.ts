@@ -9,7 +9,7 @@ import {
 import type { InvoiceType } from './billingDocumentKeys';
 
 /**
- * Mirrors `chk_verifactu_records_submission_status` (migration 397). `sending`
+ * Mirrors `chk_verifactu_records_submission_status` (migration 399). `sending`
  * and `retry_pending` are #2648 stage 4's; `submitted` is stage 2's value that
  * nothing writes.
  */
