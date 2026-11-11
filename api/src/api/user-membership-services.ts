@@ -57,27 +57,14 @@ const LIVE_PRODUCT_COLUMNS = `
          gc.amount AS unit_price,
          gc.currency`;
 
-const SELECT = `
-  SELECT ums.id, ums.gym_id, um.id AS user_membership_id, ums.product_id,
-         ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
-         ums.item_name AS snapshot_item_name,
-         ums.item_billing_frequency AS snapshot_billing_frequency,
-         ums.unit_price AS snapshot_unit_price,
-         ums.currency AS snapshot_currency,
-         ${LIVE_PRODUCT_COLUMNS}
-  FROM user_memberships um
-  JOIN member_products_recurrent_snapshot ums
-    ON ums.product_set_id = ${assignmentLineVersionId('um.id')} AND ums.gym_id = um.gym_id
-  JOIN products gc ON gc.id = ums.product_id
-`;
-
 // #2126 stage 3i: the two display reads (the Assigned Plan card's services and
 // the Member card's ADDITIONAL SERVICES) read `product_periodical_snapshots`, kept
 // equal to each version's lines by stage 2's dual-write (`syncProductSnapshotsOfVersion()`,
 // run by every Draft writer's `touch()` and by `cloneConfiguration()`). The row keeps
 // reporting the legacy line id (`source_id`), which is what the routes address a
-// service by. The Billing Simulation loader (`loadServicesForSimulation()`) stays on
-// the legacy table above until the billing readers move.
+// service by. Since stage 3k the Billing Simulation loader (`loadServicesForSimulation()`)
+// reads it too: it runs outside any transaction, so it only ever sees committed rows,
+// which the dual-write keeps equal to the legacy lines.
 const DISPLAY_SELECT = `
   SELECT ums.source_id AS id, ums.gym_id, um.id AS user_membership_id, ums.product_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
@@ -209,8 +196,8 @@ export async function loadServicesForSimulation(
   if (umIds.length === 0) return byAssignment;
 
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
-     ORDER BY ums.starts_at ASC, ums.id ASC`,
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
+     ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, ...umIds],
   );
   for (const row of rows) {

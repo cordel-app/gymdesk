@@ -13,6 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 
 // The nightly run's success branch is what advances `next_billing_date`, and
 // no provider is configured in tests — so the provider is stubbed here (this
@@ -340,6 +341,28 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     const lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
     expect(lines['Renamed Service']).toBeUndefined();
+  });
+
+  // #2126 stage 3k: the loader reads the line's Product snapshot
+  // (`product_periodical_snapshots`), which the dual-write keeps equal to the
+  // legacy line. A legacy row changed behind the writers' back must not reach
+  // the simulation; a change that went through the sync must.
+  it('prices the line from its Product snapshot, not the legacy row', async () => {
+    const { rows } = await db.query<any>(
+      `SELECT id, product_set_id FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND product_id = ?`, [gymId, serviceItemId]);
+    expect(rows.length).toBeGreaterThan(0);
+    await db.query(
+      'UPDATE member_products_recurrent_snapshot SET unit_price = 7 WHERE gym_id = ? AND product_id = ?',
+      [gymId, serviceItemId]);
+    let lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
+    expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
+
+    for (const setId of new Set(rows.map((r: any) => r.product_set_id))) {
+      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, Number(setId)));
+    }
+    lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
+    expect(lines[serviceName]).toMatchObject({ unit_price: 7, actual_charge: 14 });
   });
 });
 
