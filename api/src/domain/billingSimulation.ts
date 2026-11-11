@@ -932,15 +932,35 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   const cadence: Cadence = joinDate
     ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
     : base;
+  // #2125 M5c (Oscar, 2026-11-11) — an aligned plan's Billing & Duration is counted from its first
+  // schedule date, never from the prorated stretch before it: the stretch does not consume a free,
+  // pre-paid, paid or bonus period. Its first charge is the stretch, prorated by actual days at the
+  // price of the period it leads into, **plus** the whole Pre-paid Duration when that period starts
+  // one — so the first schedule date, already paid up front, then bills nothing.
+  const durationContext = joinDate ? { ...a, startsAt: joinDate } : a;
   return {
     cadence,
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
     resolve: (date, occurrence) => {
-      const resolved = resolveMembershipFee(regular, date, a);
-      if (!proration || occurrence !== 0) return resolved;
-      return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
+      if (!joinDate || !proration) return resolveMembershipFee(regular, date, a);
+      if (occurrence !== 0) {
+        const resolved = resolveMembershipFee(regular, date, durationContext);
+        // The first schedule date's Pre-paid lump was collected with the prorated stretch.
+        if (date === joinDate && (resolved.prepaidPeriods ?? 0) > 0) {
+          return {
+            amount: 0, quantity: 0, promotional: true, pending: resolved.pending, periodStatus: 'prepaid_plan',
+            benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'prepaid_plan' }],
+          };
+        }
+        return resolved;
+      }
+      const lead = resolveMembershipFee(regular, joinDate, durationContext);
+      const periods = lead.prepaidPeriods ?? 0;
+      const perPeriod = periods > 0 ? lead.amount / periods : lead.amount;
+      const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
+      return { ...lead, amount: round2(stretch + (periods > 0 ? lead.amount : 0)) };
     },
     line: (date, resolved) => {
       // #946 — one Membership Fee charge covers more than one period exactly

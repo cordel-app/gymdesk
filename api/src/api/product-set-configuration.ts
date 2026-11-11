@@ -12,6 +12,7 @@ import {
 } from '../domain/billingSimulation';
 import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/productClassification';
 import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
+import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
@@ -49,6 +50,11 @@ const toDateOnly = (v: unknown): string =>
  * The schedule `(root, key)`, created on first use and **never re-anchored**:
  * schedule identity is stable across the versions of a chain, so a new version
  * finds the row its predecessor made and keeps billing on the same dates.
+ *
+ * #2125 M5c — a new schedule is anchored on its cadence's billing calendar (the
+ * 1st of the month, the 4-week grid, Mondays; a yearly one on its own date),
+ * the grid date on or before `anchorDate`: a start between two grid dates pays a
+ * prorated first stretch and then bills on the grid (`alignTo`).
  */
 export async function ensureSchedule(tx: Tx, input: {
   gymId: string; rootProductSetId: number; key: string; anchorDate: string;
@@ -58,7 +64,9 @@ export async function ensureSchedule(tx: Tx, input: {
     `INSERT IGNORE INTO product_set_schedules
        (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.gymId, input.rootProductSetId, input.key, input.anchorDate, input.cadenceInterval, input.cadenceUnit],
+    [input.gymId, input.rootProductSetId, input.key,
+      calendarAnchorOnOrBefore({ interval: input.cadenceInterval, unit: input.cadenceUnit }, input.anchorDate),
+      input.cadenceInterval, input.cadenceUnit],
   );
   const { rows } = await tx.query<{ id: number }>(
     `SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = ?`,
