@@ -435,11 +435,15 @@ export async function addService(
   // Product written a moment ago (a clone carries another id than its `line_ref`, so only a
   // line bought in this Draft counts) (a double-clicked button, a retried request) is
   // still refused.
+  //
+  // #2126 stage 3l: both guards read the Product snapshot of each line, keyed
+  // back to the legacy line by `source_id`. They run before the line they guard
+  // is written, so every line they read was synced by an earlier Draft write.
   if (opts.allowRepeat) {
     const { rows: recent } = await tx.query(
-      `SELECT id FROM member_products_recurrent_snapshot
+      `SELECT source_id AS id FROM product_periodical_snapshots
         WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL
-          AND line_ref = id AND created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
+          AND line_ref = source_id AND created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
       [draft.gym_id, draft.id, productId]);
     if (recent.length > 0) {
       const message = 'This product was just added; wait a moment before adding it again';
@@ -447,7 +451,7 @@ export async function addService(
     }
   } else {
     const { rows: dup } = await tx.query(
-      `SELECT id FROM member_products_recurrent_snapshot
+      `SELECT source_id AS id FROM product_periodical_snapshots
         WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND (ends_at IS NULL OR ends_at >= ?)`,
       [draft.gym_id, draft.id, productId, startsAt]);
     if (dup.length > 0) {
