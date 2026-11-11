@@ -133,10 +133,10 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   } else {
     const { insertId } = await tx.query(
       `INSERT INTO plan_snapshots
-         (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, ends_at,
+         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, source_user_membership_id, created_by)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, productSetId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
         set.created_by ?? null]);

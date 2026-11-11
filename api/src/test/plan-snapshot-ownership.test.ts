@@ -95,6 +95,14 @@ describe('ownPlanSnapshot (#2125 M4a)', () => {
     await db.query('UPDATE plan_snapshots SET membership_fee_price = 99 WHERE id = ?', [own]);
     const { rows: orig } = await db.query<any>('SELECT membership_fee_price AS fee FROM plan_snapshots WHERE id = ?', [snapshot]);
     expect(Number(orig[0].fee)).toBe(20);
+
+    // The copy records its source (#2125 M5a), so the edited plan still reads as inherited by the Draft,
+    // which is what keeps a new Plan Promotion off it.
+    const { rows: lineage } = await db.query<any>(
+      `SELECT copied_from_plan_snapshot_id AS src, ${planSnapshotInheritedSql('s', '?')} AS inh FROM plan_snapshots s WHERE s.id = ?`,
+      [b, own]);
+    expect(Number(lineage[0].src)).toBe(snapshot);
+    expect(Number(lineage[0].inh)).toBe(1);
   });
 });
 
@@ -108,11 +116,16 @@ describe('planSnapshotInheritedSql (#2125 M4a)', () => {
     expect(own).toHaveLength(0);
     // The original is linked by A, B's previous: seen from B it carries over.
     expect(await inherited(b, snapshot)).toBe(1);
-    // A snapshot nobody else links, with the flag off, is new.
+    // A snapshot nobody else links, copied from nothing, is new.
     const { insertId } = await db.query(
-      `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, is_inherited)
-       SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at, 0 FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
+      `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at)
+       SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
     expect(await inherited(b, Number(insertId))).toBe(0);
+    // A copy of an inherited snapshot (an edited inherited plan, M5a) is inherited through its lineage.
+    const { insertId: copyId } = await db.query(
+      `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, copied_from_plan_snapshot_id)
+       SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at, id FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
+    expect(await inherited(b, Number(copyId))).toBe(1);
   });
 });
 

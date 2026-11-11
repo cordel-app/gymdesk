@@ -207,8 +207,8 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
     await db.query(
       `INSERT INTO plan_snapshots
          (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
-          membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew, is_inherited)
-       VALUES (?, ?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0, 0)`,
+          membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
+       VALUES (?, ?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0)`,
       [gymId, set.id, owner, second, joinStart, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id);
 
