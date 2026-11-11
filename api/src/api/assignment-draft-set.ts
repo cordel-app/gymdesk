@@ -4,7 +4,8 @@ import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
 import { syncMandatoryQuantities } from './product-set-draft';
 import { cloneConfiguration } from './product-set-bridge';
-import { ownAssignmentSnapshot, discardDraftSet } from './plan-snapshot-ownership';
+import { ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
+import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -88,7 +89,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   await tx.query(
     `UPDATE plan_snapshots
         SET plan_price_id = ?, base_price = ?, discount_reason = ?, discount_expires_at = ?
-      WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
+      WHERE id = ${primaryPlanSnapshotSql('?', '?')}`,
     [input.planPriceId, input.basePrice, input.discountReason, input.discountExpiresAt, setId, input.gymId],
   );
   await syncMandatoryQuantities(tx, input.gymId, setId, created.productSet.root_product_set_id ?? setId);
@@ -199,6 +200,11 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   await tx.query('UPDATE product_sets SET ends_at = ?, user_membership_id = ? WHERE id = ? AND gym_id = ?',
     [input.endsAt, input.userMembershipId, setId, input.gymId]);
   await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
+  // #2125 M4b-3: the clone links the running plan's snapshot, which is the running assignment's
+  // contract; this Draft is a **new** assignment (its own `user_memberships` row, which replaces the
+  // running one when it commits), so its plan is a proposed change by construction and is copied
+  // now — the sync below then names the Draft assignment on the copy. Any other plan stays shared.
+  await ownPrimaryPlanSnapshot(tx, input.gymId, setId);
   await syncDraftAssignment(tx, input.gymId, setId);
   return setId;
 }

@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
+import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment, createTestGym,
@@ -31,8 +32,12 @@ let umId: number;
 let setId: number;
 
 const auth = (r: any) => r.set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+// M4b-3: a set's plan snapshots are the ones `product_set_plan_snapshots` links (a successor links the
+// predecessor's, so the column still names the set that created the snapshot).
 const snapshots = async (set: number) =>
-  (await db.query<any>('SELECT * FROM plan_snapshots WHERE gym_id = ? AND product_set_id = ?', [gymId, set])).rows;
+  (await db.query<any>(
+    `SELECT s.* FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+      WHERE s.gym_id = ? AND j.product_set_id = ? ORDER BY j.id`, [gymId, set])).rows;
 
 beforeAll(async () => {
   gymId = await createTestGym('Dual Write Gym');
@@ -96,23 +101,33 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     expect((await snapshots(setId))[0].status).toBe('active');
   });
 
-  it('a successor version is inherited, and activating it supersedes the predecessor snapshot', async () => {
+  it('a successor version inherits the plan as the same snapshot, and activating it keeps that snapshot active (M4b-3)', async () => {
+    const [current] = await snapshots(setId);
     await db.query(
       `INSERT INTO plan_oneoff_snapshots (gym_id, product_id, quantity, item_name, item_type, unit_price, plan_snapshot_id)
-       VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, (SELECT id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1))`,
-      [gymId, productId, setId]);
+       VALUES (?, ?, 1, 'Frozen oneoff', 'fee', 5.00, ?)`,
+      [gymId, productId, current.id]);
     const draft = await auth(request.post('/product-sets/draft')).send({ member_id: owner });
     expect(draft.status).toBeLessThan(300);
     const newSet = Number(draft.body.product_set_id ?? draft.body.id);
-    const [copy] = await snapshots(newSet);
-    expect(copy.is_inherited).toBe(1);
-    expect(copy.status).toBe('draft');
-    const { rows: items } = await db.query<any>('SELECT item_name FROM plan_oneoff_snapshots WHERE plan_snapshot_id = ?', [copy.id]);
+    // Until M4b-3 the successor held an inherited copy in `draft`; now it links the very same snapshot,
+    // which keeps the state it has (the active set's) and reads as inherited by the link.
+    const [shared] = await snapshots(newSet);
+    expect(shared.id).toBe(current.id);
+    expect(shared.status).toBe('active');
+    const { rows: inh } = await db.query<any>(
+      `SELECT ${planSnapshotInheritedSql('s', '?')} AS i FROM plan_snapshots s WHERE s.id = ?`, [newSet, shared.id]);
+    expect(Number(inh[0].i)).toBe(1);
+    const { rows: items } = await db.query<any>('SELECT item_name FROM plan_oneoff_snapshots WHERE plan_snapshot_id = ?', [shared.id]);
     expect(items.map((i) => i.item_name)).toEqual(['Frozen oneoff']);
 
     const act = await auth(request.post(`/product-sets/${newSet}/activate`)).send({});
     expect(act.status).toBeLessThan(300);
+    // The predecessor set is superseded; the unchanged plan it shares with its successor is still active.
+    const { rows: sets } = await db.query<any>('SELECT status FROM product_sets WHERE id IN (?, ?) ORDER BY id', [setId, newSet]);
+    expect(sets.map((s: any) => s.status)).toEqual(['superseded', 'active']);
+    expect((await snapshots(newSet))[0].id).toBe(current.id);
     expect((await snapshots(newSet))[0].status).toBe('active');
-    expect((await snapshots(setId))[0].status).toBe('superseded');
+    expect((await snapshots(setId))[0].status).toBe('active');
   });
 });
