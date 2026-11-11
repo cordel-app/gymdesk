@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -16,7 +16,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { alertTextColor } from '@/components/formChrome';
+import { createLatestWinsSaver, type LatestWinsSaver } from '@/lib/latestWinsSave';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { FoodDetailsModal, type FoodDetailsRow } from '@/components/nutritionLibrary/FoodDetailsModal';
 
@@ -592,40 +593,36 @@ function MealRow({
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id });
 
+  // #2661: an expanded meal is its editor — there is no separate Edit mode and
+  // no Save/Cancel. The meal type persists on change, the notes on blur.
   const [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [mealTypeVal, setMealTypeVal] = useState(meal.meal_type ?? '');
   const [notesVal, setNotesVal] = useState(meal.notes ?? '');
-  const [saving, setSaving] = useState(false);
+  const base = `${apiBase}/${templateId}/days/${dayId}/meals/${meal.id}`;
+
+  const save = useAutosave<{ meal_type: string; notes: string }>(
+    (v) => apiFetch(base, {
+      method: 'PUT',
+      body: JSON.stringify({ meal_type: v.meal_type || undefined, notes: v.notes.trim() || null }),
+    }),
+    onChanged,
+    (err) => toast(err?.message ?? t('nutrition_plan_templates.error_generic')),
+  );
 
   useEffect(() => {
+    if (save.dirty) return; // never overwrite an edit the server has not acknowledged
     setMealTypeVal(meal.meal_type ?? '');
     setNotesVal(meal.notes ?? '');
   }, [meal]);
 
-  const base = `${apiBase}/${templateId}/days/${dayId}/meals/${meal.id}`;
-
-  function cancelEdit() {
-    setMealTypeVal(meal.meal_type ?? '');
-    setNotesVal(meal.notes ?? '');
-    setEditing(false);
+  function changeMealType(value: string) {
+    setMealTypeVal(value);
+    save.persist({ meal_type: value, notes: notesVal });
   }
 
-  async function saveMeal() {
-    setSaving(true);
-    try {
-      await apiFetch(base, {
-        method: 'PUT',
-        body: JSON.stringify({
-          meal_type: mealTypeVal || undefined,
-          notes: notesVal.trim() || null,
-        }),
-      });
-      await onChanged();
-      setEditing(false);
-    } catch (err: any) {
-      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
-    } finally { setSaving(false); }
+  function commitNotes() {
+    if (notesVal === (meal.notes ?? '') && !save.dirty) return;
+    save.persist({ meal_type: mealTypeVal, notes: notesVal });
   }
 
   const compactSummary = meal.items.length > 0
@@ -637,7 +634,7 @@ function MealRow({
     transition,
     opacity: isDragging ? 0.6 : 1,
     background: '#fff',
-    border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
+    border: '1px solid #ececf0',
     borderRadius: 6,
     marginBottom: 8,
     overflow: 'hidden',
@@ -648,7 +645,7 @@ function MealRow({
       {/* Header — always visible; clicking the row toggles expand */}
       <div
         style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '9px 12px', cursor: 'pointer', userSelect: 'none' }}
-        onClick={() => { if (!editing) setExpanded((e) => !e); }}
+        onClick={() => setExpanded((e) => !e)}
       >
         {canWrite && (
           <span
@@ -673,14 +670,7 @@ function MealRow({
           </span>
         )}
         <span style={{ flex: 1 }} />
-        {canWrite && !editing && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setExpanded(true); setEditing(true); }}
-            style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 12, color: '#555' }}
-          >
-            {t('nutrition_plan_templates.edit')}
-          </button>
-        )}
+        {canWrite && expanded && <AutosaveStatus state={save.state} onRetry={save.retry} t={t} />}
         {canWrite && (
           <span onClick={(e) => e.stopPropagation()}>
             <ContextMenu
@@ -691,27 +681,27 @@ function MealRow({
         )}
       </div>
 
-      {/* Expanded — food items (read-only when not editing) */}
-      {expanded && !editing && meal.items.length > 0 && (
+      {/* Expanded, read-only (no write access) */}
+      {expanded && !canWrite && meal.items.length > 0 && (
         <div style={{ borderTop: '1px solid #ececf0', padding: '8px 12px 10px' }}>
           <ItemsReadView items={meal.items} libraryItems={libraryItems} t={t} />
         </div>
       )}
-      {expanded && !editing && meal.items.length === 0 && (
+      {expanded && !canWrite && meal.items.length === 0 && (
         <div style={{ borderTop: '1px solid #ececf0', padding: '8px 12px' }}>
           <p style={{ color: '#aaa', fontSize: 12.5, margin: 0 }}>{t('nutrition_plan_templates.tree_no_items')}</p>
         </div>
       )}
 
-      {/* Edit mode */}
-      {editing && (
+      {/* Expanded, editable: the meal opens straight into its editor (#2661) */}
+      {expanded && canWrite && (
         <div style={{ borderTop: '1px solid #ececf0', padding: '12px 12px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_label_meal_type')}</span>
               <select
                 value={mealTypeVal}
-                onChange={(e) => setMealTypeVal(e.target.value)}
+                onChange={(e) => changeMealType(e.target.value)}
                 style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
               >
                 <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
@@ -725,7 +715,8 @@ function MealRow({
             <span style={microLabel}>{t('nutrition_plan_templates.tree_label_notes')}</span>
             <textarea
               value={notesVal}
-              onChange={(e) => setNotesVal(e.target.value)}
+              onChange={(e) => { setNotesVal(e.target.value); save.markDirty(); }}
+              onBlur={commitNotes}
               rows={2}
               style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const, resize: 'vertical', fontFamily: 'inherit' }}
             />
@@ -742,16 +733,81 @@ function MealRow({
             canWrite={canWrite}
             onChanged={onChanged}
           />
-
-          <div style={{ ...inlineActionsRowStyle, marginTop: 14 }}>
-            <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
-            <button onClick={saveMeal} disabled={saving} style={btnSmall()}>
-              {saving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}
-            </button>
-          </div>
         </div>
       )}
     </div>
+  );
+}
+
+/* ---- Autosave (#2661) ---- */
+
+type AutosaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+/**
+ * Persists every change through `createLatestWinsSaver`, so rapid edits are
+ * sent in order and a stale request never overwrites a newer value. `dirty`
+ * is true from the first local edit until the newest value is acknowledged;
+ * the caller uses it to keep the server's refetched row from overwriting an
+ * edit in progress. A failed save keeps the edit on screen and can be retried.
+ */
+function useAutosave<T>(
+  send: (value: T) => Promise<unknown>,
+  onSaved: () => Promise<void> | void,
+  onFailed: (err: any) => void,
+) {
+  const [state, setState] = useState<AutosaveState>('idle');
+  const dirtyRef = useRef(false);
+  const lastRef = useRef<T | null>(null);
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const savedRef = useRef(onSaved);
+  savedRef.current = onSaved;
+  const failedRef = useRef(onFailed);
+  failedRef.current = onFailed;
+  const saverRef = useRef<LatestWinsSaver<T> | null>(null);
+  if (!saverRef.current) {
+    saverRef.current = createLatestWinsSaver<T>((v) => sendRef.current(v), {
+      onStart: () => setState('saving'),
+      onSuccess: () => {
+        dirtyRef.current = false;
+        setState('saved');
+        void savedRef.current();
+      },
+      onError: (err) => {
+        setState('error');
+        failedRef.current(err);
+      },
+    });
+  }
+  return {
+    state,
+    get dirty() { return dirtyRef.current; },
+    markDirty() { dirtyRef.current = true; },
+    persist(value: T) {
+      dirtyRef.current = true;
+      lastRef.current = value;
+      void saverRef.current!.save(value);
+    },
+    retry() {
+      if (lastRef.current !== null) void saverRef.current!.save(lastRef.current);
+    },
+  };
+}
+
+function AutosaveStatus({ state, onRetry, t }: { state: AutosaveState; onRetry: () => void; t: (k: string) => string }) {
+  if (state === 'idle') return null;
+  if (state === 'error') {
+    return (
+      <span role="alert" style={{ fontSize: 11.5, color: alertTextColor, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+        {t('nutrition_plan_templates.autosave_failed')}{' '}
+        <button type="button" onClick={onRetry} style={retryLinkStyle}>{t('nutrition_plan_templates.autosave_retry')}</button>
+      </span>
+    );
+  }
+  return (
+    <span aria-live="polite" style={{ fontSize: 11.5, color: '#9ca3af', whiteSpace: 'nowrap' }}>
+      {state === 'saving' ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.autosave_saved')}
+    </span>
   );
 }
 
@@ -809,8 +865,8 @@ function ItemDragHandle() {
   return <span {...(handleProps ?? {})} style={{ cursor: 'grab', color: '#bbb', fontSize: 14, flexShrink: 0 }}>⠿</span>;
 }
 
-interface ItemEditState {
-  id: number;
+/** One ingredient row's editable fields, as the inputs hold them (#2661). */
+interface ItemDraft {
   foodType: string;
   itemId: string;
   qty: string;
@@ -883,10 +939,6 @@ function MealItemsEditor({
   const [addUnit, setAddUnit] = useState('g');
   const [adding, setAdding] = useState(false);
 
-  // Edit state (one item at a time)
-  const [editState, setEditState] = useState<ItemEditState | null>(null);
-  const [editSaving, setEditSaving] = useState(false);
-
   const [removingId, setRemovingId] = useState<number | null>(null);
 
   const base = `${apiBase}/${templateId}/days/${dayId}/meals/${mealId}/items`;
@@ -895,40 +947,9 @@ function MealItemsEditor({
   const addFilteredItems = addFoodType ? foods.filter((i) => i.categories.includes(addFoodType)) : [];
   const selectedAddItem = addFilteredItems.find((i) => i.id === Number(addItemId));
 
-  // Filtered foods for edit form
-  const editFilteredItems = editState ? foods.filter((i) => i.categories.includes(editState.foodType)) : [];
-  const selectedEditItem = editState ? editFilteredItems.find((i) => i.id === Number(editState.itemId)) : undefined;
-
   function handleAddFoodTypeChange(newType: string) {
     setAddFoodType(newType);
     setAddItemId(''); // clear food selection when type changes
-  }
-
-  function handleEditFoodTypeChange(newType: string) {
-    if (!editState) return;
-    setEditState({ ...editState, foodType: newType, itemId: '' });
-  }
-
-  function startEdit(item: MealItem) {
-    const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
-    // The stored `component_type` is the Food Type that was chosen for this item,
-    // so it is what the selector reopens on. It only falls back when the food no
-    // longer carries that type — otherwise the Food dropdown, which filters on the
-    // selected type, would come up empty — and then only to a category this
-    // surface also accepts, so the fallback is a value the selector really offers.
-    const storedIsStillACategory = libItem ? libItem.categories.includes(item.component_type) : true;
-    const fallbackType = libItem?.categories.find((c) => componentTypes.includes(c));
-    setEditState({
-      id: item.id,
-      foodType: storedIsStillACategory ? item.component_type : (fallbackType ?? item.component_type),
-      itemId: String(item.nutrition_library_item_id),
-      qty: item.quantity != null ? String(item.quantity) : '',
-      unit: item.unit ?? 'g',
-    });
-  }
-
-  function cancelEdit() {
-    setEditState(null);
   }
 
   async function addItem() {
@@ -956,29 +977,6 @@ function MealItemsEditor({
     } finally { setAdding(false); }
   }
 
-  async function saveEdit() {
-    if (!editState || !editState.foodType || !editState.itemId) {
-      toast(t('nutrition_plan_templates.tree_item_required'));
-      return;
-    }
-    setEditSaving(true);
-    try {
-      await apiFetch(`${base}/${editState.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          nutrition_library_item_id: parseInt(editState.itemId, 10),
-          component_type: editState.foodType,
-          quantity: editState.qty ? parseFloat(editState.qty) : null,
-          unit: editState.unit.trim() || null,
-        }),
-      });
-      setEditState(null);
-      await onChanged();
-    } catch (err: any) {
-      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
-    } finally { setEditSaving(false); }
-  }
-
   async function removeItem() {
     if (removingId == null) return;
     try {
@@ -1001,107 +999,19 @@ function MealItemsEditor({
       {/* Items list */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onItemDragEnd}>
       <SortableContext items={ordered.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-      {ordered.map((item, idx) => {
-        const isEditing = editState?.id === item.id;
-        const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
-
-        return (
-          <SortableItem key={item.id} id={item.id} enabled={canWrite && !isEditing}>
-
-            {isEditing ? (
-              /* Inline edit row */
-              <div style={{ background: '#f8f8ff', border: '1px solid #e0e0f0', borderRadius: 4, padding: '8px', marginBottom: 4 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div style={{ minWidth: 110 }}>
-                    <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
-                    <select
-                      value={editState.foodType}
-                      onChange={(e) => handleEditFoodTypeChange(e.target.value)}
-                      style={{ ...microSelect, width: '100%' }}
-                    >
-                      <option value="">—</option>
-                      {availableFoodTypes.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {foodTypeLabel(cat, t)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ flex: 2, minWidth: 130 }}>
-                    <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
-                    <select
-                      value={editState.itemId}
-                      onChange={(e) => setEditState({ ...editState, itemId: e.target.value })}
-                      style={{ ...microSelect, width: '100%' }}
-                      disabled={!editState.foodType}
-                    >
-                      <option value="">—</option>
-                      {editFilteredItems.map((o) => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ width: 64 }}>
-                    <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
-                    <input
-                      type="number" min="0" step="0.1"
-                      value={editState.qty}
-                      onChange={(e) => setEditState({ ...editState, qty: e.target.value })}
-                      style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
-                    />
-                  </div>
-                  <div style={{ width: 52 }}>
-                    <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
-                    <input
-                      value={editState.unit}
-                      onChange={(e) => setEditState({ ...editState, unit: e.target.value })}
-                      style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
-                    />
-                  </div>
-                  <button onClick={saveEdit} disabled={editSaving} style={btnSmall()}>
-                    {editSaving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}
-                  </button>
-                  <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
-                </div>
-                {(selectedEditItem?.quality_slugs ?? []).length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                    {(selectedEditItem?.quality_slugs ?? []).map((slug) => (
-                      <QualityBadge key={slug} slug={slug} t={t as any} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Read row */
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
-                {canWrite && <ItemDragHandle />}
-                <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
-                {libItem && (libItem.quality_slugs ?? []).map((slug) => (
-                  <QualityBadge key={slug} slug={slug} t={t as any} />
-                ))}
-                <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>
-                  {foodTypeLabel(item.component_type, t)}
-                </span>
-                <span style={{ flex: 1 }} />
-                {item.quantity != null && (
-                  <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
-                )}
-                {canWrite && (
-                  <>
-                    <button
-                      onClick={() => startEdit(item)}
-                      style={{ background: 'none', border: '1px solid #e5e7eb', borderRadius: 3, padding: '2px 7px', cursor: 'pointer', fontSize: 11.5, color: '#555' }}
-                    >
-                      {t('nutrition_plan_templates.edit')}
-                    </button>
-                    <button onClick={() => setRemovingId(item.id)} style={removeBtnStyle}>×</button>
-                  </>
-                )}
-              </div>
-            )}
-          </SortableItem>
-        );
-      })}
+      {ordered.map((item) => (
+        <SortableItem key={item.id} id={item.id} enabled={canWrite}>
+          <ItemEditRow
+            item={item}
+            url={`${base}/${item.id}`}
+            foods={foods}
+            componentTypes={componentTypes}
+            availableFoodTypes={availableFoodTypes}
+            onChanged={onChanged}
+            onRemove={() => setRemovingId(item.id)}
+          />
+        </SortableItem>
+      ))}
       </SortableContext>
       </DndContext>
 
@@ -1179,6 +1089,160 @@ function MealItemsEditor({
       />
     </div>
   );
+}
+
+/* ---- ItemEditRow (#2661) ---- */
+
+/**
+ * One ingredient of an expanded meal, always in its editable form. Every
+ * change persists by itself: the Food on selection, the quantity and unit on
+ * blur. Changing the Food Type clears the Food, and nothing is sent until a
+ * Food of that type is chosen, so an incomplete row is never written.
+ */
+function ItemEditRow({
+  item, url, foods, componentTypes, availableFoodTypes, onChanged, onRemove,
+}: {
+  item: MealItem;
+  url: string;
+  foods: LibraryItem[];
+  componentTypes: string[];
+  availableFoodTypes: string[];
+  onChanged: () => Promise<void> | void;
+  onRemove: () => void;
+}) {
+  const t = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { toast } = useToast();
+
+  const [draft, setDraft] = useState<ItemDraft>(() => draftFromItem(item, foods, componentTypes));
+  const save = useAutosave<ItemDraft>(
+    (d) => apiFetch(url, {
+      method: 'PUT',
+      body: JSON.stringify({
+        nutrition_library_item_id: parseInt(d.itemId, 10),
+        component_type: d.foodType,
+        quantity: d.qty ? parseFloat(d.qty) : null,
+        unit: d.unit.trim() || null,
+      }),
+    }),
+    onChanged,
+    (err) => toast(err?.message ?? t('nutrition_plan_templates.error_generic')),
+  );
+
+  useEffect(() => {
+    if (save.dirty) return; // a refetch never overwrites an edit not yet acknowledged
+    setDraft(draftFromItem(item, foods, componentTypes));
+  }, [item, foods.length]);
+
+  function persist(next: ItemDraft) {
+    setDraft(next);
+    if (!next.foodType || !next.itemId) { save.markDirty(); return; }
+    save.persist(next);
+  }
+
+  function commitText() {
+    const stored = draftFromItem(item, foods, componentTypes);
+    if (!save.dirty && draft.qty === stored.qty && draft.unit === stored.unit) return;
+    persist(draft);
+  }
+
+  const filtered = draft.foodType ? foods.filter((i) => i.categories.includes(draft.foodType)) : [];
+  const selected = filtered.find((i) => i.id === Number(draft.itemId));
+  const incomplete = !draft.foodType || !draft.itemId;
+
+  return (
+    <div style={{ background: '#f8f8ff', border: '1px solid #e0e0f0', borderRadius: 4, padding: '8px', marginBottom: 4 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, padding: '4px 0', alignItems: 'flex-end' }}>
+        <span style={{ alignSelf: 'center' }}><ItemDragHandle /></span>
+        <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
+        <div style={{ minWidth: 110 }}>
+          <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
+          <select
+            value={draft.foodType}
+            onChange={(e) => persist({ ...draft, foodType: e.target.value, itemId: '' })}
+            style={{ ...microSelect, width: '100%' }}
+          >
+            <option value="">—</option>
+            {availableFoodTypes.map((cat) => (
+              <option key={cat} value={cat}>{foodTypeLabel(cat, t)}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ flex: 2, minWidth: 130 }}>
+          <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
+          <select
+            value={draft.itemId}
+            onChange={(e) => persist({ ...draft, itemId: e.target.value })}
+            style={{ ...microSelect, width: '100%' }}
+            disabled={!draft.foodType}
+          >
+            <option value="">—</option>
+            {filtered.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ width: 64 }}>
+          <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
+          <input
+            type="number" min="0" step="0.1"
+            value={draft.qty}
+            onChange={(e) => { setDraft({ ...draft, qty: e.target.value }); save.markDirty(); }}
+            onBlur={commitText}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitText(); }}
+            style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+          />
+        </div>
+        <div style={{ width: 52 }}>
+          <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
+          <input
+            value={draft.unit}
+            onChange={(e) => { setDraft({ ...draft, unit: e.target.value }); save.markDirty(); }}
+            onBlur={commitText}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitText(); }}
+            style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+          />
+        </div>
+        <span style={{ alignSelf: 'center', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {incomplete
+            ? <span style={{ fontSize: 11.5, color: '#9ca3af' }}>{t('nutrition_plan_templates.tree_item_choose_food')}</span>
+            : <AutosaveStatus state={save.state} onRetry={save.retry} t={t} />}
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={t('nutrition_plan_templates.tree_remove_item')}
+            style={{ ...removeBtnStyle, marginLeft: 0 }}
+          >×</button>
+        </span>
+      </div>
+      {(selected?.quality_slugs ?? []).length > 0 && (
+        <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+          {(selected?.quality_slugs ?? []).map((slug) => (
+            <QualityBadge key={slug} slug={slug} t={t as any} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The row's fields from the stored item. The stored `component_type` is the
+ * Food Type that was chosen, so it is what the selector opens on; it falls
+ * back only when the food no longer carries that type — otherwise the Food
+ * dropdown, which filters on the selected type, would come up empty — and
+ * then only to a category this surface also accepts.
+ */
+function draftFromItem(item: MealItem, foods: LibraryItem[], componentTypes: string[]): ItemDraft {
+  const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
+  const storedIsStillACategory = libItem ? libItem.categories.includes(item.component_type) : true;
+  const fallbackType = libItem?.categories.find((c) => componentTypes.includes(c));
+  return {
+    foodType: storedIsStillACategory ? item.component_type : (fallbackType ?? item.component_type),
+    itemId: String(item.nutrition_library_item_id),
+    qty: item.quantity != null ? String(item.quantity) : '',
+    unit: item.unit ?? 'g',
+  };
 }
 
 /* ---- RestrictionsSection ---- */
@@ -1440,3 +1504,4 @@ const sectionHeaderStyle: React.CSSProperties = { margin: '0 0 10px', fontSize: 
 const tagRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: '1px solid #f3f4f6' };
 const removeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db', fontSize: 18, padding: '0 4px', marginLeft: 'auto', lineHeight: 1, fontWeight: 300 };
 const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14 };
+const retryLinkStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', textDecoration: 'underline', fontSize: 'inherit' };

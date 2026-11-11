@@ -15,6 +15,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import { StatusFilter } from '@/components/StatusFilter';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listHeaderCellStyle, listHeaderRowStyle, listScrollerClass,
@@ -41,7 +43,8 @@ interface MemberNutritionPlan {
   modified_by: string | null;
 }
 
-interface MemberOption { id: number; name: string }
+/** The statuses the list may be filtered by (#2661) — the API's listable set. */
+const FILTER_STATUSES = ['active', 'draft', 'completed'] as const;
 
 interface EditForm { name: string; description: string; start_date: string }
 const emptyEditForm: EditForm = { name: '', description: '', start_date: '' };
@@ -115,8 +118,13 @@ export default function NutritionPlansPage() {
 
   const [rows, setRows] = useState<MemberNutritionPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [memberFilter, setMemberFilter] = useState(searchParams.get('member_id') ?? '');
-  const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
+  // #2661: Member is a free-text, partial name match (debounced, applied by the
+  // API), Status the list's closed set. A deep link from the Member card
+  // (`?member_id=`) scopes the list to that member until the Member box is edited.
+  const [memberIdScope, setMemberIdScope] = useState(searchParams.get('member_id') ?? '');
+  const [memberInput, setMemberInput] = useState('');
+  const [memberQuery, setMemberQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [deleting, setDeleting] = useState<MemberNutritionPlan | null>(null);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -151,7 +159,9 @@ export default function NutritionPlansPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (memberFilter) params.set('member_id', memberFilter);
+      if (memberIdScope) params.set('member_id', memberIdScope);
+      if (memberQuery) params.set('member', memberQuery);
+      if (statusFilter) params.set('status', statusFilter);
       const data = await apiFetch<MemberNutritionPlan[]>(`/member-nutrition-plans?${params.toString()}`);
       setRows(data);
     } catch (err: any) {
@@ -159,14 +169,27 @@ export default function NutritionPlansPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeGymId, memberFilter]);
+  }, [activeGymId, memberIdScope, memberQuery, statusFilter]);
 
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
   useEffect(() => {
-    if (!activeGymId || gymLoading) return;
-    apiFetch<MemberOption[]>('/members').then(setMemberOptions).catch(() => {});
+    const id = setTimeout(() => setMemberQuery(memberInput.trim()), 300);
+    return () => clearTimeout(id);
+  }, [memberInput]);
+
+  // A deep-linked member is named in the Member box, so the scope is visible.
+  useEffect(() => {
+    if (!activeGymId || gymLoading || !memberIdScope) return;
+    apiFetch<{ name: string }>(`/members/${memberIdScope}`)
+      .then((m) => setMemberInput((prev) => prev || m.name))
+      .catch(() => {});
   }, [activeGymId, gymLoading]);
+
+  function changeMemberInput(value: string) {
+    setMemberIdScope('');
+    setMemberInput(value);
+  }
 
   function guardUnsaved(action: () => void) {
     if (editingId !== null) setPendingAction(() => action);
@@ -322,20 +345,34 @@ export default function NutritionPlansPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_plans.title')}</h1>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <select
-            value={memberFilter}
-            onChange={(e) => setMemberFilter(e.target.value)}
-            style={filterInputStyle}
-          >
-            <option value="">{t('nutrition_plans.filter_all_members')}</option>
-            {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
-            {t('nutrition_plans.new_plan')}
-          </button>
-        </div>
+        <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
+          {t('nutrition_plans.new_plan')}
+        </button>
       </div>
+
+      {/* #2661: left-aligned filters above the list, the labelled bar every list wears (#724). */}
+      <FilterBar>
+        <FilterField label={t('nutrition_plans.filter_label_member')} htmlFor="np-filter-member">
+          <input
+            id="np-filter-member"
+            type="search"
+            value={memberInput}
+            onChange={(e) => changeMemberInput(e.target.value)}
+            placeholder={t('nutrition_plans.filter_member_placeholder')}
+            style={{ ...filterControlStyle, minWidth: 200 }}
+          />
+        </FilterField>
+        <FilterField label={t('nutrition_plans.filter_label_status')} htmlFor="np-filter-status">
+          <StatusFilter
+            id="np-filter-status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={FILTER_STATUSES.map((st) => ({ value: st, label: t(`status.${st}`) }))}
+            allLabel={t('status.all')}
+            style={filterControlStyle}
+          />
+        </FilterField>
+      </FilterBar>
 
       {loading ? (
         <p style={{ color: '#888' }}>{t('nutrition_plans.loading')}</p>
@@ -642,11 +679,6 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
     </div>
   );
 }
-
-const filterInputStyle: React.CSSProperties = {
-  padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, background: '#fff', minWidth: 160,
-};
 
 const cardStyle = (editing: boolean): React.CSSProperties => ({
   ...cardSurfaceStyle,
