@@ -20,9 +20,9 @@
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired';
 
 /** The status vocabulary the Billing Events view filters and badges on. */
-export type BillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
+export type BillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
 
-export const BILLING_EVENT_STATUSES = ['paid', 'failed', 'pending', 'scheduled', 'recorded'] as const;
+export const BILLING_EVENT_STATUSES = ['paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled'] as const;
 
 /**
  * Maps a transaction status onto the event status it implies. `expired` is a
@@ -52,12 +52,27 @@ export function statusFromEventType(eventType: string): BillingEventStatus {
 /**
  * The event's status: its latest transaction's status when it has one,
  * otherwise what the event type implies.
+ *
+ * #2480: a cancelled event (`billing_events.cancelled_at`) reads `cancelled`,
+ * unless money arrived on it after all (a completed attempt always reads
+ * `paid`: the provider is the source of truth about money).
  */
 export function deriveBillingEventStatus(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
+  cancelled: boolean = false,
 ): BillingEventStatus {
+  if (cancelled && latestTransactionStatus !== 'completed') return 'cancelled';
   return statusFromTransaction(latestTransactionStatus) ?? statusFromEventType(eventType);
+}
+
+/**
+ * #2480: **Cancel** is offered only while the event is `pending` (an attempt
+ * raised and not settled). A scheduled obligation, a failed charge, a paid or
+ * an already cancelled event offers none.
+ */
+export function canCancelBillingEvent(status: BillingEventStatus): boolean {
+  return status === 'pending';
 }
 
 /**
@@ -136,7 +151,9 @@ export function paymentActionsFor(i: PaymentActionInput): PaymentActions {
 export function isAwaitingAction(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
+  cancelled: boolean = false,
 ): boolean {
+  if (cancelled) return false;
   // #1325 PR 2: a one-off purchase and a card verification are not
   // obligations. A failed purchase is the member's to retry from the catalogue
   // (a new request), never the staff's queue, and a verification owes nothing.

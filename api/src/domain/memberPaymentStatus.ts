@@ -72,6 +72,7 @@ export function memberPaymentStatusSql(memberAlias: string): string {
                        SELECT umm.user_membership_id FROM user_membership_members umm
                        WHERE umm.member_id = ${memberAlias}.id AND umm.gym_id = ${memberAlias}.gym_id))
              AND be.is_scheduled = 0
+             AND be.cancelled_at IS NULL
              AND be.event_type NOT IN (${excluded})
              AND ${EVENT_STATUS_SQL} <> 'recorded'
            ORDER BY (${EVENT_STATUS_SQL} = 'paid'), be.created_at DESC, be.id DESC

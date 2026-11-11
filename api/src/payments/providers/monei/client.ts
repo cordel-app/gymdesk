@@ -35,6 +35,11 @@ export class MoneiClient {
     return response.json() as Promise<MoneiPayment>;
   }
 
+  /** #2480: POST /payments/{id}/refund — a full or partial refund of a captured payment. */
+  async refundPayment(id: string, body: Record<string, unknown>): Promise<MoneiPayment> {
+    return this.post<MoneiPayment>(`/payments/${encodeURIComponent(id)}/refund`, body);
+  }
+
   private headers(): Record<string, string> {
     const headers: Record<string, string> = {
       // MONEI's API expects the raw API key, not a Bearer-scheme token —

@@ -5,6 +5,8 @@ import type {
   WebhookPayload,
   ExecuteRecurringParams,
   ExecuteRecurringResult,
+  RefundPaymentParams,
+  RefundPaymentResult,
 } from './types';
 
 export interface PaymentProvider {
@@ -30,4 +32,10 @@ export interface PaymentProvider {
    * reached or does not know the id.
    */
   getPaymentStatus(providerRef: string): Promise<WebhookPayload>;
+  /**
+   * #2480: returns money of a collected payment, in whole or in part. Answers
+   * the provider's own status; throws when the provider cannot be reached or
+   * refuses the request outright (the caller keeps its refund pending/failed).
+   */
+  refundPayment(params: RefundPaymentParams): Promise<RefundPaymentResult>;
 }

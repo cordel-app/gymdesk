@@ -86,6 +86,8 @@ interface EventContext {
   has_completed_tx: number;
   membership_status: string | null;
   last_attempt: number | null;
+  /** #2480: the event was cancelled. */
+  cancelled: number;
 }
 
 /**
@@ -101,7 +103,7 @@ async function loadEventContext(
   const { rows } = await exec.query<EventContext>(
     `SELECT be.id, be.gym_id, be.member_id, um.id AS user_membership_id, be.event_type,
             be.product_set_id, be.is_scheduled, be.billing_date,
-            be.amount, be.charge_type_id,
+            be.amount, be.charge_type_id, (be.cancelled_at IS NOT NULL) AS cancelled,
             (SELECT pr.status FROM payment_requests pr
               WHERE pr.billing_event_id = be.id
               ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
@@ -131,7 +133,7 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
   if (isNonObligationEvent(ev.event_type)) {
     return { status: 400, error: 'Payment actions are not available for a one-off purchase or a card verification.' };
   }
-  const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
+  const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status, Number(ev.cancelled) === 1);
   // #1325: a ProductSet's persisted obligation that is due and nothing has
   // collected — a member with no stored card is the usual case — is payable by
   // staff exactly like a failed one.
