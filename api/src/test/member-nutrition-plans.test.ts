@@ -287,6 +287,41 @@ describe('member nutrition plans happy path', () => {
     expect(res.status).toBe(400);
   });
 
+  // #2661: the list's free-text Member filter and its Status filter.
+  it('filters by a partial, case-insensitive ?member= name and combines it with ?status=', async () => {
+    const get = (q: string) => request
+      .get(`/member-nutrition-plans?${q}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const partial = await get('member=test%20mem');
+    expect(partial.status).toBe(200);
+    expect(partial.body.map((p: any) => p.id)).toContain(plan.id);
+    for (const p of partial.body) expect(p.member_name.toLowerCase()).toContain('test mem');
+
+    const none = await get('member=nobody-by-this-name');
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual([]);
+
+    const both = await get(`member=MNP&status=${plan.status}`);
+    expect(both.body.map((p: any) => p.id)).toContain(plan.id);
+    for (const p of both.body) expect(p.status).toBe(plan.status);
+
+    const otherStatus = plan.status === 'completed' ? 'active' : 'completed';
+    const mismatch = await get(`member=MNP&status=${otherStatus}`);
+    expect(mismatch.body.map((p: any) => p.id)).not.toContain(plan.id);
+  });
+
+  it('returns 400 for a ?status= outside the listable set', async () => {
+    for (const status of ['deleted', 'bogus']) {
+      const res = await request
+        .get(`/member-nutrition-plans?status=${status}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(400);
+    }
+  });
+
   it('gets a single plan by id', async () => {
     const res = await request
       .get(`/member-nutrition-plans/${plan.id}`)

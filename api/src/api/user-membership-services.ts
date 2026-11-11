@@ -48,6 +48,15 @@ const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan f
 // that is retired after being attached must keep billing and keep displaying
 // (the FK has no ON DELETE CASCADE for the same reason). Its retired state is
 // reported on the row instead, so the UI can flag it.
+const LIVE_PRODUCT_COLUMNS = `
+         gc.name AS product_name,
+         gc.type AS product_type,
+         gc.status AS product_status,
+         gc.deleted_at AS product_deleted_at,
+         gc.billing_frequency,
+         gc.amount AS unit_price,
+         gc.currency`;
+
 const SELECT = `
   SELECT ums.id, ums.gym_id, um.id AS user_membership_id, ums.product_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
@@ -55,16 +64,32 @@ const SELECT = `
          ums.item_billing_frequency AS snapshot_billing_frequency,
          ums.unit_price AS snapshot_unit_price,
          ums.currency AS snapshot_currency,
-         gc.name AS product_name,
-         gc.type AS product_type,
-         gc.status AS product_status,
-         gc.deleted_at AS product_deleted_at,
-         gc.billing_frequency,
-         gc.amount AS unit_price,
-         gc.currency
+         ${LIVE_PRODUCT_COLUMNS}
   FROM user_memberships um
   JOIN member_products_recurrent_snapshot ums
     ON ums.product_set_id = ${assignmentLineVersionId('um.id')} AND ums.gym_id = um.gym_id
+  JOIN products gc ON gc.id = ums.product_id
+`;
+
+// #2126 stage 3i: the two display reads (the Assigned Plan card's services and
+// the Member card's ADDITIONAL SERVICES) read `product_periodical_snapshots`, kept
+// equal to each version's lines by stage 2's dual-write (`syncProductSnapshotsOfVersion()`,
+// run by every Draft writer's `touch()` and by `cloneConfiguration()`). The row keeps
+// reporting the legacy line id (`source_id`), which is what the routes address a
+// service by. The Billing Simulation loader (`loadServicesForSimulation()`) stays on
+// the legacy table above until the billing readers move.
+const DISPLAY_SELECT = `
+  SELECT ums.source_id AS id, ums.gym_id, um.id AS user_membership_id, ums.product_id,
+         ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
+         ums.product_name AS snapshot_item_name,
+         ums.billing_frequency AS snapshot_billing_frequency,
+         ums.unit_price AS snapshot_unit_price,
+         ums.currency AS snapshot_currency,
+         ${LIVE_PRODUCT_COLUMNS}
+  FROM user_memberships um
+  JOIN product_periodical_snapshots ums
+    ON ums.product_set_id = ${assignmentLineVersionId('um.id')} AND ums.gym_id = um.gym_id
+       AND ums.source_id IS NOT NULL
   JOIN products gc ON gc.id = ums.product_id
 `;
 
@@ -141,7 +166,7 @@ function shape(row: any): AssignedPlanServiceRow {
 /** Every service attached to one Assigned Plan, oldest window first. */
 export async function loadAssignedPlanServices(gymId: string, umId: number): Promise<AssignedPlanServiceRow[]> {
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND um.id = ? ORDER BY ums.starts_at ASC, ums.id ASC`,
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND um.id = ? ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, umId],
   );
   return rows.map(shape);
@@ -158,8 +183,8 @@ export async function loadServicesForAssignments(
 ): Promise<AssignedPlanServiceRow[]> {
   if (umIds.length === 0) return [];
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
-     ORDER BY ums.starts_at ASC, ums.id ASC`,
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
+     ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, ...umIds],
   );
   return rows.map(shape);

@@ -81,7 +81,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     );
     // …and the Member is what `Q1` keeps on a phone beside the plan's own name,
     // because this list is member-related.
-    expect(pageSrc).toMatch(/key: 'member', width: \d+, grow: \d+, mobile: 'keep'/);
+    expect(pageSrc).toMatch(/key: 'member', (labelKey: 'col_member', )?width: \d+, grow: \d+, mobile: 'keep'/);
     // One typography declaration, spread by both cells, so they cannot drift.
     expect(pageSrc).toMatch(/const headerTitleStyle: React\.CSSProperties = \{ fontWeight: 600, fontSize: 15 \};/);
     for (const cell of ['nameCellStyle', 'memberCellStyle']) {
@@ -132,8 +132,10 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     for (const handler of ['handleDuplicate', 'async function complete()', 'async function del()']) {
       expect(pageSrc, `${handler} is gone`).toContain(handler);
     }
-    // The member filter still drives the list query.
-    expect(pageSrc).toMatch(/params\.set\('member_id', memberFilter\)/);
+    // The member filters still drive the list query (#2661: a deep-linked
+    // member id, then the free-text name).
+    expect(pageSrc).toMatch(/params\.set\('member_id', memberIdScope\)/);
+    expect(pageSrc).toMatch(/params\.set\('member', memberQuery\)/);
     // The Details view still offers View Audit Log (CLAUDE.md).
     expect(pageSrc).toMatch(/<ViewAuditLogButton entityType="member_nutrition_plan" entityId=\{plan\.id\}/);
   });
