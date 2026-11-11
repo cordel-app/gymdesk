@@ -103,7 +103,8 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     await commit(owner, await plan(30), 30);
     await commit(owner, null);
     const rows = await assignments(owner);
-    expect(rows.map((r: any) => r.status)).toEqual(['cancelled']);
+    // #2659 stage 2: a plan whose end date is today or later cancels at its period end.
+    expect(rows.map((r: any) => r.status)).toEqual(['active_cancel_at_period_end']);
 
     const lockerOnly = await member();
     await commit(lockerOnly, null);
