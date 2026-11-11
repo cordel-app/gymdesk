@@ -33,15 +33,16 @@ export interface ProductSetProducts {
 }
 
 /**
- * The derived label of a version: `<Plan name> — v<version>`, or the caller's
- * resolved "Products only" wording for a version that carries no plan. There is
- * no stored name (#1463's default), so every surface composes it here.
+ * The derived label of a Product Set: `<Plan name> — #<id>`, or the caller's
+ * resolved "Products only" wording for a set that carries no plan. There is
+ * no stored name (#1463's default), so every surface composes it here; since
+ * #2125 M5d there is no version number either, so the set's own id names it.
  */
 export function productSetName(
-  set: Pick<ProductSetSummary, 'plan_name' | 'version'>,
+  set: Pick<ProductSetSummary, 'plan_name' | 'id'>,
   noPlanLabel: string,
 ): string {
-  return `${set.plan_name ?? noPlanLabel} — v${set.version}`;
+  return `${set.plan_name ?? noPlanLabel} — #${set.id}`;
 }
 
 /** The `members` locale key of a status badge; unknown statuses read as the raw value's own key-less fallback (`null`). */

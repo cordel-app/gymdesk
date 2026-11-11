@@ -64,7 +64,7 @@ export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershi
        JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
        JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = s.gym_id AND p.user_membership_id = ?
       WHERE s.id = ${assignmentPlanSnapshotId('?', '?')}
-      ORDER BY p.version DESC, p.id DESC LIMIT 1`,
+      ORDER BY p.id DESC LIMIT 1`,
     [userMembershipId, userMembershipId, gymId]);
   if (!rows[0]) return null;
   return ownPlanSnapshot(tx, gymId, Number(rows[0].set_id), Number(rows[0].id));

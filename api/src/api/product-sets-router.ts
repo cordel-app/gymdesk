@@ -85,7 +85,6 @@ function shape(row: any) {
     owner_member_id: Number(row.owner_member_id),
     root_product_set_id: row.root_product_set_id != null ? Number(row.root_product_set_id) : null,
     previous_product_set_id: row.previous_product_set_id != null ? Number(row.previous_product_set_id) : null,
-    version: Number(row.version),
     status: String(row.status),
     membership_plan_id: row.membership_plan_id != null ? Number(row.membership_plan_id) : null,
     starts_at: row.starts_at instanceof Date ? row.starts_at.toISOString().slice(0, 10) : String(row.starts_at).slice(0, 10),
@@ -118,7 +117,7 @@ productSetsRouter.get('/', async (req, res) => {
   const { rows } = await db.query<any>(
     `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
        FROM product_sets ps WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-      ORDER BY ps.root_product_set_id, ps.version DESC`, [gymId, memberId]);
+      ORDER BY ps.root_product_set_id, ps.id DESC`, [gymId, memberId]);
   res.json(rows.map(shape));
 });
 
@@ -658,7 +657,7 @@ meProductSetsRouter.get('/', async (req, res) => {
                 JOIN product_set_plan_snapshots j2 ON j2.plan_snapshot_id = b.plan_snapshot_id
                 JOIN product_sets ps2 ON ps2.id = j2.product_set_id
                WHERE b.gym_id = ? AND b.member_id = ?)
-      ORDER BY ps.root_product_set_id, ps.version DESC`,
+      ORDER BY ps.root_product_set_id, ps.id DESC`,
     [ctx.gymId, memberId, ctx.gymId, memberId]);
   res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId).map(shape));
 });

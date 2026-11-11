@@ -3,7 +3,7 @@ import {
   billingMode, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
 } from '@/app/[locale]/members/productsWorkflowView';
 
-const set = (status: string, expired = false) => ({ id: 1, status, version: 1, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
+const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
 const changed = { changes: [{}], amount_due: 10 };
 
 describe('#1613 products workflow', () => {

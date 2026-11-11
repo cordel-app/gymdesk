@@ -51,7 +51,7 @@ describe('POST /user-memberships/:id/edit-draft', () => {
     const { rows: sets } = await db.query<any>(
       `SELECT ps.status, ps.user_membership_id, snap.membership_fee_price
          FROM product_sets ps JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id JOIN plan_snapshots snap ON snap.id = j.plan_snapshot_id
-        WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.version`, [gymId, memberId]);
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.id`, [gymId, memberId]);
     expect(sets.map((s: any) => s.status)).toEqual(['active', 'draft']);
     expect(Number(sets[1].membership_fee_price)).toBe(77.5);
     expect(Number(sets[1].user_membership_id)).toBe(res.body.id);

@@ -23,7 +23,7 @@ export type RepriceOutcome = 'updated' | 'skipped';
 async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: number): Promise<string | null> {
   const { rows } = await tx.query<{ status: string }>(
     `SELECT status FROM product_sets WHERE gym_id = ? AND user_membership_id = ?
-      ORDER BY version DESC, id DESC LIMIT 1`,
+      ORDER BY id DESC LIMIT 1`,
     [gymId, userMembershipId],
   );
   return rows[0]?.status ?? null;

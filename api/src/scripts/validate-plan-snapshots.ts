@@ -18,7 +18,7 @@ const PLAN_SNAPSHOT_FOR_APPLICATION = `COALESCE(
   (SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j WHERE j.product_set_id = ump.product_set_id ORDER BY j.id LIMIT 1),
   (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2 JOIN product_sets p2 ON p2.id = j2.product_set_id
     WHERE ump.user_membership_id IS NOT NULL AND p2.user_membership_id = ump.user_membership_id
-    ORDER BY p2.version DESC, p2.id DESC, j2.id LIMIT 1))`;
+    ORDER BY p2.id DESC, j2.id LIMIT 1))`;
 
 async function count(sql: string): Promise<number> {
   const { rows } = await db.query<{ n: number }>(sql);
