@@ -28,7 +28,16 @@ export interface ReviewSummary {
   changes: unknown[];
   /** #2446 — every item of the pending set: active, draft and cancelling. */
   summary_items?: SummaryItemLike[];
+  /** #2446 stage 3 — the Summary's totals, the server's. */
+  financial_summary?: FinancialSummaryLike;
   amount_due: number | null;
+}
+
+export interface FinancialSummaryLike {
+  recurring: Array<{ billing_frequency: string | null; existing: number; new: number; cancelling: number; resulting: number }>;
+  initial_discounts: number;
+  initial_payment: number | null;
+  amount_payable: number | null;
 }
 
 export interface SummaryItemLike {
@@ -40,6 +49,8 @@ export interface SummaryItemLike {
   regular_price: number | null;
   promotions: string[];
   initial_amount?: number | null;
+  /** #2446 stage 3 — the per-period charge from the engine's forecast. */
+  final_price?: number | null;
 }
 
 export interface WorkflowInput {

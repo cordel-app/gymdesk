@@ -15,7 +15,7 @@ import { cardHintStyle, cardSubLabelStyle, formErrorStyle, secondaryBtnSmall } f
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
 import { changeMessage, type ChangeLike } from './recurringProductsView';
-import type { SummaryItemLike } from './productsWorkflowView';
+import type { FinancialSummaryLike, SummaryItemLike } from './productsWorkflowView';
 
 interface Props {
   productSets: ProductSetRow[];
@@ -24,11 +24,13 @@ interface Props {
   changes?: unknown[];
   /** #2446 — every item of the pending set with its economic conditions. */
   items?: SummaryItemLike[];
+  /** #2446 stage 3 — the totals of the pending set, the server's. */
+  financial?: FinancialSummaryLike | null;
   /** Re-reads the Member's configuration after an action. */
   onChanged: () => void;
 }
 
-export function ProductSetsInFlight({ productSets, canWrite, changes = [], items = [], onChanged }: Props) {
+export function ProductSetsInFlight({ productSets, canWrite, changes = [], items = [], financial = null, onChanged }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -82,8 +84,9 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], items
                     t(i.type === 'plan' ? 'summary_type_plan' : 'summary_type_product'),
                     i.quantity != null ? `× ${i.quantity}` : null,
                     i.billing_frequency ? i.billing_frequency.replace('_', ' ') : null,
-                    i.regular_price != null ? `${i.regular_price.toFixed(2)} €` : null,
+                    i.regular_price != null ? `${t('summary_regular')}: ${i.regular_price.toFixed(2)} €` : null,
                     i.promotions.length > 0 ? i.promotions.join(', ') : null,
+                    i.final_price != null ? `${t('summary_final')}: ${i.final_price.toFixed(2)} €` : null,
                     i.initial_amount != null ? `${t('summary_initial')}: ${i.initial_amount.toFixed(2)} €` : null,
                   ].filter(Boolean).join(' · ');
                   const tone = i.state === 'draft' ? '#15803d' : i.state === 'cancelling' ? '#b91c1c' : undefined;
@@ -94,6 +97,30 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], items
                   );
                 })}
               </ul>
+            )}
+            {ps.status === 'draft' && financial && (
+              <div data-financial-summary style={{ marginTop: 8, fontSize: 13 }}>
+                <div style={cardSubLabelStyle}>{t('summary_financial')}</div>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {financial.recurring.map((r, n) => (
+                    <li key={n} data-recurring-frequency={r.billing_frequency ?? ''}>
+                      {r.billing_frequency ? `${r.billing_frequency.replace('_', ' ')}: ` : ''}
+                      {[
+                        `${t('summary_existing')} ${r.existing.toFixed(2)} €`,
+                        `${t('summary_new')} ${r.new.toFixed(2)} €`,
+                        `${t('summary_cancelling')} ${r.cancelling.toFixed(2)} €`,
+                        `${t('summary_resulting')} ${r.resulting.toFixed(2)} €`,
+                      ].join(' · ')}
+                    </li>
+                  ))}
+                  {financial.initial_discounts > 0 && (
+                    <li>{t('summary_discounts')}: −{financial.initial_discounts.toFixed(2)} €</li>
+                  )}
+                  {financial.amount_payable != null && (
+                    <li><strong>{t('summary_amount_payable')}: {financial.amount_payable.toFixed(2)} €</strong></li>
+                  )}
+                </ul>
+              </div>
             )}
             {link?.id === ps.id && (
               <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{link.url}</code></div>

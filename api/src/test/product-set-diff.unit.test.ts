@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffConfigurations, recurringLinesOf, summaryItems } from '../domain/productSetDiff';
+import { diffConfigurations, financialSummary, itemFinalPrice, recurringFinalPrices, recurringLinesOf, summaryItems } from '../domain/productSetDiff';
 
 const svc = (productId: number, quantity: number, unitPrice = 10, endsOn: string | null = null) => ({
   id: productId, productId, name: `P${productId}`, billingFrequency: 'month', unitPrice, quantity, startsOn: '2026-01-01', endsOn,
@@ -64,5 +64,47 @@ describe('summaryItems (#2446)', () => {
   it('shows a replaced plan as cancelling beside the new draft one, and a first plan as draft', () => {
     expect(summaryItems(asg([]), asg([], { planName: 'New' })).map((i) => `${i.name}:${i.state}`)).toEqual(['Plan:cancelling', 'New:draft']);
     expect(summaryItems(null, asg([])).map((i) => i.state)).toEqual(['draft']);
+  });
+});
+
+describe('Summary financial view (#2446 stage 3)', () => {
+  const fee = (actual: number, extra: any = {}) => ({ kind: 'membership_fee' as const, label: 'Fee', actual_charge: actual, prepaid_periods: null, ...extra });
+  const prod = (label: string, actual: number, extra: any = {}) => ({ kind: 'product' as const, label, actual_charge: actual, prepaid_periods: null, ...extra });
+
+  it('takes each item\'s first ordinary charge, passing over a prorated or pre-paid one', () => {
+    const prices = recurringFinalPrices([
+      { date: '2026-12-01', lines: [fee(30), prod('Locker', 10)] },
+      { date: '2026-11-15', lines: [prod('Locker', 5, { proration: { prorated_days: 15, period_days: 31 } }), fee(90, { prepaid_periods: 3 })] },
+    ]);
+    expect(prices.fee).toBe(30);
+    expect(prices.products.get('Locker')).toBe(10);
+    expect(itemFinalPrice({ type: 'plan', name: 'Plan' }, prices)).toBe(30);
+    expect(itemFinalPrice({ type: 'product', name: 'Towel' }, prices)).toBeNull();
+    expect(itemFinalPrice({ type: 'product', name: 'Locker' }, null)).toBeNull();
+  });
+
+  it('falls back to a prorated charge when it is the only one', () => {
+    const prices = recurringFinalPrices([{ date: '2026-11-15', lines: [prod('Locker', 5, { proration: { prorated_days: 15, period_days: 31 } })] }]);
+    expect(prices.products.get('Locker')).toBe(5);
+  });
+
+  it('totals per frequency and reports the initial discounts and the amount payable unchanged', () => {
+    const out = financialSummary([
+      { state: 'active', billing_frequency: '1_month', final_price: 40 },
+      { state: 'draft', billing_frequency: 'month', final_price: 10 },
+      { state: 'active', billing_frequency: 'month', final_price: 5 },
+      { state: 'cancelling', billing_frequency: 'month', final_price: 7 },
+      { state: 'draft', billing_frequency: 'year', final_price: null },
+    ], [
+      { quantity: 2, amount: 16, regular_unit_price: 10 },
+      { quantity: 1, amount: 30, regular_unit_price: null },
+    ], 46);
+    expect(out.recurring).toEqual([
+      { billing_frequency: '1_month', existing: 40, new: 0, cancelling: 0, resulting: 40 },
+      { billing_frequency: 'month', existing: 5, new: 10, cancelling: 7, resulting: 15 },
+    ]);
+    expect(out.initial_discounts).toBe(4);
+    expect(out.amount_payable).toBe(46);
+    expect(out.initial_payment).toBe(46);
   });
 });

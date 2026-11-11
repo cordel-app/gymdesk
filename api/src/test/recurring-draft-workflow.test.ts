@@ -219,6 +219,14 @@ describe('Review your changes (#1537)', () => {
     ]);
     expect(review.body.amount_due).toBe(10);
     expect(review.body.payment_required).toBe(true);
+    // #2446 stage 3 — the new line's per-period price is the engine's, and the
+    // Summary's amount payable is the amount Save & Pay charges.
+    const towelItem = review.body.summary_items.find((i: any) => i.name === 'Towel R');
+    expect(towelItem).toEqual(expect.objectContaining({ state: 'draft', final_price: 10 }));
+    expect(review.body.financial_summary.amount_payable).toBe(review.body.amount_due);
+    expect(review.body.financial_summary.recurring).toEqual(expect.arrayContaining([
+      expect.objectContaining({ billing_frequency: 'month', new: 10 }),
+    ]));
 
     const eventsBefore = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ? AND product_set_id = ?', [gymId, draftId]);
     expect(Number(eventsBefore.rows[0].n)).toBe(0); // reading it wrote nothing
