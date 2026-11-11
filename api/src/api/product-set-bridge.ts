@@ -17,6 +17,7 @@ import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
+import { linkCancellingPlans } from './entitlement-plan-links';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -56,7 +57,7 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await tx.query(
     `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
      SELECT ?, psj.plan_snapshot_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id`, [toSetId, gymId, fromSetId]);
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`, [toSetId, gymId, fromSetId]);
 
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
@@ -68,6 +69,9 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
     [toSetId, gymId, fromSetId]);
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
+  // #2659 stage 3: the plans the owner is cancelling at their period end are carried for entitlement
+  // only — derived again from the assignments, never copied from the predecessor's links (above).
+  await linkCancellingPlans(tx, gymId, toSetId);
   await syncPlanSnapshot(tx, gymId, toSetId);
 }
 
@@ -305,7 +309,7 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   const { rows: snap } = await tx.query<any>(
     `SELECT s.free_periods, s.pay_beforehand_periods, s.recurring_billing_interval, s.recurring_billing_unit
        FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY psj.id ASC LIMIT 1`, [set.id, gymId]);
+      WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id ASC LIMIT 1`, [set.id, gymId]);
   const prepaidEnd = prepaidCoverageEnd(snap[0] ? {
     freePeriods: Number(snap[0].free_periods ?? 0), prepaidPeriods: Number(snap[0].pay_beforehand_periods ?? 0),
     interval: Number(snap[0].recurring_billing_interval ?? 0), unit: snap[0].recurring_billing_unit ?? null,
@@ -345,7 +349,8 @@ async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.status = 'active'
         AND EXISTS (SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-                     WHERE psj.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_user_membership_id = ?)
+                     WHERE psj.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_user_membership_id = ?
+                       AND psj.entitlement_only = 0)
       FOR UPDATE`, [gymId, userMembershipId]);
   if (!rows[0]) return null;
   return {
@@ -452,6 +457,10 @@ export async function retireProjected(
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
+  // #2659 stage 3: the activation has just closed the plan (as `active_cancel_at_period_end` when it
+  // still runs to a paid day), so the new Active set carries it — and any other plan the owner is
+  // cancelling — for entitlement only. Nothing is billed or projected from these links.
+  await linkCancellingPlans(tx, input.gymId, created.productSet.id);
   return { kind: 'ok', productSetId: created.productSet.id };
 }
 

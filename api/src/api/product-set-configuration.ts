@@ -265,7 +265,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
   for (const table of ['plan_periodical_snapshots', 'member_products_recurrent_snapshot'] as const) {
     // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
     const scope = table === 'plan_periodical_snapshots'
-      ? 'plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)'
+      ? 'plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 0)'
       : 'product_set_id = ?';
     const { rows } = await tx.query<any>(
       `SELECT id, item_billing_frequency${table === 'member_products_recurrent_snapshot' ? ', starts_at' : ''}
@@ -333,7 +333,7 @@ export async function loadProductSetSimulationAssignment(
             sch.cadence_interval, sch.cadence_unit, sch.anchor_date
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
        LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id
        LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
       WHERE ps.id = ? AND ps.gym_id = ?`,
@@ -486,7 +486,7 @@ export async function planScheduledEvents(
      SELECT p.product_id, sch.schedule_key
        FROM plan_periodical_snapshots p JOIN product_set_schedules sch ON sch.id = p.schedule_id
        JOIN product_set_plan_snapshots psj2 ON psj2.plan_snapshot_id = p.plan_snapshot_id
-      WHERE p.gym_id = ? AND psj2.product_set_id = ?`,
+      WHERE p.gym_id = ? AND psj2.product_set_id = ? AND psj2.entitlement_only = 0`,
     [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));

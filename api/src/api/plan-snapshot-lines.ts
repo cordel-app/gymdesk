@@ -27,7 +27,7 @@ type Exec = { query: Tx['query'] };
 export async function primaryPlanSnapshotId(exec: Exec, gymId: string, productSetId: number): Promise<number | null> {
   const { rows } = await exec.query<{ id: number }>(
     `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id LIMIT 1`, [gymId, productSetId]);
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id LIMIT 1`, [gymId, productSetId]);
   return rows[0] ? Number(rows[0].id) : null;
 }
 
@@ -39,7 +39,8 @@ export async function primaryPlanSnapshotId(exec: Exec, gymId: string, productSe
 export const primaryPlanSnapshotSql = (setExpr: string, gymExpr: string): string =>
   `(SELECT pp_.plan_snapshot_id FROM product_set_plan_snapshots pp_
      JOIN product_sets pset_ ON pset_.id = pp_.product_set_id
-    WHERE pp_.product_set_id = ${setExpr} AND pset_.gym_id = ${gymExpr} ORDER BY pp_.id LIMIT 1)`;
+    WHERE pp_.product_set_id = ${setExpr} AND pset_.gym_id = ${gymExpr} AND pp_.entitlement_only = 0
+    ORDER BY pp_.id LIMIT 1)`;
 
 /**
  * The plan snapshot of `userMembershipId` inside one version (#2125 stage 21): the copy that names the
@@ -51,7 +52,7 @@ export async function planSnapshotOfAssignment(
   if (userMembershipId != null) {
     const { rows } = await exec.query<{ id: number }>(
       `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-        WHERE s.gym_id = ? AND psj.product_set_id = ? AND s.source_user_membership_id = ?
+        WHERE s.gym_id = ? AND psj.product_set_id = ? AND s.source_user_membership_id = ? AND psj.entitlement_only = 0
         ORDER BY psj.id LIMIT 1`, [gymId, productSetId, userMembershipId]);
     if (rows[0]) return Number(rows[0].id);
   }

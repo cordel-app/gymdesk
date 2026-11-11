@@ -142,7 +142,8 @@ async function mergeOwnerVersionForAdd(
   // would duplicate every plan, so a Draft that already carries inherited snapshots is left as it is.
   const { rows: merged } = await tx.query<any>(
     `SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? AND ${planSnapshotInheritedSql('s', 'psj.product_set_id')} LIMIT 1`,
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0
+        AND ${planSnapshotInheritedSql('s', 'psj.product_set_id')} LIMIT 1`,
     [gymId, draft.id]);
   if (merged.length > 0) return true;
   await mergeActiveVersionIntoDraft(tx, gymId, Number(active.id), Number(draft.id), { excludeUserMembershipIds });

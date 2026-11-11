@@ -105,7 +105,7 @@ const SET_SELECT = `
          snap.discount_reason, snap.discount_expires_at,
          sch.cadence_interval, sch.cadence_unit
     FROM product_sets ps
-    LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+    LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
     LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id
     LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
    WHERE ps.id = ? AND ps.gym_id = ?`;
@@ -145,7 +145,7 @@ async function reusesPredecessorsContract(
   if (primary == null) return false;
   const { rows } = await tx.query<{ n: number }>(
     `SELECT COUNT(*) AS n FROM plan_snapshots s
-       JOIN product_set_plan_snapshots prev ON prev.plan_snapshot_id = s.id AND prev.product_set_id = ?
+       JOIN product_set_plan_snapshots prev ON prev.plan_snapshot_id = s.id AND prev.product_set_id = ? AND prev.entitlement_only = 0
       WHERE s.id = ? AND s.gym_id = ? AND s.source_user_membership_id = ?`,
     [set.previous_product_set_id, primary, gymId, previousUmId]);
   return Number(rows[0]?.n ?? 0) > 0;

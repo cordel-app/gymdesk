@@ -692,7 +692,7 @@ export async function applyPromotionToProductSet(
     const { rows: inheritedRows } = await tx.query(
       `SELECT ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
           FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-        WHERE psj.product_set_id = ? AND s.gym_id = ?`,
+        WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0`,
       [productSetId, gymId],
     );
     if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
@@ -979,7 +979,7 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   const { rows: versionRows } = await db.query<any>(
     `SELECT ps.status, ${planSnapshotInheritedSql('snap', 'ps.id')} AS is_inherited
        FROM product_sets ps
-       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
+       LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
        LEFT JOIN plan_snapshots snap ON snap.id = psj.plan_snapshot_id AND snap.gym_id = ps.gym_id
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],

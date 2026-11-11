@@ -39,7 +39,7 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
   // Status and closed_at of every snapshot the version links and no other set does.
   await tx.query(
     `UPDATE plan_snapshots s
-       JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ?
+       JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
         SET s.status = CASE WHEN ps.status = 'active' AND um.status = 'active_cancel_at_period_end' THEN 'cancelled'
