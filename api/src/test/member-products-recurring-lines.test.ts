@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { syncProductSnapshotForPurchase, syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 let gymId: string;
@@ -24,6 +25,8 @@ async function setWithLine(status: 'active' | 'superseded'): Promise<number> {
         item_billing_frequency, unit_price, list_unit_price, direct_discount_percent)
      VALUES (?, ?, ?, 2, '2026-01-01', 'Locker Rental', 'service', 'month', 8.00, 10.00, 20)`,
     [gymId, s.insertId, productId]);
+  // #2126 stage 3g: the list reads `product_periodical_snapshots`, which the dual-write keeps equal.
+  await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, s.insertId));
   return s.insertId;
 }
 
@@ -60,6 +63,44 @@ describe('GET /members/:id/products — recurring lines (#1661)', () => {
       direct_discount_percent: 20, product_id: productId,
     });
     expect(recurring[0].id).toBeLessThan(0);
+  });
+
+  // #2126 stage 3g: a purchase's applied Promotions are read from `product_promotion_snapshots`,
+  // in the order they were applied, still identified by the purchase's own application ids.
+  it('lists every Promotion frozen onto a purchase, in application order (#2126 stage 3g)', async () => {
+    const promo = async (name: string) => (await db.query<any>(
+      `INSERT INTO promotions
+         (gym_id, name, starts_at, ends_at, lifecycle_status, applies_to, stackable,
+          only_applicable_for_new_members, free_months, paid_months, bonus_months)
+       VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 'product', 1, 0, 0, 6, 0)`,
+      [gymId, name])).insertId;
+    const first = await promo('Spring 50');
+    const second = await promo('Loyalty 20');
+    const dayPass = (await db.query<any>(
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount)
+       VALUES (?, 'Day Pass', 'other', 'once', 'active', 'public', 'EUR', '100.00')`, [gymId])).insertId;
+    const purchaseId = (await db.query<any>(
+      `INSERT INTO member_products_oneoff_snapshot
+         (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
+          amount, currency, list_price, created_by)
+       VALUES (?, ?, ?, 'active', 'Day Pass', 'other', 'once', '40.00', 'EUR', '100.00', 'Test')`,
+      [gymId, memberId, dayPass])).insertId;
+    const applicationIds: number[] = [];
+    for (const [promotionId, name, regular, final] of [[first, 'Spring 50', 100, 50], [second, 'Loyalty 20', 50, 40]] as const) {
+      applicationIds.push((await db.query<any>(
+        `INSERT INTO member_products_oneoff_promotion_snapshot
+           (gym_id, member_product_id, promotion_id, promotion_name, benefit_action, benefit_value,
+            regular_amount, final_amount)
+         VALUES (?, ?, ?, ?, 'percentage_discount', 20, ?, ?)`,
+        [gymId, purchaseId, promotionId, name, regular, final])).insertId);
+    }
+    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+
+    const res = await auth(request.get(`/members/${memberId}/products`));
+    expect(res.status).toBe(200);
+    const item = (res.body.items as any[]).find((i) => i.id === purchaseId);
+    expect(item.promotions.map((p: any) => [p.id, p.promotion_name, p.regular_amount, p.final_amount]))
+      .toEqual([[applicationIds[0], 'Spring 50', 100, 50], [applicationIds[1], 'Loyalty 20', 50, 40]]);
   });
 
   it('is tenant scoped', async () => {
