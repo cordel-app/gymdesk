@@ -37,6 +37,11 @@ import { CardSection } from '@/components/CardSection';
 import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
+import {
+  CircularThumbnail, NestedPromotionRow, ProductDetailModal, PromotionDetailModal,
+  useAppliedPromotionToggle,
+} from './AssignedPlanPromotions';
+import { placePromotionsUnderProducts, thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -241,6 +246,20 @@ export function AssignedPlanConfiguration({
   const feePromotionNames = applied
     .filter((p) => p.membership_fee_benefits.some((b) => b.enabled && b.action && b.action !== 'no_benefit'))
     .map((p) => p.promotion_name);
+
+  // #2478 — every application (standing or spent) is drawn under the Product
+  // line(s) it grants, or under the Membership Fee when it grants none of them;
+  // the separate Promotions section is gone. One toggle per card, so the same
+  // application drawn under two Products is one checkbox state and one revoke.
+  const placement = placePromotionsUnderProducts(
+    promotions,
+    [...snapshot.oneoff_benefits, ...snapshot.session_benefits, ...snapshot.periodical_benefits]
+      .map((b) => b.product_id),
+  );
+  const promotionToggle = useAppliedPromotionToggle(assignedPlanId, onChanged);
+  const toggleGate = { cardEditing, canWrite, readOnlyTitle };
+  const [productDetail, setProductDetail] = useState<AssignedPlanSnapshotBenefit | null>(null);
+  const [promotionDetail, setPromotionDetail] = useState<AppliedPromotion | null>(null);
 
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
@@ -535,6 +554,16 @@ export function AssignedPlanConfiguration({
             label={t('fee_breakdown_promotion')}
             value={feePromotionNames.length > 0 ? feePromotionNames.join(', ') : '—'}
           />
+          {/* #2478 — the applications that grant none of the card's Products
+              (a Membership Fee Promotion) sit under the fee they act on. */}
+          {placement.unplaced.map((p) => (
+            <NestedPromotionRow
+              key={p.id}
+              promotion={p}
+              checkbox={promotionToggle.checkbox(p, toggleGate)}
+              onOpen={() => setPromotionDetail(p)}
+            />
+          ))}
           <CardDetailRow
             label={t('fee_breakdown_direct_benefit')}
             value={snapshot.personal_fee_benefit.action === 'percentage_discount'
@@ -643,6 +672,29 @@ export function AssignedPlanConfiguration({
                 benefitContext="plan"
                 showPrices
                 showBreakdown
+                renderItemPrefix={(_row, idx) => {
+                  const line = rows[idx];
+                  return (
+                    <CircularThumbnail
+                      src={thumbnailSrc(line.image_thumbnail_url, line.image_url)}
+                      label={t('product_open_details', { product: line.item_name })}
+                      onOpen={() => setProductDetail(line)}
+                    />
+                  );
+                }}
+                renderNestedRow={(_row, idx) => {
+                  const placed = placement.byProduct.get(rows[idx].product_id);
+                  if (!placed || placed.length === 0) return null;
+                  return placed.map(({ promotion, grant }) => (
+                    <NestedPromotionRow
+                      key={promotion.id}
+                      promotion={promotion}
+                      grant={grant}
+                      checkbox={promotionToggle.checkbox(promotion, toggleGate)}
+                      onOpen={() => setPromotionDetail(promotion)}
+                    />
+                  ));
+                }}
               />
             )}
           </CardSection>
@@ -667,6 +719,10 @@ export function AssignedPlanConfiguration({
           />
         </div>
       )}
+
+      {promotionToggle.dialogs}
+      <ProductDetailModal product={productDetail} onClose={() => setProductDetail(null)} />
+      <PromotionDetailModal promotion={promotionDetail} onClose={() => setPromotionDetail(null)} />
     </>
   );
 }
