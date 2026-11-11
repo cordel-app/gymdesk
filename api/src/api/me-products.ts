@@ -85,6 +85,8 @@ export interface PromotionMedia {
   image_full_url: string | null;
 }
 export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields & {
+  /** #2609 stage 2 — `shared` Products are the family's and take no recipient. */
+  sharing_type: string;
   promotions: (MemberProductPromotionOffer & PromotionMedia)[];
   applied_promotion: (AppliedPromotion & PromotionMedia) | null;
 };
@@ -169,7 +171,7 @@ export async function memberProductCatalogue(
     ...(media.get(p.promotion_id) ?? { description: null, image_url: null, image_full_url: null }),
   });
 
-  return items.map((item) => {
+  return items.map((item, i) => {
     const own = purchases.get(item.id) ?? [];
     const purchase = describeProductPurchase(item, own.map((r) => r.status));
     // The live purchase this state is about, in `purchaseStateFor()`'s own
@@ -181,6 +183,8 @@ export async function memberProductCatalogue(
     return {
       ...item,
       ...purchase,
+      // #2609 stage 2: a shared Product is the family's and offers no recipient choice.
+      sharing_type: rows[i]?.sharing_type ?? 'individual',
       // A Product the member already holds or is paying for is not on offer
       // again: the Buy action is gone (§6), so an *Apply promotion* beside it
       // would act on nothing.

@@ -63,7 +63,7 @@ import {
   MEMBER_CURRENT_ASSIGNMENT_ORDER,
   memberBillingEventForecast,
 } from './me-billing-forecast';
-import { AssigneeRefused } from './product-assignee';
+import { AssigneeRefused, loadEligibleAssignees } from './product-assignee';
 import {
   PurchaseRefused,
   memberProductCatalogue,
@@ -2898,6 +2898,30 @@ meRouter.get(
           description: localized[i].display_description,
         })),
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// #2609 stage 2 — who a Product this member buys may be for: their family's
+// members (themself included), or `[]` when they belong to none, in which case
+// the Members App shows no choice and the purchase is theirs. The same list the
+// staff selector reads (`loadEligibleAssignees()`), and the purchase route judges
+// the answer again, so a member outside the family is a 400 whatever this said.
+// Registered before nothing that could read `assignees` as a Product id: the only
+// `/products/:id` route is the purchase `POST`.
+meRouter.get(
+  '/products/assignees',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  requireFeatureEnabled('financials.products'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      res.json({ member_id: memberId, members: await loadEligibleAssignees(db, gymId, memberId) });
     } catch (err) {
       next(err);
     }
