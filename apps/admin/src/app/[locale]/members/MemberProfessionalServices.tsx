@@ -11,6 +11,10 @@
 //
 // Everything is decided by the API; this file formats. A read-only role sees
 // the balances and the history, with `Edit` disabled and explained.
+// #2666: the per-card actions are a `⋮` menu — Details (a read-only modal in
+// the purchased Product's Details shape: `CrudModal` + `CardDetailRow`) and
+// Edit (the same inline balance editor) — and the section spans the full
+// width of the tab.
 // #2605 stage 3: the balance reads `5 items (0 available + 5 booked)` — the
 // wallet's `total_items`, `available_items` and `booked_items`, never a figure
 // summed here; Edit sets the total.
@@ -31,6 +35,9 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { ContextMenu } from '@/components/ContextMenu';
+import { CrudModal } from '@/components/CrudModal';
+import { CardDetailRow } from '@/components/CardDetailRow';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
@@ -65,6 +72,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   const { canWrite, readOnlyTitle } = useModuleAccess('MEMBERS');
   const [rows, setRows] = useState<WalletRow[] | null>(null);
   const [imageRow, setImageRow] = useState<WalletRow | null>(null);
+  const [detailRow, setDetailRow] = useState<WalletRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [historyId, setHistoryId] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -138,7 +146,29 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   if (rows.length === 0) return <p style={cardMutedTextStyle}>{t('prof_services_empty')}</p>;
 
   return (
-    <div>
+    <div style={{ width: '100%' }}>
+      <CrudModal
+        open={detailRow !== null}
+        title={detailRow?.name ?? ''}
+        hideSave
+        cancelLabel={t('close')}
+        saveLabel=""
+        onCancel={() => setDetailRow(null)}
+        onSave={() => setDetailRow(null)}
+      >
+        {detailRow && (
+          <div style={{ padding: '8px 0' }}>
+            <CardDetailRow label={t('prof_services_detail_name')} value={detailRow.name} />
+            <CardDetailRow
+              label={t('prof_services_detail_description')}
+              value={detailRow.display_description || t('prof_services_no_description')}
+            />
+            <CardDetailRow label={t('prof_services_detail_total')} value={String(detailRow.total_items)} />
+            <CardDetailRow label={t('prof_services_detail_available')} value={String(detailRow.available_items)} />
+            <CardDetailRow label={t('prof_services_detail_booked')} value={String(detailRow.booked_items)} />
+          </div>
+        )}
+      </CrudModal>
       <ProfessionalServiceImageModal
         target={imageRow ? { name: imageRow.name, imageUrl: imageRow.image_url ?? imageRow.image_thumbnail_url, description: imageRow.display_description } : null}
         onClose={() => setImageRow(null)}
@@ -186,15 +216,20 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                   </div>
                 </span>
               </button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* #1428: Edit is the card's own button (the existing editor,
-                    unchanged). */}
-                {canWrite && editingId !== id && (
-                  <button type="button" style={primaryBtnSmall()} onClick={() => startEdit(row)}>
-                    {t('prof_services_edit')}
-                  </button>
-                )}
-              </div>
+              {/* #2666: Details and Edit live in the card's ⋮ menu; Edit is
+                  disabled and explained for a read-only role (#613). */}
+              <ContextMenu
+                ariaLabel={t('prof_services_actions_for', { service: row.name })}
+                items={[
+                  { label: t('action_details'), onClick: () => setDetailRow(row) },
+                  {
+                    label: t('prof_services_edit'),
+                    onClick: () => startEdit(row),
+                    disabled: !canWrite || editingId === id,
+                    title: canWrite ? undefined : readOnlyTitle,
+                  },
+                ]}
+              />
             </div>
 
             {editingId === id && (
