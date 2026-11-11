@@ -1,3 +1,4 @@
+import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
@@ -115,6 +116,8 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   frequency: SessionBenefitFrequency | null;
   /** #1184 stage 2 — whether the member could decline this benefit when it was assigned. */
   mandatory: boolean;
+  /** #2490 stage 3 — the line's own Direct Discount (%), `null` for none. */
+  direct_discount_percent: number | null;
   /** #2483 — the tax rate (%) the line is quoted at; `null` when none is configured. */
   applied_tax_percent: number | null;
   /** #2483 — what the line's own treatment took off the line total, VAT included. */
@@ -227,6 +230,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     quantity: row.quantity,
     action: benefit.action,
     value: benefit.value,
+    direct_discount_percent: row.direct_discount_percent,
     product_amount: row.unit_price,
     product_tax_behavior: row.product_tax_behavior,
     product_tax_rate_percent: row.product_tax_rate_percent,
@@ -248,6 +252,8 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     // #1184 stage 2 — what the assignment was agreed with; `true` for a row
     // written before the column.
     mandatory: toPlanBenefitMandatory(row.mandatory),
+    // #2490 stage 3 — the line's own Direct Discount (%), as agreed; `null` for none.
+    direct_discount_percent: toLineDirectDiscount(row.direct_discount_percent),
     /**
      * #924 stage 1 — what this line costs before and after its own treatment,
      * VAT included, from the one module the Plan and Promotion sections price
@@ -407,6 +413,7 @@ export async function loadPlanBenefitsForSimulation(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, um.id AS user_membership_id, b.product_id, b.quantity,
              b.item_name, b.item_billing_frequency, b.unit_price, b.\`action\`, b.\`value\`,
+             b.direct_discount_percent,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM user_memberships um
       JOIN ${PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]} b
@@ -431,6 +438,7 @@ export async function loadPlanBenefitsForSimulation(
       // as mysql2's DECIMAL string arrives as a number and an action a Plan may
       // not configure reads as the neutral default rather than pricing.
       benefit: toProductBenefit('plan', row.action, row.value),
+      directDiscountPercent: toLineDirectDiscount(row.direct_discount_percent),
     });
     byAssignment.set(row.user_membership_id, list);
   }
@@ -446,7 +454,7 @@ export async function loadPlanBenefitsForSimulation(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, b.membership_plan_id, b.product_id, b.quantity,
              ${ITEM_NAME_EXPR} AS item_name, gc.billing_frequency, gc.amount,
-             b.\`action\`, b.\`value\`,
+             b.\`action\`, b.\`value\`, b.direct_discount_percent,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM ${planBenefitTableForCategory(category)} b
       JOIN products gc ON gc.id = b.product_id
@@ -466,6 +474,7 @@ export async function loadPlanBenefitsForSimulation(
       quantity: positiveQuantity(row.quantity),
       sessionFrequency: toSessionBenefitFrequency(row.session_frequency),
       benefit: toProductBenefit('plan', row.action, row.value),
+      directDiscountPercent: toLineDirectDiscount(row.direct_discount_percent),
     });
     livePerPlan.set(row.membership_plan_id, list);
   }

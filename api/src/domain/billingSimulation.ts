@@ -64,6 +64,7 @@
 // side, `no_benefit` on the Plan side), so no existing configuration changes
 // price by a cent.
 
+import { applyLineDirectDiscount } from './lineDirectDiscount';
 import { advanceBillingDate } from './billingDate';
 import { cadenceForFrequency } from './scheduleAllocation';
 import { prorate } from './proration';
@@ -241,6 +242,13 @@ export interface SimulationPlanBenefit {
    * `promotional` — see `buildItemStream`.
    */
   benefit: ProductBenefit;
+  /**
+   * #2490 stage 3 — the line's own Direct Discount (%), frozen with it; `null`
+   * is none. Applied last, after the treatment and every covering Promotion
+   * grant (`lineDirectDiscount.ts`). Required for the reason `benefit` is: a
+   * loader that forgot it would charge the full price for a discounted line.
+   */
+  directDiscountPercent: number | null;
 }
 
 export interface SimulationAssignment {
@@ -997,6 +1005,8 @@ interface BillableItem {
    * on — the grant's own pair is what prices those units).
    */
   benefit: ProductBenefit;
+  /** #2490 stage 3 — the Plan line's Direct Discount (%); `null` for none and for a Promotion-only item. */
+  directDiscountPercent: number | null;
   coverage: GrantCoverage[];
 }
 
@@ -1029,6 +1039,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
       // `null` whatever their row holds.
       sessionFrequency: benefit.category === 'session' ? benefit.sessionFrequency : null,
       benefit: benefit.benefit,
+      directDiscountPercent: benefit.directDiscountPercent ?? null,
       coverage: [],
     });
   }
@@ -1064,6 +1075,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
         // line prices at the catalogue price and the grant's own pair is what
         // changes it for the units/periods it covers.
         benefit: NO_PRODUCT_BENEFIT,
+        directDiscountPercent: null,
         coverage: [{ promo, grant }],
       });
     }
@@ -1156,7 +1168,8 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date, occurrence) => resolveCoveredCharge(coverage, base, planBenefitLines, date, occurrence),
+    resolve: (date, occurrence) => withLineDirectDiscount(
+      resolveCoveredCharge(coverage, base, planBenefitLines, date, occurrence), item.directDiscountPercent),
     line: (date, resolved) => ({
       kind: 'product',
       label: item.name,
@@ -1334,7 +1347,27 @@ function allocateSessionUnits(
       });
     }
   }
-  return { amount: round2(amount), benefits, promotional };
+  return withLineDirectDiscount({ amount: round2(amount), benefits, promotional }, item.directDiscountPercent);
+}
+
+/**
+ * #2490 stage 3 — the line's Direct Discount, taken off what the line costs
+ * after its treatment and every covering grant (the standalone purchase's
+ * order), and reported as the line's own `personal` benefit so it reads apart
+ * from a Promotion. Never makes a charge promotional: like the Personal
+ * Membership Fee Benefit (#772) it never ends, so it is the regular charge.
+ */
+function withLineDirectDiscount<T extends { amount: number; benefits: SimulationBenefit[] }>(
+  resolved: T, percent: number | null,
+): T {
+  if (percent == null || !(percent > 0)) return resolved;
+  return {
+    ...resolved,
+    amount: applyLineDirectDiscount(resolved.amount, percent),
+    benefits: [...resolved.benefits, {
+      source: 'personal', name: null, action: 'percentage_discount', value: percent, period_status: null,
+    }],
+  };
 }
 
 function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {

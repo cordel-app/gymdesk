@@ -94,6 +94,13 @@ export interface ProductBenefitRow {
    */
   mandatory?: boolean;
   /**
+   * #2490 stage 3 — a **Membership Plan** line's own Direct Discount (%),
+   * taken off after its Benefit treatment. Optional under the same rule as the
+   * keys above: a section that does not configure it submits none, and the
+   * API keeps what is stored. `null` (or `''` while being typed) clears it.
+   */
+  direct_discount_percent?: number | string | null;
+  /**
    * #916 — what the row costs, VAT included, as the server computed it
    * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Product
    * Item's own unit price, the same price after this row's treatment, and the
@@ -233,6 +240,10 @@ export const toBenefitItems = (draft: ProductBenefitRow[]) =>
     if (b.requirement !== undefined) line.requirement = b.requirement;
     // #1184: and a Plan benefit's Mandatory flag, under the same rule.
     if (b.mandatory !== undefined) line.mandatory = b.mandatory;
+    // #2490 stage 3: and its Direct Discount, under the same rule.
+    if (b.direct_discount_percent !== undefined) {
+      line.direct_discount_percent = b.direct_discount_percent === '' ? null : b.direct_discount_percent;
+    }
     if (b.action === undefined) return line;
     return {
       ...line,

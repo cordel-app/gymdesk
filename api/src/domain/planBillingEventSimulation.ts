@@ -100,6 +100,8 @@ export interface PlanSimulationItem {
   sessionFrequency: SessionBenefitFrequency | null;
   /** The Plan benefit row's own `(action, value)` pair (#896). */
   benefit: ProductBenefit;
+  /** #2490 stage 3 — the Plan line's own Direct Discount (%), `null` for none. */
+  directDiscountPercent: number | null;
   /** `products.mandatory` — the ticket labels such a line "(Mandatory)". */
   mandatory: boolean;
 }
@@ -170,6 +172,7 @@ export function computePlanBillingEventSimulation(
       quantity: item.quantity,
       sessionFrequency: item.sessionFrequency,
       benefit: item.benefit,
+      directDiscountPercent: item.directDiscountPercent,
     })),
     // #892 — the durations count periods of the very cadence the fee is billed at.
     planDuration: withDurationCadence(input.duration, cadence),

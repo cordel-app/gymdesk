@@ -1,3 +1,4 @@
+import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -164,11 +165,11 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
       `INSERT INTO ${target}
          (gym_id, plan_snapshot_id, product_id, quantity,
           item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
-          mandatory${sessionFrequency ? ', frequency' : ''})
+          mandatory, direct_discount_percent${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.product_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
-              b.\`action\`, b.\`value\`, b.mandatory${sessionFrequency ? ', b.frequency' : ''}
+              b.\`action\`, b.\`value\`, b.mandatory, b.direct_discount_percent${sessionFrequency ? ', b.frequency' : ''}
          FROM ${source} b
          JOIN products gc ON gc.id = b.product_id
          LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -294,7 +295,7 @@ export async function loadProductSetSimulationAssignment(
   const { rows: benefitRows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, product_id, quantity, item_name, item_billing_frequency,
-             unit_price, \`action\`, \`value\`,
+             unit_price, \`action\`, \`value\`, direct_discount_percent,
              ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
         FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ?`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, primarySnapshot ?? 0]),
@@ -308,6 +309,7 @@ export async function loadProductSetSimulationAssignment(
     quantity: Math.max(1, Math.trunc(Number(b.quantity)) || 1),
     sessionFrequency: toSessionBenefitFrequency(b.session_frequency),
     benefit: toProductBenefit('plan', b.action, b.value),
+    directDiscountPercent: toLineDirectDiscount(b.direct_discount_percent),
   }));
 
   const { rows: serviceRows } = await exec.query(

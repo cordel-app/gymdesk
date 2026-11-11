@@ -31,6 +31,7 @@
 //
 // Pure — no DB, no HTTP (CLAUDE.md).
 
+import { applyLineDirectDiscount } from './lineDirectDiscount';
 import { ProductBenefit, applyLineBenefit } from './productBenefitActions';
 
 /**
@@ -76,6 +77,8 @@ export function planBenefitPrices(
   unitPriceInclTax: number | null | undefined,
   quantity: number,
   benefit: ProductBenefit,
+  /** #2490 stage 3 — the line's Direct Discount (%), taken off after the treatment. */
+  directDiscountPercent: number | null = null,
 ): PlanBenefitPrices {
   if (unitPriceInclTax == null || !Number.isFinite(unitPriceInclTax)) {
     return { ...NO_PLAN_BENEFIT_PRICES };
@@ -84,8 +87,8 @@ export function planBenefitPrices(
   const units = Number.isFinite(quantity) ? Math.max(0, Math.trunc(quantity)) : 0;
   return {
     original_price_incl_tax: unit,
-    final_price_incl_tax: applyLineBenefit(unit, 1, benefit),
+    final_price_incl_tax: applyLineDirectDiscount(applyLineBenefit(unit, 1, benefit), directDiscountPercent),
     original_line_price_incl_tax: round2(unit * units),
-    final_line_price_incl_tax: applyLineBenefit(unit, units, benefit),
+    final_line_price_incl_tax: applyLineDirectDiscount(applyLineBenefit(unit, units, benefit), directDiscountPercent),
   };
 }

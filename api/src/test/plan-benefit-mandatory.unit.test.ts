@@ -50,6 +50,7 @@ describe('migration 237 and the writers', () => {
     expect(snapshot).toContain('b.mandatory');
     expect(draft).toContain('mandatory');
     expect(plans).toContain('parsePlanBenefitMandatoryInput');
-    expect(plans).toContain('mandatory${sessionFrequency');
+    // Duplicate's SELECT names the column (#2490 stage 3 put the Direct Discount beside it).
+    expect(plans).toMatch(/mandatory(, direct_discount_percent)?\$\{sessionFrequency/);
   });
 });

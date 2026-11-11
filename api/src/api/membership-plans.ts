@@ -1,3 +1,4 @@
+import { parseLineDirectDiscountInput, toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { addCoverage } from './product-sets';
@@ -248,6 +249,7 @@ function planSimulationItems(
         sessionFrequency: category === 'session'
           ? toSessionBenefitFrequency(row.frequency) : null,
         benefit: toProductBenefit('plan', row.action, row.value),
+        directDiscountPercent: toLineDirectDiscount(row.direct_discount_percent),
         mandatory: row.product_mandatory === true || Number(row.product_mandatory) === 1,
       });
     }
@@ -1047,7 +1049,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         // a Plan granting 2 sessions a week must not read as a one-time 2.
         const sessionFrequency = category === 'session';
         const { rows: benefits } = await tx.query(
-          `SELECT product_id, quantity, \`action\`, \`value\`, mandatory${sessionFrequency ? ', frequency' : ''}
+          `SELECT product_id, quantity, \`action\`, \`value\`, mandatory, direct_discount_percent${sessionFrequency ? ', frequency' : ''}
              FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ?`,
           [req.params.id, gymId],
@@ -1056,11 +1058,11 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
           await tx.query(
             `INSERT INTO ${table}
                (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`,
-                mandatory, created_by_membership_id${sessionFrequency ? ', frequency' : ''})
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
+                mandatory, direct_discount_percent, created_by_membership_id${sessionFrequency ? ', frequency' : ''})
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
             [
               gymId, insertId, b.product_id, b.quantity, b.action, b.value,
-              b.mandatory ? 1 : 0, callerMemberId,
+              b.mandatory ? 1 : 0, b.direct_discount_percent ?? null, callerMemberId,
               ...(sessionFrequency ? [b.frequency ?? null] : []),
             ],
           );
@@ -1642,6 +1644,9 @@ async function loadPlanBenefits(
     if ('frequency' in row) shaped.frequency = toSessionBenefitFrequency(row.frequency);
     // #1184 stage 2: `b.*` carries mandatory as mysql2's 0/1; the wire is a boolean.
     shaped.mandatory = toPlanBenefitMandatory(row.mandatory);
+    // #2490 stage 3: and the Direct Discount as a number or `null`, not a DECIMAL string.
+    (shaped as { direct_discount_percent?: number | null }).direct_discount_percent =
+      toLineDirectDiscount((row as { direct_discount_percent?: unknown }).direct_discount_percent);
     return shaped;
   });
 }
@@ -1766,6 +1771,9 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       // #1184 stage 2 — the line's own Mandatory Yes/No, on all three sections.
       const mandatoryInput = parsePlanBenefitMandatoryInput(item);
       if (mandatoryInput.error) return res.status(400).json({ error: mandatoryInput.error });
+      // #2490 stage 3 — the line's own Direct Discount (%), on all three sections.
+      const directInput = parseLineDirectDiscountInput(item);
+      if (directInput.error) return res.status(400).json({ error: directInput.error });
       seen.add(productId);
       productIds.push(productId);
       submitted.push({
@@ -1775,6 +1783,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         // quantity-only save clearing a configured Frequency.
         ...(frequency.keep ? {} : { frequency: frequency.frequency }),
         ...(mandatoryInput.keep ? {} : { mandatory: mandatoryInput.mandatory }),
+        ...(directInput.keep ? {} : { direct_discount_percent: directInput.percent }),
       });
     }
 
@@ -1827,7 +1836,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         // `withMandatoryBenefits()` gets, so preserving an item can never
         // change what it costs.
         const { rows: stored } = await tx.query(
-          `SELECT product_id, \`action\`, \`value\`, mandatory${isSessionSection ? ', frequency' : ''} FROM ${table}
+          `SELECT product_id, \`action\`, \`value\`, mandatory, direct_discount_percent${isSessionSection ? ', frequency' : ''} FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ? FOR UPDATE`,
           [planId, gymId],
         );
@@ -1843,8 +1852,15 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         const keptMandatory = new Map<number, boolean>(
           stored.map((r: any) => [Number(r.product_id), toPlanBenefitMandatory(r.mandatory)]),
         );
+        // #2490 stage 3: and its Direct Discount, for the same replace-all reason.
+        const keptDirect = new Map<number, number | null>(
+          stored.map((r: any) => [Number(r.product_id), toLineDirectDiscount(r.direct_discount_percent)]),
+        );
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
+          const directPercent = item.direct_discount_percent !== undefined
+            ? item.direct_discount_percent
+            : (keptDirect.get(item.product_id) ?? null);
           const mandatoryFlag = item.mandatory !== undefined
             ? item.mandatory
             : (keptMandatory.get(item.product_id) ?? DEFAULT_PLAN_BENEFIT_MANDATORY);
@@ -1855,11 +1871,11 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
           await tx.query(
             `INSERT INTO ${table}
                (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`,
-                mandatory, created_by_membership_id${isSessionSection ? ', frequency' : ''})
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?${isSessionSection ? ', ?' : ''})`,
+                mandatory, direct_discount_percent, created_by_membership_id${isSessionSection ? ', frequency' : ''})
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?${isSessionSection ? ', ?' : ''})`,
             [
               gymId, planId, item.product_id, item.quantity, benefit.action, benefit.value,
-              mandatoryFlag ? 1 : 0, callerMemberId,
+              mandatoryFlag ? 1 : 0, directPercent, callerMemberId,
               ...(isSessionSection ? [frequency] : []),
             ],
           );
