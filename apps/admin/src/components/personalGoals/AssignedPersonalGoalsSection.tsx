@@ -11,8 +11,10 @@ import {
   cardSectionLabelStyle, formFieldLabelStyle, formValueStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { StatusBadge } from '@/components/StatusBadge';
+import { listScrollerClass } from '@/components/listChrome';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
-import { AssignedGoalCard } from './AssignedGoalCard';
+import { AssignedGoalCard, AssignedGoalListHeader } from './AssignedGoalCard';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
 import { GoalReadingHeader } from './GoalReadingHeader';
@@ -424,7 +426,11 @@ export function AssignedPersonalGoalsSection({
         <p style={{ fontSize: 13, color: 'var(--gd-text-muted, #666)' }}>{label('empty')}</p>
       )}
       {/* #2133 item 4 — one collapsible card per assignment, the shared
-          `AssignedGoalCard` the Member card renders too. */}
+          `AssignedGoalCard` the Member card renders too. #2667 — under a header
+          band whose titles share the cards' grid; the rows expand, so a phone
+          collapses the secondary columns (#1011). */}
+      <div className={listScrollerClass('collapse')}>
+      {rows.length > 0 && <AssignedGoalListHeader label={label} />}
       {rows.map((row) => (
         <AssignedGoalCard
           key={row.id}
@@ -437,6 +443,13 @@ export function AssignedPersonalGoalsSection({
           open={expanded.has(row.id) || editingId === row.id}
           onToggle={() => toggleExpand(row.id)}
           actions={renderActions(row)}
+          cells={{
+            goal: nameOfGoal(row),
+            member: row.member_name,
+            target: formatTarget(row),
+            progress: formatProgress(row.progress_percent),
+            status: <StatusBadge status={row.status} label={label(`status_${row.status}`)} />,
+          }}
         >
           {editingId === row.id
             ? (
@@ -458,6 +471,7 @@ export function AssignedPersonalGoalsSection({
             : renderReadOnly(row)}
         </AssignedGoalCard>
       ))}
+      </div>
 
       {total > 0 && (
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
