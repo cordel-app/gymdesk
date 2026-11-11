@@ -111,7 +111,10 @@ describe('Members: Promotions removed (#931)', () => {
     const card = sourcesIn(ASSIGNED_PLANS_DIR);
     expect(card.map((s) => s.file)).toContain('AssignedPlanPromotions.tsx');
     const expandedRow = card.find((s) => s.file === 'AssignedPlanExpandedRow.tsx')!.src;
-    expect(expandedRow).toContain('<AssignedPlanPromotions');
+    // #2478 — drawn under each Product by the configuration sections.
+    expect(expandedRow).toContain('<AssignedPlanConfiguration');
+    const configuration = card.find((s) => s.file === 'AssignedPlanConfiguration.tsx')!.src;
+    expect(configuration).toContain('<NestedPromotionRow');
   });
 
   it('still configures Promotions on their own page', () => {

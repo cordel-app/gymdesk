@@ -5071,7 +5071,19 @@
     "relationship_primary": "Primary",
     "relationship_linked": "Linked",
     "simulation_initial_payment": "Initial payment",
-    "section_billing_simulation_details": "Billing Simulation Details"
+    "section_billing_simulation_details": "Billing Simulation Details",
+    "product_open_details": "View {product}",
+    "promo_open_details": "View promotion {promotion}",
+    "detail_no_image": "No image.",
+    "detail_no_description": "No description.",
+    "promo_detail_validity": "Validity",
+    "promo_detail_application": "Application",
+    "promo_detail_status": "Status",
+    "promo_detail_applied_at": "Applied at",
+    "promo_detail_applied_by": "Applied by",
+    "promo_detail_included_plans": "Membership Plans",
+    "promo_detail_no_plans": "No Membership Plans.",
+    "promo_detail_included_products": "Products"
   },
   "taxes": {
     "title": "Taxes",
