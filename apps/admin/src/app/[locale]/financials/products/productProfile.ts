@@ -303,6 +303,20 @@ export function toProductFormValues(item: ProductFormRow): ProductFormValues {
 /** #2606: how a Product is shared between Members; the API's `PRODUCT_SHARING_TYPES`. */
 export type ProductSharingType = 'individual' | 'shared';
 
+/**
+ * #2662: a Product linked to a Professional Service is always Family (stored
+ * `'shared'`). The API decides it (`decideProductSharingType()`); the form
+ * only mirrors it so it never offers Individual the save would refuse.
+ */
+export function sharingTypeLockedToFamily(form: Pick<ProductFormValues, 'type' | 'professionalServiceIds'>): boolean {
+  return form.type === 'sessions' && form.professionalServiceIds.length > 0;
+}
+
+/** The sharing type the form shows and submits: Family while it is locked. */
+export function effectiveSharingType(form: Pick<ProductFormValues, 'type' | 'professionalServiceIds' | 'sharing_type'>): ProductSharingType {
+  return sharingTypeLockedToFamily(form) ? 'shared' : form.sharing_type;
+}
+
 /** #2334: the languages a Product's name and description exist in; English is the base text. */
 export const PRODUCT_TEXT_LOCALES = ['en', 'es', 'ca'] as const;
 export type ProductTextField = 'name' | 'description';

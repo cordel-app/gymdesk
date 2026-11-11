@@ -4897,7 +4897,8 @@
     "one_per_member": "One per Member",
     "sharing_type": "Sharing type",
     "sharing_individual": "Individual",
-    "sharing_shared": "Shared"
+    "sharing_shared": "Family",
+    "sharing_family_required": "A product linked to a professional service is always Family."
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Discount (%)",
@@ -5733,7 +5734,7 @@
     "one_per_member": "One per Member",
     "sharing_type": "Sharing type",
     "sharing_individual": "Individual",
-    "sharing_shared": "Shared",
+    "sharing_shared": "Family",
     "yes": "Yes",
     "no": "No",
     "delete_confirm": "Delete \"{name}\"? Gyms created from now on will not receive it; Products already generated are not affected.",

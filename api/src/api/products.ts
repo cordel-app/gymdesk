@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
 import { resolveRequestActor } from '../domain/auditActor';
+import { decideProductSharingType } from '../domain/productSharingType';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -411,6 +412,11 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const psErr = await validateProfessionalServiceIds(gymId, professional_service_ids);
       if (psErr) return res.status(400).json(psErr);
     }
+    // #2662: a Product linked to a Professional Service is always Family.
+    const linkedOnCreate = type === SESSION_TYPE && Array.isArray(professional_service_ids)
+      ? new Set(professional_service_ids).size : 0;
+    const sharingDecision = decideProductSharingType({ requested: sharing_type, linkedServiceCount: linkedOnCreate });
+    if (!sharingDecision.ok) return res.status(400).json({ error: sharingDecision.error, code: sharingDecision.code });
 
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
@@ -432,7 +438,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           // #832: absent means non-mandatory — the ticket's default for a new
           // item and for every row that existed before the column did.
           mandatory ? 1 : 0,
-          sharing_type || 'individual',
+          sharingDecision.value || 'individual',
           one_per_member ? 1 : 0,
           notes?.trim() || null,
           package_information?.trim() || null,
@@ -658,6 +664,21 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       professionalServiceIdsToPersist = professional_service_ids;
     } // else: type is/stays 'sessions' and the request didn't touch the field — leave existing links untouched.
 
+    // #2662: what the Product will be linked to after this write decides whether
+    // it must be Family; an untouched link set is read from the table.
+    let linkedAfterWrite: number;
+    if (professionalServiceIdsToPersist !== undefined) {
+      linkedAfterWrite = new Set(professionalServiceIdsToPersist).size;
+    } else {
+      const { rows: kept } = await db.query<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM product_professional_services WHERE product_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
+      );
+      linkedAfterWrite = Number(kept[0]?.n ?? 0);
+    }
+    const sharingDecision = decideProductSharingType({ requested: sharing_type, linkedServiceCount: linkedAfterWrite });
+    if (!sharingDecision.ok) return res.status(400).json({ error: sharingDecision.error, code: sharingDecision.code });
+
     const { rowCount } = await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
         `UPDATE products SET
@@ -701,7 +722,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         mandatoryProvided ? 1 : 0, mandatory ? 1 : 0,
         oneTimeProvided ? 1 : 0, one_time_purchase ? 1 : 0,
         onePerMemberProvided ? 1 : 0, one_per_member ? 1 : 0,
-        sharing_type ?? null,
+        sharingDecision.value,
         notes ?? null,
         isSystem, name?.trim() ?? null,
         isSystem, type ?? null,

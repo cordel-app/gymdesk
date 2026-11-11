@@ -61,6 +61,8 @@ import {
   toTranslationsPayload,
   PRODUCT_TRANSLATION_LOCALES,
   visibleProductSections,
+  effectiveSharingType,
+  sharingTypeLockedToFamily,
 } from './productProfile';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import {
@@ -458,7 +460,7 @@ export default function ProductsPage() {
           mandatory: editForm.mandatory,
           one_time_purchase: editForm.one_time_purchase,
           one_per_member: editForm.one_per_member,
-          sharing_type: editForm.sharing_type,
+          sharing_type: effectiveSharingType(editForm),
           professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
         }),
       });
@@ -895,12 +897,16 @@ export default function ProductsPage() {
                 <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
                 <select
                   style={formControlStyle}
-                  value={editForm.sharing_type}
+                  value={effectiveSharingType(editForm)}
+                  disabled={sharingTypeLockedToFamily(editForm)}
                   onChange={(e) => setEditForm({ ...editForm, sharing_type: e.target.value as 'individual' | 'shared' })}
                 >
                   <option value="individual">{t('sharing_individual')}</option>
                   <option value="shared">{t('sharing_shared')}</option>
                 </select>
+                {sharingTypeLockedToFamily(editForm) && (
+                  <div style={formHelpTextStyle}>{t('sharing_family_required')}</div>
+                )}
               </div>
             </div>
           );
