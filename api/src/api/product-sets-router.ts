@@ -19,7 +19,9 @@ import {
   Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
-import { diffConfigurations, summaryItems } from '../domain/productSetDiff';
+import { diffConfigurations, summaryItems, recurringFinalPrices, itemFinalPrice, financialSummary, type RecurringFinalPrices } from '../domain/productSetDiff';
+import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
+import type { SimulationAssignment } from '../domain/billingSimulation';
 import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
@@ -595,6 +597,25 @@ async function reviewHandler(req: any, res: any, next: any) {
     const paymentMethods = methods.map((m: any) => ({ code: String(m.code), name: String(m.name), ...methodAvailability(String(m.code), { hasMoneiToken }) }));
     const netTotal = lines.reduce((n, l) => n + (l.amount_excl_tax ?? l.amount), 0);
 
+    const forecastPrices = (a: SimulationAssignment | null): RecurringFinalPrices | null => {
+      if (!a) return null;
+      try {
+        const sim = computeAssignmentBillingEventSimulation({ assignment: a, dynamicHorizon: true });
+        return sim.available ? recurringFinalPrices(sim.dates) : null;
+      } catch { return null; }
+    };
+    const afterPrices = forecastPrices(after);
+    const beforePrices = forecastPrices(before);
+    const summary = summaryItems(before, after).map((i) => {
+      const l = lines.find((x) => x.item_name === i.name);
+      return {
+        ...i,
+        promotions: i.promotions.length > 0 ? i.promotions : l?.promotion_name ? [l.promotion_name] : [],
+        initial_amount: i.state === 'draft' && l ? l.amount : null,
+        final_price: itemFinalPrice(i, i.state === 'cancelling' ? beforePrices : afterPrices),
+      };
+    });
+
     res.json({
       payment_methods: paymentMethods,
       net_total: Math.round(netTotal * 100) / 100,
@@ -604,15 +625,11 @@ async function reviewHandler(req: any, res: any, next: any) {
       has_previous: set.previous_product_set_id != null,
       changes,
       // The engine's own initial-charge line (matched by item name) gives a draft item its
-      // discount and the amount asked today; nothing is priced here.
-      summary_items: summaryItems(before, after).map((i) => {
-        const l = lines.find((x) => x.item_name === i.name);
-        return {
-          ...i,
-          promotions: i.promotions.length > 0 ? i.promotions : l?.promotion_name ? [l.promotion_name] : [],
-          initial_amount: i.state === 'draft' && l ? l.amount : null,
-        };
-      }),
+      // discount and the amount asked today; the recurring final price is the item's
+      // first ordinary charge in its own version's forecast (#2446 stage 3). Nothing
+      // is priced here.
+      summary_items: summary,
+      financial_summary: financialSummary(summary, lines, amountDue),
       amount_due: amountDue,
       payment_required: amountDue != null && amountDue > 0,
       immediate_lines: lines,

@@ -141,3 +141,114 @@ export function summaryItems(before: SimulationAssignment | null, after: Simulat
   for (const [key, l] of was) if (!now.has(key)) out.push(lineItem(l, 'cancelling'));
   return out;
 }
+
+// #2446 stage 3 — the Summary's financial view. The figures are the engine's:
+// a recurring item's final price is read off the version's own Billing Event
+// Forecast, the initial payment and its discounts off the commit charge
+// (`commitCharge()`, what Save & Pay asks for). This module only picks lines
+// and adds them up; it prices nothing.
+
+/** The forecast line shape this needs (`BillingEventLine`, structurally). */
+export interface ForecastLineLike {
+  kind: 'membership_fee' | 'product';
+  label: string;
+  actual_charge: number;
+  prepaid_periods: number | null;
+  proration?: { prorated_days: number; period_days: number } | null;
+}
+
+export interface RecurringFinalPrices {
+  /** The Membership Fee's per-period charge, `null` when the forecast has none. */
+  fee: number | null;
+  /** Each Product's per-period charge (its whole line, quantity included), by name. */
+  products: Map<string, number>;
+}
+
+/**
+ * The first ordinary charge of each recurring item in a forecast (dates in
+ * order): a prorated first stretch (#1867) and a Pre-paid lump (#946) are not a
+ * period's price, so they are passed over while a later occurrence exists.
+ */
+export function recurringFinalPrices(dates: Array<{ date: string; lines: ForecastLineLike[] }>): RecurringFinalPrices {
+  const ordered = [...dates].sort((a, b) => a.date.localeCompare(b.date));
+  const regular = new Map<string, number>();
+  const fallback = new Map<string, number>();
+  for (const d of ordered) {
+    for (const l of d.lines) {
+      const key = l.kind === 'membership_fee' ? '\u0000fee' : l.label;
+      const odd = l.proration != null || l.prepaid_periods != null;
+      const target = odd ? fallback : regular;
+      if (!target.has(key)) target.set(key, round2(Number(l.actual_charge)));
+    }
+  }
+  const pick = (key: string) => regular.get(key) ?? fallback.get(key) ?? null;
+  const products = new Map<string, number>();
+  for (const key of new Set([...regular.keys(), ...fallback.keys()])) {
+    if (key !== '\u0000fee') products.set(key, pick(key)!);
+  }
+  return { fee: pick('\u0000fee'), products };
+}
+
+/** The recurring final price of one Summary item, from its own version's forecast. */
+export function itemFinalPrice(item: Pick<SummaryItem, 'type' | 'name'>, prices: RecurringFinalPrices | null): number | null {
+  if (!prices) return null;
+  return item.type === 'plan' ? prices.fee : prices.products.get(item.name) ?? null;
+}
+
+export interface RecurringTotals {
+  /** The item's billing frequency as the Summary reports it. */
+  billing_frequency: string | null;
+  existing: number;
+  new: number;
+  cancelling: number;
+  /** What the set charges per period once committed: existing + new. */
+  resulting: number;
+}
+
+export interface FinancialSummary {
+  /** Per billing frequency, because a monthly and a yearly charge do not add up. */
+  recurring: RecurringTotals[];
+  /** Regular price minus charge over the initial payment's lines (promotions, treatments, discounts). */
+  initial_discounts: number;
+  initial_payment: number | null;
+  /** The amount Save & Pay asks for: the initial payment, unchanged. */
+  amount_payable: number | null;
+}
+
+export interface InitialLineLike {
+  quantity: number;
+  amount: number;
+  regular_unit_price: number | null;
+}
+
+export function financialSummary(
+  items: Array<Pick<SummaryItem, 'state' | 'billing_frequency'> & { final_price: number | null }>,
+  initialLines: InitialLineLike[],
+  amountDue: number | null,
+): FinancialSummary {
+  const groups = new Map<string, RecurringTotals>();
+  for (const i of items) {
+    if (i.final_price == null) continue;
+    const key = i.billing_frequency ?? '';
+    const g = groups.get(key) ?? { billing_frequency: i.billing_frequency, existing: 0, new: 0, cancelling: 0, resulting: 0 };
+    if (i.state === 'active') g.existing += i.final_price;
+    else if (i.state === 'draft') g.new += i.final_price;
+    else g.cancelling += i.final_price;
+    groups.set(key, g);
+  }
+  const recurring = [...groups.values()].map((g) => ({
+    ...g,
+    existing: round2(g.existing), new: round2(g.new), cancelling: round2(g.cancelling),
+    resulting: round2(g.existing + g.new),
+  }));
+  const discounts = initialLines.reduce((n, l) =>
+    l.regular_unit_price == null ? n : n + Math.max(0, l.regular_unit_price * l.quantity - l.amount), 0);
+  return {
+    recurring,
+    initial_discounts: round2(discounts),
+    initial_payment: amountDue,
+    amount_payable: amountDue,
+  };
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
