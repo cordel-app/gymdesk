@@ -608,6 +608,55 @@ describe('GET /user-memberships/member/:memberId/configuration — lifecycle_sta
     expect((byId.get(cancelledUm) as any).lifecycle_status).toBe('cancelled');
     expect((byId.get(endedUm) as any).lifecycle_status).toBe('expired');
   });
+
+  // #2625: a cancelled plan that still gives access until its End Date reads
+  // `cancels_on_end_date` — derived from `status` + `ends_at`, never stored —
+  // and becomes `cancelled` once `ends_at` is behind us, with no job. The date
+  // test is the entitlement's own (`ends_at >= UTC_DATE()`), so End Date = today
+  // is still a day of access and still "Cancels on End Date".
+  it('derives Cancels on End Date for a cancelled plan whose End Date is today or later', async () => {
+    const memberId = await createMember(gymId);
+    const today = new Date().toISOString().slice(0, 10);
+    const future = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Future ${uniq()}`), {
+      status: 'cancelled', startsAt: '2026-01-01', endsAt: '2099-12-31',
+    });
+    const endsToday = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Today ${uniq()}`), {
+      status: 'cancelled', startsAt: '2026-01-01', endsAt: today,
+    });
+    const past = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancelled Past ${uniq()}`), {
+      status: 'cancelled', startsAt: '2020-01-01', endsAt: '2020-12-31',
+    });
+    const openActive = await createAssignment(gymId, memberId, await createPlan(gymId, `Open Active ${uniq()}`), {
+      status: 'active', startsAt: '2026-01-01',
+    });
+    const futureActive = await createAssignment(gymId, memberId, await createPlan(gymId, `Future End Active ${uniq()}`), {
+      status: 'active', startsAt: '2026-01-01', endsAt: '2099-12-31',
+    });
+
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    const byId = new Map(res.body.plans.map((p: any) => [p.id, p]));
+    expect((byId.get(future) as any).lifecycle_status).toBe('cancels_on_end_date');
+    expect((byId.get(endsToday) as any).lifecycle_status).toBe('cancels_on_end_date');
+    expect((byId.get(past) as any).lifecycle_status).toBe('cancelled');
+    expect((byId.get(openActive) as any).lifecycle_status).toBe('active');
+    expect((byId.get(futureActive) as any).lifecycle_status).toBe('active');
+    // Nothing stored moved, the End Date is kept and the plan stays in the
+    // Active group until it ends (#2549's `is_current`).
+    expect((byId.get(future) as any).status).toBe('cancelled');
+    expect((byId.get(future) as any).ends_at).toBe('2099-12-31');
+    expect((byId.get(future) as any).is_current).toBe(true);
+    expect((byId.get(past) as any).is_current).toBe(false);
+
+    // The gym-wide Assigned Plans list reads the same projection and filters on it.
+    const list = await request
+      .get(`/user-memberships?member_id=${memberId}&lifecycle_status=cancels_on_end_date`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    const listed = (Array.isArray(list.body) ? list.body : list.body.rows ?? list.body.data).map((r: any) => r.id).sort();
+    expect(listed).toEqual([future, endsToday].sort());
+  });
 });
 
 describe('GET /user-memberships/member/:memberId/configuration — no promotions (#931)', () => {

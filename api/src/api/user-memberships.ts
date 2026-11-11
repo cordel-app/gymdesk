@@ -119,7 +119,7 @@ export const ASSIGNMENT_CREATION_STATUS = 'draft';
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled', 'superseded'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancels_on_end_date', 'cancelled', 'superseded'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -186,9 +186,16 @@ userMembershipsRouter.use('/:id', async (req, res, next) => {
  * `status` on one screen and this projection on the other would label the same
  * future-dated assignment `Active` here and `Pending` there. It takes `um` as
  * its table alias, which both callers already use.
+ *
+ * #2625: a `cancelled` row whose `ends_at` (the last paid day, #1196) is today
+ * or later reads `cancels_on_end_date` — derived, never stored. Its date test is
+ * `ENTITLED_ASSIGNMENT_SQL`'s own (`ends_at >= UTC_DATE()`), so the label says
+ * "Cancels on End Date" exactly while the plan still entitles the member, and
+ * becomes `cancelled` on the first day it no longer does, with no job.
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
+    WHEN um.status = 'cancelled' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'

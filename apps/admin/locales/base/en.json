@@ -1606,6 +1606,7 @@
     "active": "Active",
     "inactive": "Inactive",
     "paused": "Paused",
+    "cancels_on_end_date": "Cancels on End Date",
     "cancelled": "Cancelled",
     "superseded": "Superseded",
     "expired": "Expired",
