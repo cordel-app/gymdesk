@@ -5098,7 +5098,11 @@
     "promo_detail_applied_by": "Aplicada por",
     "promo_detail_included_plans": "Planes de membresía",
     "promo_detail_no_plans": "Sin planes de membresía.",
-    "promo_detail_included_products": "Productos"
+    "promo_detail_included_products": "Productos",
+    "unit_assignees_title": "Miembros de la familia por unidad",
+    "unit_assignees_hint": "Cada unidad de un producto individual es para un miembro de la familia. Varias unidades pueden ser para la misma persona.",
+    "unit_assignees_unit_label": "{product}, unidad {unit}",
+    "unit_assignees_save_error": "No se pudieron guardar los miembros de la familia."
   },
   "taxes": {
     "title": "Impuestos",

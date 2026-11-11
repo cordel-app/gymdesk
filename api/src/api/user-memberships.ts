@@ -5,7 +5,8 @@ import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billi
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId, withAssignmentConfig } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
+import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
@@ -1904,6 +1905,46 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
 
   });
 }
+
+// ─── Individual Product units per family member (#2609 stage 3) ─────────────
+// Each unit of an Individual Product the plan includes is for one person: the plan's
+// beneficiaries by default (`domain/planUnitAssignees.ts`), changeable to the owner or a
+// member of the owner's family while the assignment is a Draft — "before confirming the
+// plan" — and never afterwards (a running plan is changed by assigning a new one).
+
+userMembershipsRouter.get('/:id/benefit-assignees', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+    if (!um) return res.status(404).json({ error: 'Membership not found' });
+    const { rows } = await db.query<{ id: number }>(
+      `SELECT ${assignmentPlanSnapshotId('?', '?')} AS id`, [um.id, gymId]);
+    const snapId = rows[0]?.id != null ? Number(rows[0].id) : null;
+    res.json({ editable: um.status === 'draft', eligible: await loadAssignmentAssigneeOptions(gymId, snapId) });
+  } catch (err) { next(err); }
+});
+
+userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+    if (!um) return res.status(404).json({ error: 'Membership not found' });
+    if (um.status !== 'draft') {
+      return res.status(409).json({ error: 'not_a_draft', message: 'Family members are chosen per unit only before the plan is confirmed' });
+    }
+    const section = parseUnitSection(req.body?.section);
+    const productId = Number(req.body?.product_id);
+    if (!section) return res.status(400).json({ error: 'section must be one of session, oneoff, periodical' });
+    if (!Number.isInteger(productId) || productId <= 0) return res.status(400).json({ error: 'product_id is required' });
+    if (await redirectEditToProductSet(req, res, {
+      userMembershipId: Number(um.id), action: 'update',
+      detail: { benefit_assignees: { section, product_id: productId, assignees: req.body?.assignees } },
+      mutate: (tx, d) => writeUnitAssignees(tx, d, Number(um.id), { section, productId, assignees: req.body?.assignees }),
+      respond: () => loadAssignedPlanBenefitSection(gymId, Number(um.id), section),
+    })) return;
+    return res.status(409).json({ error: 'not_a_draft', message: 'Family members are chosen per unit only before the plan is confirmed' });
+  } catch (err) { next(err); }
+});
 
 // ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
 // A Membership's covered Members receive the plan's benefits/entitlements
