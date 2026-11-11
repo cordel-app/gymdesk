@@ -90,7 +90,7 @@ describe('One per Member on Membership Plans', () => {
     const replace = await post(`/user-memberships/${second}/activate`, { on_conflict: 'replace' });
     expect(replace.status).toBeLessThan(300);
     expect(await status(second)).toBe('active');
-    expect(await status(first)).toBe('cancelled');
+    expect(await status(first)).toBe('superseded');
   });
 
   it('a member with no holding activates the plan', async () => {
