@@ -474,6 +474,7 @@
       "draft": "Draft",
       "pending": "Pending",
       "pending_payment": "Pending Payment",
+      "active_cancel_at_period_end": "Cancels on End Date",
       "cancels_on_end_date": "Cancels on End Date",
       "superseded": "Superseded"
     },

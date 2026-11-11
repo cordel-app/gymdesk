@@ -190,7 +190,7 @@ export function MemberMembershipPlans({
           disabled: assignBusy,
           title: assignBusy ? t('assign_new_plan_busy_hint') : undefined,
         },
-        ...(plan.status !== 'cancelled'
+        ...(plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
           ? [{ label: t('action_cancel_plan'), onClick: () => onCancelPlan(plan), danger: true }]
           : []),
       ]

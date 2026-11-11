@@ -96,7 +96,7 @@ paymentRequestsRouter.post(
                 m.email AS member_email, m.name AS member_name
          FROM user_memberships um
          JOIN members m ON m.id = um.member_id
-         WHERE um.id = ? AND um.gym_id = ? AND um.status NOT IN ('cancelled', 'superseded')`,
+         WHERE um.id = ? AND um.gym_id = ? AND um.status NOT IN ('active_cancel_at_period_end', 'cancelled', 'superseded')`,
         [user_membership_id, gymId],
       );
       if (!umRows[0]) return res.status(404).json({ error: 'Membership not found' });

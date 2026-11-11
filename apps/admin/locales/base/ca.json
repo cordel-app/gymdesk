@@ -1593,6 +1593,7 @@
     "active": "Actiu",
     "inactive": "Inactiu",
     "paused": "Pausat",
+    "active_cancel_at_period_end": "Es cancel·la a la data de fi",
     "cancels_on_end_date": "Es cancel·la a la data de fi",
     "cancelled": "Cancel·lat",
     "superseded": "Reemplaçat",

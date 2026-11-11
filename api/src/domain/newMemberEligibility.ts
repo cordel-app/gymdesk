@@ -37,6 +37,8 @@
  * the Member configuration read and the Members list) can never drift apart.
  */
 
+import { isCancelledAssignmentStatus } from './assignmentStatus';
+
 /** The trailing window, in months, a Member must have been away for (#927). */
 export const NEW_MEMBER_WINDOW_MONTHS = 6;
 
@@ -151,7 +153,7 @@ function terminalEnd(
  * the plan on its last paid day, which says nothing about when it was cancelled.
  */
 export function wasCancelledWithinGrace(assignment: NewMemberAssignment): boolean {
-  if (assignment.status !== 'cancelled') return false;
+  if (!isCancelledAssignmentStatus(assignment.status)) return false;
   const start = toDateOnly(assignment.starts_at);
   const closed = toDateOnly(assignment.closed_at);
   if (start === null || closed === null) return false;

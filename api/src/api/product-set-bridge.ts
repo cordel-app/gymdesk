@@ -1,3 +1,4 @@
+import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
@@ -384,7 +385,7 @@ export async function reconfigureProjected(
   // A closed assignment is not a live projection whatever its set says: the
   // legacy route refuses the edit with the reason it always gave.
   const { rows: umRows } = await tx.query<any>('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [input.userMembershipId, input.gymId]);
-  if (!umRows[0] || ['cancelled', 'expired', 'superseded'].includes(umRows[0].status)) return { kind: 'not_projected' };
+  if (!umRows[0] || (isCancelledAssignmentStatus(umRows[0].status) || ['expired', 'superseded'].includes(umRows[0].status))) return { kind: 'not_projected' };
 
   const blocking = await loadEditLock(input.gymId, set.owner_member_id, todayUtc());
   if (blocking.length > 0) return { kind: 'edit_locked', blocking };

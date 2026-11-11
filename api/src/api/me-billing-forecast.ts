@@ -56,7 +56,7 @@ import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
  */
 export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
   ORDER BY
-    FIELD(um.status, 'active','paused','expired','cancelled','superseded'),
+    FIELD(um.status, 'active','paused','expired','active_cancel_at_period_end','cancelled','superseded'),
     um.starts_at DESC`;
 
 /**
