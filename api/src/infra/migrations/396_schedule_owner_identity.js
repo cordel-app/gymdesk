@@ -9,8 +9,9 @@
  * ones. This migration gives the schedule its owner:
  *
  *   1. `owner_member_id` (the member who owns the root Product Set), backfilled
- *      from the root, then NOT NULL with an FK to `members` (CASCADE, as the
- *      root's own FK is);
+ *      from the root, then NOT NULL with an FK to `members` (RESTRICT, as
+ *      `product_sets_owner_fk` is: deleting a member never cascades into
+ *      financial history);
  *   2. an owner holding the same key on two chains keeps it on the schedule of
  *      the chain that has an Active or in-flight version (else the newest
  *      schedule); every other one is re-keyed `<key>-<id>`. Nothing else moves:
@@ -23,8 +24,8 @@
  *      index of its own once the composite key is gone); it goes with the other
  *      version columns.
  *
- * `down` restores the chain key; it fails if a schedule had been shared by two
- * chains of one owner under one key since, which only the realign script does.
+ * `down` restores the chain key and drops the column; it does not restore the
+ * re-keyed `schedule_key` values (they still identify their schedule).
  */
 exports.up = async (knex) => {
   const hasColumn = await knex.schema.hasColumn('product_set_schedules', 'owner_member_id');
@@ -55,22 +56,59 @@ exports.up = async (knex) => {
   }
   for (const rows of groups.values()) {
     const live = rows.filter((r) => Number(r.live) === 1);
-    const keep = (live.length > 0 ? live : rows)[(live.length > 0 ? live : rows).length - 1];
+    const pool = live.length > 0 ? live : rows;
+    const keep = pool[pool.length - 1];
     for (const r of rows) {
       if (r.id === keep.id) continue;
-      await knex.raw('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?',
-        [`${r.schedule_key}-${r.id}`.slice(0, 40), r.id]);
+      // `<key>-<id>` is unique by its id; a key already ending in another id is
+      // extended until the owner holds no such key.
+      let next = `${r.schedule_key}-${r.id}`;
+      for (;;) {
+        const [taken] = await knex.raw(
+          'SELECT 1 FROM product_set_schedules WHERE owner_member_id = ? AND schedule_key = ? LIMIT 1',
+          [r.owner_member_id, next]);
+        if (taken.length === 0) break;
+        next = `${next}-${r.id}`;
+      }
+      if (next.length > 40) throw new Error(`schedule ${r.id}: re-keyed name '${next}' exceeds 40 characters`);
+      await knex.raw('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?', [next, r.id]);
     }
   }
+  const [left] = await knex.raw(`
+    SELECT owner_member_id, schedule_key FROM product_set_schedules
+     GROUP BY owner_member_id, schedule_key HAVING COUNT(*) > 1 LIMIT 1`);
+  if (left.length > 0) throw new Error('product_set_schedules still holds a duplicate (owner_member_id, schedule_key)');
 
   await knex.raw('ALTER TABLE product_set_schedules MODIFY COLUMN owner_member_id INT UNSIGNED NOT NULL');
-  await knex.raw(`
-    ALTER TABLE product_set_schedules
-      ADD KEY pss_root_index (root_product_set_id),
-      ADD UNIQUE KEY pss_owner_key (owner_member_id, schedule_key),
-      ADD CONSTRAINT pss_owner_fk FOREIGN KEY (owner_member_id) REFERENCES members (id) ON DELETE CASCADE`);
-  await knex.raw('ALTER TABLE product_set_schedules DROP INDEX pss_chain_key');
+  // Each step is guarded, so a run interrupted half-way can be run again.
+  if (!(await hasIndex(knex, 'pss_root_index'))) {
+    await knex.raw('ALTER TABLE product_set_schedules ADD KEY pss_root_index (root_product_set_id)');
+  }
+  if (!(await hasIndex(knex, 'pss_owner_key'))) {
+    await knex.raw('ALTER TABLE product_set_schedules ADD UNIQUE KEY pss_owner_key (owner_member_id, schedule_key)');
+  }
+  if (!(await hasConstraint(knex, 'pss_owner_fk'))) {
+    await knex.raw(`ALTER TABLE product_set_schedules
+      ADD CONSTRAINT pss_owner_fk FOREIGN KEY (owner_member_id) REFERENCES members (id) ON DELETE RESTRICT`);
+  }
+  if (await hasIndex(knex, 'pss_chain_key')) {
+    await knex.raw('ALTER TABLE product_set_schedules DROP INDEX pss_chain_key');
+  }
 };
+
+async function hasIndex(knex, name) {
+  const [rows] = await knex.raw(
+    `SELECT 1 FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_set_schedules' AND INDEX_NAME = ? LIMIT 1`, [name]);
+  return rows.length > 0;
+}
+
+async function hasConstraint(knex, name) {
+  const [rows] = await knex.raw(
+    `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_set_schedules' AND CONSTRAINT_NAME = ? LIMIT 1`, [name]);
+  return rows.length > 0;
+}
 
 exports.down = async (knex) => {
   await knex.raw('ALTER TABLE product_set_schedules ADD UNIQUE KEY pss_chain_key (root_product_set_id, schedule_key)');
