@@ -1,3 +1,4 @@
+import { parseLineDirectDiscountInput } from '../domain/lineDirectDiscount';
 import { db, Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
@@ -141,6 +142,7 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     benefit: ProductBenefit | null;
     frequency?: SessionBenefitFrequency | null;
     mandatory?: boolean;
+    direct_discount_percent?: number | null;
   };
   const parsed: Parsed[] = [];
   const seen = new Set<number>();
@@ -156,11 +158,14 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if ('error' in frequency && frequency.error) return { kind: 'invalid', message: frequency.error };
     const mandatoryInput = parsePlanBenefitMandatoryInput(item);
     if (mandatoryInput.error) return { kind: 'invalid', message: mandatoryInput.error };
+    const directInput = parseLineDirectDiscountInput(item);
+    if (directInput.error) return { kind: 'invalid', message: directInput.error };
     seen.add(productId);
     parsed.push({
       product_id: productId, quantity, benefit: pair.benefit,
       ...(frequency.keep ? {} : { frequency: (frequency as any).frequency }),
       ...(mandatoryInput.keep ? {} : { mandatory: mandatoryInput.mandatory }),
+      ...(directInput.keep ? {} : { direct_discount_percent: directInput.percent }),
     });
   }
 
@@ -199,6 +204,7 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (p.benefit) { extra.push('`action` = ?', '`value` = ?'); extraParams.push(p.benefit.action, p.benefit.value); }
     if (p.frequency !== undefined) { extra.push('frequency = ?'); extraParams.push(p.frequency); }
     if (p.mandatory !== undefined) { extra.push('mandatory = ?'); extraParams.push(p.mandatory ? 1 : 0); }
+    if (p.direct_discount_percent !== undefined) { extra.push('direct_discount_percent = ?'); extraParams.push(p.direct_discount_percent); }
     if (attached.has(p.product_id)) {
       await tx.query(
         `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''}

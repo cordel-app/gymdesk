@@ -1541,6 +1541,7 @@ export default function PlansPage() {
                               enforceMandatory
                               benefitContext="plan"
                               showPlanMandatory
+                              showDirectDiscount
                             />
                             {sectionSaveActions({
                               onCancel: cancelBenefitEdit,
@@ -1563,6 +1564,7 @@ export default function PlansPage() {
                                never prices (#817). */
                             showPrices
                             showPlanMandatory
+                            showDirectDiscount
                           />
                         )}
                       </div>

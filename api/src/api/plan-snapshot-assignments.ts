@@ -1,3 +1,4 @@
+import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -53,7 +54,7 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
   const { rows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, product_id, quantity, item_name, item_billing_frequency,
-             unit_price, \`action\`, \`value\`,
+             unit_price, \`action\`, \`value\`, direct_discount_percent,
              ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
         FROM ${PLAN_BENEFIT_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ?`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, planSnapshotId]),
@@ -67,6 +68,7 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
     quantity: positiveQuantity(b.quantity),
     sessionFrequency: toSessionBenefitFrequency(b.session_frequency),
     benefit: toProductBenefit('plan', b.action, b.value),
+    directDiscountPercent: toLineDirectDiscount(b.direct_discount_percent),
   }));
 }
 
