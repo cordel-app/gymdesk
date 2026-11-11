@@ -16,7 +16,7 @@ import {
   formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
-import { recordVerifactuAlta } from './verifactu-records';
+import { loadInvoiceVerifactuQr, recordVerifactuAlta } from './verifactu-records';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
 import {
   isPrivateStorageConfigured, putPrivateDocument, getPrivateDocument,
@@ -62,6 +62,8 @@ async function renderRepresentation(
     lines: rectifies ? negateLines(lines) : lines,
     totals: rectifies ? negateTotals(totals) : totals,
     currency: 'EUR', rectifies,
+    // #2648 stage 3: the QR and legend come from the invoice's own Alta record.
+    verifactu: await loadInvoiceVerifactuQr(db, ev.gym_id, inv.id),
   });
   const key = buildInvoiceKey(ev.gym_id, gym.name, inv.id, type, state);
   try {

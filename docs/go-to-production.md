@@ -72,6 +72,7 @@ Tick items off in the PR that completes them.
       answer 503. Keep a copy in the owner's password manager: losing or changing it makes every
       stored certificate unreadable (the gyms must upload them again). The private bucket
       (`CLOUDFLARE_R2_PRIVATE_*`, #2567) must be configured too.
+- [ ] **Set `VERIFACTU_ENVIRONMENT=production` on the `pro` environment** (#2648 stage 3). A GitHub variable forwarded by `deploy.yml`; unset means `test`, so a VERI*FACTU invoice issued on `pro` would print a QR pointing at AEAT's test service (`prewww2.aeat.es`). Leave `dev` unset.
 - [x] `NODE_ENV=production` in the API container — `deploy.yml` already sets it
       (`APP_NODE_ENV`), keep it when adding the production target.
 - [ ] A production MySQL database, migrated with `npm run db:migrate`. **Do not run
