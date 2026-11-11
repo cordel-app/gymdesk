@@ -37,7 +37,10 @@ export const TAX_CALCULATION_METHODS = ['inclusive', 'exclusive'] as const;
 /** What an integration does. */
 export const INTEGRATION_TYPES = ['invoice_reporting', 'e_invoicing'] as const;
 
-/** Where an integration stands with its authority; each country's procedure differs. */
+/**
+ * Where an integration stands with its authority; each country's procedure differs.
+ * Mirrored by `chk_compliance_integrations_authorization_status` (migration 392).
+ */
 export const AUTHORIZATION_STATUSES = ['not_started', 'pending', 'authorized', 'rejected', 'revoked'] as const;
 
 /**

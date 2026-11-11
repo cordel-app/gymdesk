@@ -11,7 +11,10 @@
  *
  * `compliance_integrations` holds the electronic-invoicing integrations a gym has
  * configured (VeriFactu first, #2648). Several per gym, but one per
- * (provider, integration_type) — `uq_ci_gym_provider_type`. Nothing calls a tax
+ * (provider, integration_type) — `uq_ci_gym_provider_type`. `authorization_status` is
+ * the one country-independent vocabulary, so it carries a CHECK mirroring
+ * `AUTHORIZATION_STATUSES` (a new status goes in both places); regimes, statuses,
+ * methods, providers and types are per country and have none. Nothing calls a tax
  * authority from here; `enabled` and the authorization columns are configuration.
  * An integration is never deleted, it is disabled, so its history stays readable.
  *
@@ -61,6 +64,8 @@ exports.up = async (knex) => {
         modified_at DATETIME NULL,
         modified_by VARCHAR(255) NULL,
         UNIQUE KEY uq_ci_gym_provider_type (gym_id, provider, integration_type),
+        CONSTRAINT chk_compliance_integrations_authorization_status CHECK (authorization_status IN
+          ('not_started', 'pending', 'authorized', 'rejected', 'revoked')),
         CONSTRAINT fk_ci_gym FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
@@ -89,6 +94,13 @@ exports.down = async (knex) => {
   );
   if (fk.length > 0) {
     await knex.raw('ALTER TABLE compliance_audit_events DROP FOREIGN KEY fk_cae_integration');
+  }
+  const [idx] = await knex.raw(
+    `SELECT INDEX_NAME FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'compliance_audit_events'
+        AND INDEX_NAME = 'idx_cae_integration'`,
+  );
+  if (idx.length > 0) {
     await knex.raw('ALTER TABLE compliance_audit_events DROP KEY idx_cae_integration');
   }
   await knex.schema.dropTableIfExists('compliance_integrations');
