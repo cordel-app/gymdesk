@@ -128,6 +128,7 @@ import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
 import { websiteIntegrationRouter } from './api/website-integration';
 import { gymLocalizationRouter } from './api/gym-localization';
+import { taxComplianceRouter } from './api/tax-compliance';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
@@ -461,6 +462,7 @@ app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('
 app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.themes'), gymThemesRouter);
 app.use('/system/website-integration', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.website_integration'), websiteIntegrationRouter);
 app.use('/system/localization', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), gymLocalizationRouter);
+app.use('/system/tax-compliance', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), taxComplianceRouter);
 app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.recycle_bin'), recycleBinRouter);
 
 // Global error handler — must be last, after all routes.

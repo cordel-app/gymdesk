@@ -47,6 +47,8 @@ describe('#1052: Website Integration leaves Configuration', () => {
       '/{{locale}}/audit',
       '/{{locale}}/themes',
       '/{{locale}}/localization',
+      // #2647: Tax & Compliance joins the group after Time & Localization.
+      '/{{locale}}/tax-compliance',
       '/{{locale}}/recycle-bin',
     ]);
   });
