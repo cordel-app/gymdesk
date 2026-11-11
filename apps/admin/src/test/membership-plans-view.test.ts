@@ -61,3 +61,13 @@ describe('#2549: cancelled plans with a future end date stay Active', () => {
     expect(visiblePlans([cancelledValid, cancelledPast, active]).rows.map((p: any) => p.id)).toEqual([1, 3]);
   });
 });
+
+describe('#2659 stage 3: a Draft lists the plans cancelling at their period end beside it', () => {
+  it('keeps a Cancels-on-End-Date plan, replaces the Active one, never lists a finished one', () => {
+    const cancelling = { id: 1, status: 'active_cancel_at_period_end', is_live: false, is_current: true } as any;
+    const finished = { id: 2, status: 'cancelled', is_live: false, is_current: false } as any;
+    const v = visiblePlans([plan(3, 'active'), cancelling, finished, plan(4, 'draft')]);
+    expect(v.rows.map((r: any) => r.id)).toEqual([4, 1]);
+    expect(v.heading).toBe('draft');
+  });
+});

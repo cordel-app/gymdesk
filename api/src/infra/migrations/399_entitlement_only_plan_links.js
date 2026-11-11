@@ -13,6 +13,10 @@
  * `NOT NULL DEFAULT 0` so every existing link keeps meaning what it meant.
  * `ADD COLUMN` with a default is INSTANT in MySQL 8; no CHECK (a TINYINT(1)
  * flag, written only as 0 or 1 by `linkCancellingPlans()`).
+ *
+ * `down` deletes the entitlement links before dropping the column (they would
+ * otherwise read as billable links). They are derived data: the next Draft,
+ * clone or cancellation re-derives them from the assignments' stored status.
  */
 exports.up = async (knex) => {
   if (!(await knex.schema.hasColumn('product_set_plan_snapshots', 'entitlement_only'))) {
