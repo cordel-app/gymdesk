@@ -6,7 +6,7 @@ import { db } from '../infra/db';
 import { importBaseProducts } from '../api/gym-default-products';
 import { parseBaseProductInput } from '../domain/baseProducts';
 import { violatesOnePerMember } from '../api/one-per-member';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, insertTestPurchase } from './helpers';
 
 const NAME = 'One Per Member Template (#2607)';
 let gymId: string;
@@ -60,7 +60,7 @@ describe('One per Member', () => {
 
   it('blocks a second assignment only while the member holds one', async () => {
     expect(await violatesOnePerMember(db, gymId, memberId, productId)).toBe(false);
-    const ins = (status: string) => db.query(
+    const ins = (status: string) => insertTestPurchase(
       `INSERT INTO member_products_oneoff_snapshot
          (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, amount, currency, created_by)
        VALUES (?, ?, ?, ?, 'Locker OPM', 'fee', 'once', 10, 'EUR', 'test')`, [gymId, memberId, productId, status]);

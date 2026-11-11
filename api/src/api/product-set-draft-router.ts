@@ -12,6 +12,7 @@ import { ProductBenefitCategory } from '../domain/productClassification';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
+import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
   removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
@@ -186,9 +187,10 @@ export async function simulationHandler(req: any, res: any, next: any) {
     } catch { initial = null; }
 
     const { rows: oneOffRows } = await db.query<any>(
-      `SELECT product_id, product_name, amount, list_price FROM member_products_oneoff_snapshot
-        WHERE gym_id = ? AND member_id = ? AND status IN ('draft', 'pending_payment')
-        ORDER BY id`, [gymId, Number(set.owner_member_id)]);
+      // #2126 stage 3d: the one-time purchases are read from the Product snapshot tables.
+      `SELECT product_id, product_name, amount, list_price FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+        WHERE status IN ('draft', 'pending_payment')
+        ORDER BY id`, memberPurchaseSnapshotParams(gymId, Number(set.owner_member_id)));
     const oneOffs = oneOffRows.map((r: any) => ({
       product_id: r.product_id != null ? Number(r.product_id) : null,
       name: String(r.product_name),

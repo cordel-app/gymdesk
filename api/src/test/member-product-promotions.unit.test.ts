@@ -254,9 +254,12 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
     // purchase is its own snapshot (migration 228).
     // #1521: the one join is the purchase's *own* payment request (tax, status
     // and billing event), never `products`, `promotions` or `tax_rates`.
-    const purchaseRead = statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp');
-    expect([...purchaseRead.matchAll(/JOIN\s+(\w+)/g)].map((m) => m[1])).toEqual(['payment_requests']);
-    expect(purchaseRead).toContain('mp.payment_request_id');
+    // #2126 stage 3d: the purchase is read from the Product snapshot tables and
+    // the purchase record is joined only to reach that payment request.
+    const purchaseRead = statementFrom(ioSrc, 'FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp');
+    expect([...purchaseRead.matchAll(/JOIN\s+(\w+)/g)].map((m) => m[1]))
+      .toEqual(['member_products_oneoff_snapshot', 'payment_requests']);
+    expect(purchaseRead).toContain('rec.payment_request_id');
     expect(membersRouterSrc).toContain('loadMemberPurchases(gymId, memberId)');
   });
 

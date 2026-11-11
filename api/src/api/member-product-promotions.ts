@@ -1,5 +1,6 @@
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { assignedMemberSql } from '../domain/productAssignee';
+import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { purchaseValidityState } from '../domain/productValidity';
@@ -397,8 +398,9 @@ export interface MemberPurchasedProduct {
  * never completed is part of that — the member's own catalogue is where a
  * cancelled attempt is silent (it simply reads *available* again).
  *
- * Every column of the row is the purchase's **snapshot** (migration 228), so
- * nothing here joins `products` either: a Product renamed or repriced since
+ * Every column of the row is the purchase's **snapshot** (migration 228; read
+ * from the Product snapshot tables since #2126 stage 3d, the purchase record
+ * joined only for its payment request), so nothing here joins `products` either: a Product renamed or repriced since
  * must not move what a past purchase says it was.
  */
 export async function loadMemberPurchases(
@@ -416,12 +418,13 @@ export async function loadMemberPurchases(
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
-       FROM member_products_oneoff_snapshot mp
+       FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+       LEFT JOIN member_products_oneoff_snapshot rec
+              ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
        LEFT JOIN payment_requests pr
-              ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
-      WHERE mp.gym_id = ? AND mp.member_id = ?
+              ON pr.id = rec.payment_request_id AND pr.gym_id = mp.gym_id
       ORDER BY mp.created_at DESC, mp.id DESC`,
-    [gymId, memberId],
+    memberPurchaseSnapshotParams(gymId, memberId),
   );
   const { rows: gymRows } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
   const today = DateTime.now().setZone(resolveTimeZone(gymRows[0]?.time_zone)).toISODate()!;

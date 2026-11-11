@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, insertTestPurchase, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -90,7 +90,7 @@ describe('one-time purchase', () => {
       'SELECT assigned_member_id FROM member_products_oneoff_snapshot WHERE id = ?', [res.body.purchaseId]);
     expect(rows[0].assigned_member_id).toBe(loner);
 
-    const { insertId: legacy } = await db.query(
+    const legacy = await insertTestPurchase(
       `INSERT INTO member_products_oneoff_snapshot
          (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, amount, currency, created_by)
        VALUES (?, ?, ?, 'active', 'Legacy', 'fee', 'once', 30, 'EUR', 'test')`, [gymId, loner, oneOff]);
