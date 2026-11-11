@@ -8,7 +8,8 @@
 import type { Tx } from '../infra/db';
 import type { InvoiceType } from '../domain/billingDocumentKeys';
 import { negateTotals } from '../domain/billingInvoice';
-import { verifactuIssuerNif } from '../domain/verifactu';
+import { verifactuIssuerNif, verifactuQrFromRecord } from '../domain/verifactu';
+import { VERIFACTU_ENVIRONMENT } from '../infra/verifactu-environment';
 import { buildAltaRecord, VERIFACTU_INTEGRATION_TYPE, VERIFACTU_PROVIDER } from '../domain/verifactuRecords';
 import { loadInvoiceFigures } from './invoice-figures';
 import { recordComplianceEvent } from './compliance-audit-events';
@@ -104,4 +105,18 @@ export async function recordVerifactuAlta(
     },
   });
   return insertId as number;
+}
+
+/**
+ * #2648 stage 3 — the QR and legend an invoice's PDF prints, from the invoice's
+ * own stored Alta record, or null when the invoice has none (VeriFactu off at
+ * issue, or issued before stage 2): such an invoice keeps its plain layout.
+ */
+export async function loadInvoiceVerifactuQr(
+  exec: Tx, gymId: string, invoiceId: number,
+): Promise<{ url: string; legend: string } | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT issuer_nif, invoice_number, invoice_issue_date, invoice_total FROM verifactu_records
+      WHERE gym_id = ? AND invoice_id = ? AND record_type = 'alta'`, [gymId, invoiceId]);
+  return rows[0] ? verifactuQrFromRecord(VERIFACTU_ENVIRONMENT, rows[0]) : null;
 }

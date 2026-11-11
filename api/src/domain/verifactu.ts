@@ -198,3 +198,43 @@ export function verifactuQrUrl(env: VerifactuEnvironment, q: QrInput): string {
   });
   return `${QR_BASE_URL[env]}?${params.toString()}`;
 }
+
+/**
+ * #2648 stage 3 — the deployment's AEAT service, read from
+ * `VERIFACTU_ENVIRONMENT`. Unset or blank is `test`: a deployment never claims
+ * the production service unless it says so. Any other value is a
+ * configuration error, refused at boot rather than printed on an invoice.
+ */
+export function parseVerifactuEnvironment(raw: string | undefined): VerifactuEnvironment {
+  const v = (raw ?? '').trim();
+  if (v === '') return 'test';
+  if ((VERIFACTU_ENVIRONMENTS as readonly string[]).includes(v)) return v as VerifactuEnvironment;
+  throw new Error(`VERIFACTU_ENVIRONMENT must be one of ${VERIFACTU_ENVIRONMENTS.join(', ')} (got "${v}")`);
+}
+
+/** The fields of a stored Alta record (`verifactu_records`) the QR is built from. */
+export interface QrRecordFields {
+  issuer_nif: string;
+  invoice_number: string;
+  /** Stored as `dd-mm-yyyy`, the value the huella was computed over. */
+  invoice_issue_date: string;
+  /** Stored as `verifactuAmount()` spelled it. */
+  invoice_total: string;
+}
+
+/**
+ * The QR of an issued invoice, taken from its stored Alta record and never
+ * recomputed from the invoice: the values the QR carries are by construction
+ * the values informed (and hashed) for that invoice.
+ */
+export function verifactuQrFromRecord(
+  env: VerifactuEnvironment, r: QrRecordFields,
+): { url: string; legend: string } {
+  return {
+    url: verifactuQrUrl(env, {
+      issuerNif: r.issuer_nif, invoiceNumber: r.invoice_number,
+      issueDate: r.invoice_issue_date, total: r.invoice_total,
+    }),
+    legend: VERIFACTU_QR_LEGEND,
+  };
+}
