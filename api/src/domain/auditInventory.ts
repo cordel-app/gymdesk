@@ -90,7 +90,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "nutritional_qualities": ["lookup", "global lookup, no runtime writer"],
   "payment_methods": ["technical", "stored card written by provider webhooks; replaced wholesale"],
   "product_professional_services": ["parent", "products"],
-  "plan_snapshots": ["parent", "product_sets (a Membership Plan assignment of one version, #2125)"],
+  "plan_snapshots": ["parent", "product_sets (a Membership Plan assignment, linked through product_set_plan_snapshots, #2125)"],
   "product_set_plan_snapshots": ["parent", "product_sets (junction to plan snapshots, #2125 M1)"],
   "product_set_session_snapshots": ["parent", "product_sets (junction to Product snapshots, #2126 M1)"],
   "product_set_oneoff_snapshots": ["parent", "product_sets (junction to Product snapshots, #2126 M1)"],

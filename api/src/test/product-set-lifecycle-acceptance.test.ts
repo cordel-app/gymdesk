@@ -167,7 +167,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     const { rows: apps } = await db.query<any>(
       'SELECT status, user_membership_id FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
     expect(apps.map((a: any) => [a.status, a.user_membership_id])).toEqual([['superseded', null]]);
-    expect((await rowsHeldBy(v1))['plan_snapshots']).toBeGreaterThan(0);
+    expect((await rowsHeldBy(v1))['product_set_plan_snapshots']).toBeGreaterThan(0);
     const { rows: shared } = await db.query<any>(
       'SELECT COUNT(DISTINCT plan_snapshot_id) AS n FROM product_set_plan_snapshots WHERE product_set_id IN (?, ?)', [v1, draft]);
     expect(Number(shared[0].n)).toBe(1);
