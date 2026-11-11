@@ -19,7 +19,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 
 const SECRET = 'test-productset-webhook';
 let gymId: string;
@@ -89,7 +89,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     const pay = await auth(request.post(`/product-sets/${id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);
     expect(pay.body.status).toBe('pending_payment');
-    expect(pay.body.amount).toBe(40);
+    expect(pay.body.amount).toBe(proratedToNextFirst(40));
     expect(pay.body.checkout_url).toContain('/checkout?token=');
 
     // Nothing is active and no future event exists until the money is confirmed.
@@ -218,7 +218,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);
     const cfg2 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
-    expect(cfg2.body.product_sets[0]).toMatchObject({ status: 'pending_payment', amount_due: 25 });
+    expect(cfg2.body.product_sets[0]).toMatchObject({ status: 'pending_payment', amount_due: proratedToNextFirst(25) });
 
     const cash = await auth(request.post(`/product-sets/${c.body.id}/record-payment`)).send({});
     expect(cash.status).toBe(200);

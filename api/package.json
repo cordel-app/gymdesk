@@ -21,6 +21,7 @@
     "foods:audit-base-links": "tsx src/scripts/audit-base-food-links.ts",
     "goals:audit-base-links": "tsx src/scripts/audit-base-goal-links.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
+    "schedules:realign": "tsx src/scripts/realign-billing-schedules.ts",
     "reservations:backfill": "tsx src/scripts/backfill-service-reservations.ts",
     "plan-snapshots:validate": "tsx src/scripts/validate-plan-snapshots.ts",
     "product-snapshots:validate": "tsx src/scripts/validate-product-snapshots.ts",

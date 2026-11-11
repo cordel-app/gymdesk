@@ -5,18 +5,21 @@
  *
  *   1. the item's cadence equals the Membership Plan's → the `plan` schedule;
  *   2. otherwise an existing schedule of the same cadence → that schedule;
- *   3. otherwise a new independent schedule anchored on the purchase date, and
- *      the caller shows a warning.
+ *   3. otherwise a new independent schedule anchored on the billing calendar's
+ *      grid date on or before the purchase date (#2125 M5c,
+ *      `calendarAnchorOnOrBefore()`), and the caller shows a warning.
  *
  * Joining an existing schedule means the item is charged a **prorated** amount
  * for the stretch from the purchase date to that schedule's next billing date
- * (`domain/proration.ts`); a new schedule starts on the purchase date, so there
- * is nothing to prorate. Session allowances never reach this (#918). The
+ * (`domain/proration.ts`). A new schedule is anchored on the calendar grid, so a
+ * purchase between two grid dates is prorated to the next one by the engine
+ * (`alignTo`); `prorate: false` only says no *existing* schedule was joined. Session allowances never reach this (#918). The
  * database's `UNIQUE (root_product_set_id, schedule_key)` and the FK from
  * recurring items complement this function; they do not replace it.
  *
  * Pure: no database, no clock.
  */
+import { calendarAnchorOnOrBefore } from './calendarSchedule';
 
 export type CadenceUnit = 'day' | 'week' | 'month' | 'year';
 export interface Cadence { interval: number; unit: CadenceUnit }
@@ -78,7 +81,7 @@ export function allocateSchedule(input: {
   return {
     kind: 'new',
     key: nextScheduleKey(input.schedules.map((s) => s.key)),
-    anchorDate: input.purchaseDate,
+    anchorDate: calendarAnchorOnOrBefore(input.cadence, input.purchaseDate),
     prorate: false,
     warn: true,
   };

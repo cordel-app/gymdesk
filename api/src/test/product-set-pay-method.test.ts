@@ -24,7 +24,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -80,7 +80,7 @@ describe('POST /product-sets/:id/pay (#1664)', () => {
     expect(codes).toEqual(expect.arrayContaining(['cash', 'card', 'monei', 'members_app']));
     expect(codes).not.toContain('google_pay'); // inactive in the catalogue
     expect(res.body.payment_methods.find((m: any) => m.code === 'monei')).toMatchObject({ available: false, reason: 'monei_token_missing' });
-    expect(res.body.amount_due).toBe(30);
+    expect(res.body.amount_due).toBe(proratedToNextFirst(30));
     expect(typeof res.body.net_total).toBe('number');
     expect(await statusOf(id)).toBe('draft');
   });
@@ -90,7 +90,7 @@ describe('POST /product-sets/:id/pay (#1664)', () => {
     const id = await draft(await member());
     const res = await auth(request.post(`/product-sets/${id}/pay`)).send({ method: code });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ status: 'active', outcome: 'paid', amount: 30 });
+    expect(res.body).toMatchObject({ status: 'active', outcome: 'paid', amount: proratedToNextFirst(30) });
     const { rows } = await db.query<any>('SELECT method, status FROM payment_requests WHERE billing_event_id = ?', [res.body.billing_event_id]);
     expect(rows).toEqual([{ method, status: 'completed' }]);
     expect(providerCalls).toBe(0);

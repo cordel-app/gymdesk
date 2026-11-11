@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 
 const SECRET = 'test-1521-webhook';
 let gymId: string;
@@ -374,7 +374,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     // again — and only its payment makes the version the member's.
     const sp = await auth(request.post(`/product-sets/${buy.body.product_set_id}/save-and-pay`)).send({});
     expect(sp.status).toBe(201);
-    expect(sp.body.amount).toBe(20);
+    expect(sp.body.amount).toBe(proratedToNextFirst(20));
     expect((await pay(sp.body.payment_request_id)).status).toBe(200);
     const now = await auth(request.get(`/product-sets/${buy.body.product_set_id}`));
     expect(now.body.status).toBe('active');
