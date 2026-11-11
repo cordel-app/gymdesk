@@ -92,7 +92,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             p.name AS plan_name,
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live,
-            (um.status = 'cancelled' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
+            (um.status IN ('active_cancel_at_period_end', 'cancelled') AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}

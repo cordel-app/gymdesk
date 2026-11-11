@@ -173,7 +173,7 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
             (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
                JOIN membership_plans mp ON mp.id = um.membership_plan_id
               WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')) AS plan_name
+                AND um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')) AS plan_name
        FROM members m
       WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.id IN (${top.map(() => '?').join(',')})`,
     [gymId, ...top.map((g) => g.member_id)],
@@ -356,7 +356,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
                 (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
                    JOIN membership_plans mp ON mp.id = um.membership_plan_id
                   WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                    AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'superseded')) AS plan_name
+                    AND um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')) AS plan_name
            FROM members m
           WHERE m.gym_id = ? AND m.deleted_at IS NULL
           ORDER BY m.created_at DESC, m.id DESC

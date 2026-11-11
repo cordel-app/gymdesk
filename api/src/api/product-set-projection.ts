@@ -189,8 +189,8 @@ export async function projectActiveProductSet(
     const umId = Number(set.user_membership_id ?? continuedUmId);
     await tx.query(
       `UPDATE user_memberships
-          SET ends_at = ?, status = IF(status IN ('cancelled','expired','superseded'), status, 'active'),
-              purchased_at = IF(status IN ('cancelled','expired','superseded'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
+          SET ends_at = ?, status = IF(status IN ('active_cancel_at_period_end','cancelled','expired','superseded'), status, 'active'),
+              purchased_at = IF(status IN ('active_cancel_at_period_end','cancelled','expired','superseded'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [dateOnly(set.ends_at), actor, umId, gymId],

@@ -563,9 +563,20 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   `materialiseScheduledEvents()`, and a future obligation that already has an attempt is
   **kept and listed**. No transition proration, credit or refund; past events, attempts and
   receipts are untouched; a second run changes nothing.
-- **Not yet**: consolidating two schedules of one cadence in a chain into one, and the
-  `(owner, periodicity)` schedule identity. The script lists such chains; until then their
-  schedules both sit on the grid and bill on the same dates as separate events.
+- **One schedule per cadence in a chain** (#2125 M5c-2, Oscar's §7). Two schedules of one
+  chain are the same schedule when they have the same cadence and, for a grid cadence, any
+  anchor (a yearly one only on the same anniversary): `domain/scheduleConsolidation.ts`.
+  The same script folds them into one (`consolidateChainSchedules()`), into the `plan`
+  schedule when the group holds it, else the oldest. Every snapshot line moves to it; each
+  event of the merged schedule is **moved** unchanged when the target has none for its
+  period, **regenerated** once when both are untouched future obligations (both deleted, the
+  generator writes the date again with the lines of both), and **kept** on its own schedule
+  and listed when either has history (past, attempted, paid) — never merged, deleted or
+  duplicated. A merged schedule is deleted once no event references it. Going forward, a
+  plan added to a chain that already bills a schedule of the plan's cadence adopts that
+  schedule (`adoptScheduleAsPlan()`) instead of opening a second one.
+- **Not yet**: the `(owner, periodicity)` identity across chains (an owner's chains still
+  hold their own schedules) and dropping the `product_sets` version columns.
 - **Known gap**: the per-date pricers (`priceMembershipFeeOn()`, used by My Membership's
   current fee) still count Billing & Duration from the plan's own start, so for an aligned
   plan with a configured duration they may show a different period status than the
