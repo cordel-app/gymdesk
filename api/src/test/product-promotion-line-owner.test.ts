@@ -121,6 +121,8 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     const one = await buy(m, prod, [promo]);
     // An identical purchase within seconds is refused as a double submission (#1865).
     await db.query('UPDATE member_products_recurrent_snapshot SET created_at = created_at - INTERVAL 1 MINUTE WHERE id = ?', [one.lineId]);
+    // #2126 stage 3l: the guard reads the line's Product snapshot.
+    await db.query('UPDATE product_periodical_snapshots SET created_at = created_at - INTERVAL 1 MINUTE WHERE source_id = ?', [one.lineId]);
     const two = await buy(m, prod, [promo]);
     expect(two.productSetId).toBe(one.productSetId);
     expect(two.lineId).not.toBe(one.lineId);
