@@ -135,6 +135,7 @@ describe('gate: audited tables', () => {
     { file: 'api/product-set-projection.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: re-keys a successor version\'s applications to the assignment it projects (#1995); the application itself is not edited' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
+    { file: 'api/product-set-draft.ts', table: 'product_sets', why: 'membership_plan_id of a Draft set or cleared with the plan the member adds to or takes off it (#2496 stage 4); product_sets keeps only created_by and the edit is audited against the product_set' },
     { file: 'api/product-set-draft-router.ts', table: 'product_sets', why: 'last_activity_at refresh of a Draft (its edits are recorded on the assignment projection)' },
     { file: 'api/assignment-draft-set.ts', table: 'product_sets', why: 'mirrors starts_at/ends_at and the assignment link of a Draft from its assignment row' },
     { file: 'api/gym-training-plans.ts', table: 'member_training_plans', why: 'status/valid_to when the new-plan flow expires existing plans; the actor is recorded on training_plans.modified_by in the same transaction' },

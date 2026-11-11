@@ -99,6 +99,7 @@ import {
   draftAddedCount,
   draftErrorKey,
   draftProductState,
+  draftPlanState,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -141,6 +142,8 @@ interface Benefit {
 type ItemGroup = 'onetime' | 'recurring';
 const ITEM_GROUPS: ItemGroup[] = ['onetime', 'recurring'];
 const RECURRING_ITEM_FREQUENCIES = ['week', 'four_weeks', 'month', 'year'];
+/** #2496 stage 4 — `draftBusy` while a plan is being added to or taken off the Draft. */
+const PLAN_BUSY = -2;
 function itemGroupOf(b: Benefit): ItemGroup {
   return RECURRING_ITEM_FREQUENCIES.includes(b.billing_frequency ?? '') ? 'recurring' : 'onetime';
 }
@@ -282,6 +285,8 @@ export default function MembershipPage() {
   const [setView, setSetView] = useState<MemberSetView | null>(null);
   const [draftBusy, setDraftBusy] = useState<number | null>(null);
   const [draftError, setDraftError] = useState<{ productId: number | null; key: string } | null>(null);
+  // #2496 stage 4 — a refused plan edit, shown on the plan card it came from.
+  const [planDraftError, setPlanDraftError] = useState<{ planId: number; key: string } | null>(null);
 
   // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
   // the Promotion applied per plan is page state (its snapshot is written by
@@ -429,6 +434,48 @@ export default function MembershipPage() {
       await apiFetch(`/me/product-sets/${setView.id}/services/${lineId}`, { method: 'DELETE' });
     } catch (err: any) {
       setDraftError({ productId: product.id, key: draftErrorKey(err?.message) });
+    } finally {
+      await loadSetView();
+      setDraftBusy(null);
+    }
+  }
+
+  /**
+   * #2496 stage 4 — Add Plan on the shared Draft: the plan, its applied
+   * Promotion and its declined optional Products go to the very Draft the
+   * Products are on (created if there is none), never a second one. Every rule
+   * is the server's (`POST /me/product-sets/:id/plans`).
+   */
+  async function addPlanToDraft(plan: MemberPlanOffer) {
+    setDraftBusy(PLAN_BUSY);
+    setPlanDraftError(null);
+    try {
+      const draft = await apiFetch<{ id: number }>('/me/product-sets/draft', { method: 'POST' });
+      const applied = appliedPlanPromotions[plan.id] ?? null;
+      await apiFetch(`/me/product-sets/${draft.id}/plans`, {
+        method: 'POST',
+        body: JSON.stringify({
+          membership_plan_id: plan.id,
+          promotion_ids: applied ? [applied] : [],
+          declined_benefits: declinedBenefitsPayload(plan.benefits, new Set(declinedPlanBenefits[plan.id] ?? [])),
+        }),
+      });
+    } catch (err: any) {
+      setPlanDraftError({ planId: plan.id, key: draftErrorKey(err?.message) });
+    } finally {
+      await loadSetView();
+      setDraftBusy(null);
+    }
+  }
+
+  async function removePlanFromDraft(planId: number, planSnapshotId: number) {
+    if (!setView) return;
+    setDraftBusy(PLAN_BUSY);
+    setPlanDraftError(null);
+    try {
+      await apiFetch(`/me/product-sets/${setView.id}/plans/${planSnapshotId}`, { method: 'DELETE' });
+    } catch (err: any) {
+      setPlanDraftError({ planId, key: draftErrorKey(err?.message) });
     } finally {
       await loadSetView();
       setDraftBusy(null);
@@ -1195,6 +1242,51 @@ export default function MembershipPage() {
     };
   }
 
+  /**
+   * #2496 stage 4 — while the member is building a Draft, a plan joins that
+   * Draft (one purchase with the Products on it); with no Draft the card keeps
+   * its own purchase, which stage 5's single Save & Pay will replace.
+   */
+  function planAction(plan: MemberPlanOffer) {
+    const control = planControl(plan);
+    const error = planDraftError?.planId === plan.id ? planDraftError.key : null;
+    if (!error) return control;
+    return (
+      <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+        {control}
+        <span role="alert" style={{ ...styles.draftError, flexBasis: '100%', textAlign: 'right' }}>{t(error as any)}</span>
+      </span>
+    );
+  }
+
+  function planControl(plan: MemberPlanOffer) {
+    const placed = draftPlanState(plan.id, setView);
+    const busy = draftBusy !== null;
+    if (placed.state === 'no_draft') {
+      return (
+        <button type="button" style={primaryButtonStyle} onClick={() => openChoosePlan(plan)}>
+          {t('membership.choose_plan')}
+        </button>
+      );
+    }
+    if (placed.state === 'added') {
+      return (
+        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <StatusPill status="pending" label={t('membership.plan_in_draft')} />
+          <button type="button" style={styles.draftSecondaryBtn} disabled={busy} onClick={() => removePlanFromDraft(plan.id, placed.planSnapshotId)}>
+            {t('membership.plan_remove_from_draft')}
+          </button>
+        </span>
+      );
+    }
+    if (placed.state === 'taken') return null;
+    return (
+      <button type="button" style={primaryButtonStyle} disabled={busy} onClick={() => addPlanToDraft(plan)}>
+        {draftBusy === PLAN_BUSY ? t('membership.product_adding') : t('membership.plan_add_to_draft')}
+      </button>
+    );
+  }
+
   function renderPlanCatalogue() {
     if (!catalogueOpen) return null;
     const items: MemberPlanCardItem[] = (planCatalogue ?? []).map((plan) => {
@@ -1239,11 +1331,7 @@ export default function MembershipPage() {
               ),
           };
         }),
-        action: (
-          <button type="button" style={primaryButtonStyle} onClick={() => openChoosePlan(plan)}>
-            {t('membership.choose_plan')}
-          </button>
-        ),
+        action: planAction(plan),
       };
     });
     return (
