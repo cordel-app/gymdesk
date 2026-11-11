@@ -504,14 +504,19 @@
     "product_remove_from_draft": "Treu",
     "product_in_draft": "Afegit",
     "product_state_held": "Als teus productes",
-    "draft_selection_count": "{count, plural, one {# producte afegit a la teva selecció.} other {# productes afegits a la teva selecció.}}",
+    "draft_selection_count": "{count, plural, one {# element afegit a la teva selecció.} other {# elements afegits a la teva selecció.}}",
     "draft_expires_in": "L'esborrany caduca en",
     "draft_discard": "Descarta la selecció",
     "draft_error_in_flight": "Ja tens un canvi pendent de pagament. Completa'l o cancel·la'l primer.",
     "draft_error_locked": "Encara s'està processant un pagament. Torna-ho a provar més tard.",
     "draft_error_duplicate": "Aquest producte s'acaba d'afegir. Espera un moment.",
     "draft_error_expired": "La teva selecció ha caducat. Torna a afegir el producte.",
-    "draft_error_generic": "No s'ha pogut actualitzar la teva selecció. Torna-ho a provar."
+    "draft_error_generic": "No s'ha pogut actualitzar la teva selecció. Torna-ho a provar.",
+    "plan_add_to_draft": "Afegeix a la meva selecció",
+    "plan_in_draft": "A la teva selecció",
+    "plan_remove_from_draft": "Treu",
+    "draft_error_has_plan": "La teva selecció ja inclou un pla.",
+    "draft_error_plan_via_gym": "Per canviar el teu pla, contacta amb el teu gimnàs."
   },
   "payments": {
     "title": "Pagaments",

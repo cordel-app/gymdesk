@@ -34,7 +34,10 @@ import {
   type TaxProfileField,
   type TaxProfileForm,
   type TaxProfileOptions,
+  type TaxConfigurationOptions,
 } from './taxComplianceView';
+import { TaxConfigurationSection } from './TaxConfigurationSection';
+import { ElectronicInvoicingSection } from './ElectronicInvoicingSection';
 
 interface ComplianceEvent {
   id: number;
@@ -46,7 +49,10 @@ interface ComplianceEvent {
   created_by: string | null;
 }
 
-/** #2647 stage 1: Settings → Tax & Compliance (Tax Profile, Compliance History). */
+/**
+ * #2647: Settings → Tax & Compliance — Tax Profile, Tax Configuration, Electronic
+ * Invoicing (stage 2) and Compliance History.
+ */
 export default function TaxCompliancePage() {
   const t = useTranslations('tax_compliance');
   const locale = useLocale();
@@ -58,6 +64,7 @@ export default function TaxCompliancePage() {
   const [tab, setTab] = useState<TaxComplianceTab>('profile');
   const [profile, setProfile] = useState<TaxProfile | null>(null);
   const [options, setOptions] = useState<TaxProfileOptions | null>(null);
+  const [configOptions, setConfigOptions] = useState<TaxConfigurationOptions | null>(null);
   const [history, setHistory] = useState<ComplianceEvent[] | null>(null);
   const [draft, setDraft] = useState<TaxProfileForm | null>(null);
   const [saving, setSaving] = useState(false);
@@ -72,12 +79,14 @@ export default function TaxCompliancePage() {
   useEffect(() => {
     (async () => {
       try {
-        const [p, o] = await Promise.all([
+        const [p, o, co] = await Promise.all([
           apiFetch('/system/tax-compliance/profile') as Promise<TaxProfile>,
           apiFetch('/system/tax-compliance/profile/options') as Promise<TaxProfileOptions>,
+          apiFetch('/system/tax-compliance/configuration/options') as Promise<TaxConfigurationOptions>,
         ]);
         setProfile(p);
         setOptions(o);
+        setConfigOptions(co);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -205,6 +214,28 @@ export default function TaxCompliancePage() {
             )}
           </CardSection>
         </div>
+      )}
+
+      {tab === 'configuration' && (
+        <TaxConfigurationSection
+          key={activeGym?.id}
+          country={profile?.country_code ?? null}
+          options={configOptions}
+          canWrite={canWrite}
+          onChanged={() => setHistory(null)}
+        />
+      )}
+
+      {tab === 'e_invoicing' && (
+        <ElectronicInvoicingSection
+          key={activeGym?.id}
+          country={profile?.country_code ?? null}
+          countries={[...(options?.countries ?? [])].sort((a, b) => countryName(a).localeCompare(countryName(b), locale))}
+          countryName={countryName}
+          options={configOptions}
+          canWrite={canWrite}
+          onChanged={() => setHistory(null)}
+        />
       )}
 
       {tab === 'history' && (

@@ -9,7 +9,7 @@ import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../dom
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, primaryPlanSnapshotSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotInheritedSql, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, primaryPlanSnapshotSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
@@ -612,5 +612,81 @@ export async function removeCoveredMember(
     [draft.gym_id, target, memberId]);
   if (rowCount === 0) return { kind: 'not_found' };
   await touch(tx, draft);
+  return { ok: true };
+}
+
+/* ── #2496 stage 4 — the member's plan on their own Draft ─────────────────── */
+
+/**
+ * Adds the member's **first** Membership Plan to the Draft they are building in
+ * the Members App, beside the recurring Products already on it, so one Draft is
+ * one purchase. It is the member path's own steps (`POST /me/membership-plans/
+ * :id/assign`) on an existing Draft instead of a new one: the plan frozen onto
+ * the version (`snapshotProductSetFromPlan()`, at the Draft's own start), the
+ * owner covered, each Promotion applied with its own snapshot. The caller has
+ * already judged the plan, the Promotions and the declined benefits with the
+ * same validations; this refuses only a Draft that already carries a plan,
+ * because a member never adds a second plan or replaces one from the Members
+ * App (#1288 §28, #2125). Nothing is priced and nothing is committed here.
+ */
+export async function addMemberPlanToDraft(tx: Tx, draft: LockedDraft, input: {
+  membershipPlanId: number;
+  membershipFeePrice: number | null;
+  declinedBenefits: Array<{ section: string; product_id: number }>;
+  promotionIds: readonly number[];
+  actor: string | null;
+}): Promise<{ ok: true; plan_snapshot_id: number } | DraftRefusal> {
+  const existing = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  if (draft.membership_plan_id != null || existing != null) {
+    return { kind: 'conflict', error: 'draft_has_plan', message: 'Your selection already includes a plan.' };
+  }
+  await tx.query('UPDATE product_sets SET membership_plan_id = ? WHERE id = ? AND gym_id = ?',
+    [input.membershipPlanId, draft.id, draft.gym_id]);
+  const { snapshotProductSetFromPlan } = await import('./product-set-configuration');
+  await snapshotProductSetFromPlan(tx, {
+    gymId: draft.gym_id, productSetId: draft.id, membershipPlanId: input.membershipPlanId,
+    membershipFeePrice: input.membershipFeePrice, startsAt: draft.starts_at,
+    declinedBenefits: input.declinedBenefits, origin: 'members_app',
+  });
+  const { addCoverage } = await import('./product-sets');
+  await addCoverage(tx, { gymId: draft.gym_id, productSetId: draft.id, memberId: draft.owner_member_id, isOwner: true });
+  const { applyPromotionToProductSet } = await import('./membership-promotions');
+  for (const promotionId of input.promotionIds) {
+    await applyPromotionToProductSet(tx, draft.gym_id, input.actor, draft.id, promotionId);
+  }
+  await touch(tx, { ...draft, membership_plan_id: input.membershipPlanId });
+  const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  return { ok: true, plan_snapshot_id: Number(snapshotId) };
+}
+
+/**
+ * Takes the plan back off the member's Draft: only a plan this Draft added (a
+ * snapshot no other version links), with its Promotion applications. A Draft
+ * has charged nothing, so the snapshot is deleted outright (its lines,
+ * beneficiaries and Promotion snapshots cascade); the Products on the Draft stay.
+ */
+export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, planSnapshotId: number)
+  : Promise<{ ok: true } | DraftRefusal> {
+  const { rows } = await tx.query<{ id: number; shared: number }>(
+    `SELECT s.id, (${planSnapshotSharedSql('s.id', '?')} OR ${planSnapshotInheritedSql('s', 'j.product_set_id')}) AS shared
+       FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+      WHERE j.product_set_id = ? AND s.id = ? AND s.gym_id = ?`,
+    [draft.id, draft.id, planSnapshotId, draft.gym_id]);
+  if (!rows[0]) return { kind: 'not_found' };
+  if (Number(rows[0].shared) === 1) {
+    return { kind: 'conflict', error: 'plan_not_removable', message: 'To change your plan, please contact your gym.' };
+  }
+  await tx.query(
+    `DELETE ump FROM user_membership_promotions ump JOIN promotions p ON p.id = ump.promotion_id
+      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL
+        AND p.applies_to = 'membership_plan'`, [draft.gym_id, draft.id]);
+  await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
+    [draft.id, planSnapshotId]);
+  await tx.query('DELETE FROM plan_snapshots WHERE id = ? AND gym_id = ?', [planSnapshotId, draft.gym_id]);
+  const remaining = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  if (remaining == null) {
+    await tx.query('UPDATE product_sets SET membership_plan_id = NULL WHERE id = ? AND gym_id = ?', [draft.id, draft.gym_id]);
+  }
+  await touch(tx, { ...draft, membership_plan_id: remaining == null ? null : draft.membership_plan_id });
   return { ok: true };
 }

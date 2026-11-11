@@ -3,10 +3,12 @@
 // countries and identifier types are the API's (`GET /system/tax-compliance/profile/options`,
 // `api/src/domain/taxProfile.ts`); nothing here keeps a list of its own.
 
-export type TaxComplianceTab = 'profile' | 'history';
+export type TaxComplianceTab = 'profile' | 'configuration' | 'e_invoicing' | 'history';
 
 export const TAX_COMPLIANCE_TABS: readonly { id: TaxComplianceTab; labelKey: string }[] = [
   { id: 'profile', labelKey: 'tab_profile' },
+  { id: 'configuration', labelKey: 'tab_configuration' },
+  { id: 'e_invoicing', labelKey: 'tab_e_invoicing' },
   { id: 'history', labelKey: 'tab_history' },
 ];
 
@@ -80,4 +82,180 @@ export function missingRequired(f: TaxProfileForm): TaxProfileField[] {
 }
 
 /** The event types the history knows a label for; any other reads as stored. */
-export const KNOWN_COMPLIANCE_EVENT_TYPES = ['tax_profile_updated'] as const;
+export const KNOWN_COMPLIANCE_EVENT_TYPES = [
+  'tax_profile_updated',
+  'tax_configuration_updated',
+  'integration_created',
+  'integration_updated',
+  'integration_enabled',
+  'integration_disabled',
+] as const;
+
+// ── #2647 stage 2: Tax Configuration and Electronic Invoicing ─────────────────
+// The accepted values are the API's (`GET /system/tax-compliance/configuration/options`,
+// `api/src/domain/taxConfiguration.ts`); nothing here keeps a list of its own.
+
+export type Metadata = Record<string, unknown> | null;
+
+export interface TaxConfiguration {
+  tax_regime: string | null;
+  tax_status: string | null;
+  tax_calculation_method: string | null;
+  additional_tax_identification: string | null;
+  configuration_metadata: Metadata;
+}
+
+export interface TaxConfigurationOptions {
+  tax_regimes: Record<string, string[]>;
+  tax_statuses: string[];
+  tax_calculation_methods: string[];
+  providers: Record<string, string[]>;
+  integration_types: Record<string, string[]>;
+  authorization_statuses: string[];
+}
+
+export interface ComplianceIntegration {
+  id: number;
+  country_code: string;
+  provider: string;
+  integration_type: string;
+  enabled: boolean;
+  authorization_status: string;
+  authorization_date: string | null;
+  authorization_reference: string | null;
+  activation_date: string | null;
+  configuration_metadata: Metadata;
+}
+
+/** Metadata is edited as JSON text; an empty text is no metadata. */
+export function metadataText(m: Metadata): string {
+  return m && Object.keys(m).length > 0 ? JSON.stringify(m, null, 2) : '';
+}
+
+export function parseMetadataText(text: string): { ok: true; value: Metadata } | { ok: false } {
+  if (text.trim() === '') return { ok: true, value: null };
+  try {
+    const v = JSON.parse(text);
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return { ok: false };
+    return { ok: true, value: v as Record<string, unknown> };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export interface TaxConfigurationForm {
+  tax_regime: string;
+  tax_status: string;
+  tax_calculation_method: string;
+  additional_tax_identification: string;
+  metadata: string;
+}
+
+export const TAX_CONFIGURATION_FIELDS = ['tax_regime', 'tax_status', 'tax_calculation_method', 'additional_tax_identification'] as const;
+
+export function toTaxConfigurationForm(c: TaxConfiguration): TaxConfigurationForm {
+  return {
+    tax_regime: c.tax_regime ?? '',
+    tax_status: c.tax_status ?? '',
+    tax_calculation_method: c.tax_calculation_method ?? '',
+    additional_tax_identification: c.additional_tax_identification ?? '',
+    metadata: metadataText(c.configuration_metadata),
+  };
+}
+
+/** `null` when the metadata text is not a JSON object; a blank field clears its value. */
+export function toTaxConfigurationPayload(f: TaxConfigurationForm): Record<string, unknown> | null {
+  const meta = parseMetadataText(f.metadata);
+  if (!meta.ok) return null;
+  const blank = (v: string) => (v.trim() === '' ? null : v.trim());
+  return {
+    tax_regime: blank(f.tax_regime),
+    tax_status: blank(f.tax_status),
+    tax_calculation_method: blank(f.tax_calculation_method),
+    additional_tax_identification: blank(f.additional_tax_identification),
+    configuration_metadata: meta.value,
+  };
+}
+
+/** The regimes the gym's fiscal country offers (the generic ones when it has none). */
+export function regimeOptions(options: TaxConfigurationOptions | null, country: string | null): string[] {
+  if (!options) return [];
+  if (country && options.tax_regimes[country]) return options.tax_regimes[country];
+  const any = Object.values(options.tax_regimes)[0] ?? [];
+  // The generic regimes are the ones every country offers.
+  return any.filter((r) => Object.values(options.tax_regimes).every((list) => list.includes(r)));
+}
+
+export interface IntegrationForm {
+  country_code: string;
+  provider: string;
+  integration_type: string;
+  authorization_status: string;
+  authorization_date: string;
+  authorization_reference: string;
+  activation_date: string;
+  metadata: string;
+}
+
+export function newIntegrationForm(country: string | null): IntegrationForm {
+  return {
+    country_code: country ?? '',
+    provider: '',
+    integration_type: '',
+    authorization_status: 'not_started',
+    authorization_date: '',
+    authorization_reference: '',
+    activation_date: '',
+    metadata: '',
+  };
+}
+
+export function toIntegrationForm(i: ComplianceIntegration): IntegrationForm {
+  return {
+    country_code: i.country_code,
+    provider: i.provider,
+    integration_type: i.integration_type,
+    authorization_status: i.authorization_status,
+    authorization_date: i.authorization_date ?? '',
+    authorization_reference: i.authorization_reference ?? '',
+    activation_date: i.activation_date ?? '',
+    metadata: metadataText(i.configuration_metadata),
+  };
+}
+
+/**
+ * The body of a create (`identity: true`) or an update. An update never sends the
+ * provider, type or country: they identify the row and the API refuses a change.
+ */
+export function toIntegrationPayload(f: IntegrationForm, identity: boolean): Record<string, unknown> | null {
+  const meta = parseMetadataText(f.metadata);
+  if (!meta.ok) return null;
+  const blank = (v: string) => (v.trim() === '' ? null : v.trim());
+  const body: Record<string, unknown> = {
+    authorization_status: f.authorization_status,
+    authorization_date: blank(f.authorization_date),
+    authorization_reference: blank(f.authorization_reference),
+    activation_date: blank(f.activation_date),
+    configuration_metadata: meta.value,
+  };
+  if (identity) {
+    body.country_code = f.country_code;
+    body.provider = f.provider;
+    body.integration_type = f.integration_type;
+  }
+  return body;
+}
+
+/** Changing the country or the provider clears a choice the new one does not offer. */
+export function withIntegrationIdentity(
+  f: IntegrationForm,
+  patch: Partial<Pick<IntegrationForm, 'country_code' | 'provider'>>,
+  options: TaxConfigurationOptions | null,
+): IntegrationForm {
+  const next = { ...f, ...patch };
+  const providers = options?.providers[next.country_code] ?? [];
+  if (!providers.includes(next.provider)) next.provider = '';
+  const types = options?.integration_types[next.provider] ?? [];
+  if (!types.includes(next.integration_type)) next.integration_type = types.length === 1 ? types[0] : '';
+  return next;
+}

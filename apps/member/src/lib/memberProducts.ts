@@ -460,6 +460,16 @@ export interface MemberSetView {
   status: string;
   expires_in_seconds?: number | null;
   lines: MemberSetLine[];
+  /** #2496 stage 4 — the version's Membership Plans (`added` by this Draft, or `inherited`). */
+  plans?: MemberSetPlan[];
+}
+
+/** One Membership Plan of `GET /me/product-sets/:id`. */
+export interface MemberSetPlan {
+  plan_snapshot_id: number;
+  membership_plan_id: number | null;
+  plan_name: string | null;
+  change: 'added' | 'inherited';
 }
 
 /** A row of `GET /me/product-sets`. */
@@ -508,10 +518,35 @@ export function showsAddToDraft(product: MemberProduct, view: MemberSetView | nu
   return product.addable_to_draft === true && draftProductState(product, view).state === 'none';
 }
 
-/** The lines this Draft added (what the selection notice counts); 0 outside a Draft. */
+/** The lines and the plan this Draft added (what the selection notice counts); 0 outside a Draft. */
 export function draftAddedCount(view: MemberSetView | null): number {
   if (!view || view.status !== 'draft') return 0;
-  return view.lines.filter((l) => l.change === 'added').length;
+  return view.lines.filter((l) => l.change === 'added').length
+    + (view.plans ?? []).filter((p) => p.change === 'added').length;
+}
+
+/**
+ * #2496 stage 4 — what a plan card offers while the member is building a
+ * Draft (the server decides every rule; this only reads the Draft back):
+ *  - `added`: this plan is on the Draft — *Remove*;
+ *  - `taken`: the Draft already carries another plan (one the member holds, or
+ *    one they added) — no action, since a member takes only their first plan;
+ *  - `none`: *Add to my selection*;
+ *  - `no_draft`: there is no Draft, so the card keeps its own purchase.
+ */
+export type DraftPlanState =
+  | { state: 'added'; planSnapshotId: number }
+  | { state: 'taken' }
+  | { state: 'none' }
+  | { state: 'no_draft' };
+
+export function draftPlanState(planId: number, view: MemberSetView | null): DraftPlanState {
+  if (!view || view.status !== 'draft') return { state: 'no_draft' };
+  const plans = view.plans ?? [];
+  const added = plans.find((p) => p.change === 'added' && Number(p.membership_plan_id) === planId);
+  if (added) return { state: 'added', planSnapshotId: Number(added.plan_snapshot_id) };
+  if (plans.length > 0) return { state: 'taken' };
+  return { state: 'none' };
 }
 
 /**
@@ -525,6 +560,9 @@ export function draftErrorKey(message: string | null | undefined): string {
     case 'edit_locked': return 'membership.draft_error_locked';
     case 'duplicate_submission': return 'membership.draft_error_duplicate';
     case 'draft_expired': return 'membership.draft_error_expired';
+    case 'draft_has_plan': return 'membership.draft_error_has_plan';
+    case 'plan_change_via_gym':
+    case 'plan_not_removable': return 'membership.draft_error_plan_via_gym';
     default: return 'membership.draft_error_generic';
   }
 }
