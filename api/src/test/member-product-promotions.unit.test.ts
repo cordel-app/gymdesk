@@ -249,7 +249,12 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
     // Asserted of the two reads themselves: the same file holds the
     // live-catalogue query the *offers* come from, which legitimately joins
     // `promotions`.
-    expect(statementFrom(ioSrc, 'FROM member_products_oneoff_promotion_snapshot mpp')).not.toMatch(/JOIN/);
+    // #2126 stage 3g: read from `product_promotion_snapshots`, whose one join is
+    // the purchase's own Product snapshot (a Sessions package or a one-off).
+    const applicationsRead = statementFrom(ioSrc, 'FROM product_promotion_snapshots pp');
+    expect([...applicationsRead.matchAll(/JOIN\s+(\S+)/g)].map((m) => m[1])).toEqual(['${parent}']);
+    expect(ioSrc).toContain("arm('product_session_snapshots', 'product_session_snapshot_id')");
+    expect(ioSrc).toContain("arm('product_oneoff_snapshots', 'product_oneoff_snapshot_id')");
     // Nor does the purchase read touch the live Product: every column of a
     // purchase is its own snapshot (migration 228).
     // #1521: the one join is the purchase's *own* payment request (tax, status
