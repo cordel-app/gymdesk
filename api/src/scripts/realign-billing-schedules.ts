@@ -12,6 +12,11 @@
  * payment attempt are kept and listed, never deleted or duplicated. Idempotent:
  * a second run finds every anchor on its grid and changes nothing.
  *
+ * #2125 M5c-2: it also consolidates a chain's schedules that are one schedule
+ * (`consolidateChainSchedules()`); an event that cannot be merged (a past or
+ * attempted one colliding with the target's for the same period) is listed and
+ * left on its own schedule, never deleted or duplicated.
+ *
  * The deployed database is VCN-private, so against it the compiled script runs
  * from the VPS (`node dist/scripts/realign-billing-schedules.js`).
  */
@@ -29,7 +34,7 @@ async function main(): Promise<void> {
   const { rows: chains } = await db.query<{ gym_id: string; root: number }>(
     `SELECT DISTINCT gym_id, root_product_set_id AS root FROM product_set_schedules ORDER BY gym_id, root_product_set_id`);
 
-  let moved = 0, deleted = 0, created = 0, failed = 0;
+  let moved = 0, deleted = 0, created = 0, failed = 0, merged = 0;
   const kept: number[] = [];
   for (const chain of chains) {
     let result: ChainRealignment | null = null;
@@ -47,7 +52,7 @@ async function main(): Promise<void> {
         continue;
       }
     }
-    if (!result || result.schedules.length === 0) continue;
+    if (!result || (result.schedules.length === 0 && result.consolidations.length === 0)) continue;
     for (const s of result.schedules) {
       moved += 1; deleted += s.deletedEvents; kept.push(...s.keptAttempted);
       console.log(`chain ${result.rootProductSetId} schedule ${s.scheduleId} (${s.cadence}): ${s.from} -> ${s.to}, `
@@ -55,10 +60,16 @@ async function main(): Promise<void> {
     }
     created += result.createdEvents;
     if (result.activeProductSetId == null) console.log(`chain ${result.rootProductSetId}: no Active version, nothing regenerated`);
-    if (result.sameCadenceSchedules) console.log(`chain ${result.rootProductSetId}: several schedules share a cadence (consolidated by the (owner, periodicity) re-keying)`);
+    for (const c of result.consolidations) {
+      merged += c.removed ? 1 : 0; kept.push(...c.keptEvents);
+      console.log(`chain ${result.rootProductSetId} schedule ${c.mergedScheduleId} -> ${c.targetScheduleId}: `
+        + `${c.repointedEvents} event(s) moved, ${c.regeneratedEvents} colliding future event(s) regenerated`
+        + (c.keptEvents.length ? `, NOT merged (past or attempted, kept on schedule ${c.mergedScheduleId}): ${c.keptEvents.join(',')}` : '')
+        + (c.removed ? ', schedule removed' : ''));
+    }
   }
   console.log(`${execute ? 'EXECUTED' : 'DRY RUN (rolled back)'}: ${moved} schedule(s) moved, ${deleted} future event(s) removed, `
-    + `${created} regenerated, ${kept.length} attempted future event(s) kept, ${failed} chain(s) failed.`);
+    + `${created} regenerated, ${merged} schedule(s) consolidated, ${kept.length} attempted or unmergeable event(s) kept, ${failed} chain(s) failed.`);
   await db.end();
   if (failed > 0) process.exitCode = 1;
 }

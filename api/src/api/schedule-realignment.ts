@@ -1,5 +1,6 @@
 import type { Tx } from '../infra/db';
 import { calendarAnchorOnOrBefore, calendarGridOf } from '../domain/calendarSchedule';
+import { classifyMergedEvent, consolidationGroups, type ConsolidationEvent } from '../domain/scheduleConsolidation';
 import { materialiseScheduledEvents } from './product-set-configuration';
 
 /**
@@ -26,9 +27,10 @@ import { materialiseScheduledEvents } from './product-set-configuration';
  * past events, attempts, receipts and every `payment_requests` row are left
  * exactly as they are.
  *
- * Consolidating two schedules of one cadence in a chain into one is not done
- * here (it is the `(owner, periodicity)` re-keying); such chains are reported
- * (`sameCadenceSchedules`).
+ * #2125 M5c-2 — then the chain's schedules that are one schedule (the same
+ * cadence on one billing calendar, `domain/scheduleConsolidation.ts`) are
+ * consolidated into one (`consolidateChainSchedules()`), before the generator
+ * runs, so the regenerated obligations land on the one schedule left.
  */
 export interface ScheduleRealignment {
   scheduleId: number;
@@ -45,8 +47,26 @@ export interface ChainRealignment {
   activeProductSetId: number | null;
   schedules: ScheduleRealignment[];
   createdEvents: number;
-  sameCadenceSchedules: boolean;
+  consolidations: ScheduleConsolidation[];
 }
+
+export interface ScheduleConsolidation {
+  targetScheduleId: number;
+  mergedScheduleId: number;
+  /** Events moved onto the target unchanged. */
+  repointedEvents: number;
+  /** Untouched future obligations that collided with the target's for the same period: deleted, regenerated. */
+  regeneratedEvents: number;
+  /** Events that collided and could not be merged (past, attempted or paid): left on the merged schedule. */
+  keptEvents: number[];
+  /** Whether the merged schedule was deleted (nothing references it any more). */
+  removed: boolean;
+}
+
+/** Every table whose rows name the schedule they bill on (FK `ON DELETE SET NULL`). */
+const SCHEDULED_SNAPSHOT_TABLES = [
+  'plan_snapshots', 'plan_periodical_snapshots', 'member_products_recurrent_snapshot', 'product_periodical_snapshots',
+] as const;
 
 const toDateOnly = (v: unknown): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
@@ -64,12 +84,10 @@ export async function realignChainSchedules(tx: Tx, input: {
       WHERE gym_id = ? AND root_product_set_id = ? ORDER BY id FOR UPDATE`,
     [gymId, rootProductSetId]);
 
-  const cadences = schedules.map((s: any) => `${Number(s.cadence_interval)} ${s.cadence_unit}`);
   const out: ChainRealignment = {
     gymId, rootProductSetId,
     activeProductSetId: active[0] ? Number(active[0].id) : null,
-    schedules: [], createdEvents: 0,
-    sameCadenceSchedules: new Set(cadences).size < cadences.length,
+    schedules: [], createdEvents: 0, consolidations: [],
   };
 
   for (const s of schedules) {
@@ -97,11 +115,101 @@ export async function realignChainSchedules(tx: Tx, input: {
     });
   }
 
-  if (out.schedules.length > 0 && out.activeProductSetId != null) {
+  out.consolidations = await consolidateChainSchedules(tx, { gymId, rootProductSetId, today });
+
+  if ((out.schedules.length > 0 || out.consolidations.length > 0) && out.activeProductSetId != null) {
     const { created } = await materialiseScheduledEvents(tx, {
       gymId, productSetId: out.activeProductSetId, today,
     });
     out.createdEvents = created;
+  }
+  return out;
+}
+
+/**
+ * #2125 M5c-2 — folds the chain's schedules that are one schedule into one
+ * (`consolidationGroups()`), each event handled by `classifyMergedEvent()`.
+ * Every snapshot line billing on a merged schedule moves to the target (a
+ * re-pointing that changes no configuration: the two bill on the same dates),
+ * the target takes the earliest anchor of its group (still a date of its grid,
+ * so a line that started before the target's own anchor keeps its alignment),
+ * and a merged schedule is deleted once no event references it. The caller
+ * regenerates the obligations (`materialiseScheduledEvents()`). Idempotent: a
+ * second run finds no group, or only a schedule kept for its history, which it
+ * leaves as it is.
+ */
+export async function consolidateChainSchedules(tx: Tx, input: {
+  gymId: string; rootProductSetId: number; today: string;
+}): Promise<ScheduleConsolidation[]> {
+  const { gymId, rootProductSetId, today } = input;
+  const { rows: schedules } = await tx.query<any>(
+    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
+      WHERE gym_id = ? AND root_product_set_id = ? ORDER BY id FOR UPDATE`,
+    [gymId, rootProductSetId]);
+  const groups = consolidationGroups(schedules.map((s: any) => ({
+    id: Number(s.id), key: String(s.schedule_key), anchorDate: toDateOnly(s.anchor_date),
+    cadence: { interval: Number(s.cadence_interval), unit: String(s.cadence_unit) },
+  })));
+  const anchorOf = new Map<number, string>(schedules.map((s: any) => [Number(s.id), toDateOnly(s.anchor_date)]));
+
+  const loadEvents = async (scheduleId: number) => {
+    const { rows } = await tx.query<any>(
+      `SELECT be.id, be.period_start, be.billing_date, be.is_scheduled,
+              EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id) AS attempted
+         FROM billing_events be WHERE be.gym_id = ? AND be.schedule_id = ? ORDER BY be.id FOR UPDATE`,
+      [gymId, scheduleId]);
+    return rows.map((r: any) => ({
+      id: Number(r.id),
+      event: {
+        periodStart: r.period_start != null ? toDateOnly(r.period_start) : null,
+        billingDate: r.billing_date != null ? toDateOnly(r.billing_date) : null,
+        isScheduled: Number(r.is_scheduled) === 1,
+        attempted: Number(r.attempted) === 1,
+      } as ConsolidationEvent,
+    }));
+  };
+
+  const out: ScheduleConsolidation[] = [];
+  for (const group of groups) {
+    const target = group.targetId;
+    const earliest = [target, ...group.mergedIds].map((id) => anchorOf.get(id)!).sort()[0];
+    if (earliest !== anchorOf.get(target)) {
+      await tx.query('UPDATE product_set_schedules SET anchor_date = ? WHERE id = ?', [earliest, target]);
+    }
+    const targetByPeriod = new Map<string, { id: number; event: ConsolidationEvent }>();
+    for (const e of await loadEvents(target)) {
+      if (e.event.periodStart != null) targetByPeriod.set(e.event.periodStart, e);
+    }
+
+    for (const merged of group.mergedIds) {
+      for (const table of SCHEDULED_SNAPSHOT_TABLES) {
+        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE gym_id = ? AND schedule_id = ?`, [target, gymId, merged]);
+      }
+      const result: ScheduleConsolidation = {
+        targetScheduleId: target, mergedScheduleId: merged,
+        repointedEvents: 0, regeneratedEvents: 0, keptEvents: [], removed: false,
+      };
+      for (const e of await loadEvents(merged)) {
+        const collision = e.event.periodStart != null ? targetByPeriod.get(e.event.periodStart) ?? null : null;
+        const action = classifyMergedEvent(e.event, collision?.event ?? null, today);
+        if (action === 'repoint') {
+          await tx.query('UPDATE billing_events SET schedule_id = ? WHERE id = ?', [target, e.id]);
+          if (e.event.periodStart != null) targetByPeriod.set(e.event.periodStart, e);
+          result.repointedEvents += 1;
+        } else if (action === 'regenerate') {
+          await tx.query('DELETE FROM billing_events WHERE id IN (?, ?)', [e.id, collision!.id]);
+          targetByPeriod.delete(e.event.periodStart!);
+          result.regeneratedEvents += 1;
+        } else {
+          result.keptEvents.push(e.id);
+        }
+      }
+      if (result.keptEvents.length === 0) {
+        await tx.query('DELETE FROM product_set_schedules WHERE id = ? AND gym_id = ?', [merged, gymId]);
+        result.removed = true;
+      }
+      out.push(result);
+    }
   }
   return out;
 }

@@ -13,6 +13,7 @@ import {
 import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/productClassification';
 import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
+import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
 import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
@@ -75,6 +76,32 @@ export async function ensureSchedule(tx: Tx, input: {
   return Number(rows[0].id);
 }
 
+/**
+ * #2125 M5c-2 — a chain that has no `plan` schedule yet but already bills
+ * another schedule that is the same schedule as the plan's would be (the same
+ * cadence on one billing calendar, `findScheduleWithIdentity()`: a recurring
+ * Product bought before the plan) makes that schedule the plan's, by renaming
+ * its key, rather than opening a second schedule billing on the same dates.
+ * Nothing moves: every line keeps the schedule it bills on.
+ */
+async function adoptScheduleAsPlan(tx: Tx, input: {
+  gymId: string; rootProductSetId: number; anchorDate: string; cadenceInterval: number; cadenceUnit: string;
+}): Promise<void> {
+  const { rows } = await tx.query<any>(
+    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
+       FROM product_set_schedules WHERE root_product_set_id = ? AND gym_id = ? ORDER BY id FOR UPDATE`,
+    [input.rootProductSetId, input.gymId]);
+  if (rows.some((r: any) => String(r.schedule_key) === PLAN_SCHEDULE_KEY)) return;
+  const cadence = { interval: input.cadenceInterval, unit: input.cadenceUnit };
+  const match = findScheduleWithIdentity(rows.map((r: any) => ({
+    id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
+    cadence: { interval: Number(r.cadence_interval), unit: String(r.cadence_unit) },
+  })), { cadence, anchorDate: calendarAnchorOnOrBefore(cadence, input.anchorDate) });
+  if (match) {
+    await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?', [PLAN_SCHEDULE_KEY, match.id]);
+  }
+}
+
 /* ── Writing a version's configuration ───────────────────────────────────── */
 
 /**
@@ -112,6 +139,10 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
 
   let scheduleId: number | null = null;
   if (plan.recurring_billing_interval != null && plan.recurring_billing_unit != null) {
+    await adoptScheduleAsPlan(tx, {
+      gymId, rootProductSetId: rootId, anchorDate: input.startsAt,
+      cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
+    });
     scheduleId = await ensureSchedule(tx, {
       gymId, rootProductSetId: rootId, key: PLAN_SCHEDULE_KEY, anchorDate: input.startsAt,
       cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
@@ -206,7 +237,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
 
   const { rows: sched } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-       FROM product_set_schedules WHERE root_product_set_id = ?`, [rootId]);
+       FROM product_set_schedules WHERE root_product_set_id = ? ORDER BY id`, [rootId]);
   const schedules: ExistingSchedule[] = sched.map((r: any) => ({
     id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
