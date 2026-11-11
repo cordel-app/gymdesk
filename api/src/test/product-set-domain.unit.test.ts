@@ -85,7 +85,7 @@ describe('development billing reset (#1325)', () => {
 
   it('refuses an uncascaded delete while another table still references the rows', () => {
     const refs = [
-      { table: 'product_sets', column: 'root_product_set_id', rows: 4 }, // its own chain: fine
+      { table: 'product_sets', column: 'previous_product_set_id', rows: 4 }, // its own history: fine
       { table: 'billing_events', column: 'product_set_id', rows: 0 },
       { table: 'some_new_table', column: 'product_set_id', rows: 2 },
     ];

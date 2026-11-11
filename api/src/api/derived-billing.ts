@@ -27,18 +27,20 @@ export async function loadDerivedBilling(gymId: string, assignmentIds: number[])
   const ids = [...new Set(assignmentIds.filter((n) => Number.isInteger(n) && n > 0))];
   if (ids.length === 0) return out;
 
-  const { rows: sets } = await db.query<{ user_membership_id: number; root_product_set_id: number }>(
-    `SELECT user_membership_id, root_product_set_id FROM product_sets
+  const { rows: sets } = await db.query<{ user_membership_id: number; owner_member_id: number }>(
+    `SELECT user_membership_id, owner_member_id FROM product_sets
       WHERE gym_id = ? AND status = 'active' AND user_membership_id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids]);
   if (sets.length === 0) return out;
 
-  const rootToUm = new Map<number, number>(sets.map((s) => [Number(s.root_product_set_id), Number(s.user_membership_id)]));
+  // #2125 M5d-2: the events of an assignment are those of its owner's Product Sets (one Active per
+  // owner), keyed here by the owner as they were by the chain root.
+  const rootToUm = new Map<number, number>(sets.map((s) => [Number(s.owner_member_id), Number(s.user_membership_id)]));
   const roots = [...rootToUm.keys()];
   const { rows: events } = await db.query<any>(
-    `SELECT be.id, be.billing_date, be.is_scheduled, be.event_type, ps.root_product_set_id AS root
+    `SELECT be.id, be.billing_date, be.is_scheduled, be.event_type, ps.owner_member_id AS root
        FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
-      WHERE be.gym_id = ? AND ps.root_product_set_id IN (${roots.map(() => '?').join(',')})`,
+      WHERE be.gym_id = ? AND ps.owner_member_id IN (${roots.map(() => '?').join(',')})`,
     [gymId, ...roots]);
   const eventIds = events.map((e: any) => Number(e.id));
   const attempts: any[] = eventIds.length === 0 ? [] : (await db.query<any>(

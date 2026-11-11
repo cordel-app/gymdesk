@@ -9,13 +9,14 @@ import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
  * ProductSet chain's plan schedule. An event counts only when money actually
  * settled it (a completed provider or cash attempt, never a waiver), and only
  * the plan's own schedule counts — a Product's schedule says nothing about the
- * membership. Read from the chain, so a superseded version's paid period is
- * still the contract's.
+ * membership. Read from the owner's schedule (#2125 M5c-3), so a superseded
+ * Product Set's paid period is still the contract's. `productSetId` is any of
+ * the owner's Product Sets.
  */
-export async function loadPaidThrough(tx: Tx, gymId: string, rootProductSetId: number): Promise<string | null> {
+export async function loadPaidThrough(tx: Tx, gymId: string, productSetId: number): Promise<string | null> {
   const { rows: sch } = await tx.query<any>(
     `SELECT id FROM product_set_schedules
-      WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`, [rootProductSetId, PLAN_SCHEDULE_KEY]);
+      WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`, [productSetId, PLAN_SCHEDULE_KEY]);
   if (!sch[0]) return null;
   return loadPaidThroughForSchedule(tx, gymId, Number(sch[0].id));
 }

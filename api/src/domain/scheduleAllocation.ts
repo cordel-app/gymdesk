@@ -14,7 +14,7 @@
  * (`domain/proration.ts`). A new schedule is anchored on the calendar grid, so a
  * purchase between two grid dates is prorated to the next one by the engine
  * (`alignTo`); `prorate: false` only says no *existing* schedule was joined. Session allowances never reach this (#918). The
- * database's `UNIQUE (root_product_set_id, schedule_key)` and the FK from
+ * database's `UNIQUE (owner_member_id, schedule_key)` and the FK from
  * recurring items complement this function; they do not replace it.
  *
  * Pure: no database, no clock.

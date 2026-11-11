@@ -105,7 +105,6 @@ async function seedScheduledEvent(
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'active', '2000-01-01')`,
     [gymId, memberId],
   );
-  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
   if (opts.card) {
     await db.query(
       `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)

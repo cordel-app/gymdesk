@@ -46,7 +46,6 @@ async function dueEvent(beneficiary: number, billingDate = TODAY) {
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'active', ?)`,
       [gymId, beneficiary, billingDate]);
     setId = s.insertId as number;
-    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
   }
   const e = await db.query(
     `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, billing_date, is_scheduled)

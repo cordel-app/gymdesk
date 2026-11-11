@@ -12,7 +12,7 @@ describe('Draft ProductSet billing cadence (#1949)', () => {
 
   it('setBillingCadence refuses anything but a first Draft version', () => {
     expect(draft).toContain('export async function setBillingCadence');
-    expect(draft).toContain('draft.previous_product_set_id != null || draft.root_product_set_id !== draft.id');
+    expect(draft).toContain('if (draft.previous_product_set_id != null) {');
   });
 
   it('a later version accepts an unchanged pair and refuses a change (#1982)', () => {

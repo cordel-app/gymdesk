@@ -582,13 +582,16 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   previous chain has no Active or in-flight version) bills on the schedule they already had
   when it is the same schedule. When it is not (another cadence, another yearly
   anniversary), `ensureSchedule()` re-keys the old one `<key>-<id>`, untouched, and opens a
-  new one. `root_product_set_id` stays as the chain that *opened* a schedule: the two writers
-  that move a first version's schedule (its start date, its cadence) still filter on it, so a
-  later chain never moves a schedule an earlier one opened. The migration moves no event or
+  new one. Since M5d-2 (migration 399) `product_sets.root_product_set_id` is dropped and the
+  schedule records the Product Set that *opened* it (`opened_by_product_set_id`, backfilled
+  from the old root): the two writers that move a first Product Set's schedule (its start
+  date, its cadence) move only one that set opened, so a later Product Set never moves a
+  schedule an earlier one opened, and `ensureSchedule()`'s "same chain" test is an opener in
+  the set's `previous_product_set_id` history. The migration moves no event or
   anchor; it re-keys an owner's duplicate keys (the live chain's keeps the key). The realign
   script now runs per owner and consolidates schedules of one identity across the owner's
   chains with the M5c-2 rules.
-- **Not yet**: dropping the `product_sets` version columns.
+- **Done since**: the `product_sets` version columns (`version` in M5d-1, `root_product_set_id` in M5d-2).
 - **Known gap**: the per-date pricers (`priceMembershipFeeOn()`, used by My Membership's
   current fee) still count Billing & Duration from the plan's own start, so for an aligned
   plan with a configured duration they may show a different period status than the
@@ -1387,7 +1390,7 @@ then:
 ```sql
 SELECT be.event_type, be.amount, be.receipt_number FROM billing_events be
   JOIN product_sets ps ON ps.id = be.product_set_id
- WHERE ps.root_product_set_id = (SELECT root_product_set_id FROM product_sets WHERE user_membership_id = <um> LIMIT 1)
+ WHERE ps.owner_member_id = (SELECT owner_member_id FROM product_sets WHERE user_membership_id = <um> LIMIT 1)
  ORDER BY be.id DESC LIMIT 3;
 SELECT status, source, amount FROM payment_requests WHERE user_membership_id = <um> ORDER BY id DESC LIMIT 3;
 ```

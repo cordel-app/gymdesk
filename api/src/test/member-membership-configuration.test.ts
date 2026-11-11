@@ -808,17 +808,16 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
   });
 
   it('reports the in-flight version as current and superseded ones as past, creating no Billing Event', async () => {
-    const insert = async (status: string, root: number | null, previous: number | null = null) => {
+    const insert = async (status: string, previous: number | null = null) => {
       const { insertId } = await db.query(
-        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, status, starts_at, created_by)
-         VALUES (?, ?, ?, ?, ?, '2026-03-01', 'Tester')`,
-        [gymId, memberId, root, previous, status],
+        `INSERT INTO product_sets (gym_id, owner_member_id, previous_product_set_id, status, starts_at, created_by)
+         VALUES (?, ?, ?, ?, '2026-03-01', 'Tester')`,
+        [gymId, memberId, previous, status],
       );
       return insertId as number;
     };
-    const first = await insert('superseded', null);
-    await db.query('UPDATE product_sets SET root_product_set_id = ? WHERE id = ?', [first, first]);
-    const second = await insert('draft', first, first);
+    const first = await insert('superseded');
+    const second = await insert('draft', first);
 
     const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
     const res = await getConfiguration(gymId, memberId);

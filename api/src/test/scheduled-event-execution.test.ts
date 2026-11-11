@@ -30,7 +30,6 @@ async function setup(opts: { card?: boolean; amount?: number; setStatus?: string
   const s = await db.query(
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, ?, ?)`,
     [gymId, m.insertId, opts.setStatus ?? 'active', YESTERDAY]);
-  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [s.insertId]);
   if (opts.card !== false) {
     await db.query(
       `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id) VALUES (?, ?, 'monei', 'tok', 'seq')`,
