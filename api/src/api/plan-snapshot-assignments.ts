@@ -148,7 +148,7 @@ export async function loadProductSetSimulationAssignments(
     `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
-            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date, ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
+            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
@@ -182,9 +182,12 @@ export async function loadProductSetSimulationAssignments(
         cadence, row.auto_renew,
       ),
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
-      // A plan added to a schedule that was already running (its anchor precedes the plan's own
-      // start) pays a prorated first stretch; an inherited plan keeps the dates it already had.
-      ...(!row.is_inherited && row.anchor_date != null && toDateOnly(row.anchor_date) < toDateOnly(row.starts_at)
+      // A plan whose start falls between two dates of its schedule (a plan added to a schedule
+      // that was already running, or — since #2125 M5c — any plan starting off its cadence's
+      // calendar grid) pays a prorated first stretch and then bills on the schedule's dates. An
+      // inherited plan aligns too, so a later version keeps billing on the grid its schedule is
+      // anchored on; its prorated stretch is in the past and is never materialised again.
+      ...(row.anchor_date != null && toDateOnly(row.anchor_date) < toDateOnly(row.starts_at)
         ? { alignTo: toDateOnly(row.anchor_date) } : {}),
     });
   }

@@ -130,7 +130,8 @@ describe('schedule allocation (#1325)', () => {
       .toEqual({ kind: 'existing', key: 's1', prorate: true });
 
     const fresh = allocateSchedule({ cadence: { interval: 4, unit: 'week' }, purchaseDate: '2026-10-10', schedules: [plan, yearly] });
-    expect(fresh).toEqual({ kind: 'new', key: 's2', anchorDate: '2026-10-10', prorate: false, warn: true });
+    // #2125 M5c — a new 4-weekly schedule is anchored on the 28-day grid from Monday 2026-11-02.
+    expect(fresh).toEqual({ kind: 'new', key: 's2', anchorDate: '2026-10-05', prorate: false, warn: true });
   });
 
   it('a plan-less set allocates its first schedule as s1', () => {
