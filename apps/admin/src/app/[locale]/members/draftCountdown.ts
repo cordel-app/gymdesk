@@ -5,6 +5,9 @@
  */
 export const DRAFT_WARNING_SECONDS = 15 * 60;
 
+/** When the exact expiry time is shown beside the countdown (#2477 §4: under an hour). */
+export const DRAFT_EXACT_TIME_SECONDS = 60 * 60;
+
 /** `1h 45m`, `32m`, `5m`, `<1m`; null when there is nothing to count down. */
 export function formatDraftRemaining(seconds: number | null | undefined): string | null {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null;
@@ -22,4 +25,9 @@ export function remainingNow(serverSeconds: number, receivedAtMs: number, nowMs:
 
 export function isDraftWarning(seconds: number): boolean {
   return seconds > 0 && seconds <= DRAFT_WARNING_SECONDS;
+}
+
+/** Whether the exact expiry time is shown beside the remaining time. */
+export function showsDraftExactTime(seconds: number): boolean {
+  return seconds > 0 && seconds < DRAFT_EXACT_TIME_SECONDS;
 }

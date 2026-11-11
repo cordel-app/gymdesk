@@ -515,16 +515,6 @@ export function draftAddedCount(view: MemberSetView | null): number {
 }
 
 /**
- * Whole minutes left on the Draft's own server-side countdown, rounded up so
- * "0 minutes" is never shown for a Draft still alive; `null` without one.
- */
-export function draftMinutesLeft(view: MemberSetView | null): number | null {
-  const secs = view?.status === 'draft' ? view.expires_in_seconds : null;
-  if (secs == null || !Number.isFinite(Number(secs))) return null;
-  return Math.max(1, Math.ceil(Number(secs) / 60));
-}
-
-/**
  * Which locale key explains a refused Draft edit. The API answers a code in
  * `error` (`in_flight`, `edit_locked`, `duplicate_submission`, `draft_expired`);
  * anything else falls back to the generic key.

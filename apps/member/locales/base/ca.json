@@ -505,7 +505,7 @@
     "product_in_draft": "Afegit",
     "product_state_held": "Als teus productes",
     "draft_selection_count": "{count, plural, one {# producte afegit a la teva selecció.} other {# productes afegits a la teva selecció.}}",
-    "draft_selection_expires": "Es conserva {minutes, plural, one {# minut més} other {# minuts més}}.",
+    "draft_expires_in": "L'esborrany caduca en",
     "draft_discard": "Descarta la selecció",
     "draft_error_in_flight": "Ja tens un canvi pendent de pagament. Completa'l o cancel·la'l primer.",
     "draft_error_locked": "Encara s'està processant un pagament. Torna-ho a provar més tard.",
