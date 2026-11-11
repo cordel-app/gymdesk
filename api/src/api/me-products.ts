@@ -8,6 +8,7 @@ import { resolveTimeZone } from '../domain/homeDashboard';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ownPurchaseEndDate, ownPurchaseState, type OwnPurchaseState } from '../domain/memberOwnPurchases';
 import { loadMemberPurchases } from './member-product-promotions';
+import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 // #1121 stages 1 and 2 — the I/O half of the member's own Products: what
 // `GET /me/products` answers, and what `POST /me/products/:id/purchase` does.
 //
@@ -495,11 +496,12 @@ async function hasDraftPurchase(
   productId: number,
   ignoreId?: number,
 ): Promise<boolean> {
+  // #2126 stage 3f: read from the Product snapshot tables (stage 2's dual-write keeps them equal).
   const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = ?
+    `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+      WHERE mp.product_id = ? AND mp.status = ?
       LIMIT 2`,
-    [gymId, memberId, productId, DRAFT_PURCHASE_STATUS],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId, DRAFT_PURCHASE_STATUS],
   );
   return rows.some((r) => Number(r.id) !== ignoreId);
 }
@@ -673,11 +675,13 @@ async function hasPendingPurchase(
   memberId: number,
   productId: number,
 ): Promise<boolean> {
+  // #2126 stage 3f: read from the Product snapshot tables. `mprod_pending_purchase_key` on the
+  // purchase record is still the backstop the INSERT answers `purchase_pending` from.
   const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = ?
+    `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+      WHERE mp.product_id = ? AND mp.status = ?
       LIMIT 1`,
-    [gymId, memberId, productId, PENDING_PURCHASE_STATUS],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId, PENDING_PURCHASE_STATUS],
   );
   return rows.length > 0;
 }

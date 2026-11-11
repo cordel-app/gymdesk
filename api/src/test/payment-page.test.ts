@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens } from '../domain/themeTokens';
 import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery } from './helpers';
+import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -221,6 +222,36 @@ describe('GET /payment-page/token/:token', () => {
     } finally {
       await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
       await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
+  });
+
+  // #2126 stage 3f: the item a one-off purchase page names is the Product snapshot's, for a
+  // Sessions package (product_session_snapshots) and any other Product (product_oneoff_snapshots).
+  it('names the purchased Product from its Product snapshot (#2126 stage 3f)', async () => {
+    for (const [name, type] of [['Day Pass', 'other'], ['Ten Sessions', 'sessions']] as const) {
+      const productId = (await db.query<any>(
+        `INSERT INTO products (gym_id, name, type, amount, billing_frequency, status, enrollment_status)
+         VALUES (?, ?, ?, '20.00', 'once', 'active', 'public')`, [gymId, `Item ${name}`, type])).insertId;
+      const pageToken = crypto.randomUUID();
+      const requestId = (await db.query<any>(
+        `INSERT INTO payment_requests
+           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+            status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
+         VALUES (?, NULL, ?, '20.00', 'EUR', NULL, 'pending', 'monei', UUID(), ?, ?,
+                 DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
+        [gymId, memberId, `pay_${pageToken}`, pageToken])).insertId;
+      const purchaseId = (await db.query<any>(
+        `INSERT INTO member_products_oneoff_snapshot
+           (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
+            units, amount, currency, payment_request_id, created_by)
+         VALUES (?, ?, ?, 'pending_payment', ?, ?, 'once', ?, '20.00', 'EUR', ?, 'Test')`,
+        [gymId, memberId, productId, name, type, type === 'sessions' ? 10 : null, requestId])).insertId;
+      await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+
+      const res = await request.get(`/payment-page/token/${pageToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.purpose).toBe('product_purchase');
+      expect(res.body.itemName).toBe(name);
     }
   });
 
