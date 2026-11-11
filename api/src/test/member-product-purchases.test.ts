@@ -544,3 +544,59 @@ describe('#1923 — a promoted line survives the next Draft clone', () => {
     expect(sim.status).toBe(200);
   });
 });
+
+describe('#2479 — the Products list shows every line of the Draft being edited', () => {
+  it('lists the Active promoted line and the newly added promoted Draft line once each, with their Promotions', async () => {
+    const m = await member();
+    const planId = await plan(40);
+    const created = await auth(request.post('/product-sets')).send({ member_id: m, membership_plan_id: planId, starts_at: TODAY });
+    const paid0 = await auth(request.post(`/product-sets/${created.body.id}/save-and-pay`)).send({});
+    expect((await pay(paid0.body.payment_request_id)).status).toBe(200);
+
+    const locker = await product({ name: 'Locker 2479', frequency: 'month', amount: '20.00', type: 'service' });
+    const lockerPromo = await promotion({ name: 'Locker promo 2479' });
+    await grant(lockerPromo, locker, 'periodical', 'percentage_discount', 50);
+    const add = await auth(request.post(base(m))).send({ product_id: locker, promotion_ids: [lockerPromo] });
+    expect(add.status).toBe(201);
+    const sp = await auth(request.post(`/product-sets/${add.body.product_set_id}/save-and-pay`)).send({});
+    expect((await pay(sp.body.payment_request_id)).status).toBe(200);
+
+    // A second Product, with its own Promotion, added to a new Draft cloned from the Active version.
+    const towel = await product({ name: 'Towel 2479', frequency: 'month', amount: '10.00', type: 'service' });
+    const towelPromo = await promotion({ name: 'Towel promo 2479' });
+    await grant(towelPromo, towel, 'periodical', 'percentage_discount', 20);
+    const next = await auth(request.post(base(m))).send({ product_id: towel, promotion_ids: [towelPromo] });
+    expect(next.status).toBe(201);
+
+    const list = await auth(request.get(`/members/${m}/products`));
+    expect(list.status).toBe(200);
+    const recurring = (list.body.items as any[]).filter((r) => r.source === 'recurring');
+    const lockers = recurring.filter((r) => r.product_id === locker);
+    const towels = recurring.filter((r) => r.product_id === towel);
+    expect(lockers).toHaveLength(1);
+    expect(towels).toHaveLength(1);
+
+    // The inherited line keeps its status and its Promotion while the Draft is open.
+    expect(lockers[0]).toMatchObject({ status: 'active', amount: 10, list_price: 20, pending_termination: false });
+    expect(lockers[0].promotions.map((p: any) => p.promotion_id)).toEqual([lockerPromo]);
+
+    // The line only the Draft carries is a Draft row with its own Promotion.
+    expect(towels[0]).toMatchObject({ status: 'draft', amount: 8, list_price: 10 });
+    expect(towels[0].promotions.map((p: any) => p.promotion_id)).toEqual([towelPromo]);
+  });
+
+  it('stops listing a Draft-only line once the Draft has expired', async () => {
+    const m = await member();
+    const item = await product({ name: 'Expiring 2479', frequency: 'month', amount: '12.00', type: 'service' });
+    const add = await auth(request.post(base(m))).send({ product_id: item });
+    expect(add.status).toBe(201);
+    const before = await auth(request.get(`/members/${m}/products`));
+    expect((before.body.items as any[]).some((r) => r.source === 'recurring' && r.product_id === item)).toBe(true);
+
+    await db.query(
+      'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 1 DAY WHERE id = ?',
+      [add.body.product_set_id]);
+    const after = await auth(request.get(`/members/${m}/products`));
+    expect((after.body.items as any[]).some((r) => r.source === 'recurring' && r.product_id === item)).toBe(false);
+  });
+});
