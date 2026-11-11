@@ -9,6 +9,7 @@ import { canCancelPending, isDraftExpired } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
+import { loadMemberProductSetView } from './me-product-set-lines';
 import { productSetDraftRouter, edit as editDraft, simulationHandler } from './product-set-draft-router';
 import { addService, removeService, setServiceQuantity } from './product-set-draft';
 import { memberProductCatalogueParams, memberProductCatalogueSql } from '../domain/memberProductCatalogue';
@@ -700,6 +701,26 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
     }
     const row = await loadSet(ctx.gymId, out.productSetId);
     res.status(out.created ? 201 : 200).json({ ...shape(row), created: out.created });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2496 stage 2 — the member's own version, read from its frozen line
+ * snapshots: each Product line with its picture and description, its frozen
+ * figures and its applied Promotions, what the Draft added, inherited or
+ * removed, and the Draft's server-side countdown. Read-only; never named by
+ * the request.
+ */
+meProductSetsRouter.get('/:id', async (req, res, next) => {
+  try {
+    const owned = await ownedSet(req, res);
+    if (!owned) return;
+    const { gymId } = getTenantContext(req);
+    const view = await loadMemberProductSetView(gymId, {
+      id: Number(owned.set.id), status: String(owned.set.status),
+      previous_product_set_id: owned.set.previous_product_set_id != null ? Number(owned.set.previous_product_set_id) : null,
+    });
+    res.json({ ...shape(owned.set), ...view });
   } catch (err) { next(err); }
 });
 
