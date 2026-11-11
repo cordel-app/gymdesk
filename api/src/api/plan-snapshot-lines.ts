@@ -80,14 +80,15 @@ export async function setOwnerIsBeneficiary(
 }
 
 /**
- * SQL for "this plan snapshot is inherited by the Product Set `setExpr`" (#2125 M4a): it carries over from
- * the previous Product Set rather than being added by this one. Two ways to say it while the model moves:
- * the stored `is_inherited` flag (a copy made by `cloneConfiguration()`), or the snapshot being linked by the
- * set's `previous_product_set_id` as well (a link, once M4b stops copying). M5 drops the flag and the first
- * term. `snap` is the plan snapshot alias and `setExpr` an expression for the set's id.
+ * SQL for "this plan snapshot is inherited by the Product Set `setExpr`" (#2125 M4a, M5a): it carries over
+ * from the previous Product Set rather than being added by this one. Derived, never stored: the snapshot is
+ * linked by the set's `previous_product_set_id` as well (a plan reused unchanged, M4b-3), or it is a copy of
+ * a snapshot that was (`copied_from_plan_snapshot_id`, written only by `copyPlanSnapshotToVersion()` when a
+ * writer edits a shared plan, so an edited inherited plan stays inherited). `snap` is the plan snapshot
+ * alias and `setExpr` an expression for the set's id.
  */
 export const planSnapshotInheritedSql = (snap: string, setExpr: string): string =>
-  `(${snap}.is_inherited = 1 OR EXISTS (
+  `(${snap}.copied_from_plan_snapshot_id IS NOT NULL OR EXISTS (
       SELECT 1 FROM product_sets cur_ JOIN product_set_plan_snapshots jp_ ON jp_.product_set_id = cur_.previous_product_set_id
        WHERE cur_.id = ${setExpr} AND jp_.plan_snapshot_id = ${snap}.id))`;
 

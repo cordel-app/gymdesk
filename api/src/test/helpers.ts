@@ -306,8 +306,8 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
         const { rows: um } = await db.query<any>(
           'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
-          `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, is_inherited, starts_at, origin, source_user_membership_id)
-           VALUES (?, ?, ?, ?, 'draft', 0, ?, 'admin', ?)`,
+          `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
+           VALUES (?, ?, ?, ?, 'draft', ?, 'admin', ?)`,
           [resolved.gym_id, versionId, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
         await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
         rows.push({ id: Number(insertId) });

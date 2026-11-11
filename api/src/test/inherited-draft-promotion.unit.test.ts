@@ -7,8 +7,10 @@ const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8');
 describe('Promotions only on lines added in the Draft (#1863)', () => {
   it('marks every row the clone copies as inherited', () => {
     const src = read('../api/product-set-bridge.ts');
-    // The plan snapshots are copied inherited by `copyPlanSnapshotToVersion()` (stage 17).
-    expect(read('../api/plan-snapshot-add.ts')).toMatch(/ps\.status, 1, s\.starts_at/);
+    // A plan snapshot copied by `copyPlanSnapshotToVersion()` records its source (#2125 M5a), which is
+    // what `planSnapshotInheritedSql()` reads it as inherited by.
+    expect(read('../api/plan-snapshot-add.ts')).toMatch(/ps\.status, s\.id, s\.starts_at/);
+    expect(read('../api/plan-snapshot-lines.ts')).toMatch(/copied_from_plan_snapshot_id IS NOT NULL/);
     expect(src).toMatch(/line_ref, origin, is_inherited\)/);
     expect(src).toMatch(/line_ref, origin, 1\s+FROM member_products_recurrent_snapshot/);
   });

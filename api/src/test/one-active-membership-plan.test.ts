@@ -34,6 +34,7 @@ import {
   createTestMembership,
   request, legacyChildQuery } from './helpers';
 import { ACTIVE_PLAN_EXISTS } from '../domain/oneActivePlan';
+import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 
 let gymId: string;
 let otherGymId: string;
@@ -470,11 +471,13 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
       "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
     expect(sets).toHaveLength(1);
     const { rows: snaps } = await db.query<any>(
-      'SELECT membership_plan_id, is_inherited, source_user_membership_id FROM plan_snapshots WHERE product_set_id = ? ORDER BY id',
+      `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited, s.source_user_membership_id
+         FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? ORDER BY j.id`,
       [sets[0].id]);
     expect(snaps.map((r: any) => Number(r.membership_plan_id)).sort()).toEqual([first, second].sort());
     const carried = snaps.find((r: any) => Number(r.membership_plan_id) === first);
-    expect(carried.is_inherited).toBe(1);
+    expect(Number(carried.is_inherited)).toBe(1);
     expect(Number(carried.source_user_membership_id)).toBe(live);
 
     // The superseded version's future charges were regenerated for both plans, not lost.
