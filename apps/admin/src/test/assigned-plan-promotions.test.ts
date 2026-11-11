@@ -19,6 +19,7 @@ const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'components', 'assignedPlan');
 const PROMOTIONS = join(ASSIGNED_PLANS_DIR, 'AssignedPlanPromotions.tsx');
 const EXPANDED_ROW = join(ASSIGNED_PLANS_DIR, 'AssignedPlanExpandedRow.tsx');
+const CONFIGURATION = join(ASSIGNED_PLANS_DIR, 'AssignedPlanConfiguration.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -39,25 +40,29 @@ function stripComments(src: string): string {
 
 const src = stripComments(readFileSync(PROMOTIONS, 'utf-8'));
 const rowSrc = stripComments(readFileSync(EXPANDED_ROW, 'utf-8'));
+const configSrc = stripComments(readFileSync(CONFIGURATION, 'utf-8'));
 const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) as Record<
   (typeof LOCALE_CODES)[number],
   Messages
 >;
 
-describe('Assigned Plan promotions: the card header', () => {
-  it('is rendered by the expanded row from the assignment detail', () => {
-    expect(rowSrc).toContain('<AssignedPlanPromotions');
+describe('Assigned Plan promotions: nested under their Products (#2478)', () => {
+  it('is drawn by the configuration sections from the assignment detail, with no section of its own', () => {
     expect(rowSrc).toContain('promotions={detail.promotions}');
-    // The old flat list is gone: no hand-rolled applied/revoked label.
-    expect(rowSrc).not.toContain("promo_applied");
+    expect(rowSrc).not.toContain('<AssignedPlanPromotions');
+    expect(rowSrc).not.toContain("t('section_promotions')");
+    expect(configSrc).toContain('placePromotionsUnderProducts(');
+    expect(configSrc).toContain('renderNestedRow=');
+    // An application that grants no Product line sits under the Membership Fee.
+    expect(configSrc).toContain('placement.unplaced.map');
   });
 
-  it('shows created at, created by and the status badge', () => {
-    expect(src).toContain('promo_created_at');
-    expect(src).toContain('promo_created_by');
+  it('shows the status badge and, in the detail modal, applied at and by', () => {
+    expect(src).toContain('promo_detail_applied_at');
+    expect(src).toContain('promo_detail_applied_by');
     expect(src).toContain('p.created_by');
     expect(src).toContain('<StatusBadge');
-    expect(src, 'the badge must render the status the API computed').toContain('p.display_status');
+    expect(src, 'the badge must render the status the API computed').toContain('promotion.display_status');
   });
 
   it('takes the status from the API rather than deriving one here', () => {
@@ -68,15 +73,21 @@ describe('Assigned Plan promotions: the card header', () => {
   });
 });
 
-describe('Assigned Plan promotions: expanding a card', () => {
-  it('expands a standing application and refuses an inactive one', () => {
-    expect(src).toMatch(/const standing = p\.display_status !== 'inactive'/);
-    expect(src).toMatch(/disabled=\{!standing\}/);
-    expect(src).toContain('aria-expanded');
+describe('Assigned Plan promotions: the detail modal', () => {
+  it('opens from the thumbnail or the name, and the thumbnail click stops there', () => {
+    expect(src).toContain('<CircularThumbnail');
+    expect(src).toContain('e.stopPropagation(); onOpen();');
+    expect(configSrc).toContain('onOpen={() => setPromotionDetail(');
+    expect(configSrc).toContain('onOpen={() => setProductDetail(line)}');
   });
 
   it('shows the Promotion configuration the application froze', () => {
-    expect(src).toContain('section_billing_duration');
+    expect(src).toContain('promo_detail_validity');
+    expect(src).toContain('label_start_date');
+    expect(src).toContain('label_end_date');
+    expect(src).toContain('promo_detail_included_plans');
+    expect(src).toContain('promo_detail_included_products');
+    expect(src).toContain('<NavIcon');
     // The three durations are rendered from DURATION_FIELDS through
     // `label_${field}`, exactly as the Plan's own section does.
     for (const field of ['free_months', 'paid_months', 'bonus_months']) {
@@ -104,10 +115,9 @@ describe('Assigned Plan promotions: expanding a card', () => {
     expect(src, 'the card re-reads the live Promotion').not.toContain("apiFetch('/promotions");
   });
 
-  it('introduces no modal (§10)', () => {
+  it('reuses the standard image/detail modal rather than a CRUD form', () => {
     expect(src).not.toContain('CrudModal');
-    expect(src, 'ConfirmDialog is the shared confirmation, not a CRUD modal')
-      .not.toMatch(/Modal(?!$)/m);
+    expect(src).toContain('<ProfessionalServiceImageModal');
   });
 });
 
@@ -121,7 +131,7 @@ describe('Assigned Plan promotions: revoking', () => {
   it('confirms first and disables the control for a read-only role', () => {
     expect(src).toContain('<ConfirmDialog');
     expect(src).toContain('promo_confirm_revoke');
-    expect(src).toMatch(/disabled=\{!canWrite \|\| \(!standing && !p\.can_reapply\)\}/);
+    expect(src).toMatch(/disabled=\{!gate\.canWrite \|\| \(!standing && !p\.can_reapply\)\}/);
   });
 
   it('re-reads the card after a revoke so the Billing Events move with it', () => {

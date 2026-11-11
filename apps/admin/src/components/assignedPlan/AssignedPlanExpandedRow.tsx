@@ -25,7 +25,6 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
-import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
 import {
@@ -501,20 +500,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         onChanged={() => { loadDetail(); onChanged(); }}
       />
 
-      {/* #635 stage 7 (§16): one expandable card per applied Promotion, each
-          showing the configuration *that application* froze — never the
-          Promotion's current definition, which may have been edited or
-          deleted since. */}
-      <CardSection label={t('section_promotions')}>
-        <AssignedPlanPromotions
-          assignedPlanId={assignedPlanId}
-          promotions={detail.promotions}
-          cardEditing={editing}
-          canWrite={canWritePayments}
-          readOnlyTitle={readOnlyTitle}
-          onChanged={() => { loadDetail(); onChanged(); }}
-        />
-      </CardSection>
+      {/* #2478 — there is no separate Promotions section any more: each
+          applied Promotion is drawn under the Product it affects (or under
+          the Membership Fee) by AssignedPlanConfiguration above, and its full
+          snapshot opens in a detail modal. */}
 
       {/* #2553: both simulations are for a plan still being drafted or awaiting
           its first payment only. */}

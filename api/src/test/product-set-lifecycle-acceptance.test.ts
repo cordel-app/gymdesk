@@ -108,9 +108,14 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
 
     const draft = await draftFrom(owner);
     const heldByDraft = await rowsHeldBy(draft);
-    // The Draft is a complete, independent copy: plan snapshot and application included.
-    expect(heldByDraft['plan_snapshots']).toBeGreaterThan(0);
+    // The Draft holds independent copies of the applications; the plan it leaves unchanged is the
+    // Active version's own snapshot, linked rather than copied (#2125 M4b-3).
+    expect(heldByDraft['plan_snapshots']).toBeUndefined();
     expect(heldByDraft['user_membership_promotions']).toBeGreaterThan(0);
+    const { rows: links } = await db.query<any>(
+      `SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j WHERE j.product_set_id IN (?, ?) ORDER BY j.product_set_id`, [v1, draft]);
+    expect(links).toHaveLength(2);
+    expect(Number(links[0].plan_snapshot_id)).toBe(Number(links[1].plan_snapshot_id));
     expect(await statusOf('product_sets', draft)).toBe('draft');
 
     await db.transaction(async (tx) => {
@@ -120,6 +125,10 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(await rowsHeldBy(draft)).toEqual({});
     const { rows: gone } = await db.query<any>('SELECT id FROM product_sets WHERE id = ?', [draft]);
     expect(gone).toHaveLength(0);
+    // The shared plan snapshot survives the discard, still the Active version's.
+    const { rows: kept } = await db.query<any>(
+      'SELECT COUNT(*) AS n FROM product_set_plan_snapshots WHERE product_set_id = ?', [v1]);
+    expect(Number(kept[0].n)).toBe(1);
     // The Active version, its assignment and its application are exactly as they were.
     expect(await statusOf('product_sets', v1)).toBe('active');
     expect(await statusOf('user_memberships', umV1)).toBe('active');
@@ -130,7 +139,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(stray).toHaveLength(0);
   });
 
-  it('a successful payment activates the new version and supersedes the previous one with its history kept', async () => {
+  it('a successful payment activates the new version and supersedes the previous one with its history kept (an unchanged plan keeps its assignment, M4b-3)', async () => {
     const owner = await member();
     const promo = await promotion();
     const v1 = await commit(owner, [promo]);
@@ -150,12 +159,18 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(await statusOf('product_sets', draft)).toBe('active');
     expect(await statusOf('user_memberships', umV2)).toBe('active');
     expect(await names(umV2)).toEqual([promo]);
-    // ...and the previous one is superseded, never deleted, still readable.
+    // ...the plan was not changed, so its assignment is the same one, still active (#2125 M4b-3)...
+    expect(umV2).toBe(umV1);
+    // ...and the previous version is superseded, never deleted, still readable: its applications are its
+    // own history, detached from the assignment the successor's copies now belong to.
     expect(await statusOf('product_sets', v1)).toBe('superseded');
-    expect(await statusOf('user_memberships', umV1)).toBe('superseded');
-    const { rows: apps } = await db.query<any>('SELECT status FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
-    expect(apps.map((a: any) => a.status)).toEqual(['superseded']);
+    const { rows: apps } = await db.query<any>(
+      'SELECT status, user_membership_id FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
+    expect(apps.map((a: any) => [a.status, a.user_membership_id])).toEqual([['superseded', null]]);
     expect((await rowsHeldBy(v1))['plan_snapshots']).toBeGreaterThan(0);
+    const { rows: shared } = await db.query<any>(
+      'SELECT COUNT(DISTINCT plan_snapshot_id) AS n FROM product_set_plan_snapshots WHERE product_set_id IN (?, ?)', [v1, draft]);
+    expect(Number(shared[0].n)).toBe(1);
     // Billing history of the previous version that was already due is kept.
     const { rows: dueAfter } = await db.query<any>(
       'SELECT id FROM billing_events WHERE product_set_id = ? AND (billing_date IS NULL OR billing_date <= ?) ORDER BY id', [v1, TODAY]);

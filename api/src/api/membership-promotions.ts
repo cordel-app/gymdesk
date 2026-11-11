@@ -62,7 +62,9 @@ const SELECT = `
   SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
          p.lifecycle_status AS promotion_lifecycle_status,
-         p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at
+         p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at,
+         p.image_url AS promotion_image_url,
+         COALESCE(p.image_thumbnail_url, p.image_url) AS promotion_image_thumbnail_url
   FROM user_membership_promotions ump
   JOIN promotions p ON p.id = ump.promotion_id
 `;
@@ -989,6 +991,7 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   const grants = await loadAppliedPromotionGrants(
     gymId, merged.map((r: any) => ({ id: r.id, promotion_id: r.promotion_id })),
   );
+  const includedPlans = await loadIncludedPlans(gymId, merged.map((r: any) => Number(r.promotion_id)));
   // One instant for the whole list, so two applications with the same agreed
   // window can never read differently.
   const now = new Date();
@@ -1024,8 +1027,40 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
         planTakesPromotions,
       }, now),
       ...(grants.get(row.id) ?? emptyGrants()),
+      included_plans: includedPlans.get(Number(row.promotion_id)) ?? [],
     };
   });
+}
+
+/**
+ * #2478 — the Membership Plans each Promotion targets (its Suitable Membership
+ * Plans), for the applied Promotion's detail modal. Display only: nothing
+ * prices from it, and an application's agreed benefits stay its own snapshot
+ * (§16) — no snapshot ever froze this list, so the Promotion's current
+ * configuration is the one place it can be read. A soft-deleted plan is left
+ * out. One query for the whole card.
+ */
+async function loadIncludedPlans(
+  gymId: string, promotionIds: number[],
+): Promise<Map<number, { id: number; name: string }[]>> {
+  const byPromotion = new Map<number, { id: number; name: string }[]>();
+  const ids = [...new Set(promotionIds)];
+  if (ids.length === 0) return byPromotion;
+  const { rows } = await db.query<any>(
+    `SELECT pmp.promotion_id, mp.id, mp.name
+       FROM promotion_membership_plans pmp
+       JOIN membership_plans mp ON mp.id = pmp.membership_plan_id AND mp.gym_id = pmp.gym_id
+      WHERE pmp.gym_id = ? AND pmp.promotion_id IN (${ids.map(() => '?').join(',')})
+        AND mp.deleted_at IS NULL
+      ORDER BY mp.name ASC, mp.id ASC`,
+    [gymId, ...ids],
+  );
+  for (const row of rows) {
+    const list = byPromotion.get(Number(row.promotion_id)) ?? [];
+    list.push({ id: Number(row.id), name: row.name });
+    byPromotion.set(Number(row.promotion_id), list);
+  }
+  return byPromotion;
 }
 
 membershipPromotionsRouter.get('/', async (req, res) => {

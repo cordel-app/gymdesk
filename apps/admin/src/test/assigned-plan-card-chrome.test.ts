@@ -85,7 +85,8 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
       'benefits_oneoff',
       'benefits_session',
       'benefits_period',
-      'section_promotions',
+      // #2478 — no separate Promotions section: each applied Promotion sits
+      // under the Product line it affects.
       'section_fee_simulation',
       'section_billing_forecast',
     ]);
@@ -123,9 +124,9 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
   it('mounts the snapshot sections where the declaration puts them', () => {
     const pricing = rowSrc.indexOf("t('section_pricing')");
     const configuration = rowSrc.indexOf('<AssignedPlanConfiguration');
-    const promotions = rowSrc.indexOf("t('section_promotions')");
     expect(configuration).toBeGreaterThan(pricing);
-    expect(promotions).toBeGreaterThan(configuration);
+    // #2478 — the separate Promotions section is gone.
+    expect(rowSrc).not.toContain("t('section_promotions')");
   });
 
   it('renders the five snapshot sections in the declared order too', () => {
@@ -260,8 +261,9 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
   });
 
   it('renders no write control on the read-only card', () => {
-    // The applied Promotions' revoke/re-apply checkbox…
-    expect(promotionsSrc).toMatch(/\{cardEditing && \(\s*<input/);
+    // The applied Promotions' revoke/re-apply checkbox (#2478: drawn under
+    // each Product, still absent outside Edit mode)…
+    expect(promotionsSrc).toMatch(/if \(!gate\.cardEditing\) return null;\s*const standing[\s\S]*<input/);
   });
 
   it('closes every section editor when the mode is left (#897)', () => {
