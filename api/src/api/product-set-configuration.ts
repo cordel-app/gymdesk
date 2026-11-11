@@ -14,6 +14,7 @@ import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/p
 import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
+import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
@@ -61,19 +62,37 @@ export async function ensureSchedule(tx: Tx, input: {
   gymId: string; rootProductSetId: number; key: string; anchorDate: string;
   cadenceInterval: number; cadenceUnit: string;
 }): Promise<number> {
-  await tx.query(
-    `INSERT IGNORE INTO product_set_schedules
-       (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.gymId, input.rootProductSetId, input.key,
-      calendarAnchorOnOrBefore({ interval: input.cadenceInterval, unit: input.cadenceUnit }, input.anchorDate),
-      input.cadenceInterval, input.cadenceUnit],
+  const cadence = { interval: input.cadenceInterval, unit: input.cadenceUnit };
+  const anchor = calendarAnchorOnOrBefore(cadence, input.anchorDate);
+  // #2125 M5c-3 — the key is the owner's (`UNIQUE (owner_member_id, schedule_key)`).
+  // A schedule another (necessarily finished) chain of the owner opened under this
+  // key is reused when it is the same schedule; when it is not (another cadence,
+  // or another yearly anniversary) it is re-keyed out of the way, untouched, and
+  // this chain opens its own. A mismatch inside the same chain keeps today's
+  // behaviour: the chain's schedule is returned as it is.
+  const { rows: found } = await tx.query<any>(
+    `SELECT id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit
+       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ? FOR UPDATE`,
+    [input.rootProductSetId, input.key]);
+  const existing = found[0];
+  if (existing) {
+    const sameChain = Number(existing.root_product_set_id) === Number(input.rootProductSetId);
+    const same = findScheduleWithIdentity([{
+      id: Number(existing.id), key: String(existing.schedule_key), anchorDate: toDateOnly(existing.anchor_date),
+      cadence: { interval: Number(existing.cadence_interval), unit: String(existing.cadence_unit) },
+    }], { cadence, anchorDate: anchor });
+    if (sameChain || same) return Number(existing.id);
+    await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?',
+      [`${input.key}-${existing.id}`.slice(0, 40), existing.id]);
+  }
+  const { insertId } = await tx.query(
+    `INSERT INTO product_set_schedules
+       (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+     SELECT ?, ?, ps.owner_member_id, ?, ?, ?, ? FROM product_sets ps WHERE ps.id = ?`,
+    [input.gymId, input.rootProductSetId, input.key, anchor, input.cadenceInterval, input.cadenceUnit,
+      input.rootProductSetId],
   );
-  const { rows } = await tx.query<{ id: number }>(
-    `SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = ?`,
-    [input.rootProductSetId, input.key],
-  );
-  return Number(rows[0].id);
+  return Number(insertId);
 }
 
 /**
@@ -89,7 +108,7 @@ async function adoptScheduleAsPlan(tx: Tx, input: {
 }): Promise<void> {
   const { rows } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-       FROM product_set_schedules WHERE root_product_set_id = ? AND gym_id = ? ORDER BY id FOR UPDATE`,
+       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND gym_id = ? ORDER BY id FOR UPDATE`,
     [input.rootProductSetId, input.gymId]);
   if (rows.some((r: any) => String(r.schedule_key) === PLAN_SCHEDULE_KEY)) return;
   const cadence = { interval: input.cadenceInterval, unit: input.cadenceUnit };
@@ -237,7 +256,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
 
   const { rows: sched } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-       FROM product_set_schedules WHERE root_product_set_id = ? ORDER BY id`, [rootId]);
+       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [rootId]);
   const schedules: ExistingSchedule[] = sched.map((r: any) => ({
     id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
@@ -532,7 +551,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   const planned = await planScheduledEvents(gymId, productSetId, today, input.cycles, tx);
   const scheduleIds = new Map<string, number>();
   const { rows: schedules } = await tx.query<{ id: number; schedule_key: string }>(
-    'SELECT id, schedule_key FROM product_set_schedules WHERE root_product_set_id = ?', [rootId]);
+    `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [rootId]);
   for (const s of schedules) scheduleIds.set(String(s.schedule_key), Number(s.id));
 
   const actor = input.actor === undefined ? SYSTEM_ACTOR : input.actor;

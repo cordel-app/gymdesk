@@ -575,8 +575,20 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   duplicated. A merged schedule is deleted once no event references it. Going forward, a
   plan added to a chain that already bills a schedule of the plan's cadence adopts that
   schedule (`adoptScheduleAsPlan()`) instead of opening a second one.
-- **Not yet**: the `(owner, periodicity)` identity across chains (an owner's chains still
-  hold their own schedules) and dropping the `product_sets` version columns.
+- **A schedule is the owner's** (#2125 M5c-3, migration 396). `product_set_schedules`
+  carries `owner_member_id` and is unique on `(owner_member_id, schedule_key)`; every reader
+  finds a Product Set's schedules through its owner (`scheduleOwnerOfSetSql()`,
+  `domain/scheduleOwner.ts`), so an owner who starts a new chain (possible only once their
+  previous chain has no Active or in-flight version) bills on the schedule they already had
+  when it is the same schedule. When it is not (another cadence, another yearly
+  anniversary), `ensureSchedule()` re-keys the old one `<key>-<id>`, untouched, and opens a
+  new one. `root_product_set_id` stays as the chain that *opened* a schedule: the two writers
+  that move a first version's schedule (its start date, its cadence) still filter on it, so a
+  later chain never moves a schedule an earlier one opened. The migration moves no event or
+  anchor; it re-keys an owner's duplicate keys (the live chain's keeps the key). The realign
+  script now runs per owner and consolidates schedules of one identity across the owner's
+  chains with the M5c-2 rules.
+- **Not yet**: dropping the `product_sets` version columns.
 - **Known gap**: the per-date pricers (`priceMembershipFeeOn()`, used by My Membership's
   current fee) still count Billing & Duration from the plan's own start, so for an aligned
   plan with a configured duration they may show a different period status than the

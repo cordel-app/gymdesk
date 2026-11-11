@@ -14,6 +14,7 @@ import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/b
 import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
+import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -165,7 +166,7 @@ export async function ensureInitialEvent(tx: Tx, input: {
   let scheduleId: number | null = null;
   if (input.charge.scheduleKey) {
     const { rows } = await tx.query<{ id: number }>(
-      'SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = ?',
+      `SELECT id FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`,
       [setRows[0].root_product_set_id, input.charge.scheduleKey]);
     scheduleId = rows[0] ? Number(rows[0].id) : null;
   }

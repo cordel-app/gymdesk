@@ -127,8 +127,8 @@ describe('realigning an existing monthly schedule onto the 1st (#2125 M5c)', () 
     const { setId, memberId } = await legacyChain();
     const otherAnchor = day(-20).endsWith('-01') ? day(-21) : day(-20);
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
-       VALUES (?, ?, 's1', ?, 1, 'month')`, [gymId, setId, otherAnchor]);
+      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+       SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, otherAnchor, setId]);
     const { insertId: orphan } = await db.query(
       `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,
           period_start, billing_date, is_scheduled, created_by)
@@ -169,8 +169,8 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
 
     // A second monthly schedule on the same grid, with one event of each kind.
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
-       VALUES (?, ?, 's1', ?, 1, 'month')`, [gymId, setId, `${START.slice(0, 8)}01`]);
+      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+       SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, `${START.slice(0, 8)}01`, setId]);
     const pastCollision = await insertEvent(setId, memberId, s1, past);
     const regen = await insertEvent(setId, memberId, s1, d1);
     const attemptedCollision = await insertEvent(setId, memberId, s1, d2);
@@ -228,8 +228,8 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
       return d.productSet.id;
     });
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
-       VALUES (?, ?, 's1', ?, 1, 'month')`, [gymId, setId, `${day(-60).slice(0, 8)}01`]);
+      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+       SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, `${day(-60).slice(0, 8)}01`, setId]);
     await db.transaction((tx) => snapshotProductSetFromPlan(tx, {
       gymId, productSetId: setId, membershipPlanId: planId, membershipFeePrice: 20, startsAt: TODAY }));
 

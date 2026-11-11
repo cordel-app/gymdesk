@@ -43,7 +43,9 @@ export interface ScheduleRealignment {
 
 export interface ChainRealignment {
   gymId: string;
+  /** #2125 M5c-3: the run is per owner; the root is the one asked about (or the owner's lowest). */
   rootProductSetId: number;
+  ownerMemberId: number;
   activeProductSetId: number | null;
   schedules: ScheduleRealignment[];
   createdEvents: number;
@@ -74,18 +76,38 @@ const toDateOnly = (v: unknown): string =>
 export async function realignChainSchedules(tx: Tx, input: {
   gymId: string; rootProductSetId: number; today: string;
 }): Promise<ChainRealignment> {
-  const { gymId, rootProductSetId, today } = input;
-  const { rows: active } = await tx.query<{ id: number }>(
-    `SELECT id FROM product_sets
-      WHERE gym_id = ? AND root_product_set_id = ? AND status = 'active' FOR UPDATE`,
-    [gymId, rootProductSetId]);
+  const { rows } = await tx.query<{ owner_member_id: number }>(
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.rootProductSetId, input.gymId]);
+  if (!rows[0]) throw new Error('ProductSet not found');
+  return realignOwnerSchedules(tx, {
+    gymId: input.gymId, ownerMemberId: Number(rows[0].owner_member_id), today: input.today,
+    rootProductSetId: input.rootProductSetId,
+  });
+}
+
+/**
+ * #2125 M5c-3 — the realignment and the consolidation run over **every**
+ * schedule of the owner (`(owner, periodicity)`), so schedules of one identity
+ * that two of the owner's chains opened are folded into one exactly as two of
+ * one chain's are. The owner's Active version (at most one) is regenerated.
+ */
+export async function realignOwnerSchedules(tx: Tx, input: {
+  gymId: string; ownerMemberId: number; today: string; rootProductSetId?: number;
+}): Promise<ChainRealignment> {
+  const { gymId, ownerMemberId, today } = input;
+  const { rows: active } = await tx.query<{ id: number; root_product_set_id: number }>(
+    `SELECT id, root_product_set_id FROM product_sets
+      WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' FOR UPDATE`,
+    [gymId, ownerMemberId]);
   const { rows: schedules } = await tx.query<any>(
-    `SELECT id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
-      WHERE gym_id = ? AND root_product_set_id = ? ORDER BY id FOR UPDATE`,
-    [gymId, rootProductSetId]);
+    `SELECT id, root_product_set_id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
+      WHERE gym_id = ? AND owner_member_id = ? ORDER BY id FOR UPDATE`,
+    [gymId, ownerMemberId]);
+  const rootProductSetId = input.rootProductSetId
+    ?? (active[0] ? Number(active[0].root_product_set_id) : Number(schedules[0]?.root_product_set_id ?? 0));
 
   const out: ChainRealignment = {
-    gymId, rootProductSetId,
+    gymId, rootProductSetId, ownerMemberId,
     activeProductSetId: active[0] ? Number(active[0].id) : null,
     schedules: [], createdEvents: 0, consolidations: [],
   };
@@ -115,7 +137,7 @@ export async function realignChainSchedules(tx: Tx, input: {
     });
   }
 
-  out.consolidations = await consolidateChainSchedules(tx, { gymId, rootProductSetId, today });
+  out.consolidations = await consolidateOwnerSchedules(tx, { gymId, ownerMemberId, today });
 
   if ((out.schedules.length > 0 || out.consolidations.length > 0) && out.activeProductSetId != null) {
     const { created } = await materialiseScheduledEvents(tx, {
@@ -141,11 +163,22 @@ export async function realignChainSchedules(tx: Tx, input: {
 export async function consolidateChainSchedules(tx: Tx, input: {
   gymId: string; rootProductSetId: number; today: string;
 }): Promise<ScheduleConsolidation[]> {
-  const { gymId, rootProductSetId, today } = input;
+  const { rows } = await tx.query<{ owner_member_id: number }>(
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.rootProductSetId, input.gymId]);
+  if (!rows[0]) return [];
+  return consolidateOwnerSchedules(tx, {
+    gymId: input.gymId, ownerMemberId: Number(rows[0].owner_member_id), today: input.today });
+}
+
+/** #2125 M5c-3 — the consolidation over every schedule of the owner, across their chains. */
+export async function consolidateOwnerSchedules(tx: Tx, input: {
+  gymId: string; ownerMemberId: number; today: string;
+}): Promise<ScheduleConsolidation[]> {
+  const { gymId, ownerMemberId, today } = input;
   const { rows: schedules } = await tx.query<any>(
     `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
-      WHERE gym_id = ? AND root_product_set_id = ? ORDER BY id FOR UPDATE`,
-    [gymId, rootProductSetId]);
+      WHERE gym_id = ? AND owner_member_id = ? ORDER BY id FOR UPDATE`,
+    [gymId, ownerMemberId]);
   const groups = consolidationGroups(schedules.map((s: any) => ({
     id: Number(s.id), key: String(s.schedule_key), anchorDate: toDateOnly(s.anchor_date),
     cadence: { interval: Number(s.cadence_interval), unit: String(s.cadence_unit) },
