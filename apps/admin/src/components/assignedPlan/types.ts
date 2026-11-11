@@ -26,6 +26,11 @@ export interface BillingPolicy {
  */
 export interface AssignedPlanSnapshotBenefit {
   id: number;
+  /**
+   * #2609 stage 3 — the family member each unit is for, one entry per unit, as the
+   * server resolved it; `null` for a shared Product. Absent from an older response.
+   */
+  unit_assignees?: { member_id: number; name: string }[] | null;
   product_id: number;
   quantity: number;
   item_name: string;
