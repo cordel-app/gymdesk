@@ -42,7 +42,8 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ?
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
-        SET s.status = CASE WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
+        SET s.status = CASE WHEN ps.status = 'active' AND um.status = 'active_cancel_at_period_end' THEN 'cancelled'
+                            WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
                             ELSE ps.status END,
             s.closed_at = um.closed_at
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,

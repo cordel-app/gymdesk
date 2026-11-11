@@ -28,6 +28,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { countsAsRecentMembership } from '../domain/newMemberEligibility';
+import { ASSIGNMENT_STATUSES } from '../domain/assignmentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 
 const API_SRC = join(__dirname, '..');
@@ -54,7 +55,7 @@ const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '234_pending_payment
 const USER_MEMBERSHIPS = code(API_SRC, 'api', 'user-memberships.ts');
 
 describe('the status CHECK and the API\'s status list agree', () => {
-  it('migrations 234 and 328 widen the CHECK to exactly the statuses the router accepts', () => {
+  it('migrations 234, 328 and 395 widen the CHECK to exactly the statuses the router accepts', () => {
     // The widened list in the migration…
     const wide = MIGRATION.match(/const WIDE = \[([^\]]*)\]/);
     const narrow = MIGRATION.match(/const NARROW = \[([^\]]*)\]/);
@@ -63,12 +64,16 @@ describe('the status CHECK and the API\'s status list agree', () => {
     const values = (m: RegExpMatchArray) =>
       [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
     // #1991 stage 2: migration 328 adds `superseded` on top of 234's set.
-    const wideValues = [...values(wide!), ...values(narrow!), 'superseded'];
+    // #2659 stage 1: migration 395 adds `active_cancel_at_period_end`.
+    const m395 = readFileSync(join(API_SRC, 'infra', 'migrations', '395_active_cancel_at_period_end_status.js'), 'utf8');
+    const wide395 = m395.match(/const NARROW = \[([^\]]*)\]/);
+    expect(wide395).toBeTruthy();
+    const wideValues = [...values(wide!), ...values(narrow!), 'superseded', 'active_cancel_at_period_end'];
+    expect(new Set([...values(wide395!), 'active_cancel_at_period_end'])).toEqual(new Set(wideValues));
 
-    // …and the router's own list.
-    const statuses = USER_MEMBERSHIPS.match(/const STATUSES = \[([^\]]*)\] as const;/);
-    expect(statuses).toBeTruthy();
-    const routerValues = [...statuses![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+    // …and the router's own list, now the domain declaration it aliases.
+    expect(USER_MEMBERSHIPS).toContain('const STATUSES = ASSIGNMENT_STATUSES;');
+    const routerValues = [...ASSIGNMENT_STATUSES];
 
     expect(new Set(routerValues)).toEqual(new Set(wideValues));
     expect(routerValues).toContain('draft');
@@ -190,7 +195,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
 
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired', 'superseded')");
+      .toContain("um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')");
   });
 });
 
@@ -216,7 +221,7 @@ describe('a Draft bills nothing and books nothing', () => {
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
-    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status IN ('cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))\"");
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))\"");
     const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\}/g) ?? [];
     expect(assignmentReads).toHaveLength(3);
   });

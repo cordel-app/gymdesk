@@ -67,6 +67,9 @@ import {
   membershipPlanName,
 } from './one-active-plan';
 import { LINKED_READ_ONLY_ERROR, MEMBER_MEMBERSHIP_SQL, assignmentRelationship, AssignmentRelationship } from '../domain/assignmentRelationship';
+import {
+  ASSIGNMENT_STATUSES, AssignmentStatus, CANCELLED_ASSIGNMENT_STATUSES_SQL, CANCELS_AT_PERIOD_END_STATUS,
+} from '../domain/assignmentStatus';
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
@@ -79,8 +82,10 @@ import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment,
 // Pay transaction that produces it rather than as a second value nothing can
 // write. The ticket's "Closed" action still maps onto the existing 'cancelled'
 // value rather than introducing a new terminal status.
-const STATUSES = ['draft', 'pending_payment', 'active', 'paused', 'cancelled', 'expired', 'superseded'] as const;
-type Status = (typeof STATUSES)[number];
+// #2659 stage 1: the stored set is `ASSIGNMENT_STATUSES` (domain/assignmentStatus.ts),
+// which adds `active_cancel_at_period_end` — read like `cancelled`, written by nothing yet.
+const STATUSES = ASSIGNMENT_STATUSES;
+type Status = AssignmentStatus;
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
 // `status` is set directly) and the dedicated /close, /pause and
@@ -104,6 +109,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
   pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
+  [CANCELS_AT_PERIOD_END_STATUS]: [],
   cancelled: [],
   superseded: [],
   expired: [],
@@ -193,10 +199,15 @@ userMembershipsRouter.use('/:id', async (req, res, next) => {
  * `ENTITLED_ASSIGNMENT_SQL`'s own (`ends_at >= UTC_DATE()`), so the label says
  * "Cancels on End Date" exactly while the plan still entitles the member, and
  * becomes `cancelled` on the first day it no longer does, with no job.
+ *
+ * #2659 stage 1: the persisted `active_cancel_at_period_end` reads exactly the
+ * same way — `cancels_on_end_date` while `ends_at` is today or later, else
+ * `cancelled` — so a stored row and a derived one cannot be told apart.
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status = 'cancelled' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
+    WHEN um.status IN (${CANCELLED_ASSIGNMENT_STATUSES_SQL}) AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
+    WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
     WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
@@ -1053,7 +1064,7 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   // Ledger row (P1.6): cancellation emits status_changed in the same transaction.
   const found = await db.transaction(async (tx) => {
     const { rows: current } = await tx.query(
-      "SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? AND status NOT IN ('cancelled', 'superseded') FOR UPDATE",
+      `SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? AND status NOT IN (${CANCELLED_ASSIGNMENT_STATUSES_SQL}, 'superseded') FOR UPDATE`,
       [req.params.id, gymId],
     );
     if (current.length === 0) return false;

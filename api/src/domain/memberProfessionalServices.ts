@@ -59,7 +59,7 @@ import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUA
  * inclusive). Wallet kinds that belong to no assignment (a purchased package, a
  * staff correction) are untouched and stay open indefinitely.
  */
-const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status IN ('cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))";
+const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))";
 
 export type ProfessionalServiceGrantKind =
   | 'class_package'
