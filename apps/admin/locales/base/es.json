@@ -5090,7 +5090,19 @@
     "relationship_primary": "Principal",
     "relationship_linked": "Vinculado",
     "simulation_initial_payment": "Pago inicial",
-    "section_billing_simulation_details": "Detalles de la simulación de facturación"
+    "section_billing_simulation_details": "Detalles de la simulación de facturación",
+    "product_open_details": "Ver {product}",
+    "promo_open_details": "Ver la promoción {promotion}",
+    "detail_no_image": "Sin imagen.",
+    "detail_no_description": "Sin descripción.",
+    "promo_detail_validity": "Vigencia",
+    "promo_detail_application": "Aplicación",
+    "promo_detail_status": "Estado",
+    "promo_detail_applied_at": "Aplicada el",
+    "promo_detail_applied_by": "Aplicada por",
+    "promo_detail_included_plans": "Planes de membresía",
+    "promo_detail_no_plans": "Sin planes de membresía.",
+    "promo_detail_included_products": "Productos"
   },
   "taxes": {
     "title": "Impuestos",
