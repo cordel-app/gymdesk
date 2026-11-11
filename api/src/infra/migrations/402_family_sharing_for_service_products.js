@@ -8,6 +8,15 @@
  * touched, and `modified_at`/`modified_by` are left alone because no person
  * edited the Product. Idempotent (a second run matches nothing).
  *
+ * Two consequences follow from the rule rather than from this file, and are
+ * intended: a per-unit assignee override stored on a plan line of such a
+ * Product (#2609 stage 3, `plan_*_snapshots.unit_assignees`) is no longer
+ * applied, because a Family Product has no per-unit assignee; and a purchase
+ * already made with an `assigned_member_id` keeps it as history (reads never
+ * join `products`, #1118 §13) — do not rewrite those rows. Soft-deleted
+ * Products are included, so a restored one already follows the rule;
+ * `base_products` has no Professional Service links and is untouched.
+ *
  * `down` is a no-op: which rows were `individual` before is not recorded, and
  * moving every linked Product back would break the rule for Products created
  * Family on purpose.
