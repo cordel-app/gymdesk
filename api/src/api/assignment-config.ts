@@ -32,7 +32,7 @@ export type AssignmentConfigColumn =
  * (`product_set_id = <this>`); there is no per-assignment copy of them.
  */
 export const assignmentVersionId = (idExpr: string) =>
-  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
  * #2125 stage 15 — the version whose **version-level** lines (recurring Products and services) an
@@ -45,7 +45,7 @@ export const assignmentVersionId = (idExpr: string) =>
 export const assignmentLineVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9 JOIN user_memberships u9 ON u9.id = p9.user_membership_id
      WHERE p9.user_membership_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
-     ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+     ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
  * #2125 stage 10 — SQL for the id of the plan snapshot an assignment is the contract of: the
@@ -57,7 +57,7 @@ export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
   `(SELECT s9.id FROM product_set_plan_snapshots j9 JOIN plan_snapshots s9 ON s9.id = j9.plan_snapshot_id
      JOIN product_sets p9 ON p9.id = j9.product_set_id
      WHERE s9.source_user_membership_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
-     ORDER BY p9.version DESC, s9.id DESC LIMIT 1)`;
+     ORDER BY p9.id DESC, s9.id DESC LIMIT 1)`;
 
 /** Joins the assignment's plan snapshot as `cfg`. */
 export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `

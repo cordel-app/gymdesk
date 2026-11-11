@@ -808,24 +808,24 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
   });
 
   it('reports the in-flight version as current and superseded ones as past, creating no Billing Event', async () => {
-    const insert = async (version: number, status: string, root: number | null) => {
+    const insert = async (status: string, root: number | null, previous: number | null = null) => {
       const { insertId } = await db.query(
-        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, version, status, starts_at, created_by)
+        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, status, starts_at, created_by)
          VALUES (?, ?, ?, ?, ?, '2026-03-01', 'Tester')`,
-        [gymId, memberId, root, version, status],
+        [gymId, memberId, root, previous, status],
       );
       return insertId as number;
     };
-    const first = await insert(1, 'superseded', null);
+    const first = await insert('superseded', null);
     await db.query('UPDATE product_sets SET root_product_set_id = ? WHERE id = ?', [first, first]);
-    const second = await insert(2, 'draft', first);
+    const second = await insert('draft', first, first);
 
     const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
     const res = await getConfiguration(gymId, memberId);
     const after = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
 
     expect(res.status).toBe(200);
-    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', version: 2, created_by: 'Tester' });
+    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', created_by: 'Tester' });
     expect(res.body.past_product_sets.map((p: any) => p.id)).toEqual([first]);
     expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
   });

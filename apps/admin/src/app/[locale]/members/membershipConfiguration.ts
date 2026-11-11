@@ -78,7 +78,6 @@ export type MemberServiceRow = AssignedPlanService & { plan_name: string | null 
 export interface ProductSetRow {
   id: number;
   status: 'draft' | 'pending_payment' | string;
-  version: number;
   plan_name: string | null;
   starts_at: string | null;
   /** The initial payment Save & Pay wrote, or `null` for a Draft. */
@@ -97,7 +96,6 @@ export interface ProductSetRow {
 export interface ProductSetSummary {
   id: number;
   status: 'draft' | 'pending_payment' | 'active' | 'superseded' | string;
-  version: number;
   plan_name: string | null;
   /** #1490 — the Membership Plan's own lifecycle status (not the version's). */
   plan_status?: string | null;
