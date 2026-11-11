@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bestResult, daysExercised, defaultResultType, maxWeight, metricBests, metricDays, progressDays, summarizeExercise, supportedMetrics,
+  bestResult, daysExercised, defaultResultType, maxWeight, metricBests, metricDays, progressDays, readingFields, summarizeExercise, supportedMetrics,
   type ProgressLog,
 } from '../domain/exerciseProgress';
 
@@ -101,5 +101,19 @@ describe('per-metric bests (#2179)', () => {
       { logged_date: '2026-10-01', value: 65 }, { logged_date: '2026-10-05', value: null },
     ]);
     expect(days.find((m) => m.slug === 'repetitions')!.days.map((d) => d.value)).toEqual([10, 12]);
+  });
+});
+
+// #2628 — a staff reading form offers only the values the exercise records.
+describe('readingFields', () => {
+  it('offers the configured measured fields, in a fixed order', () => {
+    expect(readingFields([REPS, WEIGHT])).toEqual(['weight', 'repetitions']);
+    expect(readingFields([WEIGHT])).toEqual(['weight']);
+    expect(readingFields([{ id: 3, slug: 'duration' }, REPS])).toEqual(['repetitions', 'duration']);
+  });
+
+  it('offers every field when the exercise records none of them', () => {
+    expect(readingFields([])).toEqual(['weight', 'repetitions', 'duration']);
+    expect(readingFields([{ id: 9, slug: 'distance' }])).toEqual(['weight', 'repetitions', 'duration']);
   });
 });

@@ -40,7 +40,36 @@ export interface ProgressReading {
   sets: Required<Pick<ProgressSet, 'id' | 'set_number' | 'weight' | 'reps'>>[];
 }
 
-export interface ProgressDetail extends ProgressSummary { days: ProgressDay[]; metric_days: ProgressMetricDays[]; readings: ProgressReading[] }
+export interface ProgressDetail extends ProgressSummary {
+  days: ProgressDay[];
+  metric_days: ProgressMetricDays[];
+  readings: ProgressReading[];
+  /** #2628 — the values the exercise is configured to record (the API's `readingFields()`). */
+  recorded_fields?: ReadingField[];
+}
+
+/** #2628 — a value a reading form may offer: per-set weight and repetitions, the log's duration. */
+export type ReadingField = 'weight' | 'repetitions' | 'duration';
+const ALL_READING_FIELDS: readonly ReadingField[] = ['weight', 'repetitions', 'duration'];
+
+/**
+ * #2628 — the fields the edit form shows: the API's list, in its order. A response without
+ * one (or an empty one) shows all three, so no stored value becomes uneditable.
+ */
+export function readingFieldsOf(detail: Pick<ProgressDetail, 'recorded_fields'> | null | undefined): ReadingField[] {
+  const fields = (detail?.recorded_fields ?? []).filter((f) => ALL_READING_FIELDS.includes(f));
+  return fields.length > 0 ? fields : [...ALL_READING_FIELDS];
+}
+
+/**
+ * #2628 — the fields the add form shows. A new reading is one set (`POST …/readings` takes
+ * weight and reps, never a duration), so it offers the configured set fields, and both when
+ * the exercise records neither.
+ */
+export function addReadingFieldsOf(fields: ReadingField[]): Array<'weight' | 'repetitions'> {
+  const setFields = fields.filter((f): f is 'weight' | 'repetitions' => f !== 'duration');
+  return setFields.length > 0 ? setFields : ['weight', 'repetitions'];
+}
 
 /** Locale key of the unit a best result is shown with; `null` is a bare number. */
 export function resultUnitKey(slug: string | null | undefined): string | null {
@@ -129,23 +158,43 @@ export function draftFromReading(r: ProgressReading): ReadingDraft {
   };
 }
 
-/** `null` when the draft holds a value the API would refuse (the date is never editable). */
-export function readingPayload(d: ReadingDraft): Record<string, unknown> | null {
+/**
+ * `null` when the draft holds a value the API would refuse (the date is never editable).
+ * #2628 — a field the form does not show is left out, so the API keeps what it stores.
+ */
+export function readingPayload(d: ReadingDraft, fields: ReadingField[] = [...ALL_READING_FIELDS]): Record<string, unknown> | null {
   const num = (v: string): number | null | undefined => {
     if (v.trim() === '') return null;
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? n : undefined;
   };
-  const duration = num(d.duration);
-  if (duration === undefined) return null;
-  const sets = [];
-  for (const s of d.sets) {
-    const weight = num(s.weight);
-    const reps = num(s.reps);
-    if (weight === undefined || reps === undefined || (reps !== null && !Number.isInteger(reps))) return null;
-    sets.push({ id: s.id, weight, reps });
+  const payload: Record<string, unknown> = { notes: d.notes };
+  if (fields.includes('duration')) {
+    const duration = num(d.duration);
+    if (duration === undefined) return null;
+    payload.duration_seconds = duration;
   }
-  return { notes: d.notes, duration_seconds: duration, sets };
+  const withWeight = fields.includes('weight');
+  const withReps = fields.includes('repetitions');
+  if (withWeight || withReps) {
+    const sets = [];
+    for (const s of d.sets) {
+      const set: Record<string, unknown> = { id: s.id };
+      if (withWeight) {
+        const weight = num(s.weight);
+        if (weight === undefined) return null;
+        set.weight = weight;
+      }
+      if (withReps) {
+        const reps = num(s.reps);
+        if (reps === undefined || (reps !== null && !Number.isInteger(reps))) return null;
+        set.reps = reps;
+      }
+      sets.push(set);
+    }
+    payload.sets = sets;
+  }
+  return payload;
 }
 
 /**

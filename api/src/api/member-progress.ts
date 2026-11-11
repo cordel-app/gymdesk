@@ -7,7 +7,7 @@ import { CATALOGUE_EXERCISE_TABLES } from '../domain/exerciseTables';
 import { localizedDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { effectiveImageThumbnailUrlSql, effectiveImageUrlSql, imageSexForGender } from '../domain/effectiveExerciseImage';
 import {
-  defaultResultType, metricBests, metricDays, progressDays, summarizeExercise,
+  defaultResultType, metricBests, metricDays, progressDays, readingFields, summarizeExercise,
   type AllowedResultType, type ProgressLog,
 } from '../domain/exerciseProgress';
 import { allowedTypesSql, json, LOG_SELECT, toLog } from './me-progress';
@@ -134,6 +134,7 @@ async function exerciseDetail(gymId: string, memberId: number, exerciseId: numbe
     metrics: metricBests(logs, allowed),
     metric_days: metricDays(logs, allowed),
     days: progressDays(logs, defaultResultType(allowed)),
+    recorded_fields: readingFields(allowed),
     readings,
   };
 }

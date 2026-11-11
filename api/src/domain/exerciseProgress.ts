@@ -151,6 +151,20 @@ export function supportedMetrics(allowed: AllowedResultType[]): ProgressMetric[]
   return PROGRESS_METRICS.filter((m) => allowed.some((a) => a.slug === m));
 }
 
+/**
+ * #2628 — the values a staff reading form offers for an exercise: the measured
+ * result types it is configured to record (per-set weight and repetitions, the
+ * log's duration), in that order. An exercise configured with none of them falls
+ * back to all three, so nothing it already holds becomes uneditable.
+ */
+export type ReadingField = 'weight' | 'repetitions' | 'duration';
+const READING_FIELDS: readonly ReadingField[] = ['weight', 'repetitions', 'duration'];
+
+export function readingFields(allowed: AllowedResultType[]): ReadingField[] {
+  const fields = READING_FIELDS.filter((f) => allowed.some((a) => a.slug === f));
+  return fields.length > 0 ? fields : [...READING_FIELDS];
+}
+
 export interface MetricBest { slug: ProgressMetric; value: number | null }
 
 export function metricBests(logs: ProgressLog[], allowed: AllowedResultType[]): MetricBest[] {
