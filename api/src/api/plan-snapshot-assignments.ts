@@ -153,7 +153,7 @@ export async function loadProductSetSimulationAssignments(
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ?
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0
       ORDER BY psj.id`,
     [gymId, productSetId],
   );
@@ -207,7 +207,7 @@ export async function loadPlanSnapshotScheduleKeys(
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ?
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0
       ORDER BY psj.id`,
     [gymId, productSetId],
   );
@@ -221,6 +221,6 @@ export async function loadPlanSnapshotInheritance(
   const { rows } = await exec.query(
     `SELECT ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
        FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id`, [gymId, productSetId]);
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`, [gymId, productSetId]);
   return (rows as any[]).map((r) => Number(r.is_inherited) === 1);
 }

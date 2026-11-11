@@ -189,7 +189,7 @@ export async function getAssignmentConfig(umId: number): Promise<Record<string, 
     `SELECT snap.*, ps.id AS product_set_id, ps.status AS product_set_status
        FROM product_sets ps
        LEFT JOIN plan_snapshots snap ON snap.id = (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2
-                                                    WHERE j2.product_set_id = ps.id ORDER BY j2.id LIMIT 1)
+                                                    WHERE j2.product_set_id = ps.id AND j2.entitlement_only = 0 ORDER BY j2.id LIMIT 1)
       WHERE ps.user_membership_id = ? ORDER BY ps.id DESC LIMIT 1`, [umId]);
   return rows[0] ?? {};
 }
@@ -214,7 +214,7 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     setId = Number(insertId);
   }
   const { rows: snap } = await db.query<{ id: number }>(
-    'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [setId]);
+    'SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id LIMIT 1', [setId]);
   let snapshotId = snap[0]?.id != null ? Number(snap[0].id) : null;
   if (snapshotId == null) {
     const { insertId } = await db.query(
@@ -344,7 +344,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     if (isLineTable) {
       await syncFixtureSnapshot(versionId);
       const { rows: snap } = await db.query<{ id: number }>(
-        'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? ORDER BY id LIMIT 1', [versionId]);
+        'SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id LIMIT 1', [versionId]);
       if (!snap[0]) throw new Error(`legacy child fixture: version ${versionId} has no plan snapshot`);
       queue[placeholders] = snap[0].id;
       columns[at] = 'plan_snapshot_id';

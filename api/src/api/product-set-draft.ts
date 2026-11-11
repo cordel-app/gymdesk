@@ -86,7 +86,8 @@ export async function syncMandatoryQuantities(
   const { rows: snaps } = await tx.query<{ id: number; n: number }>(
     `SELECT s.id, (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id AND b.gym_id = s.gym_id) AS n
        FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
+      WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0
+        AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
     [productSetId, gymId]);
   for (const snap of snaps) {
     const count = Math.max(1, Number(snap.n ?? 0));

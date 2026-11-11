@@ -7,6 +7,7 @@ import { syncMandatoryQuantities } from './product-set-draft';
 import { cloneConfiguration } from './product-set-bridge';
 import { ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
+import { linkCancellingPlans } from './entitlement-plan-links';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -94,6 +95,10 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     [input.planPriceId, input.basePrice, input.discountReason, input.discountExpiresAt, setId, input.gymId],
   );
   await syncMandatoryQuantities(tx, input.gymId, setId);
+  // #2659 stage 3: Add Membership Plan's Draft carries the owner's plans cancelling at their period
+  // end, for entitlement only (never billed, charged or projected). The Active plans join it at the
+  // commit, as before (`mergeActiveVersionIntoDraft()`).
+  await linkCancellingPlans(tx, input.gymId, setId);
   await syncDraftAssignment(tx, input.gymId, setId);
   return setId;
 }

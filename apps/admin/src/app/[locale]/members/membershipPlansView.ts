@@ -10,6 +10,8 @@
 import type { MemberPlanRow } from './membershipConfiguration';
 
 const IN_FLIGHT = new Set(['draft', 'pending_payment']);
+/** The stored status of a plan cancelling at its period end (`api/src/domain/assignmentStatus.ts`). */
+const CANCELS_AT_PERIOD_END = 'active_cancel_at_period_end';
 
 export const isInFlightPlan = (p: Pick<MemberPlanRow, 'status'>): boolean => IN_FLIGHT.has(p.status);
 
@@ -25,7 +27,11 @@ export interface VisiblePlans {
 export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   const live = plans.filter((p) => p.is_live);
   const inFlight = live.filter(isInFlightPlan);
-  if (inFlight.length > 0) return { rows: inFlight, heading: 'draft', showInFlightList: false };
+  // #2659 stage 3: a plan cancelling at its period end is carried by the Draft (for entitlement
+  // only — never billed), so it stays listed beside the in-flight version until its end date.
+  // An Active plan is still replaced in the view by the Draft, as #1538 decides.
+  const cancelling = plans.filter((p) => p.status === CANCELS_AT_PERIOD_END && p.is_current && !isInFlightPlan(p));
+  if (inFlight.length > 0) return { rows: [...inFlight, ...cancelling], heading: 'draft', showInFlightList: false };
   // #2549: a cancelled plan stays in Active until its end date passes (status badge unchanged).
   return { rows: plans.filter((p) => p.is_live || p.is_current), heading: 'active', showInFlightList: true };
 }

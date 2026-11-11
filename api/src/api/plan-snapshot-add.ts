@@ -189,7 +189,7 @@ export async function mergeActiveVersionIntoDraft(
   const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
     `SELECT s.id, s.source_user_membership_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND psj.product_set_id = ? ORDER BY psj.id`,
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`,
     [gymId, activeSetId]);
   for (const plan of plans) {
     if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;

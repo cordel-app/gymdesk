@@ -137,7 +137,7 @@ export async function loadMemberProductSetView(gymId: string, set: { id: number;
        FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = ?
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
-      WHERE j.product_set_id = ? ORDER BY j.id`, [gymId, Number(set.id)]);
+      WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id`, [gymId, Number(set.id)]);
 
   return {
     expires_in_seconds: expiresIn,
