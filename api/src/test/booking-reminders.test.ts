@@ -339,3 +339,46 @@ describe('the reminder the run raises (#1113 §2)', () => {
 // routes' own source in `booking-reminders.unit.test.ts`: the alert it removes
 // was fire-and-forget, so a `.then()` that silently never ran would make an HTTP
 // assertion pass for the wrong reason.
+
+// #2477 stage 2 — the same 15-minute pass discards ProductSet Drafts idle past
+// their two hours, through the manual discard, so an abandoned Draft no longer
+// waits for the twice-daily billing cleanup.
+describe('Draft expiry on the 15-minute pass (#2477 stage 2)', () => {
+  async function draft(minutesIdle: number, status = 'draft'): Promise<number> {
+    const ownerId = await createMember();
+    const { insertId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
+       VALUES (?, ?, ?, UTC_DATE(), UTC_TIMESTAMP() - INTERVAL ? MINUTE)`,
+      [gymId, ownerId, status, minutesIdle],
+    );
+    return insertId;
+  }
+  async function exists(id: number): Promise<string | null> {
+    const { rows } = await db.query<{ status: string }>('SELECT status FROM product_sets WHERE id = ?', [id]);
+    return rows[0]?.status ?? null;
+  }
+
+  it('discards an expired Draft and leaves a live Draft and a Pending Payment set alone', async () => {
+    const expired = await draft(121);
+    const live = await draft(30);
+    const pending = await draft(180, 'pending_payment');
+
+    const res = await run();
+    expect(res.status).toBe(200);
+    expect(res.body.drafts_expired).toBeGreaterThanOrEqual(1);
+    expect(res.body.failures).toBeUndefined();
+
+    expect(await exists(expired)).toBeNull();
+    expect(await exists(live)).toBe('draft');
+    expect(await exists(pending)).toBe('pending_payment');
+  });
+
+  it('a repeated pass finds nothing left to discard for that Draft', async () => {
+    const expired = await draft(150);
+    await run();
+    expect(await exists(expired)).toBeNull();
+    const again = await run();
+    expect(again.status).toBe(200);
+    expect(again.body.failures).toBeUndefined();
+  });
+});

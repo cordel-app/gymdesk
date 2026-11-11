@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { recordNotifications } from '../infra/notifications';
 import { convertStartedReservations } from './service-reservation';
+import { expireDrafts } from './product-sets';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import {
   BOOKING_REMINDER_LEAD_MINUTES,
@@ -118,7 +119,22 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       failures.push({ gym_id: '*', error: `event-start conversion: ${(err as Error).message}` });
     }
 
+    // #2477 stage 2: a ProductSet Draft idle past its two hours is discarded by
+    // this pass too, so an abandoned Draft is gone within a quarter of an hour
+    // rather than at the next twice-daily billing cleanup (which keeps its own
+    // call). `expireDrafts()` is the manual discard (`cancelInFlight()`), one
+    // transaction per Draft with the expiry re-checked under the row lock, so a
+    // repeated or overlapping pass discards nothing twice; a failure here must
+    // not cost reminders.
+    let draftsExpired: number | null = null;
+    try {
+      draftsExpired = await expireDrafts();
+    } catch (err) {
+      failures.push({ gym_id: '*', error: `draft expiry: ${(err as Error).message}` });
+    }
+
     const body = {
+      ...(draftsExpired != null ? { drafts_expired: draftsExpired } : {}),
       ...(conversion ? { reservations_consumed: conversion.consumed, reservations_released: conversion.released } : {}),
       candidates: candidates.length,
       created,
