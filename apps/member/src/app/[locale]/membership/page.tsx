@@ -1,6 +1,8 @@
 'use client';
 
-import { formatGymDateOnly } from '@/lib/gymFormat';
+import { formatGymDateOnly, formatGymTime } from '@/lib/gymFormat';
+import { formatDraftRemaining, isDraftWarning, isExpiredDraft, showsDraftExactTime } from '@/lib/draftCountdown';
+import { useDraftCountdown } from '@/lib/useDraftCountdown';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
@@ -96,7 +98,6 @@ import {
   currentSetId,
   draftAddedCount,
   draftErrorKey,
-  draftMinutesLeft,
   draftProductState,
 } from '@/lib/memberProducts';
 import {
@@ -372,7 +373,16 @@ export default function MembershipPage() {
     try {
       const rows = await apiFetch<MemberSetRow[]>('/me/product-sets');
       const id = currentSetId(rows);
-      setSetView(id == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${id}`));
+      let view = id == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${id}`);
+      // #2477 stage 3 — a Draft past its two hours is no longer the member's to
+      // edit, even before the discard pass removes it: read their Active
+      // version instead and say what happened.
+      if (isExpiredDraft(view)) {
+        const activeId = currentSetId(rows.filter((r) => r.status !== 'draft'));
+        view = activeId == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${activeId}`);
+        setDraftError({ productId: null, key: 'membership.draft_error_expired' });
+      }
+      setSetView(view);
     } catch {
       // No version to read: every recurring card offers Add, and the server
       // still judges the add itself.
@@ -384,6 +394,13 @@ export default function MembershipPage() {
     if (appLoading || !isLinked) return;
     loadSetView();
   }, [appLoading, isLinked, reloadKey]);
+
+  // #2477 stage 3 — the Draft's live countdown, from the server's seconds; at
+  // zero the page re-reads, so an expired Draft stops being offered for editing.
+  const draftSecondsLeft = useDraftCountdown(
+    setView?.status === 'draft' ? setView.expires_in_seconds ?? null : null,
+    loadSetView,
+  );
 
   /** Adds a recurring Product to the member's Draft, creating it if there is none. */
   async function addToDraft(product: MemberProduct) {
@@ -659,13 +676,21 @@ export default function MembershipPage() {
     const count = draftAddedCount(setView);
     const generalError = draftError && draftError.productId === null ? draftError.key : null;
     if (count === 0 && !generalError) return null;
-    const minutes = draftMinutesLeft(setView);
+    const remaining = formatDraftRemaining(draftSecondsLeft);
+    const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
+    const exact = draftSecondsLeft != null && showsDraftExactTime(draftSecondsLeft)
+      ? formatGymTime(new Date(Date.now() + draftSecondsLeft * 1000), gymFmt)
+      : null;
     return (
       <div style={{ ...noticeStyle('info'), marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
         {count > 0 && (
           <span style={{ flex: '1 1 200px', fontSize: 13.5 }}>
             {t('membership.draft_selection_count', { count })}
-            {minutes != null && <> {t('membership.draft_selection_expires', { minutes })}</>}
+          </span>
+        )}
+        {count > 0 && remaining != null && (
+          <span data-draft-expiry style={warn ? styles.draftExpiryWarning : styles.draftExpiry}>
+            {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
           </span>
         )}
         {count > 0 && (
@@ -1759,6 +1784,8 @@ const styles: Record<string, React.CSSProperties> = {
   buyBtn: { ...primaryButtonStyle, padding: '8px 18px', fontSize: 13.5, fontWeight: 600 },
   draftSecondaryBtn: { ...secondaryButtonStyle, padding: '8px 14px', fontSize: 13.5, fontWeight: 600 },
   draftError: { fontSize: 12.5, color: memberTheme.statusError },
+  draftExpiry: { fontSize: 12.5, color: memberTheme.textSecondary },
+  draftExpiryWarning: { fontSize: 12.5, fontWeight: 600, color: memberTheme.statusWarning },
   // #1118 §4/§17 — *Apply promotion* is an obvious action but a secondary one:
   // Buy is the card's primary, and two filled buttons on one card compete. Both
   // come from `memberChrome.ts`, so neither spells a colour (#983).
