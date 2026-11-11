@@ -5,7 +5,7 @@
 // the issuing transaction only (gapless per gym, type and year).
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireModuleWrite, requireModuleAccess } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite, requireModuleAccess, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
@@ -16,7 +16,10 @@ import {
   formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
-import { loadInvoiceVerifactuQr, recordVerifactuAlta } from './verifactu-records';
+import { anulacionRefusal } from '../domain/verifactuRecords';
+import {
+  enabledVerifactuIntegration, loadInvoiceVerifactuQr, loadInvoiceVerifactuRecords, recordVerifactuAlta, recordVerifactuAnulacion,
+} from './verifactu-records';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
 import {
   isPrivateStorageConfigured, putPrivateDocument, getPrivateDocument,
@@ -156,7 +159,27 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
               full_not_paid_pdf_key IS NOT NULL AS has_full_not_paid,
               full_paid_pdf_key IS NOT NULL AS has_full_paid
          FROM invoices WHERE gym_id = ? AND billing_event_id = ? ORDER BY id`, [gymId, eventId]);
-    res.json({ paid: ev.paid, invoices: rows });
+    // #2648 stage 5: each invoice's VERI*FACTU records (null when it has none),
+    // kept apart from its payment status.
+    const records = await loadInvoiceVerifactuRecords(db, gymId, rows.map((r: any) => r.id));
+    // Whether the Cancel record action is offered: `anulacionRefusal()`, the
+    // rule the route enforces, plus the route's own admin gate.
+    const integrationEnabled = (await enabledVerifactuIntegration(db, gymId)) != null;
+    const isAdmin = getTenantContext(req).role === 'admin';
+    const rectified = new Set(rows.filter((r: any) => r.related_invoice_id).map((r: any) => r.related_invoice_id));
+    res.json({
+      paid: ev.paid,
+      invoices: rows.map((r: any) => {
+        const vf = records.get(r.id) ?? null;
+        const refusal = anulacionRefusal({
+          integrationEnabled,
+          alta: vf?.alta ? { submissionStatus: vf.alta.submission_status } : null,
+          hasAnulacion: !!vf?.anulacion,
+          isRectified: rectified.has(r.id),
+        });
+        return { ...r, verifactu: vf, can_cancel_verifactu: isAdmin && refusal == null };
+      }),
+    });
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
 
@@ -286,3 +309,29 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
       fiscal_number: inv.fiscal_number, related_invoice_id: id, rectification_reason: parsed.value });
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
+
+// POST /invoices/:id/verifactu/cancel — { reason }. #2648 stage 5: generates the
+// invoice's Registro de Anulación (submitted later, in chain order, by the
+// asynchronous pass). The invoice and its Alta are never edited; a refund or a
+// rectification is a different operation. Gym admin only.
+billingInvoicesRouter.post('/invoices/:id/verifactu/cancel', requireModuleWrite('PAYMENTS'), requireRole('admin'),
+  async (req, res, next) => {
+    try {
+      const tctx = getTenantContext(req);
+      const { gymId } = tctx;
+      const id = parseInt(String(req.params.id), 10);
+      if (!id) return res.status(400).json({ error: 'Invalid id' });
+      const parsed = parseRectificationReason(req.body);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+      const actor = resolveRequestActor(tctx);
+      const recordId = await db.transaction((tx) => recordVerifactuAnulacion(tx, gymId, id, actor, parsed.value));
+      const { rows } = await db.query<any>('SELECT billing_event_id FROM invoices WHERE id = ? AND gym_id = ?', [id, gymId]);
+      recordAudit(req, { action: 'cancel_verifactu_record', entityType: 'billing_event', entityId: rows[0].billing_event_id,
+        next: { invoice_id: id, verifactu_record_id: recordId, reason: parsed.value } });
+      const records = await loadInvoiceVerifactuRecords(db, gymId, [id]);
+      res.status(201).json({ invoice_id: id, verifactu: records.get(id) ?? null });
+    } catch (err: any) {
+      if (err?.code === 'invoice_not_found') return res.status(404).json({ error: err.message });
+      if (!answerVerifactuRefusal(err, res)) next(err);
+    }
+  });
