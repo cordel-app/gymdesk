@@ -11,6 +11,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import {
+  inputStyle,
   memberTheme,
   noticeStyle,
   primaryButtonStyle,
@@ -85,6 +86,11 @@ import {
   ownPurchaseShowsPay,
   ownPurchaseStateKey,
   ownPurchaseStatusWord,
+  type ProductAssignee,
+  assigneeOptions,
+  assigneePayload,
+  ownPurchaseAssigneeName,
+  showsAssigneeChoice,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -243,6 +249,11 @@ export default function MembershipPage() {
   const [purchasing, setPurchasing] = useState<MemberProduct | null>(null);
   const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  // #2609 stage 2 — the member's family (themself included; `[]` with no family)
+  // and who the Product in the dialog is for. The server judges the choice again.
+  const [assignees, setAssignees] = useState<ProductAssignee[]>([]);
+  const [selfMemberId, setSelfMemberId] = useState<number | null>(null);
+  const [purchaseAssignee, setPurchaseAssignee] = useState<number | null>(null);
 
   /**
    * #1118 §5 — the Promotion the member has applied, per Product.
@@ -299,7 +310,7 @@ export default function MembershipPage() {
     setServiceFilter(filter);
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes, assigneeRes] = await Promise.all([
           apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
@@ -313,6 +324,8 @@ export default function MembershipPage() {
           apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans').catch(() => null),
           apiFetch<{ items: MemberServiceBalanceItem[] }>('/me/professional-services').catch(() => null),
           apiFetch<{ items: OwnPurchase[] }>('/me/purchases').catch(() => null),
+          // #2609: a failed read is "no family" — the Buy dialog then asks nothing.
+          apiFetch<{ member_id: number; members: ProductAssignee[] }>('/me/products/assignees').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -328,6 +341,8 @@ export default function MembershipPage() {
         setPlanCatalogue(plansRes?.plans ?? null);
         setServiceBalances(serviceRes?.items ?? null);
         setOwnPurchases(ownRes?.items ?? []);
+        setAssignees(assigneeRes?.members ?? []);
+        setSelfMemberId(assigneeRes?.member_id ?? null);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -487,7 +502,11 @@ export default function MembershipPage() {
       key: `own-${p.id}`,
       name: p.product_name,
       price: formatPaymentAmount(p.amount, p.currency, gymFmt),
-      meta: p.end_date ? t('membership.product_end_date', { date: formatGymDateOnly(p.end_date, gymFmt) }) : null,
+      meta: [
+        // #2609: who it is for, only where the member has a family to tell apart.
+        ownPurchaseAssigneeName(p, assignees) ? t('membership.product_assignee_line', { name: ownPurchaseAssigneeName(p, assignees)! }) : null,
+        p.end_date ? t('membership.product_end_date', { date: formatGymDateOnly(p.end_date, gymFmt) }) : null,
+      ].filter(Boolean).join(' · ') || null,
       action: (
         <>
           <StatusPill status={ownPurchaseStatusWord(p.own_state)} label={t(ownPurchaseStateKey(p.own_state) as any)} />
@@ -784,6 +803,8 @@ export default function MembershipPage() {
 
   function openPurchase(product: MemberProduct) {
     setPurchaseError(null);
+    // The buyer is the default recipient (#2609 §1): changing nothing buys for themself.
+    setPurchaseAssignee(selfMemberId);
     setPurchasing(product);
   }
 
@@ -809,7 +830,11 @@ export default function MembershipPage() {
           // The id alone: the route re-reads and re-prices the Promotion, so a
           // price named here would be ignored (§8) — and one that has lapsed in
           // the meantime refuses the purchase rather than charging another.
-          body: JSON.stringify(applied ? { promotion_id: applied.promotion_id } : {}),
+          body: JSON.stringify({
+            ...(applied ? { promotion_id: applied.promotion_id } : {}),
+            // #2609: the chosen family member, only when the dialog asked.
+            ...assigneePayload(product, assignees, purchaseAssignee),
+          }),
         },
       );
       window.location.href = result.checkoutUrl;
@@ -1195,6 +1220,23 @@ export default function MembershipPage() {
                   price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), gymFmt) ?? '—',
                 })}
               </p>
+              {showsAssigneeChoice(purchasing, assignees) && (
+                <label style={styles.assigneeField}>
+                  <span style={styles.assigneeLabel}>{t('membership.product_assignee_label')}</span>
+                  <select
+                    style={inputStyle}
+                    value={purchaseAssignee ?? ''}
+                    onChange={(e) => setPurchaseAssignee(Number(e.target.value))}
+                    disabled={purchaseSubmitting}
+                  >
+                    {assigneeOptions(assignees, selfMemberId).map((a) => (
+                      <option key={a.member_id} value={a.member_id}>
+                        {a.member_id === selfMemberId ? t('membership.product_assignee_self', { name: a.name }) : a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
               {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
             </MemberDialog>
@@ -1578,5 +1620,7 @@ const styles: Record<string, React.CSSProperties> = {
   dialogSecondary: { ...secondaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   busy: { opacity: 0.6, cursor: 'default' },
   hintLeft: { margin: 0, fontSize: 12.5, color: memberTheme.textMuted },
+  assigneeField: { display: 'flex', flexDirection: 'column', gap: 6, margin: '0 0 14px' },
+  assigneeLabel: { fontSize: 13, fontWeight: 600, color: memberTheme.textSecondary },
   confirmBtn: { ...primaryButtonStyle, padding: '10px 20px', fontSize: 14, fontWeight: 600, transition: 'opacity 0.15s' },
 };

@@ -71,22 +71,40 @@ export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershi
 }
 
 /**
- * Discards a Draft Product Set by what it actually references (M4b-0): a plan snapshot another set still
- * links is handed to that set (so the delete's cascade cannot take it) and everything only the Draft used
- * goes with it. A set past `draft` is never deleted here.
+ * Deletes a Product Set and the plan snapshots only it linked (#2125 M5b). A snapshot names no Product Set
+ * any more, so nothing cascades from the set to its snapshots: the set's links go with it (the junction
+ * cascades) and every snapshot it linked that no other set still links is deleted after it, by reference.
+ * A snapshot another set links is that set's contract and is left exactly as it is (Oscar, 2026-11-08:
+ * "Draft-only snapshots are cleaned up according to their references and dependencies. Shared snapshots
+ * must be preserved."). `status` guards the delete: a set in any other status is not deleted and its
+ * snapshots are not touched. Answers whether the set was deleted.
+ */
+export async function deleteProductSetAndOwnPlanSnapshots(
+  tx: Tx, gymId: string, productSetId: number, status: 'draft' | 'pending_payment',
+): Promise<boolean> {
+  const { rows: linked } = await tx.query<{ id: number }>(
+    `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
+       JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = ? AND ps.status = ?
+      WHERE j.product_set_id = ?`, [gymId, status, productSetId]);
+  const { rowCount } = await tx.query(
+    'DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = ?', [productSetId, gymId, status]);
+  if (Number(rowCount ?? 0) === 0) return false;
+  const ids = linked.map((r) => Number(r.id));
+  if (ids.length > 0) {
+    await tx.query(
+      `DELETE FROM plan_snapshots
+        WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})
+          AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = plan_snapshots.id)`,
+      [gymId, ...ids]);
+  }
+  return true;
+}
+
+/**
+ * Discards a Draft Product Set by what it actually references (M4b-0, M5b): a plan snapshot another set
+ * still links stays that set's, and everything only the Draft used goes with it. A set past `draft` is
+ * never deleted here.
  */
 export async function discardDraftSet(tx: Tx, gymId: string, productSetId: number): Promise<boolean> {
-  const { rows: shared } = await tx.query<{ snapshot: number; other: number }>(
-    `SELECT mine.plan_snapshot_id AS snapshot, MIN(o.product_set_id) AS other
-       FROM product_set_plan_snapshots mine
-       JOIN product_sets ps ON ps.id = mine.product_set_id AND ps.gym_id = ? AND ps.status = 'draft'
-       JOIN product_set_plan_snapshots o ON o.plan_snapshot_id = mine.plan_snapshot_id AND o.product_set_id <> mine.product_set_id
-      WHERE mine.product_set_id = ? GROUP BY mine.plan_snapshot_id`, [gymId, productSetId]);
-  for (const s of shared) {
-    await tx.query('UPDATE plan_snapshots SET product_set_id = ? WHERE id = ? AND gym_id = ? AND product_set_id = ?',
-      [Number(s.other), Number(s.snapshot), gymId, productSetId]);
-  }
-  const { rowCount } = await tx.query(
-    `DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = 'draft'`, [productSetId, gymId]);
-  return Number(rowCount ?? 0) > 0;
+  return deleteProductSetAndOwnPlanSnapshots(tx, gymId, productSetId, 'draft');
 }

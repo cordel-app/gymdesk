@@ -120,10 +120,10 @@ describe('adding a second Membership Plan to an active version', () => {
     // M4b-3: the further clone links both of v2's plans (the native one included) and copies neither.
     const { rows } = await db.query<any>(
       `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited,
-              (s.product_set_id = j.product_set_id) AS own
+              EXISTS (SELECT 1 FROM product_set_plan_snapshots o WHERE o.plan_snapshot_id = s.id AND o.product_set_id = ?) AS shared
          FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE j.product_set_id = ? ORDER BY j.id`, [v3]);
-    expect(rows.map((r: any) => [Number(r.membership_plan_id), Number(r.is_inherited), Number(r.own)])).toEqual([[first, 1, 0], [second, 1, 0]]);
+        WHERE j.product_set_id = ? ORDER BY j.id`, [v2, v3]);
+    expect(rows.map((r: any) => [Number(r.membership_plan_id), Number(r.is_inherited), Number(r.shared)])).toEqual([[first, 1, 1], [second, 1, 1]]);
     expect(v3).not.toBe(v2);
   });
 });
