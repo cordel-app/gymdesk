@@ -29,10 +29,9 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel, planBillingFrequencyOf } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
 import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
@@ -243,9 +242,35 @@ export function AssignedPlanConfiguration({
       promotionBenefitsByProduct.set(g.product_id, benefits);
     }
   }
-  const feePromotionNames = applied
-    .filter((p) => p.membership_fee_benefits.some((b) => b.enabled && b.action && b.action !== 'no_benefit'))
-    .map((p) => p.promotion_name);
+  const feePromotions = applied
+    .filter((p) => p.membership_fee_benefits.some((b) => b.enabled && b.action && b.action !== 'no_benefit'));
+  // #2626 — the Membership Fee as one row of the shared Product grid. The
+  // Benefit column is the Personal Membership Fee Benefit (#772, the direct
+  // benefit agreed with this member); the Promotions touching the fee and their
+  // own frozen treatment fill the Promotion columns; the two prices are the
+  // VAT-inclusive fee and the one the billing engine resolves for this cycle.
+  const feeRow: ProductBenefitRow = {
+    product_id: 0,
+    quantity: 1,
+    product_name: t('fee_breakdown_fee'),
+    product_type: 'membership_fee',
+    product_billing_frequency: planBillingFrequencyOf(
+      snapshot.recurring_billing_interval, snapshot.recurring_billing_unit,
+    ),
+    product_status: 'active',
+    action: snapshot.personal_fee_benefit.action,
+    value: snapshot.personal_fee_benefit.value,
+    applied_tax_percent: feeTaxPercent,
+    applied_promotions: feePromotions.map((p) => p.promotion_name),
+    applied_promotion_benefits: feePromotions.flatMap((p) => p.membership_fee_benefits
+      .filter((b) => b.enabled && b.action && b.action !== 'no_benefit')
+      .map((b) => benefitTreatmentLabel(tp as any, 'promotion', { action: b.action, value: b.value } as any))),
+    direct_discount_line_incl_tax: null,
+    original_price_incl_tax: feeInclTax ?? (snapshot.membership_fee_price != null ? Number(snapshot.membership_fee_price) : null),
+    final_price_incl_tax: currentFee,
+    original_line_price_incl_tax: null,
+    final_line_price_incl_tax: null,
+  };
 
   // #2478 — every application (standing or spent) is drawn under the Product
   // line(s) it grants, or under the Membership Fee when it grants none of them;
@@ -537,43 +562,6 @@ export function AssignedPlanConfiguration({
       )}
       </CardSection>
 
-      {/* #2483 — the Membership Fee's own breakdown: what it costs, the tax,
-          the Promotions touching it, the direct benefit (kept apart from them)
-          and the price the billing engine resolves for the current cycle. */}
-      {editing == null && (
-        <CardSection label={t('section_fee_breakdown')}>
-          <CardDetailRow
-            label={t('fee_breakdown_fee')}
-            value={fmtMoney(feeInclTax ?? snapshot.membership_fee_price)}
-          />
-          <CardDetailRow
-            label={t('fee_breakdown_tax')}
-            value={feeTaxPercent != null ? `${feeTaxPercent}%` : '—'}
-          />
-          <CardDetailRow
-            label={t('fee_breakdown_promotion')}
-            value={feePromotionNames.length > 0 ? feePromotionNames.join(', ') : '—'}
-          />
-          {/* #2478 — the applications that grant none of the card's Products
-              (a Membership Fee Promotion) sit under the fee they act on. */}
-          {placement.unplaced.map((p) => (
-            <NestedPromotionRow
-              key={p.id}
-              promotion={p}
-              checkbox={promotionToggle.checkbox(p, toggleGate)}
-              onOpen={() => setPromotionDetail(p)}
-            />
-          ))}
-          <CardDetailRow
-            label={t('fee_breakdown_direct_benefit')}
-            value={snapshot.personal_fee_benefit.action === 'percentage_discount'
-              ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
-              : t('personal_fee_benefit_no_benefit')}
-          />
-          <CardDetailRow label={t('fee_breakdown_final')} value={currentFee != null ? fmtMoney(currentFee) : '—'} />
-        </CardSection>
-      )}
-
       {/* #772 — the Personal Membership Fee Benefit. Its own section, right
           under the fee it discounts: it is neither a Promotion benefit (it
           never expires) nor part of the frozen snapshot (it is agreed with
@@ -615,11 +603,30 @@ export function AssignedPlanConfiguration({
           <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
         </div>
       ) : (
-        <CardDetailRow
-          label={t('label_personal_fee_benefit')}
-          value={snapshot.personal_fee_benefit.action === 'percentage_discount'
-            ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
-            : t('personal_fee_benefit_no_benefit')}
+        /* #2626 — the Membership Fee is a product row of the same shared grid
+           the three Product sections render, so the breakdown #2483 drew as a
+           list of label/value rows reads in the same columns: the fee, the tax,
+           the Promotions touching it, the Personal Membership Fee Benefit in
+           the Benefit column and the price the engine resolves for the current
+           cycle. Every figure is the server's; nothing is priced here. */
+        <ProductBenefitView
+          t={(key, values) => t(key as any, values as any)}
+          emptyKey="no_oneoff_benefits"
+          rows={[feeRow]}
+          showFrequency
+          benefitContext="plan"
+          showPrices
+          showBreakdown
+          renderNestedRow={() => (placement.unplaced.length === 0 ? null : placement.unplaced.map((p) => (
+            /* #2478 — the applications that grant none of the card's Products
+               (a Membership Fee Promotion) sit under the fee they act on. */
+            <NestedPromotionRow
+              key={p.id}
+              promotion={p}
+              checkbox={promotionToggle.checkbox(p, toggleGate)}
+              onOpen={() => setPromotionDetail(p)}
+            />
+          )))}
         />
       )}
       </CardSection>
