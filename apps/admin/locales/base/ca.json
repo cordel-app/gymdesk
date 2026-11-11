@@ -4910,7 +4910,8 @@
     "one_per_member": "Un per membre",
     "sharing_type": "Tipus d'ús compartit",
     "sharing_individual": "Individual",
-    "sharing_shared": "Compartit"
+    "sharing_shared": "Familiar",
+    "sharing_family_required": "Un producte vinculat a un servei professional sempre és Familiar."
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descompte (%)",
@@ -5746,7 +5747,7 @@
     "one_per_member": "Un per membre",
     "sharing_type": "Tipus d'ús compartit",
     "sharing_individual": "Individual",
-    "sharing_shared": "Compartit",
+    "sharing_shared": "Familiar",
     "yes": "Sí",
     "no": "No",
     "delete_confirm": "Eliminar \"{name}\"? Els gimnasos creats a partir d'ara no el rebran; els Productes ja generats no es veuen afectats.",
