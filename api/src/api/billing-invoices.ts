@@ -16,8 +16,9 @@ import {
   formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
+import { anulacionRefusal } from '../domain/verifactuRecords';
 import {
-  loadInvoiceVerifactuQr, loadInvoiceVerifactuRecords, recordVerifactuAlta, recordVerifactuAnulacion,
+  enabledVerifactuIntegration, loadInvoiceVerifactuQr, loadInvoiceVerifactuRecords, recordVerifactuAlta, recordVerifactuAnulacion,
 } from './verifactu-records';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
 import {
@@ -161,9 +162,23 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
     // #2648 stage 5: each invoice's VERI*FACTU records (null when it has none),
     // kept apart from its payment status.
     const records = await loadInvoiceVerifactuRecords(db, gymId, rows.map((r: any) => r.id));
+    // Whether the Cancel record action is offered: `anulacionRefusal()`, the
+    // rule the route enforces, plus the route's own admin gate.
+    const integrationEnabled = (await enabledVerifactuIntegration(db, gymId)) != null;
+    const isAdmin = getTenantContext(req).role === 'admin';
+    const rectified = new Set(rows.filter((r: any) => r.related_invoice_id).map((r: any) => r.related_invoice_id));
     res.json({
       paid: ev.paid,
-      invoices: rows.map((r: any) => ({ ...r, verifactu: records.get(r.id) ?? null })),
+      invoices: rows.map((r: any) => {
+        const vf = records.get(r.id) ?? null;
+        const refusal = anulacionRefusal({
+          integrationEnabled,
+          alta: vf?.alta ? { submissionStatus: vf.alta.submission_status } : null,
+          hasAnulacion: !!vf?.anulacion,
+          isRectified: rectified.has(r.id),
+        });
+        return { ...r, verifactu: vf, can_cancel_verifactu: isAdmin && refusal == null };
+      }),
     });
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });

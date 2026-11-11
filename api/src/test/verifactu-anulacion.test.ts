@@ -96,6 +96,8 @@ describe('VERI*FACTU Anulación of an issued invoice', () => {
   it('writes one Anulación chained after the Alta, leaves the invoice as it was and reports both records', async () => {
     const { eventId, invoiceId } = await issue(gymA);
     const before = (await db.query<any>('SELECT * FROM invoices WHERE id = ?', [invoiceId])).rows[0];
+    const offered = await request.get(`/payments/billing-events/${eventId}/invoices`).set(auth(gymA));
+    expect(offered.body.invoices[0].can_cancel_verifactu).toBe(true);
 
     const r = await cancel(gymA, invoiceId);
     expect(r.status).toBe(201);
@@ -118,6 +120,7 @@ describe('VERI*FACTU Anulación of an issued invoice', () => {
     const inv = list.body.invoices[0];
     expect(inv.verifactu.alta.record_type).toBe('alta');
     expect(inv.verifactu.anulacion.record_type).toBe('anulacion');
+    expect(inv.can_cancel_verifactu).toBe(false);
     expect(JSON.stringify(list.body)).not.toMatch(/hash_input|request_xml|storage_reference/);
 
     const again = await cancel(gymA, invoiceId);
