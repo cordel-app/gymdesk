@@ -199,4 +199,7 @@ export const AUDITED_TABLES: readonly string[] = [
   'professional_service_consumptions',
   'staff_centers',
   'trainer_availability',
+  // #2647 stage 2 (migration 392)
+  'compliance_integrations',
+  'gym_tax_configs',
 ];
