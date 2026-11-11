@@ -50,7 +50,7 @@ async function assign(memberId: number, planId: number): Promise<number> {
 }
 async function setsOf(memberId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, version, status, user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY version', [memberId]);
+    'SELECT id, previous_product_set_id, status, user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY id', [memberId]);
   return rows;
 }
 async function um(id: number) {
@@ -91,7 +91,7 @@ describe('a committed assignment becomes a ProductSet version (#1325 PR 5)', () 
 
     const sets = await setsOf(memberId);
     expect(sets).toHaveLength(1);
-    expect(sets[0]).toMatchObject({ version: 1, status: 'active' });
+    expect(sets[0]).toMatchObject({ previous_product_set_id: null, status: 'active' });
     expect(Number(sets[0].user_membership_id)).toBe(umId);
     expect((await scheduled(sets[0].id)).length).toBeGreaterThan(0);
 
@@ -210,7 +210,8 @@ describe('an edit of a projected assignment is a new version (#1325 PR 5)', () =
     expect((await auth(request.post(`/user-memberships/${umId}/close`)).send({ confirm: true })).status).toBe(200);
 
     const { rows } = await db.query<any>('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].status).toBe('cancelled');
+    // #2659 stage 2: paid past today, so it cancels at its period end.
+    expect(rows[0].status).toBe('active_cancel_at_period_end');
     // Entitled past today (the cash payment covered the first period), and no
     // renewal is left to be generated or charged.
     expect((rows[0].ends_at instanceof Date ? rows[0].ends_at.toISOString() : String(rows[0].ends_at)).slice(0, 10) >= TODAY).toBe(true);
@@ -226,7 +227,8 @@ describe('an edit of a projected assignment is a new version (#1325 PR 5)', () =
     const [v1] = await setsOf(memberId);
     const res = await auth(request.post(`/user-memberships/${umId}/close`)).send({ confirm: true });
     expect(res.status).toBe(200);
-    expect((await um(umId)).status).toBe('cancelled');
+    // #2659 stage 2: the plan started today, so it runs through today first.
+    expect((await um(umId)).status).toBe('active_cancel_at_period_end');
     const sets = await setsOf(memberId);
     expect(sets.map((s: any) => s.status)).toEqual(['superseded', 'active']);
     const future = (await scheduled(v1.id)).filter((e: any) => e.billing_date > TODAY);

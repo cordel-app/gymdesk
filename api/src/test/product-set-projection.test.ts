@@ -50,7 +50,7 @@ async function assignments(owner: number) {
     `SELECT um.id, um.status, um.membership_plan_id,
             (SELECT s.membership_fee_price FROM product_sets ps
                JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-              WHERE ps.user_membership_id = um.id ORDER BY ps.version DESC, ps.id DESC LIMIT 1) AS membership_fee_price
+              WHERE ps.user_membership_id = um.id ORDER BY ps.id DESC LIMIT 1) AS membership_fee_price
        FROM user_memberships um WHERE um.member_id = ? ORDER BY um.id`, [owner]);
   return rows;
 }
@@ -103,7 +103,8 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     await commit(owner, await plan(30), 30);
     await commit(owner, null);
     const rows = await assignments(owner);
-    expect(rows.map((r: any) => r.status)).toEqual(['cancelled']);
+    // #2659 stage 2: a plan whose end date is today or later cancels at its period end.
+    expect(rows.map((r: any) => r.status)).toEqual(['active_cancel_at_period_end']);
 
     const lockerOnly = await member();
     await commit(lockerOnly, null);

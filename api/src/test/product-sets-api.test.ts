@@ -168,7 +168,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     await auth(request.post(`/product-sets/${v1.body.id}/activate`)).send({});
     const v2 = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: free, starts_at: TODAY });
     expect(v2.status).toBe(201);
-    expect(v2.body.version).toBe(2);
+    expect(v2.body.previous_product_set_id).toBe(v1.body.id);
     const del = await auth(request.delete(`/product-sets/${v2.body.id}`));
     expect(del.status).toBe(204);
     const list = await auth(request.get(`/product-sets?member_id=${memberId}`));
@@ -261,7 +261,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     await auth(request.post(`/product-sets/${v1.body.id}/activate`)).send({});
     const v2 = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: free, starts_at: TODAY });
     expect(v2.status).toBe(201);
-    expect(v2.body.version).toBe(2);
+    expect(v2.body.previous_product_set_id).toBe(v1.body.id);
   });
 });
 

@@ -128,7 +128,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // beside `plans` for the Member card to show and act on. A Draft idle past two
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_by,
+    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             CASE WHEN ps.status = 'draft'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
@@ -149,7 +149,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // creates a Billing Event. `ends_at` is the plan's end date of the assignment
   // the version projects (null while open-ended or never projected).
   const { rows: setRows } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_at, ps.created_by,
+    `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             CASE WHEN ps.status = 'draft'
@@ -165,7 +165,6 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const summary = (r: any) => ({
     id: Number(r.id),
     status: String(r.status),
-    version: Number(r.version),
     plan_name: r.plan_name ?? null,
     // #1490 — the Membership Plan's own status, distinct from the version's.
     plan_status: r.plan_status ?? null,
@@ -189,7 +188,6 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     product_sets: inFlight.map((r: any) => ({
       id: Number(r.id),
       status: String(r.status),
-      version: Number(r.version),
       plan_name: r.plan_name ?? null,
       starts_at: toDateOnly(r.starts_at),
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,

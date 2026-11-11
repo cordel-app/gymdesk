@@ -34,3 +34,33 @@ export const CANCELLED_ASSIGNMENT_STATUSES_SQL = CANCELLED_ASSIGNMENT_STATUSES.m
 export function isCancelledAssignmentStatus(status: unknown): boolean {
   return (CANCELLED_ASSIGNMENT_STATUSES as readonly unknown[]).includes(status);
 }
+
+/**
+ * #2659 stage 2: the status a member's cancellation writes. A plan whose last
+ * paid day (`ends_at`, #1196's `cancellationEndDate()`) is today or later keeps
+ * running to it as `active_cancel_at_period_end`; one with nothing left to run
+ * is `cancelled` at once. Dates are `YYYY-MM-DD` (UTC), compared as strings.
+ */
+export function cancellationStatusFor(endsAt: string | null, today: string): 'active_cancel_at_period_end' | 'cancelled' {
+  return endsAt != null && endsAt >= today ? CANCELS_AT_PERIOD_END_STATUS : 'cancelled';
+}
+
+/**
+ * #2659 stage 2: "this assignment entitles its beneficiaries today" for the
+ * access readers (center access, class-type access, the access-locked flag): an
+ * `active` plan, or one that cancels at its period end and has not reached it.
+ * The day-granular check keeps the answer right between `ends_at` passing and
+ * the nightly sweep moving the row to `cancelled`.
+ */
+export function entitledAssignmentSql(alias = 'um'): string {
+  return `(${alias}.status = 'active' OR (${alias}.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND ${alias}.ends_at >= UTC_DATE()))`;
+}
+
+/**
+ * #2659 stage 2: what the end-of-period sweep moves to `cancelled` — a plan
+ * cancelling at its period end whose last entitled day has passed. Idempotent
+ * by construction: a moved row no longer matches.
+ */
+export function cancelAtPeriodEndDueSql(alias = 'um'): string {
+  return `${alias}.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND ${alias}.ends_at IS NOT NULL AND ${alias}.ends_at < UTC_DATE()`;
+}

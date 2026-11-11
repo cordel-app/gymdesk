@@ -9,8 +9,8 @@ import {
 // #1463 — the Products tab's pure ProductSet presentation.
 describe('productSetView (#1463)', () => {
   it('derives the name from the plan and version, never a stored name', () => {
-    expect(productSetName({ plan_name: 'Gold', version: 3 }, 'Products only')).toBe('Gold — v3');
-    expect(productSetName({ plan_name: null, version: 1 }, 'Products only')).toBe('Products only — v1');
+    expect(productSetName({ plan_name: 'Gold', id: 3 }, 'Products only')).toBe('Gold — #3');
+    expect(productSetName({ plan_name: null, id: 1 }, 'Products only')).toBe('Products only — #1');
   });
 
   it('maps statuses to keys, an expired draft included', () => {
