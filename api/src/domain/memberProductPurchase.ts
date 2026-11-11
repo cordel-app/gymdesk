@@ -124,6 +124,14 @@ export function productPurchaseBlock(
   return null;
 }
 
+/**
+ * #2496 stage 3 — a recurring Product is the member's to add to their Draft
+ * Product Set. The one rule both the catalogue flag and the member writer read.
+ */
+export function isDraftAddable(product: Pick<PurchasableProduct, 'billing_frequency'>): boolean {
+  return isRecurringFrequency(product.billing_frequency);
+}
+
 /** Whether a member may start a purchase of this Product. */
 export function isPurchasable(
   product: PurchasableProduct, pendingPurchase = false,
@@ -153,6 +161,14 @@ export interface ProductPurchaseFields {
   purchase_state: ProductPurchaseState;
   /** Whether the Buy action exists at all for this member (§6, #1073). */
   purchasable: boolean;
+  /**
+   * #2496 stage 3 — whether the Product is added to the member's Draft Product
+   * Set instead of bought on its own: a recurring Product, by the very
+   * `isRecurringFrequency()` rule that refuses it a Buy (`recurring_not_supported`)
+   * and that `POST /me/product-sets/:id/services` adds it by. A one-time Product
+   * stays outside Product Sets (#2126) and keeps its Buy.
+   */
+  addable_to_draft: boolean;
 }
 
 /**
@@ -172,6 +188,7 @@ export function describeProductPurchase(
   return {
     purchase_state,
     purchasable: isPurchasable(product, purchase_state === 'pending_payment'),
+    addable_to_draft: isDraftAddable(product),
   };
 }
 

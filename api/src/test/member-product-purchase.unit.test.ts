@@ -159,16 +159,24 @@ describe('what state a purchase is in (#1121 §6)', () => {
   // months later is a real purchase.
   it('a pending purchase takes the Buy action away; a held Product can be bought again (#1864)', () => {
     expect(describeProductPurchase(item(), ['pending_payment']))
-      .toEqual({ purchase_state: 'pending_payment', purchasable: false });
+      .toEqual({ purchase_state: 'pending_payment', purchasable: false, addable_to_draft: false });
     // #1864 restores #1121's "a second package is a real purchase".
     expect(describeProductPurchase(item(), ['active']))
-      .toEqual({ purchase_state: 'purchased', purchasable: true });
+      .toEqual({ purchase_state: 'purchased', purchasable: true, addable_to_draft: false });
     expect(describeProductPurchase(item(), []))
-      .toEqual({ purchase_state: 'available', purchasable: true });
+      .toEqual({ purchase_state: 'available', purchasable: true, addable_to_draft: false });
   });
 
   it('a recurring Product is not purchasable in any state', () => {
     expect(describeProductPurchase(item({ billing_frequency: 'month' }), []).purchasable).toBe(false);
+  });
+
+  // #2496 stage 3 — the complement of the Buy rule: a recurring Product is
+  // added to the member's Draft Product Set, a one-time one never is.
+  it('a recurring Product is addable to the Draft, a one-time one is not', () => {
+    expect(describeProductPurchase(item({ billing_frequency: 'month' }), []).addable_to_draft).toBe(true);
+    expect(describeProductPurchase(item({ billing_frequency: 'four_weeks' }), []).addable_to_draft).toBe(true);
+    expect(describeProductPurchase(item({ billing_frequency: 'once' }), []).addable_to_draft).toBe(false);
   });
 });
 

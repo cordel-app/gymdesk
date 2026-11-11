@@ -91,6 +91,13 @@ import {
   assigneePayload,
   ownPurchaseAssigneeName,
   showsAssigneeChoice,
+  type MemberSetRow,
+  type MemberSetView,
+  currentSetId,
+  draftAddedCount,
+  draftErrorKey,
+  draftMinutesLeft,
+  draftProductState,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -267,6 +274,14 @@ export default function MembershipPage() {
    */
   const [appliedPromotions, setAppliedPromotions] = useState<Record<number, number>>({});
 
+  // #2496 stage 3 — the member's current version (their Draft, else their
+  // Active one) as the server reads it, the Product an Add/Remove is in flight
+  // for, and the refusal of the last one (keyed by Product). Every figure and
+  // every rule stays the server's; this is which card says what.
+  const [setView, setSetView] = useState<MemberSetView | null>(null);
+  const [draftBusy, setDraftBusy] = useState<number | null>(null);
+  const [draftError, setDraftError] = useState<{ productId: number | null; key: string } | null>(null);
+
   // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
   // the Promotion applied per plan is page state (its snapshot is written by
   // the assignment itself, §5/§6), and the plan awaiting its first payment is
@@ -351,6 +366,72 @@ export default function MembershipPage() {
     })();
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags, reloadKey]);
+
+  // #2496 stage 3 — read with the page and after every Draft edit.
+  async function loadSetView() {
+    try {
+      const rows = await apiFetch<MemberSetRow[]>('/me/product-sets');
+      const id = currentSetId(rows);
+      setSetView(id == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${id}`));
+    } catch {
+      // No version to read: every recurring card offers Add, and the server
+      // still judges the add itself.
+      setSetView(null);
+    }
+  }
+
+  useEffect(() => {
+    if (appLoading || !isLinked) return;
+    loadSetView();
+  }, [appLoading, isLinked, reloadKey]);
+
+  /** Adds a recurring Product to the member's Draft, creating it if there is none. */
+  async function addToDraft(product: MemberProduct) {
+    setDraftBusy(product.id);
+    setDraftError(null);
+    try {
+      const draft = await apiFetch<{ id: number }>('/me/product-sets/draft', { method: 'POST' });
+      // The Product alone: the price, the start date and the Promotions are the
+      // Draft writer's, exactly as in the Admin.
+      await apiFetch(`/me/product-sets/${draft.id}/services`, {
+        method: 'POST', body: JSON.stringify({ product_id: product.id }),
+      });
+    } catch (err: any) {
+      setDraftError({ productId: product.id, key: draftErrorKey(err?.message) });
+    } finally {
+      await loadSetView();
+      setDraftBusy(null);
+    }
+  }
+
+  async function removeFromDraft(product: MemberProduct, lineId: number) {
+    if (!setView) return;
+    setDraftBusy(product.id);
+    setDraftError(null);
+    try {
+      await apiFetch(`/me/product-sets/${setView.id}/services/${lineId}`, { method: 'DELETE' });
+    } catch (err: any) {
+      setDraftError({ productId: product.id, key: draftErrorKey(err?.message) });
+    } finally {
+      await loadSetView();
+      setDraftBusy(null);
+    }
+  }
+
+  /** Discards the whole selection: the member's unpaid Draft, through its own route. */
+  async function discardDraft() {
+    if (!setView || setView.status !== 'draft') return;
+    setDraftBusy(-1);
+    setDraftError(null);
+    try {
+      await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+    } catch (err: any) {
+      setDraftError({ productId: null, key: draftErrorKey(err?.message) });
+    } finally {
+      await loadSetView();
+      setDraftBusy(null);
+    }
+  }
 
   const pendingRequest = paymentRequests
     .find(r => r.status === 'pending' && isMembershipFeeRequest(r.source)) ?? null;
@@ -562,8 +643,38 @@ export default function MembershipPage() {
         title={t('membership.products_heading')}
         emptyLabel={t('membership.products_empty')}
         items={productCardItems(products)}
+        roundImages
       />
+      {renderDraftSelection()}
       </>
+    );
+  }
+
+  /**
+   * #2496 stage 3 — what the member has added to their Draft so far and how
+   * long it is kept, with a way to discard it. The count and the countdown are
+   * the server's (`GET /me/product-sets/:id`).
+   */
+  function renderDraftSelection() {
+    const count = draftAddedCount(setView);
+    const generalError = draftError && draftError.productId === null ? draftError.key : null;
+    if (count === 0 && !generalError) return null;
+    const minutes = draftMinutesLeft(setView);
+    return (
+      <div style={{ ...noticeStyle('info'), marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+        {count > 0 && (
+          <span style={{ flex: '1 1 200px', fontSize: 13.5 }}>
+            {t('membership.draft_selection_count', { count })}
+            {minutes != null && <> {t('membership.draft_selection_expires', { minutes })}</>}
+          </span>
+        )}
+        {count > 0 && (
+          <button type="button" style={styles.draftSecondaryBtn} disabled={draftBusy !== null} onClick={discardDraft}>
+            {t('membership.draft_discard')}
+          </button>
+        )}
+        {generalError && <span role="alert" style={styles.draftError}>{t(generalError as any)}</span>}
+      </div>
     );
   }
 
@@ -784,6 +895,9 @@ export default function MembershipPage() {
    * app's one map (#983).
    */
   function productAction(product: MemberProduct) {
+    // #2496 stage 3 — a recurring Product is added to the member's Draft
+    // Product Set, never bought on its own (the server's `addable_to_draft`).
+    if (product.addable_to_draft) return draftAction(product);
     if (showsBuyAction(product)) {
       return (
         <button
@@ -799,6 +913,38 @@ export default function MembershipPage() {
     const statusWord = purchaseStateStatusWord(product.purchase_state);
     if (!stateKey || !statusWord) return null;
     return <StatusPill status={statusWord} label={t(stateKey as any)} />;
+  }
+
+  /** Add, or the line it already is: Remove for one this Draft added, a pill for one held. */
+  function draftAction(product: MemberProduct) {
+    const placed = draftProductState(product, setView);
+    const busy = draftBusy !== null;
+    const error = draftError?.productId === product.id ? draftError.key : null;
+    let control: React.ReactNode;
+    if (placed.state === 'added') {
+      control = (
+        <>
+          <StatusPill status="pending" label={t('membership.product_in_draft')} />
+          <button type="button" style={styles.draftSecondaryBtn} disabled={busy} onClick={() => removeFromDraft(product, placed.lineId)}>
+            {t('membership.product_remove_from_draft')}
+          </button>
+        </>
+      );
+    } else if (placed.state === 'held') {
+      control = <StatusPill status="active" label={t('membership.product_state_held')} />;
+    } else {
+      control = (
+        <button type="button" style={styles.buyBtn} disabled={busy} onClick={() => addToDraft(product)}>
+          {draftBusy === product.id ? t('membership.product_adding') : t('membership.product_add_to_draft')}
+        </button>
+      );
+    }
+    return (
+      <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+        {control}
+        {error && <span role="alert" style={{ ...styles.draftError, flexBasis: '100%', textAlign: 'right' }}>{t(error as any)}</span>}
+      </span>
+    );
   }
 
   function openPurchase(product: MemberProduct) {
@@ -1611,6 +1757,8 @@ const styles: Record<string, React.CSSProperties> = {
   // #1121 stage 2 — the Buy action and the purchase dialog's own pair. Both
   // spread `memberChrome`'s buttons; neither spells a colour (#983).
   buyBtn: { ...primaryButtonStyle, padding: '8px 18px', fontSize: 13.5, fontWeight: 600 },
+  draftSecondaryBtn: { ...secondaryButtonStyle, padding: '8px 14px', fontSize: 13.5, fontWeight: 600 },
+  draftError: { fontSize: 12.5, color: memberTheme.statusError },
   // #1118 §4/§17 — *Apply promotion* is an obvious action but a secondary one:
   // Buy is the card's primary, and two filled buttons on one card compete. Both
   // come from `memberChrome.ts`, so neither spells a colour (#983).
