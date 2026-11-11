@@ -21,7 +21,11 @@ import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
   ProductCardHeader, ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
 } from '@/components/products/ProductListChrome';
-import { ProductLayout, productValueStyle, productTextareaStyle, productCheckboxCellStyle } from '../../financials/products/ProductLayout';
+import {
+  ProductLayout, productValueStyle, productTextareaStyle, productCheckboxCellStyle,
+  productFlagsColumnStyle, YesNoToggle,
+} from '../../financials/products/ProductLayout';
+import { ProductFlagRow } from '../../financials/products/ProductFlagRow';
 import {
   EMPTY_VALUE, visibleProductSections, type VisibleProductField,
 } from '../../financials/products/productProfile';
@@ -366,45 +370,50 @@ export default function BaseProductsPage() {
 
   /** The base-only fields (not on a gym Product), in the template's own section. */
   const extras = (f: Form | null, p: BaseProduct | null) => {
-    // #2607: the four flags sit one below the other, in this order.
-    const rowStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' };
-    const cell: React.CSSProperties = { flex: '1 1 200px', minWidth: 0 };
+    // #2623: the same settings group Gym Products draws — each flag on one row (label left,
+    // toggle right, `ProductFlagRow`), then Sharing Type under its own label.
     return (
-      <div style={{ ...rowStyle, marginTop: 12 }}>
-        <div style={cell}>
-          <label style={formFieldLabelStyle}>{tp('label_mandatory')}</label>
+      <div style={{ ...productFlagsColumnStyle, marginTop: 12 }}>
+        <ProductFlagRow label={tp('label_mandatory')}>
           {f ? (
-            <label style={productCheckboxCellStyle}>
-              <input type="checkbox" checked={f.mandatory} onChange={(e) => set('mandatory', e.target.checked)} />
-              {f.mandatory ? tp('yes') : tp('no')}
-            </label>
+            <YesNoToggle
+              checked={f.mandatory}
+              onChange={(v) => set('mandatory', v)}
+              yesLabel={tp('yes')}
+              noLabel={tp('no')}
+              ariaLabel={tp('label_mandatory')}
+            />
           ) : (
             <div style={productValueStyle}>{p?.mandatory ? tp('yes') : tp('no')}</div>
           )}
-        </div>
-        <div style={cell}>
-          <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+        </ProductFlagRow>
+        <ProductFlagRow label={t('one_time_purchase')}>
           {f ? (
-            <label style={productCheckboxCellStyle}>
-              <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
-              {f.one_time_purchase ? tp('yes') : tp('no')}
-            </label>
+            <YesNoToggle
+              checked={f.one_time_purchase}
+              onChange={(v) => set('one_time_purchase', v)}
+              yesLabel={tp('yes')}
+              noLabel={tp('no')}
+              ariaLabel={t('one_time_purchase')}
+            />
           ) : (
             <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
           )}
-        </div>
-        <div style={cell}>
-          <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+        </ProductFlagRow>
+        <ProductFlagRow label={t('one_per_member')}>
           {f ? (
-            <label style={productCheckboxCellStyle}>
-              <input type="checkbox" checked={f.one_per_member} onChange={(e) => set('one_per_member', e.target.checked)} />
-              {f.one_per_member ? tp('yes') : tp('no')}
-            </label>
+            <YesNoToggle
+              checked={f.one_per_member}
+              onChange={(v) => set('one_per_member', v)}
+              yesLabel={tp('yes')}
+              noLabel={tp('no')}
+              ariaLabel={t('one_per_member')}
+            />
           ) : (
             <div style={productValueStyle}>{p?.one_per_member ? tp('yes') : tp('no')}</div>
           )}
-        </div>
-        <div style={cell}>
+        </ProductFlagRow>
+        <div>
           <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
           {f ? (
             <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>

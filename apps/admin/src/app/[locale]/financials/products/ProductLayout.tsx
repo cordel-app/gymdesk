@@ -176,5 +176,13 @@ export function YesNoToggle({
   );
 }
 
-/** #2606: Mandatory, One-time Purchase and Sharing Type, one below the other, in that order. */
-export const productFlagsColumnStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12 };
+/**
+ * #2606/#2623: the product settings group — Mandatory, One-time Purchase and
+ * One per Member as `ProductFlagRow`s, then Sharing Type under its own label —
+ * one below the other, in that order. Bounded so the toggles' shared right edge
+ * stays near their labels on a wide card instead of drifting to the far side.
+ */
+export const productFlagsColumnStyle: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 480,
+};
+
