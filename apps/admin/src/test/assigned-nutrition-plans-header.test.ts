@@ -81,7 +81,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     );
     // …and the Member is what `Q1` keeps on a phone beside the plan's own name,
     // because this list is member-related.
-    expect(pageSrc).toMatch(/key: 'member', width: \d+, grow: \d+, mobile: 'keep'/);
+    expect(pageSrc).toMatch(/key: 'member', (labelKey: 'col_member', )?width: \d+, grow: \d+, mobile: 'keep'/);
     // One typography declaration, spread by both cells, so they cannot drift.
     expect(pageSrc).toMatch(/const headerTitleStyle: React\.CSSProperties = \{ fontWeight: 600, fontSize: 15 \};/);
     for (const cell of ['nameCellStyle', 'memberCellStyle']) {
