@@ -86,7 +86,10 @@ async function issueInvoice(
   await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
   const year = new Date().getUTCFullYear();
   const { rows } = await tx.query<any>(
-    'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND invoice_type = ? AND fiscal_year = ? AND related_invoice_id IS NULL',
+    // A locking read: a plain SELECT would read the transaction's snapshot, taken
+    // before the gym lock was granted, and two concurrent issues would both spend
+    // the same number (#2648 stage 2 found it).
+    'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND invoice_type = ? AND fiscal_year = ? AND related_invoice_id IS NULL FOR SHARE',
     [gymId, type, year]);
   const seq = rows.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
   const { insertId } = await tx.query(
@@ -253,7 +256,7 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
       await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
       const year = new Date().getUTCFullYear();
       const { rows: nums } = await tx.query<any>(
-        'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND fiscal_year = ? AND related_invoice_id IS NOT NULL', [gymId, year]);
+        'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND fiscal_year = ? AND related_invoice_id IS NOT NULL FOR SHARE', [gymId, year]);
       const seq = nums.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
       const { insertId } = await tx.query(
         `INSERT INTO invoices (gym_id, billing_event_id, invoice_type, status, fiscal_number, fiscal_year,
