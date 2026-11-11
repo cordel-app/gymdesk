@@ -118,6 +118,16 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   applied_tax_percent: number | null;
   /** #2483 — what the line's own treatment took off the line total, VAT included. */
   direct_discount_line_incl_tax: number | null;
+  /**
+   * #2478 — the Product's image URLs (the master and its 256 px thumbnail) and
+   * its description, read from the live Product for display only: the
+   * snapshot froze what was agreed (price, treatment), never an illustration.
+   * `null` when the Product has none or no longer exists. URLs only — the
+   * browser downloads the image itself.
+   */
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+  description: string | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -187,7 +197,10 @@ const CATEGORIES: ProductBenefitCategory[] = ['session', 'oneoff', 'periodical']
  */
 function selectSnapshotSection(table: string): string {
   return `SELECT b.*, gc.tax_behavior AS product_tax_behavior,
-                 tr.rate_percent AS product_tax_rate_percent
+                 tr.rate_percent AS product_tax_rate_percent,
+                 gc.image_url AS product_image_url,
+                 gc.image_thumbnail_url AS product_image_thumbnail_url,
+                 gc.description AS product_description
           FROM ${table} b
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
@@ -244,6 +257,9 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
       prices.original_line_price_incl_tax != null && prices.final_line_price_incl_tax != null
         ? Math.round((prices.original_line_price_incl_tax - prices.final_line_price_incl_tax) * 100) / 100
         : null,
+    image_url: row.product_image_url ?? null,
+    image_thumbnail_url: row.product_image_thumbnail_url ?? row.product_image_url ?? null,
+    description: row.product_description ?? null,
   };
 }
 
