@@ -63,6 +63,8 @@ describe('/members/:memberId/progress (#1231)', () => {
     const detail = await staff(request.get(`/members/${memberId}/progress/exercises/${exerciseId}`)).expect(200);
     expect(detail.body.readings.map((r: any) => r.id)).toEqual([logIds[1], logIds[0]]);
     expect(detail.body.days).toHaveLength(2);
+    // #2628 — the exercise records weight only, so the edit form offers weight only.
+    expect(detail.body.recorded_fields).toEqual(['weight']);
   });
 
   it('edits value and notes, never the date, and recalculates', async () => {

@@ -17,7 +17,7 @@ import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { ProgressExerciseDetailsModal } from './ProgressExerciseDetailsModal';
 import { ExerciseInfoModal } from '@/components/exercises/ExerciseInfoModal';
 import {
-  addReadingPayload, combinedChartSeries, dayFlagLines, focusChartSeries, toggleFocus, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingPayload, resultUnitKey,
+  addReadingFieldsOf, addReadingPayload, combinedChartSeries, dayFlagLines, focusChartSeries, toggleFocus, draftFromReading, formatValue, groupReadingsByDate, metricLabelKey, progressChartPoints, readingChartX, readingFieldsOf, readingPayload, resultUnitKey,
   type AddReadingDraft, type ProgressDetail, type ProgressReading, type ProgressSummary, type ReadingDraft,
 } from './progressView';
 
@@ -202,6 +202,9 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   ), [detail, gym, t]);
   const shownSeries = useMemo(() => focusChartSeries(chartSeries, focusId), [chartSeries, focusId]);
   if (!detail) return null;
+  // #2628 — the forms offer only what this exercise is configured to record.
+  const fields = readingFieldsOf(detail);
+  const addFields = addReadingFieldsOf(fields);
 
   async function addReading() {
     const payload = adding ? addReadingPayload(adding) : null;
@@ -215,7 +218,7 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
   }
 
   async function save(r: ProgressReading) {
-    const payload = draft ? readingPayload(draft) : null;
+    const payload = draft ? readingPayload(draft, fields) : null;
     if (!payload) { setError(t('members.progress_invalid')); return; }
     setBusy(true); setError(null);
     try {
@@ -255,17 +258,23 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
     if (editing) {
       return (
         <div key={r.id} style={{ ...wrap, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          {draft.sets.map((s, i) => (
+          {(fields.includes('weight') || fields.includes('repetitions')) && draft.sets.map((s, i) => (
             <span key={s.id} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <span>{t('members.progress_set', { n: r.sets[i].set_number })}</span>
-              <input aria-label={t('members.progress_weight')} style={input} value={s.weight} inputMode="decimal"
-                onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, weight: e.target.value } : x)) })} />
-              <input aria-label={t('members.progress_reps')} style={input} value={s.reps} inputMode="numeric"
-                onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, reps: e.target.value } : x)) })} />
+              {fields.includes('weight') && (
+                <input aria-label={t('members.progress_weight')} placeholder={t('members.progress_weight')} style={input} value={s.weight} inputMode="decimal"
+                  onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, weight: e.target.value } : x)) })} />
+              )}
+              {fields.includes('repetitions') && (
+                <input aria-label={t('members.progress_reps')} placeholder={t('members.progress_reps')} style={input} value={s.reps} inputMode="numeric"
+                  onChange={(e) => setDraft({ ...draft, sets: draft.sets.map((x) => (x.id === s.id ? { ...x, reps: e.target.value } : x)) })} />
+              )}
             </span>
           ))}
-          <input aria-label={t('members.progress_duration')} style={input} value={draft.duration} inputMode="numeric"
-            onChange={(e) => setDraft({ ...draft, duration: e.target.value })} />
+          {fields.includes('duration') && (
+            <input aria-label={t('members.progress_duration')} placeholder={t('members.progress_duration')} style={input} value={draft.duration} inputMode="numeric"
+              onChange={(e) => setDraft({ ...draft, duration: e.target.value })} />
+          )}
           <input aria-label={t('members.progress_notes')} style={{ ...formControlStyle, flex: '1 1 160px' }} value={draft.notes}
             onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
           <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={() => save(r)}>{t('members.progress_save')}</button>
@@ -343,10 +352,14 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <input type="date" aria-label={t('members.progress_col_date')} style={{ ...formControlStyle, width: 150 }} value={adding.date}
               max={new Date().toISOString().slice(0, 10)} onChange={(e) => setAdding({ ...adding, date: e.target.value })} />
-            <input aria-label={t('members.progress_reps')} placeholder={t('members.progress_reps')} style={input} value={adding.reps} inputMode="numeric"
-              onChange={(e) => setAdding({ ...adding, reps: e.target.value })} />
-            <input aria-label={t('members.progress_weight')} placeholder={t('members.progress_weight')} style={input} value={adding.weight} inputMode="decimal"
-              onChange={(e) => setAdding({ ...adding, weight: e.target.value })} />
+            {addFields.includes('weight') && (
+              <input aria-label={t('members.progress_weight')} placeholder={t('members.progress_weight')} style={input} value={adding.weight} inputMode="decimal"
+                onChange={(e) => setAdding({ ...adding, weight: e.target.value })} />
+            )}
+            {addFields.includes('repetitions') && (
+              <input aria-label={t('members.progress_reps')} placeholder={t('members.progress_reps')} style={input} value={adding.reps} inputMode="numeric"
+                onChange={(e) => setAdding({ ...adding, reps: e.target.value })} />
+            )}
             <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={addReading}>{t('members.progress_save')}</button>
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => { setAdding(null); setError(null); }}>{t('members.progress_cancel')}</button>
           </div>
