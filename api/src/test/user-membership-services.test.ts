@@ -10,6 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -675,6 +676,14 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     // Move the stamped removal date into the past, as it would be the day after.
     await legacyChildQuery(
       'UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE user_membership_id = ?', [dayOffset(-1), umId]);
+    // #2126 stage 3i: the list reads the Product snapshot tables, so a fixture that
+    // writes the legacy line re-derives its version's snapshots as a writer would.
+    const { rows: lines } = await db.query<any>(
+      `SELECT DISTINCT product_set_id FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND ends_at = ?`, [gymId, dayOffset(-1)]);
+    for (const line of lines) {
+      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, line.product_set_id));
+    }
 
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(1);
