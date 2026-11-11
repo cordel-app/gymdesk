@@ -3,7 +3,7 @@
 // writer (`api/verifactu-records.ts`) reads the invoice, the gym and the
 // chain's last record under the gym-row lock and hands them here.
 import {
-  altaHash, altaHashString, dateInZone, verifactuAmount, verifactuDate, verifactuInvoiceKind,
+  altaHash, altaHashString, anulacionHash, anulacionHashString, dateInZone, verifactuAmount, verifactuDate, verifactuInvoiceKind,
   verifactuTimestamp, type VerifactuInvoiceKind,
 } from './verifactu';
 import type { InvoiceType } from './billingDocumentKeys';
@@ -91,4 +91,102 @@ export function buildAltaRecord(i: AltaRecordInput): AltaRecord {
     hashInput: altaHashString(hashFields),
     recordHash: altaHash(hashFields),
   };
+}
+
+// ---------------------------------------------------------------------------
+// #2648 stage 5 — Registro de Anulación.
+
+export interface AnulacionRecordInput {
+  /** The Alta record of the invoice being cancelled, as stored. */
+  alta: { issuerNif: string; invoiceNumber: string; invoiceIssueDate: string };
+  timeZone: string;
+  previous: { id: number; seq: number; hash: string } | null;
+  now: Date;
+}
+
+export interface AnulacionRecord {
+  chainSeq: number;
+  issuerNif: string;
+  invoiceNumber: string;
+  invoiceIssueDate: string;
+  previousRecordId: number | null;
+  previousRecordHash: string | null;
+  generatedAt: string;
+  hashInput: string;
+  recordHash: string;
+}
+
+/**
+ * The Anulación record of an invoice, chained after `previous`. It names the
+ * invoice exactly as its Alta informed it (the stored issuer NIF, number and
+ * `dd-mm-yyyy` date), never re-derived from the invoice row, so AEAT matches the
+ * cancellation to the record it holds.
+ */
+export function buildAnulacionRecord(i: AnulacionRecordInput): AnulacionRecord {
+  const hashFields = {
+    issuerNif: i.alta.issuerNif,
+    invoiceNumber: i.alta.invoiceNumber,
+    issueDate: i.alta.invoiceIssueDate,
+    previousHash: i.previous?.hash ?? null,
+    generatedAt: verifactuTimestamp(i.now, i.timeZone),
+  };
+  return {
+    chainSeq: (i.previous?.seq ?? 0) + 1,
+    issuerNif: hashFields.issuerNif,
+    invoiceNumber: hashFields.invoiceNumber,
+    invoiceIssueDate: hashFields.issueDate,
+    previousRecordId: i.previous?.id ?? null,
+    previousRecordHash: hashFields.previousHash,
+    generatedAt: hashFields.generatedAt,
+    hashInput: anulacionHashString(hashFields),
+    recordHash: anulacionHash(hashFields),
+  };
+}
+
+/** Why an Anulación may not be generated for an invoice; null when it may. */
+export type AnulacionRefusal =
+  | 'verifactu_disabled' | 'verifactu_no_alta' | 'verifactu_already_cancelled'
+  | 'verifactu_alta_rejected' | 'verifactu_invoice_rectified';
+
+/**
+ * The one rule deciding whether an invoice's VERI*FACTU record may be
+ * cancelled (Registro de Anulación). It never touches the invoice itself:
+ *  - the gym's VeriFactu integration must be enabled (a record no pass can send
+ *    is not generated);
+ *  - the invoice must have an Alta record (VeriFactu was on when it was issued);
+ *  - at most one Anulación per invoice;
+ *  - an Alta AEAT rejected was never registered, so there is nothing to cancel;
+ *  - an invoice already rectified is corrected by its rectifying invoice, and
+ *    cancelling its record too would leave AEAT with a rectification of a
+ *    cancelled record: the two workflows stay separate.
+ */
+export function anulacionRefusal(s: {
+  integrationEnabled: boolean;
+  alta: { submissionStatus: string } | null;
+  hasAnulacion: boolean;
+  isRectified: boolean;
+}): AnulacionRefusal | null {
+  if (!s.integrationEnabled) return 'verifactu_disabled';
+  if (!s.alta) return 'verifactu_no_alta';
+  if (s.hasAnulacion) return 'verifactu_already_cancelled';
+  if (s.alta.submissionStatus === 'rejected') return 'verifactu_alta_rejected';
+  if (s.isRectified) return 'verifactu_invoice_rectified';
+  return null;
+}
+
+/** The fiscal record view one invoice row reports (`GET /billing-events/:id/invoices`). */
+export interface VerifactuRecordView {
+  id: number;
+  record_type: 'alta' | 'anulacion';
+  chain_seq: number;
+  submission_status: VerifactuSubmissionStatus;
+  submission_attempts: number;
+  last_submission_at: string | null;
+  next_attempt_at: string | null;
+  accepted_at: string | null;
+  aeat_response_code: string | null;
+  aeat_response_description: string | null;
+  aeat_csv: string | null;
+  record_hash: string;
+  created_at: string;
 }
