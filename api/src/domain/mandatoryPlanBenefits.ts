@@ -183,6 +183,11 @@ export interface PlanBenefitWrite {
    */
   frequency?: SessionBenefitFrequency | null;
   /**
+   * #2490 stage 3 — the line's Direct Discount (%) the request named, with the
+   * same encoding: absent keeps what is stored, `null` clears it.
+   */
+  direct_discount_percent?: number | null;
+  /**
    * #1184 stage 2 — the line's own Mandatory Yes/No. Absent means the request
    * named none and the line keeps what it is stored with; a mandatory *Product*
    * re-added below carries none either, so preserving it never changes it.

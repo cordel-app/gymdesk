@@ -93,10 +93,10 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
     await tx.query(
       `INSERT INTO ${t.snapshot}
          (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency,
-          unit_price, currency, \`action\`, \`value\`, mandatory${sessionFrequency ? ', frequency' : ''})
+          unit_price, currency, \`action\`, \`value\`, mandatory, direct_discount_percent${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.product_id, b.quantity, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`, b.mandatory
-              ${sessionFrequency ? ', b.frequency' : ''}
+              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`, b.mandatory,
+              b.direct_discount_percent${sessionFrequency ? ', b.frequency' : ''}
          FROM ${t.plan} b
          JOIN products gc ON gc.id = b.product_id
          LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -144,9 +144,9 @@ export async function copyPlanSnapshotToVersion(
     await tx.query(
       `INSERT INTO ${t.snapshot}
          (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, unit_price, item_billing_frequency,
-          currency, \`action\`, \`value\`, mandatory, unit_assignees${extra})
+          currency, \`action\`, \`value\`, mandatory, unit_assignees, direct_discount_percent${extra})
        SELECT gym_id, ?, product_id, quantity, item_name, item_type, unit_price, item_billing_frequency,
-              currency, \`action\`, \`value\`, mandatory, unit_assignees${extra}
+              currency, \`action\`, \`value\`, mandatory, unit_assignees, direct_discount_percent${extra}
          FROM ${t.snapshot} WHERE plan_snapshot_id = ?`, [insertId, fromSnapshotId]);
   }
   const { rows: promos } = await tx.query<any>(

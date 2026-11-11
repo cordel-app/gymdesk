@@ -32,6 +32,7 @@
 // agnostic). It is deliberately not grossed up a second time, which would quote
 // a price nobody configured.
 
+import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { computePriceFields } from './products';
 import { PlanBenefitPrices, planBenefitPrices } from '../domain/planBenefitPrices';
 import {
@@ -52,6 +53,8 @@ export interface BenefitPricingRow {
   quantity: number | string;
   action?: unknown;
   value?: unknown;
+  /** #2490 stage 3 — a Membership Plan line's own Direct Discount (%), applied after the treatment. */
+  direct_discount_percent?: unknown;
   product_amount?: string | number | null;
   product_tax_behavior?: string | null;
   product_tax_rate_percent?: string | number | null;
@@ -110,6 +113,7 @@ export function productBenefitPrices(
     grossBenefitUnitPrice(row, fallback),
     Number(row.quantity) || 1,
     toProductBenefit(context, row.action, row.value),
+    context === 'plan' ? toLineDirectDiscount(row.direct_discount_percent) : null,
   );
 }
 

@@ -197,7 +197,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
 export type ProductBenefitColumnKey =
   'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
   | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
-  | 'mandatory';
+  | 'mandatory' | 'direct_discount_percent';
 
 export interface ProductBenefitColumn {
   key: ProductBenefitColumnKey;
@@ -217,6 +217,9 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   { key: 'quantity', labelKey: 'col_quantity', width: 90, align: 'right' },
   { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
   { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
+  // #2490 stage 3: a Membership Plan line's own Direct Discount (%), right after
+  // the Benefit it is taken off after. The Plans page only (`showDirectDiscount`).
+  { key: 'direct_discount_percent', labelKey: 'col_direct_discount_percent', width: 120, align: 'right' },
   // #959: Requirement comes after what the line *costs* and before the prices
   // that quote it — it is a property of the line, not a second treatment, and
   // Benefit stays between Frequency and the prices as #916 fixed it.
@@ -293,6 +296,8 @@ export function productBenefitColumns(opts: {
   showRequirement?: boolean;
   /** #1184 — a Membership Plan benefit's Mandatory column. Absent means not rendered at all. */
   showPlanMandatory?: boolean;
+  /** #2490 stage 3 — a Membership Plan line's Direct Discount (%) column. Absent means not rendered at all. */
+  showDirectDiscount?: boolean;
   /** #1135 — what the number column counts here. Defaults to a quantity. */
   quantityColumn?: BenefitQuantityColumn;
 }): ProductBenefitColumn[] {
@@ -301,6 +306,7 @@ export function productBenefitColumns(opts: {
     if (col.key === 'action') return opts.showAction;
     if (col.key === 'requirement') return opts.showRequirement === true;
     if (col.key === 'mandatory') return opts.showPlanMandatory === true;
+    if (col.key === 'direct_discount_percent') return opts.showDirectDiscount === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
     if (col.key === 'tax' || col.key === 'promotion' || col.key === 'promotion_benefit' || col.key === 'direct_discount') {
       return opts.showPrices && opts.showBreakdown === true;
@@ -333,7 +339,7 @@ export function formatBenefitPrice(amount: number): string {
 export function ProductBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
   benefitContext, frequencyColumn = 'item', quantityColumn = 'quantity',
-  showRequirement = false, showPlanMandatory = false,
+  showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
 }: {
   t: Translate;
   addKey: string;
@@ -390,6 +396,11 @@ export function ProductBenefitEditor({
    * `enforceMandatory` above, which is the catalogue's flag.
    */
   showPlanMandatory?: boolean;
+  /**
+   * #2490 stage 3: a **Membership Plan** line's own Direct Discount (%), an
+   * input beside its Benefit. The Plans page only; off by default.
+   */
+  showDirectDiscount?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -411,6 +422,7 @@ export function ProductBenefitEditor({
     quantityColumn === 'duration' ? 120 : 90,
     ...(showFrequency ? [130] : []),
     ...(benefitContext ? [160, 120] : []),
+    ...(showDirectDiscount ? [110] : []),
     ...(showRequirement ? [130] : []),
     ...(showPlanMandatory ? [110] : []),
     32,
@@ -432,6 +444,7 @@ export function ProductBenefitEditor({
           {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
           {benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}
           {benefitContext && <span />}
+          {showDirectDiscount && <span style={colHeaderSt}>{t('col_direct_discount_percent')}</span>}
           {showRequirement && <span style={colHeaderSt}>{t('col_requirement')}</span>}
           {showPlanMandatory && <span style={colHeaderSt}>{t('col_plan_mandatory')}</span>}
           <span />
@@ -552,6 +565,20 @@ export function ProductBenefitEditor({
                     </span>
                   ) : <span />
                 )}
+                {showDirectDiscount && (
+                  // #2490 stage 3: the line's own percentage, clamped as typed
+                  // like the treatment's value; blank means none.
+                  <input
+                    type="number" min="0" max={100} step="1"
+                    value={row.direct_discount_percent ?? ''}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
+                      direct_discount_percent: clampBenefitValue('percentage_discount', e.target.value),
+                    })}
+                    placeholder="0"
+                    aria-label={t('col_direct_discount_percent')}
+                    style={{ ...inlineSelectSt, width: '100%' }}
+                  />
+                )}
                 {showRequirement && (
                   // #959: the existing inline select, not a new control — the
                   // ticket asks for the application's own patterns and no custom
@@ -629,6 +656,7 @@ export function ProductBenefitEditor({
             {
               ...(showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : {}),
               ...(showPlanMandatory ? { mandatory: true } : {}),
+              ...(showDirectDiscount ? { direct_discount_percent: null } : {}),
             },
           )}
           style={primaryBtnSmall()}
@@ -673,7 +701,8 @@ function BenefitPriceCell({
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
-  showRequirement = false, showPlanMandatory = false, renderItemPrefix, renderNestedRow,
+  showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
+  renderItemPrefix, renderNestedRow,
 }: {
   t: Translate;
   emptyKey: string;
@@ -724,6 +753,8 @@ export function ProductBenefitView({
   showRequirement?: boolean;
   /** #1184: the read-only half of the Plan benefit's Mandatory column. */
   showPlanMandatory?: boolean;
+  /** #2490 stage 3: the read-only half of a Plan line's Direct Discount (%) column. */
+  showDirectDiscount?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -734,7 +765,7 @@ export function ProductBenefitView({
   // vanishing and shifting the columns after it out of line (#916).
   const columns = productBenefitColumns({
     showFrequency, showAction: benefitContext != null, showPrices, showBreakdown, showRequirement,
-    showPlanMandatory, quantityColumn,
+    showPlanMandatory, showDirectDiscount, quantityColumn,
   });
 
   const cell = (col: ProductBenefitColumn, row: ProductBenefitRow, index: number): React.ReactNode => {
@@ -775,6 +806,12 @@ export function ProductBenefitView({
         // #959: the stored value, normalized — a line written before the column
         // existed reads `Mandatory`, which is what it means, never an empty cell.
         return t(promotionItemRequirementLabelKey(row.requirement));
+      case 'direct_discount_percent': {
+        // #2490 stage 3: the stored percentage, or `—` for none.
+        const pct = Number(row.direct_discount_percent);
+        return row.direct_discount_percent != null && row.direct_discount_percent !== '' && pct > 0
+          ? `${pct}%` : '—';
+      }
       case 'mandatory':
         // #1184: a row written before the column reads Yes, which is what it means.
         return row.mandatory === false ? t('plan_mandatory_no') : t('plan_mandatory_yes');
