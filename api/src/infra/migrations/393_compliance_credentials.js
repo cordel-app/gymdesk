@@ -15,7 +15,7 @@
  *   - `certificate`: customer-owned, uploaded by the gym; `storage_reference` set.
  *   - `external_reference`: centrally managed (Gymdesk or a provider holds it);
  *     `external_reference` names it, nothing is stored here.
- * `chk_cc_material` keeps the two shapes apart.
+ * `chk_compliance_credentials_material` keeps the two shapes apart.
  *
  * `status` is the administrative state (`active` | `inactive`); "expired" and
  * "not yet valid" are derived on read from the validity window, never stored.
@@ -50,7 +50,7 @@ exports.up = async (knex) => {
       KEY idx_cc_integration (integration_id),
       CONSTRAINT chk_compliance_credentials_type CHECK (credential_type IN ('certificate', 'external_reference')),
       CONSTRAINT chk_compliance_credentials_status CHECK (status IN ('active', 'inactive')),
-      CONSTRAINT chk_cc_material CHECK (
+      CONSTRAINT chk_compliance_credentials_material CHECK (
         (credential_type = 'certificate' AND storage_reference IS NOT NULL AND external_reference IS NULL)
         OR (credential_type = 'external_reference' AND storage_reference IS NULL AND external_reference IS NOT NULL)
       ),

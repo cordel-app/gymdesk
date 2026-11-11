@@ -3,12 +3,13 @@
 // countries and identifier types are the API's (`GET /system/tax-compliance/profile/options`,
 // `api/src/domain/taxProfile.ts`); nothing here keeps a list of its own.
 
-export type TaxComplianceTab = 'profile' | 'configuration' | 'e_invoicing' | 'history';
+export type TaxComplianceTab = 'profile' | 'configuration' | 'e_invoicing' | 'credentials' | 'history';
 
 export const TAX_COMPLIANCE_TABS: readonly { id: TaxComplianceTab; labelKey: string }[] = [
   { id: 'profile', labelKey: 'tab_profile' },
   { id: 'configuration', labelKey: 'tab_configuration' },
   { id: 'e_invoicing', labelKey: 'tab_e_invoicing' },
+  { id: 'credentials', labelKey: 'tab_credentials' },
   { id: 'history', labelKey: 'tab_history' },
 ];
 
@@ -89,6 +90,11 @@ export const KNOWN_COMPLIANCE_EVENT_TYPES = [
   'integration_updated',
   'integration_enabled',
   'integration_disabled',
+  'credential_uploaded',
+  'credential_replaced',
+  'credential_reference_created',
+  'credential_updated',
+  'credential_deleted',
 ] as const;
 
 // ── #2647 stage 2: Tax Configuration and Electronic Invoicing ─────────────────
@@ -258,4 +264,64 @@ export function withIntegrationIdentity(
   const types = options?.integration_types[next.provider] ?? [];
   if (!types.includes(next.integration_type)) next.integration_type = types.length === 1 ? types[0] : '';
   return next;
+}
+
+// ── #2647 stage 3: Certificates & Credentials ─────────────────────────────────
+// What a credential is and what may be uploaded are the API's
+// (`GET /system/tax-compliance/credentials/options`, `api/src/domain/complianceCredentials.ts`).
+// A credential row never carries its file, its password or where it is stored.
+
+export interface ComplianceCredential {
+  id: number;
+  integration_id: number | null;
+  credential_type: 'certificate' | 'external_reference';
+  label: string | null;
+  status: 'active' | 'inactive';
+  effective_status: 'active' | 'inactive' | 'expired' | 'not_yet_valid';
+  expires_soon: boolean;
+  has_material: boolean;
+  external_reference: string | null;
+  file_name: string | null;
+  certificate_subject: string | null;
+  certificate_serial_number: string | null;
+  certificate_issuer: string | null;
+  certificate_fingerprint: string | null;
+  valid_from: string | null;
+  expires_at: string | null;
+  created_at: string;
+  created_by: string | null;
+  modified_at: string | null;
+  modified_by: string | null;
+}
+
+export interface CredentialOptions {
+  credential_types: readonly string[];
+  statuses: readonly string[];
+  certificate_extensions: readonly string[];
+  certificate_max_bytes: number;
+  expiry_warning_days: number;
+}
+
+/** The name a credential is shown under: its label, else what it says about itself. */
+export function credentialTitle(c: ComplianceCredential): string {
+  return c.label ?? c.certificate_subject ?? c.external_reference ?? `#${c.id}`;
+}
+
+/** The `StatusBadge` tone a credential's effective status wears (no colour of its own). */
+export function credentialBadgeStatus(c: ComplianceCredential): 'active' | 'inactive' | 'expired' | 'pending' {
+  return c.effective_status === 'not_yet_valid' ? 'pending' : c.effective_status;
+}
+
+/** The locale key explaining why a picked file cannot be uploaded, or null. */
+export function certificateFileError(
+  file: { name: string; size: number } | null,
+  options: CredentialOptions | null,
+): string | null {
+  if (!file) return 'error_certificate_file_required';
+  const name = file.name.toLowerCase();
+  const exts = options?.certificate_extensions ?? ['.p12', '.pfx'];
+  if (!exts.some((e) => name.endsWith(e))) return 'error_certificate_file_type';
+  if (file.size === 0) return 'error_certificate_file_required';
+  if (options && file.size > options.certificate_max_bytes) return 'error_certificate_file_size';
+  return null;
 }
