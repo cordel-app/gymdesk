@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { violatesOnePerMember } from '../api/one-per-member';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, insertTestPurchase, createTestMembership, request } from './helpers';
 
 let gymId: string;
 let planId: number;
@@ -60,7 +60,7 @@ afterAll(async () => {
 describe('One per Member on Membership Plans', () => {
   it('refuses activating a plan that carries a Product the member already bought', async () => {
     const m = await member();
-    await db.query(
+    await insertTestPurchase(
       `INSERT INTO member_products_oneoff_snapshot
          (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, amount, currency, created_by)
        VALUES (?, ?, ?, 'active', 'Locker OPM Plan', 'fee', 'once', 10, 'EUR', 'test')`, [gymId, m, lockerId]);

@@ -2,6 +2,7 @@ import supertest from 'supertest';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
+import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
 
 export const request = supertest(app);
 
@@ -382,6 +383,20 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
  * version instead. Same signature as `db.query`, so a call site changes by its
  * function name only.
  */
+/**
+ * #2126 stage 3d — inserts a one-time purchase row (`INSERT INTO member_products_oneoff_snapshot …`)
+ * and re-derives its Product snapshot, as every application writer does in its own transaction:
+ * the purchase readers read the snapshot tables, so a fixture written straight into the purchase
+ * table is invisible to them otherwise. Returns the purchase id.
+ */
+export async function insertTestPurchase(sql: string, params: unknown[] = []): Promise<number> {
+  const { insertId } = await db.query<any>(sql, params);
+  const id = Number(insertId);
+  const { rows: r } = await db.query<any>('SELECT gym_id FROM member_products_oneoff_snapshot WHERE id = ?', [id]);
+  await db.transaction((tx) => syncProductSnapshotForPurchase(tx, String(r[0].gym_id), id));
+  return id;
+}
+
 export async function legacyAssignmentQuery(sql: string, params: unknown[] = []): Promise<any> {
   const queue = [...params];
   const insert = sql.match(/^\s*INSERT INTO user_memberships\s*\(([^)]*)\)\s*VALUES\s*\(([\s\S]*)\)\s*$/i);

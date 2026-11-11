@@ -10,6 +10,7 @@
 import type { Tx } from '../infra/db';
 import { assignmentPlanSnapshotId } from './assignment-config';
 import { PLAN_LINE_TABLE } from './plan-snapshot-lines';
+import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 
 type Queryable = Pick<Tx, 'query'>;
 
@@ -61,12 +62,13 @@ export async function memberHoldsProduct(
   opts: { draftSetId?: number; excludeUserMembershipIds?: readonly number[] } = {},
 ): Promise<boolean> {
   const { rows: purchases } = await q.query<any>(
-    `SELECT id FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND product_id = ?
+    // #2126 stage 3d: the purchases are read from the Product snapshot tables.
+    `SELECT id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+      WHERE product_id = ?
         AND status IN ('pending_payment', 'active') AND cancelled_on IS NULL
         AND (valid_until IS NULL OR valid_until >= UTC_DATE())
       LIMIT 1`,
-    [gymId, memberId, productId],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId],
   );
   if (purchases.length > 0) return true;
   const { rows: lines } = opts.draftSetId != null
