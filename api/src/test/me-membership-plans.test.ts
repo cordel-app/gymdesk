@@ -35,8 +35,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  TEST_AUTH_HEADER,
-} from './helpers';
+  TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -172,7 +171,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const res = await assign(member.userId, planId, { promotion_ids: [promoId] });
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('pending_payment');
-    expect(Number(res.body.membership_fee)).toBe(20);
+    expect(Number(res.body.membership_fee)).toBe(proratedToNextFirst(20));
     expect(res.body.promotion_ids).toEqual([promoId]);
 
     // #1325 PR 3a: the member's plan is a ProductSet version, with the plan frozen
@@ -200,7 +199,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const me = await request.get('/me/membership').set(h());
     expect(me.body.membership).toBeNull();
     expect(me.body.pending_membership.id).toBe(res.body.id);
-    expect(Number(me.body.pending_membership.membership_fee)).toBe(20);
+    expect(Number(me.body.pending_membership.membership_fee)).toBe(proratedToNextFirst(20));
   });
 
   it('activates straight away when the first cycle owes nothing', async () => {
@@ -259,7 +258,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].event_type).toBe('payment_recorded');
     expect(rows[0].pr_status).toBe('pending');
-    expect(Number(rows[0].amount)).toBe(40);
+    expect(Number(rows[0].amount)).toBe(proratedToNextFirst(40));
 
     const again = await assign(member.userId, await createPlan({ price: 40 }));
     expect(again.status).toBe(409);
@@ -293,7 +292,7 @@ describe('a ProductSet plan paid through the webhook is the member\'s plan', () 
     asMember(member.userId);
     const before = await request.get('/me/membership').set(h());
     expect(before.body.membership).toBeNull();
-    expect(Number(before.body.pending_membership.membership_fee)).toBe(40);
+    expect(Number(before.body.pending_membership.membership_fee)).toBe(proratedToNextFirst(40));
 
     // Pay now on a pending set is a new attempt on the same initial event.
     asMember(member.userId);

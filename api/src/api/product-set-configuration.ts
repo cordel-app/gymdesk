@@ -280,7 +280,7 @@ export async function loadProductSetSimulationAssignment(
             snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
             snap.pay_beforehand_periods, snap.auto_renew,
             snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
-            sch.cadence_interval, sch.cadence_unit
+            sch.cadence_interval, sch.cadence_unit, sch.anchor_date
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
@@ -371,6 +371,10 @@ export async function loadProductSetSimulationAssignment(
       cadence, row.auto_renew,
     ),
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+    // #2125 M5c — the same alignment `loadProductSetSimulationAssignments()` gives the plan, so a
+    // forecast read through this loader shows the dates the persisted obligations fall on.
+    ...(row.anchor_date != null && toDateOnly(row.anchor_date) < startsAt
+      ? { alignTo: toDateOnly(row.anchor_date) } : {}),
   };
 }
 
