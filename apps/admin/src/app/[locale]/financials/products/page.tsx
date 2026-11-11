@@ -42,6 +42,7 @@ import {
   YesNoToggle,
   productValueStyle,
 } from './ProductLayout';
+import { ProductFlagRow } from './ProductFlagRow';
 import {
   EMPTY_VALUE,
   PRODUCT_ENROLLMENT_STATUSES,
@@ -614,15 +615,16 @@ export default function ProductsPage() {
           {/* #832: its own row rather than a seventh grid cell, so the six
               tracks above keep their widths. The inline editor below renders
               the same control, against the same `label_mandatory`. */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={formFieldLabelStyle}>{t('label_mandatory')}</label>
-            <YesNoToggle
-              checked={inlineNew.mandatory}
-              onChange={(v) => setInlineNew({ ...inlineNew, mandatory: v })}
-              yesLabel={t('yes')}
-              noLabel={t('no')}
-              ariaLabel={t('label_mandatory')}
-            />
+          <div style={{ ...productFlagsColumnStyle, marginBottom: 12 }}>
+            <ProductFlagRow label={t('label_mandatory')}>
+              <YesNoToggle
+                checked={inlineNew.mandatory}
+                onChange={(v) => setInlineNew({ ...inlineNew, mandatory: v })}
+                yesLabel={t('yes')}
+                noLabel={t('no')}
+                ariaLabel={t('label_mandatory')}
+              />
+            </ProductFlagRow>
           </div>
           {inlineNew.type === SESSION_TYPE && (
             <div style={{ marginBottom: 12 }}>
@@ -715,17 +717,18 @@ export default function ProductsPage() {
           return <div style={productValueStyle}>{tStatus(item.enrollment_status)}</div>;
         case 'mandatory':
           // #2606: the three flags, one below the other, as the Base Products form draws them.
+          // #2623: each flag on one row, label left and value right; Sharing Type below them.
           return (
             <div style={productFlagsColumnStyle}>
-              <div style={productValueStyle}>{isMandatory ? t('yes') : t('no')}</div>
-              <div>
-                <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+              <ProductFlagRow label={t('label_mandatory')}>
+                <div style={productValueStyle}>{isMandatory ? t('yes') : t('no')}</div>
+              </ProductFlagRow>
+              <ProductFlagRow label={t('one_time_purchase')}>
                 <div style={productValueStyle}>{item.one_time_purchase ? t('yes') : t('no')}</div>
-              </div>
-              <div>
-                <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+              </ProductFlagRow>
+              <ProductFlagRow label={t('one_per_member')}>
                 <div style={productValueStyle}>{item.one_per_member ? t('yes') : t('no')}</div>
-              </div>
+              </ProductFlagRow>
               <div>
                 <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
                 <div style={productValueStyle}>{item.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
@@ -861,15 +864,16 @@ export default function ProductsPage() {
           // `PUT /:id`'s `is_system` guard, unlike the three fields above it.
           return (
             <div style={productFlagsColumnStyle}>
-              <YesNoToggle
-                checked={editForm.mandatory}
-                onChange={(v) => setEditForm({ ...editForm, mandatory: v })}
-                yesLabel={t('yes')}
-                noLabel={t('no')}
-                ariaLabel={t('label_mandatory')}
-              />
-              <div>
-                <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+              <ProductFlagRow label={t('label_mandatory')}>
+                <YesNoToggle
+                  checked={editForm.mandatory}
+                  onChange={(v) => setEditForm({ ...editForm, mandatory: v })}
+                  yesLabel={t('yes')}
+                  noLabel={t('no')}
+                  ariaLabel={t('label_mandatory')}
+                />
+              </ProductFlagRow>
+              <ProductFlagRow label={t('one_time_purchase')}>
                 <YesNoToggle
                   checked={editForm.one_time_purchase}
                   onChange={(v) => setEditForm({ ...editForm, one_time_purchase: v })}
@@ -877,9 +881,8 @@ export default function ProductsPage() {
                   noLabel={t('no')}
                   ariaLabel={t('one_time_purchase')}
                 />
-              </div>
-              <div>
-                <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+              </ProductFlagRow>
+              <ProductFlagRow label={t('one_per_member')}>
                 <YesNoToggle
                   checked={editForm.one_per_member}
                   onChange={(v) => setEditForm({ ...editForm, one_per_member: v })}
@@ -887,7 +890,7 @@ export default function ProductsPage() {
                   noLabel={t('no')}
                   ariaLabel={t('one_per_member')}
                 />
-              </div>
+              </ProductFlagRow>
               <div>
                 <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
                 <select

@@ -115,13 +115,14 @@ describe('the field set is declared once (#974 §1)', () => {
       .flatMap((s) => s.fields)
       .filter((f) => !f.labelKey)
       .map((f) => f.key);
-    expect(unlabelled).toEqual(['professional_services', 'package_information', 'notes']);
+    // #2623: the Mandatory cell is the settings group, whose rows label themselves.
+    expect(unlabelled).toEqual(['mandatory', 'professional_services', 'package_information', 'notes']);
   });
 
   it('spans the grid with free text rather than squeezing it into a cell', () => {
     const fullWidth = PRODUCT_SECTIONS.flatMap((s) => s.fields).filter((f) => f.fullWidth);
     expect(fullWidth.map((f) => f.key)).toEqual([
-      'description', 'professional_services', 'package_information', 'notes',
+      'description', 'mandatory', 'professional_services', 'package_information', 'notes',
     ]);
   });
 

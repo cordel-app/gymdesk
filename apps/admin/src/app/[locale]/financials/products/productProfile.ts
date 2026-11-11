@@ -135,7 +135,10 @@ export const PRODUCT_SECTIONS: readonly ProductSectionSpec[] = [
       // #832: deliberately not frozen — a System item's Mandatory flag is
       // editable, which is why `PUT /:id` writes it outside the `is_system`
       // guard that still freezes the three fields above.
-      { key: 'mandatory', labelKey: 'label_mandatory', checkbox: true },
+      // #2623: no `labelKey` — the cell is the product settings group, whose
+      // rows carry their own labels inline (`ProductFlagRow`), so a label above
+      // it would name Mandatory twice. Full width so the group is one block.
+      { key: 'mandatory', checkbox: true, fullWidth: true },
     ],
   },
   {
