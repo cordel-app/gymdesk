@@ -23,6 +23,12 @@ name: Booking Reminder Run
 # hours (`expireDrafts()`, reported as `drafts_expired`, idempotent per Draft),
 # so an abandoned Draft is gone within a quarter of an hour. A failure there is
 # a `failures[]` entry and turns the run red like a reminder failure does.
+#
+# #2648 stage 4: the same pass submits pending VERI*FACTU records to the AEAT
+# (`submitPendingVerifactuRecords()`), reported under `verifactu`. A record AEAT
+# could not take is retried with back-off on a later pass, so an AEAT outage is
+# a warning here, never a red run; only an unexpected error is a `failures[]`
+# entry.
 on:
   schedule:
     # Every 15 minutes. GitHub's cron is best-effort and runs late under load,
@@ -134,6 +140,17 @@ jobs:
           # alert row exists.
           if [ "$(printf '%s' "$body" | jq -r '.capped')" = "true" ]; then
             echo "::warning title=Booking reminder run hit its per-run cap::$created reminder(s) written and more are due; the next pass will raise them. Raise BOOKING_REMINDER_MAX_PER_RUN if this recurs."
+          fi
+
+          # #2648 stage 4: VERI*FACTU submissions. Rejected or retrying records
+          # need a look but are not a failure of this run (nothing is lost).
+          vf="$(printf '%s' "$body" | jq -r 'if .verifactu then "\(.verifactu.rejected + .verifactu.rejected_locally) \(.verifactu.retry_pending)" else "0 0" end')"
+          read -r vf_rejected vf_retry <<<"$vf"
+          if [ "$vf_rejected" -gt 0 ]; then
+            echo "::warning title=VERI*FACTU records rejected::$vf_rejected record(s) were rejected (by the AEAT or by local validation) and need investigation."
+          fi
+          if [ "$vf_retry" -gt 0 ]; then
+            echo "::warning title=VERI*FACTU submission will be retried::$vf_retry record(s) could not be delivered to the AEAT this pass; they are retried with back-off."
           fi
 
           echo 'Booking reminder run completed with no failures.'
