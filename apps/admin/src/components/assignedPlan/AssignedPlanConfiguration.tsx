@@ -465,6 +465,18 @@ export function AssignedPlanConfiguration({
     );
   }
 
+  // #2677 — the open section's Save/Cancel closes that section: it is rendered
+  // inside the section's own editor, after its fields and hint, so it sits
+  // before the next section begins (reversing #2391's single pair at the foot
+  // of the block). One section is editable at a time, so there is one pair.
+  function sectionActions(onSave: () => unknown) {
+    return (
+      <div style={{ marginTop: 14 }}>
+        <SaveCancel saving={saving} onSave={() => { void onSave(); }} onCancel={cancelEdit} t={t} />
+      </div>
+    );
+  }
+
   return (
     <>
       {/* §7/§9 — Billing & Duration, the Promotion's Free Period / Paid
@@ -519,6 +531,7 @@ export function AssignedPlanConfiguration({
               cadence beside them is what one period is. */}
           <p style={hintSt}>{t('duration_periods_hint')}</p>
           <p style={hintSt}>{t('snapshot_edit_hint')}</p>
+          {sectionActions(saveDuration)}
         </div>
       ) : (
         <div style={{ marginBottom: 10 }}>
@@ -602,6 +615,7 @@ export function AssignedPlanConfiguration({
             )}
           </div>
           <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
+          {sectionActions(saveFeeBenefit)}
         </div>
       ) : (
         /* #2626 — the Membership Fee is a product row of the same shared grid
@@ -657,6 +671,7 @@ export function AssignedPlanConfiguration({
                   benefitContext="plan"
                 />
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
+                {sectionActions(() => saveBenefits(endpoint))}
               </div>
             ) : (
               /* #924 stage 1 — the one shared grid every Product section
@@ -718,25 +733,6 @@ export function AssignedPlanConfiguration({
         readOnlyTitle={readOnlyTitle}
         onChanged={onChanged}
       />
-
-      {/* #2391 — the open section editor's Save/Cancel closes the whole
-          configuration block (plan fee + included products), never the middle
-          of it. One pair, committing whichever section is open. */}
-      {editing && (
-        <div style={{ marginTop: 14 }}>
-          <SaveCancel
-            saving={saving}
-            onSave={() => {
-              if (editing === 'billing') return saveDuration();
-              if (editing === 'fee_benefit') return saveFeeBenefit();
-              const spec = BENEFIT_SECTIONS.find((b) => b.section === editing);
-              if (spec) return saveBenefits(spec.endpoint);
-            }}
-            onCancel={cancelEdit}
-            t={t}
-          />
-        </div>
-      )}
 
       {promotionToggle.dialogs}
       <ProductDetailModal product={productDetail} onClose={() => setProductDetail(null)} />
