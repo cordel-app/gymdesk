@@ -1,9 +1,11 @@
 // #2567 stage 1 — the PRIVATE Cloudflare R2 client, used exclusively for
-// invoices and receipts. It shares nothing with `storage.ts` (the public
+// invoices and receipts, and since #2647 stage 3 for the encrypted material of
+// compliance credentials. It shares nothing with `storage.ts` (the public
 // bucket for images): its own credentials, bucket and endpoint, and no public
 // URL — a document leaves this module only as bytes, through an authenticated
 // API route.
-import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { isComplianceCredentialKey } from '../domain/billingDocumentKeys';
 
 function getConfig() {
   return {
@@ -83,4 +85,14 @@ export async function getPrivateDocument(key: string): Promise<{ body: Buffer; c
   const bytes = await (result.Body as any)?.transformToByteArray();
   if (!bytes) throw new Error('Object has no body');
   return { body: Buffer.from(bytes), contentType: result.ContentType ?? null };
+}
+
+/**
+ * #2647 stage 3: deletes a compliance credential's encrypted object. Nothing else in
+ * the private bucket is ever deleted — an issued invoice or receipt is the record —
+ * so any other key is refused here rather than trusted to the caller.
+ */
+export async function deletePrivateCredentialObject(key: string): Promise<void> {
+  if (!isComplianceCredentialKey(key)) throw new Error('Only a compliance credential object may be deleted');
+  await getClient().send(new DeleteObjectCommand({ Bucket: requireBucket(), Key: key }));
 }

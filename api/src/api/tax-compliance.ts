@@ -20,15 +20,19 @@ import {
   COMPLIANCE_HISTORY_DEFAULT_LIMIT,
   COMPLIANCE_HISTORY_MAX_LIMIT,
 } from './compliance-audit-events';
+import { complianceCredentialsRouter } from './compliance-credentials';
 
 /**
- * #2647 stages 1–2: Settings → Tax & Compliance (Tax Profile, Tax Configuration,
+ * #2647 stages 1–3: Settings → Tax & Compliance (Tax Profile, Tax Configuration,
  * Electronic Invoicing integrations, Compliance History). Mounted at `/system/tax-compliance`
  * behind `requireModuleAccess('SYSTEM')` (admin only in the matrix); every write
  * also takes `requireModuleWrite('SYSTEM')`. The gym is the legal entity, so the
  * profile is columns of `gyms` and nothing is keyed by anything but the tenant's gym.
  */
 export const taxComplianceRouter = Router();
+
+// #2647 stage 3: Certificates & Credentials.
+taxComplianceRouter.use('/credentials', complianceCredentialsRouter);
 
 const PROFILE_SELECT = TAX_PROFILE_FIELDS
   .map((f) => (f === 'tax_registration_date' ? `DATE_FORMAT(${f}, '%Y-%m-%d') AS ${f}` : f))

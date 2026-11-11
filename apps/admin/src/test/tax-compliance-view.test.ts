@@ -80,3 +80,47 @@ describe('Tax Configuration / Electronic Invoicing view (#2647 stage 2)', () => 
     expect(toIntegrationPayload(f, false)).not.toHaveProperty('provider');
   });
 });
+
+// #2647 stage 3: Certificates & Credentials.
+import {
+  certificateFileError,
+  credentialBadgeStatus,
+  credentialTitle,
+  TAX_COMPLIANCE_TABS as TABS_STAGE3,
+  type ComplianceCredential,
+} from '../app/[locale]/tax-compliance/taxComplianceView';
+
+describe('Certificates & Credentials view (#2647 stage 3)', () => {
+  const base = {
+    id: 7, integration_id: null, credential_type: 'certificate', label: null, status: 'active',
+    effective_status: 'active', expires_soon: false, has_material: true, external_reference: null,
+    file_name: 'a.p12', certificate_subject: 'CN=Gym', certificate_serial_number: '01', certificate_issuer: 'CN=CA',
+    certificate_fingerprint: 'AA', valid_from: null, expires_at: null, created_at: '2026-11-11', created_by: null,
+    modified_at: null, modified_by: null,
+  } as ComplianceCredential;
+
+  it('places the tab before the history', () => {
+    const ids = TABS_STAGE3.map((t) => t.id);
+    expect(ids.indexOf('credentials')).toBe(ids.indexOf('history') - 1);
+  });
+
+  it('titles a credential by its label, then what it says about itself', () => {
+    expect(credentialTitle({ ...base, label: 'AEAT' })).toBe('AEAT');
+    expect(credentialTitle(base)).toBe('CN=Gym');
+    expect(credentialTitle({ ...base, certificate_subject: null, credential_type: 'external_reference', external_reference: 'ref' })).toBe('ref');
+  });
+
+  it('maps the effective status onto existing badge tones', () => {
+    expect(credentialBadgeStatus({ ...base, effective_status: 'expired' })).toBe('expired');
+    expect(credentialBadgeStatus({ ...base, effective_status: 'not_yet_valid' })).toBe('pending');
+    expect(credentialBadgeStatus({ ...base, effective_status: 'inactive' })).toBe('inactive');
+  });
+
+  it('judges a picked file by its name and size', () => {
+    const opts = { credential_types: [], statuses: [], certificate_extensions: ['.p12', '.pfx'], certificate_max_bytes: 100, expiry_warning_days: 30 };
+    expect(certificateFileError(null, opts)).toBe('error_certificate_file_required');
+    expect(certificateFileError({ name: 'c.PFX', size: 10 }, opts)).toBeNull();
+    expect(certificateFileError({ name: 'c.pem', size: 10 }, opts)).toBe('error_certificate_file_type');
+    expect(certificateFileError({ name: 'c.p12', size: 101 }, opts)).toBe('error_certificate_file_size');
+  });
+});

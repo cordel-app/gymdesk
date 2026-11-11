@@ -38,6 +38,7 @@ import {
 } from './taxComplianceView';
 import { TaxConfigurationSection } from './TaxConfigurationSection';
 import { ElectronicInvoicingSection } from './ElectronicInvoicingSection';
+import { CredentialsSection } from './CredentialsSection';
 
 interface ComplianceEvent {
   id: number;
@@ -51,7 +52,7 @@ interface ComplianceEvent {
 
 /**
  * #2647: Settings → Tax & Compliance — Tax Profile, Tax Configuration, Electronic
- * Invoicing (stage 2) and Compliance History.
+ * Invoicing (stage 2), Certificates & Credentials (stage 3) and Compliance History.
  */
 export default function TaxCompliancePage() {
   const t = useTranslations('tax_compliance');
@@ -236,6 +237,10 @@ export default function TaxCompliancePage() {
           canWrite={canWrite}
           onChanged={() => setHistory(null)}
         />
+      )}
+
+      {tab === 'credentials' && (
+        <CredentialsSection key={activeGym?.id} canWrite={canWrite} onChanged={() => setHistory(null)} />
       )}
 
       {tab === 'history' && (
