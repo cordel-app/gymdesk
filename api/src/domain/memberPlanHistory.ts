@@ -21,7 +21,9 @@
 //    `MEMBER_CURRENT_ASSIGNMENT_FILTER` beside the ordering (#1108 Q2: a Draft
 //    is staff-side configuration that is not the member's plan), so a Draft
 //    reaches neither half — which is why the filter is appended to the query
-//    rather than applied here.
+//    rather than applied here. (#2660: `GET /me/membership` lists the
+//    member's Drafts beside the live plans from a read of their own, so they
+//    are visible under their Admin status without ever being this split's.)
 //  - **A past plan carries no money.** §8 is explicit that the section exists
 //    for *historical visibility* and must not show an active plan's actions, so
 //    a row is a name, a status and the date it ended. Pricing a finished
@@ -37,6 +39,12 @@ export interface MemberPlanHistoryRow {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
+  /**
+   * #2660: `LIFECYCLE_STATUS_SQL`'s projection — the status the Admin shows for
+   * the same assignment. Optional only so a caller that does not project it
+   * falls back to the stored `status`.
+   */
+  lifecycle_status?: string | null;
   starts_at: unknown;
   ends_at: unknown;
   closed_at: unknown;
@@ -48,6 +56,8 @@ export interface MemberPastPlan {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
+  /** The Admin's status for this assignment (#2660), the stored one when not projected. */
+  lifecycle_status: string;
   starts_at: string | null;
   /**
    * The day it stopped running: the contractual `ends_at` where there is one,
@@ -72,6 +82,7 @@ export function toMemberPastPlan(row: MemberPlanHistoryRow): MemberPastPlan {
     membership_plan_id: row.membership_plan_id == null ? null : Number(row.membership_plan_id),
     plan_name: row.plan_name ?? null,
     status: String(row.status),
+    lifecycle_status: String(row.lifecycle_status ?? row.status),
     starts_at: toDateOnly(row.starts_at),
     ended_on: toDateOnly(row.ends_at) ?? toDateOnly(row.closed_at),
   };
@@ -95,10 +106,19 @@ export function splitMemberPlanHistory<T extends MemberPlanHistoryRow>(
   // #2125: a member may hold several live plans. The first row is "current" (the
   // ordering puts a live one first), the other live ones are *not* history —
   // `also_live` carries them so they are never drawn as a plan that ended.
-  const rest = rows.slice(1);
-  const isLive = (r: T) => r.status === 'active' || r.status === 'paused';
-  const alsoLive = isLive(rows[0]) ? rest.filter(isLive).map(toMemberPastPlan) : [];
-  const past = (isLive(rows[0]) ? rest.filter((r) => !isLive(r)) : rest).map(toMemberPastPlan);
+  //
+  // #2660: a cancelled plan still running to its last paid day reads
+  // `cancels_on_end_date` in the Admin (`LIFECYCLE_STATUS_SQL`) and is live
+  // here too — it is the member's plan until that day, not history. The
+  // ordering groups by stored status, so the first live row is looked for
+  // rather than assumed to be first.
+  const isLive = (r: T) =>
+    r.status === 'active' || r.status === 'paused' || r.lifecycle_status === 'cancels_on_end_date';
+  const currentIndex = Math.max(0, rows.findIndex(isLive));
+  const current = rows[currentIndex];
+  const rest = rows.filter((_, i) => i !== currentIndex);
+  const alsoLive = isLive(current) ? rest.filter(isLive).map(toMemberPastPlan) : [];
+  const past = (isLive(current) ? rest.filter((r) => !isLive(r)) : rest).map(toMemberPastPlan);
   past.sort((a, b) => (b.starts_at ?? '').localeCompare(a.starts_at ?? '') || b.id - a.id);
-  return { current: rows[0], also_live: alsoLive, past };
+  return { current, also_live: alsoLive, past };
 }

@@ -34,6 +34,8 @@ export interface MemberPastPlan {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
+  /** #2660: the Admin's status for the same assignment, shown as is. */
+  lifecycle_status?: string;
   starts_at: string | null;
   /** The day it stopped running: its `ends_at`, else when it was closed. */
   ended_on: string | null;
@@ -41,7 +43,9 @@ export interface MemberPastPlan {
 
 /** The locale key naming what became of a past plan — the `membership.status` map. */
 export function pastPlanStatusKey(plan: MemberPastPlan): string {
-  return `membership.status.${plan.status}`;
+  // #2660: the status the Admin shows (`lifecycle_status`), never a mapping of
+  // our own; the stored one only for a response that predates it.
+  return `membership.status.${plan.lifecycle_status ?? plan.status}`;
 }
 
 /**

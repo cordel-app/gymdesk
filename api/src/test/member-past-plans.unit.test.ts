@@ -67,6 +67,28 @@ describe('which plans are history', () => {
     expect(past).toHaveLength(2);
   });
 
+  it('keeps a plan that cancels on its end date live, under the Admin status (#2660)', () => {
+    const rows = [
+      row({ id: 6, status: 'expired', starts_at: '2026-01-01' }),
+      row({ id: 7, status: 'cancelled', lifecycle_status: 'cancels_on_end_date', ends_at: '2099-01-31' }),
+      row({ id: 8, status: 'cancelled', lifecycle_status: 'cancelled' }),
+    ];
+    const { current, past } = splitMemberPlanHistory(rows);
+    expect(current?.id).toBe(7);
+    expect(past.map((p) => p.id).sort()).toEqual([6, 8]);
+    expect(toMemberPastPlan(rows[1]).lifecycle_status).toBe('cancels_on_end_date');
+  });
+
+  it('lists a second plan cancelling on its end date beside the live one (#2660)', () => {
+    const rows = [
+      row({ id: 5, status: 'active', ends_at: null }),
+      row({ id: 4, status: 'cancelled', lifecycle_status: 'cancels_on_end_date', ends_at: '2099-01-31' }),
+    ];
+    const { also_live, past } = splitMemberPlanHistory(rows);
+    expect(also_live.map((p) => p.id)).toEqual([4]);
+    expect(past).toEqual([]);
+  });
+
   it('keeps a second live plan out of the history (#2125)', () => {
     const rows = [
       row({ id: 5, status: 'active', ends_at: null }),
@@ -135,7 +157,7 @@ describe('what a past plan reports', () => {
 
   it('carries no money and no action — a history is not an active plan', () => {
     expect(Object.keys(toMemberPastPlan(row())).sort()).toEqual(
-      ['ended_on', 'id', 'membership_plan_id', 'plan_name', 'starts_at', 'status'],
+      ['ended_on', 'id', 'lifecycle_status', 'membership_plan_id', 'plan_name', 'starts_at', 'status'],
     );
   });
 });
