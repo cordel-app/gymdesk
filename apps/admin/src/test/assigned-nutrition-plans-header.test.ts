@@ -132,8 +132,10 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     for (const handler of ['handleDuplicate', 'async function complete()', 'async function del()']) {
       expect(pageSrc, `${handler} is gone`).toContain(handler);
     }
-    // The member filter still drives the list query.
-    expect(pageSrc).toMatch(/params\.set\('member_id', memberFilter\)/);
+    // The member filters still drive the list query (#2661: a deep-linked
+    // member id, then the free-text name).
+    expect(pageSrc).toMatch(/params\.set\('member_id', memberIdScope\)/);
+    expect(pageSrc).toMatch(/params\.set\('member', memberQuery\)/);
     // The Details view still offers View Audit Log (CLAUDE.md).
     expect(pageSrc).toMatch(/<ViewAuditLogButton entityType="member_nutrition_plan" entityId=\{plan\.id\}/);
   });

@@ -47,7 +47,7 @@ describe('#812 the Nutrition Library food is read through `categories`', () => {
 
   it('filters the Food dropdown with `categories.includes(...)`, not equality', () => {
     expect(treeSrc).toContain('foods.filter((i) => i.categories.includes(addFoodType))');
-    expect(treeSrc).toContain('foods.filter((i) => i.categories.includes(editState.foodType))');
+    expect(treeSrc).toContain('foods.filter((i) => i.categories.includes(draft.foodType))');
   });
 });
 
