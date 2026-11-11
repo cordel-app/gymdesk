@@ -5,7 +5,7 @@ import { assignedMemberSql } from '../domain/productAssignee';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
- * its frozen line snapshots (`member_products_recurrent_snapshot`) and each
+ * its frozen line snapshots and each
  * line's applied Promotions' own grant snapshots, so a Draft the Members App
  * builds is shown with the figures that will be committed. Nothing here
  * prices: the unit price, the list price and the direct discount are the
@@ -18,6 +18,12 @@ import { assignedMemberSql } from '../domain/productAssignee';
  * carries is listed under `removed_lines`, since a Draft deletes a removed line
  * outright (#1882). `expires_in_seconds` is the server's own countdown (#2477),
  * for a Draft only.
+ *
+ * #2126 stage 3e: the lines are read from `product_periodical_snapshots`, the
+ * recurring Product snapshot table kept equal to each version's lines by stage 2's
+ * dual-write (`syncProductSnapshotsOfVersion()`). A line's `id` is still the
+ * legacy line id (`source_id`), which the Promotion applications and the line
+ * routes are keyed on.
  */
 export interface MemberProductSetLine {
   id: number;
@@ -41,20 +47,21 @@ export interface MemberProductSetLine {
   assigned_member_id: number | null;
 }
 
-const LINE_COLUMNS = `s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
-  s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency, s.currency,
-  s.starts_at, COALESCE(s.line_ref, s.id) AS line_ref,
+const LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
+  s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price, s.direct_discount_percent,
+  s.billing_frequency AS item_billing_frequency, s.currency,
+  s.starts_at, COALESCE(s.line_ref, s.source_id) AS line_ref,
   p.description, p.image_url, p.image_thumbnail_url`;
 
 async function linesOf(gymId: string, setId: number, ownerSql: string): Promise<any[]> {
   const { rows } = await db.query<any>(
     `SELECT ${LINE_COLUMNS}, ${assignedMemberSql('s', ownerSql)} AS assigned_member_id
-       FROM member_products_recurrent_snapshot s
+       FROM product_periodical_snapshots s
        JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN products p ON p.id = s.product_id AND p.gym_id = s.gym_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
+      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
-      ORDER BY s.created_at ASC, s.id ASC`,
+      ORDER BY s.created_at ASC, s.source_id ASC`,
     [gymId, setId],
   );
   return rows;

@@ -595,10 +595,16 @@ async function countProfessionalServiceReferences(
   );
   const linked = 'SELECT product_id FROM product_professional_services WHERE professional_service_id = ?';
   let productSnapshots = 0;
+  // #2126 stage 3e: a purchase and a recurring line are counted in the Product snapshot tables
+  // (`source_id` is the purchase or line each row mirrors, so a row is counted once, as before).
   for (const table of [
-    'member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
-    'plan_session_snapshots', 'plan_oneoff_snapshots', 'plan_periodical_snapshots',
+    'product_session_snapshots', 'product_oneoff_snapshots', 'product_periodical_snapshots',
   ]) {
+    productSnapshots += await count(
+      `SELECT COUNT(*) AS n FROM ${table} WHERE source_id IS NOT NULL AND product_id IN (${linked})`, [id],
+    );
+  }
+  for (const table of ['plan_session_snapshots', 'plan_oneoff_snapshots', 'plan_periodical_snapshots']) {
     productSnapshots += await count(
       `SELECT COUNT(*) AS n FROM ${table} WHERE product_id IN (${linked})`, [id],
     );

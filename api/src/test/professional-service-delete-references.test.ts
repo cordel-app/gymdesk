@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, insertTestPurchase, request,
 } from './helpers';
 
 // #2129: deleting a gym Professional Service is refused while Activities, calendar
@@ -68,7 +69,7 @@ describe('DELETE /professional-services/:id with references', () => {
       `INSERT INTO members (gym_id, name, email) VALUES (?, 'A B', ?)`,
       [gymId, `ps-del-${Date.now()}@example.com`],
     );
-    await db.query(
+    await insertTestPurchase(
       `INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, amount, currency, status)
        VALUES (?, ?, ?, 'Linked Product', 'sessions', 10, 'EUR', 'active')`,
       [gymId, memberId, productId],
@@ -77,6 +78,36 @@ describe('DELETE /professional-services/:id with references', () => {
     expect(res.status).toBe(409);
     expect(res.body.references.activities).toBe(1);
     expect(res.body.references.product_snapshots).toBe(1);
+    expect((await deletedAt(id)).deleted_at).toBeNull();
+  });
+
+  it('blocks when a recurring Product line of a Product Set references it (#2126 stage 3e)', async () => {
+    const id = await service('Recurring');
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, is_system)
+       VALUES (?, 'Linked Locker', 'service', 'month', 'active', 0)`,
+      [gymId],
+    );
+    await db.query('INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)', [gymId, productId, id]);
+    const { insertId: memberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'C D', ?)`,
+      [gymId, `ps-del-rec-${Date.now()}@example.com`],
+    );
+    const { insertId: setId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'superseded', '2026-01-01')`,
+      [gymId, memberId],
+    );
+    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
+    await db.query(
+      `INSERT INTO member_products_recurrent_snapshot
+         (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price)
+       VALUES (?, ?, ?, 1, '2026-01-01', 'Linked Locker', 'service', 'month', 10.00)`,
+      [gymId, setId, productId],
+    );
+    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    const res = await del(id);
+    expect(res.status).toBe(409);
+    expect(res.body.references).toEqual({ activities: 0, calendar_events: 0, product_snapshots: 1 });
     expect((await deletedAt(id)).deleted_at).toBeNull();
   });
 

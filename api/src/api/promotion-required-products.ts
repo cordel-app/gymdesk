@@ -11,7 +11,10 @@ import {
 
 const GRANT_TABLES = ['promotion_session', 'promotion_oneoff', 'promotion_periodical'] as const;
 
-/** Products the Member holds or is configuring: purchases (draft/pending/active) and open recurring lines. */
+/**
+ * Products the Member holds or is configuring: purchases (draft/pending/active) and open recurring lines.
+ * Every arm reads the Product snapshot tables (#2126 stage 3e moved the recurring one).
+ */
 async function loadHeldProductIds(gymId: string, memberId: number): Promise<Set<number>> {
   const { rows } = await db.query<{ product_id: number }>(
     `SELECT product_id FROM product_session_snapshots
@@ -20,9 +23,9 @@ async function loadHeldProductIds(gymId: string, memberId: number): Promise<Set<
      SELECT product_id FROM product_oneoff_snapshots
       WHERE gym_id = ? AND member_id = ? AND status IN ('draft', 'pending_payment', 'active')
      UNION
-     SELECT r.product_id FROM member_products_recurrent_snapshot r
+     SELECT r.product_id FROM product_periodical_snapshots r
        JOIN product_sets ps ON ps.id = r.product_set_id AND ps.gym_id = r.gym_id
-      WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.ends_at IS NULL
+      WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.source_id IS NOT NULL AND r.ends_at IS NULL
         AND ps.status IN ('draft', 'pending_payment', 'active')`,
     [gymId, memberId, gymId, memberId, gymId, memberId],
   );
