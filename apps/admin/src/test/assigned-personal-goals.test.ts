@@ -28,6 +28,7 @@ import {
   type GoalReadingRow,
 } from '@/components/personalGoals/goalReadings';
 import { navigationGroups } from '@/config/navigationGroups';
+import { ASSIGNED_GOAL_LIST_COLUMNS } from '@/components/personalGoals/AssignedGoalCard';
 
 // #948 §4 — Assigned Personal Goals.
 //
@@ -661,5 +662,25 @@ describe('#2133 item 4 — both screens draw the one collapsible card', () => {
     // The toggle and the actions are siblings, never nested buttons.
     expect(cardSrc).toContain('aria-expanded={open}');
     expect(cardSrc).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+});
+
+describe('#2667 — the gym-wide list has a header row', () => {
+  it('renders the header band once, above the cards, on the same columns', () => {
+    expect(sectionSrc).toContain('<AssignedGoalListHeader');
+    // Every card carries one value per declared column, so the titles align.
+    for (const column of ASSIGNED_GOAL_LIST_COLUMNS) {
+      expect(sectionSrc).toMatch(new RegExp(`\\b${column.key}:`));
+    }
+    // The Member card has no header band and keeps its own layout.
+    expect(memberSectionSrc).not.toContain('AssignedGoalListHeader');
+  });
+
+  it('titles every column in every locale', () => {
+    for (const code of LOCALE_CODES) {
+      for (const column of ASSIGNED_GOAL_LIST_COLUMNS) {
+        expect(messages[code].assigned_personal_goals?.[column.labelKey], `${code}.${column.labelKey}`).toBeTruthy();
+      }
+    }
   });
 });
