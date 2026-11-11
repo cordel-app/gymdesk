@@ -15,6 +15,11 @@ async function serviceConsumption() {
   if (!serviceConsumptionModule) serviceConsumptionModule = await import('./service-consumption');
   return serviceConsumptionModule;
 }
+let reservationModule: typeof import('./service-reservation') | null = null;
+async function serviceReservation() {
+  if (!reservationModule) reservationModule = await import('./service-reservation');
+  return reservationModule;
+}
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
   if (!packageCreditsModule) packageCreditsModule = await import('./package-credits');
@@ -116,6 +121,8 @@ export async function bookMemberOnSession(
   actor: string | null = null,
   /** #1985: the Professional Service the member chose to consume, when several qualify. */
   professionalServiceId?: number | null,
+  /** #2605: a Duo partner's row holds no reservation of its own (one unit per group, the booker's). */
+  reserveService = true,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -195,6 +202,19 @@ export async function bookMemberOnSession(
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?, ?, ?)`,
         [gymId, session[0].center_id, memberId, sessionId, actor, chosenServiceId, negativeBalanceOk ? 1 : 0],
       );
+      // #2605: a booking reserves one Professional Service unit. Staff overrides
+      // and accepted negative balances book without one.
+      if (reserveService && !negativeBalanceOk) {
+        const sr = await serviceReservation();
+        const outcome = await sr.reserveForBooking(
+          tx, gymId, memberId, insertId, Number(session[0].id), Number(session[0].activity_type_id),
+          chosenServiceId, actor,
+        );
+        if (outcome === 'no_available' && !overrideAccess && !force) {
+          throw Object.assign(new Error('No Professional Service sessions are available: all of them are already booked'),
+            { status: 409, code: 'no_available_balance' });
+        }
+      }
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
 
@@ -221,7 +241,7 @@ export async function cancelBooking(
   gymId: string,
   bookingId: number,
   _actorMembershipId?: number | null,
-  opts: { actor?: string | null; spendLateCancel?: boolean } = {},
+  opts: { actor?: string | null; spendLateCancel?: boolean; returnService?: boolean } = {},
 ) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
@@ -246,9 +266,20 @@ export async function cancelBooking(
     // (booking itself never does). A waiting-list place is not a booking, and a
     // caller that has already allowed the cancellation free of charge — a
     // member inside the grace period — passes `spendLateCancel: false`.
-    if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
+    // #2585: staff removing an attendee gives the session back instead — the
+    // ledger row of the booking (if any) is returned once, in this transaction.
+    if (b.status === 'booked' && opts.returnService) {
+      const sc = await serviceConsumption();
+      await sc.returnSessionForBooking(tx, gymId, bookingId, opts.actor ?? null);
+    } else if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
       const sc = await serviceConsumption();
       await sc.spendSessionForBooking(tx, gymId, bookingId, 'late_cancel', opts.actor ?? null);
+    }
+    // #2605: the reservation follows the booking. A spend (late cancellation)
+    // turns it into the consumption; any other cancellation releases it, once.
+    if (b.status === 'booked' || b.status === 'waitlisted') {
+      const sr = await serviceReservation();
+      await sr.settleReservationOnCancel(tx, gymId, bookingId);
     }
 
     if (b.user_class_package_id) {
@@ -442,7 +473,7 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
         WHERE ceb.id = ? AND ceb.gym_id = ?`,
       [req.params.id, gymId],
     );
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { actor: resolveRequestActor(getTenantContext(req)) });
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { actor: resolveRequestActor(getTenantContext(req)), returnService: true });
     if (cancelResult.promotedMemberId && sessionRows.length > 0) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
@@ -532,8 +563,10 @@ bookingsRouter.post('/:id/refund-balance', requireRole('admin', 'front_desk', 't
       );
       if (rows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
       const b = rows[0];
-      if (b.status !== 'booked' || b.attendance_status !== 'absent') {
-        throw Object.assign(new Error('Only an attendee explicitly marked absent can be refunded'), { status: 400, code: 'not_absent' });
+      // #2588: any booked attendee (attended, absent or unconfirmed, on a past or future event)
+      // whose booking spent a session may be refunded; the ledger row decides.
+      if (b.status !== 'booked') {
+        throw Object.assign(new Error('Only a booked attendee can be refunded'), { status: 400, code: 'not_booked' });
       }
       const { rows: ledger } = await tx.query(
         'SELECT id, returned_at FROM professional_service_consumptions WHERE calendar_event_booking_id = ? AND gym_id = ? FOR UPDATE',

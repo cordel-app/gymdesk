@@ -1,8 +1,8 @@
-import { assignmentPlanSnapshotId } from './assignment-config';
 import { Tx } from '../infra/db';
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import { reconfigureProjected } from './product-set-bridge';
+import { ownPrimaryPlanSnapshot, ownAssignmentSnapshot } from './plan-snapshot-ownership';
 
 /**
  * #1325 PR 3e-2 — the Plan's *Apply new price to assigned plans* writes the new
@@ -30,11 +30,12 @@ async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: numbe
 }
 
 async function writePrice(tx: Tx, gymId: string, setId: number, price: number, planPriceId: number | null) {
+  // M4b-2: the version's primary plan is the one being repriced; the set owns that one and no other.
+  const target = await ownPrimaryPlanSnapshot(tx, gymId, setId);
+  if (target == null) return;
   await tx.query(
-    `UPDATE plan_snapshots
-        SET membership_fee_price = ?, base_price = ?, plan_price_id = ?
-      WHERE id = (SELECT MIN(psj.plan_snapshot_id) FROM product_set_plan_snapshots psj JOIN product_sets pset ON pset.id = psj.product_set_id WHERE psj.product_set_id = ? AND pset.gym_id = ?)`,
-    [price, price, planPriceId, setId, gymId],
+    `UPDATE plan_snapshots SET membership_fee_price = ?, base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?`,
+    [price, price, planPriceId, target, gymId],
   );
 }
 
@@ -74,12 +75,10 @@ export async function repriceOnVersion(tx: Tx, input: {
 export async function refreshPlanPriceReference(tx: Tx, input: {
   gymId: string; userMembershipId: number; price: number; planPriceId: number | null;
 }): Promise<void> {
-  // MySQL cannot update a table through a subquery on itself: resolve the snapshot first.
-  const { rows } = await tx.query<{ id: number | null }>(
-    `SELECT ${assignmentPlanSnapshotId('?')} AS id`, [input.userMembershipId]);
-  if (rows[0]?.id == null) return;
+  const target = await ownAssignmentSnapshot(tx, input.gymId, input.userMembershipId);
+  if (target == null) return;
   await tx.query(
     `UPDATE plan_snapshots SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?`,
-    [input.price, input.planPriceId, rows[0].id, input.gymId],
+    [input.price, input.planPriceId, target, input.gymId],
   );
 }

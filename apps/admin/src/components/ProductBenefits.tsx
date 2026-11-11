@@ -195,7 +195,8 @@ export const mandatoryTagStyle: React.CSSProperties = {
  * shifting everything after it.
  */
 export type ProductBenefitColumnKey =
-  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price' | 'final_price'
+  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
+  | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
   | 'mandatory';
 
 export interface ProductBenefitColumn {
@@ -221,6 +222,14 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   // Benefit stays between Frequency and the prices as #916 fixed it.
   { key: 'requirement', labelKey: 'col_requirement', width: 120, align: 'left' },
   { key: 'original_price', labelKey: 'col_original_price', width: 130, align: 'right' },
+  // #2483 — the breakdown beside the price: the line's tax rate, the
+  // Promotions that grant the same Product and what its own treatment took off.
+  // Rendered only where a caller asks (`showBreakdown`), read from the server.
+  { key: 'tax', labelKey: 'col_applied_tax', width: 90, align: 'right' },
+  { key: 'promotion', labelKey: 'col_applied_promotion', width: 170, align: 'left' },
+  // #2494 — what the applied Promotion does to this line, from the application's own frozen grant.
+  { key: 'promotion_benefit', labelKey: 'col_promotion_benefit', width: 150, align: 'left' },
+  { key: 'direct_discount', labelKey: 'col_direct_discount', width: 120, align: 'right' },
   { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
   // #1184 stage 2: a Membership Plan benefit's own Mandatory Yes/No is the last
   // data column, immediately before Actions — never between Frequency and
@@ -278,6 +287,8 @@ export function productBenefitColumns(opts: {
   showFrequency: boolean;
   showAction: boolean;
   showPrices: boolean;
+  /** #2483 — Applied Tax, Applied Promotion and Direct Discount. Absent means not rendered. */
+  showBreakdown?: boolean;
   /** #959 — a Promotion's Requirement column. Absent means not rendered at all. */
   showRequirement?: boolean;
   /** #1184 — a Membership Plan benefit's Mandatory column. Absent means not rendered at all. */
@@ -291,6 +302,9 @@ export function productBenefitColumns(opts: {
     if (col.key === 'requirement') return opts.showRequirement === true;
     if (col.key === 'mandatory') return opts.showPlanMandatory === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
+    if (col.key === 'tax' || col.key === 'promotion' || col.key === 'promotion_benefit' || col.key === 'direct_discount') {
+      return opts.showPrices && opts.showBreakdown === true;
+    }
     return true;
   }).map((col) => (col.key === 'quantity'
     // #1135: the same column, named for what it counts in this section. The
@@ -658,7 +672,7 @@ function BenefitPriceCell({
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
-  showPrices = false, frequencyColumn = 'item', quantityColumn = 'quantity',
+  showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
   showRequirement = false, showPlanMandatory = false,
 }: {
   t: Translate;
@@ -688,6 +702,8 @@ export function ProductBenefitView({
    * the Assigned Plan snapshot sections quote their own frozen prices.
    */
   showPrices?: boolean;
+  /** #2483 — tax / promotion / direct-discount columns. */
+  showBreakdown?: boolean;
   /**
    * #959: the read-only half of the Requirement column, so the card says exactly
    * what the editor behind `⋮ → Edit` holds (#797 — the two halves are one field
@@ -705,7 +721,7 @@ export function ProductBenefitView({
   // for: a column with nothing to say renders an empty cell rather than
   // vanishing and shifting the columns after it out of line (#916).
   const columns = productBenefitColumns({
-    showFrequency, showAction: benefitContext != null, showPrices, showRequirement,
+    showFrequency, showAction: benefitContext != null, showPrices, showBreakdown, showRequirement,
     showPlanMandatory, quantityColumn,
   });
 
@@ -752,6 +768,18 @@ export function ProductBenefitView({
             line={row.original_line_price_incl_tax}
           />
         );
+      case 'tax':
+        return row.applied_tax_percent != null ? `${row.applied_tax_percent}%` : '—';
+      case 'promotion':
+        return row.applied_promotions && row.applied_promotions.length > 0
+          ? row.applied_promotions.join(', ') : '—';
+      case 'promotion_benefit':
+        return row.applied_promotion_benefits && row.applied_promotion_benefits.length > 0
+          ? row.applied_promotion_benefits.join(', ') : '—';
+      case 'direct_discount':
+        return row.direct_discount_line_incl_tax != null && row.direct_discount_line_incl_tax > 0
+          ? <BenefitPriceCell t={t} unit={row.direct_discount_line_incl_tax} line={null} />
+          : '—';
       case 'final_price':
         return (
           <BenefitPriceCell

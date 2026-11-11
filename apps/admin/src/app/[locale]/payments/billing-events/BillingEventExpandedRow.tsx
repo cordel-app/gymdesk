@@ -32,6 +32,8 @@ export interface Transaction {
   plan_name: string | null;
   card_brand: string | null;
   card_last4: string | null;
+  provider_status?: string | null;
+  normalized_payment_status?: string | null;
 }
 
 export /** #640 §2 — the read-only Billing Event details view. */
@@ -44,6 +46,8 @@ interface BillingEventDetails {
   amount: string | null;
   currency: string | null;
   status: string;
+  payment_status?: string | null;
+  normalized_payment_status?: string | null;
   event_type: string;
   charge_type_code: string | null;
   source: string | null;
@@ -53,7 +57,6 @@ interface BillingEventDetails {
   created_by: string | null;
   modified_at: string | null;
   modified_by: string | null;
-  next_payment_date: string | null;
   failure_reason: string | null;
   /** #1474: the event's priced components, read-only. */
   lines?: { id: number; kind: string; item_name: string; quantity: number; unit_amount: string | null; promotion_name: string | null; amount: string | null }[];
@@ -257,6 +260,14 @@ export function ExpandedRow({
                     : t(`billing_events_page.status_${details.status}` as any)}
                 />
               </DetailField>
+              <DetailField label={t('billing_events_page.det_normalized_payment_status')}>
+                {details.normalized_payment_status
+                  ? <StatusBadge status={details.normalized_payment_status === 'completed' ? 'paid' : details.normalized_payment_status === 'pending' ? 'pending' : 'failed'} label={t(`billing_events_page.normalized_${details.normalized_payment_status}` as any)} />
+                  : '—'}
+              </DetailField>
+              <DetailField label={t('billing_events_page.det_payment_status')}>
+                {details.payment_status ?? '—'}
+              </DetailField>
               <DetailField label={t('billing_events_page.det_event_type')}>{details.event_type}</DetailField>
               <DetailField label={t('billing_events_page.det_charge_type')}>{details.charge_type_code ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_source')}>{details.source ?? '—'}</DetailField>
@@ -266,9 +277,6 @@ export function ExpandedRow({
               </DetailField>
               <DetailField label={t('billing_events_page.det_modified_at')}>{fmtDateTime(details.modified_at, gymFmt)}</DetailField>
               <DetailField label={t('billing_events_page.det_modified_by')}>{details.modified_by ?? '—'}</DetailField>
-              <DetailField label={t('billing_events_page.det_next_payment')}>
-                {fmtScheduledDate(details.next_payment_date, gymFmt)}
-              </DetailField>
               <DetailField label={t('billing_events_page.det_receipt')}>{details.receipt_number ?? '—'}</DetailField>
               {details.failure_reason && (
                 <DetailField label={t('billing_events_page.det_failure_reason')}>
@@ -347,7 +355,7 @@ export function ExpandedRow({
           <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                {(['col_tx_date', 'col_tx_status', 'col_tx_amount', 'col_tx_source', 'col_tx_attempt', 'col_tx_method', 'col_tx_card', 'col_tx_ref', 'col_tx_reason'] as const).map((k) => (
+                {(['col_tx_date', 'col_tx_status', 'col_tx_provider_status', 'col_tx_amount', 'col_tx_source', 'col_tx_attempt', 'col_tx_method', 'col_tx_card', 'col_tx_ref', 'col_tx_reason'] as const).map((k) => (
                   <th key={k} style={{ padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>
                     {t(`billing_events_page.${k}`)}
                   </th>
@@ -359,6 +367,9 @@ export function ExpandedRow({
                 <tr key={tx.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                   <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(tx.created_at, gymFmt)}</td>
                   <td style={{ padding: '6px 10px' }}>{tx.status}</td>
+                  <td style={{ padding: '6px 10px' }}>
+                    {tx.provider_status ?? '—'}{tx.normalized_payment_status ? ` (${tx.normalized_payment_status})` : ''}
+                  </td>
                   <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtAmount(tx.amount)} {tx.currency ?? ''}
                   </td>

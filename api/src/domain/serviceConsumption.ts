@@ -11,13 +11,15 @@ import type { ProfessionalServiceGrantKind, ProfessionalServiceGrantRow } from '
  *   - `attendance` — staff marked the member present;
  *   - `no_show`    — staff marked the member absent (automatic; staff may
  *                    answer "return class" instead, which spends nothing);
- *   - `late_cancel` — the booking was cancelled inside the notice window.
+ *   - `late_cancel` — the booking was cancelled inside the notice window;
+ *   - `event_start` — the event started with the booking still held (#2604: the
+ *                    reservation a booking holds becomes the consumption).
  *
  * The notice window is #1162's `CANCELLATION_NOTICE_HOURS`, deliberately the
  * same constant and not a second configuration, so the two rules cannot drift.
  */
 
-export const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show'] as const;
+export const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'event_start'] as const;
 export type ConsumptionReason = (typeof CONSUMPTION_REASONS)[number];
 
 /**

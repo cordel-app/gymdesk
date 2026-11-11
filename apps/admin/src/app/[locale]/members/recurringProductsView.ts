@@ -82,6 +82,23 @@ export function changeMessage(c: ChangeLike): { key: string; values: Record<stri
   }
 }
 
+/**
+ * #2489 — the Review's Summary reads as three sections: what is contracted,
+ * what is cancelled, and what is due. The split is presentation only; every
+ * change still comes from the server's diff. A plan replaced by another is a
+ * contract (`from → to`); a plan with nothing after it is a cancellation.
+ */
+export function splitChanges<T extends ChangeLike>(changes: T[]): { contracted: T[]; cancelled: T[] } {
+  const contracted: T[] = [];
+  const cancelled: T[] = [];
+  for (const c of changes) {
+    const isCancel = c.kind === 'removed' || c.kind === 'promotion_removed'
+      || (c.kind === 'plan_changed' && c.to == null);
+    (isCancel ? cancelled : contracted).push(c);
+  }
+  return { contracted, cancelled };
+}
+
 /** A recurring line of the configuration `GET /product-sets/:id` freezes, as the section edits it. */
 export interface EditableLine {
   /** The Additional Periodic Service row id, `null` for a Membership Plan benefit (read-only here). */

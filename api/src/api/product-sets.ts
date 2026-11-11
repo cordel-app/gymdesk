@@ -2,6 +2,7 @@ import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { discardDraftSet } from './plan-snapshot-ownership';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -87,7 +88,7 @@ export async function createDraft(tx: Tx, input: {
       await tx.query(
         `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
           WHERE ps.id = ? AND um.status = 'draft'`, [inFlight.id]);
-      await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [inFlight.id]);
+      await discardDraftSet(tx, input.gymId, Number(inFlight.id));
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
     }
@@ -209,7 +210,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   if (row.status === 'draft') {
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
       `SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
-    await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [id]);
+    await discardDraftSet(tx, gymId, id);
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
@@ -313,20 +314,29 @@ export async function expirePendingPayments(): Promise<number> {
  * set that moved to `pending_payment` between a read and this call survives.
  */
 export async function expireDrafts(): Promise<number> {
-  // #1325 PR 3e: an Admin Draft assignment expires with its version, so no
-  // Draft row is left behind with nothing to edit it.
-  await db.query(
-    `DELETE um FROM user_memberships um
-       JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-      WHERE ps.status = 'draft' AND um.status = 'draft'
-        AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
-  );
-  const { rowCount } = await db.query(
-    `DELETE FROM product_sets
+  const { rows } = await db.query<{ id: number; gym_id: string }>(
+    `SELECT id, gym_id FROM product_sets
       WHERE status = 'draft'
         AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
   );
-  return rowCount;
+  let n = 0;
+  for (const r of rows) {
+    // #2477: the very discard a manual cancel runs (`cancelInFlight`), one
+    // transaction per Draft so a failure leaves the others — and a retry — intact.
+    // Expiry is re-checked under the row lock: a Draft touched or committed since
+    // the read is left alone.
+    const out = await db.transaction(async (tx) => {
+      const { rows: fresh } = await tx.query(
+        `SELECT id FROM product_sets
+          WHERE id = ? AND gym_id = ? AND status = 'draft'
+            AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE FOR UPDATE`,
+        [r.id, r.gym_id]);
+      if (fresh.length === 0) return { kind: 'skipped' };
+      return cancelInFlight(tx, r.gym_id, Number(r.id));
+    }).catch((err) => { console.error(`expireDrafts: draft ${r.id} failed`, err); return { kind: 'failed' }; });
+    if (out.kind === 'cancelled') n += 1;
+  }
+  return n;
 }
 
 /** Covers a member on one plan snapshot of a version (#2125 stage 21): the version's primary one by default. */

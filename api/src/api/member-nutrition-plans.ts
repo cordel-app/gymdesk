@@ -125,7 +125,7 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
-  const { member_id, template_id, name, description, start_date } = req.body;
+  const { member_id, template_id, name, description, start_date, confirm } = req.body;
 
   const memberId = Number(member_id);
   if (!Number.isInteger(memberId) || memberId <= 0) return res.status(400).json({ error: 'member_id is required' });
@@ -153,6 +153,7 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
       name: name?.trim() || null,
       description,
       startDate: start_date,
+      confirmReplace: confirm === true,
     }));
 
     const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ?`, [created.planId]);
@@ -162,7 +163,7 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
     });
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json(err.body ?? { error: err.message });
     next(err);
   }
 });

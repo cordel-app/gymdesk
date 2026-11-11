@@ -1602,6 +1602,19 @@ export default function PromotionsPage() {
     );
   }
 
+  // #2493 — the Session / One-off / Periodical sections' pair, rendered as the
+  // last element of the open editor (after the fields and `+ Add`).
+  function sectionBottomActions(onSave: () => void, onCancel: () => void) {
+    return (
+      <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
+        <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+        <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
+          {editSaving ? t('saving') : t('save_changes')}
+        </button>
+      </div>
+    );
+  }
+
   // That pair's error line, on its own: a failed section save reports itself
   // under the fields, never under the main form (#897).
   function renderSectionError(error: string | null) {
@@ -1621,7 +1634,7 @@ export default function PromotionsPage() {
         <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
-            {editSaving ? t('saving') : t('save_changes')}
+            {editSaving ? t('saving') : t('save')}
           </button>
         </div>
       </>
@@ -1635,9 +1648,6 @@ export default function PromotionsPage() {
         {renderSectionHeader(
           cfg.titleKey,
           isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, cfg.section) : null,
-          editing
-            ? sectionHeaderActions(() => handleSaveBenefitSection(promo.id, cfg.section), cancelSectionEdit)
-            : null,
         )}
         {editing ? (
           <>
@@ -1650,6 +1660,8 @@ export default function PromotionsPage() {
               quantityColumn: cfg.quantityColumn,
             })}
             {renderSectionError(sectionError)}
+            {/* #2493: Save / Cancel close the editor, after the + Add button. */}
+            {sectionBottomActions(() => handleSaveBenefitSection(promo.id, cfg.section), cancelSectionEdit)}
           </>
         ) : renderProductBenefitView(
           cfg.emptyKey, productSectionSaved(promo.id, cfg.section), cfg.showFrequency,
@@ -1680,7 +1692,6 @@ export default function PromotionsPage() {
         {/* #1387: Billing & Duration and Suitable Membership Plans belong to this
             section; they follow the card's Edit mode and its main Save. */}
         {cardEditing ? renderPlanScopeFields() : renderPlanScopeView(promo)}
-        {cardEditing && renderSectionActions(() => handleSaveMain(promo.id))}
       </div>
     );
   }
@@ -1738,7 +1749,7 @@ export default function PromotionsPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {editing
-          ? <>{renderMainFields()}{!cardTargetsMembershipPlan(promo) && renderSectionActions(() => handleSaveMain(promo.id))}</>
+          ? renderMainFields()
           : renderMainView(promo)}
 
         {renderMediaSection(promo)}
@@ -1768,6 +1779,9 @@ export default function PromotionsPage() {
             stays for both targets. */}
         {cardTargetsMembershipPlan(promo) && renderTimeline()}
         {renderBillingEventSimulation(promo)}
+
+        {/* #2492: the global Save / Cancel close the whole editor. */}
+        {editing && renderSectionActions(() => handleSaveMain(promo.id))}
       </div>
     );
   }
@@ -1971,7 +1985,6 @@ export default function PromotionsPage() {
     // never silently discard that section's unsaved draft.
     const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailFor(promo) },
       {
         label: t('edit'),
         onClick: () => enterEdit(promo),
@@ -1980,6 +1993,7 @@ export default function PromotionsPage() {
       },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
       { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { label: t('details'), onClick: () => setDetailFor(promo) },
     ];
 
     return (

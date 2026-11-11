@@ -21,6 +21,7 @@ import { getTenantContext, requireRole, TenantContext } from '../infra/tenantCon
 import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import { loadMemberEventServices } from './service-capacity';
 import {
   memberCancellation,
   professionalServiceLinkedSql,
@@ -62,6 +63,7 @@ import {
   MEMBER_CURRENT_ASSIGNMENT_ORDER,
   memberBillingEventForecast,
 } from './me-billing-forecast';
+import { AssigneeRefused } from './product-assignee';
 import {
   PurchaseRefused,
   memberProductCatalogue,
@@ -668,22 +670,18 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?'];
     const params: any[] = [gymId, memberId];
-    if (centerId != null) {
+    if ((centerId ?? defaultCenterId) != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
     const { rows } = await db.query(
       `SELECT ceb.id, ceb.status, ceb.waitlist_position, ceb.booked_at AS booked_on, ceb.cancelled_at,
-              ceb.calendar_event_id AS class_session_id,
+              ceb.calendar_event_id AS class_session_id, ceb.professional_service_id AS my_professional_service_id,
               ce.starts_at, ce.ends_at, ce.status AS session_status,
               at.name AS class_name, at.description,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
@@ -698,9 +696,11 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
     );
     // #1162 — `booked_on` is the row's own `booked_at`, and whether the booking
     // can still be cancelled is decided from the same numbers the DELETE uses.
+    const services = await loadMemberEventServices(db, gymId, rows.map((r: any) => Number(r.class_session_id)));
     res.json(rows.map((r: any) => ({
       ...withoutCancellationTiming(r),
       professional_service: !!Number(r.professional_service),
+      professional_services: services.get(Number(r.class_session_id)) ?? [],
       ...memberCancellation(r),
     })));
   } catch (err) {
@@ -773,7 +773,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
     if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     // #503 stage 6: an optional calendar-local center filter, independent from
     // the x-center-id header driving the rest of the app (#478's global
     // CenterSwitcher). It narrows within — never widens past — the header's
@@ -782,15 +782,9 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const filterCenterId = req.query.center_id as string | undefined;
     if (filterCenterId) {
       const requested = Number(filterCenterId);
-      if (allowedCenterIds && !allowedCenterIds.includes(requested)) {
-        return res.status(403).json({ error: 'You are not assigned to this center' });
-      }
-      if (centerId != null && centerId !== requested) {
-        return res.status(403).json({ error: 'You are not assigned to this center' });
-      }
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(requested);
-    } else if (centerId != null) {
+    } else if ((centerId ?? defaultCenterId) != null) {
       // A NULL center_id means the occurrence (or its activity type) was never
       // assigned to a specific center — e.g. a schedule-rule-materialized
       // session whose activity type has no default_center_id set. Such an
@@ -798,11 +792,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       // regardless of which center is selected/assigned, instead of silently
       // vanishing from every member's calendar (#478).
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
 
     const { rows } = await db.query(
@@ -814,6 +804,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
+              -- #2471: the occurrence's own description wins over the Activity Type's.
+              COALESCE(NULLIF(TRIM(ce.description), ''), at.description) AS event_description,
               -- #1637: the event's own image (#1382), else the Activity Type's.
               COALESCE(NULLIF(TRIM(ce.image_url), ''), NULLIF(TRIM(at.image_url), '')) AS class_type_image_url,
               at.is_shareable,
@@ -894,6 +886,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status = 'booked'
                 LIMIT 1
               ) AS my_attendance_status,
+              -- #2587: the Professional Service the member's own booking uses.
+              (
+                SELECT ceb.professional_service_id FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status = 'booked'
+                LIMIT 1
+              ) AS my_professional_service_id,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${professionalServiceLinkedSql('ce')} AS professional_service,
               (
@@ -929,9 +927,10 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ce.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
+    const eventServices = await loadMemberEventServices(db, gymId, rows.map((r: any) => Number(r.id)));
     const shaped = rows.map((r: any) => {
       const booked = Number(r.booked_count);
       const cap = Number(r.effective_capacity);
@@ -974,7 +973,10 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         // waiting-list place is leavable until the event starts.
         ...memberCancellation(r, r.my_booking_status ?? null),
         my_attendance_status: r.my_attendance_status ?? null,
+        my_professional_service_id: r.my_professional_service_id != null ? Number(r.my_professional_service_id) : null,
         professional_service: !!Number(r.professional_service),
+        // #2500 — each accepted service with its own capacity; the event's total is no substitute.
+        professional_services: eventServices.get(Number(r.id)) ?? [],
         availability_state,
         // #503 stage 5: unified member read model — additive next to
         // availability_state, which stays as the source of booking-action UI.
@@ -1066,7 +1068,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
           throw Object.assign(new Error('The participant is not linked to you through plan coverage'), { status: 403, code: 'participant_not_linked' });
         }
         const first = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, tx, false, actor, chosenService);
-        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService);
+        const second = await bookMemberOnSession(gymId, partnerId, Number(class_session_id), false, false, tx, false, actor, chosenService, false);
         if (first.status !== 'booked' || second.status !== 'booked') {
           // A Duo has no waiting-list path: both places or neither.
           throw Object.assign(new Error('There are not enough places for two participants'), { status: 409, code: 'duo_requires_places' });
@@ -2715,21 +2717,17 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     const now = new Date().toISOString();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId, defaultCenterId } = getCenterContext(req);
     const where: string[] = [
       'ceb.gym_id = ?', 'ceb.member_id = ?', "ceb.status = 'booked'",
       "ce.status = 'scheduled'", 'ce.starts_at >= ?', 'ce.starts_at <= ?',
     ];
     const params: any[] = [gymId, memberId, now, future];
-    if (centerId != null) {
+    if ((centerId ?? defaultCenterId) != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
-      params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
+      params.push(centerId ?? defaultCenterId);
     }
 
     const { rows: sessionRows } = await db.query(
@@ -2763,7 +2761,7 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const memberId = await resolveMemberId(gymId, ctx);
     const cutoff = new Date().toISOString();
 
-    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const { centerId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?', 'ce.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
     if (centerId != null) {
@@ -2771,10 +2769,6 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
-    } else if (allowedCenterIds) {
-      if (allowedCenterIds.length === 0) return res.json({ items: [], limit, offset });
-      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
-      params.push(...allowedCenterIds);
     }
 
     const { rows: sessionRows } = await db.query(
@@ -3015,6 +3009,8 @@ meRouter.post(
         promotionId,
         promotionIds,
         requestLocale: getRequestLocale(req),
+        // #2609: the family member the Product is for; the server refuses anyone outside the family.
+        assignedMemberInput: body.assigned_member_id,
       });
       req.log.info(
         { memberId, productId, purchaseId: result.purchaseId },
@@ -3039,6 +3035,7 @@ meRouter.post(
           message: 'This promotion is no longer available for this product',
         });
       }
+      if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
       if (err.status) return res.status(err.status).json({ error: err.message });
       req.log.error({ err: (err as Error).message }, 'Member product purchase failed');
       next(err);

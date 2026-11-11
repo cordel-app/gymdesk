@@ -34,10 +34,10 @@ afterAll(async () => {
   await db.end();
 });
 
-async function createService(name: string): Promise<number> {
+async function createService(name: string, max: number | null = null, min: number | null = null): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
-    [gymId, `${name} ${uniq()}`],
+    `INSERT INTO professional_services (gym_id, name, is_system, system_key, max_capacity, min_participants) VALUES (?, ?, 0, NULL, ?, ?)`,
+    [gymId, `${name} ${uniq()}`, max, min],
   );
   await db.query(
     `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
@@ -90,41 +90,37 @@ beforeAll(async () => {
     [gymId],
   );
   activityId = at;
-  single = await createService('Personal Training');
-  duo = await createService('Personal Training Duo');
+  single = await createService('Personal Training', 1, 1);
+  duo = await createService('Personal Training Duo', 2, 2);
   const res = await request.put(`/activity-types/${activityId}/eligible-professional-services`).set(headers())
-    .send({ professional_service_ids: [single, duo], capacities: { [single]: 1, [duo]: 2 } });
+    .send({ professional_service_ids: [single, duo] });
   expect(res.status).toBe(204);
 });
 
-describe('service capacity: configuration', () => {
-  it('reports the Activity Type default per service', async () => {
+describe('service capacity: configuration (#2499)', () => {
+  it("reports each eligible service's own min and max, not an Activity-level value", async () => {
     const res = await request.get(`/activity-types/${activityId}/eligible-professional-services`).set(headers());
-    const byId = Object.fromEntries(res.body.map((r: any) => [r.id, r.capacity]));
-    expect(byId[single]).toBe(1);
-    expect(byId[duo]).toBe(2);
+    const byId = Object.fromEntries(res.body.map((r: any) => [r.id, r]));
+    expect(byId[single]).toMatchObject({ max_capacity: 1, min_participants: 1 });
+    expect(byId[duo]).toMatchObject({ max_capacity: 2, min_participants: 2 });
   });
 
-  it('keeps a stored capacity when the list is saved again without capacities', async () => {
+  it('ignores a capacity sent for a service: the service is the single source of truth', async () => {
     const res = await request.put(`/activity-types/${activityId}/eligible-professional-services`).set(headers())
-      .send({ professional_service_ids: [single, duo] });
+      .send({ professional_service_ids: [single, duo], capacities: { [duo]: 9 } });
     expect(res.status).toBe(204);
     const rows = await db.query(
-      'SELECT professional_service_id, capacity FROM activity_type_eligible_professional_services WHERE activity_type_id = ?',
-      [activityId],
-    );
-    const byId = Object.fromEntries(rows.rows.map((r: any) => [r.professional_service_id, r.capacity]));
-    expect(byId[single]).toBe(1);
-    expect(byId[duo]).toBe(2);
+      'SELECT capacity FROM activity_type_eligible_professional_services WHERE activity_type_id = ?', [activityId]);
+    expect(rows.rows.every((r: any) => r.capacity == null)).toBe(true);
+    const sessionId = await createSession();
+    expect(svc(await detail(sessionId), duo).capacity).toBe(2);
   });
 
-  it('rejects a capacity that is not a positive integer or names an unselected service', async () => {
-    const zero = await request.put(`/activity-types/${activityId}/eligible-professional-services`).set(headers())
-      .send({ professional_service_ids: [single, duo], capacities: { [duo]: 0 } });
-    expect(zero.status).toBe(400);
-    const stray = await request.put(`/activity-types/${activityId}/eligible-professional-services`).set(headers())
-      .send({ professional_service_ids: [single], capacities: { [duo]: 2 } });
-    expect(stray.status).toBe(400);
+  it("changing the service's capacity is reflected on its events", async () => {
+    const sessionId = await createSession();
+    await db.query('UPDATE professional_services SET max_capacity = 3, min_participants = 1 WHERE id = ?', [duo]);
+    expect(svc(await detail(sessionId), duo).capacity).toBe(3);
+    await db.query('UPDATE professional_services SET max_capacity = 2, min_participants = 2 WHERE id = ?', [duo]);
   });
 
   it('an event with a service that has no capacity configured follows the event capacity', async () => {
@@ -184,7 +180,8 @@ describe('service capacity: booking', () => {
     expect((await book(a, sessionId, duo)).status).toBe(201);
     const res = await book(b, sessionId, duo);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('session_full_waitlist_not_open');
+    // The event capacity (1) caps the service's maximum (2), so the service is full.
+    expect(res.body.code).toBe('service_full');
   });
 
   it('never overbooks a service under concurrent attempts', async () => {
@@ -206,43 +203,13 @@ describe('service capacity: booking', () => {
   });
 });
 
-describe('service capacity: occurrence override', () => {
-  it('overrides one service, audits previous → new, and null follows the default again', async () => {
+describe('service capacity: no occurrence override (#2499)', () => {
+  it('ignores service_capacities on an occurrence', async () => {
     const sessionId = await createSession();
     const put = await request.put(`/class-sessions/${sessionId}`).set(headers())
-      .send({ service_capacities: { [duo]: 3 } });
+      .send({ service_capacities: { [duo]: 5 } });
     expect(put.status).toBe(200);
-    expect(svc(put.body, duo)).toMatchObject({ capacity: 3, capacity_overridden: true });
-    expect(svc(put.body, single)).toMatchObject({ capacity: 1, capacity_overridden: false });
-
-    const members = [await createMember(), await createMember(), await createMember()];
-    for (const m of members) expect((await book(m, sessionId, duo)).status).toBe(201);
-    expect(svc(await detail(sessionId), duo).status).toBe('full');
-
-    const back = await request.put(`/class-sessions/${sessionId}`).set(headers())
-      .send({ service_capacities: { [duo]: null } });
-    expect(svc(back.body, duo)).toMatchObject({ capacity: 2, capacity_overridden: false });
-
-    const { rows } = await db.query(
-      `SELECT previous_values, new_values FROM audit_logs WHERE entity_type = 'class_session' AND entity_id = ? ORDER BY id`,
-      [String(sessionId)],
-    );
-    const changed = rows.map((r: any) => JSON.parse(typeof r.new_values === 'string' ? r.new_values : JSON.stringify(r.new_values)));
-    expect(changed.some((n: any) => String(n.service_capacity_summary).includes('=3'))).toBe(true);
-  });
-
-  it('leaves the overrides alone when the key is absent, and rejects bad values', async () => {
-    const sessionId = await createSession();
-    await request.put(`/class-sessions/${sessionId}`).set(headers()).send({ service_capacities: { [duo]: 4 } });
-    const unrelated = await request.put(`/class-sessions/${sessionId}`).set(headers()).send({ max_capacity_override: 9 });
-    expect(svc(unrelated.body, duo).capacity).toBe(4);
-    for (const bad of [{ [duo]: 0 }, { [duo]: 'x' }, { abc: 2 }, [1], null]) {
-      const res = await request.put(`/class-sessions/${sessionId}`).set(headers()).send({ service_capacities: bad });
-      expect(res.status).toBe(400);
-    }
-    const stray = await request.put(`/class-sessions/${sessionId}`).set(headers())
-      .send({ service_capacities: { [await createService('Not offered')]: 2 } });
-    expect(stray.status).toBe(400);
+    expect(svc(put.body, duo).capacity).toBe(2);
   });
 });
 
@@ -251,13 +218,13 @@ describe('service capacity: access', () => {
     const sessionId = await createSession();
     const res = await request.get(`/class-sessions/${sessionId}`).set(headers(otherGymId));
     expect(res.status).toBe(404);
-    const put = await request.put(`/class-sessions/${sessionId}`).set(headers(otherGymId)).send({ service_capacities: { [duo]: 2 } });
+    const put = await request.put(`/class-sessions/${sessionId}`).set(headers(otherGymId)).send({ max_capacity_override: 2 });
     expect(put.status).toBe(404);
   });
 
   it('requires authentication', async () => {
     const sessionId = await createSession();
-    const res = await request.put(`/class-sessions/${sessionId}`).send({ service_capacities: { [duo]: 2 } });
+    const res = await request.put(`/class-sessions/${sessionId}`).send({ max_capacity_override: 2 });
     expect(res.status).toBe(401);
   });
 });

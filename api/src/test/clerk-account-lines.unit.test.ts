@@ -33,9 +33,9 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
       clerk_user_id: 'u' }, 'en').key).toBe('clerk_invitation_accepted');
   });
   // #2183: an existing, unlinked Clerk account is not "None".
-  it('an existing unlinked account is a Clerk Status fact; the invitation line stays about the invitation', () => {
+  it('an existing unlinked account reads on Status, and the invitation as Invited (never None)', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: false, account_exists: true }, 'en').key)
-      .toBe('clerk_invitation_none');
+      .toBe('clerk_invitation_invited');
     expect(m.clerkStatusLine({ account_exists: true, enrolled: false }, 'en').key)
       .toBe('clerk_status_account_exists');
     expect(m.clerkStatusLine({ account_exists: true, enrolled: true }, 'en').key)

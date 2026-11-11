@@ -1,3 +1,15 @@
+{bucket_private}/
+└── gyms/
+    └── {gym_id}-{sanitized_gym_name}/
+        ├── invoices/
+        │   ├── {invoice_id}-simplified-not-paid.pdf
+        │   ├── {invoice_id}-simplified-paid.pdf
+        │   ├── {invoice_id}-full-not-paid.pdf
+        │   └── {invoice_id}-full-paid.pdf
+        │
+        └── receipts/                                         
+            └── {receipt_id}.pdf
+
 {bucket}/
 ├── cordel/
 │   ├── nutrition/

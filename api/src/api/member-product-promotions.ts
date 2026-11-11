@@ -1,3 +1,5 @@
+import { DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { assignedMemberSql } from '../domain/productAssignee';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
 import { purchaseValidityState } from '../domain/productValidity';
@@ -17,6 +19,7 @@ import { resolveTimeZone } from '../domain/homeDashboard';
 import { db, type Tx } from '../infra/db';
 import { isNewMemberStatus } from './new-member-eligibility';
 import { type ProductBenefitCategory } from '../domain/productClassification';
+import { toProductBenefit } from '../domain/productBenefitActions';
 import {
   type AppliedPromotion,
   type MemberProductPromotionOffer,
@@ -25,6 +28,8 @@ import {
   offerCategoryFor,
   promotionGrantTableFor,
   promotionApplicationSnapshot,
+  promotionalPrice,
+  promotionDurationCycles,
   shapeAppliedPromotion,
   shapePromotionOffer,
 } from '../domain/memberProductPromotion';
@@ -374,6 +379,13 @@ export interface MemberPurchasedProduct {
   source?: 'one_off' | 'recurring';
   /** #1882 — removed in the member's open Draft; still Active until Save & Pay. */
   pending_termination?: boolean;
+  /**
+   * #2609 — the family member the Product is for: the stored assignee, else the
+   * purchaser / Product Set owner (a row written before the column existed, or a
+   * shared Product, which the purchaser holds for the family).
+   */
+  assigned_member_id: number | null;
+  assigned_member_name: string | null;
 }
 
 /**
@@ -401,7 +413,9 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
-            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
+            ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
        FROM member_products_oneoff_snapshot mp
        LEFT JOIN payment_requests pr
               ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
@@ -449,12 +463,82 @@ export async function loadMemberPurchases(
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+      assigned_member_name: row.assigned_member_name ?? null,
     };
   });
   const recurring = await loadRecurringPurchases(gymId, memberId);
   return [...oneOff, ...recurring].sort(
     (a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')),
   );
+}
+
+
+/**
+ * #2576 — the Promotions applied to recurring lines, keyed by line id, priced
+ * from each application's own frozen grant (`user_membership_promotion_*_snapshot`),
+ * never the live Promotion. Each step's `regular_amount` is the running price it
+ * was applied to, as for a one-time purchase; the direct discount comes last.
+ */
+async function loadRecurringLinePromotions(
+  gymId: string,
+  lines: readonly { id: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
+): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null }>> {
+  const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null }>();
+  if (lines.length === 0) return out;
+  const ids = lines.map((l) => l.id);
+  const { rows } = await db.query<any>(
+    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.applied_at, ump.snapshot
+       FROM user_membership_promotions ump
+      WHERE ump.gym_id = ? AND ump.status = 'applied'
+        AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY ump.id ASC`,
+    [gymId, ...ids],
+  );
+  if (rows.length === 0) return out;
+  const appIds = rows.map((r: any) => Number(r.id));
+  const marks = appIds.map(() => '?').join(',');
+  const grants = new Map<string, { action: unknown; value: unknown; quantity: unknown; category: ProductBenefitCategory }>();
+  for (const category of ['session', 'oneoff', 'periodical'] as const) {
+    const { rows: g } = await db.query<any>(
+      `SELECT user_membership_promotion_id AS app_id, product_id, \`action\`, \`value\`, quantity
+         FROM user_membership_promotion_${category}_snapshot
+        WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`,
+      [gymId, ...appIds],
+    );
+    for (const r of g as any[]) grants.set(`${r.app_id}:${r.product_id}`, { ...r, category });
+  }
+  const lineById = new Map(lines.map((l) => [l.id, l]));
+  const running = new Map<number, number>();
+  for (const row of rows as any[]) {
+    const lineId = Number(row.recurrent_snapshot_id);
+    const line = lineById.get(lineId)!;
+    const grant = grants.get(`${row.id}:${line.productId}`);
+    if (!grant) continue;
+    const snap = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
+    const benefit = toProductBenefit('promotion', grant.action, grant.value);
+    const before = running.get(lineId) ?? line.listUnit;
+    const after = promotionalPrice(before, benefit);
+    if (after == null) continue;
+    running.set(lineId, after);
+    const entry = out.get(lineId) ?? { promotions: [], final: null };
+    entry.promotions.push(shapeAppliedPromotion({
+      id: row.id, promotion_id: row.promotion_id, promotion_name: snap?.name ?? `Promotion #${row.promotion_id}`,
+      benefit_action: benefit.action, benefit_value: benefit.value,
+      duration_cycles: promotionDurationCycles(grant.category, grant.quantity),
+      regular_amount: Math.round(before * line.quantity * 100) / 100,
+      final_amount: Math.round(after * line.quantity * 100) / 100,
+      applied_at: row.applied_at ?? null,
+    }));
+    out.set(lineId, entry);
+  }
+  for (const [lineId, entry] of out) {
+    const line = lineById.get(lineId)!;
+    const afterPromos = running.get(lineId) ?? line.listUnit;
+    const net = line.pct != null ? afterPromos * (1 - line.pct / 100) : afterPromos;
+    entry.final = Math.round(net * line.quantity * 100) / 100;
+  }
+  return out;
 }
 
 /**
@@ -475,7 +559,9 @@ async function loadRecurringPurchases(
             s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status,
             COALESCE(s.line_ref, s.id) AS line_ref,
             ps.created_by AS set_created_by,
-            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
+            ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
        JOIN member_products_recurrent_snapshot s
          ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
@@ -490,31 +576,95 @@ async function loadRecurringPurchases(
   // #1882 — a line of the Active version that the member's open Draft no longer
   // carries (matched by `line_ref`, which a clone keeps) is pending termination:
   // the Draft only registers the removal, the Active version is untouched.
+  // #2479 — the open (unexpired) Draft's own lines are listed too: a line the
+  // Draft added shows as a Draft row, and a line it changed shows the Draft's
+  // frozen figures, so the list reflects the Product Set being edited.
   const { rows: draftRows } = await db.query<any>(
-    `SELECT s.product_set_id, COALESCE(s.line_ref, s.id) AS line_ref
+    `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
+            s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
+            s.currency, s.starts_at, s.created_at, s.origin,
+            COALESCE(s.line_ref, s.id) AS line_ref, ps.created_by AS set_created_by,
+            ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
+            (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
        JOIN member_products_recurrent_snapshot s
          ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
-        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())`,
+        AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
+      ORDER BY s.created_at DESC, s.id DESC`,
     [gymId, memberId],
   );
   const hasDraft = draftRows.length > 0 || (await db.query<any>(
     `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' LIMIT 1`,
     [gymId, memberId],
   )).rows.length > 0;
-  const draftLineRefs = new Set(draftRows.map((r: any) => Number(r.line_ref)));
-  return rows.map((row: any) => {
+  const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
+  const activeRefs = new Set(rows.map((r: any) => Number(r.line_ref)));
+  const draftLineRefs = new Set(draftByRef.keys());
+  const lineInputs = [...rows, ...draftRows].map((r: any) => {
+    const quantity = Number(r.quantity) || 1;
+    const unit = Number(r.unit_price);
+    const listUnit = r.list_unit_price == null ? unit : Number(r.list_unit_price);
+    return {
+      id: Number(r.id), productId: Number(r.product_id), listUnit, quantity,
+      pct: r.direct_discount_percent == null ? null : Number(r.direct_discount_percent),
+    };
+  });
+  const linePromos = await loadRecurringLinePromotions(gymId, lineInputs);
+  const figures = (row: any) => {
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
     const amount = Math.round(unit * quantity * 100) / 100;
     const listUnit = row.list_unit_price == null ? null : Number(row.list_unit_price);
     const listPrice = listUnit == null ? null : Math.round(listUnit * quantity * 100) / 100;
     const pct = row.direct_discount_percent == null ? null : Number(row.direct_discount_percent);
+    return { amount, listPrice, pct };
+  };
+  const draftOnly: MemberPurchasedProduct[] = draftRows
+    .filter((r: any) => !activeRefs.has(Number(r.line_ref)))
+    .map((row: any) => {
+      const { amount: baseAmount, listPrice, pct } = figures(row);
+      const lp = linePromos.get(Number(row.id));
+      const amount = lp?.final ?? baseAmount;
+      return {
+        id: -Number(row.id),
+        product_id: Number(row.product_id),
+        status: 'draft' as const,
+        product_name: row.item_name,
+        product_type: row.item_type,
+        billing_frequency: row.item_billing_frequency ?? null,
+        units: null,
+        amount,
+        currency: row.currency ?? 'EUR',
+        purchased_at: row.starts_at ?? null,
+        created_at: row.created_at ?? null,
+        created_by: row.set_created_by ?? null,
+        origin: toItemOrigin(row.origin),
+        regular_amount: listPrice ?? amount,
+        promotion: lp?.promotions[0] ?? null,
+        promotions: lp?.promotions ?? [],
+        list_price: listPrice,
+        direct_discount_percent: pct,
+        direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
+        tax_rate_percent: null,
+        payment_status: null,
+        billing_event_id: null,
+        source: 'recurring' as const,
+        pending_termination: false,
+        assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+        assigned_member_name: row.assigned_member_name ?? null,
+      };
+    });
+  const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
+    const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
+    const { amount: baseAmount, listPrice, pct } = figures(row);
+    const lp = linePromos.get(Number(row.id));
+    const amount = lp?.final ?? baseAmount;
     return {
-      id: -Number(row.id),
+      id: -Number(active.id),
       product_id: Number(row.product_id),
-      status: row.set_status === 'active' ? 'active' : 'pending_payment',
+      status: active.set_status === 'active' ? 'active' : 'pending_payment',
       product_name: row.item_name,
       product_type: row.item_type,
       billing_frequency: row.item_billing_frequency ?? null,
@@ -523,19 +673,22 @@ async function loadRecurringPurchases(
       currency: row.currency ?? 'EUR',
       purchased_at: row.starts_at ?? null,
       created_at: row.created_at ?? null,
-      created_by: row.set_created_by ?? null,
+      created_by: active.set_created_by ?? null,
       origin: toItemOrigin(row.origin),
       regular_amount: listPrice ?? amount,
-      promotion: null,
-      promotions: [],
+      promotion: lp?.promotions[0] ?? null,
+      promotions: lp?.promotions ?? [],
       list_price: listPrice,
       direct_discount_percent: pct,
-      direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
+      direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
       tax_rate_percent: null,
-      payment_status: row.payment_status ?? null,
-      billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      payment_status: active.payment_status ?? null,
+      billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       source: 'recurring' as const,
-      pending_termination: row.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(row.line_ref)),
+      pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
+      assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
+      assigned_member_name: row.assigned_member_name ?? null,
     };
   });
+  return [...activeRows, ...draftOnly];
 }

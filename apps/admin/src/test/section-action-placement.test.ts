@@ -128,9 +128,9 @@ describe('Membership Plans: every subsection action is beside its title (#963)',
     expect(plansSrc).toContain("<button onClick={onCancel} style={btnSmall('#888')}>{t('plans.cancel')}</button>");
     expect(plansSrc).toContain('<button onClick={onSave} disabled={saving} style={btnSmall()}>');
     expect(plansSrc).toContain("{saving ? t('plans.saving') : saveLabel}");
-    // PRICING says `Save`, every other section `Save changes` — as before.
-    expect(plansSrc).toContain("saveLabel: t('plans.save'),");
-    expect(plansSrc.match(/saveLabel: t\('plans\.save_changes'\),/g) ?? []).toHaveLength(3);
+    // Every section-level editor says `Save` (#2484).
+    expect(plansSrc.match(/saveLabel: t\('plans\.save'\),/g) ?? []).toHaveLength(4);
+    expect(plansSrc).not.toContain("saveLabel: t('plans.save_changes')");
     expect(plansSrc).toContain('saving: pricingSaving,');
     expect(plansSrc).toContain('saving: durationSaving,');
     expect(plansSrc).toContain('saving: benefitSaving,');
@@ -184,12 +184,12 @@ describe('Promotions: every subsection action is beside its title (#963)', () =>
     );
   });
 
-  it('puts each section editor\'s Save/Cancel in that section\'s header', () => {
+  it('puts each section editor\'s Save/Cancel in that section\'s header (Membership Fee) or at its bottom (#2493)', () => {
     expect(promotionsSrc).toContain(
       'function renderSectionHeader(titleKey: string, onEdit: (() => void) | null, actions?: React.ReactNode)',
     );
     expect(promotionsSrc).toMatch(
-      /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
+      /sectionBottomActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
     );
     expect(promotionsSrc).toMatch(
       /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, 'membership_fee'\), cancelSectionEdit\)/,

@@ -69,7 +69,9 @@ const emptyForm = {
   nif_nie_passport: '',
 };
 
-const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
+// #2574: the Normalized Payment Status vocabulary of the latest unsettled Billing Event.
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired', 'canceled', 'refunded', 'partially_refunded'] as const;
+const ACCESS_RIGHTS = ['granted', 'to_be_reviewed', 'revoked'] as const;
 const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 
 // ─── List columns (#928, the #637/#724 column rule) ──────────────────────────
@@ -107,6 +109,8 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
   { key: 'payment_status', labelKey: 'col_payment_status', width: 110, mobile: 'secondary' },
   { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110, mobile: 'keep' },
+  // #2550: the Member's access rights, a column rather than a chip by the name.
+  { key: 'access_rights', labelKey: 'col_access_rights', width: 110, mobile: 'secondary' },
   // Wide enough for the longest translated title ("ACCIONES") next to the
   // chevron and the ⋮ menu the cell also holds.
   { key: 'actions', labelKey: 'col_actions', width: 84, mobile: 'actions' },
@@ -145,6 +149,8 @@ export default function MembersPage() {
   const [enrollmentStatusFilter, setEnrollmentStatusFilter] = useState<string>(searchParams.get('enrollment_status') ?? '');
   // #1367: `welcomed=false` is where the Home dashboard's "Welcome new members" task lands.
   const [welcomedFilter, setWelcomedFilter] = useState<string>(searchParams.get('welcomed') ?? '');
+  // #2551: the derived Access Rights value, filtered by the API.
+  const [accessRightsFilter, setAccessRightsFilter] = useState<string>(searchParams.get('access_rights') ?? '');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   // #1374 §2: the image picked in the Add modal is held here until the Member
@@ -243,8 +249,9 @@ export default function MembersPage() {
     if (paymentStatusFilter) p.set('payment_status', paymentStatusFilter);
     if (enrollmentStatusFilter) p.set('enrollment_status', enrollmentStatusFilter);
     if (welcomedFilter) p.set('welcomed', welcomedFilter);
+    if (accessRightsFilter) p.set('access_rights', accessRightsFilter);
     return p;
-  }, [centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter]);
+  }, [centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter, accessRightsFilter]);
 
   async function load() {
     if (!activeGymId) {
@@ -275,10 +282,10 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!gymLoading) load();
-  }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter]);
+  }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter, accessRightsFilter]);
 
   function syncUrl(updates: {
-    centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string; welcomed?: string;
+    centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string; welcomed?: string; access_rights?: string;
     /** #961: the expanded Member and the work area open on it, so a refresh, a
         back/forward and a pasted link all land on the same tab. */
     member?: string; tab?: string;
@@ -314,6 +321,11 @@ export default function MembersPage() {
   function handleEnrollmentFilter(v: string) {
     setEnrollmentStatusFilter(v);
     syncUrl({ enrollment_status: v });
+  }
+
+  function handleAccessRightsFilter(v: string) {
+    setAccessRightsFilter(v);
+    syncUrl({ access_rights: v });
   }
 
   function handleWelcomedFilter(v: string) {
@@ -707,6 +719,9 @@ export default function MembersPage() {
               ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
               : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
           </div>
+          <div className={CELL_CLASS.access_rights} style={badgeCellStyle}>
+            <StatusBadge status={m.access_rights ?? 'granted'} label={t(`members.access_rights_${m.access_rights ?? 'granted'}`)} />
+          </div>
           <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             {/* Decorative: the row itself carries the expanded state and the
                 keyboard affordance, so a second control would only be a nested
@@ -860,6 +875,16 @@ export default function MembersPage() {
             onChange={handleEnrollmentFilter}
             allLabel={t('members.all_enrollment_statuses')}
             options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('members.filter_access_rights')} htmlFor="members-filter-access-rights">
+          <StatusFilter
+            id="members-filter-access-rights"
+            value={accessRightsFilter}
+            onChange={handleAccessRightsFilter}
+            allLabel={t('members.all_access_rights')}
+            options={ACCESS_RIGHTS.map((s) => ({ value: s, label: t(`members.access_rights_${s}`) }))}
             style={filterControlStyle}
           />
         </FilterField>

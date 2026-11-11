@@ -38,6 +38,7 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { SectionEditButton } from '@/components/SectionEditButton';
 
 type SlotDateStatus = 'available' | 'no_occurrence' | 'not_scheduled' | 'full' | 'already_booked';
 
@@ -157,6 +158,9 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
   const [picked, setPicked] = useState<Record<string, SlotIdentity>>({});
   const [saving, setSaving] = useState(false);
   const [report, setReport] = useState<BookReport | null>(null);
+  // #2604: the grid reads until Edit is pressed (#957 — an expanded card reads,
+  // the Edit action writes). Cancel restores the stored selection.
+  const [editing, setEditing] = useState(false);
 
   function apply(payload: PersonalTrainingSlots) {
     setData(payload);
@@ -183,6 +187,12 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function cancelEdit() {
+    if (data) apply(data);
+    setReport(null);
+    setEditing(false);
+  }
 
   function toggle(slot: WeeklySlot) {
     const key = slotKey(slot);
@@ -222,6 +232,7 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
       // Re-read: booking changes every affected date's status, and the stored
       // pattern is now whatever the server accepted.
       apply(await apiFetch<PersonalTrainingSlots>(`/members/${memberId}/personal-training-slots`));
+      if (mode === 'save') setEditing(false);
     } catch (err) {
       toast((err as Error).message || t('pt_slots_error'));
     } finally {
@@ -248,6 +259,12 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
         {' · '}
         {data.professional_services.map((s) => `${s.name} (${s.sessions})`).join(', ')}
       </p>
+
+      {canWrite && !editing && hasAnySlot && (
+        <div style={actions}>
+          <SectionEditButton label={t('pt_slots_edit')} onClick={() => setEditing(true)} />
+        </div>
+      )}
 
       {unmatched.length > 0 && (
         <p style={warn}>
@@ -277,15 +294,23 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
                     const isPicked = Boolean(picked[key]);
                     return (
                       <div key={key} style={slot.available_count > 0 ? slotCard : slotCardBlocked}>
-                        <label style={pickRow} title={readOnlyTitle}>
-                          <input
-                            type="checkbox"
-                            checked={isPicked}
-                            disabled={!canWrite || saving}
-                            onChange={() => toggle(slot)}
-                          />
-                          <span style={slotTime}>{slot.start_time}–{slot.end_time}</span>
-                        </label>
+                        {editing ? (
+                          <label style={pickRow} title={readOnlyTitle}>
+                            <input
+                              type="checkbox"
+                              checked={isPicked}
+                              disabled={!canWrite || saving}
+                              onChange={() => toggle(slot)}
+                            />
+                            <span style={slotTime}>{slot.start_time}–{slot.end_time}</span>
+                          </label>
+                        ) : (
+                          <div style={pickRow}>
+                            <span style={slotTime}>
+                              {isPicked ? '✓ ' : ''}{slot.start_time}–{slot.end_time}
+                            </span>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => setExpanded(isOpen ? null : key)}
@@ -325,7 +350,7 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
             ))}
           </div>
 
-          <div style={actions}>
+          {editing && <div style={actions}>
             <span style={dim}>{t('pt_slots_selected_count', { count: pickedCount })}</span>
             <button
               type="button"
@@ -345,7 +370,10 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
             >
               {saving ? t('pt_slots_booking') : t('pt_slots_book')}
             </button>
-          </div>
+            <button type="button" onClick={cancelEdit} disabled={saving} style={secondaryButton}>
+              {t('pt_slots_cancel')}
+            </button>
+          </div>}
         </>
       )}
 

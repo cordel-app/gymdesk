@@ -553,8 +553,8 @@ describe('POST /training-plan-templates/:id/assign', () => {
       .post(`/training-plan-templates/${gymPlanId}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, name: 'Assigned Gym Plan', start_date: new Date().toISOString().slice(0, 10), on_existing_active: 'keep' });
-    // Either 201 (first active or keep) or 409 (conflict) are valid — the important thing is the endpoint is reachable.
+      .send({ member_id: memberId, name: 'Assigned Gym Plan', start_date: new Date().toISOString().slice(0, 10) , confirm: true });
+    // Either 201 or 409 are valid — the important thing is the endpoint is reachable.
     expect([201, 409]).toContain(res.status);
   });
 });

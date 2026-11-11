@@ -21,7 +21,9 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
-import { ImagePreviewButton } from '@/components/ImagePreview';
+import { EventServicesList, type EventService } from '@/components/EventServicesList';
+import { BookingDetailDialog } from '@/components/BookingDetailDialog';
+import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -41,6 +43,16 @@ interface UpcomingBooking {
   center_name: string | null;
   my_booking_status: 'booked' | 'waitlisted' | 'attended' | 'no_show' | null;
   my_booking_id: number | null;
+  /** #2476 — the same fields `GET /me/schedule` gives My Bookings. */
+  my_waitlist_position?: number | null;
+  booked_count?: number;
+  waitlist_count?: number;
+  can_cancel?: boolean;
+  cancellation_block?: 'already_started' | 'window_closed' | null;
+  professional_service?: boolean;
+  /** #2587 — the booking's own Professional Service, shown with a Booked chip. */
+  my_professional_service_id?: number | null;
+  professional_services?: EventService[];
 }
 
 interface Membership {
@@ -154,6 +166,25 @@ export default function HomePage() {
 
   const [bookingDetailOpen, setBookingDetailOpen] = useState(false);
   const [bookingImageFailed, setBookingImageFailed] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  // #2476 — the very DELETE My Bookings calls; its eligibility rule is the API's
+  // (`can_cancel`), and the card and the dialog are re-read afterwards.
+  async function cancelNextBooking() {
+    if (!nextBooking?.my_booking_id) return;
+    setCancelBusy(true);
+    try {
+      await apiFetch(`/me/bookings/${nextBooking.my_booking_id}`, { method: 'DELETE' });
+      setConfirmCancelOpen(false);
+      setBookingDetailOpen(false);
+      setBookingImageFailed(false);
+      await load();
+    } catch {
+      setConfirmCancelOpen(false);
+    } finally {
+      setCancelBusy(false);
+    }
+  }
   function goToBookings() { router.push(`/${locale}/schedule`); }
 
   // Clerk's state is not known yet (always the case on the server and on the
@@ -262,15 +293,10 @@ export default function HomePage() {
               <div style={styles.bookingLayout}>
                 {nextBooking.class_type_image_url?.trim() && !bookingImageFailed && (
                   <div style={styles.bookingImageBox} onClick={(e) => e.stopPropagation()}>
-                    <ImagePreviewButton
-                      src={nextBooking.class_type_image_url.trim()}
-                      alt={nextBooking.class_type_name}
-                      title={nextBooking.class_type_name}
-                      description={nextBooking.class_type_description?.trim() || null}
-                    >
+                    <button type="button" style={styles.bookingImageButton} onClick={() => setBookingDetailOpen(true)} aria-label={nextBooking.class_type_name}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={nextBooking.class_type_image_url.trim()} alt="" style={styles.bookingImage} onError={() => setBookingImageFailed(true)} />
-                    </ImagePreviewButton>
+                    </button>
                   </div>
                 )}
                 <div style={styles.bookingInfo}>
@@ -297,6 +323,9 @@ export default function HomePage() {
                       <span>{value.trim()}</span>
                     </p>
                   ) : null)}
+                  {nextBooking.my_booking_status === 'booked' && nextBooking.my_professional_service_id != null && (
+                    <EventServicesList services={nextBooking.professional_services} bookedId={nextBooking.my_professional_service_id} />
+                  )}
                   {sameDayMore > 0 && (
                     <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
                   )}
@@ -313,27 +342,25 @@ export default function HomePage() {
 
 
       {bookingDetailOpen && nextBooking && (
-        <MemberDialog
-          title={nextBooking.class_type_name}
-          labelledBy="next-booking-detail-title"
+        <BookingDetailDialog
+          booking={{
+            ...nextBooking,
+            title: nextBooking.class_type_name,
+            whenLabel: `${dateOnly(nextBooking.starts_at)} · ${timeOnly(nextBooking.starts_at)}–${timeOnly(nextBooking.ends_at)}`,
+            description: nextBooking.class_type_description,
+            imageUrl: bookingImageFailed ? null : nextBooking.class_type_image_url,
+          }}
+          busy={cancelBusy}
           onClose={() => setBookingDetailOpen(false)}
-          actions={
-            <>
-              <button type="button" style={secondaryButtonStyle} onClick={() => setBookingDetailOpen(false)}>{t('home.close')}</button>
-              <button type="button" style={primaryButtonStyle} onClick={goToBookings}>{t('home.go_to_bookings')}</button>
-            </>
-          }
-        >
-          {nextBooking.class_type_image_url?.trim() && !bookingImageFailed && (
-            <img src={nextBooking.class_type_image_url.trim()} alt="" style={{ width: '100%', borderRadius: 8, display: 'block', marginBottom: 12 }} />
-          )}
-          <p style={styles.bookingSub}>
-            {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
-          </p>
-          {nextBooking.class_type_description?.trim() && (
-            <p style={styles.bookingSub}>{nextBooking.class_type_description.trim()}</p>
-          )}
-        </MemberDialog>
+          onCancel={() => setConfirmCancelOpen(true)}
+        />
+      )}
+      {confirmCancelOpen && nextBooking?.my_booking_id && (
+        <CancelBookingConfirmDialog
+          busy={cancelBusy}
+          onClose={() => setConfirmCancelOpen(false)}
+          onConfirm={cancelNextBooking}
+        />
       )}
 
       {/* Today's Nutrition Plan — omitted entirely when there's nothing to show */}
@@ -463,6 +490,7 @@ const styles: Record<string, React.CSSProperties> = {
   card:            { ...sectionCardStyle, padding: '16px 18px', cursor: 'default' },
   nextBookingCard: { ...sectionCardStyle, padding: 0, overflow: 'hidden', cursor: 'default', display: 'block', textAlign: 'left' },
   bookingLayout:   { display: 'flex', alignItems: 'stretch' },
+  bookingImageButton: { padding: 0, margin: 0, border: 'none', background: 'none', cursor: 'zoom-in', display: 'block', width: '100%', height: '100%' },
   bookingImageBox: { flex: '0 0 112px', alignSelf: 'stretch', position: 'relative', overflow: 'hidden' },
   bookingImage:    { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   bookingInfo:     { flex: '1 1 0', minWidth: 0, padding: '16px 18px' },

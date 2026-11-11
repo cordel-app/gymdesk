@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { recordNotifications } from '../infra/notifications';
+import { convertStartedReservations } from './service-reservation';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import {
   BOOKING_REMINDER_LEAD_MINUTES,
@@ -107,7 +108,18 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       }
     }
 
+    // #2604: the same pass turns the reservations of events that have started
+    // into consumptions. Idempotent per booking, so it needs no run-log slot
+    // for the reason the reminders do not; a failure here must not cost reminders.
+    let conversion: Awaited<ReturnType<typeof convertStartedReservations>> | null = null;
+    try {
+      conversion = await convertStartedReservations();
+    } catch (err) {
+      failures.push({ gym_id: '*', error: `event-start conversion: ${(err as Error).message}` });
+    }
+
     const body = {
+      ...(conversion ? { reservations_consumed: conversion.consumed, reservations_released: conversion.released } : {}),
       candidates: candidates.length,
       created,
       gyms: byGym.size,

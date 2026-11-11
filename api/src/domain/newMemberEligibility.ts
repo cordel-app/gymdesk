@@ -56,6 +56,13 @@ const DRAFT_STATUS = 'draft';
 /** #1108 stage 2: a row awaiting its first payment is a Draft that is locked — still nobody's plan. */
 const PENDING_PAYMENT_STATUS = 'pending_payment';
 
+/**
+ * #2548 — a plan cancelled within this many calendar days of its start is
+ * disregarded: a purchase undone straight away must not cost the Member their
+ * New Member status. Day 14 is inside the grace period, day 15 is not.
+ */
+export const NEW_MEMBER_CANCELLATION_GRACE_DAYS = 14;
+
 export interface NewMemberAssignment {
   id: number;
   status: string;
@@ -136,6 +143,22 @@ function terminalEnd(
   return successor === null ? null : successor.slice(0, 10);
 }
 
+/**
+ * #2548 — was this assignment cancelled within its grace period? Only a
+ * `cancelled` row with a recorded cancellation timestamp (`closed_at`) can be;
+ * the day count is calendar days between the two dates, so time of day and
+ * timezone never move a boundary. `ends_at` is not used: a cancellation ends
+ * the plan on its last paid day, which says nothing about when it was cancelled.
+ */
+export function wasCancelledWithinGrace(assignment: NewMemberAssignment): boolean {
+  if (assignment.status !== 'cancelled') return false;
+  const start = toDateOnly(assignment.starts_at);
+  const closed = toDateOnly(assignment.closed_at);
+  if (start === null || closed === null) return false;
+  const days = (Date.parse(`${closed}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000;
+  return days <= NEW_MEMBER_CANCELLATION_GRACE_DAYS;
+}
+
 /** Does this Assigned Plan make its Member a current or recent member? */
 export function countsAsRecentMembership(
   assignment: NewMemberAssignment, cutoff: string, siblings: readonly NewMemberAssignment[] = [],
@@ -148,6 +171,7 @@ export function countsAsRecentMembership(
   // that absence alone is not what makes this right.
   if (assignment.status === DRAFT_STATUS || assignment.status === PENDING_PAYMENT_STATUS) return false;
   if (LIVE_STATUSES.has(assignment.status)) return true;
+  if (wasCancelledWithinGrace(assignment)) return false;
 
   const startsAt = toDateOnly(assignment.starts_at);
   if (startsAt !== null && startsAt >= cutoff) return true;

@@ -9,6 +9,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormInput } from '@/components/CrudModal';
 import { StatusFilter } from '@/components/StatusFilter';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
 import { localeLabel } from '@/lib/localeLabels';
@@ -17,7 +19,7 @@ import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/c
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
 import {
-  ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
+  ProductCardHeader, ProductListFrame, ProductListRow, productCardStyle, productExpandedBodyStyle, type ProductListText, type ProductRowData,
 } from '@/components/products/ProductListChrome';
 import { ProductLayout, productValueStyle, productTextareaStyle, productCheckboxCellStyle } from '../../financials/products/ProductLayout';
 import {
@@ -57,6 +59,7 @@ interface BaseProduct {
   mandatory: boolean;
   validity_days: number | null;
   one_time_purchase: boolean;
+  one_per_member: boolean;
   sharing_type: 'individual' | 'shared';
   description: string | null;
   notes: string | null;
@@ -84,6 +87,7 @@ interface Form {
   mandatory: boolean;
   validity_days: string;
   one_time_purchase: boolean;
+  one_per_member: boolean;
   sharing_type: 'individual' | 'shared';
   description: string;
   notes: string;
@@ -106,6 +110,7 @@ function formFor(p: BaseProduct | null): Form {
     mandatory: p?.mandatory ?? false,
     validity_days: p?.validity_days != null ? String(p.validity_days) : '',
     one_time_purchase: p?.one_time_purchase ?? false,
+    one_per_member: p?.one_per_member ?? false,
     sharing_type: p?.sharing_type ?? 'individual',
     description: p?.description ?? '',
     notes: p?.notes ?? '',
@@ -131,6 +136,7 @@ function payloadFor(f: Form) {
     mandatory: f.mandatory,
     validity_days: f.validity_days.trim() ? Number(f.validity_days) : null,
     one_time_purchase: f.one_time_purchase,
+    one_per_member: f.one_per_member,
     sharing_type: f.sharing_type,
     description: f.description.trim() || null,
     notes: f.notes.trim() || null,
@@ -157,6 +163,7 @@ export default function BaseProductsPage() {
   const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
+  const [view, setView] = useExerciseViewMode();
   const [rows, setRows] = useState<BaseProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -255,7 +262,11 @@ export default function BaseProductsPage() {
   const sectionsFor = (type: string) =>
     visibleProductSections({ isSystem: false, isSessionType: false })
       .filter((sec) => sec.key !== 'professional_services')
-      .map((sec) => ({ ...sec, fields: sec.fields.filter((f) => type === 'sessions' || f.key !== 'units') }));
+      .map((sec) => ({
+        ...sec,
+        // Mandatory is drawn by `extras`, in one row with the two base-only flags (#2536).
+        fields: sec.fields.filter((f) => f.key !== 'mandatory' && (type === 'sessions' || f.key !== 'units')),
+      }));
 
   function renderValue(p: BaseProduct, field: VisibleProductField): React.ReactNode {
     const v = (x: React.ReactNode) => <div style={productValueStyle}>{x}</div>;
@@ -354,34 +365,59 @@ export default function BaseProductsPage() {
   }
 
   /** The base-only fields (not on a gym Product), in the template's own section. */
-  const extras = (f: Form | null, p: BaseProduct | null) => (
-    <div style={{ marginTop: 12 }}>
-      <label style={formFieldLabelStyle}>{t('charge_type_code')}</label>
-      {f ? (
-        <>
-          <input style={formControlStyle} value={f.charge_type_code} onChange={(e) => set('charge_type_code', e.target.value)} />
-          <div style={{ fontSize: 12, color: 'var(--gd-text-secondary, #666)' }}>{t('charge_type_code_help')}</div>
-          <label style={{ ...productCheckboxCellStyle, marginTop: 12 }}>
-            <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
-            {t('one_time_purchase')}
-          </label>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
-          <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
-            <option value="individual">{t('sharing_individual')}</option>
-            <option value="shared">{t('sharing_shared')}</option>
-          </select>
-        </>
-      ) : (
-        <>
-          <div style={productValueStyle}>{p?.charge_type_code ?? dash}</div>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('one_time_purchase')}</label>
-          <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
-          <label style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('sharing_type')}</label>
-          <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
-        </>
-      )}
-    </div>
-  );
+  const extras = (f: Form | null, p: BaseProduct | null) => {
+    // #2607: the four flags sit one below the other, in this order.
+    const rowStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' };
+    const cell: React.CSSProperties = { flex: '1 1 200px', minWidth: 0 };
+    return (
+      <div style={{ ...rowStyle, marginTop: 12 }}>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{tp('label_mandatory')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.mandatory} onChange={(e) => set('mandatory', e.target.checked)} />
+              {f.mandatory ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.mandatory ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('one_time_purchase')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.one_time_purchase} onChange={(e) => set('one_time_purchase', e.target.checked)} />
+              {f.one_time_purchase ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.one_time_purchase ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('one_per_member')}</label>
+          {f ? (
+            <label style={productCheckboxCellStyle}>
+              <input type="checkbox" checked={f.one_per_member} onChange={(e) => set('one_per_member', e.target.checked)} />
+              {f.one_per_member ? tp('yes') : tp('no')}
+            </label>
+          ) : (
+            <div style={productValueStyle}>{p?.one_per_member ? tp('yes') : tp('no')}</div>
+          )}
+        </div>
+        <div style={cell}>
+          <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
+          {f ? (
+            <select style={formControlStyle} value={f.sharing_type} onChange={(e) => set('sharing_type', e.target.value as 'individual' | 'shared')}>
+              <option value="individual">{t('sharing_individual')}</option>
+              <option value="shared">{t('sharing_shared')}</option>
+            </select>
+          ) : (
+            <div style={productValueStyle}>{p?.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const mediaFor = (id: number) => (
     <div style={{ margin: '12px 0 4px' }}>
@@ -437,10 +473,13 @@ export default function BaseProductsPage() {
   );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000 }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>{t('title')}</h1>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ExerciseViewToggle value={view} onChange={setView} />
         <button style={primaryBtnStyle()} disabled={form?.id === null} onClick={() => { setForm(formFor(null)); setError(null); }}>{t('add')}</button>
+        </div>
       </div>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: '#666' }}>{t('subtitle')}</p>
 
@@ -456,8 +495,33 @@ export default function BaseProductsPage() {
 
       {newEditor}
 
-      <ProductListFrame showHeader={rows.length > 0} t={tp as any}>
-        {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : (
+      {loading ? <p style={{ padding: 16 }}>…</p> : rows.length === 0 ? <p style={{ padding: 16 }}>{t('empty')}</p> : view === 'cards' ? (
+        <CardGrid>
+          {rows.map((p) => (
+            <div key={p.id} style={productCardStyle}>
+              <ProductCardHeader
+                item={rowData(p)}
+                isExpanded={expanded.has(p.id)}
+                text={listText}
+                onToggle={() => toggleExpand(p.id)}
+                menuItems={[
+                  { label: t('edit'), onClick: () => { setView('list'); setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
+                  { label: t('details'), onClick: () => setDetails(p) },
+                  { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                ]}
+              />
+              {expanded.has(p.id) && (
+                <div style={productExpandedBodyStyle}>
+                  {layoutFor(null, p)}
+                  {extras(null, p)}
+                </div>
+              )}
+            </div>
+          ))}
+        </CardGrid>
+      ) : (
+      <ProductListFrame showHeader t={tp as any}>
+        {(
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: form?.id === null ? 12 : 0 }}>
             {rows.map((p) => (
               <div key={p.id} style={productCardStyle}>
@@ -491,6 +555,7 @@ export default function BaseProductsPage() {
           </div>
         )}
       </ProductListFrame>
+      )}
 
       <FieldTranslationsModal
         open={langModal !== null}
@@ -526,7 +591,6 @@ export default function BaseProductsPage() {
       >
         {details && (
           <div style={{ fontSize: 14 }}>
-            <p><strong>{t('charge_type_code')}:</strong> {details.charge_type_code ?? dash}</p>
             <p><strong>{t('type')}:</strong> {t(`type_${details.type}`)}</p>
             <p><strong>{t('units')}:</strong> {details.units ?? dash}</p>
             <p><strong>{t('amount')}:</strong> {price(details)}</p>
@@ -541,6 +605,7 @@ export default function BaseProductsPage() {
             <MemberImagePreview src={memberImagePreviewSrc(details.image_url, details.modified_at)} emptyLabel={t('image_none')} />
             <p><strong>{t('mandatory')}:</strong> {details.mandatory ? t('yes') : t('no')}</p>
             <p><strong>{t('one_time_purchase')}:</strong> {details.one_time_purchase ? t('yes') : t('no')}</p>
+            <p><strong>{t('one_per_member')}:</strong> {details.one_per_member ? t('yes') : t('no')}</p>
             <p><strong>{t('sharing_type')}:</strong> {details.sharing_type === 'shared' ? t('sharing_shared') : t('sharing_individual')}</p>
             <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
             <p><strong>{t('created_by')}:</strong> {details.created_by ?? dash}</p>

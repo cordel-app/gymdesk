@@ -11,6 +11,9 @@
 //
 // Everything is decided by the API; this file formats. A read-only role sees
 // the balances and the history, with `Edit` disabled and explained.
+// #2605 stage 3: the balance reads `5 items (0 available + 5 booked)` — the
+// wallet's `total_items`, `available_items` and `booked_items`, never a figure
+// summed here; Edit sets the total.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -37,6 +40,8 @@ interface WalletRow {
   image_thumbnail_url?: string | null;
   image_url?: string | null;
   display_description?: string | null;
+  total_items: number;
+  booked_items: number;
   available_items: number;
 }
 
@@ -50,7 +55,7 @@ interface HistoryEntry {
   actor: string | null;
 }
 
-const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'returned'];
+const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'event_start', 'returned'];
 
 export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   const t = useTranslations('members');
@@ -90,7 +95,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
 
   function startEdit(row: WalletRow) {
     setEditingId(row.professional_service_id);
-    setBalance(String(row.available_items));
+    setBalance(String(row.total_items));
     setReason('');
     setError(null);
   }
@@ -177,7 +182,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                 <span style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 500, fontSize: 14 }}>{row.name}</div>
                   <div style={cardMutedTextStyle}>
-                    {t('prof_services_available')}: <strong>{row.available_items}</strong>
+                    {t('prof_services_balance_line', { total: row.total_items, available: row.available_items, booked: row.booked_items })}
                   </div>
                 </span>
               </button>

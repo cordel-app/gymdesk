@@ -1,4 +1,5 @@
-import { eventAssignmentSql } from '../domain/billingEventOwnership';
+import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
+import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
@@ -9,7 +10,8 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
-import { generateReceiptPdf } from '../lib/receipt-pdf';
+import { billingInvoicesRouter, generatePaidRepresentations } from './billing-invoices';
+import { receiptPdf } from './receipt-documents';
 import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
@@ -266,6 +268,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     member_id: z.coerce.number().int().positive().optional(),
     // #1521: one specific event (the Member card's *View billing event*).
     id: z.coerce.number().int().positive().optional(),
+    // #2553: every event of one Assigned Membership Plan, across all the
+    // ProductSet versions of its chain (the same predicate as the card's ledger).
+    user_membership_id: z.coerce.number().int().positive().optional(),
     status: billingEventStatusParam,
     from: z.string().optional(),
     to: z.string().optional(),
@@ -282,6 +287,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const params: any[] = [gymId];
     if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
     if (q.id !== undefined) { where.push('be.id = ?'); params.push(q.id); }
+    if (q.user_membership_id !== undefined) {
+      where.push(eventsOfAssignmentSql());
+      params.push(...eventsOfAssignmentParams(gymId, q.user_membership_id));
+    }
     if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
     if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
     const whereSql = where.join(' AND ');
@@ -295,6 +304,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       latest_tx_status: string | null;
       event_billing_date: Date | string | null; is_scheduled: number | boolean;
       from_product_set: number | boolean;
+      latest_provider_status: string | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
               ps_um.id AS user_membership_id,
@@ -305,7 +315,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               ps_um.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              (SELECT pr.provider_status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_provider_status
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN product_sets ps ON ps.id = be.product_set_id
@@ -331,6 +344,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
+      /** #2565: same value the detail read reports. */
+      normalized_payment_status: string | null;
       /** #640: whether Retry Payment / Manual payment apply to this row. */
       payment_actions_available: boolean;
       /** #1459: the individual actions the row's `⋮` menu offers. */
@@ -364,6 +379,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
         next_payment_date: r.membership_status === 'active' ? (derivedByUm.get(Number(r.user_membership_id))?.next_billing_date ?? null) : null,
+        normalized_payment_status: normalizePaymentStatus(r.latest_provider_status),
         amount: r.amount,
         event_type: r.event_type,
         status,
@@ -497,7 +513,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
     const { rows } = await db.query<any>(
       `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
               pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
-              pr.attempt, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
+              pr.attempt, pr.provider_status, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
               pr.created_by, pr.modified_at, pr.modified_by,
               m.name AS member_name,
               mp.name AS plan_name,
@@ -511,7 +527,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
        ORDER BY pr.created_at DESC`,
       [billingEventId, gymId],
     );
-    res.json({ items: rows });
+    res.json({ items: rows.map((r: any) => ({ ...r, normalized_payment_status: normalizePaymentStatus(r.provider_status) })) });
   } catch (err) {
     next(err);
   }
@@ -546,7 +562,10 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
               (SELECT CONCAT_WS(': ', pr.failure_code, pr.failure_message) FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id AND pr.failure_code IS NOT NULL
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS transaction_failure_reason
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS transaction_failure_reason,
+              (SELECT pr.provider_status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_provider_status
          FROM billing_events be
          LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
          LEFT JOIN members m ON m.id = be.member_id
@@ -589,6 +608,8 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       amount: ev.amount,
       currency: 'EUR',
       status,
+      payment_status: ev.latest_provider_status ?? null,
+      normalized_payment_status: normalizePaymentStatus(ev.latest_provider_status),
       event_type: ev.event_type,
       charge_type_code: ev.charge_type_code,
       source: ev.source,
@@ -686,6 +707,7 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
     const { result } = outcome;
+    generatePaidRepresentations(gymId, result.billing_event_id).catch(() => {});
     recordAudit(req, {
       action: 'manual_payment',
       entityType: 'billing_event',
@@ -789,19 +811,6 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
       return res.status(400).json({ error: 'Billing event has no valid amount' });
     }
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-
-    // Fetch gym's system tax rate (is_system=1); fall back to 21% if none configured
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
     // Allocate receipt number if not yet issued
     let receiptNumber = ev.receipt_number as string | null;
     let issuedAt = ev.receipt_issued_at ? new Date(ev.receipt_issued_at) : null;
@@ -817,21 +826,10 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
       }
     }
 
-    const pdfBuffer = await generateReceiptPdf({
-      receiptNumber,
-      issuedAt: issuedAt!,
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+    const pdfBuffer = await receiptPdf({
+      gymId, eventId, receiptNumber, issuedAt: issuedAt!,
+      memberName: ev.member_name, chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -862,32 +860,10 @@ paymentsRouter.get('/:id/receipt', async (req, res, next) => {
     const ev = evRows[0];
     if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
-    const pdfBuffer = await generateReceiptPdf({
-      receiptNumber: ev.receipt_number,
-      issuedAt: new Date(ev.receipt_issued_at),
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+    const pdfBuffer = await receiptPdf({
+      gymId, eventId, receiptNumber: ev.receipt_number, issuedAt: new Date(ev.receipt_issued_at),
+      memberName: ev.member_name, chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -897,3 +873,6 @@ paymentsRouter.get('/:id/receipt', async (req, res, next) => {
     next(err);
   }
 });
+
+// #2567 stage 3: fiscal invoices of a Billing Event.
+paymentsRouter.use('/', billingInvoicesRouter);

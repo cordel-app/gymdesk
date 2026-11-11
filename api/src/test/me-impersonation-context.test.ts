@@ -203,7 +203,7 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
     expect(booking).toBeDefined();
   });
 
-  it('GET /me/schedule with an x-center-id the impersonated member is not assigned to is 403', async () => {
+  it('GET /me/schedule with an x-center-id of another center of the gym is allowed (#1985: no assigned-center restriction)', async () => {
     const { insertId: otherCenterId } = await db.query(
       `INSERT INTO centers (gym_id, name) VALUES (?, 'Other Center')`,
       [gymId],
@@ -216,7 +216,7 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
       .set('x-center-id', String(otherCenterId))
       .set('x-impersonate-as', `member:${memberId}`);
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 });
 
@@ -269,7 +269,7 @@ describe('/me/schedule — center scoping under member impersonation (#362)', ()
     });
   });
 
-  it('under impersonation, only returns sessions from the member\'s assigned center', async () => {
+  it('under impersonation, defaults to the member\'s default center when no center is named', async () => {
     const res = await request
       .get('/me/schedule')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -282,7 +282,7 @@ describe('/me/schedule — center scoping under member impersonation (#362)', ()
     expect(ids).not.toContain(sessionInCenterB);
   });
 
-  it('rejects an explicit x-center-id the impersonated member is not assigned to', async () => {
+  it('an explicit x-center-id names another center of the gym and shows its sessions', async () => {
     const res = await request
       .get('/me/schedule')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -290,6 +290,26 @@ describe('/me/schedule — center scoping under member impersonation (#362)', ()
       .set('x-impersonate-as', `member:${memberId}`)
       .set('x-center-id', String(centerBId));
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const ids = (res.body as any[]).map((s) => s.id);
+    expect(ids).toContain(sessionInCenterB);
+    expect(ids).not.toContain(sessionInCenterA);
+  });
+
+  it('a member with no member_centers row sees every center\'s future sessions in a multi-center gym (#1985)', async () => {
+    const { insertId: freeMember } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Unassigned Member', ?)`,
+      [gymId, `unassigned-${Date.now()}@test.com`],
+    );
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-impersonate-as', `member:${freeMember}`);
+
+    expect(res.status).toBe(200);
+    const ids = (res.body as any[]).map((s) => s.id);
+    expect(ids).toContain(sessionInCenterA);
+    expect(ids).toContain(sessionInCenterB);
   });
 });

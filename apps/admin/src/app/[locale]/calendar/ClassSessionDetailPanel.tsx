@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { serviceOccupancyLabel, type ServiceCapacityRow } from '@/lib/serviceCapacity';
+import { serviceOccupancyLabel, serviceNameWithCapacity, type ServiceCapacityRow } from '@/lib/serviceCapacity';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
@@ -98,7 +98,7 @@ interface Booking {
 
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
 interface Trainer { gym_membership_id: number; name: string }
-interface ProfessionalServiceOption { id: number; name: string; status: 'active' | 'inactive' }
+interface ProfessionalServiceOption { id: number; name: string; status: 'active' | 'inactive'; max_capacity?: number | null; min_participants?: number | null; display_name?: string | null }
 
 interface Props {
   sessionId: number;
@@ -217,6 +217,10 @@ export function ClassSessionDetailPanel({
   sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices,
 }: Props) {
   const t = useTranslations('calendar');
+  const tAt = useTranslations('activity_types');
+  // #2499: a service's own capacity beside its name (never typed on the event).
+  const svcLabel = (svc: ProfessionalServiceOption) =>
+    serviceNameWithCapacity(svc.display_name || svc.name, svc, (key, values) => tAt(key as any, values as any));
   const gymFormat = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -570,7 +574,7 @@ export function ClassSessionDetailPanel({
     const activeIds = new Set(active.map((svc) => svc.id));
     const storedInactive = current.eligible_professional_services
       .filter((svc) => !activeIds.has(svc.id))
-      .map((svc) => ({ id: svc.id, name: svc.name, status: 'inactive' as const }));
+      .map((svc) => ({ id: svc.id, name: svc.name, status: 'inactive' as const, max_capacity: (svc as any).max_capacity, min_participants: (svc as any).min_participants }));
     return [...active, ...storedInactive];
   }
 
@@ -664,7 +668,7 @@ export function ClassSessionDetailPanel({
         method: 'POST',
         body: JSON.stringify({ title: commTitle, message: commMessage }),
       });
-      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'));
+      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'), 'success');
       setShowCommunication(false);
       setCommTitle('');
       setCommMessage('');
@@ -982,7 +986,7 @@ export function ClassSessionDetailPanel({
                       }}
                       style={{ width: 15, height: 15 }}
                     />
-                    {svc.name}
+                    {svcLabel(svc)}
                   </label>
                 ))}
               </div>
@@ -1043,9 +1047,9 @@ export function ClassSessionDetailPanel({
                       )}
                     </div>
                   )}
-                  {/* #1382 §5 — only for an explicitly absent attendee whose booking
+                  {/* #1382 §5 / #2588 — for any attendee (past or future event) whose booking
                       spent a session that has not been given back. */}
-                  {canWrite && !isCancelled && b.attendance_status === 'absent' && !!b.service_consumed && !b.service_returned && (
+                  {canWrite && !isCancelled && !!b.service_consumed && !b.service_returned && (
                     <button
                       onClick={() => refundBalance(b)}
                       disabled={refundBusyId !== null}

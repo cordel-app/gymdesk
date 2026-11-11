@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import FullCalendar from '@fullcalendar/react';
@@ -13,6 +13,8 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
+import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '@/lib/serviceSelection';
+import { useServiceBalances } from '@/lib/useServiceBalances';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -26,6 +28,7 @@ import {
 } from '@/lib/memberChrome';
 import { CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
+import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import {
   EVENT_STATUS_CHIP_STYLE,
@@ -51,6 +54,7 @@ interface ScheduleSession {
   class_type_name: string;
   /** #1637 — the activity's description and image (event override, else the Activity Type's). */
   class_type_description?: string | null;
+  event_description?: string | null;
   class_type_image_url?: string | null;
   starts_at: string;
   ends_at: string;
@@ -66,7 +70,11 @@ interface ScheduleSession {
   booked_on: string | null;
   cancellation_block: CancellationBlock;
   professional_service: boolean;
+  /** #2500 — each accepted service with its own capacity. */
+  professional_services?: EventService[];
   my_booking_status: 'booked' | 'waitlisted' | null;
+  /** #2587 — the Professional Service the member's own booking uses. */
+  my_professional_service_id?: number | null;
   /** #1382 — the member's own attendance, read-only; `pending` is unconfirmed and shows nothing. */
   my_attendance_status?: 'pending' | 'present' | 'absent' | null;
   my_waitlist_position: number | null;
@@ -153,6 +161,8 @@ export default function MemberCalendarPage() {
   // #1985: services to choose between, inline in the booking flow.
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [chosenServiceId, setChosenServiceId] = useState<number | null>(null);
+  const [selectionAttempted, setSelectionAttempted] = useState(false);
+  const serviceBalances = useServiceBalances(true, selected?.id);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -277,16 +287,31 @@ export default function MemberCalendarPage() {
     }
   }
 
+  // #2587 — the accepted services with the member's balance, shown inline.
+  const serviceChoiceList = useMemo(
+    () => (selected && !selected.my_booking_status ? serviceChoices(selected.professional_services, serviceBalances) : []),
+    [selected, serviceBalances],
+  );
+  useEffect(() => {
+    if (chosenServiceId == null) setChosenServiceId(defaultChoice(serviceChoiceList));
+  }, [serviceChoiceList]);
+
   function handleEventClick(info: any) {
     setActionMsg(null);
     setUnlockServiceIds([]);
     setServiceOptions([]);
     setChosenServiceId(null);
+    setSelectionAttempted(false);
     setSelected(info.event.extendedProps as ScheduleSession);
   }
 
   async function book() {
     if (!selected) return;
+    if (selectionMissing(serviceChoiceList, chosenServiceId)) {
+      // #2587 §3 — nothing is booked or spent; the line above the button says why.
+      setSelectionAttempted(true);
+      return;
+    }
     setActionLoading(true);
     setActionMsg(null);
     try {
@@ -305,7 +330,9 @@ export default function MemberCalendarPage() {
       }
       setUnlockServiceIds(requiredServiceIds(e));
       const names = requiredServiceNames(e);
-      setActionMsg(names.length ? t('service_required_message', { services: names.join(', ') }) : (e.message ?? t('error_generic')));
+      setActionMsg(names.length ? t('service_required_message', { services: names.join(', ') })
+        : e?.code === 'no_available_balance' ? t('no_available_balance')
+        : (e.message ?? t('error_generic')));
     } finally { setActionLoading(false); }
   }
 
@@ -594,7 +621,7 @@ export default function MemberCalendarPage() {
                 <span>{value.trim()}</span>
               </p>
             ) : null))}
-            {selected.class_type_description && selected.class_type_description.trim() && (
+            {(selected.event_description ?? selected.class_type_description)?.trim() && (
               <p
                 style={{
                   margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
@@ -603,7 +630,7 @@ export default function MemberCalendarPage() {
                     : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
                 }}
               >
-                {selected.class_type_description.trim()}
+                {(selected.event_description ?? selected.class_type_description)?.trim()}
               </p>
             )}
 
@@ -616,7 +643,7 @@ export default function MemberCalendarPage() {
                 <span style={statusPillStyle(memberStatusChip(selected)!.tone)}>{t(memberStatusChip(selected)!.key)}</span>
               )}
               <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status])}>
-                {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
+                {t(`occupancy_${selected.occupancy_status}`)}{(selected.professional_services?.length ?? 0) === 0 && ` · ${t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}`}
               </span>
               {selected.waitlist_status !== 'disabled' && (
                 <span style={badgeStyle(memberTheme.primaryButton)}>
@@ -635,16 +662,11 @@ export default function MemberCalendarPage() {
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
             )}
-            {serviceOptions.length > 0 && (
-              <div role="radiogroup" aria-label={t('select_service_prompt')} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                {serviceOptions.map((o) => (
-                  <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: memberTheme.text }}>
-                    <input type="radio" name="professional_service" checked={chosenServiceId === o.id} onChange={() => setChosenServiceId(o.id)} />
-                    {o.name}
-                  </label>
-                ))}
-              </div>
-            )}
+            <EventServicesList
+              services={selected.professional_services}
+              bookedId={selected.my_booking_status ? (selected.my_professional_service_id ?? null) : null}
+              choose={serviceChoiceList.length > 0 ? { choices: serviceChoiceList, chosenId: chosenServiceId, onChoose: (id) => { setChosenServiceId(id); setSelectionAttempted(false); } } : null}
+            />
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
@@ -654,9 +676,16 @@ export default function MemberCalendarPage() {
               </button>
             )}
 
+            {selectionAttempted && selectionMissing(serviceChoiceList, chosenServiceId) && (
+              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('select_service_validation')}</p>
+            )}
+            {/* #2605 §3: every unit is already booked — the explanation stands where the action was. */}
+            {noAvailableBalance(serviceChoiceList) && (
+              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('no_available_balance')}</p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading || (serviceOptions.length > 0 && chosenServiceId == null)} style={actionBtn()}>
+                <button onClick={book} disabled={actionLoading || noAvailableBalance(serviceChoiceList)} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

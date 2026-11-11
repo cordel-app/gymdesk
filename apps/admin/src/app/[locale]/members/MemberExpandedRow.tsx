@@ -51,7 +51,7 @@ import {
   type MemberProfile,
 } from './memberProfile';
 import { MemberCenterAccess } from './MemberCenterAccess';
-import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
+import { MemberProfileLayout, NewMemberValue, WelcomedValue, statusChipRowStyle, profileValueStyle } from './MemberProfileLayout';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
@@ -182,6 +182,16 @@ export function MemberExpandedRow({
   // #1463 — the current ProductSet's frozen products and forecast (read-only).
   const productSetDetail = useProductSetDetail(tab === 'products_services' ? configuration.current_product_set : null, configuration);
   const [cancelling, setCancelling] = useState<MemberPlanRow | null>(null);
+  // #2481: the access end date the server will apply, fetched when the dialog opens.
+  const [cancelEndsOn, setCancelEndsOn] = useState<string | null>(null);
+  useEffect(() => {
+    setCancelEndsOn(null);
+    if (!cancelling || cancelling.status === 'draft') return;
+    let live = true;
+    apiFetch<{ ends_on: string | null }>(`/user-memberships/${cancelling.id}/cancellation-preview`)
+      .then((r) => { if (live) setCancelEndsOn(r.ends_on); }).catch(() => {});
+    return () => { live = false; };
+  }, [cancelling]);
   const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
   // so remounting it is how a change in either section above re-runs it.
@@ -395,20 +405,24 @@ export function MemberExpandedRow({
                      so the Profile, the member header's badge and the Promotion
                      apply paths can never disagree about who is new. */
                   renderCalculated={() => (
-                    <NewMemberValue
-                      isNewMember={member.is_new_member}
-                      label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
-                      announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
-                    />
+                    <span style={statusChipRowStyle}>
+                      <NewMemberValue
+                        isNewMember={member.is_new_member}
+                        label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
+                        announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
+                      />
+                      <WelcomedValue
+                        welcomed={!!member.welcomed_at}
+                        label={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
+                        announce={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
+                      />
+                    </span>
                   )}
                   centers={{
                     defaultLabel: t('members.default_center'),
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}
                 />
-                <p style={{ ...profileValueStyle, marginTop: 12 }} data-testid="member-welcomed">
-                  {t('members.label_welcomed')}: {member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}
-                </p>
               </div>
             </Section>
           )}
@@ -442,7 +456,7 @@ export function MemberExpandedRow({
                 return (
                   <p key={label as string} style={profileValueStyle}>
                     <strong>{t(`members.${label as string}`)}:</strong>{' '}
-                    <span style={positive ? listNameBadgeAccentStyle : listNameBadgeStyle}>{t(`members.${chipKey}`)}</span>
+                    <span style={{ ...(positive ? listNameBadgeAccentStyle : listNameBadgeStyle), fontSize: 13 }}>{t(`members.${chipKey}`)}</span>
                     {l.date ? <span> {l.date}</span> : null}
                   </p>
                 );
@@ -450,7 +464,7 @@ export function MemberExpandedRow({
               {clerkStatus && (
                 <p style={profileValueStyle} data-testid="member-payment-token">
                   <strong>{t('members.label_payment_token')}:</strong>{' '}
-                  <span style={clerkStatus.has_payment_token ? listNameBadgeAccentStyle : listNameBadgeStyle}>
+                  <span style={{ ...(clerkStatus.has_payment_token ? listNameBadgeAccentStyle : listNameBadgeStyle), fontSize: 13 }}>
                     {t(clerkStatus.has_payment_token ? 'members.payment_token_available' : 'members.payment_token_unavailable')}
                   </span>
                 </p>
@@ -571,6 +585,7 @@ export function MemberExpandedRow({
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
                 changes={draftReview?.changes}
+                items={draftReview?.summary_items}
                 onChanged={reloadConfiguration}
               />
               <ProductsWorkflowActions
@@ -910,9 +925,12 @@ export function MemberExpandedRow({
 
       <ConfirmDialog
         open={cancelling !== null}
-        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft') : t('members.confirm_cancel_plan')}
+        title={cancelling && cancelling.status !== 'draft' ? t('members.cancel_plan_title') : undefined}
+        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft')
+          : cancelEndsOn ? t('members.confirm_cancel_plan_until', { date: formatGymDateOnly(cancelEndsOn, gymFmt) })
+          : t('members.confirm_cancel_plan')}
         confirmLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
-        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel')}
+        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
       />

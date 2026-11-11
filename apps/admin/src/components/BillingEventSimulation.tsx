@@ -53,6 +53,7 @@ import {
   simulationLineTone,
   visibleBillingDates,
   simulationPriceLabelKey,
+  simulationLineName,
 } from '@/lib/billingEventSimulation';
 import type { ExampleTimelineRowCycle } from '@/lib/exampleTimeline';
 
@@ -179,7 +180,7 @@ export function BillingEventTable({
               >
                 <td style={timelineTdStyle}>{i === 0 ? formatDate(group.date) : ''}</td>
                 <td style={{ ...timelineTdStyle, fontWeight: 500 }}>
-                  {line.label}
+                  {simulationLineName(line, t)}
                   {/* #832/#894 — a Mandatory item is part of every Plan, and the
                       line says so rather than looking like an optional extra. */}
                   {line.mandatory && (

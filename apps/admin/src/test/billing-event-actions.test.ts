@@ -22,7 +22,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const pageSrc = stripComments(readFileSync(PAGE, 'utf-8') + readFileSync(join(PAGE, '..', 'BillingEventExpandedRow.tsx'), 'utf-8'));
+const pageSrc = stripComments(readFileSync(PAGE, 'utf-8') + readFileSync(join(PAGE, '..', 'BillingEventExpandedRow.tsx'), 'utf-8') + readFileSync(join(PAGE, '..', 'BillingEventShared.tsx'), 'utf-8'));
 
 const REQUIRED_KEYS = [
   'col_actions',
@@ -39,7 +39,6 @@ const REQUIRED_KEYS = [
   'det_created_by',
   'det_modified_at',
   'det_modified_by',
-  'det_next_payment',
   'det_failure_reason',
   'actor_system',
   'cash_modal_title',
@@ -82,7 +81,7 @@ describe('Billing Events payment actions (#640)', () => {
 
   it('confirms cash, card and waive in a modal that sends nothing until Accept', () => {
     expect(pageSrc).toContain('<PaymentActionModal');
-    expect(pageSrc).toContain('onClose={() => setPending(null)}');
+    expect(pageSrc).toContain('onClose={closePending}');
     // The request is built only in the Accept handler, from the pure module.
     expect(pageSrc).toContain('async function acceptAction(');
     expect(pageSrc).toContain('actionRequest(kind');

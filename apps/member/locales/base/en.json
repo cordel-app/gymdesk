@@ -280,6 +280,8 @@
     "action_book": "Book",
     "buy_sessions_cta": "Buy sessions to book this class",
     "select_service_prompt": "Choose which service to use for this booking.",
+    "select_service_validation": "Please select a Professional Service before booking.",
+    "no_available_balance": "All your sessions for this service are already booked. Cancel a booking or buy more sessions to book another event.",
     "service_required_message": "You don't have any of the professional services required for this booking: {services}. Visit My Products to purchase one of these services.",
     "action_join_waitlist": "Join waitlist",
     "action_cancel_booking": "Cancel booking",
@@ -343,7 +345,7 @@
     "type_booking_reminder_2h": "Training reminder",
     "detail_booking_reminder_2h": "You have this training booked in 2 hours.",
     "type_staff_message": "Message from your gym",
-    "type_staff_message_from": "Message from {name}",
+    "type_staff_message_from": "Message from <nameTag>{name}</nameTag>",
     "category_all": "All",
     "category_staff": "Staff",
     "category_auto": "Auto",
@@ -374,7 +376,7 @@
     "tab_services": "Professional Services",
     "services_empty": "Your gym has no professional services available yet.",
     "services_error": "Could not load your professional services.",
-    "services_available": "Sessions available: {count}",
+    "services_balance": "{total, plural, one {# session} other {# sessions}} ({available} available + {booked} booked)",
     "services_close": "Close",
     "services_image_alt": "Product image",
     "products_filtered_notice": "Showing the products that unlock the class you tried to book.",
@@ -405,6 +407,10 @@
     "add_plan_loading": "Loading plans…",
     "add_plan_close": "Close",
     "plan_final_price": "Final price (VAT included)",
+    "plan_included": "Included:",
+    "plan_optional": "Optional:",
+    "plan_no_image": "No image",
+    "plan_ov_include": "Include",
     "plan_benefits_heading": "Included elements",
     "my_plans_heading": "My Membership Plans",
     "choose_plan": "Choose this plan",
@@ -854,5 +860,24 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# day} other {# days}}"
+  },
+  "booking_detail": {
+    "center": "Center",
+    "space": "Space",
+    "trainer": "Trainer",
+    "status": "Booking status",
+    "attendees": "Attendees",
+    "waiting_list": "Waiting list",
+    "attendees_count": "{count, plural, one {# person booked} other {# people booked}}",
+    "cancel": "Cancel booking",
+    "close": "Close"
+  },
+  "event_services": {
+    "booked": "Booked",
+    "balance": "{n, plural, one {# session available} other {# sessions available}}",
+    "title": "Professional Services",
+    "capacity": "{n, plural, one {# place} other {# places}}",
+    "image_alt": "Image of {name}",
+    "no_image": "No image"
   }
 }

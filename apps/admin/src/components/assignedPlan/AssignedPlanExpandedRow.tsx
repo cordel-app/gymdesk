@@ -10,6 +10,8 @@ import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
+import { useRouter } from 'next/navigation';
+import { showsBillingSimulations, viewBillingEventsPath } from './assignedPlanBillingEvents';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { CardSection } from '@/components/CardSection';
@@ -122,6 +124,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // ("Monthly", "Every 4 weeks"), never as the stored pair ("1 / month").
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const locale = useLocale();
+  const router = useRouter();
   const gymFmt = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -372,6 +375,13 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       }].filter(() => !(isEditing && detail.status === 'draft'))
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
+    // #2553: the plan's own Billing Events, across every ProductSet of its chain.
+    {
+      label: t('action_view_billing_events'),
+      onClick: () => router.push(viewBillingEventsPath(locale, {
+        id: detail.id, plan_name: detail.plan_name, member_id: detail.member_id, member_name: detail.member_name,
+      })),
+    },
     // #1538: embedded in the Member card, the Products tab's one global Save & Pay
     // commits the plan with the recurring Products, so the plan has none of its own.
     ...(canSaveAndPay && !embedded
@@ -481,6 +491,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         assignedPlanId={assignedPlanId}
         planStatus={detail.status}
         snapshot={detail.snapshot}
+        promotions={detail.promotions}
+        feeInclTax={detail.effective_price?.amount_incl_tax ?? null}
+        feeTaxPercent={detail.effective_price?.applied_tax_rate ?? null}
+        currentFee={detail.membership_fee}
         cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}
@@ -502,6 +516,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         />
       </CardSection>
 
+      {/* #2553: both simulations are for a plan still being drafted or awaiting
+          its first payment only. */}
+      {showsBillingSimulations(detail.status) && (
+        <>
       {/* #924 stage 3 (§7) — the MEMBERSHIP FEE SIMULATION: the Membership Plan
           card's Example Timeline, for this contract. One row per billing period
           of the assignment's own cadence, from the period containing today,
@@ -622,6 +640,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           })()}
         />
       </CardSection>
+        </>
+      )}
 
       {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in
           place of Done Editing. */}

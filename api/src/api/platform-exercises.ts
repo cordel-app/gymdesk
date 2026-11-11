@@ -187,11 +187,11 @@ platformExercisesRouter.get('/facets', requireSuperadmin, async (_req, res, next
 //
 // Registered **before** `/:id`, or Express would match `lookups` as an exercise id.
 
-platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, next) => {
+platformExercisesRouter.get('/lookups', requireSuperadmin, async (req, res, next) => {
   try {
     const { rows } = await db.query('SELECT id, name, slug FROM result_types ORDER BY id ASC');
     res.json({
-      muscles: (await listMuscles()).map(({ key }) => ({ key })),
+      muscles: (await listMuscles(getRequestLocale(req))).map(({ key, display_name }) => ({ key, display_name })),
       result_types: rows,
       // #967 §3: the shared editor renders one Name input per translatable
       // locale, so the language list travels with the other two catalogues

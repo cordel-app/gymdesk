@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { modalActionsRowStyle } from '@/components/formChrome';
 
 /**
@@ -36,6 +37,7 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated, initialMember
   const [startDate, setStartDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +72,7 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated, initialMember
     }
   }
 
-  async function save() {
+  async function save(confirm = false) {
     if (!memberId) { setError(t('nutrition_plans.error_member_required')); return; }
     if (mode === 'template' && !templateId) { setError(t('nutrition_plans.error_template_required')); return; }
     if (mode === 'scratch' && !name.trim()) { setError(t('nutrition_plans.error_name_required')); return; }
@@ -84,10 +86,13 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated, initialMember
           template_id: mode === 'template' ? parseInt(templateId, 10) : null,
           name: name.trim() || null,
           start_date: startDate,
+          ...(confirm ? { confirm: true } : {}),
         }),
       });
+      setConflict(null);
       onCreated(plan);
     } catch (err: any) {
+      if (err.status === 409 && err.body?.code === 'active_plan_exists') { setConflict(err.body.current_plan?.name ?? ''); return; }
       setError(err.message ?? t('nutrition_plans.error_generic'));
     } finally {
       setSaving(false);
@@ -155,6 +160,16 @@ export function NewNutritionPlanDialog({ open, onClose, onCreated, initialMember
           </>
         )}
       </div>
+      <ConfirmDialog
+        open={conflict !== null}
+        title={t('nutrition_plans.replace_confirm_title')}
+        message={t('nutrition_plans.replace_confirm', { name: conflict ?? '' })}
+        confirmLabel={t('nutrition_plans.replace_confirm_btn')}
+        cancelLabel={t('nutrition_plans.cancel')}
+        busy={saving}
+        onConfirm={() => { setConflict(null); void save(true); }}
+        onCancel={() => setConflict(null)}
+      />
     </div>
   );
 }

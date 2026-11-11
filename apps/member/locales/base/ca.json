@@ -280,6 +280,8 @@
     "action_book": "Reservar",
     "buy_sessions_cta": "Compra sessions per reservar aquesta classe",
     "select_service_prompt": "Tria quin servei utilitzar per a aquesta reserva.",
+    "select_service_validation": "Selecciona un servei professional abans de reservar.",
+    "no_available_balance": "Totes les teves sessions d'aquest servei ja estan reservades. Cancel·la una reserva o compra més sessions per reservar un altre esdeveniment.",
     "service_required_message": "No tens cap dels serveis professionals necessaris per a aquesta reserva: {services}. Visita Els meus productes per comprar-ne un.",
     "action_join_waitlist": "Afegir-se a la llista d'espera",
     "action_cancel_booking": "Cancel·lar reserva",
@@ -343,7 +345,7 @@
     "type_booking_reminder_2h": "Recordatori d'entrenament",
     "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores.",
     "type_staff_message": "Missatge del teu gimnàs",
-    "type_staff_message_from": "Missatge de {name}",
+    "type_staff_message_from": "Missatge de <nameTag>{name}</nameTag>",
     "category_all": "Totes",
     "category_staff": "Equip",
     "category_auto": "Automàtiques",
@@ -374,7 +376,7 @@
     "tab_services": "Serveis professionals",
     "services_empty": "El teu gimnàs encara no té serveis professionals disponibles.",
     "services_error": "No s'han pogut carregar els teus serveis professionals.",
-    "services_available": "Sessions disponibles: {count}",
+    "services_balance": "{total, plural, one {# sessió} other {# sessions}} ({available} disponibles + {booked} reservades)",
     "services_close": "Tancar",
     "services_image_alt": "Imatge del producte",
     "products_filtered_notice": "Mostrant els productes que desbloquegen la classe que vas intentar reservar.",
@@ -405,6 +407,10 @@
     "add_plan_loading": "Carregant plans…",
     "add_plan_close": "Tancar",
     "plan_final_price": "Preu final (IVA inclòs)",
+    "plan_included": "Inclòs:",
+    "plan_optional": "Opcional:",
+    "plan_no_image": "Sense imatge",
+    "plan_ov_include": "Incloure",
     "plan_benefits_heading": "Elements inclosos",
     "my_plans_heading": "Els meus plans de membresia",
     "choose_plan": "Triar aquest pla",
@@ -854,5 +860,24 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# dia} other {# dies}}"
+  },
+  "booking_detail": {
+    "center": "Centre",
+    "space": "Espai",
+    "trainer": "Entrenador",
+    "status": "Estat de la reserva",
+    "attendees": "Assistents",
+    "waiting_list": "Llista d'espera",
+    "attendees_count": "{count, plural, one {# persona reservada} other {# persones reservades}}",
+    "cancel": "Cancel·la la reserva",
+    "close": "Tanca"
+  },
+  "event_services": {
+    "booked": "Reservat",
+    "balance": "{n, plural, one {# sessió disponible} other {# sessions disponibles}}",
+    "title": "Serveis professionals",
+    "capacity": "{n, plural, one {# plaça} other {# places}}",
+    "image_alt": "Imatge de {name}",
+    "no_image": "Sense imatge"
   }
 }

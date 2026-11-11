@@ -39,6 +39,29 @@ describe('muscle translations (#2402)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('lists the seeded muscles with their Spanish and Catalan names (#2333 backfill)', async () => {
+    const res = await request.get('/platform/muscles').set(H);
+    expect(res.status).toBe(200);
+    const chest = res.body.find((m: any) => m.slug === 'chest');
+    expect(chest).toBeTruthy();
+    expect(chest.translations.es).toBe('Pecho');
+    expect(chest.translations.ca).toBe('Pit');
+  });
+
+  it('serves the muscle name in the request locale to the exercise screens (#2333)', async () => {
+    const created = await request.post('/platform/muscles').set(H)
+      .send({ name: `${NAME} D`, translations: { es: 'Músculo display' } });
+    expect(created.status).toBe(201);
+    const slug = created.body.slug;
+
+    const es = await request.get('/platform/exercises/lookups').set(H).set('x-locale', 'es');
+    expect(es.status).toBe(200);
+    expect(es.body.muscles.find((m: any) => m.key === slug).display_name).toBe('Músculo display');
+
+    const en = await request.get('/platform/exercises/lookups').set(H).set('x-locale', 'en');
+    expect(en.body.muscles.find((m: any) => m.key === slug).display_name).toBe(`${NAME} D`);
+  });
+
   it('stores translations on create, reports them, keeps them on a name-only edit and replaces them on request', async () => {
     const created = await request.post('/platform/muscles').set(H)
       .send({ name: NAME, translations: { es: 'Músculo prueba', ca: 'Múscul prova' } });

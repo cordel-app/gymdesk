@@ -738,6 +738,13 @@ export async function applyPromotionToProductSet(
     'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
     ? Number(own[0].user_membership_id) : null;
+  // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
+  // that plan first — `syncPlanSnapshot()` writes the application onto the primary snapshot only when
+  // no other set shares it.
+  if (!opts.productTarget) {
+    const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
+    await ownPrimaryPlanSnapshot(tx, gymId, productSetId);
+  }
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
@@ -948,6 +955,16 @@ async function loadAppliedPromotionGrants(
 // #635 stage 9 adds `can_reapply`: whether a spent application's checkbox may be
 // ticked again (the thread's Q2 answer, "selectable and deselectable"). Decided
 // by `canReapplyPromotion()` so the card states it rather than deriving it.
+function liveDraftPromotionStatus(row: any, now: Date): 'active' | 'inactive' | 'expired' {
+  if (row.promotion_lifecycle_status === 'expired') return 'expired';
+  if (row.promotion_lifecycle_status !== 'active') return 'inactive';
+  const start = row.promotion_live_starts_at ? new Date(row.promotion_live_starts_at) : null;
+  const end = row.promotion_live_ends_at ? new Date(row.promotion_live_ends_at) : null;
+  if (end && !Number.isNaN(end.getTime()) && end.getTime() < now.getTime()) return 'expired';
+  if (start && !Number.isNaN(start.getTime()) && start.getTime() > now.getTime()) return 'inactive';
+  return 'active';
+}
+
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
     `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
@@ -968,6 +985,7 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   const planTakesPromotions = versionRows.length > 0
     && versionRows[0].status === 'draft'
     && Number(versionRows[0].is_inherited ?? 0) === 0;
+  const draftVersion = versionRows.length > 0 && versionRows[0].status === 'draft';
   const grants = await loadAppliedPromotionGrants(
     gymId, merged.map((r: any) => ({ id: r.id, promotion_id: r.promotion_id })),
   );
@@ -984,7 +1002,11 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
       .map((row: any) => Number(row.promotion_id)),
   );
   return merged.map((row: any) => {
-    const display_status = promotionApplicationStatus(row, now);
+    // #2487: while the version is a Draft the live `promotions` row is the source
+    // of truth for status; the snapshot only takes over once Save & Pay confirms.
+    const display_status = draftVersion && row.status === 'applied'
+      ? liveDraftPromotionStatus(row, now)
+      : promotionApplicationStatus(row, now);
     // `standing_promotion_key` is migration 183's generated column — the
     // database's own copy of (assignment, promotion) while the row stands. It
     // rides along on `ump.*` and means nothing to a client, so it is dropped

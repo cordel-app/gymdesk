@@ -44,7 +44,7 @@ describe('POST /training-plans (gym-level)', () => {
     expect(res.body.status).toBe('active');
   });
 
-  it('returns 409 with active_count when a second active plan is created without a decision', async () => {
+  it('refuses a second active plan without confirmation and changes nothing (#2573)', async () => {
     const res = await request
       .post('/training-plans')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -52,60 +52,66 @@ describe('POST /training-plans (gym-level)', () => {
       .send({ member_id: memberId, name: 'Plan B', start_date: TODAY });
 
     expect(res.status).toBe(409);
-    expect(typeof res.body.active_count).toBe('number');
-    expect(res.body.active_count).toBeGreaterThan(0);
+    expect(res.body.code).toBe('active_plan_exists');
+    expect(res.body.current_plan.name).toBe('Plan A');
+
+    const { rows } = await db.query(
+      `SELECT name, status FROM training_plans WHERE member_id = ? AND gym_id = ?`, [memberId, gymId]);
+    expect(rows).toEqual([{ name: 'Plan A', status: 'active' }]);
   });
 
-  it('keeps existing actives when on_existing_active=keep', async () => {
+  it('keep is no longer an option: still 409 (#2573)', async () => {
     const res = await request
       .post('/training-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, name: 'Plan B', start_date: TODAY, on_existing_active: 'keep' });
-
-    expect(res.status).toBe(201);
-
-    // Both plans should still be active
-    const { rows } = await db.query(
-      `SELECT status FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'`,
-      [memberId, gymId],
-    );
-    expect(rows.length).toBe(2);
+    expect(res.status).toBe(409);
   });
 
-  it('expires all prior actives atomically when on_existing_active=expire', async () => {
+  it('completes the previous plan and keeps one active when confirmed (#2573)', async () => {
     const memberB = await createMember(gymId);
+    const post = (body: object) =>
+      request.post('/training-plans').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+        .send({ member_id: memberB, start_date: TODAY, ...body });
 
-    // Create an active plan
-    await request
-      .post('/training-plans')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_id: memberB, name: 'Old Plan', start_date: TODAY });
-
-    // Create a new one with expire
-    const res = await request
-      .post('/training-plans')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_id: memberB, name: 'New Plan', start_date: TODAY, on_existing_active: 'expire' });
+    expect((await post({ name: 'Old Plan' })).status).toBe(201);
+    const res = await post({ name: 'New Plan', confirm: true });
 
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('active');
 
-    // Old plan should now be expired
     const { rows } = await db.query(
-      `SELECT status FROM training_plans WHERE member_id = ? AND gym_id = ? AND name = 'Old Plan'`,
+      `SELECT status, end_date FROM training_plans WHERE member_id = ? AND gym_id = ? AND name = 'Old Plan'`,
       [memberB, gymId],
     );
-    expect(rows[0].status).toBe('expired');
+    expect(rows[0].status).toBe('completed');
+    expect(rows[0].end_date).not.toBeNull();
 
-    // Only one active plan remains
     const { rows: activeRows } = await db.query(
       `SELECT id FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'`,
       [memberB, gymId],
     );
     expect(activeRows.length).toBe(1);
+    const { rows: mtp } = await db.query(
+      `SELECT status FROM member_training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'`,
+      [memberB, gymId],
+    );
+    expect(mtp.length).toBe(1);
+  });
+
+  it('applies the same rule to the per-member assignment route (#2573)', async () => {
+    const memberC = await createMember(gymId);
+    const post = (body: object) =>
+      request.post(`/members/${memberC}/member-training-plans`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+    expect((await post({ name: 'First' })).status).toBe(201);
+    const refused = await post({ name: 'Second' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('active_plan_exists');
+    expect((await post({ name: 'Second', confirm: true })).status).toBe(201);
+    const { rows } = await db.query(
+      `SELECT id FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'`, [memberC, gymId]);
+    expect(rows.length).toBe(1);
   });
 });
 

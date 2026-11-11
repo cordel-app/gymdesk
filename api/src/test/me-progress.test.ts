@@ -93,6 +93,7 @@ describe('GET /me/progress/exercises (#1224)', () => {
     // #2284 — what the Members App filters on.
     expect(e.last_logged_date).toBe('2026-10-03');
     expect(e.muscles).toEqual([muscleSlug]);
+    expect(e.primary_muscles).toEqual([muscleSlug]);
   });
 
   it('reports the System exercise\'s equipment for a copy imported without one (#2320)', async () => {

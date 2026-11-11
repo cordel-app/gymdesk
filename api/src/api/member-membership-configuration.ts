@@ -1,4 +1,5 @@
 import { resolveCurrentProductSet } from '../domain/currentProductSet';
+import { draftExpiresInSeconds } from '../domain/productSet';
 import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -90,7 +91,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             um.member_id AS owner_member_id,
             p.name AS plan_name,
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
-            um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
+            um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live,
+            (um.status = 'cancelled' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
@@ -128,6 +130,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const { rows: inFlight } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_by,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'draft'
+                 THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name,
             (SELECT be.amount FROM billing_events be
               WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
@@ -148,6 +152,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'draft'
+                 THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name, mp.lifecycle_status AS plan_status, um.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
@@ -168,6 +174,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     created_at: toDateOnly(r.created_at),
     created_by: r.created_by ?? null,
     expired: Number(r.expired) === 1,
+    expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
   });
   // #1582 — one resolver decides the current version; an ambiguous chain
   // (never expected: migration 246's UNIQUE keys forbid it) reports no current.
@@ -187,6 +194,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       starts_at: toDateOnly(r.starts_at),
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,
       expired: Number(r.expired) === 1,
+      expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
       created_by: r.created_by ?? null,
     })),
     plans: plans.map((p: any) => ({
@@ -226,6 +234,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       // the same contract as `linked`; the owner sees `primary`.
       assignment_relationship: assignmentRelationship(memberId, p.owner_member_id),
       is_live: Number(p.is_live) === 1,
+      // #2549 — a cancelled plan is still valid until its effective end date (`ends_at`, the last
+      // paid day, #1196): the Active/Past split reads this, the stored `status` is unchanged.
+      is_current: Number(p.is_live) === 1 || Number(p.is_cancelled_valid) === 1,
       new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
     })),
     services: services.map((s) => ({ ...s, plan_name: planNameById.get(s.user_membership_id) ?? null })),

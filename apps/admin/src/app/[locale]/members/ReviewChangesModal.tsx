@@ -16,7 +16,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
-import { changeMessage, confirmAction, type ChangeLike, type ReviewLike } from './recurringProductsView';
+import { changeMessage, confirmAction, splitChanges, type ChangeLike, type ReviewLike } from './recurringProductsView';
 
 interface Review extends ReviewLike {
   product_set_id: number;
@@ -27,6 +27,7 @@ interface Review extends ReviewLike {
     item_name: string | null; quantity: number; amount: number;
     regular_unit_price?: number | null; promotion_name?: string | null;
     tax_rate_percent?: number | null; amount_excl_tax?: number | null;
+    treatment_action?: string | null; treatment_value?: number | null;
   }>;
   currency: string;
   /** #1664 — the active Base Payment Methods and whether each can be used for this member. */
@@ -146,19 +147,30 @@ export function ReviewChangesModal({
       {loading && <p style={cardHintStyle}>{t('review_loading')}</p>}
       {review && (
         <div data-review-changes>
-          <div style={cardSectionLabelStyle}>{t('review_changes')}</div>
-          {review.changes.length === 0 ? (
-            <p style={cardHintStyle}>{t('review_no_changes')}</p>
-          ) : (
-            <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }}>
-              {review.changes.map((c, i) => {
-                const m = changeMessage(c);
-                return <li key={i}>{t(m.key as any, m.values as any)}</li>;
-              })}
-            </ul>
-          )}
+          {(() => {
+            const { contracted, cancelled } = splitChanges(review.changes);
+            const list = (items: ChangeLike[]) => (
+              <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }}>
+                {items.map((c, i) => {
+                  const m = changeMessage(c);
+                  return <li key={i}>{t(m.key as any, m.values as any)}</li>;
+                })}
+              </ul>
+            );
+            if (review.changes.length === 0) {
+              return (<><div style={cardSectionLabelStyle}>{t('review_changes')}</div><p style={cardHintStyle}>{t('review_no_changes')}</p></>);
+            }
+            return (
+              <>
+                <div style={cardSectionLabelStyle}>{t('review_contracted')}</div>
+                {contracted.length === 0 ? <p style={cardHintStyle}>{t('review_contracted_none')}</p> : list(contracted)}
+                <div style={cardSectionLabelStyle}>{t('review_cancelled')}</div>
+                {cancelled.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+              </>
+            );
+          })()}
 
-          <div style={cardSectionLabelStyle}>{t('review_due_today')}</div>
+          <div style={cardSectionLabelStyle}>{t('review_initial_payment')}</div>
           {review.amount_due == null ? (
             <p style={cardHintStyle}>{t('review_error_amount')}</p>
           ) : (
@@ -171,6 +183,9 @@ export function ReviewChangesModal({
                   <div style={{ ...cardHintStyle, margin: 0 }}>
                     {l.regular_unit_price != null ? `${t('pay_original_price')}: ${money(l.regular_unit_price * l.quantity, review.currency)}` : ''}
                     {l.promotion_name ? ` · ${t('pay_promotion')}: ${l.promotion_name}` : ''}
+                    {l.treatment_action && l.treatment_action !== 'no_benefit' && !l.promotion_name
+                      ? ` · ${t('pay_direct_discount')}: ${l.treatment_action === 'percentage_discount' && l.treatment_value != null ? `${l.treatment_value}%` : l.treatment_action === 'waive' ? '100%' : money(l.treatment_value ?? 0, review.currency)}`
+                      : ''}
                     {l.tax_rate_percent != null && l.amount_excl_tax != null
                       ? ` · ${t('pay_vat_line', { rate: l.tax_rate_percent, net: money(l.amount_excl_tax, review.currency), tax: money(l.amount - l.amount_excl_tax, review.currency) })}`
                       : ''}

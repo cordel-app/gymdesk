@@ -9,14 +9,16 @@ import { canCancelPending, isDraftExpired } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
-import { productSetDraftRouter } from './product-set-draft-router';
+import { productSetDraftRouter, edit as editDraft, simulationHandler } from './product-set-draft-router';
+import { addService, removeService, setServiceQuantity } from './product-set-draft';
+import { memberProductCatalogueParams, memberProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
 import { activePlanConflictBody, addPlanUnsupportedBody, parseConflictResolution } from '../domain/oneActivePlan';
 import {
   Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
-import { diffConfigurations } from '../domain/productSetDiff';
+import { diffConfigurations, summaryItems } from '../domain/productSetDiff';
 import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
@@ -534,7 +536,7 @@ productSetsRouter.post('/draft', requireModuleWrite('PAYMENTS'), async (req, res
  * function `save-and-pay` charges from. `amount_due: null` with an `error` means
  * it could not be established reliably and the screen must not offer Confirm.
  */
-productSetsRouter.get('/:id/review', async (req, res, next) => {
+async function reviewHandler(req: any, res: any, next: any) {
   const { gymId } = getTenantContext(req);
   try {
     const set = await loadSet(gymId, req.params.id);
@@ -600,6 +602,16 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
       status: String(set.status),
       has_previous: set.previous_product_set_id != null,
       changes,
+      // The engine's own initial-charge line (matched by item name) gives a draft item its
+      // discount and the amount asked today; nothing is priced here.
+      summary_items: summaryItems(before, after).map((i) => {
+        const l = lines.find((x) => x.item_name === i.name);
+        return {
+          ...i,
+          promotions: i.promotions.length > 0 ? i.promotions : l?.promotion_name ? [l.promotion_name] : [],
+          initial_amount: i.state === 'draft' && l ? l.amount : null,
+        };
+      }),
       amount_due: amountDue,
       payment_required: amountDue != null && amountDue > 0,
       immediate_lines: lines,
@@ -607,7 +619,8 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
       error,
     });
   } catch (err) { next(err); }
-});
+}
+productSetsRouter.get('/:id/review', reviewHandler);
 
 productSetsRouter.use('/:id', productSetDraftRouter);
 
@@ -650,3 +663,79 @@ meProductSetsRouter.delete('/:id', async (req, res) => {
 });
 
 export { isDraftExpired };
+
+
+/**
+ * #2496 stage 1 — the member's own Draft Product Set, built through the very
+ * writers the Admin uses. The member is the session's, never the request's, and
+ * a version that is not their own Draft is a 404. The member-facing surface is
+ * deliberately narrower than the Admin's: only Products the member may be
+ * shown (`memberProductCatalogueSql()`), a quantity, and nothing that names a
+ * price, a fee, a discount or another member.
+ */
+async function ownedSet(req: any, res: any): Promise<{ memberId: number; set: any } | null> {
+  const ctx = getTenantContext(req);
+  let memberId: number;
+  try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { res.status(404).json({ error: 'ProductSet not found' }); return null; }
+  const set = await loadSet(ctx.gymId, req.params.id);
+  if (!set || Number(set.owner_member_id) !== memberId) { res.status(404).json({ error: 'ProductSet not found' }); return null; }
+  return { memberId, set };
+}
+
+meProductSetsRouter.post('/draft', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  try {
+    let memberId: number;
+    try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'Member not found' }); }
+    const blocking = await loadEditLock(ctx.gymId, memberId, todayUtc());
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+    const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
+      gymId: ctx.gymId, memberId, actor: actorOf(req), today: todayUtc(),
+    }));
+    if (out.kind === 'in_flight') {
+      return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
+    }
+    if (out.created) {
+      recordAudit(req, { action: 'create', entityType: 'product_set', entityId: out.productSetId, next: { auto_draft: true, source: 'members_app' } });
+    }
+    const row = await loadSet(ctx.gymId, out.productSetId);
+    res.status(out.created ? 201 : 200).json({ ...shape(row), created: out.created });
+  } catch (err) { next(err); }
+});
+
+meProductSetsRouter.get('/:id/review', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  return reviewHandler(req, res, next);
+});
+
+meProductSetsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  return simulationHandler(req, res, next);
+});
+
+meProductSetsRouter.post('/:id/services', async (req, res, next) => {
+  const owned = await ownedSet(req, res);
+  if (!owned) return;
+  const { gymId } = getTenantContext(req);
+  const productId = Number(req.body?.product_id);
+  if (!Number.isInteger(productId) || productId <= 0) return res.status(400).json({ error: 'product_id must be a positive integer' });
+  const { rows } = await db.query(
+    `SELECT p.id FROM products p WHERE p.id = ? AND p.gym_id = ? AND ${memberProductCatalogueSql('p')}`,
+    [productId, gymId, ...memberProductCatalogueParams()]);
+  if (rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+  // Only a Product and a quantity: a start date is the Draft's own.
+  const body = { product_id: productId, quantity: req.body?.quantity };
+  return editDraft(req, res, 'update', (tx, d) => addService(tx, d, body), next, { add_service: body, source: 'members_app' });
+});
+
+meProductSetsRouter.put('/:id/services/:serviceId', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  return editDraft(req, res, 'update', (tx, d) => setServiceQuantity(tx, d, Number(req.params.serviceId), req.body?.quantity), next,
+    { service_quantity: { service: Number(req.params.serviceId), quantity: req.body?.quantity }, source: 'members_app' });
+});
+
+meProductSetsRouter.delete('/:id/services/:serviceId', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  return editDraft(req, res, 'update', (tx, d) => removeService(tx, d, Number(req.params.serviceId)), next,
+    { remove_service: Number(req.params.serviceId), source: 'members_app' });
+});

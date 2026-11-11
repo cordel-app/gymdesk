@@ -57,6 +57,9 @@ export interface AssignedPlanSnapshotBenefit {
   final_price_incl_tax: number | null;
   original_line_price_incl_tax: number | null;
   final_line_price_incl_tax: number | null;
+  /** #2483 — tax rate (%) and what the line's own treatment took off its total, from the server. */
+  applied_tax_percent?: number | null;
+  direct_discount_line_incl_tax?: number | null;
 }
 
 /** The assignment's frozen commercial configuration (#635 §11–§17). */

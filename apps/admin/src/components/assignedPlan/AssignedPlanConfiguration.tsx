@@ -36,6 +36,7 @@ import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
 import { BillingDurationExplanations } from '@/components/BillingDurationExplanations';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
+import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -53,8 +54,9 @@ import {
   ProductOption,
 } from '@/components/ProductBenefits';
 import { saveBenefitSection } from '@/lib/benefitEditing';
-import { billingDurationPayload, directDiscountPayload, durationFormError } from '@/lib/durationEditing';
+import { billingDurationPayload, durationFormError } from '@/lib/durationEditing';
 import type {
+  AppliedPromotion,
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
   PersonalFeeBenefitAction,
@@ -123,16 +125,6 @@ interface DurationForm {
   bonus_periods: string;
   recurring_billing_interval: string;
   recurring_billing_unit: string;
-  /** #1925 — the fee is never typed: a percentage off the plan's fee (the Personal Membership Fee Benefit). */
-  direct_discount_percent: string;
-}
-
-/** The regular fee less the typed percentage; null when there is no fee or the input is out of range. */
-function effectiveFee(fee: number | string | null, percent: string): number | null {
-  if (fee == null || fee === '') return null;
-  const pct = percent === '' ? 0 : Number(percent);
-  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
-  return Math.round(Number(fee) * (100 - pct)) / 100;
 }
 
 interface Props {
@@ -140,6 +132,12 @@ interface Props {
   /** The assignment's stored status — a terminal one is read-only. */
   planStatus: string;
   snapshot: AssignedPlanSnapshot;
+  /** #2483 — the applied Promotions (each from its own snapshot), to name the ones touching each line and the fee. */
+  promotions?: AppliedPromotion[];
+  /** #2483 — the fee quoted VAT-inclusive and the one the engine resolves for the current cycle. */
+  feeInclTax?: number | null;
+  feeTaxPercent?: number | null;
+  currentFee?: number | null;
   /**
    * Whether the card is in Edit mode (#797/#897). Outside it every section is
    * read-only and carries no `Edit` button at all — absent, not disabled.
@@ -191,9 +189,16 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
  * payload is the point: `toBenefitItems()` sends only the keys a draft row
  * carries, and the assignment's `PUT` takes quantity alone.
  */
-function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
+function toViewRow(
+  b: AssignedPlanSnapshotBenefit, promotionNames: Map<number, string[]>,
+  promotionBenefits: Map<number, string[]>,
+): ProductBenefitRow {
   return {
     ...toDraftRow(b),
+    applied_tax_percent: b.applied_tax_percent ?? null,
+    applied_promotions: promotionNames.get(b.product_id) ?? [],
+    applied_promotion_benefits: promotionBenefits.get(b.product_id) ?? [],
+    direct_discount_line_incl_tax: b.direct_discount_line_incl_tax ?? null,
     frequency: b.frequency,
     original_price_incl_tax: b.original_price_incl_tax,
     final_price_incl_tax: b.final_price_incl_tax,
@@ -203,15 +208,39 @@ function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, cardEditing, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
   // the stored pair ("1 × Month").
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
+  const tp = useTranslations('promotions');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
+
+  // #2483 — which applied Promotions grant each Product, and which touch the
+  // Membership Fee. Names only: every amount stays the server's.
+  const applied = promotions.filter((p) => p.status === 'applied');
+  const promotionNamesByProduct = new Map<number, string[]>();
+  const promotionBenefitsByProduct = new Map<number, string[]>();
+  for (const p of applied) {
+    for (const g of [...p.session_grants, ...p.oneoff_grants, ...p.periodical_grants]) {
+      if (g.product_id == null) continue;
+      const names = promotionNamesByProduct.get(g.product_id) ?? [];
+      const benefits = promotionBenefitsByProduct.get(g.product_id) ?? [];
+      if (!names.includes(p.promotion_name)) {
+        names.push(p.promotion_name);
+        // The grant's own frozen action/value (#635 §16), worded in the Promotion's voice.
+        benefits.push(benefitTreatmentLabel(tp as any, 'promotion', { action: g.action, value: g.value } as any));
+      }
+      promotionNamesByProduct.set(g.product_id, names);
+      promotionBenefitsByProduct.set(g.product_id, benefits);
+    }
+  }
+  const feePromotionNames = applied
+    .filter((p) => p.membership_fee_benefits.some((b) => b.enabled && b.action && b.action !== 'no_benefit'))
+    .map((p) => p.promotion_name);
 
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
@@ -261,8 +290,6 @@ export function AssignedPlanConfiguration({
       bonus_periods: numField(snapshot.bonus_periods),
       recurring_billing_interval: numField(snapshot.recurring_billing_interval),
       recurring_billing_unit: snapshot.recurring_billing_unit ?? '',
-      direct_discount_percent: snapshot.personal_fee_benefit.action === 'percentage_discount'
-        && snapshot.personal_fee_benefit.value != null ? String(snapshot.personal_fee_benefit.value) : '',
     });
     setEditing('billing');
   }
@@ -302,10 +329,6 @@ export function AssignedPlanConfiguration({
       await apiFetch(`/user-memberships/${assignedPlanId}/billing-duration`, {
         method: 'PUT',
         body: JSON.stringify(billingDurationPayload(durationForm)),
-      });
-      await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
-        method: 'PUT',
-        body: JSON.stringify(directDiscountPayload(durationForm)),
       });
       cancelEdit();
       onChanged();
@@ -446,22 +469,6 @@ export function AssignedPlanConfiguration({
                 {fmtMoney(snapshot.membership_fee_price)}
               </div>
             </div>
-            <div>
-              <label style={labelSt} htmlFor="assigned-plan-direct-discount">{t('label_direct_discount')}</label>
-              <input
-                id="assigned-plan-direct-discount"
-                type="number" min="0" max="100" step="0.01"
-                value={durationForm.direct_discount_percent}
-                onChange={(e) => setDurationForm({ ...durationForm, direct_discount_percent: e.target.value })}
-                style={inputSt}
-              />
-            </div>
-            <div>
-              <label style={labelSt}>{t('label_effective_fee')}</label>
-              <div style={{ ...inputSt, background: 'transparent', border: '1px solid transparent' }}>
-                {fmtMoney(effectiveFee(snapshot.membership_fee_price, durationForm.direct_discount_percent))}
-              </div>
-            </div>
           </div>
           {/* #892 — the four numbers above are billing periods, and the
               cadence beside them is what one period is. */}
@@ -510,6 +517,33 @@ export function AssignedPlanConfiguration({
         </div>
       )}
       </CardSection>
+
+      {/* #2483 — the Membership Fee's own breakdown: what it costs, the tax,
+          the Promotions touching it, the direct benefit (kept apart from them)
+          and the price the billing engine resolves for the current cycle. */}
+      {editing == null && (
+        <CardSection label={t('section_fee_breakdown')}>
+          <CardDetailRow
+            label={t('fee_breakdown_fee')}
+            value={fmtMoney(feeInclTax ?? snapshot.membership_fee_price)}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_tax')}
+            value={feeTaxPercent != null ? `${feeTaxPercent}%` : '—'}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_promotion')}
+            value={feePromotionNames.length > 0 ? feePromotionNames.join(', ') : '—'}
+          />
+          <CardDetailRow
+            label={t('fee_breakdown_direct_benefit')}
+            value={snapshot.personal_fee_benefit.action === 'percentage_discount'
+              ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
+              : t('personal_fee_benefit_no_benefit')}
+          />
+          <CardDetailRow label={t('fee_breakdown_final')} value={currentFee != null ? fmtMoney(currentFee) : '—'} />
+        </CardSection>
+      )}
 
       {/* #772 — the Personal Membership Fee Benefit. Its own section, right
           under the fee it discounts: it is neither a Promotion benefit (it
@@ -603,11 +637,12 @@ export function AssignedPlanConfiguration({
               <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
-                rows={rows.map(toViewRow)}
+                rows={rows.map((r) => toViewRow(r, promotionNamesByProduct, promotionBenefitsByProduct))}
                 showFrequency={showFrequency}
                 frequencyColumn={viewFrequencyColumn}
                 benefitContext="plan"
                 showPrices
+                showBreakdown
               />
             )}
           </CardSection>

@@ -42,6 +42,7 @@ const SELECT = `
     gc.mandatory,
     gc.one_time_purchase,
     gc.sharing_type,
+    gc.one_per_member,
     gc.description,
     gc.amount,
     gc.currency,
@@ -220,6 +221,7 @@ productsRouter.get('/base', requireRole('admin'), async (req, res, next) => {
       validity_days: r.validity_days,
       one_time_purchase: Boolean(r.one_time_purchase),
       sharing_type: r.sharing_type,
+      one_per_member: Boolean(r.one_per_member),
       imported: r.imported,
       imported_product_id: r.imported_product_id,
     })));
@@ -262,7 +264,7 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
   const actor = resolveRequestActor(ctx);
   try {
     const { rows } = await db.query(
-      'SELECT id, name, description, image_url, base_product_id, sharing_type FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT id, name, description, image_url, base_product_id, sharing_type, one_per_member FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, ctx.gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -271,7 +273,7 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
       return res.status(409).json({ error: 'not_imported', message: 'This Product was not imported from a System Product' });
     }
     const { rows: baseRows } = await db.query(
-      'SELECT name, description, image_url, image_thumbnail_url, sharing_type FROM base_products WHERE id = ? AND deleted_at IS NULL',
+      'SELECT name, description, image_url, image_thumbnail_url, sharing_type, one_per_member FROM base_products WHERE id = ? AND deleted_at IS NULL',
       [prod.base_product_id],
     );
     if (baseRows.length === 0) {
@@ -290,6 +292,10 @@ productsRouter.post('/:id/resync', requireRole('admin'), async (req, res, next) 
       changed.description = { previous: prod.description ?? null, next: base.description ?? null };
     }
     // #2393: the Base Product's sharing type is System metadata, like the name.
+    if (base.one_per_member !== undefined && Boolean(base.one_per_member) !== Boolean(prod.one_per_member)) {
+      sets.push('one_per_member = ?'); params.push(base.one_per_member ? 1 : 0);
+      changed.one_per_member = { previous: Boolean(prod.one_per_member), next: Boolean(base.one_per_member) };
+    }
     if (base.sharing_type && base.sharing_type !== prod.sharing_type) {
       sets.push('sharing_type = ?'); params.push(base.sharing_type);
       changed.sharing_type = { previous: prod.sharing_type, next: base.sharing_type };
@@ -365,7 +371,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory, sharing_type,
+    mandatory, sharing_type, one_per_member,
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -410,9 +416,9 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, sharing_type, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, sharing_type, one_per_member, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name.trim(),
@@ -427,6 +433,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           // item and for every row that existed before the column did.
           mandatory ? 1 : 0,
           sharing_type || 'individual',
+          one_per_member ? 1 : 0,
           notes?.trim() || null,
           package_information?.trim() || null,
           validity_days != null ? parseInt(validity_days, 10) : null,
@@ -489,9 +496,9 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, one_time_purchase, sharing_type, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, one_time_purchase, sharing_type, one_per_member, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             image_url, image_thumbnail_url, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -513,6 +520,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
           // #1349: copied as it stands, like the flag above.
           orig.one_time_purchase,
           orig.sharing_type,
+          orig.one_per_member,
           orig.notes,
           orig.package_information,
           orig.validity_days,
@@ -557,7 +565,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory, sharing_type,
+    mandatory, sharing_type, one_time_purchase, one_per_member,
   } = req.body;
 
   if (type && !VALID_TYPES.includes(type)) {
@@ -584,6 +592,14 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     return res.status(400).json({ error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` });
   }
   const mandatoryProvided = mandatory !== undefined && mandatory !== null;
+  // #2606: One-time Purchase is edited like Mandatory — absent keeps, a boolean or 0/1 sets.
+  const oneTimeErr = validateMandatory(one_time_purchase)?.replace('mandatory', 'one_time_purchase') ?? null;
+  if (oneTimeErr) return res.status(400).json({ error: oneTimeErr });
+  const oneTimeProvided = one_time_purchase !== undefined && one_time_purchase !== null;
+  // #2607: One per Member is edited like One-time Purchase — absent keeps, a boolean or 0/1 sets.
+  const onePerMemberErr = validateMandatory(one_per_member)?.replace('mandatory', 'one_per_member') ?? null;
+  if (onePerMemberErr) return res.status(400).json({ error: onePerMemberErr });
+  const onePerMemberProvided = one_per_member !== undefined && one_per_member !== null;
   // #2254: absent keeps the stored translations; a locale given blank clears it.
   let translations: Record<string, { name: string; description: string | null }> | null = null;
   let cleared: string[] = [];
@@ -661,6 +677,8 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
          -- mandatoryProvided, the shape PUT /promotions/:id uses for
          -- only_applicable_for_new_members.
          mandatory                 = IF(?, ?, mandatory),
+         one_time_purchase         = IF(?, ?, one_time_purchase),
+         one_per_member            = IF(?, ?, one_per_member),
          sharing_type              = COALESCE(?, sharing_type),
          notes                     = ?,
          name                      = COALESCE(IF(? = 0, ?, NULL), name),
@@ -681,6 +699,8 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         status ?? null,
         enrollment_status ?? null,
         mandatoryProvided ? 1 : 0, mandatory ? 1 : 0,
+        oneTimeProvided ? 1 : 0, one_time_purchase ? 1 : 0,
+        onePerMemberProvided ? 1 : 0, one_per_member ? 1 : 0,
         sharing_type ?? null,
         notes ?? null,
         isSystem, name?.trim() ?? null,

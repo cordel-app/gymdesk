@@ -248,6 +248,25 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   if (!row) return { kind: 'not_found' };
   if (row.status !== DRAFT_STATUS) return { kind: 'not_committable', status: row.status };
 
+  // #2487: a Draft reads Promotions from the live `promotions` row, so Save & Pay
+  // revalidates each standing application against it. The snapshot (written when
+  // the Promotion was applied) is the agreement, not the current eligibility.
+  const { rows: ineligible } = await tx.query<any>(
+    `SELECT p.name FROM user_membership_promotions ump
+       JOIN promotions p ON p.id = ump.promotion_id
+      WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
+        AND (p.lifecycle_status <> 'active'
+             OR (p.starts_at IS NOT NULL AND p.starts_at > UTC_TIMESTAMP())
+             OR (p.ends_at IS NOT NULL AND p.ends_at < UTC_TIMESTAMP()))`,
+    [row.id, input.gymId],
+  );
+  if (ineligible.length > 0) {
+    throw Object.assign(
+      new Error(`Promotion no longer applicable: ${ineligible.map((r: any) => r.name).join(', ')}. Remove it to continue.`),
+      { status: 409 },
+    );
+  }
+
   const pending = input.resolution === 'replace' ? await pendingConflicts(tx, input.gymId, row) : [];
   if (pending.length > 0) return { kind: 'pending_conflict', pendingIds: pending };
 

@@ -3,7 +3,8 @@
 // #1779 / #2103 — presentation only: every string arrives resolved and no colour
 // is spelled here (#983). The balance is the API's (`GET /me/professional-services`);
 // nothing is summed or derived in the browser. A row is the thumbnail (only when
-// the service has an image), the name and the sessions still available.
+// the service has an image), the name and the balance as `5 sessions (0 available
+// + 5 booked)` (#2605 stage 3): the three figures arrive from the API as they are.
 import { useState, type CSSProperties } from 'react';
 import { memberTheme, noticeStyle, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
 import { MemberDialog } from '@/components/MemberDialog';
@@ -16,6 +17,8 @@ export interface MemberServiceBalanceItem {
   total: number;
   used: number;
   remaining: number;
+  booked: number;
+  available: number;
 }
 
 interface Props {
@@ -23,7 +26,7 @@ interface Props {
   labels: {
     empty: string;
     error: string;
-    available: (count: number) => string;
+    balance: (item: { remaining: number; available: number; booked: number }) => string;
     close: string;
     imageAlt: string;
   };
@@ -66,7 +69,7 @@ export function MemberProfessionalServices({ items, labels }: Props) {
             </button>
           ) : null}
           <strong style={{ color: memberTheme.text, flex: '1 1 auto', minWidth: 0 }}>{item.name}</strong>
-          <span style={{ ...small, fontSize: 13, whiteSpace: 'nowrap' }}>{labels.available(item.remaining)}</span>
+          <span style={{ ...small, fontSize: 13, textAlign: 'right' }}>{labels.balance(item)}</span>
         </div>
       ))}
       {selected && selected.image_url ? (

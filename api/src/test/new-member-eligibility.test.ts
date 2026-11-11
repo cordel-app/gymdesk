@@ -166,3 +166,34 @@ describe('qualifiesAsNewMember', () => {
     expect(qualifiesAsNewMember([oldest, middle, newest], CUTOFF, 3)).toBe(false);
   });
 });
+
+// #2548 — a plan cancelled within 14 calendar days of its start is disregarded.
+describe('cancellation grace period (#2548)', () => {
+  const cancelled = (id: number, starts_at: string, closed_at: string) =>
+    assignment({ id, status: 'cancelled', starts_at, closed_at, ends_at: closed_at, created_at: `${starts_at} 09:00:00` });
+  const recent = '2026-08-01';
+
+  it.each([
+    ['7 days', '2026-08-08', true],
+    ['day 14', '2026-08-15', true],
+    ['day 15', '2026-08-16', false],
+  ])('plan cancelled after %s qualifies=%s', (_l, closed, expected) => {
+    expect(qualifiesAsNewMember([cancelled(1, recent, closed)], CUTOFF)).toBe(expected);
+  });
+
+  it('an active plan always blocks, and a grace-cancelled one beside it changes nothing', () => {
+    const active = assignment({ id: 2, status: 'active', starts_at: '2026-09-01' });
+    expect(qualifiesAsNewMember([active], CUTOFF)).toBe(false);
+    expect(qualifiesAsNewMember([cancelled(1, recent, '2026-08-05'), active], CUTOFF)).toBe(false);
+  });
+
+  it('mixes grace and non-grace history: the late cancellation still counts', () => {
+    expect(qualifiesAsNewMember(
+      [cancelled(1, '2026-07-01', '2026-07-03'), cancelled(2, recent, '2026-09-01')], CUTOFF)).toBe(false);
+  });
+
+  it('a cancellation with no recorded date keeps counting, and old cancelled plans still age out', () => {
+    expect(qualifiesAsNewMember([assignment({ id: 1, status: 'cancelled', starts_at: recent })], CUTOFF)).toBe(false);
+    expect(qualifiesAsNewMember([cancelled(1, '2025-01-01', '2025-06-01')], CUTOFF)).toBe(true);
+  });
+});

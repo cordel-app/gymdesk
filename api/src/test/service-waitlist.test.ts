@@ -22,7 +22,7 @@ afterAll(async () => {
 
 async function createService(name: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+    `INSERT INTO professional_services (gym_id, name, is_system, system_key, max_capacity) VALUES (?, ?, 0, NULL, 1)`,
     [gymId, `${name} ${uniq()}`],
   );
   await db.query(
@@ -65,7 +65,7 @@ beforeAll(async () => {
   svcA = await createService('A');
   svcB = await createService('B');
   const res = await request.put(`/activity-types/${activityId}/eligible-professional-services`).set(headers())
-    .send({ professional_service_ids: [svcA, svcB], capacities: { [svcA]: 1, [svcB]: 1 } });
+    .send({ professional_service_ids: [svcA, svcB] });
   expect(res.status).toBe(204);
 });
 

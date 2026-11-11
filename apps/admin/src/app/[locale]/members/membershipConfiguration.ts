@@ -53,6 +53,8 @@ export interface MemberPlanRow {
    * #634 — but nothing can be attached to them.
    */
   is_live: boolean;
+  /** #2549 — live, or cancelled with an effective end date not yet passed: the Active/Past split. */
+  is_current?: boolean;
   /**
    * #634 §3 — whether a Promotion flagged "Only applicable for new members"
    * would be accepted on this plan: the Member held no other Membership Plan
@@ -82,6 +84,8 @@ export interface ProductSetRow {
   /** The initial payment Save & Pay wrote, or `null` for a Draft. */
   amount_due: number | null;
   expired: boolean;
+  /** Seconds left on a Draft by the server's clock (#2477); null for any other status. */
+  expires_in_seconds?: number | null;
   created_by: string | null;
 }
 
@@ -102,6 +106,7 @@ export interface ProductSetSummary {
   created_at: string | null;
   created_by: string | null;
   expired: boolean;
+  expires_in_seconds?: number | null;
 }
 
 export interface MemberConfiguration {

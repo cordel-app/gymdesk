@@ -52,7 +52,7 @@ async function createTestPlan(): Promise<any> {
     .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ member_id: memberId });
+    .send({ confirm: true, member_id: memberId });
   expect(assignRes.status).toBe(201);
   return assignRes.body;
 }
@@ -135,7 +135,7 @@ describe('auth guard', () => {
   });
 
   it('returns 401 without auth on POST /member-nutrition-plans', async () => {
-    const res = await request.post('/member-nutrition-plans').send({ member_id: memberId, name: 'X', start_date: '2026-01-01' });
+    const res = await request.post('/member-nutrition-plans').send({ confirm: true, member_id: memberId, name: 'X', start_date: '2026-01-01' });
     expect(res.status).toBe(401);
   });
 });
@@ -189,7 +189,7 @@ describe('tenant isolation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: otherGymTemplate.id, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: otherGymTemplate.id, start_date: '2026-01-01' });
     expect(res.status).toBe(404);
   });
 
@@ -205,7 +205,7 @@ describe('tenant isolation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: otherGymMemberId, name: 'Cross Gym Plan', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: otherGymMemberId, name: 'Cross Gym Plan', start_date: '2026-01-01' });
     expect(res.status).toBe(404);
   });
 });
@@ -238,7 +238,7 @@ describe('module access guard', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', accountantGymId)
-      .send({ member_id: accountantGymMemberId, name: 'Should Fail', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: accountantGymMemberId, name: 'Should Fail', start_date: '2026-01-01' });
     expect(res.status).toBe(403);
   });
 });
@@ -369,7 +369,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'No Member', start_date: '2026-01-01' });
+      .send({ confirm: true, name: 'No Member', start_date: '2026-01-01' });
     expect(res.status).toBe(400);
   });
 
@@ -378,7 +378,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, name: 'No Start Date' });
+      .send({ confirm: true, member_id: memberId, name: 'No Start Date' });
     expect(res.status).toBe(400);
   });
 
@@ -387,7 +387,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, name: 'Bad Start Date', start_date: '01/01/2026' });
+      .send({ confirm: true, member_id: memberId, name: 'Bad Start Date', start_date: '01/01/2026' });
     expect(res.status).toBe(400);
   });
 
@@ -396,7 +396,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, start_date: '2026-01-01' });
     expect(res.status).toBe(400);
   });
 
@@ -405,7 +405,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: 'abc', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: 'abc', start_date: '2026-01-01' });
     expect(res.status).toBe(400);
   });
 
@@ -414,7 +414,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: 'abc', name: 'Bad Member', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: 'abc', name: 'Bad Member', start_date: '2026-01-01' });
     expect(res.status).toBe(400);
   });
 
@@ -423,7 +423,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: 999999, name: 'Ghost Member', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: 999999, name: 'Ghost Member', start_date: '2026-01-01' });
     expect(res.status).toBe(404);
   });
 
@@ -432,7 +432,7 @@ describe('create plan — validation', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: 999999, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: 999999, start_date: '2026-01-01' });
     expect(res.status).toBe(404);
   });
 });
@@ -444,7 +444,7 @@ describe('create plan — from scratch (no template_id)', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, name: planName, description: 'Built without a template', start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, name: planName, description: 'Built without a template', start_date: '2026-01-01' });
     expect(res.status).toBe(201);
     expect(res.body.template_id).toBeNull();
     expect(res.body.name).toBe(planName);
@@ -469,7 +469,7 @@ describe('create plan — from a template (template_id set)', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: tpl.id, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: tpl.id, start_date: '2026-01-01' });
     expect(res.status).toBe(201);
     expect(Number(res.body.template_id)).toBe(Number(tpl.id));
     expect(res.body.member_name).toBe('MNP Test Member');
@@ -505,7 +505,7 @@ describe('create plan — from a template (template_id set)', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: tpl.id, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: tpl.id, start_date: '2026-01-01' });
     expect(res.status).toBe(201);
     expect(res.body.name).toBe(tpl.name);
   });
@@ -518,7 +518,7 @@ describe('create plan — from a template (template_id set)', () => {
       .post('/member-nutrition-plans')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ member_id: memberId, template_id: tpl.id, name: customName, start_date: '2026-01-01' });
+      .send({ confirm: true, member_id: memberId, template_id: tpl.id, name: customName, start_date: '2026-01-01' });
     expect(res.status).toBe(201);
     expect(res.body.name).toBe(customName);
   });
@@ -876,12 +876,14 @@ describe('days', () => {
 
   it('returns 404 when deleting a dayId belonging to a different plan', async () => {
     const planA = await createTestPlan();
-    const planB = await createTestPlan();
+    // Add the day while planA is still active: creating planB completes planA (#2572).
     const dayRes = await request
       .post(`/member-nutrition-plans/${planA.id}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ weekday: 5 });
+    expect(dayRes.status).toBe(201);
+    const planB = await createTestPlan();
 
     const res = await request
       .delete(`/member-nutrition-plans/${planB.id}/days/${dayRes.body.id}`)
@@ -1330,5 +1332,78 @@ describe('GET /member-nutrition-plans/component-types', () => {
       .set('x-gym-id', gymId)
       .send({ nutrition_library_item_id: libraryItemId, component_type: 'starter' });
     expect(rejected.status).toBe(400);
+  });
+});
+
+// #2572: a member holds one active assigned Nutrition Plan.
+describe('single active nutrition plan (#2572)', () => {
+  async function freshMember(): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Single Plan Member', ?)`,
+      [gymId, `single-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.com`],
+    );
+    return insertId;
+  }
+  const create = (body: Record<string, unknown>) =>
+    request.post('/member-nutrition-plans').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+  const planRow = async (id: number) =>
+    (await db.query('SELECT status, end_date FROM member_nutrition_plans WHERE id = ?', [id])).rows[0];
+
+  it('assigning to a member with no active plan works without confirmation', async () => {
+    const m = await freshMember();
+    const res = await create({ member_id: m, name: 'First', start_date: '2026-03-10' });
+    expect(res.status).toBe(201);
+  });
+
+  it('refuses a second active plan with 409 active_plan_exists and changes nothing', async () => {
+    const m = await freshMember();
+    const first = await create({ member_id: m, name: 'First', start_date: '2026-03-10' });
+    const second = await create({ member_id: m, name: 'Second', start_date: '2026-04-01' });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('active_plan_exists');
+    expect(second.body.current_plan.id).toBe(first.body.id);
+    expect((await planRow(first.body.id)).status).toBe('active');
+    const { rows } = await db.query('SELECT COUNT(*) AS n FROM member_nutrition_plans WHERE member_id = ?', [m]);
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it('with confirm, completes the previous plan the day before the new start and activates the new one', async () => {
+    const m = await freshMember();
+    const first = await create({ member_id: m, name: 'First', start_date: '2026-03-10' });
+    const second = await create({ member_id: m, name: 'Second', start_date: '2026-04-01', confirm: true });
+    expect(second.status).toBe(201);
+    const prev = await planRow(first.body.id);
+    expect(prev.status).toBe('completed');
+    expect(String(prev.end_date instanceof Date ? prev.end_date.toISOString() : prev.end_date)).toContain('2026-03-31');
+    expect((await planRow(second.body.id)).status).toBe('active');
+  });
+
+  it('the template assign route applies the same rule', async () => {
+    const m = await freshMember();
+    const tpl = await request.post('/nutrition-plan-templates').set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId).send({ name: `Single ${Date.now()}` });
+    const assign = (body: Record<string, unknown>) =>
+      request.post(`/nutrition-plan-templates/${tpl.body.id}/assign`).set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId).send({ member_id: m, ...body });
+    expect((await assign({})).status).toBe(201);
+    const refused = await assign({});
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('active_plan_exists');
+    expect((await assign({ confirm: true })).status).toBe(201);
+    const { rows } = await db.query(
+      "SELECT COUNT(*) AS n FROM member_nutrition_plans WHERE member_id = ? AND status = 'active'", [m]);
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it('concurrent confirmed creations leave a single active plan', async () => {
+    const m = await freshMember();
+    await create({ member_id: m, name: 'Base', start_date: '2026-03-01' });
+    await Promise.all([
+      create({ member_id: m, name: 'A', start_date: '2026-04-01', confirm: true }),
+      create({ member_id: m, name: 'B', start_date: '2026-04-01', confirm: true }),
+    ]);
+    const { rows } = await db.query(
+      "SELECT COUNT(*) AS n FROM member_nutrition_plans WHERE member_id = ? AND status = 'active'", [m]);
+    expect(Number(rows[0].n)).toBe(1);
   });
 });

@@ -161,7 +161,7 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
   const ctx = getTenantContext(req);
   const { gymId, gymMembershipId } = ctx;
   const actor = resolveRequestActor(ctx);
-  const { member_id, template_id, name, description, start_date, on_existing_active } = req.body;
+  const { member_id, template_id, name, description, start_date, on_existing_active, confirm } = req.body;
 
   const memberId = Number(member_id);
   if (!Number.isInteger(memberId) || memberId <= 0) return res.status(400).json({ error: 'member_id is required' });
@@ -187,33 +187,6 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
     const result = await db.transaction(async (tx) => {
-      // Locked read so a concurrent create for the same member can't slip an
-      // Active plan past the keep-vs-expire decision.
-      const { rows: activeRows } = await tx.query(
-        "SELECT id FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active' FOR UPDATE",
-        [memberId, gymId],
-      );
-      const activeIds = activeRows.map((r: any) => r.id);
-      if (activeIds.length > 0 && !on_existing_active) {
-        throw Object.assign(
-          new Error('Member already has active training plans. Choose whether to keep them active or expire them.'),
-          { status: 409, activeCount: activeIds.length },
-        );
-      }
-      if (activeIds.length > 0 && on_existing_active === 'expire') {
-        const marks = activeIds.map(() => '?').join(',');
-        await tx.query(
-          `UPDATE training_plans SET status = 'expired', end_date = ?,
-                  modified_at = UTC_TIMESTAMP(), modified_by = ?
-           WHERE id IN (${marks}) AND gym_id = ?`,
-          [start_date, actor, ...activeIds, gymId],
-        );
-        await tx.query(
-          `UPDATE member_training_plans SET status = 'completed', valid_to = ?
-           WHERE training_plan_id IN (${marks}) AND gym_id = ? AND status = 'active'`,
-          [start_date, ...activeIds, gymId],
-        );
-      }
       const created = await createTrainingPlanTx(tx, {
         gymId, memberId, gymMembershipId, actor,
         templateId,
@@ -221,14 +194,15 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
         description,
         startDate: start_date,
         validTo: null,
+        confirmReplace: confirm === true || on_existing_active === 'expire',
       });
-      return { ...created, expiredIds: on_existing_active === 'expire' ? activeIds : [] };
+      return { ...created, expiredIds: created.supersededIds };
     });
 
     for (const expiredId of result.expiredIds) {
       recordAudit(req, {
         action: 'status_change', entityType: 'training_plan', entityId: expiredId,
-        previous: { status: 'active' }, next: { status: 'expired', end_date: start_date },
+        previous: { status: 'active' }, next: { status: 'completed', replaced_by: result.planId },
       });
     }
     const { rows } = await db.query(
@@ -245,7 +219,7 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
     });
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.status === 409) return res.status(409).json({ error: err.message, active_count: err.activeCount });
+    if (err.status === 409 && err.code) return res.status(409).json({ error: err.message, code: err.code, current_plan: err.current_plan });
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }

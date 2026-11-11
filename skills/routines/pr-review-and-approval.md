@@ -54,7 +54,23 @@ A file-count alone does not tell the two apart: three PRs today conflicted in do
 - Wait for all checks to finish. Poll infrequently (every 2-3 minutes, not in tight loops) — CI takes minutes regardless, and frequent polling just burns tokens without speeding anything up.
 - **No checks at all is not "pending".** A head commit whose check list is *empty* — `get_status` answering `state: pending` with `total_count: 0`, as #994's head did — has no CI coming, usually because the results aged out or the run never fired. Waiting for it never ends. A push (a resolution, a fix) is what brings CI back; if you have nothing to push, park it and say CI never ran.
 - If CI is green, sanity-check the PR before merging: typecheck (`npx tsc --noEmit`) in any workspace touched, and skim the diff for anything that looks unfinished, unsafe, or out of scope. Start from the PR description and file list rather than pulling the full patch for every file — only fetch a specific file's diff if something in it looks questionable. If it looks safe, squash-merge the PR.
-- If CI is red, investigate the actual failure (read the job logs, not just the status). Fetch a small tail (~100-150 lines) first, not the full log — the error is almost always right before the step fails, and post-failure cleanup output (git/docker teardown, etc.) is noise. If it's a genuine, fixable problem introduced by the PR itself (e.g. a wrong assertion, a missed edge case) — not a pre-existing failure on main, and not something that needs a design decision — fix it, push the fix to the PR's branch, and re-check CI. Repeat until CI is green or the failure can't be safely fixed this way.
+- If CI is red, investigate the actual failure (read the job logs, not just the status). Fetch a small tail (~100-150 lines) first, not the full log — the error is almost always right before the step fails, and post-failure cleanup output (git/docker teardown, etc.) is noise. If it's a genuine, fixable problem introduced by the PR itself (e.g. a wrong assertion, a missed edge case) — and not something that needs a design decision — fix it, push the fix to the PR's branch, and re-check CI. Repeat until CI is green or the failure can't be safely fixed this way. If the failing test is **not** one the PR touched, or `main`'s own CI is red, it is a red `main`: see **A red main is yours to fix**.
+
+## Never merge on a failing check
+
+A squash-merge needs **every** check on the head commit to be `SUCCESS`: one `FAILURE`, `CANCELLED` or still-pending check is a no. #2575 merged with API shard 3 red and put eight PRs behind a broken `main`. `main` is now branch-protected (the five checks `API (shard 1/3)`, `API (shard 2/3)`, `API (shard 3/3)`, `Admin`, `Payment page`, up to date with `main`), so GitHub refuses such a merge; if it answers 405 for that reason, fix the failure or sync, never bypass it with `--admin`.
+
+## A red main is yours to fix
+
+A failure the PR did not cause is still your problem, because **every open PR inherits it and none can merge** (2026-11-09: commit 7b22880e removed the 403 for unassigned centers but left three tests asserting it, `main`'s CI went red, and eight PRs sat blocked while each run called the failure "pre-existing" and moved on). Nobody else fixes it, so do not park and do not wait:
+
+1. Before working the queue, and whenever a PR's red check is outside its own diff, look at the latest `CI` run on `main` (`gh run list --branch main --workflow CI --limit 3`). If it is red, read which tests fail and `git log` the files they cover.
+2. Decide which side is stale. A commit that **deliberately** changed behaviour (its changelog entry and docs say so) means the old tests are outdated: update them to the new behaviour, as that commit's own tests already did. A commit that changed behaviour **by accident** means the code is wrong: fix the code. When it is unclear which, the commit's ticket decides; if it still is not, that is the one case to park with a comment naming the commit.
+3. Branch from `origin/main` (`claude/fix-main-ci-<short sha>`), fix, run the failing files locally, open a PR titled `Fix main CI: <what>`, wait for green and squash-merge it **first**, ahead of every other PR. Check first that no open PR already carries the same fix (another run may be on it), and re-fetch `main` before pushing, because someone else may have fixed it meanwhile.
+4. Then merge `main` into each open PR as usual: their red checks are gone. A PR whose red check is *still* there after that is its own failure, back to the previous section.
+
+A flaky failure (passes on re-run, no relevant commit) is not this: re-run the job once, and if it passes, merge.
+
 - A failure is often in the PR's *fixture* rather than in the product: today a test asserting 201 got 422 because the case put two exercises in a block type that allows one, and another expected a forecast for an assignment whose test fixture gave it no price. Read what the code under test actually requires before concluding the product is wrong.
 - If CI is still red after a reasonable fix attempt, or the failure needs a judgment call outside the ticket's scope, **park the PR** rather than stopping.
 
@@ -79,7 +95,7 @@ A parked PR is skipped on later runs **until something changes**, which is any o
 - a commit pushed to its head branch after the parking comment;
 - a comment by someone other than this account, after the parking comment;
 - CI green on its current head;
-- `main` having moved since the parking, *when the parking reason was a failure the PR did not cause* — a base-branch problem or a collision with another PR can simply be gone.
+- `main` having moved since the parking, *when the parking reason was a collision with another PR* — it can simply be gone. (A red `main` is never a parking reason: fix it, see **A red main is yours to fix**.)
 
 Any of those un-parks it: remove the `needs-human` label and work it normally. Without them a parked PR would be parked for ever, which is the same failure one layer up.
 

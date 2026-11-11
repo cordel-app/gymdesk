@@ -1,10 +1,10 @@
-import { assignmentPlanSnapshotId } from './assignment-config';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
 import { syncMandatoryQuantities } from './product-set-draft';
 import { cloneConfiguration } from './product-set-bridge';
+import { ownAssignmentSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -61,7 +61,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     [input.gymId, input.ownerMemberId, input.userMembershipId],
   );
   for (const old of stale) {
-    await tx.query(`DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = 'draft'`, [old.id, input.gymId]);
+    await discardDraftSet(tx, input.gymId, Number(old.id));
     await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`,
       [old.user_membership_id, input.gymId]);
   }
@@ -114,10 +114,11 @@ export async function linkedDraftSetFor(
  * in-flight version, locking them out of starting another.
  */
 export async function deleteLinkedDraftSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
-  await tx.query(
-    `DELETE FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft'`,
+  const { rows } = await tx.query<{ id: number }>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft'`,
     [gymId, userMembershipId],
   );
+  for (const r of rows) await discardDraftSet(tx, gymId, Number(r.id));
 }
 
 /**
@@ -130,17 +131,16 @@ export async function writeDiscountOnVersion(tx: Tx, gymId: string, userMembersh
   reason: { value: string | null } | null; expires: { value: string | null } | null;
 }): Promise<void> {
   if (!input.reason && !input.expires) return;
-  // MySQL cannot update a table through a subquery on itself: resolve the snapshot first.
-  const { rows } = await tx.query<{ id: number | null }>(
-    `SELECT ${assignmentPlanSnapshotId('?')} AS id`, [userMembershipId]);
-  if (rows[0]?.id == null) return;
+  // M4b-2: the assignment's own plan is the one edited, owned by the version it is read from.
+  const target = await ownAssignmentSnapshot(tx, gymId, userMembershipId);
+  if (target == null) return;
   await tx.query(
     `UPDATE plan_snapshots
         SET discount_reason = IF(?, ?, discount_reason),
             discount_expires_at = IF(?, ?, discount_expires_at)
       WHERE id = ? AND gym_id = ?`,
     [input.reason ? 1 : 0, input.reason?.value ?? null, input.expires ? 1 : 0, input.expires?.value ?? null,
-      rows[0].id, gymId]);
+      target, gymId]);
 }
 
 /**

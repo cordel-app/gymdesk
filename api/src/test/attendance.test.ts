@@ -471,12 +471,20 @@ describe('Attendance Management (#193)', () => {
       expect(res.body.code).toBe('nothing_consumed');
     });
 
-    it('refuses an attendee who is not explicitly absent', async () => {
+    it('refunds an attendee marked present too (#2588)', async () => {
       const bookingId = await absentBookingWithLedger();
-      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'pending' WHERE id = ?`, [bookingId]);
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'present' WHERE id = ?`, [bookingId]);
+      const res = await post(bookingId);
+      expect(res.status).toBe(200);
+      expect(Number(res.body.service_returned)).toBe(1);
+    });
+
+    it('refuses a cancelled booking', async () => {
+      const bookingId = await absentBookingWithLedger();
+      await db.query(`UPDATE calendar_event_bookings SET status = 'cancelled' WHERE id = ?`, [bookingId]);
       const res = await post(bookingId);
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('not_absent');
+      expect(res.body.code).toBe('not_booked');
     });
 
     it('is a 404 for another gym\'s booking', async () => {

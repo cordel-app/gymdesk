@@ -45,7 +45,7 @@ export function MemberCommunicationModal({ memberId, memberName, onClose, onSent
         method: 'POST',
         body: JSON.stringify({ title: cleanTitle, message: cleanMessage }),
       });
-      toast(t('communication_sent', { name: memberName }));
+      toast(t('communication_sent', { name: memberName }), 'success');
       onSent?.();
       onClose();
     } catch (err: any) {

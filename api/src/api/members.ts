@@ -92,6 +92,12 @@ membersRouter.get('/', async (req, res) => {
   const nifNiePassportFilter = typeof req.query.nif_nie_passport === 'string' ? req.query.nif_nie_passport.trim() : null;
   const paymentStatusFilter = typeof req.query.payment_status === 'string' ? req.query.payment_status : null;
   const enrollmentStatusFilter = typeof req.query.enrollment_status === 'string' ? req.query.enrollment_status : null;
+  // #2551: Access Rights is derived on read (domain/memberAccessRights.ts), so it is
+  // filtered on the derived value after the rows are read, never in SQL.
+  const accessRightsFilter = typeof req.query.access_rights === 'string' ? req.query.access_rights : null;
+  if (accessRightsFilter && !['granted', 'to_be_reviewed', 'revoked'].includes(accessRightsFilter)) {
+    return res.status(400).json({ error: 'Invalid access_rights' });
+  }
   const joins: string[] = [];
   const where: string[] = ['m.deleted_at IS NULL', 'm.gym_id = ?'];
   const params: any[] = [gymId];
@@ -123,7 +129,8 @@ membersRouter.get('/', async (req, res) => {
     having.push('enrollment_status = ?');
     params.push(enrollmentStatusFilter);
   }
-  const limitClause = q ? 'LIMIT 20' : '';
+  // With the access filter the LIMIT must apply after it, so it is applied below.
+  const limitClause = q && !accessRightsFilter ? 'LIMIT 20' : '';
   const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
   const { rows } = await db.query(
     `SELECT m.*,
@@ -162,12 +169,14 @@ membersRouter.get('/', async (req, res) => {
   // shows can never disagree with what a new-members-only Promotion enforces
   // (§5). The Member Profile reads the very same field off this row.
   const newMemberFlags = await newMemberStatusByMember(db, gymId, rows.map((r: any) => Number(r.id)));
-  res.json(rows.map((r: any) => ({
+  const shaped = rows.map((r: any) => ({
     ...r,
     is_new_member: newMemberFlags.get(Number(r.id)) ?? true,
     access_rights_stored: r.access_rights,
     access_rights: deriveAccessRights(r.access_rights, r.payment_status),
-  })));
+  }));
+  const filtered = accessRightsFilter ? shaped.filter((r: any) => r.access_rights === accessRightsFilter) : shaped;
+  res.json(q && accessRightsFilter ? filtered.slice(0, 20) : filtered);
 });
 
 membersRouter.get('/count', async (req, res) => {
@@ -702,6 +711,12 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
           return res.status(409).json({ ...conflict, reconciled: 'pending_invitation', has_pending_invitation: true });
         }
         if (found.kind === 'account_exists') {
+          // The refusal is the evidence the member was invited outside Gymdesk: keep it as history.
+          await db.query(
+            `UPDATE members SET invited_at = COALESCE(invited_at, UTC_TIMESTAMP()), modified_at = UTC_TIMESTAMP(), modified_by = ?
+              WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invited_at IS NULL`,
+            [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
+          );
           return res.status(409).json({ ...conflict, reconciled: 'account_exists' });
         }
       } catch {

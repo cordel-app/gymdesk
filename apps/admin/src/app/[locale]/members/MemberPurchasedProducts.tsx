@@ -156,6 +156,12 @@ export function MemberPurchasedProducts({
       render: (item) => <div style={{ fontWeight: 500 }}>{item.product_name}</div>,
     },
     {
+      // #2609 — who the Product is for; the server answers the purchaser when nobody was chosen.
+      header: t('purchase_col_assigned_to'),
+      mobile: 'secondary',
+      render: (item) => item.assigned_member_name ?? dash,
+    },
+    {
       header: t('purchase_col_date'),
       mobile: 'secondary',
       render: (item) => (
@@ -185,6 +191,14 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_applied_promotion'),
       mobile: 'secondary',
       render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
+    },
+    {
+      // #2494 — what that Promotion gave this purchase, from the purchase's own frozen application.
+      header: t('purchase_col_promotion_benefit'),
+      mobile: 'secondary',
+      render: (item) => (item.promotion
+        ? benefitTreatmentLabel(tp as any, 'promotion', { action: item.promotion.benefit_action, value: item.promotion.benefit_value } as any)
+        : dash),
     },
     {
       header: t('purchase_col_direct_discount'),
@@ -283,9 +297,15 @@ export function MemberPurchasedProducts({
           onToggleExpand={toggleExpand}
           draftRow={adding ? (() => {
             const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
-            // Same order as `columns`: product, date, end date, price, tax, promotion, discount, final, payment status, status, actions.
+            // #2538 — the benefit of each chosen Promotion, from the Promotion's own action/value/duration.
+            const chosen = (addForm.product?.promotions ?? []).filter((pr) => addForm.promotionIds.includes(pr.promotion_id));
+            const draftBenefit = chosen.length === 0 ? dash : chosen.map((pr) => [
+              benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
+              pr.duration_cycles != null ? t('purchase_promotion_cycles', { count: pr.duration_cycles }) : null,
+            ].filter(Boolean).join(' · ')).join(', ');
+            // Same order as `columns`: product, date, end date, price, tax, promotion, promotion benefit, discount, final, payment status, status, actions.
             const cells: React.ReactNode[] = [
-              c.product, c.date, null, c.price, c.tax, c.promotion, c.discount, c.final, null,
+              c.product, c.date, null, c.price, c.tax, c.promotion, draftBenefit, c.discount, c.final, null,
               <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />, null,
             ];
             return { cells, form: <AddProductDetails form={addForm} /> };
@@ -354,6 +374,7 @@ function PurchaseFacts({
   return (
     <div style={{ padding: '8px 0' }}>
       <CardDetailRow label={t('purchase_col_product')} value={item.product_name} />
+      <CardDetailRow label={t('purchase_col_assigned_to')} value={item.assigned_member_name ?? dash} />
       <CardDetailRow label={t('purchase_col_date')} value={date(purchaseDate(item), gymFmt)} />
       <CardDetailRow label={t('purchase_cancelled_on')} value={formatGymDateOnly(item.cancelled_on, gymFmt)} />
       <CardDetailRow label={t('purchase_valid_until')} value={formatGymDateOnly(item.valid_until, gymFmt)} />

@@ -280,6 +280,8 @@
     "action_book": "Reservar",
     "buy_sessions_cta": "Compra sesiones para reservar esta clase",
     "select_service_prompt": "Elige qué servicio usar para esta reserva.",
+    "select_service_validation": "Selecciona un servicio profesional antes de reservar.",
+    "no_available_balance": "Todas tus sesiones de este servicio ya están reservadas. Cancela una reserva o compra más sesiones para reservar otro evento.",
     "service_required_message": "No tienes ninguno de los servicios profesionales necesarios para esta reserva: {services}. Visita Mis productos para comprar uno de ellos.",
     "action_join_waitlist": "Unirse a lista de espera",
     "action_cancel_booking": "Cancelar reserva",
@@ -343,7 +345,7 @@
     "type_booking_reminder_2h": "Recordatorio de entreno",
     "detail_booking_reminder_2h": "Tienes este entreno reservado en 2 horas.",
     "type_staff_message": "Mensaje de tu gimnasio",
-    "type_staff_message_from": "Mensaje de {name}",
+    "type_staff_message_from": "Mensaje de <nameTag>{name}</nameTag>",
     "category_all": "Todas",
     "category_staff": "Equipo",
     "category_auto": "Automáticas",
@@ -374,7 +376,7 @@
     "tab_services": "Servicios profesionales",
     "services_empty": "Tu gimnasio todavía no tiene servicios profesionales disponibles.",
     "services_error": "No se pudieron cargar tus servicios profesionales.",
-    "services_available": "Sesiones disponibles: {count}",
+    "services_balance": "{total, plural, one {# sesión} other {# sesiones}} ({available} disponibles + {booked} reservadas)",
     "services_close": "Cerrar",
     "services_image_alt": "Imagen del producto",
     "products_filtered_notice": "Mostrando los productos que desbloquean la clase que intentaste reservar.",
@@ -405,6 +407,10 @@
     "add_plan_loading": "Cargando planes…",
     "add_plan_close": "Cerrar",
     "plan_final_price": "Precio final (IVA incluido)",
+    "plan_included": "Incluido:",
+    "plan_optional": "Opcional:",
+    "plan_no_image": "Sin imagen",
+    "plan_ov_include": "Incluir",
     "plan_benefits_heading": "Elementos incluidos",
     "my_plans_heading": "Mis planes de membresía",
     "choose_plan": "Elegir este plan",
@@ -854,5 +860,24 @@
     "unit_reps": "reps",
     "unit_seconds": "s",
     "summary": "{days, plural, one {# día} other {# días}}"
+  },
+  "booking_detail": {
+    "center": "Centro",
+    "space": "Espacio",
+    "trainer": "Entrenador",
+    "status": "Estado de la reserva",
+    "attendees": "Asistentes",
+    "waiting_list": "Lista de espera",
+    "attendees_count": "{count, plural, one {# persona reservada} other {# personas reservadas}}",
+    "cancel": "Cancelar reserva",
+    "close": "Cerrar"
+  },
+  "event_services": {
+    "booked": "Reservado",
+    "balance": "{n, plural, one {# sesión disponible} other {# sesiones disponibles}}",
+    "title": "Servicios profesionales",
+    "capacity": "{n, plural, one {# plaza} other {# plazas}}",
+    "image_alt": "Imagen de {name}",
+    "no_image": "Sin imagen"
   }
 }

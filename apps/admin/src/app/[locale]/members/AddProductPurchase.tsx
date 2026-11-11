@@ -25,8 +25,8 @@ import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
-  parseDiscountInput, purchaseErrorKey,
-  type PurchasableProductOption, type PurchaseQuote,
+  parseDiscountInput, purchaseErrorKey, showsAssigneeSelector,
+  type EligibleAssignee, type PurchasableProductOption, type PurchaseQuote,
 } from './purchasedProductsView';
 
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
@@ -62,6 +62,9 @@ export function useAddProductForm({
   const base = `/members/${memberId}/product-purchases`;
 
   const [catalogue, setCatalogue] = useState<PurchasableProductOption[] | null>(null);
+  // #2609: the member's family (themself included), and who the Product is for.
+  const [assignees, setAssignees] = useState<EligibleAssignee[] | null>(null);
+  const [assignedMemberId, setAssignedMemberId] = useState<number>(memberId);
   const [productId, setProductId] = useState<number | null>(null);
   const [promotionIds, setPromotionIds] = useState<number[]>([]);
   const [discount, setDiscount] = useState('');
@@ -87,12 +90,16 @@ export function useAddProductForm({
     if (!enabled) {
       // A closed form starts fresh the next time it opens.
       setProductId(null); setPromotionIds([]); setDiscount(''); setQuote(null); setError(null); setOutcome(null);
+      setAssignedMemberId(memberId);
       return;
     }
     let cancelled = false;
     apiFetch<{ items: PurchasableProductOption[] }>(`${base}/catalogue`)
       .then((r) => { if (!cancelled) setCatalogue(r.items.filter((p) => !recurringOnly || p.recurring)); })
       .catch((err) => { if (!cancelled) { setCatalogue([]); setError(describe(err)); } });
+    apiFetch<{ members: EligibleAssignee[] }>(`${base}/assignees`)
+      .then((r) => { if (!cancelled) setAssignees(r.members); })
+      .catch(() => { if (!cancelled) setAssignees([]); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId, enabled]);
@@ -134,6 +141,8 @@ export function useAddProductForm({
     setPromotionIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
+  const showAssignee = showsAssigneeSelector(assignees, product);
+
   async function create(confirmBillingFrequency = false) {
     if (productId == null || !product) return;
     setFrequencyPrompt(null);
@@ -144,6 +153,7 @@ export function useAddProductForm({
         method: 'POST',
         body: JSON.stringify({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
+          ...(showAssignee ? { assigned_member_id: assignedMemberId } : {}),
           ...(product.recurring ? {} : { draft: true }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
           ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
@@ -179,6 +189,7 @@ export function useAddProductForm({
     catalogue, productId, product, promotionIds, discount, setDiscount, quote, error, busy, outcome,
     requiredProducts, requiredPending, selectionKey, setConfirmedKey, cancelRequired, togglePromotion,
     frequencyPrompt, setFrequencyPrompt, pickProduct, create, canCreate,
+    assignees, assignedMemberId, setAssignedMemberId, showAssignee,
   };
 }
 
@@ -210,6 +221,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
     tax: quote && quote.tax_rate_percent != null ? `${quote.tax_rate_percent}%` : '—',
     promotion: quote && quote.promotions.length > 0 ? quote.promotions.map((p) => p.promotion_name).join(', ') : '—',
     discount: f.isAdmin ? (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
       <input
         id="add-product-discount"
         aria-label={t('add_product_direct_discount')}
@@ -220,6 +232,8 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
         onChange={(e) => f.setDiscount(e.target.value)}
         title={t('add_product_direct_discount_help')}
       />
+      <span aria-hidden="true" data-direct-discount-percent>%</span>
+      </span>
     ) : '—',
     final: <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{quote ? money(quote.final_price, quote.currency) : '—'}</span>,
   };
@@ -257,6 +271,23 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
             </p>
           )}
         </>
+      )}
+      {product && !outcome && f.showAssignee && (
+        <div style={{ marginTop: 8, maxWidth: 360 }} data-add-product-assignee>
+          <label style={formFieldLabelStyle} htmlFor="add-product-assignee">{t('add_product_assigned_to')}</label>
+          <select
+            id="add-product-assignee"
+            style={{ ...formControlStyle, maxWidth: '100%' }}
+            value={f.assignedMemberId}
+            disabled={f.busy}
+            onChange={(e) => f.setAssignedMemberId(Number(e.target.value))}
+          >
+            {(f.assignees ?? []).map((m) => (
+              <option key={m.member_id} value={m.member_id}>{m.name}</option>
+            ))}
+          </select>
+          <p style={cardHintStyle}>{t('add_product_assigned_to_help')}</p>
+        </div>
       )}
       {quote && (
         <p style={cardHintStyle}>

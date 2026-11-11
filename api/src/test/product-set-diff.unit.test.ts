@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffConfigurations, recurringLinesOf } from '../domain/productSetDiff';
+import { diffConfigurations, recurringLinesOf, summaryItems } from '../domain/productSetDiff';
 
 const svc = (productId: number, quantity: number, unitPrice = 10, endsOn: string | null = null) => ({
   id: productId, productId, name: `P${productId}`, billingFrequency: 'month', unitPrice, quantity, startsOn: '2026-01-01', endsOn,
@@ -50,5 +50,19 @@ describe('diffConfigurations (#1537)', () => {
     expect(diffConfigurations(asg([line(30, null)]), asg([line(31, null, 2)]))).toEqual([
       expect.objectContaining({ kind: 'quantity_changed' }),
     ]);
+  });
+});
+
+describe('summaryItems (#2446)', () => {
+  it('lists active, draft and cancelling items with the plan', () => {
+    const before = asg([svc(1, 1), svc(2, 1)]);
+    const after = asg([svc(1, 1), svc(3, 2)]);
+    const out = summaryItems(before, after).map((i) => `${i.type}:${i.name}:${i.state}`);
+    expect(out).toEqual(['plan:Plan:active', 'product:P1:active', 'product:P3:draft', 'product:P2:cancelling']);
+  });
+
+  it('shows a replaced plan as cancelling beside the new draft one, and a first plan as draft', () => {
+    expect(summaryItems(asg([]), asg([], { planName: 'New' })).map((i) => `${i.name}:${i.state}`)).toEqual(['Plan:cancelling', 'New:draft']);
+    expect(summaryItems(null, asg([])).map((i) => i.state)).toEqual(['draft']);
   });
 });

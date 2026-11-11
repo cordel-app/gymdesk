@@ -93,3 +93,51 @@ export function diffConfigurations(
   for (const name of pBefore) if (!pAfter.has(name)) out.push({ kind: 'promotion_removed', name });
   return out;
 }
+
+// #2446 stage 2 — the Summary lists every item of the pending Product Set, not
+// only the differences: what stays (active), what the Draft adds (draft) and
+// what it takes away (cancelling). Frozen figures only; nothing here prices.
+export type SummaryItemState = 'active' | 'draft' | 'cancelling';
+
+export interface SummaryItem {
+  state: SummaryItemState;
+  type: 'plan' | 'product';
+  name: string;
+  quantity: number | null;
+  /** The product's own frequency; for a plan, its cadence as `<interval>_<unit>`. */
+  billing_frequency: string | null;
+  regular_price: number | null;
+  promotions: string[];
+}
+
+const planItem = (a: SimulationAssignment, state: SummaryItemState): SummaryItem | null =>
+  a.planName
+    ? {
+        state, type: 'plan', name: a.planName, quantity: null,
+        billing_frequency: a.recurringInterval != null && a.recurringUnit ? `${a.recurringInterval}_${a.recurringUnit}` : null,
+        regular_price: a.membershipFeePrice,
+        promotions: a.promotions.filter((p) => p.revokedAt == null).map((p) => p.name ?? ''),
+      }
+    : null;
+
+const lineItem = (l: RecurringLine, state: SummaryItemState): SummaryItem => ({
+  state, type: 'product', name: l.name, quantity: l.quantity,
+  billing_frequency: l.billingFrequency, regular_price: l.unitPrice, promotions: [],
+});
+
+/** `before` is the Active version (`null` when there is none), `after` the Draft. */
+export function summaryItems(before: SimulationAssignment | null, after: SimulationAssignment): SummaryItem[] {
+  const out: SummaryItem[] = [];
+  const was = new Map(recurringLinesOf(before).map((l) => [l.key, l]));
+  const now = new Map(recurringLinesOf(after).map((l) => [l.key, l]));
+
+  const prevPlan = before?.planName ?? null;
+  const nextPlan = after.planName ?? null;
+  if (before && prevPlan && prevPlan !== nextPlan) { const p = planItem(before, 'cancelling'); if (p) out.push(p); }
+  const plan = planItem(after, before && prevPlan === nextPlan ? 'active' : 'draft');
+  if (plan) out.push(plan);
+
+  for (const [key, l] of now) out.push(lineItem(l, was.has(key) ? 'active' : 'draft'));
+  for (const [key, l] of was) if (!now.has(key)) out.push(lineItem(l, 'cancelling'));
+  return out;
+}

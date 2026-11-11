@@ -1,7 +1,7 @@
 import { loadPaidThrough } from './cancellation-entitlement';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { cancellationEndDate } from '../domain/cancellationEntitlement';
+import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
@@ -60,9 +60,9 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
-        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, is_inherited)
+        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, assigned_member_id, line_ref, origin, is_inherited)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
-            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, 1
+            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, assigned_member_id, line_ref, origin, 1
        FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 
@@ -299,9 +299,19 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
           AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = billing_events.id)`,
       [gymId, scheduleId, startsAt]);
   }
+  // #2488 — a Pre-paid Duration is paid as one lump on the first period: that event covers every prepaid
+  // period, so its stored end is the last day of the last one (else paid-through stops after period one).
+  const { rows: snap } = await tx.query<any>(
+    `SELECT s.free_periods, s.pay_beforehand_periods, s.recurring_billing_interval, s.recurring_billing_unit
+       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+      WHERE psj.product_set_id = ? AND s.gym_id = ? ORDER BY s.id ASC LIMIT 1`, [set.id, gymId]);
+  const prepaidEnd = prepaidCoverageEnd(snap[0] ? {
+    freePeriods: Number(snap[0].free_periods ?? 0), prepaidPeriods: Number(snap[0].pay_beforehand_periods ?? 0),
+    interval: Number(snap[0].recurring_billing_interval ?? 0), unit: snap[0].recurring_billing_unit ?? null,
+  } : null, startsAt);
   await tx.query(
-    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, billing_date = ?
-      WHERE id = ?`, [set.id, scheduleId, startsAt, startsAt, ev[0].id]);
+    `UPDATE billing_events SET product_set_id = ?, schedule_id = ?, period_start = ?, period_end = ?, billing_date = ?
+      WHERE id = ?`, [set.id, scheduleId, startsAt, prepaidEnd, startsAt, ev[0].id]);
 }
 
 /* ── Edit: an assignment write becomes a new version ─────────────────────── */
@@ -406,6 +416,23 @@ export async function reconfigureProjected(
 }
 
 /**
+ * #1196 / #2481: the day a cancelled plan keeps its entitlement through (inclusive) — the end of the last paid
+ * period, or yesterday when nothing was paid. The one computation behind both the cancellation and the
+ * confirmation dialog's preview, so the date shown is the date applied.
+ */
+export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
+  const { rows: info } = await tx.query<any>(
+    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+      WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
+  const paidThrough = await loadPaidThrough(tx, gymId, Number(info[0].root_product_set_id));
+  return cancellationEndDate({
+    paidThrough, today: todayUtc(),
+    assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,
+  });
+}
+
+/**
  * Ends a projected plan: a new, empty, plan-less version. Its activation closes
  * the assignment (the projection), supersedes the previous version and deletes
  * its obsolete future events, so nothing more is billed.
@@ -416,18 +443,7 @@ export async function retireProjected(
 ): Promise<ReconfigureOutcome> {
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
-  // #1196: the plan-less version starts on the day entitlement ends — the end of
-  // the last paid period, or yesterday when nothing was paid — and the
-  // projection closes the assignment with that as its `ends_at`.
-  const { rows: info } = await tx.query<any>(
-    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
-       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-      WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, input.gymId]);
-  const paidThrough = await loadPaidThrough(tx, input.gymId, Number(info[0].root_product_set_id));
-  const endsOn = cancellationEndDate({
-    paidThrough, today: todayUtc(),
-    assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,
-  });
+  const endsOn = await cancellationEndFor(tx, input.gymId, set);
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: null,
     startsAt: endsOn, actor: input.actor,
@@ -470,6 +486,9 @@ export function applyPromotionMutator(gymId: string, actor: string | null, promo
  */
 export function revokePromotionMutator(promotionId: number, actor: string | null) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
+    // M4b-2: revoking changes the plan's applied Promotions, so the version takes its own copy of the plan.
+    const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
+    await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
     const { rowCount } = await tx.query(
       `UPDATE user_membership_promotions
           SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
