@@ -22,8 +22,8 @@ import type { Tx } from '../infra/db';
 
 type Conn = Pick<Tx, 'query'>;
 
+/** The Product junctions, still derived from their snapshots' own `product_set_id` (the plan one is not, M5b). */
 export const SET_JUNCTIONS = [
-  { junction: 'product_set_plan_snapshots', snapshotCol: 'plan_snapshot_id', table: 'plan_snapshots' },
   { junction: 'product_set_periodical_snapshots', snapshotCol: 'product_periodical_snapshot_id', table: 'product_periodical_snapshots' },
   { junction: 'product_set_session_snapshots', snapshotCol: 'product_session_snapshot_id', table: 'product_session_snapshots' },
   { junction: 'product_set_oneoff_snapshots', snapshotCol: 'product_oneoff_snapshot_id', table: 'product_oneoff_snapshots' },
@@ -45,7 +45,7 @@ async function syncOne(tx: Conn, gymId: string, productSetId: number, j: SetJunc
 
 /** The recurring Product snapshots of a Product Set (and any session / one-off snapshot that names it). */
 export async function syncProductSnapshotJunctions(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  for (const j of SET_JUNCTIONS.slice(1)) await syncOne(tx, gymId, productSetId, j);
+  for (const j of SET_JUNCTIONS) await syncOne(tx, gymId, productSetId, j);
 }
 
 /** Links a bought one-time Product's snapshot to the Billing Event of its payment request. */

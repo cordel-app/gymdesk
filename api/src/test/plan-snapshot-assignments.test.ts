@@ -201,7 +201,7 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
     const owner = await member();
     const set = await newVersion(owner, first, TODAY, 50);
     const { rows: snap } = await db.query<any>(
-      'SELECT s.schedule_id, sch.anchor_date FROM plan_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id WHERE s.product_set_id = ?',
+      'SELECT s.schedule_id, sch.anchor_date FROM plan_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id WHERE s.id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)',
       [set.id]);
     const joinStart = day(10);
     const { insertId: added } = await db.query(

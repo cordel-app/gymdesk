@@ -21,7 +21,8 @@
  * exactly what the sync would have done, so no snapshot becomes unreachable. Nothing else moves.
  *
  * The rollback restores the column from the snapshot's first link (lossy for a snapshot linked by several
- * sets, which is dev data) and re-adds the cascade FK.
+ * sets, which is dev data; a snapshot no set links is deleted) and re-adds the cascade FK. It is only valid
+ * together with reverting the M5b application code, which no longer writes the column.
  */
 
 const SNAPSHOT_ASSIGNMENT = `COALESCE(s.source_user_membership_id,
@@ -33,12 +34,16 @@ const VIEW_OVER_JUNCTION = `
   CREATE OR REPLACE VIEW user_membership_members AS
   SELECT DISTINCT x.user_membership_id AS user_membership_id,
          b.gym_id AS gym_id, b.member_id AS member_id, b.is_owner AS is_owner, b.created_at AS created_at
-    FROM (SELECT s.id, s.gym_id, ${SNAPSHOT_ASSIGNMENT} AS user_membership_id,
-                 ROW_NUMBER() OVER (PARTITION BY s.gym_id, ${SNAPSHOT_ASSIGNMENT} ORDER BY s.id DESC) AS rn
-            FROM plan_snapshots s
-           WHERE EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)) x
+    FROM (SELECT a.id, a.gym_id, a.user_membership_id,
+                 ROW_NUMBER() OVER (PARTITION BY a.gym_id, a.user_membership_id ORDER BY a.id DESC) AS rn
+            FROM (SELECT s.id, s.gym_id, ${SNAPSHOT_ASSIGNMENT} AS user_membership_id
+                    FROM plan_snapshots s
+                   WHERE EXISTS (SELECT 1 FROM product_set_plan_snapshots j
+                                   JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = s.gym_id
+                                  WHERE j.plan_snapshot_id = s.id)) a
+           WHERE a.user_membership_id IS NOT NULL) x
     JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = x.id AND b.gym_id = x.gym_id
-   WHERE x.user_membership_id IS NOT NULL AND x.rn = 1`;
+   WHERE x.rn = 1`;
 
 // Migration 358's definition, restored by the rollback.
 const VIEW_OVER_COLUMN = `
@@ -73,8 +78,14 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
-  if (await knex.schema.hasColumn('plan_snapshots', 'product_set_id')) return;
-  await knex.raw('ALTER TABLE plan_snapshots ADD COLUMN product_set_id INT UNSIGNED NULL AFTER gym_id');
+  // Guarded on the FK, the last thing the rollback restores, so a rollback that failed half-way can be re-run.
+  const [fk] = await knex.raw(
+    `SELECT 1 FROM information_schema.REFERENTIAL_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'plan_snapshots_set_fk'`);
+  if (fk.length > 0) return;
+  if (!(await knex.schema.hasColumn('plan_snapshots', 'product_set_id'))) {
+    await knex.raw('ALTER TABLE plan_snapshots ADD COLUMN product_set_id INT UNSIGNED NULL AFTER gym_id');
+  }
   await knex.raw(`
     UPDATE plan_snapshots s
       JOIN (SELECT plan_snapshot_id, MIN(product_set_id) AS set_id
