@@ -16,6 +16,7 @@ import { cancelInFlight, createDraft, submitForPayment as submitSetForPayment } 
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
+import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -289,7 +290,7 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   if (!ev[0]) return;
   const startsAt = dateOnly(set.starts_at);
   const { rows: sch } = await tx.query<any>(
-    'SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = ?',
+    `SELECT id FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`,
     [set.root_product_set_id, PLAN_SCHEDULE_KEY]);
   const scheduleId = sch[0] ? Number(sch[0].id) : null;
   if (scheduleId != null) {
