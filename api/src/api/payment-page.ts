@@ -32,7 +32,14 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
         `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref, pr.source,
                 g.name AS gym_name,
                 m.name AS member_name,
-                mprod.product_name,
+                -- #2126 stage 3f: the name comes from the Product snapshot of the purchase; the
+                -- purchase record is joined only for its payment_request_id link.
+                COALESCE(
+                  (SELECT pos.product_name FROM product_oneoff_snapshots pos
+                    WHERE pos.member_product_id = mprod.id AND pos.gym_id = mprod.gym_id LIMIT 1),
+                  (SELECT pss.product_name FROM product_session_snapshots pss
+                    WHERE pss.member_product_id = mprod.id AND pss.gym_id = mprod.gym_id LIMIT 1)
+                ) AS product_name,
                 bp.recurring_billing_interval,
                 bp.recurring_billing_unit,
                 t.id AS theme_id, t.logo_mime AS theme_logo_mime,
@@ -128,7 +135,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       gymName: row.gym_name,
       memberName: row.member_name,
       // #1121 stage 2: what is being bought, for the one-off consent sentence.
-      // The snapshot's name (`member_products_oneoff_snapshot.product_name`), never the live
+      // The snapshot's name (the Product snapshot's `product_name`, #2126 stage 3f), never the live
       // catalogue's — the page must say what the member agreed to buy.
       itemName: row.product_name ?? null,
       billingInterval,
