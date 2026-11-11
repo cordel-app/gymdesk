@@ -13,6 +13,10 @@
  * recognised by another assignment of the same owner that starts on its
  * `ends_at` and was created after it.
  *
+ * A relabel, not a lifecycle transition: the rows already read *Cancels on
+ * End Date*, so no `status_change` audit row and no `modified_at`/`modified_by`
+ * are written.
+ *
  * Data only (no DDL). Idempotent: a moved row no longer matches. `down` puts
  * every `active_cancel_at_period_end` row back to `cancelled` (the value this
  * stage starts writing is indistinguishable from a moved one).
