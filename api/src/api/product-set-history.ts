@@ -3,7 +3,7 @@ import type { Tx } from '../infra/db';
 /**
  * #2125 M5d-2 — a Product Set's history, read through `previous_product_set_id`.
  *
- * `root_product_set_id` is gone (migration 399): Oscar's model (2026-11-03) has
+ * `root_product_set_id` is gone (migration 400): Oscar's model (2026-11-03) has
  * no chain identity, only the owner and the historical link from a Product Set
  * to the one it replaced. Where a writer still needs to know whether something
  * belongs to "this line of the owner's history" — a schedule this set or one of

@@ -582,7 +582,7 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   previous chain has no Active or in-flight version) bills on the schedule they already had
   when it is the same schedule. When it is not (another cadence, another yearly
   anniversary), `ensureSchedule()` re-keys the old one `<key>-<id>`, untouched, and opens a
-  new one. Since M5d-2 (migration 399) `product_sets.root_product_set_id` is dropped and the
+  new one. Since M5d-2 (migration 400) `product_sets.root_product_set_id` is dropped and the
   schedule records the Product Set that *opened* it (`opened_by_product_set_id`, backfilled
   from the old root): the two writers that move a first Product Set's schedule (its start
   date, its cadence) move only one that set opened, so a later Product Set never moves a
