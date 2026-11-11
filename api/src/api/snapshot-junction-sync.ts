@@ -7,11 +7,11 @@
  * columns (idempotent `INSERT IGNORE`, stale rows removed). The snapshot side of every junction is
  * `ON DELETE CASCADE` (migration 375), so a deleted snapshot takes its links with it.
  *
- * Since M4b-1 the **plan** junction is the record of the link rather than a spelling of the column: a
- * Product Set may link a plan snapshot whose column names another set (the sharing M4b introduces), so
- * `syncPlanSnapshotJunction()` only adds the link a snapshot's column implies and never removes one — a
- * link is released by its writer (`ownPlanSnapshot()`, `discardDraftSet()`) or by the cascade. The
- * Product junctions still follow the column until #2126 stage 3 moves the recurring lines.
+ * Since M5b (migration 388) the **plan** junction is the only record of the link: `plan_snapshots` has no
+ * `product_set_id`, every writer that creates a plan snapshot links it in the same statement sequence, and a
+ * link is released by its writer (`ownPlanSnapshot()`, `deleteProductSetAndOwnPlanSnapshots()`) or by the
+ * cascade. Nothing here derives a plan link. The Product junctions still follow the column until #2126
+ * stage 3 moves the recurring lines.
  *
  *   plan snapshots          -> product_set_plan_snapshots
  *   recurring Product lines -> product_set_periodical_snapshots
@@ -40,20 +40,6 @@ async function syncOne(tx: Conn, gymId: string, productSetId: number, j: SetJunc
   await tx.query(
     `INSERT IGNORE INTO ${j.junction} (product_set_id, ${j.snapshotCol})
      SELECT s.product_set_id, s.id FROM ${j.table} s WHERE s.gym_id = ? AND s.product_set_id = ?`,
-    [gymId, productSetId]);
-}
-
-/**
- * The Membership Plan snapshots of a Product Set (M4b-1): a snapshot whose column names the set is linked
- * if it is not yet (a fixture or a legacy path that wrote the column alone), and no existing link is
- * touched — the junction, not the column, says which snapshots a set holds.
- */
-export async function syncPlanSnapshotJunction(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  const j = SET_JUNCTIONS[0];
-  // In snapshot order: a set's first link is its primary plan (`primaryPlanSnapshotId()`).
-  await tx.query(
-    `INSERT IGNORE INTO ${j.junction} (product_set_id, ${j.snapshotCol})
-     SELECT s.product_set_id, s.id FROM ${j.table} s WHERE s.gym_id = ? AND s.product_set_id = ? ORDER BY s.id`,
     [gymId, productSetId]);
 }
 

@@ -2,7 +2,7 @@ import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot, syncPlanSnapshotsOfChain } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
-import { discardDraftSet } from './plan-snapshot-ownership';
+import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -233,7 +233,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   if (!canCancelPending(attempts)) return { kind: 'unresolved' };
   await tx.query(`DELETE FROM payment_requests WHERE id IN (
       SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL)`, [id]);
-  await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'pending_payment'`, [id]);
+  await deleteProductSetAndOwnPlanSnapshots(tx, gymId, id, 'pending_payment');
   return { kind: 'cancelled' };
 }
 

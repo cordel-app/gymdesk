@@ -118,13 +118,13 @@ describe('planSnapshotInheritedSql (#2125 M4a)', () => {
     expect(await inherited(b, snapshot)).toBe(1);
     // A snapshot nobody else links, copied from nothing, is new.
     const { insertId } = await db.query(
-      `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at)
-       SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at)
+       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
     expect(await inherited(b, Number(insertId))).toBe(0);
     // A copy of an inherited snapshot (an edited inherited plan, M5a) is inherited through its lineage.
     const { insertId: copyId } = await db.query(
-      `INSERT INTO plan_snapshots (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, copied_from_plan_snapshot_id)
-       SELECT gym_id, ?, member_id, membership_plan_id, 'draft', starts_at, id FROM plan_snapshots WHERE id = ?`, [b, snapshot]);
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, copied_from_plan_snapshot_id)
+       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at, id FROM plan_snapshots WHERE id = ?`, [snapshot]);
     expect(await inherited(b, Number(copyId))).toBe(1);
   });
 });
@@ -188,15 +188,20 @@ describe('a Draft writer copies only the plan it edits (#2125 M4b-2)', () => {
   });
 });
 
-describe('discardDraftSet (#2125 M4b-0)', () => {
-  it('discarding a Draft keeps a snapshot another set still links, and only a Draft is deleted', async () => {
+describe('discardDraftSet (#2125 M4b-0, M5b)', () => {
+  it('discarding a Draft keeps a snapshot another set still links, deletes the ones only it linked, and only a Draft is deleted', async () => {
     const { a, b, snapshot } = await twoSets();
-    // The snapshot's own set pointer is the Draft's; the superseded A links it too.
-    await db.query('UPDATE plan_snapshots SET product_set_id = ? WHERE id = ?', [b, snapshot]);
+    // The Draft B links the superseded A's snapshot (shared) and one of its own.
     await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
+    const { insertId: own } = await db.query(
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at)
+       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, own]);
     expect(await db.transaction((tx) => discardDraftSet(tx, gymId, b))).toBe(true);
-    const { rows } = await db.query<any>('SELECT product_set_id FROM plan_snapshots WHERE id = ?', [snapshot]);
-    expect(Number(rows[0].product_set_id)).toBe(a);
+    // The shared snapshot is A's, untouched; the Draft's own one is gone with it.
+    expect(await linked(a)).toEqual([snapshot]);
+    expect((await db.query<any>('SELECT id FROM plan_snapshots WHERE id IN (?, ?) ORDER BY id', [snapshot, own])).rows
+      .map((r: any) => Number(r.id))).toEqual([snapshot]);
     // A (superseded) is not a Draft: nothing is deleted.
     expect(await db.transaction((tx) => discardDraftSet(tx, gymId, a))).toBe(false);
   });

@@ -81,9 +81,9 @@ afterAll(async () => {
 
 // #2125 stage 6 — the engine's input is one assignment per plan snapshot of the version.
 /** The fixtures write a plan snapshot by hand; the Product Set junction is what the loaders read (M3). */
-async function linkPlanSnapshots(setId: number): Promise<void> {
+async function linkPlanSnapshots(setId: number, snapshotId: number): Promise<void> {
   await db.query(
-    'INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) SELECT product_set_id, id FROM plan_snapshots WHERE product_set_id = ?', [setId]);
+    'INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapshotId]);
 }
 
 describe('loadProductSetSimulationAssignments', () => {
@@ -113,14 +113,14 @@ describe('loadProductSetSimulationAssignments', () => {
     const before = await loadProductSetSimulationAssignments(gymId, set.id);
 
     const { rows: snap } = await db.query<any>(
-      'SELECT schedule_id FROM plan_snapshots WHERE product_set_id = ?', [set.id]);
-    await db.query(
+      'SELECT schedule_id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [set.id]);
+    const { insertId: added } = await db.query(
       `INSERT INTO plan_snapshots
-         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+         (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
-      [gymId, set.id, owner, second, TODAY, snap[0].schedule_id]);
-    await linkPlanSnapshots(set.id);
+       VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
+      [gymId, owner, second, TODAY, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id, Number(added));
 
     const list = await loadProductSetSimulationAssignments(gymId, set.id);
     expect(list).toHaveLength(2);
@@ -174,14 +174,14 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
     const aloneFees = alone.map((e) => e.lines.filter((l) => l.kind === 'membership_fee').length);
     expect(aloneFees.every((n) => n === 1)).toBe(true);
 
-    const { rows: snap } = await db.query<any>('SELECT schedule_id FROM plan_snapshots WHERE product_set_id = ?', [set.id]);
-    await db.query(
+    const { rows: snap } = await db.query<any>('SELECT schedule_id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [set.id]);
+    const { insertId: added } = await db.query(
       `INSERT INTO plan_snapshots
-         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+         (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
-      [gymId, set.id, owner, second, TODAY, snap[0].schedule_id]);
-    await linkPlanSnapshots(set.id);
+       VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
+      [gymId, owner, second, TODAY, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id, Number(added));
 
     const both = await planScheduledEvents(gymId, set.id, TODAY, 2);
     expect(both.map((e) => e.date)).toEqual(alone.map((e) => e.date));
@@ -204,13 +204,13 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
       'SELECT s.schedule_id, sch.anchor_date FROM plan_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id WHERE s.product_set_id = ?',
       [set.id]);
     const joinStart = day(10);
-    await db.query(
+    const { insertId: added } = await db.query(
       `INSERT INTO plan_snapshots
-         (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+         (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0)`,
-      [gymId, set.id, owner, second, joinStart, snap[0].schedule_id]);
-    await linkPlanSnapshots(set.id);
+       VALUES (?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0)`,
+      [gymId, owner, second, joinStart, snap[0].schedule_id]);
+    await linkPlanSnapshots(set.id, Number(added));
 
     const events = await planScheduledEvents(gymId, set.id, TODAY, 3);
     const secondLines = events.flatMap((e) => e.lines

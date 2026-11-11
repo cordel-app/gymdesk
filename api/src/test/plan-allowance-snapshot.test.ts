@@ -63,7 +63,7 @@ describe('plan allowance renewals by plan snapshot', () => {
 
     const setId = await activeVersion(owner, planId, 50);
     const { rows: line } = await db.query<any>(
-      'SELECT id FROM plan_session_snapshots WHERE plan_snapshot_id = (SELECT id FROM plan_snapshots WHERE product_set_id = ?)', [setId]);
+      'SELECT id FROM plan_session_snapshots WHERE plan_snapshot_id = (SELECT id FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?))', [setId]);
     expect(line).toHaveLength(1);
 
     const inTwoWeeks = day(14);

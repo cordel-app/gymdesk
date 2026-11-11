@@ -71,11 +71,11 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
 
   const { insertId } = await tx.query(
     `INSERT INTO plan_snapshots
-       (gym_id, product_set_id, member_id, membership_plan_id, status, starts_at, schedule_id,
+       (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
         membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
         auto_renew, recurring_billing_interval, recurring_billing_unit, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, productSetId, input.memberId, membershipPlanId, setRows[0].status, input.startsAt, scheduleId,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, input.memberId, membershipPlanId, setRows[0].status, input.startsAt, scheduleId,
       input.membershipFeePrice ?? null, plan.free_periods ?? null, plan.paid_periods ?? null,
       plan.bonus_periods ?? null, plan.pay_beforehand_periods ?? null,
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
@@ -120,18 +120,18 @@ export async function copyPlanSnapshotToVersion(
 ): Promise<number> {
   const { insertId } = await tx.query(
     `INSERT INTO plan_snapshots
-       (gym_id, product_set_id, member_id, membership_plan_id, status, copied_from_plan_snapshot_id, starts_at, ends_at, closed_at,
+       (gym_id, member_id, membership_plan_id, status, copied_from_plan_snapshot_id, starts_at, ends_at, closed_at,
         schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
         source_user_membership_id, created_by, owner_is_beneficiary)
-     SELECT s.gym_id, ?, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
+     SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
-      WHERE s.id = ? AND s.gym_id = ?`, [toSetId, toSetId, fromSnapshotId, gymId]);
+      WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
   if (opts.link !== false) {
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }
