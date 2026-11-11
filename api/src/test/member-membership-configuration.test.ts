@@ -610,18 +610,18 @@ describe('GET /user-memberships/member/:memberId/configuration — lifecycle_sta
   });
 
   // #2625: a cancelled plan that still gives access until its End Date reads
-  // `cancels_on_end_date` — derived from `status` + `ends_at`, never stored —
-  // and becomes `cancelled` once `ends_at` is behind us, with no job. The date
+  // `cancels_on_end_date`; since #2659 stage 2 that plan is stored as
+  // `active_cancel_at_period_end`, and reads `cancelled` once `ends_at` is behind us. The date
   // test is the entitlement's own (`ends_at >= UTC_DATE()`), so End Date = today
   // is still a day of access and still "Cancels on End Date".
-  it('derives Cancels on End Date for a cancelled plan whose End Date is today or later', async () => {
+  it('reads Cancels on End Date for a plan cancelling at its period end whose End Date is today or later', async () => {
     const memberId = await createMember(gymId);
     const today = new Date().toISOString().slice(0, 10);
     const future = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Future ${uniq()}`), {
-      status: 'cancelled', startsAt: '2026-01-01', endsAt: '2099-12-31',
+      status: 'active_cancel_at_period_end', startsAt: '2026-01-01', endsAt: '2099-12-31',
     });
     const endsToday = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Today ${uniq()}`), {
-      status: 'cancelled', startsAt: '2026-01-01', endsAt: today,
+      status: 'active_cancel_at_period_end', startsAt: '2026-01-01', endsAt: today,
     });
     const past = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancelled Past ${uniq()}`), {
       status: 'cancelled', startsAt: '2020-01-01', endsAt: '2020-12-31',
@@ -641,9 +641,9 @@ describe('GET /user-memberships/member/:memberId/configuration — lifecycle_sta
     expect((byId.get(past) as any).lifecycle_status).toBe('cancelled');
     expect((byId.get(openActive) as any).lifecycle_status).toBe('active');
     expect((byId.get(futureActive) as any).lifecycle_status).toBe('active');
-    // Nothing stored moved, the End Date is kept and the plan stays in the
-    // Active group until it ends (#2549's `is_current`).
-    expect((byId.get(future) as any).status).toBe('cancelled');
+    // The End Date is kept and the plan stays in the Active group until it
+    // ends (#2549's `is_current`).
+    expect((byId.get(future) as any).status).toBe('active_cancel_at_period_end');
     expect((byId.get(future) as any).ends_at).toBe('2099-12-31');
     expect((byId.get(future) as any).is_current).toBe(true);
     expect((byId.get(past) as any).is_current).toBe(false);

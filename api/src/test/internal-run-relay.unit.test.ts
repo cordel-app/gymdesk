@@ -104,6 +104,7 @@ describe('only the declared internal runs may be relayed', () => {
       '/billing/run',
       '/billing/cleanup',
       '/promotion-lifecycle/run',
+      '/assignment-lifecycle/run',
       '/plan-allowance-renewals/run',
       '/recurring-bookings/run',
       '/booking-reminders/run',
@@ -293,6 +294,7 @@ describe('the API end of the relay', () => {
       "app.use('/recurring-bookings', internalRunLimiter as any, recurringBookingsRouter)",
       "app.use('/promotion-lifecycle', internalRunLimiter as any, promotionLifecycleRouter)",
       "app.use('/plan-allowance-renewals', internalRunLimiter as any, planAllowanceRenewalsRouter)",
+      "app.use('/assignment-lifecycle', internalRunLimiter as any, assignmentLifecycleRouter)",
     ]) {
       expect(API_APP_CODE).toContain(mount);
     }

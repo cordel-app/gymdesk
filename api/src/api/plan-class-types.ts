@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
+import { entitledAssignmentSql } from '../domain/assignmentStatus';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { registerBookingAccessHook } from './bookings';
 
@@ -85,7 +86,7 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
      FROM user_memberships um
      JOIN class_type_user_memberships ctum
        ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND EXISTS (
          SELECT 1 FROM user_membership_members umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
