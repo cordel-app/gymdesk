@@ -40,6 +40,7 @@ paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFun
               pr.status, pr.provider, pr.provider_order, pr.provider_ref,
               pr.source, pr.created_by, pr.created_at, pr.completed_at,
               pr.modified_at, pr.modified_by,
+              pr.transaction_type, pr.refund_of_payment_request_id,
               m.name AS member_name
        FROM payment_requests pr
        JOIN members m ON m.id = pr.member_id

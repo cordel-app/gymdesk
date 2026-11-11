@@ -25,6 +25,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "audit_logs": ["ledger", "is the activity log itself (actor_user_id, actor_name)"],
   "benefit_types": ["lookup", "global lookup, no runtime writer"],
   "billing_event_lines": ["parent", "billing_events (priced components of one event)"],
+  "payment_refund_lines": ["parent", "payment_requests (the lines one refund transaction returned, #2480)"],
   "billing_policies": ["parent", "membership_plans (Billing & Duration section)"],
   "billing_run_log": ["ledger", "system run log"],
   "job_run_log": ["ledger", "system job run log (#1996), no gym_id"],

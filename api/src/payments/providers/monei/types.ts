@@ -9,6 +9,10 @@ export interface MoneiPayment {
   };
   paymentToken?: string;
   sequenceId?: string;
+  /** #2480: present on a refund answer. */
+  refundedAmount?: number;
+  statusCode?: string;
+  statusMessage?: string;
   paymentMethod?: {
     card?: {
       last4: string;

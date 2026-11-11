@@ -15,13 +15,14 @@ import { readOnlyStyle } from '@/components/ui';
 import { ExpandedRow, StatusBadge, fmtDate, fmtDateTime, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
 import {
   BILLING_EVENT_STATUS_VALUES, BillingEventStatusBadge, NormalizedPaymentStatusBadge, billingEventAmountLabel, useBillingEventActions,
+  type BillingEventHeaderRow,
 } from './BillingEventShared';
 
 const STATUS_VALUES = BILLING_EVENT_STATUS_VALUES;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface BillingEvent {
+interface BillingEvent extends BillingEventHeaderRow {
   id: number | null;
   type: 'real' | 'virtual';
   member_id: number;
@@ -35,7 +36,7 @@ interface BillingEvent {
   normalized_payment_status?: string | null;
   amount: string | null;
   event_type: string;
-  status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
+  status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
   currency: string | null;
   /** #640: Retry Payment / Manual payment apply to this row. */
   payment_actions_available: boolean;
@@ -264,6 +265,7 @@ export default function BillingEventsPage() {
     pending: t('billing_events_page.status_pending'),
     scheduled: t('billing_events_page.status_scheduled'),
     recorded: t('billing_events_page.status_recorded'),
+    cancelled: t('billing_events_page.status_cancelled'),
   };
 
   return (
@@ -366,6 +368,8 @@ export default function BillingEventsPage() {
                 <th style={{ padding: '8px 12px', width: 32 }} />
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_member')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_plan')}</th>
+                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.header_method')}</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.header_attempts')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_date')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_created')}</th>
                 <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
@@ -377,7 +381,7 @@ export default function BillingEventsPage() {
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
+                  <td colSpan={11} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
                     {t('billing_events_page.empty')}
                   </td>
                 </tr>
@@ -403,6 +407,8 @@ export default function BillingEventsPage() {
                       </td>
                       <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
                       <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.attempt_count ?? 0}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gymFmt)}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtDateTime(row.created_at, gymFmt)}
@@ -425,6 +431,7 @@ export default function BillingEventsPage() {
                     {isExpanded && row.id != null && (
                       <tr key={`${rowKey}-expanded`} style={{ borderBottom: '1px solid #e5e7eb' }}>
                         <ExpandedRow
+                          key={`${row.id}-${row.status}-${row.refunded_amount ?? ''}`}
                           billingEvent={row}
                           onChanged={reloadCurrentPage}
                           canWrite={canWrite}

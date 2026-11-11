@@ -2459,6 +2459,8 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
        LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = pr.gym_id
        WHERE pr.gym_id = ? AND pr.member_id = ? AND pr.source <> ?
+         -- #2480: a refund is not a payment the member made.
+         AND pr.transaction_type = 'payment'
        ORDER BY pr.created_at DESC`,
       [gymId, memberId, CARD_UPDATE_SOURCE],
     );
@@ -2816,7 +2818,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // Payments dashboard calls failed.
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.previous_status, be.new_status,
-              be.amount, be.notes, be.created_at, be.receipt_number,
+              be.amount, be.notes, be.created_at, be.receipt_number, be.cancelled_at,
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
@@ -2830,7 +2832,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     );
     const items = rows.map(({ latest_tx_status, ...row }) => ({
       ...row,
-      status: deriveBillingEventStatus(row.event_type, latest_tx_status),
+      status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
     }));
     res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) {

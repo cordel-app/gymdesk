@@ -34,6 +34,10 @@ export interface Transaction {
   card_last4: string | null;
   provider_status?: string | null;
   normalized_payment_status?: string | null;
+  /** #2480: `refund` rows return money of the attempt they name. */
+  transaction_type?: 'payment' | 'refund';
+  refund_of_payment_request_id?: number | null;
+  provider_refund_ref?: string | null;
 }
 
 export /** #640 §2 — the read-only Billing Event details view. */
@@ -105,6 +109,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   pending:   { bg: '#ffedd5', text: '#9a3412' },
   scheduled: { bg: '#fef9c3', text: '#92400e' },
   recorded:  { bg: '#e0f2fe', text: '#075985' },
+  cancelled: { bg: '#f3f4f6', text: '#374151' },
 };
 
 export function StatusBadge({ status, label }: { status: string; label: string }) {
@@ -229,7 +234,7 @@ export function ExpandedRow({
 
   if (loading) {
     return asCell ? (
-      <td colSpan={9} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>
+      <td colSpan={11} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>
         {t('billing_events_page.loading')}
       </td>
     ) : (
@@ -366,21 +371,28 @@ export function ExpandedRow({
               {rows?.map((tx) => (
                 <tr key={tx.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                   <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(tx.created_at, gymFmt)}</td>
-                  <td style={{ padding: '6px 10px' }}>{tx.status}</td>
+                  <td style={{ padding: '6px 10px' }}>
+                    {tx.transaction_type === 'refund' && (
+                      <span style={{ marginRight: 6, padding: '1px 6px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: '#ede9fe', color: '#5b21b6' }}>
+                        {t('billing_events_page.tx_refund')}
+                      </span>
+                    )}
+                    {tx.status}
+                  </td>
                   <td style={{ padding: '6px 10px' }}>
                     {tx.provider_status ?? '—'}{tx.normalized_payment_status ? ` (${tx.normalized_payment_status})` : ''}
                   </td>
                   <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtAmount(tx.amount)} {tx.currency ?? ''}
+                    {tx.transaction_type === 'refund' ? '−' : ''}{fmtAmount(tx.amount)} {tx.currency ?? ''}
                   </td>
                   <td style={{ padding: '6px 10px' }}>{tx.source ?? '—'}</td>
-                  <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>{tx.attempt ?? '—'}</td>
+                  <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>{tx.transaction_type === 'refund' ? '—' : (tx.attempt ?? '—')}</td>
                   <td style={{ padding: '6px 10px' }}>{tx.payment_method_name ?? '—'}</td>
                   <td style={{ padding: '6px 10px' }}>
                     {tx.card_brand && tx.card_last4 ? `${tx.card_brand} ···${tx.card_last4}` : '—'}
                   </td>
                   <td style={{ padding: '6px 10px', color: '#6b7280', fontFamily: 'monospace', fontSize: 12 }}>
-                    {tx.provider_ref ?? '—'}
+                    {(tx.transaction_type === 'refund' ? tx.provider_refund_ref : tx.provider_ref) ?? '—'}
                   </td>
                   <td style={{ padding: '6px 10px', color: tx.failure_code ? '#991b1b' : '#6b7280' }}>
                     {[tx.failure_code, tx.failure_message].filter(Boolean).join(': ') || tx.notes || '—'}
@@ -393,6 +405,6 @@ export function ExpandedRow({
         </CollapsibleSection>
       </div>
   );
-  return asCell ? <td colSpan={9} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>{body}</td> : body;
+  return asCell ? <td colSpan={11} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>{body}</td> : body;
 }
 

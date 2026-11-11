@@ -131,6 +131,8 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
               AND be.event_type NOT IN ('product_purchase', 'card_verification')
               -- #1325: a persisted, not-yet-executed obligation is not a ledger row yet.
               AND be.is_scheduled = 0
+              -- #2480: a cancelled event is neither collected nor owed.
+              AND be.cancelled_at IS NULL
          ) e
         GROUP BY e.event_type, e.latest_tx_status`,
       [gymId, w.previousMonthStart, w.currentMonthStart],
