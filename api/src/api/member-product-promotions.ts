@@ -616,8 +616,11 @@ async function loadRecurringPurchases(
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
     const amount = Math.round(unit * quantity * 100) / 100;
-    const listUnit = row.list_unit_price == null ? null : Number(row.list_unit_price);
-    const listPrice = listUnit == null ? null : Math.round(listUnit * quantity * 100) / 100;
+    // #2479 — `list_unit_price` is only stored beside a direct discount; without
+    // one, `unit_price` *is* the list price (the same rule `lineInputs` prices the
+    // line's Promotions from), so the regular price is never the promoted amount.
+    const listUnit = row.list_unit_price == null ? unit : Number(row.list_unit_price);
+    const listPrice = Math.round(listUnit * quantity * 100) / 100;
     const pct = row.direct_discount_percent == null ? null : Number(row.direct_discount_percent);
     return { amount, listPrice, pct };
   };
