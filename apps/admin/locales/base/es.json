@@ -4883,7 +4883,8 @@
     "one_per_member": "Uno por miembro",
     "sharing_type": "Tipo de uso compartido",
     "sharing_individual": "Individual",
-    "sharing_shared": "Compartido"
+    "sharing_shared": "Familiar",
+    "sharing_family_required": "Un producto vinculado a un servicio profesional siempre es Familiar."
   },
   "assigned_plans_page": {
     "item_action_value_percentage_discount": "Descuento (%)",
@@ -5719,7 +5720,7 @@
     "one_per_member": "Uno por miembro",
     "sharing_type": "Tipo de uso compartido",
     "sharing_individual": "Individual",
-    "sharing_shared": "Compartido",
+    "sharing_shared": "Familiar",
     "yes": "Sí",
     "no": "No",
     "delete_confirm": "¿Eliminar \"{name}\"? Los gimnasios creados a partir de ahora no lo recibirán; los Productos ya generados no se ven afectados.",
