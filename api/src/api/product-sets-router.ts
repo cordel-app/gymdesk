@@ -763,7 +763,10 @@ meProductSetsRouter.post('/:id/services', async (req, res, next) => {
   if (rows.length === 0) return res.status(404).json({ error: 'Product not found' });
   // Only a Product and a quantity: a start date is the Draft's own.
   const body = { product_id: productId, quantity: req.body?.quantity };
-  return editDraft(req, res, 'update', (tx, d) => addService(tx, d, body), next, { add_service: body, source: 'members_app' });
+  // #2496 stage 3: "recurring" is the Product's billing frequency, the staff
+  // purchase's own rule and the catalogue's `addable_to_draft`, so a Sessions
+  // package billed monthly is a recurring line here too.
+  return editDraft(req, res, 'update', (tx, d) => addService(tx, d, body, { recurringByFrequency: true }), next, { add_service: body, source: 'members_app' });
 });
 
 meProductSetsRouter.put('/:id/services/:serviceId', async (req, res, next) => {

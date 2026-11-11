@@ -20,8 +20,8 @@ const as = (clerk: string, method: 'get' | 'post' | 'put' | 'delete', path: stri
 async function product(name: string, over: Record<string, unknown> = {}): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount, tax_behavior)
-     VALUES (?, ?, 'fee', ?, ?, ?, 'EUR', '10.00', 'inclusive')`,
-    [gymId, name, over.frequency ?? 'month', over.status ?? 'active', over.enrollment ?? 'public']);
+     VALUES (?, ?, ?, ?, ?, ?, 'EUR', '10.00', 'inclusive')`,
+    [gymId, name, over.type ?? 'fee', over.frequency ?? 'month', over.status ?? 'active', over.enrollment ?? 'public']);
   return insertId;
 }
 
@@ -69,6 +69,20 @@ describe('/me/product-sets draft', () => {
     expect(Number(rows[0].n)).toBe(0);
     const del = await as(A, 'delete', `/${draft.id}/services/${add.body.id}`);
     expect(del.status).toBe(200);
+  });
+
+  // #2496 stage 3 — the member adds what the catalogue reports `addable_to_draft`:
+  // a Sessions package billed monthly is recurring by its frequency (the staff
+  // purchase's rule) and was refused before; a one-time Product never is.
+  it('adds a monthly Sessions package and refuses a one-time Product', async () => {
+    const draft = (await as(A, 'post', '/draft')).body;
+    const duo = await product('Duo class', { type: 'sessions', frequency: 'month' });
+    const add = await as(A, 'post', `/${draft.id}/services`).send({ product_id: duo });
+    expect(add.status).toBe(200);
+    const once = await product('Bottle', { frequency: 'once' });
+    const refused = await as(A, 'post', `/${draft.id}/services`).send({ product_id: once });
+    expect(refused.status).toBe(400);
+    await as(A, 'delete', `/${draft.id}/services/${add.body.id}`);
   });
 
   it('refuses a staff-only or inactive Product as not found', async () => {

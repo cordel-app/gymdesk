@@ -498,7 +498,20 @@
       "four_weeks": "Every 4 weeks",
       "month": "Monthly",
       "year": "Yearly"
-    }
+    },
+    "product_add_to_draft": "Add",
+    "product_adding": "Adding…",
+    "product_remove_from_draft": "Remove",
+    "product_in_draft": "Added",
+    "product_state_held": "In your products",
+    "draft_selection_count": "{count, plural, one {# product added to your selection.} other {# products added to your selection.}}",
+    "draft_selection_expires": "It is kept for {minutes, plural, one {# more minute} other {# more minutes}}.",
+    "draft_discard": "Discard selection",
+    "draft_error_in_flight": "You already have a change awaiting payment. Complete or cancel it first.",
+    "draft_error_locked": "A payment is still being processed. Please try again later.",
+    "draft_error_duplicate": "This product was just added. Please wait a moment.",
+    "draft_error_expired": "Your selection expired. Please add the product again.",
+    "draft_error_generic": "Your selection could not be updated. Please try again."
   },
   "payments": {
     "title": "Payments",

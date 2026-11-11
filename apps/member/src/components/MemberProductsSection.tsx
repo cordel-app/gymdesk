@@ -94,16 +94,24 @@ export interface MemberProductCardItem {
 }
 
 /** The picture, or nothing: a failed load drops the box rather than showing a broken icon. */
-function ProductImage({ src, fullSrc, title, alt, description, size = 64 }: {
+function ProductImage({ src, fullSrc, title, alt, description, size = 64, round = false }: {
   src?: string | null;
   fullSrc?: string | null;
   title?: string;
   alt?: string;
   description?: string | null;
   size?: number;
+  /**
+   * #2496 stage 3 — the catalogue's circular thumbnail (the Members App's
+   * product convention, as in the plan overview), with the standard
+   * placeholder in place of a missing or broken picture.
+   */
+  round?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
-  if (!src || broken) return null;
+  if (!src || broken) {
+    return round ? <span aria-hidden="true" style={{ ...styles.placeholder, width: size, height: size }} /> : null;
+  }
   const box: CSSProperties = { width: size, height: size, flexShrink: 0, display: 'block' };
   return (
     <span style={box}>
@@ -114,16 +122,18 @@ function ProductImage({ src, fullSrc, title, alt, description, size = 64 }: {
         description={description}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={alt ?? ''} style={{ ...styles.image, width: size, height: size }} onError={() => setBroken(true)} />
+        <img src={src} alt={alt ?? ''} style={{ ...styles.image, width: size, height: size, ...(round ? { borderRadius: '50%' } : {}) }} onError={() => setBroken(true)} />
       </ImagePreviewButton>
     </span>
   );
 }
 
-export function MemberProductsSection({ title, emptyLabel, items }: {
+export function MemberProductsSection({ title, emptyLabel, items, roundImages = false }: {
   title: string;
   emptyLabel: string;
   items: MemberProductCardItem[];
+  /** #2496 stage 3 — circular Product thumbnails with the placeholder (the catalogue). */
+  roundImages?: boolean;
 }) {
   return (
     <section style={styles.section}>
@@ -136,7 +146,7 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
         <ul style={styles.list}>
           {items.map((item) => (
             <li key={item.key} style={styles.card}>
-              <ProductImage src={item.imageUrl} fullSrc={item.imageFullUrl} title={item.previewTitle ?? item.name} alt={item.imageAlt ?? item.name} description={item.description} />
+              <ProductImage src={item.imageUrl} fullSrc={item.imageFullUrl} title={item.previewTitle ?? item.name} alt={item.imageAlt ?? item.name} description={item.description} round={roundImages} />
               <div style={styles.body}>
               <div style={styles.head}>
                 <span style={styles.name}>{item.name}</span>
@@ -194,6 +204,7 @@ const styles: Record<string, CSSProperties> = {
   card: { ...sectionCardStyle, padding: '12px 14px', display: 'flex', gap: 12, alignItems: 'flex-start' },
   body: { flex: 1, minWidth: 0 },
   image: { width: 64, height: 64, flexShrink: 0, objectFit: 'cover', borderRadius: 8 },
+  placeholder: { display: 'block', flexShrink: 0, borderRadius: '50%', background: memberTheme.separator },
   head: {
     display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
     gap: 10, flexWrap: 'wrap',

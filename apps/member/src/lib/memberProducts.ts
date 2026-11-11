@@ -61,6 +61,11 @@ export interface MemberProduct {
    * button the route refuses (or hide one it would have accepted).
    */
   purchasable: boolean;
+  /**
+   * #2496 stage 3 — whether the card offers *Add* (to the member's Draft
+   * Product Set) instead of Buy. The server's answer: a recurring Product.
+   */
+  addable_to_draft?: boolean;
   /** #1118 §4 — the Promotions still on offer for it, the server's own rule. */
   promotions?: MemberProductPromotion[];
   /** #1118 §13 — the Promotion a live purchase was made under, frozen. */
@@ -438,4 +443,98 @@ export function ownPurchaseAssigneeName(p: OwnPurchase, assignees: readonly Prod
   if (assignees.length <= 1) return null;
   const name = p.assigned_member_name?.trim();
   return name ? name : null;
+}
+
+/* ── #2496 stage 3 — Add Product to the member's Draft Product Set ─────────── */
+
+/** One Product line of `GET /me/product-sets/:id`, as this page reads it. */
+export interface MemberSetLine {
+  id: number;
+  product_id: number;
+  change: 'added' | 'inherited';
+}
+
+/** The member's current version (Draft, else Active) as `GET /me/product-sets/:id` answers it. */
+export interface MemberSetView {
+  id: number;
+  status: string;
+  expires_in_seconds?: number | null;
+  lines: MemberSetLine[];
+}
+
+/** A row of `GET /me/product-sets`. */
+export interface MemberSetRow {
+  id: number;
+  status: string;
+}
+
+/**
+ * Which version the Products page reads its Draft state from: the member's own
+ * Draft, else their Active version (so a Product they already hold reads as
+ * such), else none. `GET /me/product-sets` already lists only the member's own
+ * Draft, so nothing here judges ownership.
+ */
+export function currentSetId(rows: readonly MemberSetRow[]): number | null {
+  const draft = rows.find((r) => r.status === 'draft');
+  if (draft) return Number(draft.id);
+  const active = rows.find((r) => r.status === 'active');
+  return active ? Number(active.id) : null;
+}
+
+/**
+ * Where a recurring Product stands against the member's current version:
+ *  - `added`: a line the Draft added — the card offers *Remove*;
+ *  - `held`: a line the member already has (inherited by the Draft, or on the
+ *    Active version) — a pill, no action, since a second line of a running
+ *    Product is the Admin's decision, not the member's;
+ *  - `none`: not on the version — the card offers *Add*.
+ */
+export type DraftProductState =
+  | { state: 'added'; lineId: number }
+  | { state: 'held' }
+  | { state: 'none' };
+
+export function draftProductState(product: Pick<MemberProduct, 'id'>, view: MemberSetView | null): DraftProductState {
+  if (!view) return { state: 'none' };
+  const lines = view.lines.filter((l) => Number(l.product_id) === product.id);
+  const added = view.status === 'draft' ? lines.find((l) => l.change === 'added') : undefined;
+  if (added) return { state: 'added', lineId: Number(added.id) };
+  if (lines.length > 0) return { state: 'held' };
+  return { state: 'none' };
+}
+
+/** Whether the card offers *Add* at all: the server's flag and nothing already on the version. */
+export function showsAddToDraft(product: MemberProduct, view: MemberSetView | null): boolean {
+  return product.addable_to_draft === true && draftProductState(product, view).state === 'none';
+}
+
+/** The lines this Draft added (what the selection notice counts); 0 outside a Draft. */
+export function draftAddedCount(view: MemberSetView | null): number {
+  if (!view || view.status !== 'draft') return 0;
+  return view.lines.filter((l) => l.change === 'added').length;
+}
+
+/**
+ * Whole minutes left on the Draft's own server-side countdown, rounded up so
+ * "0 minutes" is never shown for a Draft still alive; `null` without one.
+ */
+export function draftMinutesLeft(view: MemberSetView | null): number | null {
+  const secs = view?.status === 'draft' ? view.expires_in_seconds : null;
+  if (secs == null || !Number.isFinite(Number(secs))) return null;
+  return Math.max(1, Math.ceil(Number(secs) / 60));
+}
+
+/**
+ * Which locale key explains a refused Draft edit. The API answers a code in
+ * `error` (`in_flight`, `edit_locked`, `duplicate_submission`, `draft_expired`);
+ * anything else falls back to the generic key.
+ */
+export function draftErrorKey(message: string | null | undefined): string {
+  switch (message) {
+    case 'in_flight': return 'membership.draft_error_in_flight';
+    case 'edit_locked': return 'membership.draft_error_locked';
+    case 'duplicate_submission': return 'membership.draft_error_duplicate';
+    case 'draft_expired': return 'membership.draft_error_expired';
+    default: return 'membership.draft_error_generic';
+  }
 }
