@@ -27,6 +27,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   pending_payment: { bg: '#fff4e0', fg: '#b26a00' },
   // #1882: a product the open Draft terminates, still Active until Save & Pay.
   pending_termination: { bg: '#fff4e0', fg: '#b26a00' },
+  // #2625: a cancelled Membership Plan still giving access until its End Date.
+  cancels_on_end_date: { bg: '#fff4e0', fg: '#b26a00' },
   completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
   failed:       { bg: '#fdeaea', fg: '#c0392b' },
   // #1238: Access Rights

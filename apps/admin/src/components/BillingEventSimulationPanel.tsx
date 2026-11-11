@@ -4,7 +4,9 @@
 // the chart directly under the section heading and the "Billing Simulation
 // Details" collapsible (collapsed by default) right below it. The chart and the
 // details read the same simulation and share the "Show €0 billing events"
-// choice; nothing is recomputed or fetched here.
+// choice; nothing is recomputed or fetched here. The panel's accordion is the
+// only one: the details render with `collapsible={false}` (#2627), so they do
+// not draw a second, nested "Billing Simulation Details" accordion.
 
 import React, { ReactNode, useState } from 'react';
 
@@ -58,6 +60,7 @@ export function BillingEventSimulationPanel({
       {open && (
         <BillingEventSimulation
           simulation={simulation}
+          collapsible={false}
           zeroToggle={zeroToggle}
           showZero={showZero}
           onShowZeroChange={setShowZero}

@@ -66,4 +66,12 @@ describe('shared simulation layout', () => {
     expect(p.indexOf('<BillingEventSimulationChart')).toBeLessThan(p.indexOf('<BillingEventSimulation\n'));
     expect(p).toContain('useState(false)');
   });
+  it('#2627 — the panel draws the only details accordion, never a nested one', () => {
+    const p = src('components/BillingEventSimulationPanel.tsx');
+    const inner = p.slice(p.indexOf('<BillingEventSimulation\n'));
+    expect(inner.slice(0, inner.indexOf('/>'))).toContain('collapsible={false}');
+    const c = src('components/BillingEventSimulation.tsx');
+    expect(c).toContain('{collapsible && (');
+    expect(c).toContain('(!collapsible || detailsOpen)');
+  });
 });
