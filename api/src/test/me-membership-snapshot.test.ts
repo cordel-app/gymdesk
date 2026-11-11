@@ -503,6 +503,15 @@ describe('GET /me/membership — past_memberships', () => {
     expect(body.past_memberships.map((p: any) => p.status)).toEqual(['cancelled', 'expired']);
   });
 
+  it('lists the Draft beside the live plan under the Admin status (#2660)', async () => {
+    const { body } = await getMembership(gymId);
+    expect(body.membership.lifecycle_status).toBe('active');
+    const drafts = body.other_memberships.filter((p: any) => p.status === 'draft');
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].lifecycle_status).toBe('draft');
+    expect(drafts[0].membership_plan_id).toBe(oldPlanId);
+  });
+
   it('carries no price and no billing date on a past plan (§8)', async () => {
     const { body } = await getMembership(gymId);
     for (const field of ['membership_fee', 'next_billing_date', 'benefits']) {
@@ -522,5 +531,38 @@ describe('GET /me/membership — past_memberships', () => {
     const { body } = await getMembership(otherGym);
     // The rows above belong to the first gym, so a tenant leak would show here.
     expect(body.past_memberships).toEqual([]);
+  });
+});
+
+describe('GET /me/membership — a plan that cancels on its end date (#2660)', () => {
+  let gymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Me Membership Cancels On End Gym');
+    await createTestMembership(gymId, 'member');
+    const memberId = await createCallingMember(gymId);
+    planId = await createPlan(gymId, { interval: 1, unit: 'month' });
+    const pastPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
+    // Cancelled, but paid through a day still ahead: the Admin reads it
+    // `cancels_on_end_date` (LIFECYCLE_STATUS_SQL), so the member must too.
+    await legacyAssignmentQuery(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, base_price)
+       VALUES (?, ?, ?, 'cancelled', '2026-06-01', DATE_ADD(UTC_DATE(), INTERVAL 20 DAY), NOW(), 60)`,
+      [gymId, memberId, planId],
+    );
+    // An expired plan sorts ahead of a cancelled one in the ordering.
+    await legacyAssignmentQuery(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
+       VALUES (?, ?, ?, 'expired', '2025-01-01', '2025-12-31', 60)`,
+      [gymId, memberId, pastPlanId],
+    );
+  });
+
+  it('is the member\'s plan, with the Admin status, never Cancelled and never history', async () => {
+    const { body } = await getMembership(gymId);
+    expect(body.membership.membership_plan_id).toBe(planId);
+    expect(body.membership.lifecycle_status).toBe('cancels_on_end_date');
+    expect(body.past_memberships.map((p: any) => p.lifecycle_status)).toEqual(['expired']);
   });
 });

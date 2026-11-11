@@ -56,7 +56,7 @@ import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImage
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
-import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
+import { LIFECYCLE_STATUS_SQL, loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import {
   MEMBER_CURRENT_ASSIGNMENT_FILTER,
@@ -80,6 +80,7 @@ import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
   splitMemberPlanHistory,
+  toMemberPastPlan,
 } from '../domain/memberPlanHistory';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
@@ -2075,6 +2076,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.member_id, um.membership_plan_id,
               ${assignmentConfig('base_price')} AS base_price, ${assignmentConfig('discount_reason')} AS discount_reason, ${assignmentConfig('discount_expires_at')} AS discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
+              ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
               ${assignmentConfig('membership_fee_price')} AS membership_fee_price,
               ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods, ${assignmentConfig('bonus_periods')} AS bonus_periods, ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
               ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action, ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
@@ -2105,7 +2107,22 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // card above is about can then never also appear in the history under it.
     // The limit is a declared constant written into the statement, never a bound
     // parameter — `db.query` is a prepared statement and MySQL refuses `LIMIT ?`.
-    const { current, also_live, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
+    const { current, also_live: liveOthers, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
+    // #2660: the member's Draft assignments are listed beside their live plans
+    // under the Admin's own status (`draft`), never as the member's plan — the
+    // ordering and filter above still decide `membership` without them.
+    const { rows: draftRows } = await db.query<any>(
+      `SELECT um.id, um.membership_plan_id, p.name AS plan_name, um.status,
+              ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
+              um.starts_at, um.ends_at, um.closed_at
+         FROM user_memberships um
+         LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+        WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'draft'
+        ORDER BY um.starts_at DESC, um.id DESC
+        LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
+      [gymId, memberId],
+    );
+    const also_live = [...liveOthers, ...draftRows.map(toMemberPastPlan)];
     // #1108 stage 2 / #1122: a plan awaiting its first payment is not the
     // member's plan (it is filtered out above), but it is what *Pay now* is
     // for, so the page is told about it beside the current one.
@@ -2179,7 +2196,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const professional_service_sessions = (await resolveMemberProfessionalServices(gymId, memberId))
       .filter((b) => activeServiceIds.has(b.professional_service_id))
       .reduce((sum, b) => sum + b.sessions, 0);
-    if (!current) return res.json({ membership: null, other_memberships: [], past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
+    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.
