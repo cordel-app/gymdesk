@@ -65,6 +65,8 @@ export interface MemberProduct {
   promotions?: MemberProductPromotion[];
   /** #1118 §13 — the Promotion a live purchase was made under, frozen. */
   applied_promotion?: AppliedMemberProductPromotion | null;
+  /** #2609 stage 2 — `shared` Products are the family's and take no recipient. */
+  sharing_type?: string;
 }
 
 /** A locale key plus whatever it interpolates, for the page to resolve. */
@@ -197,6 +199,10 @@ export function purchaseErrorKey(message: string | null | undefined): string {
     // #1118 §5 — the Promotion lapsed between the quote and the Buy. The member
     // is told so rather than being charged a price they did not choose.
     case 'promotion_not_applicable': return 'membership.promotion_unavailable_error';
+    // #2609 — the chosen family member is no longer in the family (or the Product became shared).
+    case 'assignee_not_in_family':
+    case 'assignee_not_allowed':
+    case 'assignee_invalid': return 'membership.product_assignee_error';
     default: return 'membership.product_purchase_error';
   }
 }
@@ -351,6 +357,9 @@ export interface OwnPurchase {
   end_date: string | null;
   /** A ProductSet line (negative id): paid through Pay now, not `/me/purchases/:id/pay`. */
   source?: 'recurring';
+  /** #2609 — the family member it is for (the stored one, else the purchaser). */
+  assigned_member_id?: number | null;
+  assigned_member_name?: string | null;
 }
 
 /** The status word `statusTone()` knows for a purchase state (#983: no tone of our own). */
@@ -375,4 +384,58 @@ export function ownPurchaseShowsPay(p: OwnPurchase): boolean {
 /** Whether a purchase is paid through the one-off route or the plan's Pay now. */
 export function ownPurchasePayPath(p: OwnPurchase): string {
   return p.source === 'recurring' || p.id < 0 ? '/me/payment-requests' : `/me/purchases/${p.id}/pay`;
+}
+
+/* ── #2609 stage 2 — who a Product is for ──────────────────────────────────── */
+
+/** One member of `GET /me/products/assignees`: the caller's family, themself included. */
+export interface ProductAssignee {
+  member_id: number;
+  name: string;
+  is_owner: boolean;
+}
+
+/**
+ * Whether the Buy dialog asks who the Product is for. Only a member in a family
+ * (someone besides themself to choose) buying an Individual Product: a member
+ * with no family buys for themself and a `shared` Product is the family's, so
+ * neither is shown a choice that could only have one answer (#2609 §1, §4).
+ */
+export function showsAssigneeChoice(product: Pick<MemberProduct, 'sharing_type'>, assignees: readonly ProductAssignee[]): boolean {
+  return product.sharing_type !== 'shared' && assignees.length > 1;
+}
+
+/**
+ * The recipients in the order the dialog offers them: the buyer first (the
+ * default, so a member who changes nothing buys for themself as before), then
+ * the rest of the family in the server's order.
+ */
+export function assigneeOptions(assignees: readonly ProductAssignee[], selfId: number | null): ProductAssignee[] {
+  const self = assignees.filter((a) => a.member_id === selfId);
+  return [...self, ...assignees.filter((a) => a.member_id !== selfId)];
+}
+
+/**
+ * The `assigned_member_id` the purchase request carries: the chosen member when
+ * the dialog asked, nothing otherwise — the server then stores the buyer (or no
+ * one, for a shared Product) and judges a named member against the family itself.
+ */
+export function assigneePayload(
+  product: Pick<MemberProduct, 'sharing_type'>,
+  assignees: readonly ProductAssignee[],
+  selectedId: number | null,
+): { assigned_member_id?: number } {
+  if (!showsAssigneeChoice(product, assignees) || selectedId == null) return {};
+  return { assigned_member_id: selectedId };
+}
+
+/**
+ * The "For <name>" line of a purchase: shown only to a member in a family, where
+ * it says something (to a member with no family every purchase is their own), and
+ * only when the server named someone. `null` means no line.
+ */
+export function ownPurchaseAssigneeName(p: OwnPurchase, assignees: readonly ProductAssignee[]): string | null {
+  if (assignees.length <= 1) return null;
+  const name = p.assigned_member_name?.trim();
+  return name ? name : null;
 }
