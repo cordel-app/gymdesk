@@ -8,10 +8,17 @@ import {
 } from './verifactu';
 import type { InvoiceType } from './billingDocumentKeys';
 
-/** Mirrors `chk_verifactu_records_submission_status` (migration 394). */
+/**
+ * Mirrors `chk_verifactu_records_submission_status` (migration 399). `sending`
+ * and `retry_pending` are #2648 stage 4's; `submitted` is stage 2's value that
+ * nothing writes.
+ */
 export const VERIFACTU_SUBMISSION_STATUSES = [
-  'pending', 'submitted', 'accepted', 'accepted_with_errors', 'rejected',
+  'pending', 'sending', 'submitted', 'retry_pending', 'accepted', 'accepted_with_errors', 'rejected',
 ] as const;
+
+/** The statuses a submission pass picks a record up in (plus a stale `sending`). */
+export const VERIFACTU_DUE_STATUSES = ['pending', 'retry_pending'] as const;
 export type VerifactuSubmissionStatus = (typeof VERIFACTU_SUBMISSION_STATUSES)[number];
 
 /** The provider and type of the #2647 integration that switches records on. */

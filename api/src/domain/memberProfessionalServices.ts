@@ -73,7 +73,7 @@ export interface ProfessionalServiceGrantRow {
   professional_service_id: number;
   professional_service_name: string;
   kind: ProfessionalServiceGrantKind;
-  /** Row id of the granting record — `user_class_packages.id`, `user_membership_promotions.id`, `member_products_recurrent_snapshot.id`. */
+  /** Row id of the granting record — `user_class_packages.id`, `user_membership_promotions.id`, `member_products_recurrent_snapshot.id` (read as `product_periodical_snapshots.source_id`). */
   reference_id: number;
   product_id: number;
   product_name: string;
@@ -228,17 +228,23 @@ export async function loadMemberProfessionalServiceGrants(
   // `products.units` is the number of sessions a Session item bundles
   // (migration 103 copies `class_packages.number_of_sessions` into it), so an
   // attachment of quantity 2 of a 10-session item is 20 sessions.
+  //
+  // #2126 stage 3j: the lines are read from `product_periodical_snapshots`, kept
+  // equal to each version's recurring lines by stage 2's dual-write. The grant is
+  // still identified by the legacy line id (`source_id`), which is what the
+  // consumption ledger's `source_reference_id` holds for this kind.
   const { rows: serviceRows } = await db.query<ProfessionalServiceGrantRow>(
     `SELECT ps.id                 AS professional_service_id,
             ps.name               AS professional_service_name,
             'membership_service'  AS kind,
-            umsv.id               AS reference_id,
+            umsv.source_id        AS reference_id,
             gc.id                 AS product_id,
             gc.name               AS product_name,
             umsv.quantity * COALESCE(gc.units, 1) AS sessions
      FROM user_memberships um
-     JOIN member_products_recurrent_snapshot umsv
+     JOIN product_periodical_snapshots umsv
        ON umsv.product_set_id = ${assignmentLineVersionId('um.id')} AND umsv.gym_id = um.gym_id
+          AND umsv.source_id IS NOT NULL
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
