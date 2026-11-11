@@ -23,6 +23,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "activity_type_schedule_rules": ["parent", "activity_types (a rule edit is an edit of the Activity Type)"],
   "invoices": ["ledger", "fiscal invoices (#2567): issued rows are never edited, created_by only"],
   "audit_logs": ["ledger", "is the activity log itself (actor_user_id, actor_name)"],
+  "compliance_audit_events": ["ledger", "compliance configuration and submission history (#2647), append-only, created_by only"],
   "benefit_types": ["lookup", "global lookup, no runtime writer"],
   "billing_event_lines": ["parent", "billing_events (priced components of one event)"],
   "payment_refund_lines": ["parent", "payment_requests (the lines one refund transaction returned, #2480)"],

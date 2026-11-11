@@ -340,6 +340,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.localization',
       },
       {
+        // #2647: the gym's fiscal identity and tax-compliance configuration.
+        href: '/{{locale}}/tax-compliance',
+        labelKey: 'nav.tax_compliance',
+      },
+      {
         href: '/{{locale}}/recycle-bin',
         labelKey: 'nav.recycle_bin',
         featureKey: 'system.recycle_bin',
