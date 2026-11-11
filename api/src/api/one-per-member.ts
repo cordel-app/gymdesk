@@ -71,18 +71,22 @@ export async function memberHoldsProduct(
     [...memberPurchaseSnapshotParams(gymId, memberId), productId],
   );
   if (purchases.length > 0) return true;
+  // #2126 stage 3h: the recurring lines are read from `product_periodical_snapshots`,
+  // kept equal to each version's lines by stage 2's dual-write
+  // (`syncProductSnapshotsOfVersion()`, run by every Draft writer's `touch()`); the
+  // check runs before the line it guards is written, so every line it reads is synced.
   const { rows: lines } = opts.draftSetId != null
     ? await q.query<any>(
-      `SELECT id FROM member_products_recurrent_snapshot
-        WHERE gym_id = ? AND product_set_id = ? AND product_id = ?
+      `SELECT source_id AS id FROM product_periodical_snapshots
+        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND source_id IS NOT NULL
           AND (ends_at IS NULL OR ends_at >= UTC_DATE())
         LIMIT 1`,
       [gymId, opts.draftSetId, productId],
     )
     : await q.query<any>(
-      `SELECT r.id FROM member_products_recurrent_snapshot r
+      `SELECT r.source_id AS id FROM product_periodical_snapshots r
          JOIN product_sets ps ON ps.id = r.product_set_id AND ps.gym_id = r.gym_id
-        WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.product_id = ?
+        WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.product_id = ? AND r.source_id IS NOT NULL
           AND ps.status IN ('draft', 'pending_payment', 'active')
           AND (r.ends_at IS NULL OR r.ends_at >= UTC_DATE())
         LIMIT 1`,

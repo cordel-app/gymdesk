@@ -6,6 +6,7 @@ import { db } from '../infra/db';
 import { importBaseProducts } from '../api/gym-default-products';
 import { parseBaseProductInput } from '../domain/baseProducts';
 import { violatesOnePerMember } from '../api/one-per-member';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 import { cleanupTestGyms, createTestGym, insertTestPurchase } from './helpers';
 
 const NAME = 'One Per Member Template (#2607)';
@@ -41,6 +42,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
+  await db.query('DELETE FROM member_products_recurrent_snapshot WHERE gym_id = ?', [gymId]);
+  await db.query('DELETE FROM product_sets WHERE gym_id = ?', [gymId]);
   await db.query('DELETE FROM products WHERE base_product_id = ?', [templateId]);
   await db.query('DELETE FROM base_products WHERE id = ?', [templateId]);
   await cleanupTestGyms();
@@ -70,5 +73,45 @@ describe('One per Member', () => {
     expect(await violatesOnePerMember(db, gymId, memberId, productId)).toBe(true);
     // A Product without the flag is never restricted.
     expect(await violatesOnePerMember(db, gymId, memberId, plainId)).toBe(false);
+  });
+
+  // #2126 stage 3h: a recurring line is read from `product_periodical_snapshots`, which the
+  // Draft writers' dual-write keeps equal to the version's lines.
+  it('blocks a Product the member holds as a live recurring line, on any live version or the Draft', async () => {
+    const m = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Opm Recurring', 'opm-rec@example.com')`, [gymId]);
+    const owner = m.insertId;
+    const lineProduct = (await db.query(
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system, one_per_member, created_by)
+       VALUES (?, 'Locker Monthly OPM', 'service', 10, 'EUR', 'month', 'active', 'public', 0, 1, 'test')`, [gymId])).insertId;
+    const setWithLine = async (status: string, endsAt: string | null) => {
+      const s = await db.query(
+        `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, ?, '2019-01-01')`,
+        [gymId, owner, status]);
+      await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [s.insertId]);
+      await db.query(
+        `INSERT INTO member_products_recurrent_snapshot
+           (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
+            item_billing_frequency, unit_price)
+         VALUES (?, ?, ?, 1, '2019-01-01', ?, 'Locker Monthly OPM', 'service', 'month', 10.00)`,
+        [gymId, s.insertId, lineProduct, endsAt]);
+      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, s.insertId));
+      return s.insertId;
+    };
+
+    // A superseded version and a line that already ended hold nothing.
+    await setWithLine('superseded', null);
+    const draftId = await setWithLine('draft', '2020-01-31');
+    expect(await violatesOnePerMember(db, gymId, owner, lineProduct)).toBe(false);
+    expect(await violatesOnePerMember(db, gymId, owner, lineProduct, { draftSetId: draftId })).toBe(false);
+
+    // A running line on the Active version is held, from the member's view and the Draft's own.
+    await setWithLine('active', null);
+    expect(await violatesOnePerMember(db, gymId, owner, lineProduct)).toBe(true);
+    // One in-flight version per owner: the ended Draft goes before the open one is written.
+    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE product_set_id = ?', [draftId]);
+    await db.query('DELETE FROM product_sets WHERE id = ?', [draftId]);
+    const openDraft = await setWithLine('draft', null);
+    expect(await violatesOnePerMember(db, gymId, owner, lineProduct, { draftSetId: openDraft })).toBe(true);
   });
 });
