@@ -15,7 +15,8 @@
  * Existing rows: a copy carrying is_inherited = 1 gets its lineage from the matching plan snapshot of its
  * set's previous set (same Membership Plan, same assignment), the copy's only possible source; a copy with
  * no such match keeps NULL (dev data, #2125 decision 2: no historical migration is owed). The flag is then
- * dropped. `product_*_snapshots.is_inherited` (#2126) and the Promotion applications' flag are untouched.
+ * dropped. The rollback is lossy (dev data): it restores the flag only on rows with a lineage.
+ * `product_*_snapshots.is_inherited` (#2126) and the Promotion applications' flag are untouched.
  */
 
 exports.up = async (knex) => {
@@ -28,15 +29,19 @@ exports.up = async (knex) => {
           REFERENCES plan_snapshots (id) ON DELETE SET NULL`);
   }
   if (await knex.schema.hasColumn('plan_snapshots', 'is_inherited')) {
+    // The lowest matching id, so a set holding the same plan twice gets one deterministic source.
     await knex.raw(`
       UPDATE plan_snapshots c
-        JOIN product_sets ps ON ps.id = c.product_set_id
-        JOIN product_set_plan_snapshots pj ON pj.product_set_id = ps.previous_product_set_id
-        JOIN plan_snapshots src ON src.id = pj.plan_snapshot_id
-                               AND src.membership_plan_id = c.membership_plan_id
-                               AND src.source_user_membership_id <=> c.source_user_membership_id
-         SET c.copied_from_plan_snapshot_id = src.id
-       WHERE c.is_inherited = 1 AND c.copied_from_plan_snapshot_id IS NULL AND src.id <> c.id`);
+        JOIN (SELECT c2.id AS copy_id, MIN(src.id) AS src_id
+                FROM plan_snapshots c2
+                JOIN product_sets ps ON ps.id = c2.product_set_id
+                JOIN product_set_plan_snapshots pj ON pj.product_set_id = ps.previous_product_set_id
+                JOIN plan_snapshots src ON src.id = pj.plan_snapshot_id
+                                       AND src.membership_plan_id = c2.membership_plan_id
+                                       AND src.source_user_membership_id <=> c2.source_user_membership_id
+               WHERE c2.is_inherited = 1 AND c2.copied_from_plan_snapshot_id IS NULL AND src.id <> c2.id
+               GROUP BY c2.id) m ON m.copy_id = c.id
+         SET c.copied_from_plan_snapshot_id = m.src_id`);
     await knex.raw('ALTER TABLE plan_snapshots DROP COLUMN is_inherited');
   }
 };
