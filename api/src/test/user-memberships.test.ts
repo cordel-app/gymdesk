@@ -967,6 +967,9 @@ describe('DELETE /user-memberships/:id', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
+    // at once (a plan running to today or later is `active_cancel_at_period_end`).
+    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     const res = await request
       .delete(`/user-memberships/${umId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -981,6 +984,9 @@ describe('DELETE /user-memberships/:id', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
+    // at once (a plan running to today or later is `active_cancel_at_period_end`).
+    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await db.query('UPDATE user_memberships SET ends_at = NULL WHERE id = ?', [umId]);
     await request.delete(`/user-memberships/${umId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const { rows } = await db.query('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
@@ -2104,6 +2110,9 @@ describe('POST /user-memberships/:id/close', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
+    // at once (a plan running to today or later is `active_cancel_at_period_end`).
+    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await setNextBillingDate(umId, null);
 
     const res = await request
@@ -2130,6 +2139,9 @@ describe('POST /user-memberships/:id/close', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
+    // at once (a plan running to today or later is `active_cancel_at_period_end`).
+    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await setNextBillingDate(umId, 'DATE_SUB(CURDATE(), INTERVAL 1 DAY)');
 
     const res = await request
@@ -2147,6 +2159,9 @@ describe('POST /user-memberships/:id/close', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
+    // at once (a plan running to today or later is `active_cancel_at_period_end`).
+    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
 
     const res = await request

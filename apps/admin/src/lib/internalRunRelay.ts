@@ -37,6 +37,8 @@ export const INTERNAL_RUN_API_PATHS = [
   '/billing/run',
   '/billing/cleanup',
   '/promotion-lifecycle/run',
+  // #2659 stage 2: plans cancelled at their period end reach `cancelled`.
+  '/assignment-lifecycle/run',
   // #1227 stage 2: nightly renewal of plan Session Benefit allowances.
   '/plan-allowance-renewals/run',
   '/recurring-bookings/run',

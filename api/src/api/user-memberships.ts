@@ -202,11 +202,16 @@ userMembershipsRouter.use('/:id', async (req, res, next) => {
  *
  * #2659 stage 1: the persisted `active_cancel_at_period_end` reads exactly the
  * same way — `cancels_on_end_date` while `ends_at` is today or later, else
- * `cancelled` — so a stored row and a derived one cannot be told apart.
+ * `cancelled` — so a stored row and a derived one cannot be told apart. *
+ * #2659 stage 2: the cancel paths now write `active_cancel_at_period_end`, the
+ * existing rows were moved (migration 397) and a sweep moves the value to
+ * `cancelled` once `ends_at` has passed, so the derivation from a `cancelled`
+ * row is gone: only the stored value reads `cancels_on_end_date` (and reads
+ * `cancelled` in the gap before the nightly sweep runs).
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status IN (${CANCELLED_ASSIGNMENT_STATUSES_SQL}) AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
+    WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
     WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'

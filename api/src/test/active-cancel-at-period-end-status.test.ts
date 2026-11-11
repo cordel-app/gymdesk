@@ -60,7 +60,7 @@ describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1
     expect(values).toEqual([...ASSIGNMENT_STATUSES].sort());
   });
 
-  it('reads Cancels on End Date until ends_at, then Cancelled — exactly like a cancelled row', async () => {
+  it('reads Cancels on End Date until ends_at, then Cancelled; a cancelled row no longer derives it (#2659 stage 2)', async () => {
     const memberId = await createMember();
     const storedFuture = await createAssignment(memberId, CANCELS_AT_PERIOD_END_STATUS, '2026-01-01', '2099-12-31');
     const storedToday = await createAssignment(memberId, CANCELS_AT_PERIOD_END_STATUS, '2026-01-01', today());
@@ -75,6 +75,7 @@ describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1
     expect(byId.get(storedPast).lifecycle_status).toBe('cancelled');
     expect(byId.get(storedFuture).status).toBe(CANCELS_AT_PERIOD_END_STATUS);
     // Same grouping as the derived twin: in the current group until it ends, never live.
+    expect(byId.get(legacyFuture).lifecycle_status).toBe('cancelled');
     for (const id of [storedFuture, legacyFuture]) {
       expect(byId.get(id).is_current).toBe(true);
       expect(Number(byId.get(id).is_live)).toBe(0);
@@ -84,7 +85,7 @@ describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1
     const list = await authed(request.get(`/user-memberships?member_id=${memberId}&lifecycle_status=cancels_on_end_date`));
     expect(list.status).toBe(200);
     const listed = (Array.isArray(list.body) ? list.body : list.body.rows ?? list.body.data).map((r: any) => r.id).sort();
-    expect(listed).toEqual([storedFuture, storedToday, legacyFuture].sort());
+    expect(listed).toEqual([storedFuture, storedToday].sort());
 
     const byStatus = await authed(request.get(`/user-memberships?member_id=${memberId}&status=${CANCELS_AT_PERIOD_END_STATUS}`));
     expect(byStatus.status).toBe(200);

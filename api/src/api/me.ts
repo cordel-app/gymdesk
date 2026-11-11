@@ -2,6 +2,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
+import { entitledAssignmentSql } from '../domain/assignmentStatus';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -914,7 +915,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 SELECT 1 FROM user_memberships um
                 JOIN class_type_user_memberships ctum
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-                WHERE um.gym_id = ce.gym_id AND um.status = 'active'
+                WHERE um.gym_id = ce.gym_id AND ${entitledAssignmentSql('um')}
                   AND EXISTS (
                     SELECT 1 FROM user_membership_members umm
                     WHERE umm.user_membership_id = um.id AND umm.member_id = ?

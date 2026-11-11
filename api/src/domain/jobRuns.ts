@@ -20,6 +20,7 @@ export const JOB_RUN_JOBS = [
   'promotion_lifecycle',
   'plan_allowance_renewals',
   'booking_reminders',
+  'assignment_lifecycle',
 ] as const;
 export type JobRunJob = (typeof JOB_RUN_JOBS)[number];
 
@@ -34,6 +35,7 @@ export const JOB_RUN_SOURCES = {
   promotion_lifecycle: 'job_run_log',
   plan_allowance_renewals: 'job_run_log',
   booking_reminders: 'job_run_log',
+  assignment_lifecycle: 'job_run_log',
 } as const satisfies Record<JobRunJob, string>;
 
 export const JOB_RUN_RESULTS = ['success', 'warning', 'error'] as const;

@@ -16,6 +16,7 @@ export const JOB_NAMES = [
   'promotion_lifecycle',
   'plan_allowance_renewals',
   'booking_reminders',
+  'assignment_lifecycle',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 
