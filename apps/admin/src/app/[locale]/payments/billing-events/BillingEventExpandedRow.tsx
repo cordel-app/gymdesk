@@ -12,6 +12,7 @@ import { useToast } from '@/components/Toast';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';
+import { InvoicesSection } from './InvoicesSection';
 
 export interface Transaction {
   id: number;
@@ -351,6 +352,11 @@ export function ExpandedRow({
             </table>
           </CollapsibleSection>
         )}
+
+        {/* ── Invoices and their VERI*FACTU records (#2648 stage 5) ── */}
+        <CollapsibleSection title={t('billing_events_page.invoices_heading')} defaultOpen={false}>
+          <InvoicesSection billingEventId={billingEventId} gymFmt={gymFmt} />
+        </CollapsibleSection>
 
         {/* ── Payment transactions ── */}
         <CollapsibleSection title={t('billing_events_page.transactions_heading')} defaultOpen={false}>

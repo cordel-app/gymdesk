@@ -35,8 +35,8 @@ import { VERIFACTU_INTEGRATION_TYPE, VERIFACTU_PROVIDER } from '../domain/verifa
 import {
   VERIFACTU_DEFAULT_WAIT_SECONDS, VERIFACTU_MAX_RECORDS_PER_BATCH, VERIFACTU_SENDING_STALE_MINUTES,
   VERIFACTU_SOAP_ENDPOINTS, batchStatus, buildDesglose, buildRegFactuRequest, parseAeatResponse,
-  recordOutcome, retryDelaySeconds, validateAltaSubmission, validateSoftware,
-  type AltaSubmission, type RecordOutcome, type VerifactuSoftware,
+  matchResponseLine, recordOutcome, retryDelaySeconds, validateRecordSubmission, validateSoftware,
+  type AltaSubmission, type AnulacionSubmission, type RecordOutcome, type RecordSubmission, type VerifactuSoftware,
 } from '../domain/verifactuXml';
 import { AeatTransportError, postToAeat } from './verifactu-aeat-client';
 import { loadInvoiceFigures } from './invoice-figures';
@@ -79,7 +79,7 @@ export async function submitPendingVerifactuRecords(
   };
   const { rows: gyms } = await db.query<{ gym_id: string }>(
     `SELECT DISTINCT vr.gym_id FROM verifactu_records vr
-      WHERE vr.record_type = 'alta' AND ${DUE_SQL}`);
+      WHERE ${DUE_SQL}`);
   const software = opts.software === undefined ? verifactuSoftwareFromEnv() : opts.software;
   for (const { gym_id: gymId } of gyms) {
     summary.gyms += 1;
@@ -180,7 +180,9 @@ async function submitGym(
   return null;
 }
 
-interface ClaimedRecord { id: number; invoiceNumber: string; issueDate: string; attempts: number }
+interface ClaimedRecord {
+  id: number; invoiceNumber: string; issueDate: string; attempts: number; kind: 'alta' | 'anulacion';
+}
 interface Claim { submissionId: number; xml: string; records: ClaimedRecord[] }
 
 /**
@@ -194,19 +196,21 @@ async function claimBatch(
 ): Promise<Claim | null> {
   const { rows } = await tx.query<any>(
     `SELECT vr.*, (${DUE_SQL}) AS is_due FROM verifactu_records vr
-      WHERE vr.gym_id = ? AND vr.record_type = 'alta' AND ${UNSETTLED_SQL}
+      WHERE vr.gym_id = ? AND ${UNSETTLED_SQL}
       ORDER BY vr.chain_seq LIMIT ${VERIFACTU_MAX_RECORDS_PER_BATCH} FOR UPDATE`, [gymId]);
   // Chain order: a later record never overtakes an earlier one still waiting.
   if (rows.length === 0 || !rows[0].is_due) return null;
   const candidates = rows.filter((r: any) => r.issuer_nif === ctx.taxpayer.nif
     && (r.submission_status !== 'sending' || r.is_due));
 
-  const submissions: AltaSubmission[] = [];
+  const submissions: RecordSubmission[] = [];
   const claimed: ClaimedRecord[] = [];
   let incident = false;
   for (const r of candidates) {
-    const sub = await loadAltaSubmission(tx, gymId, ctx, r);
-    const errors = validateAltaSubmission(sub);
+    const sub: RecordSubmission = r.record_type === 'anulacion'
+      ? await loadAnulacionSubmission(tx, gymId, r)
+      : await loadAltaSubmission(tx, gymId, ctx, r);
+    const errors = validateRecordSubmission(sub);
     if (errors.length > 0) {
       summary.rejected_locally += 1;
       await tx.query(
@@ -223,7 +227,10 @@ async function claimBatch(
     }
     if (r.submission_attempts > 0) incident = true;
     submissions.push(sub);
-    claimed.push({ id: r.id, invoiceNumber: r.invoice_number, issueDate: r.invoice_issue_date, attempts: r.submission_attempts + 1 });
+    claimed.push({
+      id: r.id, invoiceNumber: r.invoice_number, issueDate: r.invoice_issue_date,
+      attempts: r.submission_attempts + 1, kind: r.record_type === 'anulacion' ? 'anulacion' : 'alta',
+    });
   }
   if (claimed.length === 0) return null;
 
@@ -239,6 +246,34 @@ async function claimBatch(
             last_submission_at = UTC_TIMESTAMP(), last_submission_id = ?
       WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(', ')})`, [insertId, gymId, ...ids]);
   return { submissionId: insertId, xml, records: claimed };
+}
+
+/** The record before `r` in the chain, as RegistroAnterior names it. */
+async function loadPrevious(tx: Tx, gymId: string, r: any): Promise<AltaSubmission['previous']> {
+  if (!r.previous_record_id) return null;
+  const { rows: p } = await tx.query<any>(
+    `SELECT issuer_nif, invoice_number, invoice_issue_date, record_hash FROM verifactu_records
+      WHERE id = ? AND gym_id = ?`, [r.previous_record_id, gymId]);
+  if (!p[0]) return null;
+  return {
+    issuerNif: p[0].issuer_nif, invoiceNumber: p[0].invoice_number,
+    issueDate: p[0].invoice_issue_date, hash: p[0].record_hash,
+  };
+}
+
+/** #2648 stage 5 — an Anulación carries only its own stored fields and its chain link. */
+async function loadAnulacionSubmission(tx: Tx, gymId: string, r: any): Promise<AnulacionSubmission> {
+  return {
+    kind: 'anulacion',
+    recordId: r.id,
+    issuerNif: r.issuer_nif,
+    invoiceNumber: r.invoice_number,
+    issueDate: r.invoice_issue_date,
+    previous: await loadPrevious(tx, gymId, r),
+    generatedAt: r.generated_at,
+    hash: r.record_hash,
+    installationNumber: gymId,
+  };
 }
 
 /** Everything a record's XML carries beyond its own stored (hashed) fields. */
@@ -263,18 +298,7 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
     rectifying ? negateTotals(totals) : totals,
   );
 
-  let previous: AltaSubmission['previous'] = null;
-  if (r.previous_record_id) {
-    const { rows: p } = await tx.query<any>(
-      `SELECT issuer_nif, invoice_number, invoice_issue_date, record_hash FROM verifactu_records
-        WHERE id = ? AND gym_id = ?`, [r.previous_record_id, gymId]);
-    if (p[0]) {
-      previous = {
-        issuerNif: p[0].issuer_nif, invoiceNumber: p[0].invoice_number,
-        issueDate: p[0].invoice_issue_date, hash: p[0].record_hash,
-      };
-    }
-  }
+  const previous = await loadPrevious(tx, gymId, r);
 
   const needsRecipient = r.invoice_kind === 'F1' || r.invoice_kind === 'R1';
   const description = [...new Set(lines.map((l) => (l.name ?? '').trim()).filter(Boolean))].join(', ').slice(0, 500);
@@ -329,8 +353,7 @@ async function settleBatch(
     errorDescription = parsed.message;
   } else {
     for (const rec of claim.records) {
-      const line = parsed.lines.find((l) => l.invoiceNumber === rec.invoiceNumber
-        && (l.issueDate == null || l.issueDate === rec.issueDate));
+      const line = matchResponseLine(parsed.lines, rec);
       outcomes.set(rec.id, line
         ? {
           outcome: recordOutcome(line),

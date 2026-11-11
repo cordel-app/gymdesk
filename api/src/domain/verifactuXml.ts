@@ -58,6 +58,8 @@ export interface DesgloseLine {
 
 /** One stored Alta record plus what its XML needs beyond the hashed fields. */
 export interface AltaSubmission {
+  /** Absent on an Alta (stage 4's shape); `anulacion` marks the other kind. */
+  kind?: 'alta';
   recordId: number;
   issuerNif: string;
   issuerName: string;
@@ -81,12 +83,43 @@ export interface AltaSubmission {
   installationNumber: string;
 }
 
+/**
+ * #2648 stage 5 — one stored Anulación record: the cancelled invoice as its Alta
+ * informed it, the chain link and the huella. Nothing else is informed.
+ */
+export interface AnulacionSubmission {
+  kind: 'anulacion';
+  recordId: number;
+  /** IDEmisorFacturaAnulada. */
+  issuerNif: string;
+  /** NumSerieFacturaAnulada. */
+  invoiceNumber: string;
+  /** FechaExpedicionFacturaAnulada, `dd-mm-yyyy`. */
+  issueDate: string;
+  previous: { issuerNif: string; invoiceNumber: string; issueDate: string; hash: string } | null;
+  generatedAt: string;
+  hash: string;
+  installationNumber: string;
+}
+
+/** A record of either kind, as a batch carries it. */
+export type RecordSubmission = AltaSubmission | AnulacionSubmission;
+
+export function isAnulacion(r: RecordSubmission): r is AnulacionSubmission {
+  return r.kind === 'anulacion';
+}
+
+/** AEAT's TipoOperacion for a record of each kind, as its response line reports it. */
+export function recordOperation(r: { kind?: 'alta' | 'anulacion' }): 'Alta' | 'Anulacion' {
+  return r.kind === 'anulacion' ? 'Anulacion' : 'Alta';
+}
+
 export interface BatchInput {
   taxpayer: { name: string; nif: string };
   /** Cabecera › RemisionVoluntaria › Incidencia = S: the batch is late because of a technical incident. */
   incident: boolean;
   software: VerifactuSoftware;
-  records: AltaSubmission[];
+  records: RecordSubmission[];
 }
 
 export function xmlEscape(value: string): string {
@@ -211,6 +244,29 @@ export function validateAltaSubmission(r: AltaSubmission): string[] {
   return errors;
 }
 
+/** The checks an Anulación record passes before it may be transmitted. */
+export function validateAnulacionSubmission(r: AnulacionSubmission): string[] {
+  const errors: string[] = [];
+  if (verifactuIssuerNif(r.issuerNif) !== r.issuerNif) errors.push('IDEmisorFacturaAnulada is not a valid Spanish NIF/NIE');
+  if (!r.invoiceNumber || !r.invoiceNumber.trim()) errors.push('NumSerieFacturaAnulada is required');
+  else if (r.invoiceNumber.length > 60) errors.push('NumSerieFacturaAnulada exceeds 60 characters');
+  else if (!PRINTABLE_RE.test(r.invoiceNumber)) errors.push('NumSerieFacturaAnulada has non-printable characters');
+  if (!DATE_RE.test(r.issueDate)) errors.push('FechaExpedicionFacturaAnulada must be dd-mm-yyyy');
+  if (!HASH_RE.test(r.hash)) errors.push('Huella must be 64 uppercase hex characters');
+  if (!TIMESTAMP_RE.test(r.generatedAt)) errors.push('FechaHoraHusoGenRegistro is not ISO 8601 with offset');
+  if (!r.installationNumber || !r.installationNumber.trim()) errors.push('NumeroInstalacion is required');
+  if (r.previous) {
+    if (!HASH_RE.test(r.previous.hash)) errors.push('RegistroAnterior Huella is invalid');
+    if (!DATE_RE.test(r.previous.issueDate)) errors.push('RegistroAnterior date must be dd-mm-yyyy');
+  }
+  return errors;
+}
+
+/** Validation of a record of either kind. */
+export function validateRecordSubmission(r: RecordSubmission): string[] {
+  return isAnulacion(r) ? validateAnulacionSubmission(r) : validateAltaSubmission(r);
+}
+
 export function validateSoftware(s: VerifactuSoftware): string[] {
   const errors: string[] = [];
   if (!s.producerName.trim() || s.producerName.length > 120) errors.push('software producer name is required (≤120)');
@@ -257,29 +313,56 @@ function altaXml(r: AltaSubmission, s: VerifactuSoftware): string {
   ]))));
   parts.push(el('CuotaTotal', r.taxTotal));
   parts.push(el('ImporteTotal', r.total));
-  parts.push(group('Encadenamiento', [r.previous
-    ? group('RegistroAnterior', [
-      el('IDEmisorFactura', r.previous.issuerNif),
-      el('NumSerieFactura', r.previous.invoiceNumber),
-      el('FechaExpedicionFactura', r.previous.issueDate),
-      el('Huella', r.previous.hash),
-    ])
-    : el('PrimerRegistro', 'S')]));
-  parts.push(group('SistemaInformatico', [
-    el('NombreRazon', s.producerName),
-    el('NIF', s.producerNif),
-    el('NombreSistemaInformatico', s.name),
-    el('IdSistemaInformatico', s.id),
-    el('Version', s.version),
-    el('NumeroInstalacion', r.installationNumber),
-    el('TipoUsoPosibleSoloVerifactu', 'S'),
-    el('TipoUsoPosibleMultiOT', 'S'),
-    el('IndicadorMultiplesOT', 'N'),
-  ]));
-  parts.push(el('FechaHoraHusoGenRegistro', r.generatedAt));
-  parts.push(el('TipoHuella', '01'));
-  parts.push(el('Huella', r.hash));
+  parts.push(...chainAndSystem(r, s));
   return `<sum:RegistroFactura>${group('RegistroAlta', parts)}</sum:RegistroFactura>`;
+}
+
+/** Encadenamiento, SistemaInformatico, FechaHoraHusoGenRegistro, TipoHuella, Huella: both kinds end the same way. */
+function chainAndSystem(r: RecordSubmission, s: VerifactuSoftware): string[] {
+  return [
+    group('Encadenamiento', [r.previous
+      ? group('RegistroAnterior', [
+        el('IDEmisorFactura', r.previous.issuerNif),
+        el('NumSerieFactura', r.previous.invoiceNumber),
+        el('FechaExpedicionFactura', r.previous.issueDate),
+        el('Huella', r.previous.hash),
+      ])
+      : el('PrimerRegistro', 'S')]),
+    group('SistemaInformatico', [
+      el('NombreRazon', s.producerName),
+      el('NIF', s.producerNif),
+      el('NombreSistemaInformatico', s.name),
+      el('IdSistemaInformatico', s.id),
+      el('Version', s.version),
+      el('NumeroInstalacion', r.installationNumber),
+      el('TipoUsoPosibleSoloVerifactu', 'S'),
+      el('TipoUsoPosibleMultiOT', 'S'),
+      el('IndicadorMultiplesOT', 'N'),
+    ]),
+    el('FechaHoraHusoGenRegistro', r.generatedAt),
+    el('TipoHuella', '01'),
+    el('Huella', r.hash),
+  ];
+}
+
+/**
+ * #2648 stage 5 — RegistroAnulacion (XSD sequence: IDVersion, IDFactura
+ * {IDEmisorFacturaAnulada, NumSerieFacturaAnulada, FechaExpedicionFacturaAnulada},
+ * then the optional RefExterna / SinRegistroPrevio / RechazoPrevio / GeneradoPor
+ * / Generador, omitted because an Anulación is only ever generated for an Alta
+ * this system issued, by the issuer itself, then Encadenamiento onwards).
+ */
+function anulacionXml(r: AnulacionSubmission, s: VerifactuSoftware): string {
+  const parts: string[] = [
+    el('IDVersion', VERIFACTU_RECORD_VERSION),
+    group('IDFactura', [
+      el('IDEmisorFacturaAnulada', r.issuerNif),
+      el('NumSerieFacturaAnulada', r.invoiceNumber),
+      el('FechaExpedicionFacturaAnulada', r.issueDate),
+    ]),
+    ...chainAndSystem(r, s),
+  ];
+  return `<sum:RegistroFactura>${group('RegistroAnulacion', parts)}</sum:RegistroFactura>`;
 }
 
 /**
@@ -297,7 +380,7 @@ export function buildRegFactuRequest(b: BatchInput): string {
     + `<soapenv:Envelope xmlns:soapenv="${SOAP_NS}" xmlns:sum="${SUM_NS}" xmlns:sum1="${SUM1_NS}">`
     + '<soapenv:Header/><soapenv:Body><sum:RegFactuSistemaFacturacion>'
     + `<sum:Cabecera>${cabecera.join('')}</sum:Cabecera>`
-    + b.records.map((r) => altaXml(r, b.software)).join('')
+    + b.records.map((r) => (isAnulacion(r) ? anulacionXml(r, b.software) : altaXml(r, b.software))).join('')
     + '</sum:RegFactuSistemaFacturacion></soapenv:Body></soapenv:Envelope>';
 }
 
@@ -449,3 +532,19 @@ export function retryDelaySeconds(attempts: number): number {
 
 /** A record still `sending` this long after its batch started is presumed lost and resent. */
 export const VERIFACTU_SENDING_STALE_MINUTES = 15;
+
+/**
+ * #2648 stage 5 — the response line that answers one sent record. An invoice's
+ * Alta and its Anulación name the same invoice (number and date), so when both
+ * travel in one batch the line's TipoOperacion is what tells them apart; a line
+ * that reports no operation still matches by invoice alone, as in stage 4.
+ */
+export function matchResponseLine(
+  lines: AeatResponseLine[],
+  rec: { invoiceNumber: string; issueDate: string; kind?: 'alta' | 'anulacion' },
+): AeatResponseLine | null {
+  const op = recordOperation(rec);
+  return lines.find((l) => l.invoiceNumber === rec.invoiceNumber
+    && (l.issueDate == null || l.issueDate === rec.issueDate)
+    && (l.operation == null || l.operation === op)) ?? null;
+}
