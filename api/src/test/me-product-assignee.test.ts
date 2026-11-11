@@ -61,6 +61,7 @@ function asMember(clerk: string, r: any) {
 
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';
+  process.env.MONEI_WEBHOOK_SECRET = 'test-2609-webhook-secret';
   gymId = await createTestGym('Member product assignee gym');
   await createTestMembership(gymId);
   await createTestMembership(gymId, 'member', OWNER_CLERK);
@@ -77,6 +78,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.MONEI_API_KEY;
+  delete process.env.MONEI_WEBHOOK_SECRET;
   await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
