@@ -65,6 +65,13 @@ Tick items off in the PR that completes them.
       every deploy. Do not hand-edit the VPS. Any env var added for production must also be
       forwarded in the workflow's `env:` / `envs:` / heredoc block, or it never reaches the
       container.
+- [ ] **Create `COMPLIANCE_CREDENTIALS_ENCRYPTION_KEY` per environment** (#2647 stage 3). A GitHub
+      **secret** (forwarded by `deploy.yml`): 32 random bytes, base64 (`openssl rand -base64 32`),
+      a different one for dev and pro. It encrypts every uploaded tax-authority certificate and
+      its password before they reach the private bucket; with it unset, certificate uploads
+      answer 503. Keep a copy in the owner's password manager: losing or changing it makes every
+      stored certificate unreadable (the gyms must upload them again). The private bucket
+      (`CLOUDFLARE_R2_PRIVATE_*`, #2567) must be configured too.
 - [x] `NODE_ENV=production` in the API container — `deploy.yml` already sets it
       (`APP_NODE_ENV`), keep it when adding the production target.
 - [ ] A production MySQL database, migrated with `npm run db:migrate`. **Do not run
