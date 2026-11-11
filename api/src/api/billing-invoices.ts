@@ -14,8 +14,9 @@ import {
 } from '../domain/billingDocumentKeys';
 import {
   formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
-  taxBreakdown, type LineInput,
 } from '../domain/billingInvoice';
+import { loadInvoiceFigures } from './invoice-figures';
+import { recordVerifactuAlta } from './verifactu-records';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
 import {
   isPrivateStorageConfigured, putPrivateDocument, getPrivateDocument,
@@ -49,19 +50,7 @@ async function renderRepresentation(
   const { rows: gymRows } = await db.query<any>(
     'SELECT name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?', [ev.gym_id]);
   const gym = gymRows[0];
-  const { rows: taxRows } = await db.query<any>(
-    "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1", [ev.gym_id]);
-  const fallbackRate = taxRows[0] ? parseFloat(taxRows[0].rate) : 21;
-  const { rows: lineRows } = await db.query<any>(
-    `SELECT item_name, quantity, amount, amount_excl_tax, tax_rate_percent
-       FROM billing_event_lines WHERE billing_event_id = ? AND gym_id = ? ORDER BY id`, [ev.id, ev.gym_id]);
-  const lines: LineInput[] = lineRows.length
-    ? lineRows.map((l: any) => ({
-        name: l.item_name, quantity: l.quantity, amount: parseFloat(l.amount),
-        amountExclTax: l.amount_excl_tax == null ? null : parseFloat(l.amount_excl_tax),
-        taxRate: l.tax_rate_percent == null ? null : parseFloat(l.tax_rate_percent),
-      }))
-    : [{ name: 'Membership', quantity: 1, amount: ev.amount, amountExclTax: null, taxRate: null }];
+  const { lines, totals } = await loadInvoiceFigures(db, ev.gym_id, ev.id, ev.amount);
   const type = inv.invoice_type as InvoiceType;
   const pdf = await generateInvoicePdf({
     type, state, lang: invoiceLanguage(ev.locale),
@@ -71,7 +60,7 @@ async function renderRepresentation(
       ? { name: inv.customer_name, taxId: inv.customer_tax_id, address: inv.customer_address }
       : { name: ev.memberName ?? '', taxId: null, address: null },
     lines: rectifies ? negateLines(lines) : lines,
-    totals: rectifies ? negateTotals(taxBreakdown(lines, ev.amount, fallbackRate)) : taxBreakdown(lines, ev.amount, fallbackRate),
+    totals: rectifies ? negateTotals(totals) : totals,
     currency: 'EUR', rectifies,
   });
   const key = buildInvoiceKey(ev.gym_id, gym.name, inv.id, type, state);
@@ -108,6 +97,8 @@ async function issueInvoice(
       customer?.name ?? null, customer?.taxId ?? null, customer?.address ?? null,
       ev.paid ? 'paid' : 'not_paid', actor],
   );
+  // #2648 stage 2: the VERI*FACTU Alta record commits with the invoice (gym row locked above).
+  await recordVerifactuAlta(tx, gymId, insertId as number, actor);
   return insertId as number;
 }
 
@@ -136,6 +127,15 @@ export async function generatePaidRepresentations(gymId: string, eventId: number
 
 export const billingInvoicesRouter = Router();
 
+/** A refusal the VERI*FACTU writer raised (the invoice was rolled back): answered with its code. */
+function answerVerifactuRefusal(err: any, res: import('express').Response): boolean {
+  if (typeof err?.code === 'string' && err.code.startsWith('verifactu_') && typeof err.status === 'number') {
+    res.status(err.status).json({ error: err.message, code: err.code });
+    return true;
+  }
+  return false;
+}
+
 // GET /billing-events/:id/invoices — what exists, for the Generate / View actions.
 billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('PAYMENTS'), async (req, res, next) => {
   try {
@@ -152,7 +152,7 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
               full_paid_pdf_key IS NOT NULL AS has_full_paid
          FROM invoices WHERE gym_id = ? AND billing_event_id = ? ORDER BY id`, [gymId, eventId]);
     res.json({ paid: ev.paid, invoices: rows });
-  } catch (err) { next(err); }
+  } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
 
 // POST /billing-events/:id/invoices — { invoice_type, customer_* (full only) }.
@@ -201,7 +201,7 @@ billingInvoicesRouter.post('/billing-events/:id/invoices', requireModuleWrite('P
     }
     const { rows: out } = await db.query<any>('SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status FROM invoices WHERE id = ?', [invoiceId]);
     res.status(created ? 201 : 200).json(out[0]);
-  } catch (err) { next(err); }
+  } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
 
 // GET /invoices/:id/pdf?state=paid|not-paid — streamed from the private bucket, no URL.
@@ -223,7 +223,7 @@ billingInvoicesRouter.get('/invoices/:id/pdf', requireModuleAccess('PAYMENTS'), 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="factura-${inv.fiscal_number}.pdf"`);
     res.send(doc.body);
-  } catch (err) { next(err); }
+  } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
 
 // POST /invoices/:id/rectify — { reason }. A rectifying invoice is its own row
@@ -264,6 +264,7 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
           orig.customer_name, orig.customer_tax_id, orig.customer_address, orig.payment_status,
           id, parsed.value, actor],
       );
+      await recordVerifactuAlta(tx, gymId, insertId as number, actor);
       outcome = { status: 201, id: insertId as number };
     });
     if (outcome.error) return res.status(outcome.status).json({ error: outcome.error });
@@ -278,5 +279,5 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
       next: { invoice_id: inv.id, rectifies_invoice_id: id, fiscal_number: inv.fiscal_number } });
     res.status(201).json({ id: inv.id, invoice_type: inv.invoice_type, status: inv.status,
       fiscal_number: inv.fiscal_number, related_invoice_id: id, rectification_reason: parsed.value });
-  } catch (err) { next(err); }
+  } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
