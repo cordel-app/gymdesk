@@ -26,8 +26,15 @@
  * `VERIFACTU_SUBMISSION_STATUSES` (domain/verifactuRecords.ts): a new value goes
  * in both places.
  *
- * Both FKs cascade: the application never deletes an invoice or a record, and
- * the only delete is a whole gym's (tests, a gym hard-delete).
+ * Both FKs cascade: the application never deletes a record, and the delete
+ * this is built for is a whole gym's (tests, a gym hard-delete). Note what the
+ * invoice cascade also covers: `invoices` cascades from `billing_events`
+ * (migration 380), so a hard-deleted event (a cancelled Pending Payment
+ * version's initial event, the dev billing reset) takes an issued invoice and
+ * its Alta with it, leaving a gap in the chain. RESTRICT would refuse those
+ * deletes instead, which changes behaviour beyond this stage; that a billing
+ * event carrying an issued invoice can be deleted at all is migration 380's
+ * question, raised on the PR.
  */
 
 exports.up = async (knex) => {
