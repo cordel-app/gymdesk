@@ -15,10 +15,12 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge, fmtAmount } from './BillingEventExpandedRow';
 import { PaymentActionModal } from './PaymentActionModal';
 import { PaymentActionKind, actionRequest } from './paymentActions';
+import { RefundModal } from './RefundModal';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type T = ReturnType<typeof useTranslations>;
 
-export const BILLING_EVENT_STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded'] as const;
+export const BILLING_EVENT_STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled'] as const;
 
 /** The fields of a list row the header and the actions read. */
 export interface BillingEventHeaderRow {
@@ -35,6 +37,39 @@ export interface BillingEventHeaderRow {
   can_pay_card?: boolean;
   can_waive?: boolean;
   first_payment?: boolean;
+  /** #2480: the latest attempt's payment method snapshot and the event's own attempt counter. */
+  payment_method_name?: string | null;
+  attempt_count?: number;
+  /** #2480: the API's flags for Cancel (pending only) and Refund (admin, flag on, money left to return). */
+  can_cancel?: boolean;
+  can_refund?: boolean;
+  refunded_amount?: string | null;
+  refund_state?: string | null;
+}
+
+/**
+ * #2480: the three header facts — Member, Payment method (the snapshot), Attempts
+ * (the event's authoritative counter) — as one compact labelled group, so both
+ * hosts render them the same way and wrap them on a narrow screen.
+ */
+export function BillingEventHeaderFacts({ row, t, showMember = true }: {
+  row: Pick<BillingEventHeaderRow, 'member_name' | 'payment_method_name' | 'attempt_count'>;
+  t: T;
+  showMember?: boolean;
+}) {
+  const fact = (label: string, value: React.ReactNode) => (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'baseline', fontSize: 13, whiteSpace: 'nowrap' }}>
+      <span style={{ color: '#6b7280', fontSize: 12 }}>{label}</span>
+      <span style={{ fontWeight: 500 }}>{value}</span>
+    </span>
+  );
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline' }}>
+      {showMember && fact(t('billing_events_page.header_member'), row.member_name ?? '—')}
+      {fact(t('billing_events_page.header_method'), row.payment_method_name ?? '—')}
+      {fact(t('billing_events_page.header_attempts'), row.attempt_count ?? 0)}
+    </span>
+  );
 }
 
 interface RetryResult {
@@ -85,8 +120,30 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  /** #2480: the event a Cancel confirmation or the Refund modal is open for. */
+  const [cancelling, setCancelling] = useState<R | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [refunding, setRefunding] = useState<R | null>(null);
 
   const closePending = useCallback(() => setPending(null), []);
+
+  /** #2480: Cancel is a backend operation; the dialog's own Cancel changes nothing. */
+  async function confirmCancel() {
+    if (!cancelling || cancelBusy) return;
+    const id = cancelling.id!;
+    setCancelBusy(true);
+    try {
+      await apiFetch(`/payments/billing-events/${id}/cancel`, { method: 'POST' });
+      toast(t('billing_events_page.cancel_success'), 'success');
+      setCancelling(null);
+      openDetails(id);
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('billing_events_page.action_error'));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
 
   function openAction(kind: PaymentActionKind, row: R) {
     setActionError(null);
@@ -150,8 +207,9 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       { label: t('billing_events_page.action_details'), onClick: () => openDetails(id) },
     ];
     // §1: payment actions are hidden — not merely disabled — where the API's
-    // flags say they don't apply. There is deliberately no Cancel item: closing
-    // a confirmation never alters the outstanding obligation (#1459 §2).
+    // flags say they don't apply. Closing a confirmation never alters the
+    // outstanding obligation (#1459 §2); cancelling the *event* is its own
+    // backend action, offered only while it is pending (#2480).
     const busy = retryingId === id;
     if (row.can_pay_cash) {
       items.push({ label: t('billing_events_page.action_pay_cash'), onClick: () => openAction('cash', row), disabled: !canWrite, title: readOnlyTitle });
@@ -167,13 +225,53 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
         title: readOnlyTitle,
       });
     }
+    if (row.can_refund) {
+      items.push({ label: t('billing_events_page.action_refund'), onClick: () => setRefunding(row), disabled: !canWrite, title: readOnlyTitle });
+    }
     if (row.can_waive) {
       items.push({ label: t('billing_events_page.action_waive'), onClick: () => openAction('waive', row), disabled: !canWrite, title: readOnlyTitle, danger: true });
+    }
+    // #2480: Cancel the pending event itself (never a dismissed dialog).
+    if (row.can_cancel) {
+      items.push({ label: t('billing_events_page.action_cancel_event'), onClick: () => setCancelling(row), disabled: !canWrite, title: readOnlyTitle, danger: true });
     }
     return items;
   }
 
-  const modal = pending ? (
+  const extraModals = (
+    <>
+      <ConfirmDialog
+        open={cancelling != null}
+        title={t('billing_events_page.cancel_modal_title')}
+        message={t('billing_events_page.cancel_modal_body', {
+          member: cancelling?.member_name ?? '—',
+          amount: cancelling ? `${fmtAmount(cancelling.amount)} ${cancelling.currency ?? 'EUR'}` : '',
+        })}
+        confirmLabel={cancelBusy ? t('billing_events_page.modal_working') : t('billing_events_page.cancel_modal_confirm')}
+        cancelLabel={t('billing_events_page.modal_close')}
+        onConfirm={confirmCancel}
+        onCancel={() => { if (!cancelBusy) setCancelling(null); }}
+        busy={cancelBusy}
+      />
+      {refunding && (
+        <RefundModal
+          billingEventId={refunding.id!}
+          memberName={refunding.member_name ?? '—'}
+          currency={refunding.currency ?? 'EUR'}
+          onClose={() => setRefunding(null)}
+          onDone={(r) => {
+            const id = refunding.id!;
+            toast(t(r.status === 'pending' ? 'billing_events_page.refund_pending' : 'billing_events_page.refund_success', { amount: fmtAmount(r.amount) }), 'success');
+            setRefunding(null);
+            openDetails(id);
+            onChanged();
+          }}
+        />
+      )}
+    </>
+  );
+
+  const paymentModal = pending ? (
     <PaymentActionModal
       kind={pending.kind}
       memberName={pending.row.member_name ?? '—'}
@@ -184,6 +282,8 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       onClose={closePending}
     />
   ) : null;
+
+  const modal = <>{paymentModal}{extraModals}</>;
 
   return { menuItems, modal, closePending, canWrite, readOnlyTitle };
 }

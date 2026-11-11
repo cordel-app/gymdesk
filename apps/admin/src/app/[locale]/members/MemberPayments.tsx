@@ -9,7 +9,7 @@ import { cardMutedTextStyle, cardSectionLabelStyle, formErrorStyle, innerCardSty
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExpandedRow, fmtDate, fmtDateTime } from '../payments/billing-events/BillingEventExpandedRow';
 import {
-  BillingEventStatusBadge, NormalizedPaymentStatusBadge, billingEventAmountLabel, useBillingEventActions,
+  BillingEventHeaderFacts, BillingEventStatusBadge, NormalizedPaymentStatusBadge, billingEventAmountLabel, useBillingEventActions,
   type BillingEventHeaderRow,
 } from '../payments/billing-events/BillingEventShared';
 import { splitPaymentsTabEvents, type PaymentsTabEvent } from './paymentsTabView';
@@ -126,12 +126,13 @@ function EventRow({ ev, gym, t, expanded, toggle, menuItems, onChanged, canWrite
           <span style={{ ...cell, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{billingEventAmountLabel(ev)}</span>
           <BillingEventStatusBadge row={ev} t={t} />
           <NormalizedPaymentStatusBadge status={ev.normalized_payment_status} t={t} />
+          <BillingEventHeaderFacts row={ev} t={t} />
         </button>
         <ContextMenu items={menuItems(ev)} ariaLabel={t('billing_events_page.col_actions')} />
       </div>
       {open && ev.id != null && (
         <div style={{ marginTop: 8 }}>
-          <ExpandedRow billingEvent={ev} onChanged={onChanged} canWrite={canWrite} readOnlyTitle={readOnlyTitle} t={t} asCell={false} />
+          <ExpandedRow key={`${ev.id}-${ev.status}-${ev.refunded_amount ?? ''}`} billingEvent={ev} onChanged={onChanged} canWrite={canWrite} readOnlyTitle={readOnlyTitle} t={t} asCell={false} />
         </div>
       )}
     </div>

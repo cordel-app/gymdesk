@@ -522,7 +522,8 @@
       "failed": "Failed",
       "pending": "Pending",
       "scheduled": "Scheduled",
-      "recorded": "Recorded"
+      "recorded": "Recorded",
+      "cancelled": "Cancelled"
     }
   },
   "payment_banner": {

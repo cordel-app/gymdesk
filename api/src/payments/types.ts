@@ -78,3 +78,20 @@ export interface PaymentMethodToken {
   cardLast4: string | null;
   cardBrand: string | null;
 }
+
+/** #2480: a refund of a payment the provider already collected. */
+export interface RefundPaymentParams {
+  /** The provider's own id of the original payment (`payment_requests.provider_ref`). */
+  providerRef: string;
+  /** Minor units (cents), as every amount crossing this boundary. */
+  amount: number;
+}
+
+export interface RefundPaymentResult {
+  /** The provider's raw status after the refund (e.g. `REFUNDED`, `PARTIALLY_REFUNDED`). */
+  providerStatus: string | null;
+  /** The provider's reference for the refund operation. */
+  providerRefundRef: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}

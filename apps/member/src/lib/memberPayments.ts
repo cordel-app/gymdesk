@@ -33,7 +33,7 @@
 /** `payment_requests.status` folded onto the event, as `#640` derives it. */
 import { DEFAULT_GYM_FORMAT, formatGymAmount, formatGymDateOnly, type GymFormatSettings } from './gymFormat';
 
-export type MemberBillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
+export type MemberBillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
 
 /** Why a forecast line's charge differs from its regular price. */
 export interface ForecastBenefit {
