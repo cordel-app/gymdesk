@@ -26,7 +26,7 @@ export function eventAssignmentSql(alias = 'be'): string {
              JOIN product_sets p2
                ON p2.root_product_set_id = p1.root_product_set_id AND p2.gym_id = p1.gym_id
             WHERE p1.id = ${alias}.product_set_id AND p2.user_membership_id IS NOT NULL
-            ORDER BY p2.version DESC, p2.id DESC
+            ORDER BY p2.id DESC
             LIMIT 1)`;
 }
 

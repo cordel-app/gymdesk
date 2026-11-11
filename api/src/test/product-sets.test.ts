@@ -39,7 +39,7 @@ describe('ProductSet versioning (#1325)', () => {
       gymId, ownerMemberId: memberId, membershipPlanId: null, startsAt: today(), actor }));
     expect(out.kind).toBe('created');
     if (out.kind !== 'created') return;
-    expect(out.productSet.version).toBe(1);
+    expect(out.productSet.previous_product_set_id).toBeNull();
     expect(Number(out.productSet.root_product_set_id)).toBe(Number(out.productSet.id));
     expect(out.productSet.membership_plan_id).toBeNull();
     await db.transaction((tx) => cancelInFlight(tx, gymId, out.productSet.id));
@@ -76,7 +76,6 @@ describe('ProductSet versioning (#1325)', () => {
     const draft = await db.transaction((tx) => createDraft(tx, {
       gymId, ownerMemberId: otherMemberId, membershipPlanId: null, startsAt: today(), actor }));
     if (draft.kind !== 'created') throw new Error('expected created');
-    expect(draft.productSet.version).toBe(2);
     expect(Number(draft.productSet.previous_product_set_id)).toBe(Number(v1.id));
     // §2: the existing version stays Active while the replacement is a Draft…
     expect(await status(v1.id)).toBe('active');
@@ -111,7 +110,7 @@ describe('ProductSet versioning (#1325)', () => {
     const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));
     expect(out.kind).toBe('cancelled');
     const { rows } = await db.query<{ status: string }>(
-      `SELECT status FROM product_sets WHERE owner_member_id = ? ORDER BY version`, [otherMemberId]);
+      `SELECT status FROM product_sets WHERE owner_member_id = ? ORDER BY id`, [otherMemberId]);
     expect(rows.map((r) => r.status)).toEqual(['superseded', 'active']);
   });
 

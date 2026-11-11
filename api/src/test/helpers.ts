@@ -132,7 +132,7 @@ export type AssignmentConfigPatch = Partial<Record<AssignmentConfigColumn, unkno
 
 async function latestLinkedSet(umId: number): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY version DESC, id DESC LIMIT 1', [umId]);
+    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [umId]);
   return rows[0] ? Number(rows[0].id) : null;
 }
 
@@ -150,7 +150,7 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   if (own.length > 0) return;
   const { rows: holder } = await db.query<{ id: number }>(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
-      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
+      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.id DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
   if (!holder[0]) return;
   const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
   const scols = ASSIGNMENT_CONFIG_COLUMNS.map((c) => `s.${c}`).join(', ');
@@ -190,7 +190,7 @@ export async function getAssignmentConfig(umId: number): Promise<Record<string, 
        FROM product_sets ps
        LEFT JOIN plan_snapshots snap ON snap.id = (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2
                                                     WHERE j2.product_set_id = ps.id ORDER BY j2.id LIMIT 1)
-      WHERE ps.user_membership_id = ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId]);
+      WHERE ps.user_membership_id = ? ORDER BY ps.id DESC LIMIT 1`, [umId]);
   return rows[0] ?? {};
 }
 
@@ -206,9 +206,9 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     if (!um) throw new Error(`setAssignmentConfig: assignment ${umId} not found`);
     const { insertId } = await db.query(
       `INSERT INTO product_sets
-         (gym_id, owner_member_id, version, status, membership_plan_id, starts_at, ends_at,
+         (gym_id, owner_member_id, status, membership_plan_id, starts_at, ends_at,
           user_membership_id, superseded_at)
-       VALUES (?, ?, 1, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
+       VALUES (?, ?, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
       [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
     await db.query("UPDATE product_sets SET created_by = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
@@ -267,11 +267,11 @@ function literalValue(token: string, params: unknown[]): unknown {
  * `IN (?, …)` predicate becomes the same lookup through that version.
  */
 const LATEST_VERSION = (idExpr: string) =>
-  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
 
 async function versionOfAssignment(userMembershipId: number): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY version DESC, id DESC LIMIT 1', [userMembershipId]);
+    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [userMembershipId]);
   if (rows[0]) return Number(rows[0].id);
   const { rows: um } = await db.query<{ gym_id: string; member_id: number }>(
     'SELECT gym_id, member_id FROM user_memberships WHERE id = ?', [userMembershipId]);

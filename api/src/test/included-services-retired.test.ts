@@ -405,6 +405,7 @@ describe('POST /user-memberships/:id/close after Included Services (#635 stage 4
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('cancelled');
+    // #2659 stage 2: started today, so it runs to today's end before it is `cancelled`.
+    expect(res.body.status).toBe('active_cancel_at_period_end');
   });
 });

@@ -1,4 +1,5 @@
 import { db } from '../infra/db';
+import { entitledAssignmentSql } from '../domain/assignmentStatus';
 import { registerBookingAccessHook } from './bookings';
 import { soleActiveCenterId } from '../infra/centerContext';
 import {
@@ -30,7 +31,7 @@ export async function loadMemberCenterAccessInputs(
   const { rows: memberships } = await tx.query(
     `SELECT DISTINCT um.membership_plan_id, mp.center_access_mode, mp.online_access FROM user_memberships um
      JOIN membership_plans mp ON mp.id = um.membership_plan_id
-     WHERE um.gym_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND EXISTS (
          SELECT 1 FROM user_membership_members umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
@@ -146,7 +147,7 @@ export async function centersAvailableToMember(
 ): Promise<{ id: number; name: string }[]> {
   const { rows: memberships } = await db.query<{ membership_plan_id: number }>(
     `SELECT DISTINCT um.membership_plan_id FROM user_memberships um
-     WHERE um.gym_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND (um.member_id = ? OR EXISTS (
          SELECT 1 FROM user_membership_members umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?

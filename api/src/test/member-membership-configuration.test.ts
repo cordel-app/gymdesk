@@ -610,18 +610,18 @@ describe('GET /user-memberships/member/:memberId/configuration — lifecycle_sta
   });
 
   // #2625: a cancelled plan that still gives access until its End Date reads
-  // `cancels_on_end_date` — derived from `status` + `ends_at`, never stored —
-  // and becomes `cancelled` once `ends_at` is behind us, with no job. The date
+  // `cancels_on_end_date`; since #2659 stage 2 that plan is stored as
+  // `active_cancel_at_period_end`, and reads `cancelled` once `ends_at` is behind us. The date
   // test is the entitlement's own (`ends_at >= UTC_DATE()`), so End Date = today
   // is still a day of access and still "Cancels on End Date".
-  it('derives Cancels on End Date for a cancelled plan whose End Date is today or later', async () => {
+  it('reads Cancels on End Date for a plan cancelling at its period end whose End Date is today or later', async () => {
     const memberId = await createMember(gymId);
     const today = new Date().toISOString().slice(0, 10);
     const future = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Future ${uniq()}`), {
-      status: 'cancelled', startsAt: '2026-01-01', endsAt: '2099-12-31',
+      status: 'active_cancel_at_period_end', startsAt: '2026-01-01', endsAt: '2099-12-31',
     });
     const endsToday = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancels Today ${uniq()}`), {
-      status: 'cancelled', startsAt: '2026-01-01', endsAt: today,
+      status: 'active_cancel_at_period_end', startsAt: '2026-01-01', endsAt: today,
     });
     const past = await createAssignment(gymId, memberId, await createPlan(gymId, `Cancelled Past ${uniq()}`), {
       status: 'cancelled', startsAt: '2020-01-01', endsAt: '2020-12-31',
@@ -641,9 +641,9 @@ describe('GET /user-memberships/member/:memberId/configuration — lifecycle_sta
     expect((byId.get(past) as any).lifecycle_status).toBe('cancelled');
     expect((byId.get(openActive) as any).lifecycle_status).toBe('active');
     expect((byId.get(futureActive) as any).lifecycle_status).toBe('active');
-    // Nothing stored moved, the End Date is kept and the plan stays in the
-    // Active group until it ends (#2549's `is_current`).
-    expect((byId.get(future) as any).status).toBe('cancelled');
+    // The End Date is kept and the plan stays in the Active group until it
+    // ends (#2549's `is_current`).
+    expect((byId.get(future) as any).status).toBe('active_cancel_at_period_end');
     expect((byId.get(future) as any).ends_at).toBe('2099-12-31');
     expect((byId.get(future) as any).is_current).toBe(true);
     expect((byId.get(past) as any).is_current).toBe(false);
@@ -808,24 +808,24 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
   });
 
   it('reports the in-flight version as current and superseded ones as past, creating no Billing Event', async () => {
-    const insert = async (version: number, status: string, root: number | null) => {
+    const insert = async (status: string, root: number | null, previous: number | null = null) => {
       const { insertId } = await db.query(
-        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, version, status, starts_at, created_by)
+        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, status, starts_at, created_by)
          VALUES (?, ?, ?, ?, ?, '2026-03-01', 'Tester')`,
-        [gymId, memberId, root, version, status],
+        [gymId, memberId, root, previous, status],
       );
       return insertId as number;
     };
-    const first = await insert(1, 'superseded', null);
+    const first = await insert('superseded', null);
     await db.query('UPDATE product_sets SET root_product_set_id = ? WHERE id = ?', [first, first]);
-    const second = await insert(2, 'draft', first);
+    const second = await insert('draft', first, first);
 
     const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
     const res = await getConfiguration(gymId, memberId);
     const after = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
 
     expect(res.status).toBe(200);
-    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', version: 2, created_by: 'Tester' });
+    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', created_by: 'Tester' });
     expect(res.body.past_product_sets.map((p: any) => p.id)).toEqual([first]);
     expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
   });
