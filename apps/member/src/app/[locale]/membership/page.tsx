@@ -158,6 +158,8 @@ interface Membership {
   ends_at: string | null;
   next_billing_date: string | null;
   status: 'active' | 'paused' | 'cancelled' | 'expired';
+  /** #2660: the Admin's status for this assignment (`LIFECYCLE_STATUS_SQL`), shown as is. */
+  lifecycle_status?: string;
   plan_name: string | null;
   plan_description: string | null;
   billing_interval: number | null;
@@ -1612,7 +1614,7 @@ export default function MembershipPage() {
               <p style={styles.planDesc}>{membership.plan_description}</p>
             )}
           </div>
-          <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
+          <StatusPill status={membership.lifecycle_status ?? membership.status} label={t(`membership.status.${membership.lifecycle_status ?? membership.status}` as any)} />
         </div>
 
         <dl style={styles.dl}>

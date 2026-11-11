@@ -470,7 +470,12 @@
       "active": "Activa",
       "paused": "Pausada",
       "cancelled": "Cancel·lada",
-      "expired": "Caducada"
+      "expired": "Caducada",
+      "draft": "Esborrany",
+      "pending": "Pendent",
+      "pending_payment": "Pendent de pagament",
+      "cancels_on_end_date": "Es cancel·la a la data de fi",
+      "superseded": "Reemplaçat"
     },
     "event": {
       "charge_created": "Càrrec",

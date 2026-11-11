@@ -470,7 +470,12 @@
       "active": "Activa",
       "paused": "Pausada",
       "cancelled": "Cancelada",
-      "expired": "Caducada"
+      "expired": "Caducada",
+      "draft": "Borrador",
+      "pending": "Pendiente",
+      "pending_payment": "Pendiente de pago",
+      "cancels_on_end_date": "Se cancela en la fecha de fin",
+      "superseded": "Reemplazado"
     },
     "event": {
       "charge_created": "Cargo",

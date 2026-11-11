@@ -470,7 +470,12 @@
       "active": "Active",
       "paused": "Paused",
       "cancelled": "Cancelled",
-      "expired": "Expired"
+      "expired": "Expired",
+      "draft": "Draft",
+      "pending": "Pending",
+      "pending_payment": "Pending Payment",
+      "cancels_on_end_date": "Cancels on End Date",
+      "superseded": "Superseded"
     },
     "event": {
       "charge_created": "Charge",
