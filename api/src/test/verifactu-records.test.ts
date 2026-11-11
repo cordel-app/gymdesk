@@ -13,6 +13,7 @@ vi.mock('../infra/private-storage', () => ({
   privateObjectExists: async (key: string) => stored.has(key),
 }));
 
+import { inflateSync } from 'node:zlib';
 import { db } from '../infra/db';
 import { altaHash, altaHashString } from '../domain/verifactu';
 import {
@@ -48,6 +49,32 @@ async function enableVerifactu(gymId: string, cif: string) {
      VALUES (?, 'ES', 'verifactu', 'invoice_reporting', 1)`, [gymId]);
 }
 
+/** Whether a stored PDF prints the VERI*FACTU legend (#2648 stage 3). */
+function printsVerifactuLegend(pdf: Buffer): boolean {
+  const raw = pdf.toString('latin1');
+  const legend = `<${Buffer.from('VERI*FACTU', 'latin1').toString('hex').toUpperCase()}>`;
+  const re = /stream\r?\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw))) {
+    const start = m.index + m[0].length;
+    try {
+      if (inflateSync(pdf.subarray(start, raw.indexOf('endstream', start))).toString('latin1').includes(legend)) return true;
+    } catch { /* not a flate stream */ }
+  }
+  return false;
+}
+
+async function storedPdf(gymId: string, invoiceId: number): Promise<Buffer> {
+  const r = await request.get(`/payments/invoices/${invoiceId}/pdf`).set(auth(gymId))
+    .buffer(true).parse((res, cb) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => cb(null, Buffer.concat(chunks)));
+    });
+  expect(r.status).toBe(200);
+  return r.body as Buffer;
+}
+
 const records = async (gymId: string) =>
   (await db.query<any>('SELECT * FROM verifactu_records WHERE gym_id = ? ORDER BY chain_seq', [gymId])).rows;
 
@@ -68,6 +95,7 @@ describe('VERI*FACTU Alta records at invoice issue', () => {
     const r = await request.post(`/payments/billing-events/${ev}/invoices`).set(auth(gymOff)).send({ invoice_type: 'simplified' });
     expect(r.status).toBe(201);
     expect(await records(gymOff)).toHaveLength(0);
+    expect(printsVerifactuLegend(await storedPdf(gymOff, r.body.id))).toBe(false);
   });
 
   let firstInvoice = 0;
@@ -84,6 +112,10 @@ describe('VERI*FACTU Alta records at invoice issue', () => {
       invoice_type: 'full', customer_name: 'ACME SL', customer_tax_id: 'B12345678', customer_address: 'Calle 1',
     });
     expect(b.status).toBe(201);
+
+    // #2648 stage 3: both new PDFs print the VERI*FACTU QR and legend.
+    expect(printsVerifactuLegend(await storedPdf(gymOn, a.body.id))).toBe(true);
+    expect(printsVerifactuLegend(await storedPdf(gymOn, b.body.id))).toBe(true);
 
     const rows = await records(gymOn);
     expect(rows).toHaveLength(2);
@@ -122,6 +154,7 @@ describe('VERI*FACTU Alta records at invoice issue', () => {
       invoice_id: r.body.id, chain_seq: 3, invoice_kind: 'R5', invoice_total: '-29.99',
       previous_record_hash: rows[1].record_hash,
     });
+    expect(printsVerifactuLegend(await storedPdf(gymOn, r.body.id))).toBe(true);
   });
 
   it('keeps an independent chain per gym and never forks under concurrent issues', async () => {
