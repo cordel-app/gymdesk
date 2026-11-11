@@ -11,7 +11,7 @@
  * (whose own direct discount is the Personal Membership Fee Benefit, #772).
  *
  * Stored as `direct_discount_percent` on `membership_plan_{session,oneoff,periodical}`
- * and on the plan snapshot lines (`plan_*_snapshots`, migration 390), NULL
+ * and on the plan snapshot lines (`plan_*_snapshots`, migration 391), NULL
  * meaning none — what every line written before the migration reads as.
  *
  * The arithmetic is `applyPeriodBenefit()`'s `percentage_discount`, so no
