@@ -480,7 +480,7 @@ export async function loadMemberPurchases(
  * never the live Promotion. Each step's `regular_amount` is the running price it
  * was applied to, as for a one-time purchase; the direct discount comes last.
  */
-async function loadRecurringLinePromotions(
+export async function loadRecurringLinePromotions(
   gymId: string,
   lines: readonly { id: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
 ): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null }>> {
