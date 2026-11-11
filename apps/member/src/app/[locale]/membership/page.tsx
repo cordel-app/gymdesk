@@ -96,6 +96,10 @@ import {
   type MemberSetRow,
   type MemberSetView,
   currentSetId,
+  setPlans,
+  setProductLines,
+  setStatusKey,
+  type MemberSetPlan,
   draftAddedCount,
   draftErrorKey,
   draftProductState,
@@ -232,7 +236,6 @@ export default function MembershipPage() {
   // never filters a list by status for itself.
   const [pastPlans, setPastPlans] = useState<MemberPastPlan[]>([]);
   // #2125: the member's other live plans, beside the one the page is about.
-  const [otherPlans, setOtherPlans] = useState<MemberPastPlan[]>([]);
   const [packages, setPackages] = useState<UserPackage[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
@@ -285,6 +288,8 @@ export default function MembershipPage() {
   // for, and the refusal of the last one (keyed by Product). Every figure and
   // every rule stays the server's; this is which card says what.
   const [setView, setSetView] = useState<MemberSetView | null>(null);
+  // #2663 — `My Plans` and `My Products` render only once the one selected version is known.
+  const [setViewLoaded, setSetViewLoaded] = useState(false);
   const [draftBusy, setDraftBusy] = useState<number | null>(null);
   const [draftError, setDraftError] = useState<{ productId: number | null; key: string } | null>(null);
   // #2496 stage 4 — a refused plan edit, shown on the plan card it came from.
@@ -353,7 +358,6 @@ export default function MembershipPage() {
         if (cancelled) return;
         setMembership(mship.membership);
         setPastPlans(mship.past_memberships ?? []);
-        setOtherPlans(mship.other_memberships ?? []);
         setPendingMembership(mship.pending_membership ?? null);
         setEvents(ledger.items);
         setPackages(pkgs);
@@ -394,6 +398,8 @@ export default function MembershipPage() {
       // No version to read: every recurring card offers Add, and the server
       // still judges the add itself.
       setSetView(null);
+    } finally {
+      setSetViewLoaded(true);
     }
   }
 
@@ -643,6 +649,132 @@ export default function MembershipPage() {
     }
   }
 
+  /* ── #2663 My Plans + My Products — one Product Set, read once ─────────── */
+  //
+  // Both sections read `setView`, the one version `currentSetId()` selects (the
+  // member's Draft, else the version awaiting payment, else the Active one), so
+  // the plans and the Products on screen always belong to the same version.
+  // Every figure is that version's own snapshot, as the server reports it.
+
+  /** The plan's beneficiaries, named only where the plan covers someone besides the reader. */
+  function planForLine(plan: MemberSetPlan): string | null {
+    const people = plan.beneficiaries ?? [];
+    if (people.length === 0) return null;
+    if (people.length === 1 && selfMemberId != null && people[0].member_id === selfMemberId) return null;
+    return t('membership.plan_for', { names: people.map((b) => b.name ?? '—').join(', ') });
+  }
+
+  function renderMyPlans() {
+    if (!setViewLoaded) return null;
+    const plans = setPlans(setView);
+    return (
+      <section style={styles.section}>
+        <h2 style={styles.h2}>{t('membership.my_plans_heading')}</h2>
+        {plans.length === 0 ? (
+          <div style={styles.emptyCard}>
+            <p style={styles.hint}>{t('membership.my_plans_empty')}</p>
+          </div>
+        ) : plans.map((plan) => {
+          const status = plan.status ?? setView?.status ?? 'active';
+          const benefits = (plan.benefits ?? []) as Benefit[];
+          const forLine = planForLine(plan);
+          return (
+            <div key={plan.plan_snapshot_id} style={{ ...styles.card, marginBottom: 12 }}>
+              <div style={styles.cardHead}>
+                <div>
+                  <p style={styles.planName}>{plan.plan_name ?? '—'}</p>
+                  {plan.plan_description && <p style={styles.planDesc}>{plan.plan_description}</p>}
+                  {forLine && <p style={styles.planDesc}>{forLine}</p>}
+                  {plan.entitlement_only && <p style={styles.planDesc}>{t('membership.plan_entitlement_only')}</p>}
+                </div>
+                <StatusPill status={status} label={t(`membership.status.${status}` as any)} />
+              </div>
+              <dl style={styles.dl}>
+                <div style={styles.row}>
+                  <dt style={styles.dt}>{t('membership.price')}</dt>
+                  <dd style={styles.dd}>
+                    {plan.membership_fee != null ? plan.membership_fee.toFixed(2) : '—'}
+                    {plan.discount_reason && <span style={styles.discount}> · {plan.discount_reason}</span>}
+                  </dd>
+                </div>
+                <div style={styles.row}>
+                  <dt style={styles.dt}>{t('membership.member_since')}</dt>
+                  <dd style={styles.dd}>{day(plan.starts_at ?? null) ?? '—'}</dd>
+                </div>
+                <div style={styles.row}>
+                  <dt style={styles.dt}>{t('membership.ends')}</dt>
+                  <dd style={styles.dd}>{day(plan.ends_at ?? null) ?? t('membership.ongoing')}</dd>
+                </div>
+              </dl>
+              {benefits.length > 0 && (
+                <div style={styles.nestedBenefits}>
+                  <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
+                  {ITEM_GROUPS.map((group) => {
+                    const rows = benefits.filter((b) => itemGroupOf(b) === group);
+                    if (rows.length === 0) return null;
+                    return (
+                      <div key={group} style={styles.benefitGroup}>
+                        <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
+                        <ul style={styles.benefitList}>
+                          {rows.map((b) => (
+                            <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                              <span>{b.name}</span>
+                              <span style={styles.benefitMeta}>× {b.quantity}</span>
+                              <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
+                              {b.billing_frequency && (
+                                <span style={styles.benefitMeta}>· {t(`membership.frequency.${b.billing_frequency}` as any)}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </section>
+    );
+  }
+
+  function renderMyProducts() {
+    if (!setViewLoaded) return null;
+    const statusKey = setStatusKey(setView);
+    const items: MemberProductCardItem[] = setProductLines(setView).map((line) => {
+      const quantity = line.quantity ?? 1;
+      const currency = line.currency ?? 'EUR';
+      const regular = line.regular_amount ?? null;
+      const final = line.final_amount ?? null;
+      const assignee = line.assigned_member_id != null && selfMemberId != null && line.assigned_member_id !== selfMemberId
+        ? assignees.find((a) => a.member_id === line.assigned_member_id)?.name ?? null : null;
+      return {
+        key: `set-line-${line.id}`,
+        name: line.product_name ?? '—',
+        description: line.description ?? null,
+        imageUrl: line.image_thumbnail_url ?? null,
+        imageFullUrl: line.image_url ?? null,
+        price: final != null ? formatPaymentAmount(final, currency, gymFmt) : null,
+        regularPrice: regular != null && final != null && regular !== final ? formatPaymentAmount(regular, currency, gymFmt) : null,
+        frequency: line.billing_frequency && RECURRING_ITEM_FREQUENCIES.includes(line.billing_frequency)
+          ? t(`membership.frequency.${line.billing_frequency}` as any) : null,
+        meta: [
+          quantity > 1 ? `× ${quantity}` : null,
+          assignee ? t('membership.product_assignee_line', { name: assignee }) : null,
+        ].filter(Boolean).join(' · ') || null,
+      };
+    });
+    return (
+      <MemberProductsSection
+        title={t('membership.set_products_heading')}
+        emptyLabel={t('membership.set_products_empty')}
+        items={items}
+        badge={statusKey && setView ? <StatusPill status={setView.status} label={t(statusKey as any)} /> : undefined}
+      />
+    );
+  }
+
   function renderOwnPurchases() {
     if (ownPurchases.length === 0) return null;
     const items: MemberProductCardItem[] = ownPurchases.map((p) => ({
@@ -800,25 +932,6 @@ export default function MembershipPage() {
         meta: endedOn ? `${status} · ${endedOn}` : status,
       };
     });
-  }
-
-  /**
-   * #2125: the member's other live plans — absent for the usual one-plan member.
-   * A live plan reads as its status and the day it started, never as history.
-   */
-  function renderOtherPlans() {
-    if (otherPlans.length === 0) return null;
-    return (
-      <PastMembershipPlansCard
-        title={t('membership.other_plans_heading')}
-        summary={t('membership.other_plans_count', { count: otherPlans.length })}
-        items={otherPlans.map((plan) => {
-          const since = plan.starts_at ? formatPaymentDate(plan.starts_at, gymFmt) : null;
-          const status = t(pastPlanStatusKey(plan) as any);
-          return { key: String(plan.id), name: pastPlanName(plan), meta: since ? `${status} · ${since}` : status };
-        })}
-      />
-    );
   }
 
   /**
@@ -1581,13 +1694,8 @@ export default function MembershipPage() {
         {tab === 'services' ? renderServicesTab() : (<>
         {renderPlansHeader()}
         {renderPlanCatalogue()}
-        {!pendingMembership && !catalogueOpen && (
-          <div style={styles.emptyCard}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>✦</div>
-            <h2 style={styles.emptyTitle}>{t('membership.title')}</h2>
-            <p style={styles.hint}>{t('membership.empty')}</p>
-          </div>
-        )}
+        {renderMyPlans()}
+        {renderMyProducts()}
         {renderOwnPurchases()}
         {renderProducts()}
         </>)}
@@ -1605,73 +1713,9 @@ export default function MembershipPage() {
       {renderPlansHeader()}
       {renderPlanCatalogue()}
 
-      <h2 style={styles.h2}>{t('membership.my_plans_heading')}</h2>
-      <div style={styles.card}>
-        <div style={styles.cardHead}>
-          <div>
-            <p style={styles.planName}>{membership.plan_name ?? '—'}</p>
-            {membership.plan_description && (
-              <p style={styles.planDesc}>{membership.plan_description}</p>
-            )}
-          </div>
-          <StatusPill status={membership.lifecycle_status ?? membership.status} label={t(`membership.status.${membership.lifecycle_status ?? membership.status}` as any)} />
-        </div>
-
-        <dl style={styles.dl}>
-          <div style={styles.row}>
-            <dt style={styles.dt}>{t('membership.price')}</dt>
-            <dd style={styles.dd}>
-              {membership.membership_fee != null ? membership.membership_fee.toFixed(2) : '—'}
-              {membership.discount_reason && (
-                <span style={styles.discount}> · {membership.discount_reason}</span>
-              )}
-              {promotions.length > 0 && (
-                <div style={styles.promoLine}>
-                  {promotions.map((p) => p.name).join(', ')}
-                </div>
-              )}
-            </dd>
-          </div>
-          <div style={styles.row}>
-            <dt style={styles.dt}>{t('membership.member_since')}</dt>
-            <dd style={styles.dd}>{day(membership.starts_at) ?? '—'}</dd>
-          </div>
-          <div style={styles.row}>
-            <dt style={styles.dt}>{t('membership.ends')}</dt>
-            <dd style={styles.dd}>{day(membership.ends_at) ?? t('membership.ongoing')}</dd>
-          </div>
-        </dl>
-        {membership.benefits.length > 0 && (
-          <div style={styles.nestedBenefits}>
-            <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
-            {ITEM_GROUPS.map((group) => {
-              const rows = membership.benefits.filter((b) => itemGroupOf(b) === group);
-              if (rows.length === 0) return null;
-              return (
-                <div key={group} style={styles.benefitGroup}>
-                  <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
-                  <ul style={styles.benefitList}>
-                    {rows.map((b) => (
-                      <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
-                        <span>{b.name}</span>
-                        <span style={styles.benefitMeta}>× {b.quantity}</span>
-                        {/* The frozen price, not the catalogue's: what this
-                            membership was agreed at (§17). */}
-                        <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
-                        {b.billing_frequency && (
-                          <span style={styles.benefitMeta}>
-                            · {t(`membership.frequency.${b.billing_frequency}`)}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* #2663 — My Plans, then My Products, both from the one selected version. */}
+      {renderMyPlans()}
+      {renderMyProducts()}
 
       {/* Payment banner */}
       {pendingRequest && (
@@ -1795,7 +1839,6 @@ export default function MembershipPage() {
 
       {/* #1775 — Past Membership Plans close the page: secondary history,
           collapsed and muted, below everything the member acts on. */}
-      {renderOtherPlans()}
       {renderPastPlans()}
       </>)}
 

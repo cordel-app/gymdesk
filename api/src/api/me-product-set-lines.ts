@@ -2,7 +2,9 @@ import { db } from '../infra/db';
 import { draftExpiresInSeconds, DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { loadRecurringLinePromotions } from './member-product-promotions';
 import { assignedMemberSql } from '../domain/productAssignee';
-import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
+import { LIFECYCLE_STATUS_SQL } from './user-memberships';
+import { currentMembershipFees } from './membership-fee-pricing';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -49,6 +51,7 @@ export interface MemberProductSetLine {
 }
 
 const LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
+  p.sharing_type AS sharing_type,
   s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price, s.direct_discount_percent,
   s.billing_frequency AS item_billing_frequency, s.currency,
   s.starts_at, COALESCE(s.line_ref, s.source_id) AS line_ref,
@@ -75,12 +78,45 @@ function dateOnly(v: unknown): string | null {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function loadMemberProductSetView(gymId: string, set: { id: number; status: string; previous_product_set_id: number | null }) {
-  const lines = await linesOf(gymId, Number(set.id), 'ps.owner_member_id');
+/** One Membership Plan of the version, as the Members App's *My Plans* draws it (#2663). */
+export interface MemberProductSetPlan {
+  plan_snapshot_id: number;
+  membership_plan_id: number | null;
+  plan_name: string | null;
+  plan_description: string | null;
+  change: 'added' | 'inherited';
+  /** The assignment's own lifecycle status, else the version's status for a plan no assignment holds yet. */
+  status: string;
+  entitlement_only: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  membership_fee: number | null;
+  discount_reason: string | null;
+  beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
+  benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number }[];
+}
+
+/**
+ * #2663 — who is reading: the version's owner reads every plan and every line;
+ * a covered family member reads only the plans they are a beneficiary of and the
+ * lines that are theirs (assigned to them) or the family's (`sharing_type =
+ * 'shared'`), so another member's Individual Product is never exposed.
+ */
+export interface MemberProductSetViewer { memberId: number; ownerMemberId: number }
+
+export async function loadMemberProductSetView(
+  gymId: string,
+  set: { id: number; status: string; previous_product_set_id: number | null; user_membership_id?: number | null },
+  viewer?: MemberProductSetViewer,
+) {
+  const isOwnerView = !viewer || viewer.memberId === viewer.ownerMemberId;
+  const allLines = await linesOf(gymId, Number(set.id), 'ps.owner_member_id');
+  const lines = isOwnerView ? allLines : allLines.filter((r) =>
+    r.sharing_type === 'shared' || Number(r.assigned_member_id) === viewer!.memberId);
   const previous = set.previous_product_set_id != null
     ? await linesOf(gymId, Number(set.previous_product_set_id), 'ps.owner_member_id') : [];
   const previousRefs = new Set(previous.map((r) => Number(r.line_ref)));
-  const currentRefs = new Set(lines.map((r) => Number(r.line_ref)));
+  const currentRefs = new Set(allLines.map((r) => Number(r.line_ref)));
 
   const promos = await loadRecurringLinePromotions(gymId, lines.map((r) => {
     const unit = Number(r.unit_price);
@@ -130,25 +166,88 @@ export async function loadMemberProductSetView(gymId: string, set: { id: number;
 
   // #2496 stage 4 — the version's Membership Plans, in link order: `added` for
   // a plan this Draft took (the Members App's Add Plan, removable), `inherited`
-  // for the plan the member already holds.
+  // for the plan the member already holds. #2663: with each plan's status,
+  // dates, fee, beneficiaries and included Products, all read off this
+  // version's own plan snapshot (and the assignment it names), so *My Plans*
+  // never reads a plan from another version. Entitlement-only links (#2659
+  // stage 3: a plan that cancels on its end date) are listed too, flagged.
   const { rows: planRows } = await db.query<any>(
-    `SELECT s.id AS plan_snapshot_id, s.membership_plan_id, mp.name AS plan_name,
-            ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS inherited
+    `SELECT s.id AS plan_snapshot_id, s.membership_plan_id, mp.name AS plan_name, mp.description AS plan_description,
+            ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS inherited, j.entitlement_only,
+            s.starts_at AS snapshot_starts_at, s.ends_at AS snapshot_ends_at,
+            s.membership_fee_price, s.discount_reason,
+            um.id AS user_membership_id, um.starts_at AS um_starts_at, um.ends_at AS um_ends_at,
+            CASE WHEN um.id IS NULL THEN NULL ELSE ${LIFECYCLE_STATUS_SQL} END AS lifecycle_status
        FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = ?
+       JOIN product_sets ps ON ps.id = j.product_set_id
+       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
-      WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id`, [gymId, Number(set.id)]);
+      WHERE j.product_set_id = ? ORDER BY j.entitlement_only, j.id`, [gymId, Number(set.id)]);
+  const snapshotIds = planRows.map((r) => Number(r.plan_snapshot_id));
+  const beneficiaries = new Map<number, MemberProductSetPlan['beneficiaries']>();
+  const benefits = new Map<number, MemberProductSetPlan['benefits']>();
+  if (snapshotIds.length > 0) {
+    const marks = snapshotIds.map(() => '?').join(',');
+    const { rows: bRows } = await db.query<any>(
+      `SELECT b.plan_snapshot_id, b.member_id, b.is_owner, m.name
+         FROM plan_snapshot_beneficiaries b LEFT JOIN members m ON m.id = b.member_id AND m.gym_id = b.gym_id
+        WHERE b.gym_id = ? AND b.plan_snapshot_id IN (${marks}) ORDER BY b.is_owner DESC, b.id`, [gymId, ...snapshotIds]);
+    for (const r of bRows) {
+      const list = beneficiaries.get(Number(r.plan_snapshot_id)) ?? [];
+      list.push({ member_id: Number(r.member_id), name: r.name ?? null, is_owner: Number(r.is_owner) === 1 });
+      beneficiaries.set(Number(r.plan_snapshot_id), list);
+    }
+    for (const category of PLAN_LINE_CATEGORIES) {
+      const { rows: lRows } = await db.query<any>(
+        `SELECT plan_snapshot_id, product_id, item_name, quantity, item_billing_frequency, unit_price
+           FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id IN (${marks}) ORDER BY item_name, id`,
+        [gymId, ...snapshotIds]);
+      for (const r of lRows) {
+        const list = benefits.get(Number(r.plan_snapshot_id)) ?? [];
+        list.push({
+          category, product_id: Number(r.product_id), name: r.item_name, quantity: Number(r.quantity) || 1,
+          billing_frequency: r.item_billing_frequency ?? null, unit_price: Number(r.unit_price),
+        });
+        benefits.set(Number(r.plan_snapshot_id), list);
+      }
+    }
+  }
+  // The fee of a plan the version bills now is the one resolver's (#635 stage 12);
+  // a Draft's or a pending version's plan is not charged yet, so it reads the
+  // regular fee frozen on its own snapshot rather than a running assignment's.
+  const pricedIds = set.status === 'active'
+    ? planRows.filter((r) => r.user_membership_id != null && Number(r.entitlement_only) === 0).map((r) => Number(r.user_membership_id))
+    : [];
+  const fees = pricedIds.length > 0 ? await currentMembershipFees(gymId, pricedIds) : new Map<number, number>();
+  const plans: MemberProductSetPlan[] = planRows
+    .map((r) => {
+      const umId = r.user_membership_id == null ? null : Number(r.user_membership_id);
+      const fee = umId != null && fees.has(umId) ? fees.get(umId)!
+        : r.membership_fee_price != null ? Number(r.membership_fee_price) : null;
+      return {
+        plan_snapshot_id: Number(r.plan_snapshot_id),
+        membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
+        plan_name: r.plan_name ?? null,
+        plan_description: r.plan_description ?? null,
+        change: Number(r.inherited) === 1 ? 'inherited' as const : 'added' as const,
+        status: r.lifecycle_status ?? String(set.status),
+        entitlement_only: Number(r.entitlement_only) === 1,
+        starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
+        ends_at: dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
+        membership_fee: fee == null ? null : round2(fee),
+        discount_reason: r.discount_reason ?? null,
+        beneficiaries: beneficiaries.get(Number(r.plan_snapshot_id)) ?? [],
+        benefits: benefits.get(Number(r.plan_snapshot_id)) ?? [],
+      };
+    })
+    .filter((p) => isOwnerView || p.beneficiaries.some((b) => b.member_id === viewer!.memberId));
 
   return {
     expires_in_seconds: expiresIn,
-    plans: planRows.map((r) => ({
-      plan_snapshot_id: Number(r.plan_snapshot_id),
-      membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
-      plan_name: r.plan_name ?? null,
-      change: Number(r.inherited) === 1 ? 'inherited' as const : 'added' as const,
-    })),
+    plans,
     lines: lines.map((r) => shapeLine(r, set.previous_product_set_id != null && previousRefs.has(Number(r.line_ref)) ? 'inherited' : 'added')),
-    removed_lines: previous
+    removed_lines: !isOwnerView ? [] : previous
       .filter((r) => !currentRefs.has(Number(r.line_ref)))
       .map((r) => ({
         line_ref: Number(r.line_ref),

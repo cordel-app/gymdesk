@@ -412,7 +412,7 @@
     "plan_no_image": "Sin imagen",
     "plan_ov_include": "Incluir",
     "plan_benefits_heading": "Elementos incluidos",
-    "my_plans_heading": "Mis planes de membresía",
+    "my_plans_heading": "Mis planes",
     "choose_plan": "Elegir este plan",
     "choose_plan_title": "Confirma tu plan",
     "choose_plan_body": "Estás eligiendo {name}. Tu primer pago será de {price}. Introducirás tu tarjeta en la página de pago segura de tu gimnasio.",
@@ -433,7 +433,7 @@
     "product_package_price": "Precio total del paquete",
     "product_tax_included": "Impuestos incluidos",
     "product_buy": "Comprar",
-    "own_products_heading": "Mis productos",
+    "own_products_heading": "Mis compras",
     "product_end_date": "Válido hasta {date}",
     "product_pay": "Pagar",
     "product_state_cancelled": "Cancelado",
@@ -522,7 +522,19 @@
     "plan_in_draft": "En tu selección",
     "plan_remove_from_draft": "Quitar",
     "draft_error_has_plan": "Tu selección ya incluye un plan.",
-    "draft_error_plan_via_gym": "Para cambiar tu plan, contacta con tu gimnasio."
+    "draft_error_plan_via_gym": "Para cambiar tu plan, contacta con tu gimnasio.",
+    "my_plans_empty": "No tienes planes en tus productos actuales.",
+    "set_products_heading": "Mis productos",
+    "set_products_empty": "No tienes productos en tus productos actuales.",
+    "plan_for": "Para {names}",
+    "plan_entitlement_only": "Hasta su fecha de fin",
+    "set_status": {
+      "draft": "Borrador",
+      "pending_payment": "Pendiente de pago",
+      "active": "Activo",
+      "superseded": "Sustituido"
+    },
+    "set_status_label": "Estado"
   },
   "payments": {
     "title": "Pagos",
