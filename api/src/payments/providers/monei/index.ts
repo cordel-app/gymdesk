@@ -6,6 +6,8 @@ import type {
   WebhookPayload,
   ExecuteRecurringParams,
   ExecuteRecurringResult,
+  RefundPaymentParams,
+  RefundPaymentResult,
 } from '../../types';
 import { MoneiClient } from './client';
 import { chargePayload, verifyAndParseWebhook } from './webhook';
@@ -93,6 +95,25 @@ export class MoneiProvider implements PaymentProvider {
 
   async getPaymentStatus(providerRef: string): Promise<WebhookPayload> {
     return chargePayload(await this.client.getPayment(providerRef));
+  }
+
+  /**
+   * #2480: MONEI refunds a captured payment by its id, with the amount in
+   * cents; the answer is the payment itself, whose status reads `REFUNDED` or
+   * `PARTIALLY_REFUNDED` once the money is on its way back. The refund has no
+   * id of its own, so the payment id is the reference kept for it.
+   */
+  async refundPayment(params: RefundPaymentParams): Promise<RefundPaymentResult> {
+    const payment = await this.client.refundPayment(params.providerRef, {
+      amount: params.amount,
+      refundReason: 'requested_by_customer',
+    });
+    return {
+      providerStatus: typeof payment.status === 'string' ? payment.status : null,
+      providerRefundRef: payment.id ?? params.providerRef,
+      errorCode: payment.statusCode ?? null,
+      errorMessage: payment.statusMessage ?? null,
+    };
   }
 
   async executeRecurring(params: ExecuteRecurringParams): Promise<ExecuteRecurringResult> {

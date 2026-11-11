@@ -631,6 +631,37 @@ a `completed` transaction. There is no status column.
 >   `requireModuleWrite('PAYMENTS')`.
 > - **Poll every 60 s.** The number changes about once a night.
 
+#### Cancel and Refund (#2480)
+
+| | `POST …/:id/cancel` | `POST …/:id/refund` |
+|---|---|---|
+| Gate | `requireModuleWrite('PAYMENTS')` | `requireRole('admin')` + flag `payments.billing_events.refund` + PAYMENTS write |
+| Offered when | derived status `pending` (`can_cancel`) | status `paid`, a collected attempt with refundable balance (`can_refund`) |
+| Writes | `billing_events.cancelled_at`/`cancelled_by`; open attempts → `expired` | a new `payment_requests` row, `transaction_type 'refund'`, `refund_of_payment_request_id` → the collected attempt, `billing_event_id` NULL; `payment_refund_lines` for a line refund |
+| Provider | none | Cash / Card terminal: none. Monei: `refundPayment()` → `POST /v1/payments/{id}/refund` with the amount in cents, **after** the refund row is committed |
+| Refused | not pending, already cancelled (409), a submitted attempt with no outcome (409) | nothing collected / nothing left (409), invalid amount or lines, a method the payment cannot use (400) |
+
+A refund's money rules: collected = the latest completed `payment` attempt with method
+`provider`/`cash`/`card_terminal`; refunded = completed **and pending** refunds (a pending
+Monei refund reserves its amount until reconciled); a failed refund releases it. A Monei
+answer of `REFUNDED`/`PARTIALLY_REFUNDED` completes the row (with `provider_status` and
+`provider_refund_ref`); an HTTP 4xx fails it; a transport error leaves it pending. The
+event's displayed payment status reads `refunded` / `partially_refunded` from completed
+refunds. Nothing else moves: the original attempt, the ledger row, its lines, a receipt
+or invoice, the attempt counter and every contracted item stay as they were (a rectifying
+invoice is the existing manual `POST /payments/invoices/:id/rectify`, never automatic).
+
+> **Decisions (#2480)** — change them here if they turn out wrong:
+> - **A refund carries no `billing_event_id`.** It reaches the event through the attempt it
+>   refunds, so the ~60 readers of "the event's latest attempt" need no change.
+> - **Cancel expires open attempts** rather than leaving them pending, so a stale link cannot
+>   pay a cancelled event; a payment that still completes reads `paid` (money wins).
+> - **Cancelling a first payment leaves the membership `pending_payment`** — cancelling the
+>   charge is not cancelling the plan.
+> - **Card terminal is a manual refund method** beside Cash; Monei is offered only for a
+>   provider payment with a `provider_ref`.
+> - **A pending Monei refund is not reconciled automatically** yet; it stays reserved.
+
 ### B8. `POST /billing/cleanup`
 
 `payment_requests` carries **two** deadlines and they are not interchangeable (#789,

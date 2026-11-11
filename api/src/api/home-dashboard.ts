@@ -124,6 +124,7 @@ async function loadPayments(gymId: string, day: UtcWindow) {
           WHERE be.gym_id = ?
             AND be.event_type NOT IN ('product_purchase', 'card_verification')
             AND be.is_scheduled = 0
+            AND be.cancelled_at IS NULL
             AND (be.event_type = 'failed_billing'
                  OR EXISTS (SELECT 1 FROM payment_requests pf
                              WHERE pf.billing_event_id = be.id AND pf.status IN ('failed', 'expired'))

@@ -3,7 +3,12 @@ import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } f
 import { Router } from 'express';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
-import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
+import type { Request } from 'express';
+import { isFeatureEnabled, requireFeatureEnabled } from '../infra/featureFlags';
+import {
+  cancelBillingEvent, loadRefundOptions, loadRefundSummaries, refundBillingEvent,
+} from './billing-event-refunds';
 import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -20,6 +25,7 @@ import {
   isReceiptableEvent,
   paymentActionsFor,
   receiptRefusalReason,
+  canCancelBillingEvent,
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment, waiveBillingEvent } from '../domain/billingEventPayments';
@@ -70,6 +76,24 @@ const LIST_SELECT = `
 `;
 
 export const paymentsRouter = Router();
+
+/** #2480: the Refund feature flag. Refunds are also the gym `admin` role's alone. */
+export const REFUND_FEATURE_KEY = 'payments.billing_events.refund';
+
+/** Whether this caller may refund at all: `requireRole('admin')` + the flag, as the routes enforce. */
+async function callerMayRefund(req: Request): Promise<boolean> {
+  const ctx = getTenantContext(req);
+  if (ctx.role !== 'admin') return false;
+  if (ctx.isSuperadmin && !ctx.impersonatedUserId) return true;
+  return isFeatureEnabled(REFUND_FEATURE_KEY);
+}
+
+/** #2480: a refund shows in the payment status column as the provider's own vocabulary does. */
+function withRefundState(normalized: string | null, refundState: string | undefined): string | null {
+  if (refundState === 'full') return 'refunded';
+  if (refundState === 'partial') return 'partially_refunded';
+  return normalized;
+}
 
 paymentsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -305,6 +329,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       event_billing_date: Date | string | null; is_scheduled: number | boolean;
       from_product_set: number | boolean;
       latest_provider_status: string | null;
+      cancelled_at: Date | null;
+      attempt_count: number | string | null;
+      payment_method_name: string | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
               ps_um.id AS user_membership_id,
@@ -312,6 +339,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
+              be.cancelled_at, be.attempt_count,
+              (SELECT pr.payment_method_name FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name,
               ps_um.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
@@ -355,6 +386,16 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       can_waive: boolean;
       /** #1459: a first payment settles through `POST /user-memberships/:id/record-payment`. */
       first_payment: boolean;
+      /** #2480: the latest attempt's payment method snapshot (never the live catalogue). */
+      payment_method_name: string | null;
+      /** #2480: `billing_events.attempt_count`, the authoritative total. */
+      attempt_count: number;
+      cancelled_at: string | null;
+      can_cancel: boolean;
+      can_refund: boolean;
+      refunded_amount: string | null;
+      refundable_amount: string | null;
+      refund_state: string | null;
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -364,9 +405,13 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     // is the ProductSet's next scheduled event, read off the ledger.
     const derivedByUm = await loadDerivedBilling(
       gymId, realRows.map((r) => Number(r.user_membership_id)).filter((n) => Number.isInteger(n) && n > 0));
+    const mayRefund = await callerMayRefund(req);
+    const refundsByEvent = await loadRefundSummaries(gymId, realRows.map((r) => Number(r.id)));
     const past: BillingEventRow[] = realRows.map((r) => {
       const scheduledEvent = Number(r.is_scheduled) === 1;
-      const status = scheduledEvent ? 'scheduled' : deriveBillingEventStatus(r.event_type, r.latest_tx_status);
+      const cancelled = r.cancelled_at != null;
+      const status = scheduledEvent ? 'scheduled' : deriveBillingEventStatus(r.event_type, r.latest_tx_status, cancelled);
+      const refund = refundsByEvent.get(Number(r.id));
       return {
         id: r.id,
         type: 'real' as const,
@@ -379,16 +424,24 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
         next_payment_date: r.membership_status === 'active' ? (derivedByUm.get(Number(r.user_membership_id))?.next_billing_date ?? null) : null,
-        normalized_payment_status: normalizePaymentStatus(r.latest_provider_status),
+        normalized_payment_status: withRefundState(normalizePaymentStatus(r.latest_provider_status), refund?.refund_state),
         amount: r.amount,
         event_type: r.event_type,
         status,
         currency: r.currency,
+        payment_method_name: r.payment_method_name ?? null,
+        attempt_count: Number(r.attempt_count ?? 0),
+        cancelled_at: r.cancelled_at ? new Date(r.cancelled_at).toISOString() : null,
+        can_cancel: canCancelBillingEvent(status),
+        can_refund: mayRefund && status === 'paid' && refund != null && Number(refund.refundable_amount) > 0,
+        refunded_amount: refund?.refunded_amount ?? null,
+        refundable_amount: refund?.refundable_amount ?? null,
+        refund_state: refund?.refund_state ?? null,
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         ...(() => {
           const a = paymentActionsFor({
-            status: deriveBillingEventStatus(r.event_type, r.latest_tx_status),
+            status: deriveBillingEventStatus(r.event_type, r.latest_tx_status, cancelled),
             eventType: r.event_type,
             scheduledAndDue: scheduledEvent
               && (toDateOnly(r.event_billing_date) as string) <= new Date().toISOString().slice(0, 10),
@@ -462,6 +515,7 @@ export async function loadFailedPaymentsAttention(gymId: string, memberId?: numb
            FROM billing_events be
           WHERE be.gym_id = ?${memberId === undefined ? '' : ' AND be.member_id = ?'}
             AND be.event_type NOT IN ('product_purchase', 'card_verification')
+            AND be.cancelled_at IS NULL
             AND (be.event_type = 'failed_billing'
                  OR EXISTS (SELECT 1 FROM payment_requests pf
                              WHERE pf.billing_event_id = be.id
@@ -514,6 +568,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
       `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
               pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
               pr.attempt, pr.provider_status, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
+              pr.transaction_type, pr.refund_of_payment_request_id, pr.provider_refund_ref,
               pr.created_by, pr.modified_at, pr.modified_by,
               m.name AS member_name,
               mp.name AS plan_name,
@@ -523,9 +578,13 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
        LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
        LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
-       WHERE pr.billing_event_id = ? AND pr.gym_id = ?
-       ORDER BY pr.created_at DESC`,
-      [billingEventId, gymId],
+       WHERE pr.gym_id = ?
+         AND (pr.billing_event_id = ?
+              -- #2480: a refund reaches its event through the attempt it returns money from.
+              OR pr.refund_of_payment_request_id IN (
+                   SELECT o.id FROM payment_requests o WHERE o.billing_event_id = ? AND o.gym_id = ?))
+       ORDER BY pr.created_at DESC, pr.id DESC`,
+      [gymId, billingEventId, billingEventId, gymId],
     );
     res.json({ items: rows.map((r: any) => ({ ...r, normalized_payment_status: normalizePaymentStatus(r.provider_status) })) });
   } catch (err) {
@@ -553,6 +612,10 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
               be.modified_at, be.modified_by,
+              be.cancelled_at, be.cancelled_by, be.attempt_count,
+              (SELECT pr.payment_method_name FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name,
               ct.code AS charge_type_code,
               m.name AS member_name,
               mp.name AS plan_name,
@@ -577,7 +640,9 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
     const ev = rows[0];
 
-    const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
+    const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status, ev.cancelled_at != null);
+    const refund = (await loadRefundSummaries(gymId, [billingEventId])).get(billingEventId);
+    const mayRefund = await callerMayRefund(req);
     const actions = paymentActionsFor({
       status, eventType: ev.event_type, scheduledAndDue: false,
       linked: ev.product_set_id != null, membershipStatus: ev.membership_status,
@@ -609,7 +674,16 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       currency: 'EUR',
       status,
       payment_status: ev.latest_provider_status ?? null,
-      normalized_payment_status: normalizePaymentStatus(ev.latest_provider_status),
+      normalized_payment_status: withRefundState(normalizePaymentStatus(ev.latest_provider_status), refund?.refund_state),
+      payment_method_name: ev.payment_method_name ?? null,
+      attempt_count: Number(ev.attempt_count ?? 0),
+      cancelled_at: ev.cancelled_at ? new Date(ev.cancelled_at).toISOString() : null,
+      cancelled_by: auditActorField(ev.cancelled_by),
+      can_cancel: canCancelBillingEvent(status),
+      can_refund: mayRefund && status === 'paid' && refund != null && Number(refund.refundable_amount) > 0,
+      refunded_amount: refund?.refunded_amount ?? null,
+      refundable_amount: refund?.refundable_amount ?? null,
+      refund_state: refund?.refund_state ?? null,
       event_type: ev.event_type,
       charge_type_code: ev.charge_type_code,
       source: ev.source,
@@ -753,6 +827,83 @@ paymentsRouter.post('/billing-events/:id/waive', requireModuleWrite('PAYMENTS'),
         waived_amount: result.waived_amount,
         reason: result.reason,
         payment_request_id: result.payment_request_id,
+      },
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/cancel — #2480. Cancels a `pending` Billing
+ * Event (stamps `cancelled_at`, expires its open attempts; nothing is deleted).
+ * Any other status, or a payment still being processed, is a 409.
+ */
+paymentsRouter.post('/billing-events/:id/cancel', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const outcome = await cancelBillingEvent(gymId, billingEventId, resolveRequestActor(getTenantContext(req)));
+    if ('failure' in outcome) return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    const { result } = outcome;
+    recordAudit(req, {
+      action: 'cancel_billing_event',
+      entityType: 'billing_event',
+      entityId: result.billing_event_id,
+      previous: { status: result.previous_status },
+      next: { status: result.new_status, expired_attempts: result.expired_attempts },
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /payments/billing-events/:id/refund-options — #2480. What the Refund
+ * modal offers: the collected, refunded and refundable amounts, the event's
+ * lines with what each may still return, and the refund methods. Admin only,
+ * behind the Refund feature flag.
+ */
+paymentsRouter.get('/billing-events/:id/refund-options', requireRole('admin'), requireFeatureEnabled(REFUND_FEATURE_KEY), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const outcome = await loadRefundOptions(gymId, billingEventId);
+    if ('failure' in outcome) return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    res.json(outcome.result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/refund — #2480. Body:
+ * `{ kind: 'full' | 'lines' | 'adhoc', method: 'cash' | 'card_terminal' | 'provider', amount?, line_ids? }`.
+ * Writes a new refund Payment Transaction; never edits the original payment,
+ * the ledger row, a receipt or invoice, or any contracted item. Admin only,
+ * behind the Refund feature flag.
+ */
+paymentsRouter.post('/billing-events/:id/refund', requireRole('admin'), requireFeatureEnabled(REFUND_FEATURE_KEY), requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const outcome = await refundBillingEvent(gymId, billingEventId, req.body ?? {}, resolveRequestActor(getTenantContext(req)));
+    if ('failure' in outcome) return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    const { result } = outcome;
+    recordAudit(req, {
+      action: 'refund_payment',
+      entityType: 'billing_event',
+      entityId: result.billing_event_id,
+      previous: null,
+      next: {
+        refund_payment_request_id: result.refund_payment_request_id,
+        kind: result.kind, method: result.method, amount: result.amount, status: result.status,
+        provider_status: result.provider_status, refund_state: result.balance.refund_state,
       },
     });
     res.status(201).json(result);

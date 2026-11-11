@@ -59,6 +59,24 @@ const REQUIRED_KEYS = [
   'col_tx_source',
   'col_tx_attempt',
   'col_tx_reason',
+  'status_cancelled',
+  'header_member',
+  'header_method',
+  'header_attempts',
+  'action_refund',
+  'action_cancel_event',
+  'cancel_modal_title',
+  'cancel_modal_body',
+  'refund_modal_title',
+  'refund_kind_full',
+  'refund_kind_lines',
+  'refund_kind_adhoc',
+  'refund_method',
+  'refund_selected_total',
+  'refund_final_amount',
+  'refund_success',
+  'refund_pending',
+  'tx_refund',
 ] as const;
 
 describe('Billing Events payment actions (#640)', () => {
@@ -74,9 +92,27 @@ describe('Billing Events payment actions (#640)', () => {
     }
   });
 
-  it('has no separate Cancel action in the payment menu (#1459 §2)', () => {
-    const menu = pageSrc.slice(pageSrc.indexOf('function menuItems('), pageSrc.indexOf('return (\n    <div>'));
-    expect(menu).not.toMatch(/action_cancel|cancel_payment/);
+  it('offers Cancel (the event, #2480) and Refund only on the API flags, never as a dismissal (#1459 §2)', () => {
+    expect(pageSrc).toContain('if (row.can_cancel) {');
+    expect(pageSrc).toContain('if (row.can_refund) {');
+    // Cancelling is a backend action behind a confirmation, not a closed modal.
+    expect(pageSrc).toContain('`/payments/billing-events/${id}/cancel`');
+    expect(pageSrc).toContain('<ConfirmDialog');
+    expect(pageSrc).not.toMatch(/cancel_payment/);
+  });
+
+  it('shows Member, Payment method and Attempts in the header from the API fields', () => {
+    expect(pageSrc).toContain('row.payment_method_name');
+    expect(pageSrc).toContain('row.attempt_count');
+    expect(pageSrc).toContain("t('billing_events_page.header_attempts')");
+  });
+
+  it('records a refund only from the modal\'s Accept', () => {
+    const modal = readFileSync(join(PAGE, '..', 'RefundModal.tsx'), 'utf-8');
+    expect(modal).toContain('async function accept()');
+    expect(modal).toContain('`/payments/billing-events/${billingEventId}/refund`');
+    expect(modal.match(/method: 'POST'/g)).toHaveLength(1);
+    expect(modal).toContain('refundRequestBody(kind, method, selected, adhoc)');
   });
 
   it('confirms cash, card and waive in a modal that sends nothing until Accept', () => {
