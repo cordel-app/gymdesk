@@ -354,7 +354,7 @@ The API runs no scheduler of its own: every recurring job is a scheduled GitHub 
 |---|---|---|
 | `billing-run.yml` | Daily at 06:00, second attempt at 10:00 | 1. `/billing/run` — charges the due Billing Events<br>2. `/billing/cleanup` — expires stale, abandoned payment requests<br>3. `/promotion-lifecycle/run` — moves Promotions past their End Date to `expired`<br>4. `/plan-allowance-renewals/run` — renews plan-included sessions |
 | `recurring-booking-run.yml` | Daily at 03:00 | `/recurring-bookings/run` — advances the rolling 2-month recurring-booking window |
-| `booking-reminder-run.yml` | Every 15 minutes | `/booking-reminders/run` — sends the 2-hour training reminder |
+| `booking-reminder-run.yml` | Every 15 minutes | `/booking-reminders/run` — sends the 2-hour training reminder; the same pass converts started reservations (#2604) and discards ProductSet Drafts idle past two hours (`expireDrafts()`, #2477 stage 2, reported as `drafts_expired`) |
 | `codeql.yml` | Mondays at 08:00 | None — CodeQL security analysis of the code |
 
 The 10:00 billing attempt is a safety net: once today's run has completed, `/billing/run` answers `200` with `skipped_reason: 'already_completed_today'` (#780) and charges nothing again. Workflows triggered only by hand (`workflow_dispatch`) have no schedule and are not listed here.
