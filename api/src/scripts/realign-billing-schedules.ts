@@ -13,7 +13,7 @@
  * a second run finds every anchor on its grid and changes nothing.
  *
  * #2125 M5c-2: it also consolidates a chain's schedules that are one schedule
- * (`consolidateChainSchedules()`); an event that cannot be merged (a past or
+ * (`consolidateSetOwnerSchedules()`); an event that cannot be merged (a past or
  * attempted one colliding with the target's for the same period) is listed and
  * left on its own schedule, never deleted or duplicated.
  *
@@ -22,10 +22,10 @@
  */
 import 'dotenv/config';
 import { db } from '../infra/db';
-import { realignOwnerSchedules, type ChainRealignment } from '../api/schedule-realignment';
+import { realignOwnerSchedules, type OwnerRealignment } from '../api/schedule-realignment';
 
 class DryRunRollback extends Error {
-  constructor(readonly result: ChainRealignment) { super('dry run'); }
+  constructor(readonly result: OwnerRealignment) { super('dry run'); }
 }
 
 async function main(): Promise<void> {
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   let moved = 0, deleted = 0, created = 0, failed = 0, merged = 0;
   const kept: number[] = [];
   for (const chain of chains) {
-    let result: ChainRealignment | null = null;
+    let result: OwnerRealignment | null = null;
     try {
       result = await db.transaction(async (tx) => {
         const r = await realignOwnerSchedules(tx, { gymId: String(chain.gym_id), ownerMemberId: Number(chain.owner), today });

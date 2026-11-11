@@ -29,7 +29,7 @@ import { materialiseScheduledEvents } from './product-set-configuration';
  *
  * #2125 M5c-2 — then the chain's schedules that are one schedule (the same
  * cadence on one billing calendar, `domain/scheduleConsolidation.ts`) are
- * consolidated into one (`consolidateChainSchedules()`), before the generator
+ * consolidated into one (`consolidateSetOwnerSchedules()`), before the generator
  * runs, so the regenerated obligations land on the one schedule left.
  */
 export interface ScheduleRealignment {
@@ -41,10 +41,9 @@ export interface ScheduleRealignment {
   keptAttempted: number[];
 }
 
-export interface ChainRealignment {
+export interface OwnerRealignment {
   gymId: string;
-  /** #2125 M5c-3: the run is per owner; the root is the one asked about (or the owner's lowest). */
-  rootProductSetId: number;
+  /** #2125 M5c-3: the run is per owner. */
   ownerMemberId: number;
   activeProductSetId: number | null;
   schedules: ScheduleRealignment[];
@@ -73,15 +72,15 @@ const SCHEDULED_SNAPSHOT_TABLES = [
 const toDateOnly = (v: unknown): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 
-export async function realignChainSchedules(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; today: string;
-}): Promise<ChainRealignment> {
+/** The realignment of the schedules of the member who owns `productSetId` (any of their Product Sets). */
+export async function realignSetOwnerSchedules(tx: Tx, input: {
+  gymId: string; productSetId: number; today: string;
+}): Promise<OwnerRealignment> {
   const { rows } = await tx.query<{ owner_member_id: number }>(
-    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.rootProductSetId, input.gymId]);
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, input.gymId]);
   if (!rows[0]) throw new Error('ProductSet not found');
   return realignOwnerSchedules(tx, {
     gymId: input.gymId, ownerMemberId: Number(rows[0].owner_member_id), today: input.today,
-    rootProductSetId: input.rootProductSetId,
   });
 }
 
@@ -92,22 +91,19 @@ export async function realignChainSchedules(tx: Tx, input: {
  * one chain's are. The owner's Active version (at most one) is regenerated.
  */
 export async function realignOwnerSchedules(tx: Tx, input: {
-  gymId: string; ownerMemberId: number; today: string; rootProductSetId?: number;
-}): Promise<ChainRealignment> {
+  gymId: string; ownerMemberId: number; today: string;
+}): Promise<OwnerRealignment> {
   const { gymId, ownerMemberId, today } = input;
-  const { rows: active } = await tx.query<{ id: number; root_product_set_id: number }>(
-    `SELECT id, root_product_set_id FROM product_sets
+  const { rows: active } = await tx.query<{ id: number }>(
+    `SELECT id FROM product_sets
       WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' FOR UPDATE`,
     [gymId, ownerMemberId]);
   const { rows: schedules } = await tx.query<any>(
-    `SELECT id, root_product_set_id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
+    `SELECT id, anchor_date, cadence_interval, cadence_unit FROM product_set_schedules
       WHERE gym_id = ? AND owner_member_id = ? ORDER BY id FOR UPDATE`,
     [gymId, ownerMemberId]);
-  const rootProductSetId = input.rootProductSetId
-    ?? (active[0] ? Number(active[0].root_product_set_id) : Number(schedules[0]?.root_product_set_id ?? 0));
-
-  const out: ChainRealignment = {
-    gymId, rootProductSetId, ownerMemberId,
+  const out: OwnerRealignment = {
+    gymId, ownerMemberId,
     activeProductSetId: active[0] ? Number(active[0].id) : null,
     schedules: [], createdEvents: 0, consolidations: [],
   };
@@ -149,7 +145,7 @@ export async function realignOwnerSchedules(tx: Tx, input: {
 }
 
 /**
- * #2125 M5c-2 — folds the chain's schedules that are one schedule into one
+ * #2125 M5c-2 — folds the owner's schedules that are one schedule into one
  * (`consolidationGroups()`), each event handled by `classifyMergedEvent()`.
  * Every snapshot line billing on a merged schedule moves to the target (a
  * re-pointing that changes no configuration: the two bill on the same dates),
@@ -160,11 +156,11 @@ export async function realignOwnerSchedules(tx: Tx, input: {
  * second run finds no group, or only a schedule kept for its history, which it
  * leaves as it is.
  */
-export async function consolidateChainSchedules(tx: Tx, input: {
-  gymId: string; rootProductSetId: number; today: string;
+export async function consolidateSetOwnerSchedules(tx: Tx, input: {
+  gymId: string; productSetId: number; today: string;
 }): Promise<ScheduleConsolidation[]> {
   const { rows } = await tx.query<{ owner_member_id: number }>(
-    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.rootProductSetId, input.gymId]);
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, input.gymId]);
   if (!rows[0]) return [];
   return consolidateOwnerSchedules(tx, {
     gymId: input.gymId, ownerMemberId: Number(rows[0].owner_member_id), today: input.today });

@@ -45,8 +45,7 @@ export interface TableReference {
 
 /**
  * The references that make an uncascaded delete unsafe: a row elsewhere still
- * points at the table being emptied. The table's own self-reference (a version
- * chain's `root_product_set_id`) is fine — those rows go in the same statement.
+ * points at the table being emptied. The table's own self-reference (`previous_product_set_id`) is fine — those rows go in the same statement.
  */
 export function blockingReferences(
   target: string,

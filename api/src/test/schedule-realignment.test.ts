@@ -12,7 +12,7 @@ import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
-import { realignChainSchedules } from '../api/schedule-realignment';
+import { realignSetOwnerSchedules } from '../api/schedule-realignment';
 
 let gymId: string;
 const actor = { name: 'Test', type: 'staff' };
@@ -47,7 +47,7 @@ async function legacyChain() {
     return d.productSet.id;
   });
   // What a schedule created before M5c looks like: anchored on the plan's own start date.
-  await db.query('UPDATE product_set_schedules SET anchor_date = ? WHERE root_product_set_id = ?', [START, setId]);
+  await db.query('UPDATE product_set_schedules SET anchor_date = ? WHERE opened_by_product_set_id = ?', [START, setId]);
   const act = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: setId, today: TODAY }));
   expect(act.kind).toBe('ok');
   return { setId, memberId };
@@ -70,8 +70,8 @@ async function attempt(eventId: number, memberId: number) {
     [gymId, memberId, eventId]);
 }
 
-const realign = (rootProductSetId: number) =>
-  db.transaction((tx) => realignChainSchedules(tx, { gymId, rootProductSetId, today: TODAY }));
+const realign = (productSetId: number) =>
+  db.transaction((tx) => realignSetOwnerSchedules(tx, { gymId, productSetId, today: TODAY }));
 
 beforeAll(async () => { gymId = await createTestGym('Schedule realignment gym'); });
 afterAll(async () => {
@@ -98,7 +98,7 @@ describe('realigning an existing monthly schedule onto the 1st (#2125 M5c)', () 
     expect(result.schedules[0].deletedEvents).toBe(future.length - 1);
     expect(result.createdEvents).toBeGreaterThan(0);
 
-    const { rows: sch } = await db.query<any>('SELECT anchor_date FROM product_set_schedules WHERE root_product_set_id = ?', [setId]);
+    const { rows: sch } = await db.query<any>('SELECT anchor_date FROM product_set_schedules WHERE opened_by_product_set_id = ?', [setId]);
     expect(iso(sch[0].anchor_date)).toBe(`${START.slice(0, 8)}01`);
 
     const after = await events(setId);
@@ -127,7 +127,7 @@ describe('realigning an existing monthly schedule onto the 1st (#2125 M5c)', () 
     const { setId, memberId } = await legacyChain();
     const otherAnchor = day(-20).endsWith('-01') ? day(-21) : day(-20);
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, otherAnchor, setId]);
     const { insertId: orphan } = await db.query(
       `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,
@@ -140,7 +140,7 @@ describe('realigning an existing monthly schedule onto the 1st (#2125 M5c)', () 
     const { rows } = await db.query('SELECT id FROM billing_events WHERE id = ?', [orphan]);
     expect(rows).toHaveLength(0);
     expect(result.consolidations).toEqual([expect.objectContaining({ mergedScheduleId: s1, removed: true, keptEvents: [] })]);
-    const { rows: left } = await db.query<any>('SELECT schedule_key FROM product_set_schedules WHERE root_product_set_id = ?', [setId]);
+    const { rows: left } = await db.query<any>('SELECT schedule_key FROM product_set_schedules WHERE opened_by_product_set_id = ?', [setId]);
     expect(left.map((r: any) => r.schedule_key)).toEqual(['plan']);
   });
 });
@@ -159,7 +159,7 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
     const { setId, memberId } = await legacyChain();
     await realign(setId); // the plan schedule is now on the 1st, its future obligations regenerated
     const { rows: planRows } = await db.query<any>(
-      `SELECT id FROM product_set_schedules WHERE root_product_set_id = ? AND schedule_key = 'plan'`, [setId]);
+      `SELECT id FROM product_set_schedules WHERE opened_by_product_set_id = ? AND schedule_key = 'plan'`, [setId]);
     const plan = Number(planRows[0].id);
     const planFuture = (await events(setId)).filter((e) => e.schedule_id === plan && e.billing_date > TODAY);
     expect(planFuture.length).toBeGreaterThanOrEqual(2);
@@ -169,7 +169,7 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
 
     // A second monthly schedule on the same grid, with one event of each kind.
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, `${START.slice(0, 8)}01`, setId]);
     const pastCollision = await insertEvent(setId, memberId, s1, past);
     const regen = await insertEvent(setId, memberId, s1, d1);
@@ -228,12 +228,12 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
       return d.productSet.id;
     });
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        SELECT ?, ?, owner_member_id, 's1', ?, 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, `${day(-60).slice(0, 8)}01`, setId]);
     await db.transaction((tx) => snapshotProductSetFromPlan(tx, {
       gymId, productSetId: setId, membershipPlanId: planId, membershipFeePrice: 20, startsAt: TODAY }));
 
-    const { rows } = await db.query<any>('SELECT id, schedule_key FROM product_set_schedules WHERE root_product_set_id = ?', [setId]);
+    const { rows } = await db.query<any>('SELECT id, schedule_key FROM product_set_schedules WHERE opened_by_product_set_id = ?', [setId]);
     expect(rows.map((r: any) => [Number(r.id), r.schedule_key])).toEqual([[s1, 'plan']]);
   });
 });

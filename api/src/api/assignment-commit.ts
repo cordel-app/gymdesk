@@ -121,23 +121,26 @@ async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member
 
 /**
  * "Add" (#2125 stage 13): finds the owner's active version and the Draft this assignment is linked
- * to — both in one chain — and merges the first into the second. `false` when the shape is not that
+ * to — the Draft a successor of the owner's history — and merges the first into the second. `false` when the shape is not that
  * (no Draft, a Draft outside the owner's chain, no active plan version): the caller refuses the add.
  */
 async function mergeOwnerVersionForAdd(
   tx: Tx, gymId: string, row: { id: number; member_id: number }, excludeUserMembershipIds: readonly number[] = [],
 ): Promise<boolean> {
   const { rows: drafts } = await tx.query<any>(
-    `SELECT id, root_product_set_id FROM product_sets
+    `SELECT id, owner_member_id, previous_product_set_id FROM product_sets
       WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment')
       ORDER BY id DESC LIMIT 1 FOR UPDATE`,
     [gymId, row.id]);
   const { rows: actives } = await tx.query<any>(
-    `SELECT id, root_product_set_id FROM product_sets
+    `SELECT id FROM product_sets
       WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' AND membership_plan_id IS NOT NULL FOR UPDATE`,
     [gymId, row.member_id]);
   const draft = drafts[0]; const active = actives[0];
-  if (!draft || !active || Number(draft.root_product_set_id) !== Number(active.root_product_set_id)) return false;
+  // #2125 M5d-2: "in the owner's chain" is the Draft's own history — it was opened as the successor of
+  // the owner's Active set (`previous_product_set_id`), which only its own activation can supersede.
+  if (!draft || !active || Number(draft.owner_member_id) !== Number(row.member_id)
+    || draft.previous_product_set_id == null) return false;
   // A Save & Pay merges when it is submitted and the payment's commit comes back here: merging twice
   // would duplicate every plan, so a Draft that already carries inherited snapshots is left as it is.
   const { rows: merged } = await tx.query<any>(

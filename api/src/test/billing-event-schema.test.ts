@@ -27,9 +27,8 @@ beforeAll(async () => {
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'active', '2026-10-01')`,
     [gymId, memberId]);
   setId = s.insertId;
-  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
   const sch = await db.query(
-    `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+    `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
      SELECT ?, ?, owner_member_id, 'plan', '2026-10-01', 1, 'month' FROM product_sets WHERE id = ?`, [gymId, setId, setId]);
   scheduleId = sch.insertId;
 });
@@ -59,7 +58,7 @@ describe('billing_events ownership and schedule (#1325 PR 2a)', () => {
 
   it('deleting a schedule keeps the obligation; deleting its set removes it', async () => {
     const s2 = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        SELECT ?, ?, owner_member_id, 's1', '2026-10-05', 1, 'year' FROM product_sets WHERE id = ?`, [gymId, setId, setId]);
     const id = await newEvent({ schedule: s2.insertId, period: '2027-03-01' });
     await db.query('DELETE FROM product_set_schedules WHERE id = ?', [s2.insertId]);

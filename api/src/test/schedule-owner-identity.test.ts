@@ -49,10 +49,10 @@ const finish = (setId: number) => db.query(`UPDATE product_sets SET status = 'su
 
 async function schedulesOf(memberId: number) {
   const { rows } = await db.query<any>(
-    `SELECT id, root_product_set_id, schedule_key, cadence_interval, cadence_unit
+    `SELECT id, opened_by_product_set_id, schedule_key, cadence_interval, cadence_unit
        FROM product_set_schedules WHERE owner_member_id = ? ORDER BY id`, [memberId]);
   return rows.map((r: any) => ({
-    id: Number(r.id), root: Number(r.root_product_set_id), key: String(r.schedule_key),
+    id: Number(r.id), root: Number(r.opened_by_product_set_id), key: String(r.schedule_key),
     cadence: `${r.cadence_interval} ${r.cadence_unit}`,
   }));
 }
@@ -77,7 +77,7 @@ describe('a schedule is the owner\'s (#2125 M5c-3)', () => {
     const [s] = await schedulesOf(memberId);
     expect(s).toMatchObject({ root: setId, key: 'plan', cadence: '1 month' });
     await expect(db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        VALUES (?, ?, ?, 'plan', ?, 1, 'month')`, [gymId, setId, memberId, TODAY])).rejects.toThrow();
   });
 
@@ -118,7 +118,7 @@ describe('a schedule is the owner\'s (#2125 M5c-3)', () => {
     const second = await chainWithPlan(memberId, await plan(4, 'week'));
     // A monthly Product line the second chain opened: one schedule with the first chain's (re-keyed) plan schedule.
     const { insertId: s1 } = await db.query(
-      `INSERT INTO product_set_schedules (gym_id, root_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
+      `INSERT INTO product_set_schedules (gym_id, opened_by_product_set_id, owner_member_id, schedule_key, anchor_date, cadence_interval, cadence_unit)
        VALUES (?, ?, ?, 's1', ?, 1, 'month')`, [gymId, second, memberId, `${TODAY.slice(0, 8)}01`]);
     const firstSchedule = await planScheduleOf(first);
 
