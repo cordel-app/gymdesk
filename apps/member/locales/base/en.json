@@ -504,14 +504,19 @@
     "product_remove_from_draft": "Remove",
     "product_in_draft": "Added",
     "product_state_held": "In your products",
-    "draft_selection_count": "{count, plural, one {# product added to your selection.} other {# products added to your selection.}}",
+    "draft_selection_count": "{count, plural, one {# item added to your selection.} other {# items added to your selection.}}",
     "draft_expires_in": "Draft expires in",
     "draft_discard": "Discard selection",
     "draft_error_in_flight": "You already have a change awaiting payment. Complete or cancel it first.",
     "draft_error_locked": "A payment is still being processed. Please try again later.",
     "draft_error_duplicate": "This product was just added. Please wait a moment.",
     "draft_error_expired": "Your selection expired. Please add the product again.",
-    "draft_error_generic": "Your selection could not be updated. Please try again."
+    "draft_error_generic": "Your selection could not be updated. Please try again.",
+    "plan_add_to_draft": "Add to my selection",
+    "plan_in_draft": "In your selection",
+    "plan_remove_from_draft": "Remove",
+    "draft_error_has_plan": "Your selection already includes a plan.",
+    "draft_error_plan_via_gym": "To change your plan, please contact your gym."
   },
   "payments": {
     "title": "Payments",
