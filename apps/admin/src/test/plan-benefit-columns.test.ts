@@ -167,7 +167,7 @@ describe('#916: the read-only view renders from the declaration', () => {
     expect(componentSrc).toContain('const columns = productBenefitColumns({');
     expect(componentSrc).toContain('<col key={col.key}');
     expect(componentSrc).toContain("<th key={col.key} style={{ ...thSt, textAlign: col.align }}>{t(col.labelKey)}</th>");
-    expect(componentSrc).toContain('<td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>');
+    expect(componentSrc).toContain('<td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r, idx)}</td>');
   });
 
   it('fixes the layout, so a long item name cannot widen its column', () => {

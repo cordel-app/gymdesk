@@ -365,6 +365,7 @@ export function PromotionDetailModal({ promotion, onClose }: {
                 {(p.included_plans ?? []).map((plan) => <li key={plan.id}>{plan.name}</li>)}
               </ul>
             )}
+            <div style={grantTitleSt}>{t('promo_membership_fee_benefit')}</div>
             {p.membership_fee_benefits.length === 0 ? (
               <p style={dimSt}>{t('promo_no_membership_fee_benefit')}</p>
             ) : (
