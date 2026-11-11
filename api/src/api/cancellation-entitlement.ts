@@ -2,6 +2,7 @@ import type { Tx } from '../infra/db';
 import { BillingDateUnit } from '../domain/billingDate';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import { PaidPeriod, ScheduleCadence, paidThroughDate } from '../domain/cancellationEntitlement';
+import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 
 /**
  * #1196 — the SQL half of the cancellation entitlement: the paid periods of a
@@ -14,7 +15,7 @@ import { PaidPeriod, ScheduleCadence, paidThroughDate } from '../domain/cancella
 export async function loadPaidThrough(tx: Tx, gymId: string, rootProductSetId: number): Promise<string | null> {
   const { rows: sch } = await tx.query<any>(
     `SELECT id FROM product_set_schedules
-      WHERE root_product_set_id = ? AND schedule_key = ?`, [rootProductSetId, PLAN_SCHEDULE_KEY]);
+      WHERE ${scheduleOwnerOfSetSql()} AND schedule_key = ?`, [rootProductSetId, PLAN_SCHEDULE_KEY]);
   if (!sch[0]) return null;
   return loadPaidThroughForSchedule(tx, gymId, Number(sch[0].id));
 }

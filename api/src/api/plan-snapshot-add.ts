@@ -4,6 +4,7 @@ import { copyProductTargetApplications } from './product-set-bridge';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { toPlanDurationRepeats } from '../domain/planDuration';
+import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 
 /**
  * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan: a plan beyond the
@@ -53,7 +54,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
     const cadence = { interval: Number(plan.recurring_billing_interval), unit: plan.recurring_billing_unit } as const;
     const { rows: sched } = await tx.query<any>(
       `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-         FROM product_set_schedules WHERE root_product_set_id = ? ORDER BY id`, [rootId]);
+         FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [rootId]);
     const schedules: ExistingSchedule[] = sched.map((r: any) => ({
       id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
       cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },

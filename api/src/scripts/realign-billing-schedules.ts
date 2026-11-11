@@ -7,7 +7,7 @@
  *   npm run schedules:realign                 # dry run: every chain is realigned and rolled back
  *   npm run schedules:realign -- --execute    # commits
  *
- * One transaction per chain, so a chain that fails is reported and left exactly
+ * One transaction per owner (#2125 M5c-3; per chain before), so an owner that fails is reported and left exactly
  * as it was while the others proceed. Future obligations that already have a
  * payment attempt are kept and listed, never deleted or duplicated. Idempotent:
  * a second run finds every anchor on its grid and changes nothing.
@@ -22,7 +22,7 @@
  */
 import 'dotenv/config';
 import { db } from '../infra/db';
-import { realignChainSchedules, type ChainRealignment } from '../api/schedule-realignment';
+import { realignOwnerSchedules, type ChainRealignment } from '../api/schedule-realignment';
 
 class DryRunRollback extends Error {
   constructor(readonly result: ChainRealignment) { super('dry run'); }
@@ -31,8 +31,9 @@ class DryRunRollback extends Error {
 async function main(): Promise<void> {
   const execute = process.argv.slice(2).includes('--execute');
   const today = new Date().toISOString().slice(0, 10);
-  const { rows: chains } = await db.query<{ gym_id: string; root: number }>(
-    `SELECT DISTINCT gym_id, root_product_set_id AS root FROM product_set_schedules ORDER BY gym_id, root_product_set_id`);
+  // #2125 M5c-3: one transaction per owner, since a schedule is the owner's (`(owner, periodicity)`).
+  const { rows: chains } = await db.query<{ gym_id: string; owner: number }>(
+    `SELECT DISTINCT gym_id, owner_member_id AS owner FROM product_set_schedules ORDER BY gym_id, owner_member_id`);
 
   let moved = 0, deleted = 0, created = 0, failed = 0, merged = 0;
   const kept: number[] = [];
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
     let result: ChainRealignment | null = null;
     try {
       result = await db.transaction(async (tx) => {
-        const r = await realignChainSchedules(tx, { gymId: String(chain.gym_id), rootProductSetId: Number(chain.root), today });
+        const r = await realignOwnerSchedules(tx, { gymId: String(chain.gym_id), ownerMemberId: Number(chain.owner), today });
         if (!execute) throw new DryRunRollback(r);
         return r;
       });
@@ -48,28 +49,28 @@ async function main(): Promise<void> {
       if (err instanceof DryRunRollback) result = err.result;
       else {
         failed += 1;
-        console.error(`chain ${chain.root} (gym ${chain.gym_id}) FAILED, left unchanged:`, (err as Error).message);
+        console.error(`owner ${chain.owner} (gym ${chain.gym_id}) FAILED, left unchanged:`, (err as Error).message);
         continue;
       }
     }
     if (!result || (result.schedules.length === 0 && result.consolidations.length === 0)) continue;
     for (const s of result.schedules) {
       moved += 1; deleted += s.deletedEvents; kept.push(...s.keptAttempted);
-      console.log(`chain ${result.rootProductSetId} schedule ${s.scheduleId} (${s.cadence}): ${s.from} -> ${s.to}, `
+      console.log(`owner ${result.ownerMemberId} schedule ${s.scheduleId} (${s.cadence}): ${s.from} -> ${s.to}, `
         + `${s.deletedEvents} future event(s) removed${s.keptAttempted.length ? `, attempted kept: ${s.keptAttempted.join(',')}` : ''}`);
     }
     created += result.createdEvents;
-    if (result.activeProductSetId == null) console.log(`chain ${result.rootProductSetId}: no Active version, nothing regenerated`);
+    if (result.activeProductSetId == null) console.log(`owner ${result.ownerMemberId}: no Active version, nothing regenerated`);
     for (const c of result.consolidations) {
       merged += c.removed ? 1 : 0; kept.push(...c.keptEvents);
-      console.log(`chain ${result.rootProductSetId} schedule ${c.mergedScheduleId} -> ${c.targetScheduleId}: `
+      console.log(`owner ${result.ownerMemberId} schedule ${c.mergedScheduleId} -> ${c.targetScheduleId}: `
         + `${c.repointedEvents} event(s) moved, ${c.regeneratedEvents} colliding future event(s) regenerated`
         + (c.keptEvents.length ? `, NOT merged (past or attempted, kept on schedule ${c.mergedScheduleId}): ${c.keptEvents.join(',')}` : '')
         + (c.removed ? ', schedule removed' : ''));
     }
   }
   console.log(`${execute ? 'EXECUTED' : 'DRY RUN (rolled back)'}: ${moved} schedule(s) moved, ${deleted} future event(s) removed, `
-    + `${created} regenerated, ${merged} schedule(s) consolidated, ${kept.length} attempted or unmergeable event(s) kept, ${failed} chain(s) failed.`);
+    + `${created} regenerated, ${merged} schedule(s) consolidated, ${kept.length} attempted or unmergeable event(s) kept, ${failed} owner(s) failed.`);
   await db.end();
   if (failed > 0) process.exitCode = 1;
 }
