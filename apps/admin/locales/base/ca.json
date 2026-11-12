@@ -3739,6 +3739,7 @@
     "public_event_hint_restricted": "Només els membres amb sessions d’un dels serveis professionals seleccionats poden reservar aquesta activitat. Sense selecció, qualsevol pot reservar.",
     "public_event_yes": "Sí — qualsevol pot reservar",
     "public_event_no": "No — restringit per servei professional",
+    "public_event_private": "No - esdeveniment privat",
     "label_waitlist_mode": "Llista d'espera",
     "waitlist_mode_disabled": "Desactivada",
     "waitlist_mode_open": "Oberta",
