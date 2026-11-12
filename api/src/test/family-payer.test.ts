@@ -135,4 +135,28 @@ describe('card removal guard covers the family', () => {
     expect(await loadCardRemovalBlock(gymId, owner)).toBe('billable_membership');
     expect(await loadCardRemovalBlock(gymId, child)).toBeNull();
   });
+
+  // #2126 stage 4: a Product Set holding recurring Products only projects no
+  // assignment, and the guard used to read `user_memberships` alone.
+  it('blocks removal for an Active Product Set of recurring Products only, with no assignment at all', async () => {
+    const solo = await member('ProductsOnly', 'po');
+    await dueEvent(solo, '2999-02-01');
+    expect(await loadCardRemovalBlock(gymId, solo)).toBe('billable_membership');
+  });
+
+  it("blocks the owner's card for a family member's Products-only set, and not the member's", async () => {
+    const owner = await member('Owner5', 'o5');
+    const child = await member('Child5', 'c5');
+    await family(owner, child);
+    await dueEvent(child, '2999-03-01');
+    expect(await loadCardRemovalBlock(gymId, owner)).toBe('billable_membership');
+    expect(await loadCardRemovalBlock(gymId, child)).toBeNull();
+  });
+
+  it('a Products-only set with nothing scheduled blocks nothing', async () => {
+    const solo = await member('ProductsDone', 'pd');
+    await db.query(`INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'active', ?)`,
+      [gymId, solo, TODAY]);
+    expect(await loadCardRemovalBlock(gymId, solo)).toBeNull();
+  });
 });

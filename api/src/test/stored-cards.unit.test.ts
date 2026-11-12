@@ -56,6 +56,12 @@ describe('cardRemovalBlock', () => {
     ])).toBe('billable_membership');
   });
 
+  it('blocks on an obligation of a Products-only Product Set, which has no assignment to ask (#2126 stage 4)', () => {
+    expect(cardRemovalBlock([], { productOnlyObligation: true })).toBe('billable_membership');
+    expect(cardRemovalBlock([{ status: 'cancelled', has_pending_obligation: true }], { productOnlyObligation: false }))
+      .toBeNull();
+  });
+
   it('accepts a Date, as mysql2 may return a DATE column', () => {
     expect(cardRemovalBlock([{ status: 'active', has_pending_obligation: true }]))
       .toBe('billable_membership');

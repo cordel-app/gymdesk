@@ -54,8 +54,17 @@ export interface AssignmentBillingState {
  * wants to stop paying cancels the membership, which is a conversation with the
  * gym rather than a silent database change.
  */
-export function cardRemovalBlock(assignments: AssignmentBillingState[]): RemovalBlockReason | null {
-  const billable = assignments.some(
+export function cardRemovalBlock(
+  assignments: AssignmentBillingState[],
+  /**
+   * #2126 stage 4: an Active Product Set that projects no Membership Plan
+   * assignment (recurring Products only) is still charged by the nightly run, so
+   * an obligation there keeps the card exactly as a billable assignment does —
+   * there is no assignment status to ask.
+   */
+  opts: { productOnlyObligation?: boolean } = {},
+): RemovalBlockReason | null {
+  const billable = opts.productOnlyObligation === true || assignments.some(
     (a) => BILLABLE_STATUSES.has(a.status) && a.has_pending_obligation,
   );
   return billable ? 'billable_membership' : null;
