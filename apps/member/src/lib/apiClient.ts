@@ -3,6 +3,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useLocale } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { MEMBER_ACCESS_REVOKED_EVENT, readAccessRevocation } from '@/lib/memberAccessRevoked';
+import { trackRequest } from '@/lib/requestActivity';
 
 const IMPERSONATION_KEY = 'impersonation_session';
 
@@ -47,7 +48,8 @@ export function useApiClient() {
       }
     } catch {}
 
-    const res = await fetch(`/api/proxy${path}`, { ...options, headers });
+    // #2683: counted so pull-to-refresh knows when the page's reads settled.
+    const res = await trackRequest(() => fetch(`/api/proxy${path}`, { ...options, headers }));
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -91,7 +93,7 @@ export function useApiClient() {
       }
     } catch {}
 
-    const res = await fetch(`/api/proxy${path}`, { method: 'POST', headers, body: file });
+    const res = await trackRequest(() => fetch(`/api/proxy${path}`, { method: 'POST', headers, body: file }));
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });

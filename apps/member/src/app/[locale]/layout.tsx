@@ -14,6 +14,7 @@ import { AdminBar } from '@/components/AdminBar';
 import { MemberLocalePreference } from '@/components/MemberLocalePreference';
 import { NativeShell } from '@/components/NativeShell';
 import { NativeAppState } from '@/components/NativeAppState';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { memberTheme, safeArea } from '@/lib/memberChrome';
 import { publicAppTitle } from '@/lib/appTitle';
 
@@ -100,8 +101,12 @@ export default async function LocaleLayout({
                     <TopBar />
                     <GymSwitcher />
                     {/* Holds the page back while the member's language is being
-                        applied, so it is never painted in the wrong one first. */}
-                    <MemberLocalePreference>{children}</MemberLocalePreference>
+                        applied, so it is never painted in the wrong one first.
+                        #2683: the native apps' pull-to-refresh wraps the page,
+                        once, so every screen gets it and none implements it. */}
+                    <PullToRefresh>
+                      <MemberLocalePreference>{children}</MemberLocalePreference>
+                    </PullToRefresh>
                   </ThemeProvider>
                 </FeatureFlagsProvider>
               </AppProvider>
