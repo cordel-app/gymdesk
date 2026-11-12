@@ -553,7 +553,9 @@
     "summary_error_changed": "La teva selecció ha canviat. Revisa-la de nou.",
     "summary_error_amount": "No s'ha pogut calcular l'import. Torna-ho a provar més tard.",
     "summary_error_generic": "No s'ha pogut confirmar la teva selecció. Torna-ho a provar.",
-    "summary_error_unresolved": "Encara s'està processant un pagament. Torna-ho a provar més tard."
+    "summary_error_unresolved": "Encara s'està processant un pagament. Torna-ho a provar més tard.",
+    "add_product": "+ Afegir producte",
+    "back_to_products": "← Els Meus Productes"
   },
   "payments": {
     "title": "Pagaments",
