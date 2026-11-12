@@ -331,7 +331,7 @@ export default function MemberCalendarPage() {
       setSelectionAttempted(true);
       return;
     }
-    if (groupInvalid) return; // #2674 §4: the picker already says why
+    if (groupInvalid) return; // the participant picker already says why (ticket 2674 §4)
     setActionLoading(true);
     setActionMsg(null);
     try {

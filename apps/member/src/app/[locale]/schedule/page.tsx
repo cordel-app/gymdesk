@@ -207,7 +207,7 @@ export default function MemberSchedulePage() {
       setAttemptedSession(sessionId);
       return;
     }
-    if (session && groupInvalidFor(session)) return; // #2674 §4: the picker already says why
+    if (session && groupInvalidFor(session)) return; // the participant picker already says why (ticket 2674 §4)
     const groupService = session ? groupServiceFor(session) : null;
     setPendingSession(sessionId); setMessage(null); setUnlockServiceIds([]);
     try {
