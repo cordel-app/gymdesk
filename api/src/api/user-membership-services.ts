@@ -300,8 +300,11 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
     // being edited carries its own copy of it (cloned with the configuration),
     // found by Product and start date, so the removal is addressed by that.
     mutate: async (tx, d) => {
+      // #2126 stage 3n — the id on the screen is the line `loadAssignedPlanServices()`
+      // reported, i.e. `product_periodical_snapshots.source_id` (the legacy line id).
+      // That line is a committed one, so its snapshot is already synced.
       const { rows } = await tx.query<{ product_id: number; starts_at: string; line_ref: number | null }>(
-        'SELECT product_id, starts_at, line_ref FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, d.gym_id]);
+        'SELECT product_id, starts_at, line_ref FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ?', [serviceId, d.gym_id]);
       if (!rows[0]) return { kind: 'not_found' as const };
       // #1865: a purchase is recognised across versions by its line_ref, so two
       // lines of one Product are never confused; a line that predates it is the
