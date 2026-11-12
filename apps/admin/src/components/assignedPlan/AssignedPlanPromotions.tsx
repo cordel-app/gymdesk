@@ -241,10 +241,13 @@ export function PlanPromotionRow({ promotion, checkbox, onOpen }: {
         size={40}
         square
       />
+      {/* #2624 §7: a long name is truncated on its own row; the full name is the
+          tooltip (and the detail modal it opens). */}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onOpen(); }}
-        title={t('promo_open_details', { promotion: promotion.promotion_name })}
+        title={promotion.promotion_name}
+        aria-label={t('promo_open_details', { promotion: promotion.promotion_name })}
         style={nameBtnSt}
       >
         {promotion.promotion_name}
@@ -454,6 +457,8 @@ const thumbButtonSt: React.CSSProperties = {
 const nameBtnSt: React.CSSProperties = {
   padding: 0, border: 'none', background: 'none', cursor: 'pointer',
   font: 'inherit', color: 'inherit', fontWeight: 500, textAlign: 'left',
+  // #2624 §7: truncate rather than wrap a long Promotion name.
+  maxWidth: 320, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const metaSt: React.CSSProperties = { color: '#888', fontSize: 12 };
 const planRowSt: React.CSSProperties = {
