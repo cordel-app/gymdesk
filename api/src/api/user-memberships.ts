@@ -1268,6 +1268,8 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       // (none written at Save & Pay) keeps the older shape: commit first, then
       // the payment's event on the version the commit created.
       const open = await openInitialEventForAssignment(tx, gymId, Number(req.params.id));
+      // #2533 stage 2: staff cancelled this membership's payment; it is not reopened.
+      if (open?.cancelled) return { kind: 'event_cancelled' as const };
       if (open) {
         const { rows: prev } = await tx.query<{ n: number }>(
           'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId]);
@@ -1304,6 +1306,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       }
       return committed;
     });
+    if (outcome.kind === 'event_cancelled') {
+      return res.status(409).json({ error: 'billing_event_cancelled', message: 'The payment of this membership was cancelled.' });
+    }
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
     if (outcome.kind === 'not_committable') {
       return res.status(400).json({

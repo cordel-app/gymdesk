@@ -133,6 +133,9 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
   if (isNonObligationEvent(ev.event_type)) {
     return { status: 400, error: 'Payment actions are not available for a one-off purchase or a card verification.' };
   }
+  if (Number(ev.cancelled) === 1) {
+    return { status: 409, error: 'This billing event has been cancelled.' };
+  }
   const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status, Number(ev.cancelled) === 1);
   // #1325: a ProductSet's persisted obligation that is due and nothing has
   // collected — a member with no stored card is the usual case — is payable by

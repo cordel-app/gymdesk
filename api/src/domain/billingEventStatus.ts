@@ -53,17 +53,34 @@ export function statusFromEventType(eventType: string): BillingEventStatus {
  * The event's status: its latest transaction's status when it has one,
  * otherwise what the event type implies.
  *
- * #2480: a cancelled event (`billing_events.cancelled_at`) reads `cancelled`,
- * unless money arrived on it after all (a completed attempt always reads
- * `paid`: the provider is the source of truth about money).
+ * #2533 stage 2 (reversing #2480's exception): a cancelled event
+ * (`billing_events.cancelled_at`) reads `cancelled` **always**. Cancellation is
+ * an administrative terminal state, and a payment result that arrives after it
+ * never moves the event to `paid` or `failed`. The payment result is still
+ * recorded on its attempt (the provider's raw status and the normalized one),
+ * and the readers that ask about *money* ask `isPaymentCollected()` instead, so
+ * a payment collected on a cancelled event stays receiptable and refundable.
  */
 export function deriveBillingEventStatus(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
   cancelled: boolean = false,
 ): BillingEventStatus {
-  if (cancelled && latestTransactionStatus !== 'completed') return 'cancelled';
+  if (cancelled) return 'cancelled';
   return statusFromTransaction(latestTransactionStatus) ?? statusFromEventType(eventType);
+}
+
+/**
+ * #2533 stage 2: whether the event's payment result says money was received,
+ * whatever its administrative status. This is the question receipts and refunds
+ * ask; it ignores `cancelled_at` on purpose (a cancelled event whose payment
+ * completed afterwards collected money that must be receiptable and refundable).
+ */
+export function isPaymentCollected(
+  eventType: string,
+  latestTransactionStatus: string | null | undefined,
+): boolean {
+  return deriveBillingEventStatus(eventType, latestTransactionStatus, false) === 'paid';
 }
 
 /**
@@ -123,6 +140,11 @@ export interface PaymentActions {
 }
 
 export function paymentActionsFor(i: PaymentActionInput): PaymentActions {
+  // #2533 stage 2: a cancelled event is closed administratively; nothing is
+  // collected on it any more, even when it is a due obligation.
+  if (i.status === 'cancelled') {
+    return { retry: false, waive: false, payCash: false, payCard: false, firstPayment: false };
+  }
   const priced = i.amount > 0;
   const actionable = (isPaymentActionable(i.status) || i.scheduledAndDue)
     && i.linked && priced && !isNonObligationEvent(i.eventType);
@@ -209,7 +231,7 @@ export function isReceiptableEvent(
   latestTransactionStatus: string | null | undefined,
 ): boolean {
   if (!RECEIPTABLE_EVENT_TYPES.includes(eventType as any)) return false;
-  return deriveBillingEventStatus(eventType, latestTransactionStatus) === 'paid';
+  return isPaymentCollected(eventType, latestTransactionStatus);
 }
 
 /**

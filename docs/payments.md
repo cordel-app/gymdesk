@@ -694,7 +694,7 @@ a `completed` transaction. There is no status column.
 | | `POST …/:id/cancel` | `POST …/:id/refund` |
 |---|---|---|
 | Gate | `requireModuleWrite('PAYMENTS')` | `requireRole('admin')` + flag `payments.billing_events.refund` + PAYMENTS write |
-| Offered when | derived status `pending` (`can_cancel`) | status `paid`, a collected attempt with refundable balance (`can_refund`) |
+| Offered when | derived status `pending` (`can_cancel`) | money collected (`isPaymentCollected()`, cancelled or not, #2533) with refundable balance (`can_refund`) |
 | Writes | `billing_events.cancelled_at`/`cancelled_by`; open attempts → `expired` | a new `payment_requests` row, `transaction_type 'refund'`, `refund_of_payment_request_id` → the collected attempt, `billing_event_id` NULL; `payment_refund_lines` for a line refund |
 | Provider | none | Cash / Card terminal: none. Monei: `refundPayment()` → `POST /v1/payments/{id}/refund` with the amount in cents, **after** the refund row is committed |
 | Refused | not pending, already cancelled (409), a submitted attempt with no outcome (409) | nothing collected / nothing left (409), invalid amount or lines, a method the payment cannot use (400) |
@@ -713,12 +713,50 @@ invoice is the existing manual `POST /payments/invoices/:id/rectify`, never auto
 > - **A refund carries no `billing_event_id`.** It reaches the event through the attempt it
 >   refunds, so the ~60 readers of "the event's latest attempt" need no change.
 > - **Cancel expires open attempts** rather than leaving them pending, so a stale link cannot
->   pay a cancelled event; a payment that still completes reads `paid` (money wins).
+>   pay a cancelled event. ~~A payment that still completes reads `paid` (money wins).~~
+>   Reversed by #2533 stage 2, below.
 > - **Cancelling a first payment leaves the membership `pending_payment`** — cancelling the
 >   charge is not cancelling the plan.
 > - **Card terminal is a manual refund method** beside Cash; Monei is offered only for a
 >   provider payment with a `provider_ref`.
 > - **A pending Monei refund is not reconciled automatically** yet; it stays reserved.
+
+#### A cancelled Billing Event stays cancelled (#2533 stage 2)
+
+A Billing Event carries three independent answers: its **status** (administrative,
+derived by `deriveBillingEventStatus()`), the latest attempt's **payment status**
+(`payment_requests.provider_status`, the provider's own value verbatim) and its
+**normalized payment status** (`normalizePaymentStatus()`). The normal lifecycle is
+unchanged — `pending` → `paid` on a completed attempt, → `failed` on a rejected one — but
+`cancelled_at` outranks it: a cancelled event reads `cancelled` whatever arrives after it.
+
+| After Cancel the provider answers… | `status` | `payment_status` | `normalized_payment_status` | Side effects |
+|---|---|---|---|---|
+| `SUCCEEDED` | `cancelled` | `SUCCEEDED` | `completed` | the attempt is completed; **no** ProductSet activation, assignment commit or purchase completion (`settleInTransaction()` logs a warning for refund review) |
+| `FAILED` | `cancelled` | `FAILED` | `failed` | the attempt is failed; not in the failed-payments queue |
+
+Readers that ask about money ask the payment result, not the status:
+`isPaymentCollected()` decides receipt eligibility (`isReceiptableEvent()`) and `can_refund`,
+so money collected on a cancelled event is receiptable and refundable. Readers that ask
+about obligations ignore a cancelled event: `paymentActionsFor()` offers nothing,
+`guardActionable()` refuses Retry / Manual payment / Waive with 409, the failed queue, Home,
+the Payments dashboard and the member's Payment Status keep their `cancelled_at IS NULL`
+filter. No new attempt is raised on a cancelled initial event: a staff payment link, the
+member's Pay now and `POST /user-memberships/:id/record-payment` answer
+`409 billing_event_cancelled` (`openInitialEventForAssignment()` reports `cancelled`).
+
+> **Decisions (#2533 stage 2)** — change them here if they turn out wrong:
+> - **The vocabulary is unchanged** (`paid | failed | pending | scheduled | recorded | cancelled`);
+>   the ticket's `pending_payment`/`canceled` are the existing `pending`/`cancelled`, and
+>   `normalized_payment_status` stays derived on read from the stored raw status (stage 1),
+>   not a new column.
+> - **A completed payment on a cancelled event activates nothing** (ProductSet, assignment,
+>   one-time purchase). The card the payment stored is still stored: it is the payer's fact,
+>   not a status.
+> - **A failed attempt on a cancelled event is not in the failed queue**: the queue is the
+>   staff's work list of obligations, and a cancelled event is none.
+> - **The paid-only dashboard counts keep excluding cancelled events**; the money stays visible
+>   on the event (normalized `completed`) and in its refund state.
 
 ### B8. `POST /billing/cleanup`
 
