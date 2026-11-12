@@ -109,6 +109,9 @@ export interface MemberEventService {
   image_thumbnail_url: string | null;
   /** The effective capacity for this occurrence (#1984), never the event's total. */
   capacity: number;
+  /** #2674: `family_only` with `min_participants > 1` takes a family participant selection. */
+  booking_type: string;
+  min_participants: number | null;
 }
 
 /**
@@ -127,7 +130,7 @@ export async function loadMemberEventServices(
   const serviceIds = [...new Set([...views.values()].flat().map((v) => v.id))];
   if (serviceIds.length === 0) return result;
   const { rows } = await q.query(
-    `SELECT ps.id, ps.description, ps.image_url, ps.image_thumbnail_url
+    `SELECT ps.id, ps.description, ps.image_url, ps.image_thumbnail_url, ps.booking_type, ps.min_participants
        FROM professional_services ps
        LEFT JOIN gym_professional_services gps
          ON gps.professional_service_id = ps.id AND gps.gym_id = ?
@@ -148,6 +151,8 @@ export async function loadMemberEventServices(
           image_url: r.image_url || null,
           image_thumbnail_url: r.image_thumbnail_url || null,
           capacity: v.capacity,
+          booking_type: r.booking_type ?? 'open_group',
+          min_participants: r.min_participants == null ? null : Number(r.min_participants),
         };
       });
     if (shown.length) result.set(eventId, shown);

@@ -21,6 +21,9 @@ export interface EventService {
   image_url: string | null;
   image_thumbnail_url: string | null;
   capacity: number;
+  /** #2674: a `family_only` service with a minimum above one takes a participant selection. */
+  booking_type?: string | null;
+  min_participants?: number | null;
 }
 
 const SIZE = 40;
