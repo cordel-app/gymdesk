@@ -1,5 +1,9 @@
 import { memberInviteMetadata } from '../domain/memberInviteTarget';
 import { listItems, resolveInviteConflict } from '../domain/clerkInviteConflict';
+import {
+  pendingInvitationIdsFor, reconcileMemberInvitation,
+  type ClerkInvitationLookup, type ReconciledInvitation,
+} from '../domain/memberInvitationState';
 import { createSoloFamily } from './family-membership';
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
@@ -314,39 +318,20 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 
   let { invited_at } = rows[0];
   const { clerk_user_id, invitation_id, enrolled_at } = rows[0];
-  // #2183: an unlinked member whose email already has a Clerk account (the invite is
-  // refused with "account already exists") read "None". Report the fact, read-only;
-  // linking stays /me/link's job. A lookup failure reports nothing.
-  // #2183 follow-up: Clerk may also hold a pending invitation this row never stored
-  // (the invite was refused with "invitation or account already exists"). Report it
-  // independently of the account, so Clerk Invitation never reads "None" beside it.
-  let accountExists = false;
-  let pendingInvitation = !!invitation_id;
-  if (!clerk_user_id) {
-    try {
-      const { rows: er } = await db.query<any>(
-        'SELECT email FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-      const email = er[0]?.email;
-      if (email) {
-        const users = listItems<any>(await clerkClient.users.getUserList({ emailAddress: [email] }));
-        accountExists = resolveInviteConflict(email, [], users).kind === 'account_exists';
-        if (!pendingInvitation) {
-          const found = resolveInviteConflict(email, await listPendingInvitations(email), []);
-          if (found.kind === 'pending_invitation') {
-            pendingInvitation = true;
-            await db.query(
-              `UPDATE members SET invitation_id = ?, invited_at = COALESCE(invited_at, UTC_TIMESTAMP()),
-                      modified_at = UTC_TIMESTAMP(), modified_by = ?
-                WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invitation_id IS NULL`,
-              [found.invitationId, 'System', req.params.id, gymId],
-            );
-            const { rows: ir } = await db.query<any>('SELECT invited_at FROM members WHERE id = ?', [req.params.id]);
-            invited_at = ir[0]?.invited_at ?? invited_at;
-          }
-        }
-      }
-    } catch { /* leave as stored */ }
+  // #2183: an unlinked member whose email already has a Clerk account is reported, read-only;
+  // linking stays /me/link's job. #2680: Clerk is the source of truth for whether an
+  // invitation is pending — a pending one the row does not store is stored, a stored one
+  // Clerk no longer holds as pending is cleared — and a lookup failure changes nothing.
+  const { rows: er } = await db.query<any>(
+    'SELECT email FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+  const lookup = clerk_user_id ? null : await safeInvitationLookup(er[0]?.email ?? null);
+  const reconciled = reconcileMemberInvitation({ linked: !!clerk_user_id, storedInvitationId: invitation_id, lookup });
+  if (await applyInvitationReconciliation(gymId, String(req.params.id), invitation_id, reconciled, 'System')) {
+    const { rows: ir } = await db.query<any>('SELECT invited_at FROM members WHERE id = ?', [req.params.id]);
+    invited_at = ir[0]?.invited_at ?? invited_at;
   }
+  const accountExists = !!lookup?.accountExists;
+  const pendingInvitation = reconciled.state === 'invitation_pending';
   // #1234: the dates are history, reported as stored and independent of the status.
   // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
   // every branch below because the card passes this whole response to
@@ -366,6 +351,7 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
     has_pending_invitation: pendingInvitation,
     enrolled: !!clerk_user_id,
     account_exists: accountExists,
+    invitation_state: reconciled.state,
   };
 
   if (!clerk_user_id) {
@@ -664,6 +650,58 @@ async function listPendingInvitations(email: string) {
   return out;
 }
 
+// #2680: what Clerk holds for the member's email — its pending invitations and whether an
+// account exists. Throws when Clerk cannot be asked.
+async function lookupClerkInvitation(email: string): Promise<ClerkInvitationLookup> {
+  const [invitations, users] = await Promise.all([
+    listPendingInvitations(email),
+    clerkClient.users.getUserList({ emailAddress: [email] }),
+  ]);
+  return {
+    pendingInvitationIds: pendingInvitationIdsFor(email, invitations),
+    accountExists: resolveInviteConflict(email, [], listItems(users)).kind === 'account_exists',
+  };
+}
+
+/** `null` when Clerk could not be asked (or there is no email to ask about). */
+async function safeInvitationLookup(email: string | null): Promise<ClerkInvitationLookup | null> {
+  if (!email) return null;
+  try { return await lookupClerkInvitation(email); } catch { return null; }
+}
+
+/**
+ * Writes the reconciled `invitation_id`, guarded on the value it was computed from so a
+ * concurrent invite is never overwritten. Answers whether a row changed.
+ */
+async function applyInvitationReconciliation(
+  gymId: string, memberId: string, storedInvitationId: string | null,
+  reconciled: ReconciledInvitation, actor: string | null,
+): Promise<boolean> {
+  if (reconciled.storeInvitationId === undefined) return false;
+  const next = reconciled.storeInvitationId;
+  const { rowCount } = await db.query<any>(
+    `UPDATE members SET invitation_id = ?,
+            invited_at = IF(? IS NULL, invited_at, COALESCE(invited_at, UTC_TIMESTAMP())),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND invitation_id <=> ?`,
+    [next, next, actor, memberId, gymId, storedInvitationId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Revokes each invitation; one Clerk no longer has (404) is already gone. */
+async function revokeInvitations(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    try {
+      await clerkClient.invitations.revokeInvitation(id);
+    } catch (err: any) {
+      if (err?.status !== 404) throw err;
+    }
+  }
+}
+
+const CLERK_LOOKUP_FAILED = 'Could not check the Members App invitation in Clerk. Try again.';
+
 membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
@@ -731,10 +769,14 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
   }
 });
 
-// POST /:id/reinvite — resend a still-pending invitation for member-portal access
+// POST /:id/reinvite — "Resend Members App Invitation" (#2680). Clerk is asked first:
+// every pending invitation for the email is revoked before the replacement is created,
+// so repeating the action never leaves two live invitations. A failed lookup creates
+// nothing.
 membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
+  const actor = resolveRequestActor(getTenantContext(req));
   try {
     const { rows } = await db.query(
       'SELECT email, clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -742,39 +784,79 @@ membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, r
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
     if (rows[0].clerk_user_id) return res.status(400).json({ error: 'This member has already linked their account.' });
-    if (!rows[0].invitation_id) return res.status(400).json({ error: 'No pending invitation for this member. Use Invite instead.' });
 
-    const invitation = await clerkClient.invitations.createInvitation({
-      emailAddress: rows[0].email,
-      redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
-      publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
-    });
+    let lookup: ClerkInvitationLookup;
+    try { lookup = await lookupClerkInvitation(rows[0].email); } catch {
+      return res.status(502).json({ error: CLERK_LOOKUP_FAILED });
+    }
+    const reconciled = reconcileMemberInvitation({ linked: false, storedInvitationId: rows[0].invitation_id, lookup });
+    if (reconciled.state !== 'invitation_pending') {
+      await applyInvitationReconciliation(gymId, String(req.params.id), rows[0].invitation_id, reconciled, actor);
+      return res.status(409).json({
+        error: 'No pending invitation for this member. Use Invite to Members App instead.',
+        invitation_state: reconciled.state,
+      });
+    }
+
+    try {
+      await revokeInvitations(lookup.pendingInvitationIds);
+    } catch (err: any) {
+      console.error('Failed to revoke member invitation before resending:', { memberId: req.params.id, error: err.message });
+      return res.status(502).json({ error: 'Failed to replace the invitation in Clerk.' });
+    }
+    let invitation: { id: string };
+    try {
+      invitation = await clerkClient.invitations.createInvitation({
+        emailAddress: rows[0].email,
+        redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
+        publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
+      });
+    } catch (err: any) {
+      // The previous invitation is already revoked: the row must not keep pointing at it.
+      await db.query(
+        'UPDATE members SET invitation_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+        [actor, req.params.id, gymId],
+      );
+      if (err.status === 422) return res.status(409).json({ error: 'An invitation or account already exists for this email.' });
+      throw err;
+    }
     await db.query(
       'UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
-      [invitation.id, resolveRequestActor(getTenantContext(req)), req.params.id],
+      [invitation.id, actor, req.params.id],
     );
     recordAudit(req, { action: 'reinvite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {
-    if (err.status === 422) return res.status(409).json({ error: 'An invitation is already pending for this email.' });
     next(err);
   }
 });
 
-// POST /:id/revoke-invite — cancel a pending portal invitation without removing the member
+// POST /:id/revoke-invite — "Cancel Members App Invitation" (#2680): revokes the pending
+// invitation(s) Clerk actually holds for the member and clears the stored reference. The
+// member row and everything attached to it are untouched.
 membersRouter.post('/:id/revoke-invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const actor = resolveRequestActor(getTenantContext(req));
   try {
     const { rows } = await db.query(
-      'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT email, clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
     if (rows[0].clerk_user_id) return res.status(400).json({ error: 'This member has already linked their account; nothing to revoke.' });
-    if (!rows[0].invitation_id) return res.status(400).json({ error: 'No pending invitation for this member.' });
+
+    const lookup = await safeInvitationLookup(rows[0].email);
+    const reconciled = reconcileMemberInvitation({ linked: false, storedInvitationId: rows[0].invitation_id, lookup });
+    if (reconciled.state !== 'invitation_pending') {
+      await applyInvitationReconciliation(gymId, String(req.params.id), rows[0].invitation_id, reconciled, actor);
+      if (!lookup) return res.status(502).json({ error: CLERK_LOOKUP_FAILED });
+      return res.status(400).json({ error: 'No pending invitation for this member.', invitation_state: reconciled.state });
+    }
+    // With no lookup, the stored invitation is the one known to Clerk.
+    const ids = lookup ? lookup.pendingInvitationIds : [reconciled.invitationId!];
 
     try {
-      await clerkClient.invitations.revokeInvitation(rows[0].invitation_id);
+      await revokeInvitations(ids);
     } catch (err: any) {
       console.error('Failed to revoke member invitation:', { memberId: req.params.id, error: err.message });
       return res.status(502).json({ error: 'Failed to revoke invitation in Clerk.' });
@@ -782,7 +864,7 @@ membersRouter.post('/:id/revoke-invite', requireModuleWrite('MEMBERS'), async (r
 
     await db.query(
       'UPDATE members SET invitation_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
-      [resolveRequestActor(getTenantContext(req)), req.params.id],
+      [actor, req.params.id],
     );
     recordAudit(req, { action: 'revoke_invite', entityType: 'member', entityId: req.params.id });
     res.status(204).send();

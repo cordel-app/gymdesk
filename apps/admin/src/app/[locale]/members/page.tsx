@@ -41,6 +41,7 @@ import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
 import { innerCardStyle, inlineActionsRowStyle, formControlStyle } from '@/components/formChrome';
 import { profileGridStyle, profileFieldLabelStyle, PROFILE_ROW_GAP } from './MemberProfileLayout';
+import { INVITATION_ACTION_LABEL_KEYS, initialInvitationState, invitationMenu, type InvitationActionId } from './membersAppInvitation';
 
 interface Plan {
   id: number;
@@ -213,6 +214,18 @@ export default function MembersPage() {
   const [profileVersion, setProfileVersion] = useState(0);
   // #1326: bumped by invite / re-invite / revoke so an open row re-reads its Clerk status.
   const [accountVersion, setAccountVersion] = useState(0);
+  // #2680: each Member's Members App invitation state as Clerk reports it, read when the
+  // ⋮ menu opens (`null` = the read failed). The menu offers invitation actions from it,
+  // never from the row's stored invitation_id alone.
+  const [invitationReads, setInvitationReads] = useState<Record<number, { invitation_state?: string } | null>>({});
+
+  function readInvitationState(m: Member) {
+    if (m.clerk_user_id) return;
+    setInvitationReads((prev) => { const next = { ...prev }; delete next[m.id]; return next; });
+    apiFetch<{ invitation_state?: string }>(`/members/${m.id}/clerk-status`)
+      .then((r) => setInvitationReads((prev) => ({ ...prev, [m.id]: r })))
+      .catch(() => setInvitationReads((prev) => ({ ...prev, [m.id]: null })));
+  }
 
   useEffect(() => {
     if (editingId === null) return;
@@ -636,17 +649,17 @@ export default function MembersPage() {
   }
 
   function buildActions(m: Member): ContextMenuItem[] {
-    const linked = !!m.clerk_user_id;
-    const pendingInvite = !linked && !!m.invitation_id;
     const items: ContextMenuItem[] = [];
-
-    if (!linked && !pendingInvite) {
-      items.push({ label: t('members.action_invite'), onClick: () => guardUnsaved(() => handleInvite(m.id)) });
+    const menu = invitationMenu(initialInvitationState(m, invitationReads[m.id]));
+    const handlers: Record<InvitationActionId, () => void> = {
+      invite: () => handleInvite(m.id),
+      resend: () => handleReinvite(m.id),
+      cancel: () => handleRevokeInvite(m.id),
+    };
+    for (const action of menu.actions) {
+      items.push({ label: t(INVITATION_ACTION_LABEL_KEYS[action]), onClick: () => guardUnsaved(handlers[action]) });
     }
-    if (pendingInvite) {
-      items.push({ label: t('members.action_reinvite'), onClick: () => guardUnsaved(() => handleReinvite(m.id)) });
-      items.push({ label: t('members.action_revoke'), onClick: () => guardUnsaved(() => handleRevokeInvite(m.id)) });
-    }
+    if (menu.noticeKey) items.push({ label: t(`members.${menu.noticeKey}`), onClick: () => {}, disabled: true });
     if (canSendCommunication) {
       items.push({ label: t('members.action_send_communication'), onClick: () => guardUnsaved(() => setCommunicationFor(m)) });
     }
@@ -729,6 +742,7 @@ export default function MembersPage() {
             <span aria-hidden="true" style={chevronStyle(isExpanded)}>▾</span>
             <ContextMenu
               items={buildActions(m)}
+              onOpen={() => readInvitationState(m)}
               ariaLabel={`${t('members.col_actions')} — ${m.name}`}
             />
           </div>
