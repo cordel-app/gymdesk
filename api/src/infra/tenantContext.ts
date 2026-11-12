@@ -10,6 +10,7 @@ const getClerkUser = createCachedLookup(
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 import { AppRole, AppModule, canAccess, canAccessFeature, canWrite, canWriteFeature } from './permissions';
+import { isAllowedWhileRevoked, isMemberAccessRevoked, memberAccessRevokedBody } from '../domain/memberAccessRevocation';
 
 /** Gym-scoped role stored in gym_memberships.role. */
 export type GymRole = AppRole;
@@ -104,7 +105,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
           effectiveUserId: String(memberRows[0].id),
           effectiveType: 'member',
         };
-        return next();
+        return enforceMemberAccess(req, res, next);
       }
 
       // Staff impersonation: x-impersonate-as header is a Clerk user ID
@@ -145,7 +146,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
         effectiveUserId: impersonateAs,
         effectiveType: 'staff',
       };
-      return next();
+      return enforceMemberAccess(req, res, next);
     }
 
     req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName, effectiveUserId: userId, effectiveType: null };
@@ -162,7 +163,37 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
   }
 
   req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName, effectiveUserId: userId, effectiveType: null };
-  next();
+  return enforceMemberAccess(req, res, next);
+}
+
+/**
+ * #2681: a request made as the `member` role is refused when that member's
+ * stored Access Rights are `revoked` (`domain/memberAccessRevocation.ts`).
+ * Read on every request, never cached, so a revocation or a grant applies to a
+ * session that is already open. Staff roles are untouched, and a member who is
+ * not linked to a member row is left to the route (which answers 404 as before).
+ */
+async function enforceMemberAccess(req: Request, res: Response, next: NextFunction) {
+  const ctx = req.tenantCtx!;
+  if (ctx.role !== 'member') return next();
+  if (isAllowedWhileRevoked(req.method, req.originalUrl.split('?')[0])) return next();
+  try {
+    const byMemberId = ctx.effectiveType === 'member';
+    const { rows } = await db.query<{ access_rights: string; preferred_locale: string | null; gym_name: string }>(
+      `SELECT m.access_rights, m.preferred_locale, g.name AS gym_name
+         FROM members m JOIN gyms g ON g.id = m.gym_id
+        WHERE m.gym_id = ? AND ${byMemberId ? 'm.id' : 'm.clerk_user_id'} = ? AND m.deleted_at IS NULL
+        LIMIT 1`,
+      [ctx.gymId, byMemberId ? Number(ctx.effectiveUserId) : ctx.effectiveUserId],
+    );
+    const row = rows[0];
+    if (row && isMemberAccessRevoked(row.access_rights)) {
+      return res.status(403).json(memberAccessRevokedBody(row.gym_name, row.preferred_locale));
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 }
 
 export function getTenantContext(req: Request): TenantContext {

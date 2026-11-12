@@ -949,5 +949,10 @@
     "min_reached": "At least {min} participants are needed",
     "below_min": "This service needs at least {min} participants from your family.",
     "above_max": "This service allows at most {max} participants."
+  },
+  "access_revoked": {
+    "title": "Access revoked",
+    "message": "Your access to the Members App has been revoked. Please contact {gymName} for more information.",
+    "message_no_gym": "Your access to the Members App has been revoked. Please contact your gym for more information."
   }
 }
