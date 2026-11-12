@@ -39,4 +39,30 @@ describe('family group booking rules (#2674)', () => {
     expect(client.canRemoveParticipant([2], 2)).toBe(false);
     expect(client.addableMembers(1, family, [3]).map((m) => m.member_id)).toEqual([4, 2]);
   });
+
+  // #2674 follow-up (2026-11-12): the selection showed only once a service was
+  // chosen, so a member whose balance preselected nothing never saw it.
+  it('shows the selection for the event\'s one qualifying service even when none is chosen', () => {
+    const fam = { id: 7, booking_type: 'family_only', min_participants: 2, capacity: 4 };
+    const open = { id: 8, booking_type: 'open_group', min_participants: null, capacity: 4 };
+    expect(client.groupServiceOf([fam], null)?.id).toBe(7);
+    expect(client.groupServiceOf([open, fam], null)?.id).toBe(7);
+    expect(client.groupServiceOf([open, fam], 8)).toBeNull();
+    expect(client.groupServiceOf([fam, { ...fam, id: 9 }], null)).toBeNull();
+    expect(client.groupServiceOf([fam, { ...fam, id: 9 }], 9)?.id).toBe(9);
+    expect(client.groupServiceOf(null, null)).toBeNull();
+  });
+
+  it('toggles a family member within the limits, keeping the alphabetical order', () => {
+    // min 2, max 3 (booker included): partners 1..2
+    expect(client.toggleParticipant(1, family, [3], 4, 2, 3)).toEqual([3, 4]);
+    expect(client.toggleParticipant(1, family, [4], 3, 2, 3)).toEqual([3, 4]);
+    expect(client.toggleParticipant(1, family, [3, 4], 2, 2, 3)).toEqual([3, 4]); // max reached
+    expect(client.toggleParticipant(1, family, [3, 4], 4, 2, 3)).toEqual([3]);
+    expect(client.toggleParticipant(1, family, [3], 3, 2, 3)).toEqual([3]); // min reached
+    expect(client.toggleParticipant(1, family, [3], 1, 2, 3)).toEqual([3]); // booker is locked
+    expect(client.toggleParticipant(1, family, [3], 99, 2, 3)).toEqual([3]); // not in the family
+    expect(client.canToggleParticipant([3, 4], 2, 2, 3)).toBe(false);
+    expect(client.canToggleParticipant([3, 4], 4, 2, 3)).toBe(true);
+  });
 });

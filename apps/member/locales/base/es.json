@@ -944,11 +944,11 @@
     "title": "Participantes",
     "count": "{n} de {min}–{max}",
     "you": "Tú",
-    "remove": "Quitar a {name}",
-    "add": "+ Añadir familiar",
     "min_reached": "Se necesitan al menos {min} participantes",
     "below_min": "Este servicio necesita al menos {min} participantes de tu familia.",
-    "above_max": "Este servicio admite como máximo {max} participantes."
+    "above_max": "Este servicio admite como máximo {max} participantes.",
+    "attends": "Asiste {name}",
+    "max_reached": "Como máximo {max} participantes"
   },
   "access_revoked": {
     "title": "Acceso revocado",

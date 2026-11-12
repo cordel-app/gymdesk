@@ -21,7 +21,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { serviceChoices, defaultChoice, selectionMissing, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, initialParticipants, isFamilyGroupService, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
@@ -120,8 +120,7 @@ export default function MemberSchedulePage() {
   const [participantPicks, setParticipantPicks] = useState<Record<number, { serviceId: number; ids: number[] }>>({});
   function groupServiceFor(s: Session) {
     if (s.my_booking_id) return null;
-    const svc = (s.professional_services ?? []).find((x) => x.id === chosenFor(s));
-    return svc && isFamilyGroupService(svc) ? svc : null;
+    return groupServiceOf(s.professional_services, chosenFor(s));
   }
   function participantsFor(s: Session): number[] {
     const svc = groupServiceFor(s);
