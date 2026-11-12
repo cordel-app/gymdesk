@@ -77,15 +77,17 @@ export async function memberHoldsProduct(
   // check runs before the line it guards is written, so every line it reads is synced.
   const { rows: lines } = opts.draftSetId != null
     ? await q.query<any>(
-      `SELECT source_id AS id FROM product_periodical_snapshots
-        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND source_id IS NOT NULL
-          AND (ends_at IS NULL OR ends_at >= UTC_DATE())
+      `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ? AND s.source_id IS NOT NULL
+          AND (s.ends_at IS NULL OR s.ends_at >= UTC_DATE())
         LIMIT 1`,
       [gymId, opts.draftSetId, productId],
     )
     : await q.query<any>(
       `SELECT r.source_id AS id FROM product_periodical_snapshots r
-         JOIN product_sets ps ON ps.id = r.product_set_id AND ps.gym_id = r.gym_id
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = r.id
+         JOIN product_sets ps ON ps.id = lnk.product_set_id AND ps.gym_id = r.gym_id
         WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.product_id = ? AND r.source_id IS NOT NULL
           AND ps.status IN ('draft', 'pending_payment', 'active')
           AND (r.ends_at IS NULL OR r.ends_at >= UTC_DATE())

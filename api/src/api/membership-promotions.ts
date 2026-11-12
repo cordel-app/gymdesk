@@ -683,7 +683,9 @@ export async function applyPromotionToProductSet(
         // #2126 stage 3q — the line is read in `product_periodical_snapshots` by its legacy
         // id (`source_id`). The line was written earlier in this Draft's transaction by
         // `addService()`, whose `touch()` already synced it.
-        'SELECT 1 FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ? AND product_set_id = ?',
+        `SELECT 1 FROM product_set_periodical_snapshots lnk
+           JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+          WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ?`,
         [opts.lineId, gymId, productSetId],
       );
       if (lineRows.length === 0) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });

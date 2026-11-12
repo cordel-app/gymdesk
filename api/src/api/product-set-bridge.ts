@@ -101,8 +101,9 @@ async function copyApplications(
       // `source_id` is the legacy line id, which is what an application and the routes are keyed on.
       const { rows: lines } = await tx.query<any>(
         `SELECT n.source_id FROM product_periodical_snapshots o
+           JOIN product_set_periodical_snapshots nl ON nl.product_set_id = ?
            JOIN product_periodical_snapshots n
-             ON n.gym_id = o.gym_id AND n.product_set_id = ? AND n.source_id IS NOT NULL
+             ON n.id = nl.product_periodical_snapshot_id AND n.gym_id = o.gym_id AND n.source_id IS NOT NULL
             AND COALESCE(n.line_ref, n.source_id) = COALESCE(o.line_ref, o.source_id)
           WHERE o.source_id = ? AND o.gym_id = ? ORDER BY n.source_id LIMIT 1`,
         [to.productSetId, app.recurrent_snapshot_id, gymId]);

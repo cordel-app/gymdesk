@@ -526,8 +526,9 @@ async function loadRecurringPurchases(
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
+       JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
        JOIN product_periodical_snapshots s
-         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
+         ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
        LEFT JOIN payment_requests pr
               ON pr.id = ps.payment_request_id AND pr.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
@@ -551,8 +552,9 @@ async function loadRecurringPurchases(
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
        FROM product_sets ps
+       JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
        JOIN product_periodical_snapshots s
-         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
+         ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
