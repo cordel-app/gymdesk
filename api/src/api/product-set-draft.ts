@@ -1,7 +1,7 @@
 import { parseLineDirectDiscountInput } from '../domain/lineDirectDiscount';
 import { db, Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-import { deleteRecurringLine, insertRecurringLine, updateRecurringLine } from './recurring-line-writer';
+import { deleteRecurringLine, insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
 import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
@@ -603,10 +603,13 @@ export async function removeService(
   // is then read from `product_periodical_snapshots`, kept equal to the line by
   // `syncProductSnapshotsOfVersion()` (every Draft writer's `touch()`, and the
   // clone that made the version).
+  // #2126 stage 5c-2c: the line is locked by its id alone, since a line the
+  // Draft links but another Product Set wrote is still the Draft's to change
+  // (through a copy, below); the junction read then says whether the Draft links it.
   const { rows: locked } = await tx.query<any>(
     `SELECT id FROM member_products_recurrent_snapshot
-      WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
-    [serviceId, draft.gym_id, draft.id]);
+      WHERE id = ? AND gym_id = ? FOR UPDATE`,
+    [serviceId, draft.gym_id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
     `SELECT s.starts_at, s.ends_at, s.schedule_id FROM product_set_periodical_snapshots lnk
@@ -621,15 +624,18 @@ export async function removeService(
   const today = new Date().toISOString().slice(0, 10);
   const deleted = !opts.legacy || dateOnly(rows[0].starts_at) > today;
   let endsAt = today;
+  // #2126 stage 5c-2c: a line another Product Set links is copied for the Draft
+  // before it is written; `lineId` is the Draft's own line.
+  const lineId = (await ownRecurringLine(tx, draft.gym_id, draft.id, serviceId)) ?? serviceId;
   if (deleted) {
-    await deleteRecurringLine(tx, draft.gym_id, serviceId);
+    await deleteRecurringLine(tx, draft.gym_id, lineId);
   } else {
     // #1914 — a removed line keeps what was paid for: it ends on the last day
     // of its last paid period when that is still ahead, else today.
     const paidThrough = rows[0].schedule_id != null
       ? await loadPaidThroughForSchedule(tx, draft.gym_id, Number(rows[0].schedule_id)) : null;
     endsAt = paidThrough && paidThrough > today ? paidThrough : today;
-    await updateRecurringLine(tx, draft.gym_id, serviceId, { ends_at: endsAt });
+    await updateRecurringLine(tx, draft.gym_id, lineId, { ends_at: endsAt });
   }
   await touch(tx, draft);
   return { ok: true, deleted, ends_at: deleted ? null : endsAt };
@@ -649,10 +655,13 @@ export async function setServiceQuantity(
   }
   // #2126 stage 3s — lock the legacy line (the writer below), then read whether
   // it is still running from its synced snapshot.
+  // #2126 stage 5c-2c: the line is locked by its id alone, since a line the
+  // Draft links but another Product Set wrote is still the Draft's to change
+  // (through a copy, below); the junction read then says whether the Draft links it.
   const { rows: locked } = await tx.query<any>(
     `SELECT id FROM member_products_recurrent_snapshot
-      WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
-    [serviceId, draft.gym_id, draft.id]);
+      WHERE id = ? AND gym_id = ? FOR UPDATE`,
+    [serviceId, draft.gym_id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
     `SELECT 1 FROM product_set_periodical_snapshots lnk
@@ -660,7 +669,10 @@ export async function setServiceQuantity(
       WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
-  await updateRecurringLine(tx, draft.gym_id, serviceId, { quantity });
+  // #2126 stage 5c-2c: a line another Product Set links is copied for the Draft
+  // before it is written; `lineId` is the Draft's own line.
+  const lineId = (await ownRecurringLine(tx, draft.gym_id, draft.id, serviceId)) ?? serviceId;
+  await updateRecurringLine(tx, draft.gym_id, lineId, { quantity });
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true, quantity };
