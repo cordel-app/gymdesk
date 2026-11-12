@@ -85,6 +85,11 @@ export interface MemberProductSetPlan {
   membership_plan_id: number | null;
   plan_name: string | null;
   plan_description: string | null;
+  /** #2744 — the Plan's picture and cadence, so *My Plans* draws the Add Plan catalogue's card. */
+  plan_image_url: string | null;
+  plan_image_thumbnail_url: string | null;
+  billing_interval: number | null;
+  billing_unit: string | null;
   change: 'added' | 'inherited';
   /** The assignment's own lifecycle status, else the version's status for a plan no assignment holds yet. */
   status: string;
@@ -94,7 +99,7 @@ export interface MemberProductSetPlan {
   membership_fee: number | null;
   discount_reason: string | null;
   beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
-  benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number }[];
+  benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean }[];
 }
 
 /**
@@ -174,6 +179,9 @@ export async function loadMemberProductSetView(
   // stage 3: a plan that cancels on its end date) are listed too, flagged.
   const { rows: planRows } = await db.query<any>(
     `SELECT s.id AS plan_snapshot_id, s.membership_plan_id, mp.name AS plan_name, mp.description AS plan_description,
+            mp.image_url AS plan_image_url, mp.image_thumbnail_url AS plan_image_thumbnail_url,
+            COALESCE(s.recurring_billing_interval, bp.recurring_billing_interval) AS billing_interval,
+            COALESCE(s.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit,
             ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS inherited, j.entitlement_only,
             s.starts_at AS snapshot_starts_at, s.ends_at AS snapshot_ends_at,
             s.membership_fee_price, s.discount_reason,
@@ -184,6 +192,7 @@ export async function loadMemberProductSetView(
        JOIN product_sets ps ON ps.id = j.product_set_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = s.membership_plan_id AND bp.gym_id = s.gym_id
       WHERE j.product_set_id = ? ORDER BY j.entitlement_only, j.id`, [gymId, Number(set.id)]);
   const snapshotIds = planRows.map((r) => Number(r.plan_snapshot_id));
   const beneficiaries = new Map<number, MemberProductSetPlan['beneficiaries']>();
@@ -201,7 +210,7 @@ export async function loadMemberProductSetView(
     }
     for (const category of PLAN_LINE_CATEGORIES) {
       const { rows: lRows } = await db.query<any>(
-        `SELECT plan_snapshot_id, product_id, item_name, quantity, item_billing_frequency, unit_price
+        `SELECT plan_snapshot_id, product_id, item_name, quantity, item_billing_frequency, unit_price, mandatory
            FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id IN (${marks}) ORDER BY item_name, id`,
         [gymId, ...snapshotIds]);
       for (const r of lRows) {
@@ -209,6 +218,7 @@ export async function loadMemberProductSetView(
         list.push({
           category, product_id: Number(r.product_id), name: r.item_name, quantity: Number(r.quantity) || 1,
           billing_frequency: r.item_billing_frequency ?? null, unit_price: Number(r.unit_price),
+          mandatory: Number(r.mandatory) !== 0,
         });
         benefits.set(Number(r.plan_snapshot_id), list);
       }
@@ -231,6 +241,10 @@ export async function loadMemberProductSetView(
         membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
         plan_name: r.plan_name ?? null,
         plan_description: r.plan_description ?? null,
+        plan_image_url: r.plan_image_url ?? null,
+        plan_image_thumbnail_url: r.plan_image_thumbnail_url ?? r.plan_image_url ?? null,
+        billing_interval: r.billing_interval == null ? null : Number(r.billing_interval),
+        billing_unit: r.billing_unit ?? null,
         change: Number(r.inherited) === 1 ? 'inherited' as const : 'added' as const,
         status: r.lifecycle_status ?? String(set.status),
         entitlement_only: Number(r.entitlement_only) === 1,

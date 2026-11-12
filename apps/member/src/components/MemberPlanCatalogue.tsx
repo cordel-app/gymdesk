@@ -53,6 +53,15 @@ export interface MemberPlanCardItem {
   overview?: PlanOverviewView | null;
   /** The card's one action row: *Choose this plan*. */
   action?: ReactNode;
+  /** #2744 — a status pill beside the name (*My Plans*: the plan's own status). */
+  status?: ReactNode;
+  /**
+   * #2744 — what sits immediately below the plan name, outside the toggle: the
+   * pending payment of a plan awaiting its first payment, with its actions.
+   */
+  notice?: ReactNode;
+  /** #2744 — extra content of the expanded card (*My Plans*: dates and items). */
+  details?: ReactNode;
 }
 
 export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLabel }: {
@@ -73,7 +82,7 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
       ) : (
         <ul style={styles.list}>
           {items.map((item) => (
-            <PlanCard key={item.key} item={item} />
+            <MemberPlanCard key={item.key} item={item} />
           ))}
         </ul>
       )}
@@ -87,7 +96,7 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
  * summary and the purchase button on the right, the existing details below once
  * the card is expanded. The image and the button stop their own clicks.
  */
-function PlanCard({ item }: { item: MemberPlanCardItem }) {
+export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
   const [open, setOpen] = useState(false);
   const [broken, setBroken] = useState(false);
   const toggle = () => setOpen((v) => !v);
@@ -116,22 +125,29 @@ function PlanCard({ item }: { item: MemberPlanCardItem }) {
             <div style={styles.head}>
               <span style={styles.name}>{open ? '▾' : '▸'} {item.name}</span>
               <span style={styles.priceGroup}>
+                {item.status}
                 <span style={styles.price}>{item.price ?? '—'}</span>
                 {item.frequency && <span style={styles.frequency}>/ {item.frequency}</span>}
               </span>
             </div>
+          </div>
+          {item.notice && <div onClick={(e) => e.stopPropagation()}>{item.notice}</div>}
+          {(item.included || item.optional || item.initial) && (
+          <div style={styles.summaryButton} onClick={toggle}>
             {item.included && <span style={styles.line}><b>{item.includedLabel}</b> {item.included}</span>}
             {item.optional && <span style={styles.line}><b>{item.optionalLabel}</b> {item.optional}</span>}
             {item.initial && (
               <span style={styles.line}><b>{item.initial.label}</b> {item.initial.value}</span>
             )}
           </div>
+          )}
           {item.action && <div style={styles.action} onClick={(e) => e.stopPropagation()}>{item.action}</div>}
         </div>
       </div>
       {open && (
         <div style={styles.details}>
           {item.description && <p style={styles.description}>{item.description}</p>}
+              {item.details}
               {item.overview && <MemberPlanOverview view={item.overview} />}
               {(item.promotions ?? []).map((promotion) => (
                 <div key={promotion.key} style={styles.promotion}>

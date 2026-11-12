@@ -26,6 +26,10 @@ import { BookingDetailDialog } from '@/components/BookingDetailDialog';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { formatGymTime } from '@/lib/gymFormat';
+import { formatPaymentAmount } from '@/lib/memberPayments';
+import { homePendingPayment } from '@/lib/memberProducts';
+import { MEMBERSHIP_PATH } from '@/lib/membershipPages';
+import { RETRY_PAYMENT_PARAM } from '@/lib/paymentReturn';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
 
@@ -106,6 +110,8 @@ export default function HomePage() {
   const [sameDayMore, setSameDayMore] = useState(0);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
   const [activeProducts, setActiveProducts] = useState(0);
+  // #2744 — the global pending payment notice lives here, not on My Products.
+  const [pendingPayment, setPendingPayment] = useState<{ amount: number; currency: string } | null>(null);
   const [serviceSessions, setServiceSessions] = useState(0);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
@@ -127,11 +133,12 @@ export default function HomePage() {
       const to = new Date();
       to.setDate(to.getDate() + 7);
 
-      const [sessions, mship, notifs, nutrition] = await Promise.all([
+      const [sessions, mship, notifs, nutrition, requests] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
-        apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0 })),
+        apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number; pending_membership?: { membership_fee: number | null } | null }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0, pending_membership: null })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
+        apiFetch<{ status: string; source?: string | null; amount: string; currency?: string | null }[]>('/me/payment-requests').catch(() => []),
       ]);
 
       const booked = sessions.filter(
@@ -144,6 +151,7 @@ export default function HomePage() {
           : 0,
       );
       setMembership(mship.membership);
+      setPendingPayment(homePendingPayment(mship.pending_membership, requests));
       setActiveProducts(mship.active_products_count ?? 0);
       setServiceSessions(mship.professional_service_sessions ?? 0);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
@@ -252,6 +260,22 @@ export default function HomePage() {
     <main style={styles.container}>
       <h1 style={styles.greeting}>{t(`home.${greetingKey()}`, { name: firstName })}</h1>
 
+
+      {/* #2744 — the one pending payment notice. Pay now opens the existing
+          consent and checkout on My Products (`?pay=1`), so nothing is created here. */}
+      {!loading && pendingPayment && featureEnabled('member_web.my_membership') && (
+        <section style={styles.section}>
+          <div style={styles.pendingPaymentCard} data-home-pending-payment>
+            <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+              <p style={styles.pendingPaymentHeading}>{t('payment_banner.pending_heading')}</p>
+              <p style={styles.pendingPaymentAmount}>{formatPaymentAmount(pendingPayment.amount, pendingPayment.currency, gymFormat) ?? pendingPayment.amount.toFixed(2)}</p>
+            </div>
+            <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${MEMBERSHIP_PATH}?${RETRY_PAYMENT_PARAM}=1`)}>
+              {t('payment_banner.pay_now')}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Alerts */}
       {!loading && alert && (
@@ -505,6 +529,9 @@ const styles: Record<string, React.CSSProperties> = {
   btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },
   btnSecondary:    { ...secondaryButtonStyle, marginTop: 8, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
   alertCard:       { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
+  pendingPaymentCard: { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  pendingPaymentHeading: { margin: 0, fontSize: 14, fontWeight: 600, color: 'inherit' },
+  pendingPaymentAmount: { margin: '4px 0 0', fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums' },
   alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
   alertDetail:     { margin: '4px 0 0', fontSize: 13, color: 'inherit' },
   alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
