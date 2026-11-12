@@ -5012,7 +5012,7 @@
     "col_quantity": "Cantidad",
     "col_frequency": "Frecuencia",
     "col_item_action": "Beneficio",
-    "col_original_price": "Precio Acordado",
+    "col_original_price": "Precio base",
     "col_applied_tax": "Impuesto aplicado",
     "col_applied_promotion": "Promoción aplicada",
     "col_promotion_benefit": "Beneficio de la promoción",
@@ -5162,7 +5162,9 @@
     "unit_assignees_title": "Miembros de la familia por unidad",
     "unit_assignees_hint": "Cada unidad de un producto individual es para un miembro de la familia. Varias unidades pueden ser para la misma persona.",
     "unit_assignees_unit_label": "{product}, unidad {unit}",
-    "unit_assignees_save_error": "No se pudieron guardar los miembros de la familia."
+    "unit_assignees_save_error": "No se pudieron guardar los miembros de la familia.",
+    "section_plan_promotions": "Promociones",
+    "no_plan_promotions": "No hay promociones aplicadas a este plan."
   },
   "taxes": {
     "title": "Impuestos",

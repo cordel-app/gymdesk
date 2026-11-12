@@ -5026,7 +5026,7 @@
     "col_quantity": "Quantity",
     "col_frequency": "Frequency",
     "col_item_action": "Benefit",
-    "col_original_price": "Agreed Price",
+    "col_original_price": "Base Price",
     "col_applied_tax": "Applied Tax",
     "col_applied_promotion": "Applied Promotion",
     "col_promotion_benefit": "Promotion Benefit",
@@ -5176,7 +5176,9 @@
     "unit_assignees_title": "Family members per unit",
     "unit_assignees_hint": "Each unit of an individual product is for one family member. Several units may go to the same person.",
     "unit_assignees_unit_label": "{product}, unit {unit}",
-    "unit_assignees_save_error": "Could not save the family members."
+    "unit_assignees_save_error": "Could not save the family members.",
+    "section_plan_promotions": "Promotions",
+    "no_plan_promotions": "No promotions applied to this plan."
   },
   "taxes": {
     "title": "Taxes",

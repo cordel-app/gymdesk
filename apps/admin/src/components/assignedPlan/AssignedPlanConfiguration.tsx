@@ -37,10 +37,10 @@ import { BillingDurationExplanations } from '@/components/BillingDurationExplana
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import {
-  CircularThumbnail, NestedPromotionRow, ProductDetailModal, PromotionDetailModal,
+  CircularThumbnail, PlanPromotionRow, ProductDetailModal, PromotionDetailModal,
   useAppliedPromotionToggle,
 } from './AssignedPlanPromotions';
-import { placePromotionsUnderProducts, thumbnailSrc } from './promotionPlacement';
+import { thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { PlanUnitAssignees } from './PlanUnitAssignees';
 import { primaryBtnSmall } from '@/components/ui';
@@ -273,15 +273,9 @@ export function AssignedPlanConfiguration({
     final_line_price_incl_tax: null,
   };
 
-  // #2478 — every application (standing or spent) is drawn under the Product
-  // line(s) it grants, or under the Membership Fee when it grants none of them;
-  // the separate Promotions section is gone. One toggle per card, so the same
-  // application drawn under two Products is one checkbox state and one revoke.
-  const placement = placePromotionsUnderProducts(
-    promotions,
-    [...snapshot.oneoff_benefits, ...snapshot.session_benefits, ...snapshot.periodical_benefits]
-      .map((b) => b.product_id),
-  );
+  // #2657 — a Promotion applies to the whole plan, so each application (standing
+  // or spent) is drawn once, in its own row below Period Benefits, rather than
+  // under every Product line it grants (#2478). One toggle per card.
   const promotionToggle = useAppliedPromotionToggle(assignedPlanId, onChanged);
   const toggleGate = { cardEditing, canWrite, readOnlyTitle };
   const [productDetail, setProductDetail] = useState<AssignedPlanSnapshotBenefit | null>(null);
@@ -632,16 +626,6 @@ export function AssignedPlanConfiguration({
           benefitContext="plan"
           showPrices
           showBreakdown
-          renderNestedRow={() => (placement.unplaced.length === 0 ? null : placement.unplaced.map((p) => (
-            /* #2478 — the applications that grant none of the card's Products
-               (a Membership Fee Promotion) sit under the fee they act on. */
-            <NestedPromotionRow
-              key={p.id}
-              promotion={p}
-              checkbox={promotionToggle.checkbox(p, toggleGate)}
-              onOpen={() => setPromotionDetail(p)}
-            />
-          )))}
         />
       )}
       </CardSection>
@@ -676,7 +660,7 @@ export function AssignedPlanConfiguration({
             ) : (
               /* #924 stage 1 — the one shared grid every Product section
                  of every card renders from (#916/#919): Product,
-                 Quantity, Frequency, Benefit, Agreed Price, Final Price, in
+                 Quantity, Frequency, Benefit, Base Price, Final Price, in
                  that order and at the same horizontal positions as the
                  Membership Plan it came from. The hand-rolled table this
                  replaced had its own columns and its own widths, which is the
@@ -705,24 +689,27 @@ export function AssignedPlanConfiguration({
                     />
                   );
                 }}
-                renderNestedRow={(_row, idx) => {
-                  const placed = placement.byProduct.get(rows[idx].product_id);
-                  if (!placed || placed.length === 0) return null;
-                  return placed.map(({ promotion, grant }) => (
-                    <NestedPromotionRow
-                      key={promotion.id}
-                      promotion={promotion}
-                      grant={grant}
-                      checkbox={promotionToggle.checkbox(promotion, toggleGate)}
-                      onOpen={() => setPromotionDetail(promotion)}
-                    />
-                  ));
-                }}
               />
             )}
           </CardSection>
         );
       })}
+
+      {/* #2657 — the plan's Promotions, each drawn once, right below Period
+          Benefits: a Promotion belongs to the whole Membership Plan. The
+          square thumbnail opens the detail modal with the original image. */}
+      <CardSection label={t('section_plan_promotions')}>
+        {promotions.length === 0 ? (
+          <p style={hintSt}>{t('no_plan_promotions')}</p>
+        ) : promotions.map((p) => (
+          <PlanPromotionRow
+            key={p.id}
+            promotion={p}
+            checkbox={promotionToggle.checkbox(p, toggleGate)}
+            onOpen={() => setPromotionDetail(p)}
+          />
+        ))}
+      </CardSection>
 
       {/* #2609 stage 3 — who each unit of the Individual Products is for. */}
       <PlanUnitAssignees
