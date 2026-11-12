@@ -145,8 +145,11 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   if ('kind' in added) return added;
 
   if (input.directDiscountPercent != null) {
+    // #2126 stage 3r — the line's list price is read from its Product snapshot,
+    // which `addService()` has just synced (`touch()`); the write stays on the
+    // legacy line and is re-synced below.
     const { rows } = await tx.query<any>(
-      'SELECT unit_price FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?',
+      'SELECT unit_price FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ?',
       [added.id, input.gymId]);
     const list = Number(rows[0].unit_price);
     await tx.query(
