@@ -175,7 +175,9 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
     const regen = await insertEvent(setId, memberId, s1, d1);
     const attemptedCollision = await insertEvent(setId, memberId, s1, d2);
     await attempt(attemptedCollision, memberId);
-    const moved = await insertEvent(setId, memberId, s1, day(50));
+    // Off the 1st, so it never collides with d1/d2, which sit on the monthly grid.
+    const movedDate = day(50).endsWith('-01') ? day(51) : day(50);
+    const moved = await insertEvent(setId, memberId, s1, movedDate);
     // The plan snapshot bills on the merged schedule: it moves with it.
     await db.query(
       `UPDATE plan_snapshots SET schedule_id = ? WHERE id IN
@@ -189,7 +191,7 @@ describe('consolidating schedules of one cadence (#2125 M5c-2)', () => {
 
     const after = await events(setId);
     // Moved unchanged; kept on its own schedule; the plan's past event untouched.
-    expect(after.find((e) => e.id === moved)).toMatchObject({ schedule_id: plan, billing_date: day(50) });
+    expect(after.find((e) => e.id === moved)).toMatchObject({ schedule_id: plan, billing_date: movedDate });
     expect(after.find((e) => e.id === pastCollision)).toMatchObject({ schedule_id: s1 });
     expect(after.find((e) => e.id === attemptedCollision)).toMatchObject({ schedule_id: s1, attempts: 1 });
     expect(after.find((e) => e.id === planPast)).toMatchObject({ schedule_id: plan, billing_date: past });
