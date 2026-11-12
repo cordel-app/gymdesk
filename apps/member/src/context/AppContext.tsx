@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import type { MembersImages } from '@/lib/membersBackground';
+import { MEMBER_ACCESS_REVOKED_EVENT, readAccessRevocation, type MemberAccessRevocation } from '@/lib/memberAccessRevoked';
 
 const ACTIVE_GYM_KEY = 'activeGymId';
 
@@ -93,6 +94,13 @@ interface AppContextValue {
   rateLimited: boolean;
   /** Re-runs the context load, keeping the Clerk session. */
   reload: () => void;
+  /**
+   * #2681: the API refused the member because their Access Rights are
+   * `revoked`. Set from the context load and from any later `apiFetch` refusal
+   * (a revocation while the app is open); cleared by a successful load, which is
+   * how a grant restores the app. `MemberAccessGate` is the one consumer.
+   */
+  accessRevoked: MemberAccessRevocation | null;
   centers: MemberCenter[];
   activeCenterId: number | null;
   setActiveCenterId: (id: number) => void;
@@ -114,6 +122,7 @@ const AppContext = createContext<AppContextValue>({
   loadError: false,
   rateLimited: false,
   reload: () => {},
+  accessRevoked: null,
   centers: [],
   activeCenterId: null,
   setActiveCenterId: () => {},
@@ -139,6 +148,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
+  const [accessRevoked, setAccessRevoked] = useState<MemberAccessRevocation | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
@@ -173,7 +183,12 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
       headers: buildHeaders(token, resolvedGymId),
     });
     if (res.status === 429 && !isCancelled?.()) setRateLimited(true);
+    if (res.status === 403 && !isCancelled?.()) {
+      const revocation = readAccessRevocation(res.status, await res.json().catch(() => null));
+      if (revocation) setAccessRevoked(revocation);
+    }
     if (isCancelled?.() || !res.ok) return false;
+    setAccessRevoked(null);
     setMember(await res.json());
     setIsLinked(true);
 
@@ -219,6 +234,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
       setLoading(true);
       setLoadError(false);
       setRateLimited(false);
+      setAccessRevoked(null);
       setIsLinked(false);
       setMember(null);
       setCenters([]);
@@ -286,6 +302,17 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     };
   }, [impersonationReady, isLoaded, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin, reloadKey]);
 
+  // #2681: a request refused as revoked while the app is open replaces the app
+  // with the revoked-access screen at once, not on the next full load.
+  useEffect(() => {
+    function onRevoked(event: Event) {
+      const detail = (event as CustomEvent<MemberAccessRevocation>).detail;
+      if (detail) setAccessRevoked(detail);
+    }
+    window.addEventListener(MEMBER_ACCESS_REVOKED_EVENT, onRevoked);
+    return () => window.removeEventListener(MEMBER_ACCESS_REVOKED_EVENT, onRevoked);
+  }, []);
+
   /** #1073: retry the load itself rather than reloading the WebView, so the
    * member keeps their session and the app does not pay the slow first load
    * again. */
@@ -334,7 +361,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, loadError, rateLimited, reload, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, loadError, rateLimited, reload, accessRevoked, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

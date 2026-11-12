@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useLocale } from 'next-intl';
 import { useApp } from '@/context/AppContext';
+import { MEMBER_ACCESS_REVOKED_EVENT, readAccessRevocation } from '@/lib/memberAccessRevoked';
 
 const IMPERSONATION_KEY = 'impersonation_session';
 
@@ -50,6 +51,11 @@ export function useApiClient() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      // #2681: the member's access was revoked while the app is open.
+      const revocation = readAccessRevocation(res.status, body);
+      if (revocation && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(MEMBER_ACCESS_REVOKED_EVENT, { detail: revocation }));
+      }
       // `code` and the rest of the body travel with the message (#1189 stage 4):
       // a refusal such as `professional_service_required` names what would
       // unlock the action, and a caller that wants it reads it off the error.

@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { preferredLocalePath } from '@/lib/memberLocale';
+import { MemberAccessGate } from './MemberAccessGate';
 
 /**
  * #1039 — the **one** place a member's stored default language is applied to
@@ -39,7 +40,7 @@ export function MemberLocalePreference({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { member, loading } = useApp();
+  const { member, loading, accessRevoked } = useApp();
   const { isImpersonating } = useImpersonation();
   const [gaveUp, setGaveUp] = useState(false);
 
@@ -57,8 +58,11 @@ export function MemberLocalePreference({ children }: { children: ReactNode }) {
       const back = saved ? preferredLocalePath(pathname ?? '/', locale, saved) : null;
       if (back) pending = { target: back, kind: 'return' };
     }
-    if (!pending && member) {
-      const target = preferredLocalePath(pathname ?? '/', locale, member.preferred_locale);
+    // #2681: a revoked member has no profile to read, so the refusal carries
+    // their language and the revoked-access screen follows the same rule.
+    const preference = member ? member.preferred_locale : accessRevoked?.preferredLocale ?? null;
+    if (!pending && (member || accessRevoked)) {
+      const target = preferredLocalePath(pathname ?? '/', locale, preference);
       if (target) pending = { target, kind: 'preference' };
     }
   }
@@ -81,7 +85,9 @@ export function MemberLocalePreference({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [target]);
 
-  return <>{target && !gaveUp ? null : children}</>;
+  // #2681: a revoked member's page is replaced by the revoked-access screen,
+  // shown only once it is in their language.
+  return <>{target && !gaveUp ? null : <MemberAccessGate>{children}</MemberAccessGate>}</>;
 }
 
 /** How long the page is held back for a language switch before it is shown anyway. */

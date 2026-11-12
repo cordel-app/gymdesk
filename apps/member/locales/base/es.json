@@ -949,5 +949,10 @@
     "min_reached": "Se necesitan al menos {min} participantes",
     "below_min": "Este servicio necesita al menos {min} participantes de tu familia.",
     "above_max": "Este servicio admite como máximo {max} participantes."
+  },
+  "access_revoked": {
+    "title": "Acceso revocado",
+    "message": "Tu acceso a la Members App ha sido revocado. Ponte en contacto con {gymName} para obtener más información.",
+    "message_no_gym": "Tu acceso a la Members App ha sido revocado. Ponte en contacto con tu gimnasio para obtener más información."
   }
 }

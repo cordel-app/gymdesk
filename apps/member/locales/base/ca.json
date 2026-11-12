@@ -949,5 +949,10 @@
     "min_reached": "Calen almenys {min} participants",
     "below_min": "Aquest servei necessita almenys {min} participants de la teva família.",
     "above_max": "Aquest servei admet com a màxim {max} participants."
+  },
+  "access_revoked": {
+    "title": "Accés revocat",
+    "message": "S'ha revocat el teu accés a la Members App. Posa't en contacte amb {gymName} per obtenir més informació.",
+    "message_no_gym": "S'ha revocat el teu accés a la Members App. Posa't en contacte amb el teu gimnàs per obtenir més informació."
   }
 }

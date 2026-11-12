@@ -133,7 +133,8 @@ describe('the Members App side of the preference', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '');
     expect(component).toMatch(/export function MemberLocalePreference\(\{ children \}/);
     expect(component).toContain('SWITCH_TIMEOUT_MS');
-    expect(component).toMatch(/target && !gaveUp \? null : children/);
+    // #2681: the page it releases goes through the revoked-access gate.
+    expect(component).toMatch(/target && !gaveUp \? null : <MemberAccessGate>\{children\}<\/MemberAccessGate>/);
     const layout = memberFile('app/[locale]/layout.tsx');
     expect(layout).toContain('<MemberLocalePreference>{children}</MemberLocalePreference>');
     expect(layout).not.toContain('<MemberLocalePreference />');
