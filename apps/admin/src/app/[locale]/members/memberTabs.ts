@@ -32,6 +32,7 @@ export const MEMBER_TAB_IDS = [
   'profile',
   'family',
   'products_services',
+  'bookings',
   'professional_services',
   'nutrition',
   'personal_goals',
@@ -53,6 +54,7 @@ export type MemberSectionKey =
   | 'section_recurring_products'
   | 'section_additional_services'
   | 'section_pt_slots'
+  | 'section_bookings'
   | 'section_professional_services'
   | 'section_billing_events'
   | 'section_nutrition_plans'
@@ -95,6 +97,8 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       'section_billing_events',
     ],
   },
+  // #2720 — the Member's bookings, between Products and Professional Services.
+  { id: 'bookings', labelKey: 'tab_bookings', sections: ['section_bookings'] },
   {
     id: 'professional_services',
     labelKey: 'tab_professional_services',
