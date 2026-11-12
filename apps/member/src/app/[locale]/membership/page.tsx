@@ -27,7 +27,7 @@ import {
 import {
   BillingEventCard,
   type BillingEventCardLine,
-  PaymentsCard,
+  PaymentsSection,
   PaymentsSubcard,
 } from '@/components/MemberPaymentsCard';
 import {
@@ -332,7 +332,7 @@ export default function MembershipPage() {
   const [reloadKey, setReloadKey] = useState(0);
   // #1779 — the Professional Services tab. `null` = the read failed.
   const [serviceBalances, setServiceBalances] = useState<MemberServiceBalanceItem[] | null>([]);
-  const [tab, setTab] = useState<'products' | 'services'>('products');
+  const [tab, setTab] = useState<'products' | 'services' | 'payments'>('products');
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -1040,7 +1040,8 @@ export default function MembershipPage() {
     );
   }
 
-  // #1779 — two tabs over the page; the first is everything the page showed before.
+  // #1779 — tabs over the page; the first is everything the page showed before,
+  // less the Payments card, which is its own tab since #2740.
   function renderTabs() {
     const tabStyle = (active: boolean) => ({
       ...(active ? primaryButtonStyle : secondaryButtonStyle),
@@ -1054,6 +1055,9 @@ export default function MembershipPage() {
         </button>
         <button type="button" role="tab" aria-selected={tab === 'services'} style={tabStyle(tab === 'services')} onClick={() => setTab('services')}>
           {t('membership.tab_services')}
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'payments'} style={tabStyle(tab === 'payments')} onClick={() => setTab('payments')}>
+          {t('membership.tab_payments')}
         </button>
       </div>
     );
@@ -1071,6 +1075,64 @@ export default function MembershipPage() {
           imageAlt: t('membership.services_image_alt'),
         }}
       />
+    );
+  }
+
+  // #2740 — Payments is its own tab: the three subcards #1123 put in one
+  // collapsed card, from the ledger and the forecast the page already loads.
+  function renderPaymentsTab() {
+    return (
+      <PaymentsSection>
+        <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
+          {nextGroup ? (
+            <BillingEventCard
+              date={formatPaymentDate(nextGroup.date, gymFmt)}
+              total={money(nextGroup.total)}
+              totalLabel={t('payments.total')}
+              lines={forecastCardLines(nextGroup)}
+              prominent
+              footer={forecast.tax_included ? t('payments.tax_included') : null}
+            />
+          ) : (
+            <p style={styles.hint}>{t('payments.next_empty')}</p>
+          )}
+        </PaymentsSubcard>
+
+        <PaymentsSubcard title={t('payments.past_heading')}>
+          {pastGroups.length === 0 ? (
+            <p style={styles.hint}>{t('payments.past_empty')}</p>
+          ) : (
+            pastGroups.map((group) => (
+              <BillingEventCard
+                key={group.date}
+                date={formatPaymentDate(group.date, gymFmt)}
+                total={money(group.total)}
+                totalLabel={t('payments.total')}
+                lines={pastCardLines(group.events)}
+              />
+            ))
+          )}
+        </PaymentsSubcard>
+
+        <PaymentsSubcard title={t('payments.forecast_heading')}>
+          {laterGroups.length === 0 ? (
+            <p style={styles.hint}>
+              {forecast.available ? t('payments.forecast_empty') : t('payments.forecast_unavailable')}
+            </p>
+          ) : (
+            laterGroups.map((group) => (
+              <BillingEventCard
+                key={group.date}
+                date={formatPaymentDate(group.date, gymFmt)}
+                total={money(group.total)}
+                totalLabel={t('payments.total')}
+                lines={forecastCardLines(group)}
+                badge={<span style={statusPillStyle('info')}>{t('payments.forecast_badge')}</span>}
+              />
+            ))
+          )}
+        </PaymentsSubcard>
+      </PaymentsSection>
     );
   }
 
@@ -1424,15 +1486,6 @@ export default function MembershipPage() {
    * payment — above the current plan (§1), in both the with-plan and the
    * no-plan branches so the entry point is never missing.
    */
-  function renderBackLink() {
-    return (
-      <a href={`/${locale}${MEMBERSHIP_PATH}`} style={styles.backLink}
-        onClick={(e) => { e.preventDefault(); router.push(`/${locale}${MEMBERSHIP_PATH}`); }}>
-        {t('membership.back_to_products')}
-      </a>
-    );
-  }
-
   function renderPlansHeader() {
     return (
       <>
@@ -1867,7 +1920,6 @@ export default function MembershipPage() {
   if (mode === 'add_plan') {
     return (
       <main style={styles.container}>
-        {renderBackLink()}
         {renderPlansHeader()}
         {renderPlanCatalogue()}
         {renderDialogs()}
@@ -1878,7 +1930,6 @@ export default function MembershipPage() {
   if (mode === 'add_product') {
     return (
       <main style={styles.container}>
-        {renderBackLink()}
         {renderProducts()}
         {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
         {renderSetSummary()}
@@ -1893,7 +1944,7 @@ export default function MembershipPage() {
     return (
       <main style={styles.container}>
         {renderTabs()}
-        {tab === 'services' ? renderServicesTab() : (<>
+        {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
         {renderPlansHeader()}
         {renderMyPlans()}
         {renderMyProducts()}
@@ -1908,7 +1959,7 @@ export default function MembershipPage() {
   return (
     <main style={styles.container}>
       {renderTabs()}
-      {tab === 'services' ? renderServicesTab() : (<>
+      {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -1972,71 +2023,6 @@ export default function MembershipPage() {
         </section>
       )}
 
-      {/* #1123 — Payments: one collapsed card holding Next Payment, Past
-          Billing Events and Forecast Billing Events. It replaces the page's
-          own *Upcoming payments* and *Payment history* sections: both are
-          absorbed, so neither the ledger nor a projected charge is rendered
-          twice. */}
-      <PaymentsCard
-        title={t('payments.title')}
-        summary={nextGroup
-          ? t('payments.summary_next', {
-            date: formatPaymentDate(nextGroup.date, gymFmt),
-            amount: money(nextGroup.total) ?? '—',
-          })
-          : null}
-      >
-        <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
-          {nextGroup ? (
-            <BillingEventCard
-              date={formatPaymentDate(nextGroup.date, gymFmt)}
-              total={money(nextGroup.total)}
-              totalLabel={t('payments.total')}
-              lines={forecastCardLines(nextGroup)}
-              prominent
-              footer={forecast.tax_included ? t('payments.tax_included') : null}
-            />
-          ) : (
-            <p style={styles.hint}>{t('payments.next_empty')}</p>
-          )}
-        </PaymentsSubcard>
-
-        <PaymentsSubcard title={t('payments.past_heading')}>
-          {pastGroups.length === 0 ? (
-            <p style={styles.hint}>{t('payments.past_empty')}</p>
-          ) : (
-            pastGroups.map((group) => (
-              <BillingEventCard
-                key={group.date}
-                date={formatPaymentDate(group.date, gymFmt)}
-                total={money(group.total)}
-                totalLabel={t('payments.total')}
-                lines={pastCardLines(group.events)}
-              />
-            ))
-          )}
-        </PaymentsSubcard>
-
-        <PaymentsSubcard title={t('payments.forecast_heading')}>
-          {laterGroups.length === 0 ? (
-            <p style={styles.hint}>
-              {forecast.available ? t('payments.forecast_empty') : t('payments.forecast_unavailable')}
-            </p>
-          ) : (
-            laterGroups.map((group) => (
-              <BillingEventCard
-                key={group.date}
-                date={formatPaymentDate(group.date, gymFmt)}
-                total={money(group.total)}
-                totalLabel={t('payments.total')}
-                lines={forecastCardLines(group)}
-                badge={<span style={statusPillStyle('info')}>{t('payments.forecast_badge')}</span>}
-              />
-            ))
-          )}
-        </PaymentsSubcard>
-      </PaymentsCard>
-
       {/* #1775 — Past Membership Plans close the page: secondary history,
           collapsed and muted, below everything the member acts on. */}
       {renderPastPlans()}
@@ -2087,7 +2073,6 @@ const styles: Record<string, React.CSSProperties> = {
   // #1122 — the Add plan row, the plan awaiting its first payment, and the
   // choose dialog's text. Every colour is the theme's (#983).
   addPlanRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginBottom: 12 },
-  backLink: { display: 'inline-block', marginBottom: 12, fontSize: 14, color: memberTheme.text, textDecoration: 'underline' },
   pendingPlanCard: { ...noticeStyle('warning'), marginBottom: 12 },
   pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
   pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },

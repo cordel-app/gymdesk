@@ -37,6 +37,7 @@
   },
   "nav": {
     "back_home": "Volver al inicio",
+    "back_to_products": "Volver a Mis Productos",
     "calendar": "Calendario",
     "training": "Mi Entrenamiento",
     "bookings": "Mis Reservas",
@@ -374,6 +375,7 @@
     "products_empty": "Tu gimnasio todavía no ofrece productos ni servicios adicionales.",
     "tab_products": "Planes y productos",
     "tab_services": "Servicios profesionales",
+    "tab_payments": "Pagos",
     "services_empty": "Tu gimnasio todavía no tiene servicios profesionales disponibles.",
     "services_error": "No se pudieron cargar tus servicios profesionales.",
     "services_balance": "{total, plural, one {# sesión} other {# sesiones}} ({available} disponibles + {booked} reservadas)",
@@ -554,8 +556,7 @@
     "summary_error_amount": "No se ha podido calcular el importe. Inténtalo más tarde.",
     "summary_error_generic": "No se ha podido confirmar tu selección. Inténtalo de nuevo.",
     "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde.",
-    "add_product": "+ Añadir producto",
-    "back_to_products": "← Mis Productos"
+    "add_product": "+ Añadir producto"
   },
   "payments": {
     "title": "Pagos",

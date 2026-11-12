@@ -23,3 +23,13 @@ export function membershipPageMode(pathname: string | null | undefined): Members
   if (segments[2] === 'add-product') return 'add_product';
   return 'overview';
 }
+
+/**
+ * #2741 — where the header's back control goes from a page (locale-less; ''
+ * is Home). On the two purchasing pages the header already reads
+ * "← My Products", so it goes back to My Products and the page draws no second
+ * back link of its own; everywhere else it goes Home, as before.
+ */
+export function headerBackPath(pathname: string | null | undefined): string {
+  return membershipPageMode(pathname) === 'overview' ? '' : MEMBERSHIP_PATH;
+}

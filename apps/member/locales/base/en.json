@@ -37,6 +37,7 @@
   },
   "nav": {
     "back_home": "Back to home",
+    "back_to_products": "Back to My Products",
     "calendar": "Calendar",
     "training": "My Training",
     "bookings": "My Bookings",
@@ -374,6 +375,7 @@
     "products_empty": "Your gym does not offer any additional products or services yet.",
     "tab_products": "Plans & Products",
     "tab_services": "Professional Services",
+    "tab_payments": "Payments",
     "services_empty": "Your gym has no professional services available yet.",
     "services_error": "Could not load your professional services.",
     "services_balance": "{total, plural, one {# session} other {# sessions}} ({available} available + {booked} booked)",
@@ -554,8 +556,7 @@
     "summary_error_amount": "The amount due could not be calculated. Please try again later.",
     "summary_error_generic": "Your selection could not be confirmed. Please try again.",
     "summary_error_unresolved": "A payment is still being processed. Please try again later.",
-    "add_product": "+ Add Product",
-    "back_to_products": "← My Products"
+    "add_product": "+ Add Product"
   },
   "payments": {
     "title": "Payments",

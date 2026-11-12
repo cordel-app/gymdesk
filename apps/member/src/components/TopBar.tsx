@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { memberTheme, withSafeArea } from '@/lib/memberChrome';
 import { MemberUserMenu } from '@/components/MemberUserMenu';
+import { headerBackPath } from '@/lib/membershipPages';
 
 const SECTION_TITLE_KEYS: Record<string, string> = {
   calendar: 'nav.calendar',
@@ -41,7 +42,10 @@ export function TopBar() {
 
   const homePath = `/${locale}`;
   // #1638: the back arrow and the section title are one control's two faces — both call this.
-  const goBack = () => router.push(homePath);
+  // #2741: on the Add Plan / Add Product pages it reads "← My Products" and goes there.
+  const backPath = headerBackPath(pathname);
+  const goBack = () => router.push(`${homePath}${backPath}`);
+  const backLabel = backPath ? t('nav.back_to_products') : t('nav.back_home');
   const isHome = pathname === homePath;
   const isNotifications = pathname.startsWith(`${homePath}/notifications`);
 
@@ -112,7 +116,7 @@ export function TopBar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
           <button
             onClick={goBack}
-            aria-label={t('nav.back_home')}
+            aria-label={backLabel}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'inherit', fontFamily: 'inherit', fontSize: 24, lineHeight: 1, flexShrink: 0 }}
           >
             ←
@@ -121,7 +125,7 @@ export function TopBar() {
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, lineHeight: 1.2, color: 'inherit', fontFamily: 'inherit', minWidth: 0, overflowWrap: 'anywhere' }}>
               <button
                 onClick={goBack}
-                aria-label={t('nav.back_home')}
+                aria-label={backLabel}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: 0, color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', overflowWrap: 'anywhere' }}
               >
                 {t(sectionTitleKey)}
