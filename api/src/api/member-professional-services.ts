@@ -8,6 +8,8 @@ import { resolveMemberProfessionalServices } from '../domain/memberProfessionalS
 import { resolveRequestActor } from '../domain/auditActor';
 import { reservationBalance } from '../domain/serviceReservation';
 import { loadBookedByService, loadServiceBalanceViews } from './service-reservation';
+import { familyWalletOf, inList, lockWallet, MEMBER_FAMILY_SQL } from './family-wallet';
+import { walletAdjustmentParams, walletAdjustmentScope, walletLedgerParams, walletLedgerScope } from '../domain/memberProfessionalServices';
 import {
   BalanceHistoryEntry,
   parseAdjustmentInput,
@@ -124,19 +126,31 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
     );
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
+    // #2670 stage 2: the Family wallet's history — the same for every member of the family.
+    const wallet = await familyWalletOf(db, gymId, memberId);
+    const ids = wallet.memberIds;
     const { rows: adjustments } = await db.query(
-      `SELECT delta, balance_before, balance_after, reason, created_at, created_by
-         FROM professional_service_adjustments
-        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?
-        ORDER BY id ASC`,
-      [gymId, memberId, serviceId],
+      `SELECT psa.delta, psa.balance_before, psa.balance_after, psa.reason, psa.created_at, psa.created_by,
+              psa.member_id, m.name AS member_name
+         FROM professional_service_adjustments psa
+         LEFT JOIN members m ON m.id = psa.member_id
+        WHERE psa.gym_id = ? AND ${walletAdjustmentScope('psa', wallet.familyId, inList(ids))}
+          AND psa.professional_service_id = ?
+        ORDER BY psa.id ASC`,
+      [gymId, ...walletAdjustmentParams(wallet.familyId, ids), serviceId],
     );
+    // The member named on a spend is the one who booked (the booking's member), not
+    // the holder of the grant it was taken from.
     const { rows: consumptions } = await db.query(
-      `SELECT reason, created_at, created_by, returned_at, returned_by
-         FROM professional_service_consumptions
-        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?
-        ORDER BY id ASC`,
-      [gymId, memberId, serviceId],
+      `SELECT psc.reason, psc.created_at, psc.created_by, psc.returned_at, psc.returned_by,
+              COALESCE(ceb.member_id, psc.member_id) AS member_id, m.name AS member_name
+         FROM professional_service_consumptions psc
+         LEFT JOIN calendar_event_bookings ceb ON ceb.id = psc.calendar_event_booking_id
+         LEFT JOIN members m ON m.id = COALESCE(ceb.member_id, psc.member_id)
+        WHERE psc.gym_id = ? AND psc.professional_service_id = ?
+          AND ${walletLedgerScope('psc', wallet.familyId, inList(ids))}
+        ORDER BY psc.id ASC`,
+      [gymId, serviceId, ...walletLedgerParams(wallet.familyId, ids)],
     );
     // #1227 stage 2: each renewal of a plan Session Benefit allowance is a grant.
     const { rows: renewals } = await db.query(
@@ -146,20 +160,21 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
          JOIN user_memberships um ON um.gym_id = par.gym_id
           AND ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} = umss.plan_snapshot_id
         WHERE par.gym_id = ? AND um.status = 'active'
-          AND (um.member_id = ?
+          AND (um.member_id IN ${inList(ids)}
                OR EXISTS (SELECT 1 FROM user_membership_members umm
-                          WHERE umm.user_membership_id = um.id AND umm.member_id = ?))
+                          WHERE umm.user_membership_id = um.id AND umm.member_id IN ${inList(ids)}))
           AND EXISTS (SELECT 1 FROM product_professional_services sips
                        WHERE sips.product_id = umss.product_id AND sips.gym_id = par.gym_id
                          AND sips.professional_service_id = ?)
         ORDER BY par.renewal_date ASC, par.id ASC`,
-      [gymId, memberId, memberId, serviceId],
+      [gymId, ...ids, ...ids, serviceId],
     );
     const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
     const entries: BalanceHistoryEntry[] = [
       ...adjustments.map((a: any) => ({
         kind: 'adjustment' as const, at: iso(a.created_at), quantity: Number(a.delta), reason: a.reason,
         balance_before: Number(a.balance_before), balance_after: Number(a.balance_after), actor: a.created_by,
+        member_id: a.member_id == null ? null : Number(a.member_id), member_name: a.member_name ?? null,
       })),
       ...renewals.map((r: any) => ({
         kind: 'grant' as const, at: iso(r.renewal_date), quantity: Number(r.quantity), reason: 'plan_renewal',
@@ -169,6 +184,7 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
         const spent: BalanceHistoryEntry = {
           kind: 'consumption', at: iso(c.created_at), quantity: -1, reason: c.reason,
           balance_before: null, balance_after: null, actor: c.created_by,
+          member_id: c.member_id == null ? null : Number(c.member_id), member_name: c.member_name ?? null,
         };
         return c.returned_at
           ? [spent, { ...spent, at: iso(c.returned_at), quantity: 1, reason: 'returned', actor: c.returned_by }]
@@ -202,6 +218,8 @@ memberProfessionalServicesRouter.post('/:serviceId/adjust', requireModuleWrite('
         [memberId, gymId],
       );
       if (memberRows.length === 0) return { status: 404 as const, body: { error: 'Member not found' } };
+      // #2670 stage 2: the balance is the Family's, so corrections are serialised per family.
+      await lockWallet(tx, gymId, await familyWalletOf(tx, gymId, memberId), memberId);
       const { rows: serviceRows } = await tx.query(
         `SELECT ps.id FROM professional_services ps
            JOIN gym_professional_services gps
@@ -226,9 +244,9 @@ memberProfessionalServicesRouter.post('/:serviceId/adjust', requireModuleWrite('
 
       await tx.query(
         `INSERT INTO professional_service_adjustments
-           (gym_id, member_id, professional_service_id, delta, balance_before, balance_after, reason, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, memberId, serviceId, delta, before, input.new_balance, input.reason, resolveRequestActor(ctx)],
+           (gym_id, member_id, family_id, professional_service_id, delta, balance_before, balance_after, reason, created_by)
+         VALUES (?, ?, ${MEMBER_FAMILY_SQL}, ?, ?, ?, ?, ?, ?)`,
+        [gymId, memberId, memberId, gymId, serviceId, delta, before, input.new_balance, input.reason, resolveRequestActor(ctx)],
       );
       return { status: 200 as const, body: { professional_service_id: serviceId, ...view(input.new_balance), changed: true } };
     });

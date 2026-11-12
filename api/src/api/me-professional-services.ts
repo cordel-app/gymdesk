@@ -12,6 +12,8 @@
 import { db } from '../infra/db';
 import { attachTranslations } from './professional-service-translations';
 import { loadServiceBalanceViews } from './service-reservation';
+import { familyWalletOf, inList } from './family-wallet';
+import { walletLedgerParams, walletLedgerScope } from '../domain/memberProfessionalServices';
 
 export interface MemberServiceBalance {
   professional_service_id: number;
@@ -40,12 +42,15 @@ export async function memberServiceBalances(gymId: string, memberId: number, loc
   const services = (await attachTranslations(base as any[], locale)).map((s: any) => ({
     ...s, name: s.display_name, description: s.display_description,
   }));
+  // #2670 stage 2: the spends of the member's Family wallet, whichever member booked.
+  const wallet = await familyWalletOf(db, gymId, memberId);
   const { rows: usedRows } = await db.query(
-    `SELECT professional_service_id, COUNT(*) AS n
-       FROM professional_service_consumptions
-      WHERE gym_id = ? AND member_id = ? AND returned_at IS NULL
-      GROUP BY professional_service_id`,
-    [gymId, memberId],
+    `SELECT psc.professional_service_id, COUNT(*) AS n
+       FROM professional_service_consumptions psc
+      WHERE psc.gym_id = ? AND psc.returned_at IS NULL
+        AND ${walletLedgerScope('psc', wallet.familyId, inList(wallet.memberIds))}
+      GROUP BY psc.professional_service_id`,
+    [gymId, ...walletLedgerParams(wallet.familyId, wallet.memberIds)],
   );
   const used = new Map<number, number>(usedRows.map((r: any) => [Number(r.professional_service_id), Number(r.n)]));
   const views = await loadServiceBalanceViews(gymId, memberId);

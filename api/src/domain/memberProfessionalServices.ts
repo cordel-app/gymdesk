@@ -1,6 +1,7 @@
 import { assignmentLineVersionId, assignmentPlanSnapshotId } from '../api/assignment-config';
 import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
+import { familyWalletOf, inList } from '../api/family-wallet';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
 
 /**
@@ -78,6 +79,14 @@ export interface ProfessionalServiceGrantRow {
   product_id: number;
   product_name: string;
   sessions: number | string;
+  /**
+   * #2670 stage 2: the family member who holds the grant (the package's buyer, the
+   * assignment's owner, the plan's beneficiary). A family wallet holds every member's
+   * grants, and the same plan line covering two members is two grants — the sum the
+   * members held before the wallet became the family's. Absent on a manual-adjustment
+   * row, which is the family's own.
+   */
+  holder_member_id?: number;
 }
 
 export interface ProfessionalServiceGrant {
@@ -125,7 +134,7 @@ export function aggregateProfessionalServiceGrants(
     if (!Number.isFinite(sessions)) continue;
     if (sessions <= 0 && !(sessions < 0 && row.kind === 'manual_adjustment')) continue;
 
-    const key = `${row.professional_service_id}:${row.kind}:${row.reference_id}:${row.product_id}`;
+    const key = `${row.professional_service_id}:${row.kind}:${row.reference_id}:${row.product_id}:${row.holder_member_id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -169,6 +178,10 @@ export async function loadMemberProfessionalServiceGrants(
   gymId: string,
   memberId: number,
 ): Promise<ProfessionalServiceGrantRow[]> {
+  // #2670 stage 2: the wallet is the Family's — every member's grants, the family's ledger.
+  const wallet = await familyWalletOf(db, gymId, memberId);
+  const ids = wallet.memberIds;
+  const IN = inList(ids);
   // Resolving the Product behind a purchased package through
   // MIN(gc.id) rather than a plain join: `products.class_package_id` (the
   // traceability FK added by migration 103) carries no uniqueness
@@ -181,7 +194,8 @@ export async function loadMemberProfessionalServiceGrants(
             ucp.id          AS reference_id,
             gc.id           AS product_id,
             gc.name         AS product_name,
-            ucp.sessions_remaining AS sessions
+            ucp.sessions_remaining AS sessions,
+            ucp.member_id   AS holder_member_id
      FROM user_class_packages ucp
      JOIN products gc
        ON gc.id = (SELECT MIN(gc2.id) FROM products gc2
@@ -192,9 +206,9 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = ucp.gym_id AND gps.status = 'active'
-     WHERE ucp.gym_id = ? AND ucp.member_id = ? AND ucp.status = 'active'
+     WHERE ucp.gym_id = ? AND ucp.member_id IN ${IN} AND ucp.status = 'active'
        AND ucp.sessions_remaining > 0 AND ucp.expires_at >= UTC_DATE()`,
-    [gymId, memberId],
+    [gymId, ...ids],
   );
 
   // reference_id is the *application* (`user_membership_promotions.id`), not
@@ -208,7 +222,8 @@ export async function loadMemberProfessionalServiceGrants(
             ump.id              AS reference_id,
             gc.id               AS product_id,
             gc.name             AS product_name,
-            psn.quantity        AS sessions
+            psn.quantity        AS sessions,
+            um.member_id        AS holder_member_id
      FROM user_memberships um
      JOIN user_membership_promotions ump
        ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id AND ump.status IN ('applied', 'superseded')
@@ -221,8 +236,8 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.member_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}`,
-    [gymId, memberId],
+     WHERE um.gym_id = ? AND um.member_id IN ${IN} AND ${ENTITLED_ASSIGNMENT_SQL}`,
+    [gymId, ...ids],
   );
 
   // `products.units` is the number of sessions a Session item bundles
@@ -240,7 +255,8 @@ export async function loadMemberProfessionalServiceGrants(
             umsv.source_id        AS reference_id,
             gc.id                 AS product_id,
             gc.name               AS product_name,
-            umsv.quantity * COALESCE(gc.units, 1) AS sessions
+            umsv.quantity * COALESCE(gc.units, 1) AS sessions,
+            um.member_id          AS holder_member_id
      FROM user_memberships um
      JOIN product_periodical_snapshots umsv
        ON umsv.product_set_id = ${assignmentLineVersionId('um.id')} AND umsv.gym_id = um.gym_id
@@ -252,10 +268,10 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.member_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}
+     WHERE um.gym_id = ? AND um.member_id IN ${IN} AND ${ENTITLED_ASSIGNMENT_SQL}
        AND umsv.starts_at <= UTC_DATE()
        AND (umsv.ends_at IS NULL OR umsv.ends_at >= UTC_DATE())`,
-    [gymId, memberId],
+    [gymId, ...ids],
   );
 
   const { rows: planRows } = await db.query<ProfessionalServiceGrantRow>(
@@ -266,8 +282,11 @@ export async function loadMemberProfessionalServiceGrants(
             gc.id             AS product_id,
             gc.name           AS product_name,
             umss.quantity + COALESCE((SELECT SUM(par.quantity) FROM plan_allowance_renewals par
-                                      WHERE par.plan_session_snapshot_id = umss.id), 0) AS sessions
+                                      WHERE par.plan_session_snapshot_id = umss.id), 0) AS sessions,
+            umm.member_id     AS holder_member_id
      FROM user_memberships um
+     JOIN user_membership_members umm
+       ON umm.user_membership_id = um.id AND umm.member_id IN ${IN}
      JOIN plan_session_snapshots umss
        ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id
      JOIN products gc ON gc.id = umss.product_id
@@ -278,23 +297,26 @@ export async function loadMemberProfessionalServiceGrants(
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
      WHERE um.gym_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}
-       AND EXISTS (SELECT 1 FROM user_membership_members umm
-                   WHERE umm.user_membership_id = um.id AND umm.member_id = ?)
        AND um.starts_at <= UTC_DATE()
        AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())`,
-    [gymId, memberId],
+    [...ids, gymId],
   );
 
   // #1189 stage 3: the sessions already spent from the grants that carry no
   // counter of their own. A returned row (`returned_at`) no longer counts.
+  // #2670 stage 2: a grant's spends are the rows naming its holder (`member_id`); the
+  // manual-adjustment grant is the family's, so its spends are the family's rows.
   const { rows: consumed } = await db.query<ConsumedTotal>(
-    `SELECT psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name, COUNT(*) AS consumed
+    `SELECT psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name,
+            IF(psc.source_kind = 'manual_adjustment', NULL, psc.member_id) AS member_id, COUNT(*) AS consumed
        FROM professional_service_consumptions psc
        JOIN professional_services ps ON ps.id = psc.professional_service_id
-      WHERE psc.gym_id = ? AND psc.member_id = ? AND psc.returned_at IS NULL
+      WHERE psc.gym_id = ? AND psc.returned_at IS NULL
         AND psc.source_kind <> 'class_package'
-      GROUP BY psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name`,
-    [gymId, memberId],
+        AND ${walletLedgerScope('psc', wallet.familyId, IN)}
+      GROUP BY psc.source_kind, psc.source_reference_id, psc.professional_service_id, ps.name,
+               IF(psc.source_kind = 'manual_adjustment', NULL, psc.member_id)`,
+    [gymId, ...walletLedgerParams(wallet.familyId, ids)],
   );
 
   // #1227 stage 1: staff corrections are one more source of the same balance.
@@ -307,8 +329,8 @@ export async function loadMemberProfessionalServiceGrants(
        JOIN professional_services ps ON ps.id = psa.professional_service_id AND ps.deleted_at IS NULL
        JOIN gym_professional_services gps
          ON gps.professional_service_id = ps.id AND gps.gym_id = psa.gym_id AND gps.status = 'active'
-      WHERE psa.gym_id = ? AND psa.member_id = ?`,
-    [gymId, memberId],
+      WHERE psa.gym_id = ? AND ${walletAdjustmentScope('psa', wallet.familyId, IN)}`,
+    [gymId, ...walletAdjustmentParams(wallet.familyId, ids)],
   );
   const derived = applyConsumption(
     [...packageRows, ...promotionRows, ...serviceRows, ...planRows],
@@ -340,6 +362,37 @@ export async function loadMemberProfessionalServiceGrants(
     });
   }
   return applyConsumption(withDebt, manualConsumed);
+}
+
+/**
+ * #2670 stage 2: which ledger rows (consumptions, reservations) belong to a wallet. A
+ * grant's rows follow its holder (`member_id IN` the family), so a grant and its spends
+ * move together; the family's own manual-adjustment rows are the family's (`family_id`).
+ */
+export function walletLedgerScope(alias: string, familyId: number | null, memberIn: string): string {
+  return familyId != null
+    ? `((${alias}.source_kind <> 'manual_adjustment' AND ${alias}.member_id IN ${memberIn})
+        OR (${alias}.source_kind = 'manual_adjustment'
+            AND (${alias}.family_id = ? OR (${alias}.family_id IS NULL AND ${alias}.member_id IN ${memberIn}))))`
+    : `${alias}.member_id IN ${memberIn}`;
+}
+
+export function walletLedgerParams(familyId: number | null, memberIds: number[]): unknown[] {
+  return familyId != null ? [...memberIds, familyId, ...memberIds] : [...memberIds];
+}
+
+/**
+ * #2670 stage 2: the staff corrections of a wallet are the family's (`family_id`); a row
+ * written with no family (a writer predating the column) is its member's.
+ */
+export function walletAdjustmentScope(alias: string, familyId: number | null, memberIn: string): string {
+  return familyId != null
+    ? `(${alias}.family_id = ? OR (${alias}.family_id IS NULL AND ${alias}.member_id IN ${memberIn}))`
+    : `${alias}.member_id IN ${memberIn}`;
+}
+
+export function walletAdjustmentParams(familyId: number | null, memberIds: number[]): unknown[] {
+  return familyId != null ? [familyId, ...memberIds] : [...memberIds];
 }
 
 /** The Member's Professional Services with their session counts, ready to serve. */

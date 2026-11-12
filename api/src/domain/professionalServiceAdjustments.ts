@@ -115,6 +115,9 @@ export interface BalanceHistoryEntry {
   balance_before: number | null;
   balance_after: number | null;
   actor: string | null;
+  /** #2670 stage 2: the family member the entry is about (who booked, or whose card a correction was entered from). */
+  member_id?: number | null;
+  member_name?: string | null;
 }
 
 /**

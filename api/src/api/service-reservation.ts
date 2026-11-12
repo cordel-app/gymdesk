@@ -1,7 +1,8 @@
 import { Tx, db } from '../infra/db';
 import { spendSessionForBooking } from './service-consumption';
 import { loadRequiredServices } from './activity-eligibility';
-import { loadMemberProfessionalServiceGrants, resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
+import { loadMemberProfessionalServiceGrants, resolveMemberProfessionalServices, walletLedgerParams, walletLedgerScope } from '../domain/memberProfessionalServices';
+import { familyWalletOf, inList, lockWallet, MEMBER_FAMILY_SQL } from './family-wallet';
 import { chooseSpendGrant } from '../domain/serviceConsumption';
 import { availableGrants, serviceBalanceViews, ServiceBalanceView } from '../domain/serviceReservation';
 
@@ -11,25 +12,32 @@ import { availableGrants, serviceBalanceViews, ServiceBalanceView } from '../dom
  * from; the wallet's remaining balance is untouched, only what is available.
  */
 
+/** #2670 stage 2: the units the member's Family wallet holds for future bookings, per grant. */
 export async function loadReservedTotals(tx: Tx, gymId: string, memberId: number) {
+  const wallet = await familyWalletOf(tx, gymId, memberId);
   const { rows } = await tx.query(
-    `SELECT source_kind, source_reference_id, COUNT(*) AS reserved
-       FROM professional_service_reservations
-      WHERE gym_id = ? AND member_id = ? AND status = 'reserved'
-      GROUP BY source_kind, source_reference_id`,
-    [gymId, memberId],
+    `SELECT r.source_kind, r.source_reference_id,
+            IF(r.source_kind = 'manual_adjustment', NULL, r.member_id) AS member_id, COUNT(*) AS reserved
+       FROM professional_service_reservations r
+      WHERE r.gym_id = ? AND r.status = 'reserved' AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
+      GROUP BY r.source_kind, r.source_reference_id, IF(r.source_kind = 'manual_adjustment', NULL, r.member_id)`,
+    [gymId, ...walletLedgerParams(wallet.familyId, wallet.memberIds)],
   );
-  return rows.map((r: any) => ({ source_kind: r.source_kind, source_reference_id: Number(r.source_reference_id), reserved: Number(r.reserved) }));
+  return rows.map((r: any) => ({
+    source_kind: r.source_kind, source_reference_id: Number(r.source_reference_id),
+    member_id: r.member_id == null ? null : Number(r.member_id), reserved: Number(r.reserved),
+  }));
 }
 
-/** #2605 stage 3: the member's `reserved` rows counted per Professional Service. */
+/** #2605 stage 3: the `reserved` rows counted per Professional Service — #2670 stage 2: the Family wallet's. */
 export async function loadBookedByService(q: Pick<Tx, 'query'>, gymId: string, memberId: number) {
+  const wallet = await familyWalletOf(q, gymId, memberId);
   const { rows } = await q.query(
-    `SELECT professional_service_id, COUNT(*) AS booked
-       FROM professional_service_reservations
-      WHERE gym_id = ? AND member_id = ? AND status = 'reserved'
-      GROUP BY professional_service_id`,
-    [gymId, memberId],
+    `SELECT r.professional_service_id, COUNT(*) AS booked
+       FROM professional_service_reservations r
+      WHERE r.gym_id = ? AND r.status = 'reserved' AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
+      GROUP BY r.professional_service_id`,
+    [gymId, ...walletLedgerParams(wallet.familyId, wallet.memberIds)],
   );
   return rows.map((r: any) => ({ professional_service_id: Number(r.professional_service_id), booked: Number(r.booked) }));
 }
@@ -65,7 +73,8 @@ export async function reserveForBooking(
 ): Promise<'reserved' | 'not_applicable' | 'no_available'> {
   const required = await loadRequiredServices(tx, gymId, activityTypeId, eventId);
   if (required.length === 0) return 'not_applicable';
-  await tx.query('SELECT id FROM members WHERE id = ? AND gym_id = ? FOR UPDATE', [memberId, gymId]);
+  // #2670 stage 2: the family shares one wallet, so reservations are serialised per family.
+  await lockWallet(tx, gymId, await familyWalletOf(tx, gymId, memberId), memberId);
   const grants = availableGrants(
     await loadMemberProfessionalServiceGrants(gymId, memberId),
     await loadReservedTotals(tx, gymId, memberId),
@@ -75,12 +84,15 @@ export async function reserveForBooking(
     (chosenServiceId != null && ids.includes(chosenServiceId) ? chooseSpendGrant(grants, [chosenServiceId]) : null) ??
     chooseSpendGrant(grants, ids);
   if (!grant) return 'no_available';
+  // #2670 stage 2: the unit is held against the grant's holder (who may be another member
+  // of the family); the booking names the member who booked.
+  const holder = grant.kind !== 'manual_adjustment' && grant.holder_member_id != null ? grant.holder_member_id : memberId;
   await tx.query(
     `INSERT IGNORE INTO professional_service_reservations
-       (gym_id, member_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
+       (gym_id, member_id, family_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
         source_kind, source_reference_id, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, memberId, bookingId, eventId, grant.professional_service_id, grant.kind, grant.reference_id, actor],
+     VALUES (?, ?, ${MEMBER_FAMILY_SQL}, ?, ?, ?, ?, ?, ?)`,
+    [gymId, holder, memberId, gymId, bookingId, eventId, grant.professional_service_id, grant.kind, grant.reference_id, actor],
   );
   return 'reserved';
 }
