@@ -17,6 +17,7 @@
 // server-side from the Product's id, so the UI is never the enforcement.
 
 import { syncProductSnapshotForPurchase } from './product-snapshot-sync';
+import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -487,12 +488,22 @@ memberProductPurchasesRouter.post('/:id/cancel', requireModuleWrite('MEMBERS'), 
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
     const result = await db.transaction(async (tx) => {
+      // #2126 stage 3q — the purchase record is the writer below, so its row is
+      // locked first (a repeat cancel waits here); what the route decides on —
+      // status, validity, cancellation day — is then read from the Product
+      // snapshot tables, kept equal to the record by `syncProductSnapshotForPurchase()`.
+      const { rows: locked } = await tx.query<any>(
+        `SELECT id FROM member_products_oneoff_snapshot
+          WHERE id = ? AND gym_id = ? AND member_id = ? FOR UPDATE`,
+        [id, gymId, memberId],
+      );
+      if (!locked[0]) return { status: 404 as const };
       const { rows } = await tx.query<any>(
         `SELECT mp.status, DATE_FORMAT(mp.valid_until, '%Y-%m-%d') AS valid_until,
                 DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on, g.time_zone
-           FROM member_products_oneoff_snapshot mp JOIN gyms g ON g.id = mp.gym_id
-          WHERE mp.id = ? AND mp.gym_id = ? AND mp.member_id = ? FOR UPDATE`,
-        [id, gymId, memberId],
+           FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp JOIN gyms g ON g.id = mp.gym_id
+          WHERE mp.id = ?`,
+        [...memberPurchaseSnapshotParams(gymId, memberId), id],
       );
       const row = rows[0];
       if (!row) return { status: 404 as const };
