@@ -23,7 +23,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -253,7 +253,7 @@ async function attachMembershipService(
   // real writer keeps in step; this direct insert re-derives them the same way.
   const { rows } = await db.query<{ product_set_id: number }>(
     'SELECT product_set_id FROM member_products_recurrent_snapshot WHERE id = ?', [insertId]);
-  await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, Number(rows[0].product_set_id)));
+  await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, Number(rows[0].product_set_id)));
   return insertId;
 }
 

@@ -7,7 +7,7 @@ import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 
 let gymId: string;
@@ -61,7 +61,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     const { insertId: lineId } = await db.query(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, 1, ?, 'Locker', 'service', 'month', 10.00, 'EUR')`, [gymId, setId, productId, TODAY]);
-    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     const { rows: pers } = await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId]);
     expect(pers).toHaveLength(1);
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([Number(pers[0].id)]);
@@ -72,7 +72,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
 
     // Removing the line removes its snapshot and, by cascade, its link.
     await db.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [lineId]);
-    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([]);
     expect((await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId])).rows).toHaveLength(0);
 

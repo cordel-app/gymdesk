@@ -6,7 +6,7 @@ import { db } from '../infra/db';
 import { importBaseProducts } from '../api/gym-default-products';
 import { parseBaseProductInput } from '../domain/baseProducts';
 import { violatesOnePerMember } from '../api/one-per-member';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { cleanupTestGyms, createTestGym, insertTestPurchase } from './helpers';
 
 const NAME = 'One Per Member Template (#2607)';
@@ -94,7 +94,7 @@ describe('One per Member', () => {
             item_billing_frequency, unit_price)
          VALUES (?, ?, ?, 1, '2019-01-01', ?, 'Locker Monthly OPM', 'service', 'month', 10.00)`,
         [gymId, s.insertId, lineProduct, endsAt]);
-      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, s.insertId));
+      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, s.insertId));
       return s.insertId;
     };
 
