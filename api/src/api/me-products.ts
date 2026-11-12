@@ -819,12 +819,14 @@ export async function loadOwnPurchases(gymId: string, memberId: number) {
 export async function reissuePurchaseCheckout(input: {
   gymId: string; memberId: number; purchaseId: number; requestLocale?: string;
 }): Promise<{ checkoutUrl: string } | null> {
+  // #2126 stage 3m: the purchase (its member and its pending status) is read from the Product
+  // snapshot tables; the purchase record is joined only for its `payment_request_id` link.
   const { rows } = await db.query<any>(
-    `SELECT pr.id FROM member_products_oneoff_snapshot mp
-       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
-      WHERE mp.id = ? AND mp.gym_id = ? AND mp.member_id = ?
-        AND mp.status = ? AND pr.status = 'pending'`,
-    [input.purchaseId, input.gymId, input.memberId, PENDING_PURCHASE_STATUS],
+    `SELECT pr.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
+       JOIN member_products_oneoff_snapshot rec ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
+       JOIN payment_requests pr ON pr.id = rec.payment_request_id AND pr.gym_id = mp.gym_id
+      WHERE mp.id = ? AND mp.status = ? AND pr.status = 'pending'`,
+    [...memberPurchaseSnapshotParams(input.gymId, input.memberId), input.purchaseId, PENDING_PURCHASE_STATUS],
   );
   if (!rows[0]) return null;
   const pageToken = crypto.randomUUID();
