@@ -360,3 +360,54 @@ describe('a recurring Product added mid-cycle (#1867 stage 4)', () => {
     expect(aligned.lines.find((l: any) => l.label === 'Trainer Pro').actual_charge).toBe(31);
   });
 });
+
+// #2126 stage 3s — the Draft line writers lock the legacy line and decide from
+// its synced `product_periodical_snapshots` row.
+describe('Draft line writers read the Product snapshot (#2126 stage 3s)', () => {
+  it('changes the quantity and removes a line, deciding from the snapshot', async () => {
+    const m = await member();
+    await activePlan(m);
+    const towel = await product({ name: 'Towel S', frequency: 'month', amount: '5.00', type: 'service' });
+    const d = await auth(request.post(base(m))).send({ product_id: towel });
+    const draftId = d.body.product_set_id as number;
+    const [line] = await openLines(draftId);
+
+    expect((await auth(request.put(`${mset(draftId)}/services/${line.id}`)).send({ quantity: 3 })).status).toBe(200);
+    const { rows: snap } = await db.query<any>(
+      'SELECT quantity FROM product_periodical_snapshots WHERE source_id = ?', [line.id]);
+    expect(Number(snap[0].quantity)).toBe(3);
+
+    expect((await auth(request.delete(`${mset(draftId)}/services/${line.id}`))).status).toBe(200);
+    expect(await openLines(draftId)).toHaveLength(0);
+    const { rows: gone } = await db.query<any>(
+      'SELECT id FROM product_periodical_snapshots WHERE source_id = ?', [line.id]);
+    expect(gone).toHaveLength(0);
+  });
+
+  it('answers 404 for a line whose snapshot says it has ended, leaving the legacy line alone', async () => {
+    const m = await member();
+    await activePlan(m);
+    const towel = await product({ name: 'Towel T', frequency: 'month', amount: '5.00', type: 'service' });
+    const d = await auth(request.post(base(m))).send({ product_id: towel });
+    const draftId = d.body.product_set_id as number;
+    const [line] = await openLines(draftId);
+    await db.query('UPDATE product_periodical_snapshots SET ends_at = ? WHERE source_id = ?', [TODAY, line.id]);
+
+    expect((await auth(request.put(`${mset(draftId)}/services/${line.id}`)).send({ quantity: 2 })).status).toBe(404);
+    const { rows } = await db.query<any>('SELECT quantity FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
+    expect(Number(rows[0].quantity)).toBe(1);
+  });
+
+  it('refuses to remove a line its snapshot says was already removed', async () => {
+    const m = await member();
+    await activePlan(m);
+    const towel = await product({ name: 'Towel U', frequency: 'month', amount: '5.00', type: 'service' });
+    const d = await auth(request.post(base(m))).send({ product_id: towel });
+    const draftId = d.body.product_set_id as number;
+    const [line] = await openLines(draftId);
+    await db.query('UPDATE product_periodical_snapshots SET ends_at = ? WHERE source_id = ?', [TODAY, line.id]);
+
+    expect((await auth(request.delete(`${mset(draftId)}/services/${line.id}`))).status).toBe(409);
+    expect(await openLines(draftId)).toHaveLength(1);
+  });
+});

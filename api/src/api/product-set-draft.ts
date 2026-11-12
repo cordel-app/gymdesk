@@ -497,9 +497,19 @@ export async function addService(
 export async function removeService(
   tx: Tx, draft: LockedDraft, serviceId: number, opts: { legacy?: boolean } = {},
 ): Promise<{ ok: true; deleted: boolean; ends_at: string | null } | DraftRefusal> {
-  const { rows } = await tx.query<any>(
-    `SELECT id, starts_at, ends_at, schedule_id FROM member_products_recurrent_snapshot
+  // #2126 stage 3s — the legacy line is the writer below, so its row is locked
+  // first; what the removal decides on (already removed, started, its schedule)
+  // is then read from `product_periodical_snapshots`, kept equal to the line by
+  // `syncProductSnapshotsOfVersion()` (every Draft writer's `touch()`, and the
+  // clone that made the version).
+  const { rows: locked } = await tx.query<any>(
+    `SELECT id FROM member_products_recurrent_snapshot
       WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
+    [serviceId, draft.gym_id, draft.id]);
+  if (!locked[0]) return { kind: 'not_found' };
+  const { rows } = await tx.query<any>(
+    `SELECT starts_at, ends_at, schedule_id FROM product_periodical_snapshots
+      WHERE source_id = ? AND gym_id = ? AND product_set_id = ?`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
   if (rows[0].ends_at != null) {
@@ -535,9 +545,16 @@ export async function setServiceQuantity(
   if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 999) {
     return { kind: 'invalid', message: 'quantity must be a positive integer' };
   }
-  const { rows } = await tx.query<any>(
+  // #2126 stage 3s — lock the legacy line (the writer below), then read whether
+  // it is still running from its synced snapshot.
+  const { rows: locked } = await tx.query<any>(
     `SELECT id FROM member_products_recurrent_snapshot
-      WHERE id = ? AND gym_id = ? AND product_set_id = ? AND ends_at IS NULL FOR UPDATE`,
+      WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
+    [serviceId, draft.gym_id, draft.id]);
+  if (!locked[0]) return { kind: 'not_found' };
+  const { rows } = await tx.query<any>(
+    `SELECT 1 FROM product_periodical_snapshots
+      WHERE source_id = ? AND gym_id = ? AND product_set_id = ? AND ends_at IS NULL`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
   await tx.query('UPDATE member_products_recurrent_snapshot SET quantity = ? WHERE id = ? AND gym_id = ?',
