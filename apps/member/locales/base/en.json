@@ -939,5 +939,15 @@
     "capacity": "{n, plural, one {# place} other {# places}}",
     "image_alt": "Image of {name}",
     "no_image": "No image"
+  },
+  "family_participants": {
+    "title": "Participants",
+    "count": "{n} of {min}–{max}",
+    "you": "You",
+    "remove": "Remove {name}",
+    "add": "+ Add family member",
+    "min_reached": "At least {min} participants are needed",
+    "below_min": "This service needs at least {min} participants from your family.",
+    "above_max": "This service allows at most {max} participants."
   }
 }

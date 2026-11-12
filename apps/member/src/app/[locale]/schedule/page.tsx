@@ -20,6 +20,9 @@ import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { serviceChoices, defaultChoice, selectionMissing, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
+import { useFamilyMembers } from '@/lib/useFamilyMembers';
+import { groupLimits, initialParticipants, isFamilyGroupService, participantsValid } from '@/lib/familyParticipants';
+import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
@@ -110,6 +113,29 @@ export default function MemberSchedulePage() {
   function chosenFor(s: Session): number | null {
     return chosenService[s.id] ?? defaultChoice(choicesFor(s));
   }
+  // #2674 — the family members picked per session for a family group service.
+  // A stored pick only stands for the service it was made for; otherwise the
+  // initial selection (§2) applies, so changing the service seeds it again.
+  const familyRead = useFamilyMembers();
+  const [participantPicks, setParticipantPicks] = useState<Record<number, { serviceId: number; ids: number[] }>>({});
+  function groupServiceFor(s: Session) {
+    if (s.my_booking_id) return null;
+    const svc = (s.professional_services ?? []).find((x) => x.id === chosenFor(s));
+    return svc && isFamilyGroupService(svc) ? svc : null;
+  }
+  function participantsFor(s: Session): number[] {
+    const svc = groupServiceFor(s);
+    if (!svc || !familyRead) return [];
+    const pick = participantPicks[s.id];
+    if (pick && pick.serviceId === svc.id) return pick.ids;
+    return initialParticipants(familyRead.member_id, familyRead.members, groupLimits(svc).max);
+  }
+  function groupInvalidFor(s: Session): boolean {
+    const svc = groupServiceFor(s);
+    if (!svc) return false;
+    const { min, max } = groupLimits(svc);
+    return !familyRead || !participantsValid(participantsFor(s), min, max);
+  }
 
   const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
   const [pastLoading, setPastLoading] = useState(true);
@@ -181,10 +207,16 @@ export default function MemberSchedulePage() {
       setAttemptedSession(sessionId);
       return;
     }
+    if (session && groupInvalidFor(session)) return; // the participant picker already says why (ticket 2674 §4)
+    const groupService = session ? groupServiceFor(session) : null;
     setPendingSession(sessionId); setMessage(null); setUnlockServiceIds([]);
     try {
       const result: any = await apiFetch('/me/bookings', {
-        method: 'POST', body: JSON.stringify({ class_session_id: sessionId, ...(serviceId != null ? { professional_service_id: serviceId } : {}) }),
+        method: 'POST', body: JSON.stringify({
+          class_session_id: sessionId,
+          ...(serviceId != null ? { professional_service_id: serviceId } : {}),
+          ...(groupService && session ? { participant_member_ids: participantsFor(session) } : {}),
+        }),
       });
       setMessage(result.status === 'waitlisted'
         ? t('member_schedule.waitlisted_at', { pos: result.waitlist_position ?? '?' })
@@ -392,6 +424,21 @@ export default function MemberSchedulePage() {
                       onChoose: (id) => { setChosenService((m) => ({ ...m, [s.id]: id })); setAttemptedSession(null); },
                     } : null}
                   />
+                  {(() => {
+                    const svc = groupServiceFor(s);
+                    if (!svc || !familyRead) return null;
+                    const { min, max } = groupLimits(svc);
+                    return (
+                      <FamilyParticipantsPicker
+                        bookerId={familyRead.member_id}
+                        family={familyRead.members}
+                        partnerIds={participantsFor(s)}
+                        min={min}
+                        max={max}
+                        onChange={(ids) => setParticipantPicks((m) => ({ ...m, [s.id]: { serviceId: svc.id, ids } }))}
+                      />
+                    );
+                  })()}
                   {isExpanded && (
                     <div style={styles.details}>
                       {s.class_type_description && <div style={styles.sub}>{s.class_type_description}</div>}
@@ -425,7 +472,7 @@ export default function MemberSchedulePage() {
                       {noAvailableBalance(choicesFor(s)) && (
                         <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.no_available_balance')}</p>
                       )}
-                      <button style={styles.btnBook} disabled={isBusy || noAvailableBalance(choicesFor(s))} onClick={() => bookSession(s.id)}>
+                      <button style={styles.btnBook} disabled={isBusy || noAvailableBalance(choicesFor(s)) || groupInvalidFor(s)} onClick={() => bookSession(s.id)}>
                         {isBusy ? '…' : t('member_schedule.book')}
                       </button>
                       </>

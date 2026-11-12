@@ -939,5 +939,15 @@
     "capacity": "{n, plural, one {# plaça} other {# places}}",
     "image_alt": "Imatge de {name}",
     "no_image": "Sense imatge"
+  },
+  "family_participants": {
+    "title": "Participants",
+    "count": "{n} de {min}–{max}",
+    "you": "Tu",
+    "remove": "Treu {name}",
+    "add": "+ Afegeix un familiar",
+    "min_reached": "Calen almenys {min} participants",
+    "below_min": "Aquest servei necessita almenys {min} participants de la teva família.",
+    "above_max": "Aquest servei admet com a màxim {max} participants."
   }
 }
