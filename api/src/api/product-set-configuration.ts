@@ -266,19 +266,14 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
   }));
 
-  for (const table of ['plan_periodical_snapshots', 'member_products_recurrent_snapshot'] as const) {
-    // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
-    const scope = table === 'plan_periodical_snapshots'
-      ? 'plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 0)'
-      : 'product_set_id = ?';
-    const { rows } = await tx.query<any>(
-      `SELECT id, item_billing_frequency${table === 'member_products_recurrent_snapshot' ? ', starts_at' : ''}
-         FROM ${table} WHERE gym_id = ? AND ${scope} AND schedule_id IS NULL`,
-      [gymId, productSetId]);
-    for (const row of rows) {
-      const cadence = cadenceForFrequency(row.item_billing_frequency);
+  const allocate = async (
+    candidates: Array<{ id: number; frequency: string | null; startsAt: unknown }>,
+    table: 'plan_periodical_snapshots' | 'member_products_recurrent_snapshot',
+  ) => {
+    for (const row of candidates) {
+      const cadence = cadenceForFrequency(row.frequency as any);
       if (!cadence) continue;
-      const purchaseDate = row.starts_at ? toDateOnly(row.starts_at) : setStart;
+      const purchaseDate = row.startsAt ? toDateOnly(row.startsAt) : setStart;
       const allocation = allocateSchedule({ cadence, purchaseDate, schedules });
       let scheduleId: number | null = null;
       if (allocation.kind === 'new') {
@@ -291,11 +286,38 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
         scheduleId = schedules.find((s) => s.key === allocation.key)?.id ?? null;
       }
       if (scheduleId != null) {
-        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ?`, [scheduleId, row.id]);
+        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ? AND gym_id = ?`, [scheduleId, row.id, gymId]);
       }
     }
-  }
+  };
+
+  // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
+  const { rows: planLines } = await tx.query<any>(
+    `SELECT id, item_billing_frequency
+       FROM plan_periodical_snapshots
+      WHERE gym_id = ? AND schedule_id IS NULL
+        AND plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 0)`,
+    [gymId, productSetId]);
+  await allocate(planLines.map((r: any) => ({ id: Number(r.id), frequency: r.item_billing_frequency, startsAt: null })),
+    'plan_periodical_snapshots');
+
+  // #2126 stage 3t — the version's recurring Product lines are read from
+  // `product_periodical_snapshots`. A writer calls this right after inserting or
+  // changing a legacy line and before its own sync, so the version is synced
+  // first; the schedule is still written on the legacy line (the writer), keyed
+  // by the snapshot's `source_id`, and the caller's sync carries it over.
+  await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
+  const { rows: productLines } = await tx.query<any>(
+    `SELECT source_id, billing_frequency, starts_at
+       FROM product_periodical_snapshots
+      WHERE gym_id = ? AND product_set_id = ? AND schedule_id IS NULL AND source_id IS NOT NULL
+      ORDER BY source_id`,
+    [gymId, productSetId]);
+  await allocate(productLines.map((r: any) => ({
+    id: Number(r.source_id), frequency: r.billing_frequency, startsAt: r.starts_at,
+  })), 'member_products_recurrent_snapshot');
 }
+
 
 /** Adds a recurring Additional Product to a version, on its own schedule. */
 export async function addProductSetService(tx: Tx, input: {
