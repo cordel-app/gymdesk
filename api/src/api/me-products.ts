@@ -471,11 +471,19 @@ export async function deletePurchaseDraft(
   purchaseId: number,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
-    const { rows } = await tx.query<{ id: number }>(
+    // #2126 stage 3r — the purchase record is what is deleted below, so its row
+    // is locked first (a repeat cancel waits here); whether it is still a draft
+    // is then read from the Product snapshot tables, kept equal to the record
+    // by `syncProductSnapshotForPurchase()`.
+    const { rows: locked } = await tx.query<{ id: number }>(
       `SELECT id FROM member_products_oneoff_snapshot
-        WHERE id = ? AND gym_id = ? AND member_id = ? AND status = ?
-        FOR UPDATE`,
-      [purchaseId, gymId, memberId, DRAFT_PURCHASE_STATUS],
+        WHERE id = ? AND gym_id = ? AND member_id = ? FOR UPDATE`,
+      [purchaseId, gymId, memberId],
+    );
+    if (!locked[0]) return false;
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
+      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, DRAFT_PURCHASE_STATUS],
     );
     if (!rows[0]) return false;
     await tx.query(
