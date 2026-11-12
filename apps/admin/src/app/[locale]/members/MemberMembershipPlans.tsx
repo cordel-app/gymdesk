@@ -61,7 +61,8 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { canEditLivePlan, visiblePlans } from './membershipPlansView';
+import { canEditLivePlan, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
+import { PendingPaymentPlans } from './PendingPaymentPlans';
 
 
 interface Props {
@@ -134,6 +135,10 @@ export function MemberMembershipPlans({
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
   const history = plans.filter((p) => !p.is_live && !p.is_current);
+  // #2742: a plan the member chose in the Members App and has not paid yet has no
+  // assignment row until the payment activates it; it is listed in Active from its
+  // ProductSet version, labelled by that version's own `pending_payment` status.
+  const pendingSets = pendingPaymentPlanSets(productSets);
   // #2125: a Member may hold several plans — the same plan twice included — so the picker offers
   // every assignable Plan; whether the new one is added beside the live ones or replaces them is
   // the Add-or-Replace dialog's question.
@@ -213,17 +218,20 @@ export function MemberMembershipPlans({
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
       {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
       {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
-      <AssignedPlansTable
-        rows={visible.rows}
-        loadingText={t('add_membership_plan_loading')}
-        emptyText={t('no_active_membership_plans')}
-        onChanged={onChanged}
-        scope="member"
-        embedded
-        viewAsMemberId={memberId}
-        rowActions={rowActions}
-        openInEditId={newDraftId}
-      />
+      <PendingPaymentPlans sets={pendingSets} spaced={visible.rows.length > 0} />
+      {(visible.rows.length > 0 || pendingSets.length === 0) && (
+        <AssignedPlansTable
+          rows={visible.rows}
+          loadingText={t('add_membership_plan_loading')}
+          emptyText={t('no_active_membership_plans')}
+          onChanged={onChanged}
+          scope="member"
+          embedded
+          viewAsMemberId={memberId}
+          rowActions={rowActions}
+          openInEditId={newDraftId}
+        />
+      )}
 
       {createError && !adding && <p style={{ ...formErrorStyle, margin: '8px 0' }}>{createError}</p>}
 
