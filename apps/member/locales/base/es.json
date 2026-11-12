@@ -37,6 +37,7 @@
   },
   "nav": {
     "back_home": "Volver al inicio",
+    "back_to_products": "Volver a Mis Productos",
     "calendar": "Calendario",
     "training": "Mi Entrenamiento",
     "bookings": "Mis Reservas",
@@ -555,8 +556,7 @@
     "summary_error_amount": "No se ha podido calcular el importe. Inténtalo más tarde.",
     "summary_error_generic": "No se ha podido confirmar tu selección. Inténtalo de nuevo.",
     "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde.",
-    "add_product": "+ Añadir producto",
-    "back_to_products": "← Mis Productos"
+    "add_product": "+ Añadir producto"
   },
   "payments": {
     "title": "Pagos",

@@ -37,6 +37,7 @@
   },
   "nav": {
     "back_home": "Torna a l'inici",
+    "back_to_products": "Torna a Els Meus Productes",
     "calendar": "Calendari",
     "training": "El Meu Entrenament",
     "bookings": "Les Meves Reserves",
@@ -555,8 +556,7 @@
     "summary_error_amount": "No s'ha pogut calcular l'import. Torna-ho a provar més tard.",
     "summary_error_generic": "No s'ha pogut confirmar la teva selecció. Torna-ho a provar.",
     "summary_error_unresolved": "Encara s'està processant un pagament. Torna-ho a provar més tard.",
-    "add_product": "+ Afegir producte",
-    "back_to_products": "← Els Meus Productes"
+    "add_product": "+ Afegir producte"
   },
   "payments": {
     "title": "Pagaments",

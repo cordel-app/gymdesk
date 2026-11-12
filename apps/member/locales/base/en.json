@@ -37,6 +37,7 @@
   },
   "nav": {
     "back_home": "Back to home",
+    "back_to_products": "Back to My Products",
     "calendar": "Calendar",
     "training": "My Training",
     "bookings": "My Bookings",
@@ -555,8 +556,7 @@
     "summary_error_amount": "The amount due could not be calculated. Please try again later.",
     "summary_error_generic": "Your selection could not be confirmed. Please try again.",
     "summary_error_unresolved": "A payment is still being processed. Please try again later.",
-    "add_product": "+ Add Product",
-    "back_to_products": "← My Products"
+    "add_product": "+ Add Product"
   },
   "payments": {
     "title": "Payments",
