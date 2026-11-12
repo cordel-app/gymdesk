@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { entitledAssignmentSql } from '../domain/assignmentStatus';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { registerBookingAccessHook } from './bookings';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * P2.7: /membership-plans/:id/class-types — nested list/replace.
@@ -88,7 +89,7 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
        ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
      WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND EXISTS (
-         SELECT 1 FROM user_membership_members umm
+         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
        )
        AND ctum.class_type_id = ?

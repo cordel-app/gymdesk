@@ -5,6 +5,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import {
   centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
 } from '../domain/planCenterAccess';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * Booking-time center validation: if the member's active Membership Plan has
@@ -33,7 +34,7 @@ export async function loadMemberCenterAccessInputs(
      JOIN membership_plans mp ON mp.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND EXISTS (
-         SELECT 1 FROM user_membership_members umm
+         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
        )`,
     [gymId, memberId],
@@ -149,7 +150,7 @@ export async function centersAvailableToMember(
     `SELECT DISTINCT um.membership_plan_id FROM user_memberships um
      WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
        AND (um.member_id = ? OR EXISTS (
-         SELECT 1 FROM user_membership_members umm
+         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
          WHERE umm.user_membership_id = um.id AND umm.member_id = ?
        ))`,
     [gymId, memberId, memberId],

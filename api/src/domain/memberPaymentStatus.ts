@@ -21,6 +21,7 @@
  */
 
 import { eventAssignmentSql } from './billingEventOwnership';
+import { ASSIGNMENT_BENEFICIARIES } from './assignmentBeneficiaries';
 
 /** Sources that carry no fee: a card verification moves no money (#788). Kept for callers. */
 export const NON_BILLABLE_SOURCES = ['card_update'] as const;
@@ -69,7 +70,7 @@ export function memberPaymentStatusSql(memberAlias: string): string {
              AND (be.member_id = ${memberAlias}.id
                   -- #640: a covered Member follows the Membership they are covered by.
                   OR ${eventAssignmentSql('be')} IN (
-                       SELECT umm.user_membership_id FROM user_membership_members umm
+                       SELECT umm.user_membership_id FROM ${ASSIGNMENT_BENEFICIARIES} umm
                        WHERE umm.member_id = ${memberAlias}.id AND umm.gym_id = ${memberAlias}.gym_id))
              AND be.is_scheduled = 0
              AND be.cancelled_at IS NULL

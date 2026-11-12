@@ -73,7 +73,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     expect(Number(rows[0].membership_fee_price)).toBe(30);
     const { rows: link } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
     expect(Number(link[0].user_membership_id)).toBe(Number(rows[0].id));
-    const { rows: cover } = await db.query<any>('SELECT is_owner FROM user_membership_members WHERE user_membership_id = ?', [rows[0].id]);
+    const { rows: cover } = await legacyChildQuery('SELECT is_owner FROM user_membership_members WHERE user_membership_id = ?', [rows[0].id]);
     expect(cover.length).toBe(1);
   });
 

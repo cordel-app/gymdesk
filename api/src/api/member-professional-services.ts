@@ -15,6 +15,7 @@ import {
   parseAdjustmentInput,
   sortHistory,
 } from '../domain/professionalServiceAdjustments';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * #647 stage 1: read-only view of the Member side of the Professional
@@ -161,7 +162,7 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
           AND ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} = umss.plan_snapshot_id
         WHERE par.gym_id = ? AND um.status = 'active'
           AND (um.member_id IN ${inList(ids)}
-               OR EXISTS (SELECT 1 FROM user_membership_members umm
+               OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
                           WHERE umm.user_membership_id = um.id AND umm.member_id IN ${inList(ids)}))
           AND EXISTS (SELECT 1 FROM product_professional_services sips
                        WHERE sips.product_id = umss.product_id AND sips.gym_id = par.gym_id

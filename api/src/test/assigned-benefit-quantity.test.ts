@@ -124,7 +124,7 @@ describe('mandatory Product quantity follows the covered Members', () => {
   });
 
   it('lets the payer leave the beneficiaries, and the quantity follows the Members left (#2125 stage 22)', async () => {
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT member_id FROM user_membership_members WHERE user_membership_id = ? AND is_owner = 1', [umId],
     );
     const res = await http('delete', gymId, `/user-memberships/${umId}/members/${rows[0].member_id}`);

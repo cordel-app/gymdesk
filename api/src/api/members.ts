@@ -149,7 +149,7 @@ membersRouter.get('/', async (req, res) => {
             -- against its owner, so a covered member's payment status has to
             -- follow the transactions of any Membership they are covered by —
             -- not only the ones raised against them personally. Without the
-            -- join through user_membership_members a failed (or retried, or
+            -- join through the coverage (ASSIGNMENT_BENEFICIARIES) a failed (or retried, or
             -- manually settled) charge would move the owner's status and leave
             -- everyone else on the same plan reading as if nothing happened.
             -- #788: a card replacement is a payment_requests row with no money

@@ -3,6 +3,7 @@ import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export const request = supertest(app);
 
@@ -329,6 +330,12 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
         [resolved.gym_id, rows[0].id, Number(resolved.member_id), Number(resolved.is_owner)]);
     }
     return last;
+  }
+  // #2125 M6a: the `user_membership_members` view is dropped; a fixture that reads it reads the same
+  // coverage through ASSIGNMENT_BENEFICIARIES.
+  if (/^\s*SELECT\b/i.test(sql) && /\bFROM user_membership_members\b/.test(sql)) {
+    return db.query(sql.replace(/\bFROM user_membership_members\b/g,
+      `FROM ${ASSIGNMENT_BENEFICIARIES} user_membership_members`), queue);
   }
   const insert = sql.match(/^(\s*INSERT INTO \w+\s*\()([^)]*)(\)\s*VALUES\s*\()([\s\S]*)(\)\s*)$/i);
   if (insert && /\buser_membership_id\b/.test(insert[2])) {

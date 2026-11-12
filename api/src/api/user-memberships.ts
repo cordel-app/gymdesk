@@ -72,6 +72,7 @@ import {
   ASSIGNMENT_STATUSES, AssignmentStatus, CANCELLED_ASSIGNMENT_STATUSES_SQL, CANCELS_AT_PERIOD_END_STATUS,
 } from '../domain/assignmentStatus';
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -1970,7 +1971,7 @@ userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS
 
 export const MEMBERS_SELECT = `
   SELECT umm.member_id, umm.is_owner, m.name, m.email
-  FROM user_membership_members umm
+  FROM ${ASSIGNMENT_BENEFICIARIES} umm
   JOIN members m ON m.id = umm.member_id
   WHERE umm.user_membership_id = ? AND umm.gym_id = ?
   ORDER BY umm.is_owner DESC, m.name ASC

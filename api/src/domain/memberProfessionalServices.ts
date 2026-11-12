@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
 import { familyWalletOf, inList } from '../api/family-wallet';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
+import { ASSIGNMENT_BENEFICIARIES } from './assignmentBeneficiaries';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -285,7 +286,7 @@ export async function loadMemberProfessionalServiceGrants(
                                       WHERE par.plan_session_snapshot_id = umss.id), 0) AS sessions,
             umm.member_id     AS holder_member_id
      FROM user_memberships um
-     JOIN user_membership_members umm
+     JOIN ${ASSIGNMENT_BENEFICIARIES} umm
        ON umm.user_membership_id = um.id AND umm.member_id IN ${IN}
      JOIN plan_session_snapshots umss
        ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id

@@ -103,6 +103,7 @@ import {
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -927,7 +928,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
                 WHERE um.gym_id = ce.gym_id AND ${entitledAssignmentSql('um')}
                   AND EXISTS (
-                    SELECT 1 FROM user_membership_members umm
+                    SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
                     WHERE umm.user_membership_id = um.id AND umm.member_id = ?
                   )
                   AND ctum.activity_type_id = ce.activity_type_id

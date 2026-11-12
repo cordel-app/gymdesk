@@ -29,6 +29,7 @@ import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 import { loadServiceCapacityViews } from './service-capacity';
 import { incompleteServiceRows, type IncompleteServiceRow } from '../domain/incompleteClasses';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export const homeDashboardRouter = Router();
 
@@ -203,7 +204,7 @@ async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
          ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
        JOIN (SELECT id AS um_id, member_id FROM user_memberships
              UNION
-             SELECT user_membership_id, member_id FROM user_membership_members) mm ON mm.um_id = um.id
+             SELECT user_membership_id, member_id FROM ${ASSIGNMENT_BENEFICIARIES} umm) mm ON mm.um_id = um.id
        JOIN members m ON m.id = mm.member_id AND m.gym_id = um.gym_id AND m.deleted_at IS NULL
       WHERE um.gym_id = ? AND um.status = 'active'
         AND um.starts_at <= UTC_DATE() AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())
