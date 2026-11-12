@@ -86,8 +86,8 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
       'benefits_oneoff',
       'benefits_session',
       'benefits_period',
-      // #2478 — no separate Promotions section: each applied Promotion sits
-      // under the Product line it affects.
+      // #2657 — the plan's Promotions, each drawn once below Period Benefits.
+      'section_plan_promotions',
       'section_fee_simulation',
       'section_billing_forecast',
     ]);
@@ -140,6 +140,7 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
       "label={t('section_billing_duration')}",
       "label={t('section_membership_fee_benefit')}",
       'BENEFIT_SECTIONS.map(',
+      "label={t('section_plan_promotions')}",
     ].map((marker) => {
       const at = jsx.indexOf(marker);
       expect(at, `the configuration does not render ${marker}`).toBeGreaterThan(-1);

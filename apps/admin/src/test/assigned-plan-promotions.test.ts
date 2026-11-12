@@ -46,15 +46,25 @@ const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) 
   Messages
 >;
 
-describe('Assigned Plan promotions: nested under their Products (#2478)', () => {
-  it('is drawn by the configuration sections from the assignment detail, with no section of its own', () => {
+describe('Assigned Plan promotions: one plan-level row each (#2657)', () => {
+  it('is drawn once by the configuration, below Period Benefits, never under a Product line', () => {
     expect(rowSrc).toContain('promotions={detail.promotions}');
     expect(rowSrc).not.toContain('<AssignedPlanPromotions');
     expect(rowSrc).not.toContain("t('section_promotions')");
-    expect(configSrc).toContain('placePromotionsUnderProducts(');
-    expect(configSrc).toContain('renderNestedRow=');
-    // An application that grants no Product line sits under the Membership Fee.
-    expect(configSrc).toContain('placement.unplaced.map');
+    expect(configSrc).not.toContain('placePromotionsUnderProducts');
+    expect(configSrc).not.toContain('renderNestedRow=');
+    expect(configSrc).toContain("t('section_plan_promotions')");
+    expect(configSrc).toContain('promotions.map((p) => (');
+    expect(configSrc).toContain('<PlanPromotionRow');
+    const periods = configSrc.indexOf('BENEFIT_SECTIONS.map(');
+    const row = configSrc.indexOf("t('section_plan_promotions')");
+    expect(row).toBeGreaterThan(periods);
+  });
+
+  it('draws a square 1:1 thumbnail that opens the detail with the original image', () => {
+    expect(src).toMatch(/<CircularThumbnail[\s\S]*?size=\{40\}[\s\S]*?square/);
+    expect(src).toContain("borderRadius: square ? 4 : '50%'");
+    expect(src).toContain('imageUrl: p.promotion_image_url');
   });
 
   it('shows the status badge and, in the detail modal, applied at and by', () => {

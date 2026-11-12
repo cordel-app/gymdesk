@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  placePromotionsUnderProducts,
+  promotionGrants,
   thumbnailSrc,
 } from '../components/assignedPlan/promotionPlacement';
 import type { AppliedPromotion, AppliedPromotionGrant } from '../components/assignedPlan/types';
 
-// #2478 — where each applied Promotion is drawn on the Assigned Plan card:
-// under every Product line one of its grants names, or under the Membership
-// Fee when it names none, so no application ever disappears from the card.
+// #2657 — an applied Promotion is drawn once, as a plan-level row, and its
+// benefit summary reads the application's own grants (#2478's placement under
+// each Product is gone).
 
 function grant(productId: number | null, action = 'percentage_discount'): AppliedPromotionGrant {
   return {
@@ -29,36 +29,16 @@ function promotion(id: number, grants: Partial<Record<'oneoff' | 'session' | 'pe
   };
 }
 
-describe('placePromotionsUnderProducts (#2478)', () => {
-  it('puts an application under the Product its grant names', () => {
-    const p = promotion(1, { oneoff: [grant(5)] });
-    const { byProduct, unplaced } = placePromotionsUnderProducts([p], [5, 6]);
-    expect(byProduct.get(5)?.map((x) => x.promotion.id)).toEqual([1]);
-    expect(byProduct.get(6)).toBeUndefined();
-    expect(unplaced).toEqual([]);
+describe('promotionGrants (#2657)', () => {
+  it('lists every grant of an application once, one-off then session then period', () => {
+    const a = grant(5, 'waive');
+    const b = grant(6);
+    const c = grant(7);
+    expect(promotionGrants(promotion(1, { session: [b], oneoff: [a], periodical: [c] }))).toEqual([a, b, c]);
   });
 
-  it('puts one application under every Product it grants, once each, with that Product\'s grant', () => {
-    const towel = grant(5, 'waive');
-    const p = promotion(1, { oneoff: [towel], periodical: [grant(6)], session: [grant(5)] });
-    const { byProduct } = placePromotionsUnderProducts([p], [5, 6]);
-    expect(byProduct.get(5)).toEqual([{ promotion: p, grant: towel }]);
-    expect(byProduct.get(6)?.map((x) => x.promotion.id)).toEqual([1]);
-  });
-
-  it('keeps an application that grants none of the card\'s Products, for the Membership Fee', () => {
-    const fee = promotion(1, {});
-    const elsewhere = promotion(2, { oneoff: [grant(99)], periodical: [grant(null)] });
-    const { byProduct, unplaced } = placePromotionsUnderProducts([fee, elsewhere], [5]);
-    expect(byProduct.size).toBe(0);
-    expect(unplaced.map((p) => p.id)).toEqual([1, 2]);
-  });
-
-  it('keeps the card order under a Product', () => {
-    const { byProduct } = placePromotionsUnderProducts(
-      [promotion(2, { oneoff: [grant(5)] }), promotion(1, { oneoff: [grant(5)] })], [5],
-    );
-    expect(byProduct.get(5)?.map((x) => x.promotion.id)).toEqual([2, 1]);
+  it('is empty for a Membership Fee Promotion, which grants no Product', () => {
+    expect(promotionGrants(promotion(1, {}))).toEqual([]);
   });
 });
 
