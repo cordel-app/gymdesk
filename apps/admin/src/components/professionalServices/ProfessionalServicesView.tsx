@@ -28,7 +28,7 @@ import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import {
-  PS_LOCALES, applyTextValues, emptyForm, formErrorKey, formFor, matchesSearch, textValuesOf, textsOfRow, toPayload, type PsTextField, type Form, type Loc, type PsRow,
+  PS_LOCALES, PS_BOOKING_TYPES, bookingTypeLabelKey, type PsBookingType, applyTextValues, emptyForm, formErrorKey, formFor, matchesSearch, textValuesOf, textsOfRow, toPayload, type PsTextField, type Form, type Loc, type PsRow,
 } from './psModel';
 
 /**
@@ -279,6 +279,14 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
           onChange={(e) => setForm({ ...form, min_participants: e.target.value })}
         />
         <div style={formHelpTextStyle}>{t('min_participants_help')}</div>
+        <label style={formFieldLabelStyle} htmlFor="ps-booking-type">{t('label_booking_type')} *</label>
+        <select
+          id="ps-booking-type" style={formControlStyle} value={form.booking_type}
+          onChange={(e) => setForm({ ...form, booking_type: e.target.value as PsBookingType })}
+        >
+          {PS_BOOKING_TYPES.map((v) => <option key={v} value={v}>{t(bookingTypeLabelKey(v))}</option>)}
+        </select>
+        <div style={formHelpTextStyle}>{t('booking_type_help')}</div>
         {item && (
           <>
             <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
@@ -316,6 +324,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
         <DetailRow label={t('label_description')} value={item.description || t('no_description')} globe={() => setLangModal({ field: 'description', row: item })} globeLabel={t('translations_open', { field: fieldLabel('description') })} />
         <DetailRow label={t('label_max_capacity')} value={capacityText(item)} />
         <DetailRow label={t('label_min_participants')} value={item.min_participants == null ? dash : String(item.min_participants)} />
+        <DetailRow label={t('label_booking_type')} value={t(bookingTypeLabelKey(item.booking_type))} />
         {/* Same order as the editor: texts, capacity, then Media (#2241). */}
         <div style={{ ...cardSectionLabelStyle, margin: '12px 0 8px' }}>{t('section_media')}</div>
         {item.image_url ? (
@@ -517,6 +526,7 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
             <ModalField label={t('label_name')} value={details.name || dash} />
             <ModalField label={t('label_description')} value={details.description || t('no_description')} />
             <ModalField label={t('label_max_capacity')} value={capacityText(details)} />
+            <ModalField label={t('label_booking_type')} value={t(bookingTypeLabelKey(details.booking_type))} />
             {details.status && <ModalField label={t('label_status')} value={tStatus(details.status)} />}
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
