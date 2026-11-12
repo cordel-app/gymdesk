@@ -24,7 +24,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { productSetHistoryIds } from './product-set-history';
-import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { insertRecurringLine, updateRecurringLine } from './recurring-line-writer';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -286,7 +286,11 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
         scheduleId = schedules.find((s) => s.key === allocation.key)?.id ?? null;
       }
       if (scheduleId != null) {
-        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ? AND gym_id = ?`, [scheduleId, row.id, gymId]);
+        if (table === 'member_products_recurrent_snapshot') {
+          await updateRecurringLine(tx, gymId, row.id, { schedule_id: scheduleId });
+        } else {
+          await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ? AND gym_id = ?`, [scheduleId, row.id, gymId]);
+        }
       }
     }
   };
@@ -302,11 +306,9 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     'plan_periodical_snapshots');
 
   // #2126 stage 3t — the version's recurring Product lines are read from
-  // `product_periodical_snapshots`. A writer calls this right after inserting or
-  // changing a legacy line and before its own sync, so the version is synced
-  // first; the schedule is still written on the legacy line (the writer), keyed
-  // by the snapshot's `source_id`, and the caller's sync carries it over.
-  await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
+  // `product_periodical_snapshots`, kept in step with the legacy line by its one
+  // writer (`recurring-line-writer.ts`, stage 5c), which also writes the schedule
+  // onto both, keyed by the snapshot's `source_id`.
   const { rows: productLines } = await tx.query<any>(
     `SELECT source_id, billing_frequency, starts_at
        FROM product_periodical_snapshots
@@ -324,20 +326,12 @@ export async function addProductSetService(tx: Tx, input: {
   gymId: string; productSetId: number; productId: number; quantity: number;
   startsAt: string; scheduleId: number | null; origin?: ItemOrigin | null;
 }): Promise<number> {
-  const { insertId } = await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at,
-        item_name, item_type, unit_price, item_billing_frequency, currency, schedule_id, origin)
-     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-            COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, ?, ?
-       FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-      WHERE gc.id = ? AND gc.gym_id = ?`,
-    [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.origin ?? null, input.productId, input.gymId],
-  );
-  await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
-  // #2126 stage 3o: the engine loader reads the Product snapshot, so the new line is synced now.
-  await syncProductSnapshotsOfVersion(tx, input.gymId, input.productSetId);
-  return insertId;
+  // #2126 stage 5c: the line and its Product snapshot (which the engine loader reads) are written together.
+  const lineId = await insertRecurringLine(tx, {
+    gymId: input.gymId, productSetId: input.productSetId, productId: input.productId, quantity: input.quantity,
+    startsAt: input.startsAt, scheduleId: input.scheduleId, origin: input.origin ?? null,
+  });
+  return lineId ?? 0;
 }
 
 /* ── Reading it back for the engine ──────────────────────────────────────── */

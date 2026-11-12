@@ -11,8 +11,11 @@ describe('Promotions only on lines added in the Draft (#1863)', () => {
     // what `planSnapshotInheritedSql()` reads it as inherited by.
     expect(read('../api/plan-snapshot-add.ts')).toMatch(/ps\.status, s\.id, s\.starts_at/);
     expect(read('../api/plan-snapshot-lines.ts')).toMatch(/copied_from_plan_snapshot_id IS NOT NULL/);
-    expect(src).toMatch(/line_ref, origin, is_inherited\)/);
-    expect(src).toMatch(/line_ref, origin, 1\s+FROM member_products_recurrent_snapshot/);
+    // The recurring lines are copied by their one writer (#2126 stage 5c), both rows inherited.
+    expect(src).toMatch(/copyRecurringLines\(/);
+    const writer = read('../api/recurring-line-writer.ts');
+    expect(writer).toMatch(/line_ref, origin, is_inherited, created_at\)\s+VALUES \([?, ]+1, \?\)/);
+    expect(writer).toMatch(/ps\.status, 1, COALESCE\(\?, p\.name\)/);
   });
 
   it('refuses a Plan Promotion on an inherited plan in the one writer', () => {

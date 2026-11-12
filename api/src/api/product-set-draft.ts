@@ -1,6 +1,7 @@
 import { parseLineDirectDiscountInput } from '../domain/lineDirectDiscount';
 import { db, Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { deleteRecurringLine, insertRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
 import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
@@ -576,14 +577,11 @@ export async function addService(
     throw err;
   }
 
-  const { insertId } = await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, origin, assigned_member_id)
-     SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, 'admin', ?
-       FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-      WHERE gc.id = ? AND gc.gym_id = ?`,
-    [draft.gym_id, draft.id, quantity, startsAt, assignedMemberId, productId, draft.gym_id]);
-  await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
+  // #2126 stage 5c: the line and its Product snapshot are written together by their one writer.
+  const insertId = await insertRecurringLine(tx, {
+    gymId: draft.gym_id, productSetId: draft.id, productId, quantity, startsAt,
+    origin: 'admin', assignedMemberId,
+  });
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true, id: Number(insertId) };
@@ -621,14 +619,14 @@ export async function removeService(
   const deleted = !opts.legacy || dateOnly(rows[0].starts_at) > today;
   let endsAt = today;
   if (deleted) {
-    await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [serviceId]);
+    await deleteRecurringLine(tx, draft.gym_id, serviceId);
   } else {
     // #1914 — a removed line keeps what was paid for: it ends on the last day
     // of its last paid period when that is still ahead, else today.
     const paidThrough = rows[0].schedule_id != null
       ? await loadPaidThroughForSchedule(tx, draft.gym_id, Number(rows[0].schedule_id)) : null;
     endsAt = paidThrough && paidThrough > today ? paidThrough : today;
-    await tx.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [endsAt, serviceId]);
+    await updateRecurringLine(tx, draft.gym_id, serviceId, { ends_at: endsAt });
   }
   await touch(tx, draft);
   return { ok: true, deleted, ends_at: deleted ? null : endsAt };
@@ -658,8 +656,7 @@ export async function setServiceQuantity(
       WHERE source_id = ? AND gym_id = ? AND product_set_id = ? AND ends_at IS NULL`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
-  await tx.query('UPDATE member_products_recurrent_snapshot SET quantity = ? WHERE id = ? AND gym_id = ?',
-    [quantity, serviceId, draft.gym_id]);
+  await updateRecurringLine(tx, draft.gym_id, serviceId, { quantity });
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true, quantity };
