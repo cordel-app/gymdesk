@@ -7,14 +7,13 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
-import { ContextMenu } from '@/components/ContextMenu';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';
-import { ExpandedRow, StatusBadge, fmtDate, fmtDateTime, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
+import { StatusBadge, fmtAmount, type Transaction, type BillingEventDetails } from './BillingEventExpandedRow';
 import {
-  BILLING_EVENT_STATUS_VALUES, BillingEventStatusBadge, NormalizedPaymentStatusBadge, billingEventAmountLabel, useBillingEventActions,
+  BILLING_EVENT_STATUS_VALUES, BillingEventsTable, useBillingEventActions,
   type BillingEventHeaderRow,
 } from './BillingEventShared';
 
@@ -362,89 +361,18 @@ export default function BillingEventsPage() {
 
       {!loading && !error && (
         <>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
-                <th style={{ padding: '8px 12px', width: 32 }} />
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_member')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_plan')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.header_method')}</th>
-                <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.header_attempts')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_date')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_created')}</th>
-                <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_status')}</th>
-                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_normalized_payment_status')}</th>
-                <th style={{ padding: '8px 12px', width: 48 }}>{t('billing_events_page.col_actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 && (
-                <tr>
-                  <td colSpan={11} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
-                    {t('billing_events_page.empty')}
-                  </td>
-                </tr>
-              )}
-              {items.map((row, idx) => {
-                const rowKey = row.id != null ? `real-${row.id}` : `virtual-${row.user_membership_id}-${row.billing_date}-${idx}`;
-                const isExpandable = row.type === 'real' && row.id != null;
-                const isExpanded = isExpandable && expanded.has(row.id!);
-
-                return (
-                  <>
-                    <tr
-                      key={rowKey}
-                      style={{
-                        borderBottom: isExpanded ? 'none' : '1px solid #f3f4f6',
-                        background: isExpanded ? '#f9fafb' : undefined,
-                        cursor: isExpandable ? 'pointer' : undefined,
-                      }}
-                      onClick={isExpandable ? () => toggleExpand(row.id!) : undefined}
-                    >
-                      <td style={{ padding: '8px 12px', color: '#9ca3af', fontSize: 12 }}>
-                        {isExpandable ? (isExpanded ? '▾' : '▸') : null}
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
-                      <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
-                      <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.attempt_count ?? 0}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gymFmt)}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtDateTime(row.created_at, gymFmt)}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                        {billingEventAmountLabel(row)}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <BillingEventStatusBadge row={row} t={t} />
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <NormalizedPaymentStatusBadge status={row.normalized_payment_status} t={t} />
-                      </td>
-                      <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
-                        {isExpandable && (
-                          <ContextMenu items={menuItems(row)} ariaLabel={t('billing_events_page.col_actions')} />
-                        )}
-                      </td>
-                    </tr>
-                    {isExpanded && row.id != null && (
-                      <tr key={`${rowKey}-expanded`} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <ExpandedRow
-                          key={`${row.id}-${row.status}-${row.refunded_amount ?? ''}`}
-                          billingEvent={row}
-                          onChanged={reloadCurrentPage}
-                          canWrite={canWrite}
-                          readOnlyTitle={readOnlyTitle}
-                          t={t}
-                        />
-                      </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
+          <BillingEventsTable
+            rows={items}
+            gym={gymFmt}
+            t={t}
+            expanded={expanded}
+            onToggle={toggleExpand}
+            menuItems={menuItems}
+            onChanged={reloadCurrentPage}
+            canWrite={canWrite}
+            readOnlyTitle={readOnlyTitle}
+            emptyLabel={t('billing_events_page.empty')}
+          />
 
           {/* Pagination */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13, color: '#6b7280' }}>
