@@ -2,7 +2,7 @@
 
 // #2571 — the Billing Event *header* and its payment actions, shared by
 // Payments → Billing Events (a table row) and the Member card's Payments tab
-// (a card), the way `ExpandedRow` already is (#2449). Neither surface keeps a
+// (the same table since the #2449 follow-up), the way `ExpandedRow` already is (#2449). Neither surface keeps a
 // copy of the status labels, the per-action flags or the Pay Cash / Pay Card /
 // Retry / Waive flow: whether an action is offered is the API's flag.
 
@@ -10,9 +10,10 @@ import React, { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { ContextMenuItem } from '@/components/ContextMenu';
+import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { useModuleAccess } from '@/lib/useModuleAccess';
-import { StatusBadge, fmtAmount } from './BillingEventExpandedRow';
+import { ExpandedRow, StatusBadge, fmtAmount, fmtDate, fmtDateTime } from './BillingEventExpandedRow';
+import type { GymFormatSettings } from '@/lib/gymFormat';
 import { PaymentActionModal } from './PaymentActionModal';
 import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
@@ -47,28 +48,124 @@ export interface BillingEventHeaderRow {
   refund_state?: string | null;
 }
 
+/** The fields a row of the shared Billing Events table reads. */
+export interface BillingEventsTableRow extends BillingEventHeaderRow {
+  type?: 'real' | 'virtual';
+  plan_name?: string | null;
+  billing_date: string;
+  created_at: string | null;
+}
+
+/** Columns of the shared table; the expanded row spans them all. */
+export const BILLING_EVENTS_TABLE_COLUMNS = 11;
+
 /**
- * #2480: the three header facts — Member, Payment method (the snapshot), Attempts
- * (the event's authoritative counter) — as one compact labelled group, so both
- * hosts render them the same way and wrap them on a narrow screen.
+ * #2449 follow-up: the Billing Events **table** — header, rows, chevron and
+ * the expanded `ExpandedRow` — shared by Payments → Billing Events and the
+ * Member card's Payments tab, so both show the same columns under the same
+ * header. Presentational: the rows, the expansion state, the actions and the
+ * reload are the host's.
  */
-export function BillingEventHeaderFacts({ row, t, showMember = true }: {
-  row: Pick<BillingEventHeaderRow, 'member_name' | 'payment_method_name' | 'attempt_count'>;
+export function BillingEventsTable<R extends BillingEventsTableRow>({
+  rows, gym, t, expanded, onToggle, menuItems, onChanged, canWrite, readOnlyTitle, emptyLabel,
+}: {
+  rows: R[];
+  gym: GymFormatSettings;
   t: T;
-  showMember?: boolean;
+  expanded: Set<number>;
+  onToggle: (id: number) => void;
+  menuItems: (row: R) => ContextMenuItem[];
+  onChanged: () => void;
+  canWrite: boolean;
+  readOnlyTitle?: string;
+  emptyLabel: string;
 }) {
-  const fact = (label: string, value: React.ReactNode) => (
-    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'baseline', fontSize: 13, whiteSpace: 'nowrap' }}>
-      <span style={{ color: '#6b7280', fontSize: 12 }}>{label}</span>
-      <span style={{ fontWeight: 500 }}>{value}</span>
-    </span>
-  );
+  const th: React.CSSProperties = { padding: '8px 12px' };
   return (
-    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline' }}>
-      {showMember && fact(t('billing_events_page.header_member'), row.member_name ?? '—')}
-      {fact(t('billing_events_page.header_method'), row.payment_method_name ?? '—')}
-      {fact(t('billing_events_page.header_attempts'), row.attempt_count ?? 0)}
-    </span>
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
+            <th style={{ ...th, width: 32 }} />
+            <th style={th}>{t('billing_events_page.col_member')}</th>
+            <th style={th}>{t('billing_events_page.col_plan')}</th>
+            <th style={th}>{t('billing_events_page.header_method')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{t('billing_events_page.header_attempts')}</th>
+            <th style={th}>{t('billing_events_page.col_date')}</th>
+            <th style={th}>{t('billing_events_page.col_created')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
+            <th style={th}>{t('billing_events_page.col_status')}</th>
+            <th style={th}>{t('billing_events_page.col_normalized_payment_status')}</th>
+            <th style={{ ...th, width: 48 }}>{t('billing_events_page.col_actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={BILLING_EVENTS_TABLE_COLUMNS} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
+                {emptyLabel}
+              </td>
+            </tr>
+          )}
+          {rows.map((row, idx) => {
+            const rowKey = row.id != null ? `real-${row.id}` : `virtual-${row.user_membership_id}-${row.billing_date}-${idx}`;
+            const isExpandable = row.type !== 'virtual' && row.id != null;
+            const isExpanded = isExpandable && expanded.has(row.id!);
+            return (
+              <React.Fragment key={rowKey}>
+                <tr
+                  style={{
+                    borderBottom: isExpanded ? 'none' : '1px solid #f3f4f6',
+                    background: isExpanded ? '#f9fafb' : undefined,
+                    cursor: isExpandable ? 'pointer' : undefined,
+                  }}
+                  onClick={isExpandable ? () => onToggle(row.id!) : undefined}
+                  aria-expanded={isExpandable ? isExpanded : undefined}
+                >
+                  <td style={{ padding: '8px 12px', color: '#9ca3af', fontSize: 12 }}>
+                    {isExpandable ? (isExpanded ? '▾' : '▸') : null}
+                  </td>
+                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
+                  <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.attempt_count ?? 0}</td>
+                  <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gym)}</td>
+                  <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {fmtDateTime(row.created_at, gym)}
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {billingEventAmountLabel(row)}
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <BillingEventStatusBadge row={row} t={t} />
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <NormalizedPaymentStatusBadge status={row.normalized_payment_status} t={t} />
+                  </td>
+                  <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
+                    {isExpandable && (
+                      <ContextMenu items={menuItems(row)} ariaLabel={t('billing_events_page.col_actions')} />
+                    )}
+                  </td>
+                </tr>
+                {isExpanded && row.id != null && (
+                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <ExpandedRow
+                      key={`${row.id}-${row.status}-${row.refunded_amount ?? ''}`}
+                      billingEvent={row}
+                      onChanged={onChanged}
+                      canWrite={canWrite}
+                      readOnlyTitle={readOnlyTitle}
+                      t={t}
+                    />
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
