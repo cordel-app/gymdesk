@@ -3,7 +3,7 @@
 // The flow against real MySQL is `assigned-plan-promotion-final-price.test.ts`.
 
 import { describe, expect, it } from 'vitest';
-import { currentProductCharges, finalPriceWithPromotion } from '../domain/assignedLineEnginePrices';
+import { currentProductCharges, engineLineKey, finalPriceWithPromotion } from '../domain/assignedLineEnginePrices';
 import type { BillingSimulationResult, SimulationLine } from '../domain/billingSimulation';
 
 function line(productId: number, actual: number, regular: number, opts: Partial<SimulationLine> = {}): SimulationLine {
@@ -30,8 +30,8 @@ describe('currentProductCharges', () => {
       { date: '2026-10-01', lines: [line(1, 10, 10)] },
       { date: '2026-11-01', lines: [line(1, 10, 10), line(2, 3, 6)] },
     ]), '2026-10-15');
-    expect(charges.get(1)).toMatchObject({ date: '2026-10-01', promoted: false });
-    expect(charges.get(2)).toMatchObject({ date: '2026-11-01', promoted: true });
+    expect(charges.get(engineLineKey(1, null))).toMatchObject({ date: '2026-10-01', promoted: false });
+    expect(charges.get(engineLineKey(2, null))).toMatchObject({ date: '2026-11-01', promoted: true });
   });
 
   it('skips a prorated first charge and the Membership Fee', () => {
@@ -39,8 +39,17 @@ describe('currentProductCharges', () => {
       { date: '2026-10-10', lines: [line(1, 2, 10, { proration: { prorated_days: 6, period_days: 31 } })] },
       { date: '2026-11-01', lines: [line(1, 10, 10), { ...line(9, 1, 2), kind: 'membership_fee' }] },
     ]), '2026-10-15');
-    expect(charges.get(1)?.date).toBe('2026-11-01');
-    expect(charges.has(9)).toBe(false);
+    expect(charges.get(engineLineKey(1, null))?.date).toBe('2026-11-01');
+    expect(charges.has(engineLineKey(9, null))).toBe(false);
+  });
+
+  it('keeps one charge per member line of the same Product (#2657 stage 3)', () => {
+    const charges = currentProductCharges(sim([
+      { date: '2026-11-01', lines: [line(1, 10, 10, { assigned_member_id: 7 }), line(1, 5, 10, { assigned_member_id: 8 })] },
+    ]), '2026-11-15');
+    expect(charges.get(engineLineKey(1, 7))?.actual_charge).toBe(10);
+    expect(charges.get(engineLineKey(1, 8))?.actual_charge).toBe(5);
+    expect(charges.has(engineLineKey(1, null))).toBe(false);
   });
 });
 

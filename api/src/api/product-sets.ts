@@ -144,6 +144,9 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   // #2624 stage 4: the Promotions applied while it was a Draft are captured now.
   const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
   await confirmDraftPromotionSnapshots(tx, gymId, id);
+  // #2657 stage 3: a committed plan holds its Individual Products one line per member.
+  const { syncPlanLineAllocations } = await import('./plan-line-allocation');
+  await syncPlanLineAllocations(tx, gymId, id, { split: true });
   await tx.query(
     `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
     [paymentRequestId, id],
@@ -168,6 +171,9 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
     // #2624 stage 4: a free commit confirms the Draft's Promotion snapshots too.
     const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
     await confirmDraftPromotionSnapshots(tx, gymId, id);
+    // #2657 stage 3: and splits its Individual Products into one line per member.
+    const { syncPlanLineAllocations } = await import('./plan-line-allocation');
+    await syncPlanLineAllocations(tx, gymId, id, { split: true });
   }
 
   const previous = await lockActive(tx, gymId, Number(row.owner_member_id));

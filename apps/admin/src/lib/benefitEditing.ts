@@ -29,6 +29,12 @@ export interface ProductBenefitRow {
    * card's Member column; `null`/absent for a Shared Product. Display only.
    */
   member_name?: string | null;
+  /**
+   * #2657 stage 3 — the member the line is for when an Individual Product is held as
+   * one line per member: part of the line's identity, sent back with the line so the
+   * server edits that member's line and no other. Absent where nothing is split.
+   */
+  assigned_member_id?: number | null;
   quantity: number;
   product_name: string;
   product_type: string;
@@ -232,12 +238,18 @@ export function updateBenefitRow(
  * switching back restores it, and this is where the one that no longer applies
  * is dropped.
  */
+/** #2657 stage 3 — a draft row's identity: its Product and, for a line held per member, the member. */
+export const benefitRowKey = (row: Pick<ProductBenefitRow, 'product_id' | 'assigned_member_id'>): string =>
+  `${row.product_id}:${row.assigned_member_id ?? ''}`;
+
 export const toBenefitItems = (draft: ProductBenefitRow[]) =>
   draft.map((b) => {
     // #918: the Frequency travels under the same rule as the pair — only when
     // the draft row actually carries the key, so a section that does not
     // configure it cannot clear what is stored.
     const line: Record<string, unknown> = { product_id: b.product_id, quantity: b.quantity };
+    // #2657 stage 3: a line held per member names its member, so the save edits that line.
+    if (b.assigned_member_id !== undefined) line.assigned_member_id = b.assigned_member_id;
     if ('frequency' in b) line.frequency = b.frequency ?? null;
     // #959: and the Requirement, under the same rule — only when the draft row
     // carries the key, so a section that does not configure it cannot reset what

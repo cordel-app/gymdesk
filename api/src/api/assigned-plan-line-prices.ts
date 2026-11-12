@@ -13,6 +13,7 @@
 
 import {
   currentProductCharges,
+  engineLineKey,
   finalPriceWithPromotion,
   EngineLineCharge,
 } from '../domain/assignedLineEnginePrices';
@@ -28,7 +29,7 @@ import { loadSimulationAssignments } from './billing-simulation';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 
 /** The engine's charge per Product for the assignment's current cycle; empty when it bills nothing. */
-async function engineChargesFor(gymId: string, umId: number): Promise<Map<number, EngineLineCharge>> {
+async function engineChargesFor(gymId: string, umId: number): Promise<Map<string, EngineLineCharge>> {
   const [assignment] = await loadSimulationAssignments(gymId, { userMembershipId: umId });
   if (!assignment) return new Map();
   const today = todayUtc();
@@ -40,9 +41,9 @@ async function engineChargesFor(gymId: string, umId: number): Promise<Map<number
   return currentProductCharges(simulation, today);
 }
 
-function overlay(rows: AssignedPlanBenefitRow[], charges: Map<number, EngineLineCharge>): AssignedPlanBenefitRow[] {
+function overlay(rows: AssignedPlanBenefitRow[], charges: Map<string, EngineLineCharge>): AssignedPlanBenefitRow[] {
   if (charges.size === 0) return rows;
-  return rows.map((row) => ({ ...row, ...finalPriceWithPromotion(row, charges.get(Number(row.product_id))) }));
+  return rows.map((row) => ({ ...row, ...finalPriceWithPromotion(row, charges.get(engineLineKey(Number(row.product_id), row.assigned_member_id))) }));
 }
 
 /** `loadAssignedPlanSnapshot()` with each line's Final Price including its Promotion Benefit. */
