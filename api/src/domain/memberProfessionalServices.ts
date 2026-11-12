@@ -259,8 +259,9 @@ export async function loadMemberProfessionalServiceGrants(
             umsv.quantity * COALESCE(gc.units, 1) AS sessions,
             um.member_id          AS holder_member_id
      FROM user_memberships um
+     JOIN product_set_periodical_snapshots umsvl ON umsvl.product_set_id = ${assignmentLineVersionId('um.id')}
      JOIN product_periodical_snapshots umsv
-       ON umsv.product_set_id = ${assignmentLineVersionId('um.id')} AND umsv.gym_id = um.gym_id
+       ON umsv.id = umsvl.product_periodical_snapshot_id AND umsv.gym_id = um.gym_id
           AND umsv.source_id IS NOT NULL
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips

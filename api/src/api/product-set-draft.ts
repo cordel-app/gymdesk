@@ -543,9 +543,10 @@ export async function addService(
   // is written, so every line they read was synced by an earlier Draft write.
   if (opts.allowRepeat) {
     const { rows: recent } = await tx.query(
-      `SELECT source_id AS id FROM product_periodical_snapshots
-        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL
-          AND line_ref = source_id AND created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
+      `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ? AND s.ends_at IS NULL
+          AND s.line_ref = s.source_id AND s.created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
       [draft.gym_id, draft.id, productId]);
     if (recent.length > 0) {
       const message = 'This product was just added; wait a moment before adding it again';
@@ -553,8 +554,9 @@ export async function addService(
     }
   } else {
     const { rows: dup } = await tx.query(
-      `SELECT source_id AS id FROM product_periodical_snapshots
-        WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND (ends_at IS NULL OR ends_at >= ?)`,
+      `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ? AND (s.ends_at IS NULL OR s.ends_at >= ?)`,
       [draft.gym_id, draft.id, productId, startsAt]);
     if (dup.length > 0) {
       const message = 'This service is already attached to the Assigned Plan for that period';
@@ -607,8 +609,9 @@ export async function removeService(
     [serviceId, draft.gym_id, draft.id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
-    `SELECT starts_at, ends_at, schedule_id FROM product_periodical_snapshots
-      WHERE source_id = ? AND gym_id = ? AND product_set_id = ?`,
+    `SELECT s.starts_at, s.ends_at, s.schedule_id FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ?`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
   if (rows[0].ends_at != null) {
@@ -652,8 +655,9 @@ export async function setServiceQuantity(
     [serviceId, draft.gym_id, draft.id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
-    `SELECT 1 FROM product_periodical_snapshots
-      WHERE source_id = ? AND gym_id = ? AND product_set_id = ? AND ends_at IS NULL`,
+    `SELECT 1 FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL`,
     [serviceId, draft.gym_id, draft.id]);
   if (!rows[0]) return { kind: 'not_found' };
   await updateRecurringLine(tx, draft.gym_id, serviceId, { quantity });

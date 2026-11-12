@@ -310,10 +310,11 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
   // writer (`recurring-line-writer.ts`, stage 5c), which also writes the schedule
   // onto both, keyed by the snapshot's `source_id`.
   const { rows: productLines } = await tx.query<any>(
-    `SELECT source_id, billing_frequency, starts_at
-       FROM product_periodical_snapshots
-      WHERE gym_id = ? AND product_set_id = ? AND schedule_id IS NULL AND source_id IS NOT NULL
-      ORDER BY source_id`,
+    `SELECT s.source_id, s.billing_frequency, s.starts_at
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.schedule_id IS NULL AND s.source_id IS NOT NULL
+      ORDER BY s.source_id`,
     [gymId, productSetId]);
   await allocate(productLines.map((r: any) => ({
     id: Number(r.source_id), frequency: r.billing_frequency, startsAt: r.starts_at,
@@ -404,9 +405,10 @@ export async function loadProductSetSimulationAssignment(
     `SELECT s.source_id AS id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.billing_frequency AS item_billing_frequency, s.unit_price,
             sch.anchor_date AS schedule_anchor
-       FROM product_periodical_snapshots s
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
+      WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.source_id IS NOT NULL
       ORDER BY s.starts_at ASC, s.source_id ASC`,
     [gymId, productSetId],
   );
@@ -512,8 +514,10 @@ export async function planScheduledEvents(
   const { rows: scheduled } = await exec.query(
     // #2126 stage 3o: the recurring lines' schedules, from the Product snapshot (see above).
     `SELECT s.product_id, sch.schedule_key
-       FROM product_periodical_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+       JOIN product_set_schedules sch ON sch.id = s.schedule_id
+      WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.source_id IS NOT NULL
      UNION
      SELECT p.product_id, sch.schedule_key
        FROM plan_periodical_snapshots p JOIN product_set_schedules sch ON sch.id = p.schedule_id

@@ -123,8 +123,9 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
     const { rows: freqs } = await tx.query<any>(
       // #2126 stage 3l: read before the new line is written, so every line it
       // reads is one an earlier Draft write already synced.
-      `SELECT DISTINCT billing_frequency AS f FROM product_periodical_snapshots
-        WHERE gym_id = ? AND product_set_id = ? AND ends_at IS NULL AND billing_frequency IS NOT NULL`,
+      `SELECT DISTINCT s.billing_frequency AS f FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL AND s.billing_frequency IS NOT NULL`,
       [input.gymId, draftId]);
     const existing = freqs.map((r: any) => String(r.f));
     const { rows: prod } = await tx.query<any>(

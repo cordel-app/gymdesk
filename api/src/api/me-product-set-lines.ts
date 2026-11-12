@@ -60,10 +60,11 @@ const LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.product_nam
 async function linesOf(gymId: string, setId: number, ownerSql: string): Promise<any[]> {
   const { rows } = await db.query<any>(
     `SELECT ${LINE_COLUMNS}, ${assignedMemberSql('s', ownerSql)} AS assigned_member_id
-       FROM product_periodical_snapshots s
-       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+       JOIN product_sets ps ON ps.id = lnk.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN products p ON p.id = s.product_id AND p.gym_id = s.gym_id
-      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
+      WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.source_id IS NOT NULL
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
       ORDER BY s.created_at ASC, s.source_id ASC`,
     [gymId, setId],
