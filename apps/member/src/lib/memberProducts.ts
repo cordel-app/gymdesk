@@ -452,6 +452,17 @@ export interface MemberSetLine {
   id: number;
   product_id: number;
   change: 'added' | 'inherited';
+  /** #2663 — the line's frozen snapshot, for *My Products*. */
+  product_name?: string;
+  description?: string | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  quantity?: number;
+  billing_frequency?: string | null;
+  currency?: string;
+  regular_amount?: number;
+  final_amount?: number;
+  assigned_member_id?: number | null;
 }
 
 /** The member's current version (Draft, else Active) as `GET /me/product-sets/:id` answers it. */
@@ -470,25 +481,69 @@ export interface MemberSetPlan {
   membership_plan_id: number | null;
   plan_name: string | null;
   change: 'added' | 'inherited';
+  /** #2663 — what *My Plans* draws, all off this version's own plan snapshot. */
+  plan_description?: string | null;
+  status?: string;
+  entitlement_only?: boolean;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  membership_fee?: number | null;
+  discount_reason?: string | null;
+  beneficiaries?: { member_id: number; name: string | null; is_owner: boolean }[];
+  benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number }[];
 }
 
 /** A row of `GET /me/product-sets`. */
 export interface MemberSetRow {
   id: number;
   status: string;
+  /** #2663 — the member's own version, as opposed to a family version they are covered by. */
+  own?: boolean;
 }
 
 /**
- * Which version the Products page reads its Draft state from: the member's own
- * Draft, else their Active version (so a Product they already hold reads as
- * such), else none. `GET /me/product-sets` already lists only the member's own
- * Draft, so nothing here judges ownership.
+ * The statuses a version may be selected in, newest-in-lifecycle first: the
+ * member's in-flight Draft, then a version awaiting its first payment, then the
+ * Active one. The Admin's Products tab reads the same order (#1463: the
+ * in-flight version, else the active one). A superseded version is history and
+ * is never selected (#2663 Scenario E: no arbitrary fallback).
+ */
+export const SELECTABLE_SET_STATUSES = ['draft', 'pending_payment', 'active'] as const;
+
+/**
+ * #2663 — the one Product Set the *My Plans* and *My Products* sections both
+ * read, resolved once per page load: the member's own version before a family
+ * version they are only covered by, and within each the first status of
+ * `SELECTABLE_SET_STATUSES` (a newer Draft wins over the Active version, never
+ * the other way round). `GET /me/product-sets` already lists only the member's
+ * own Draft, so nothing here judges ownership.
  */
 export function currentSetId(rows: readonly MemberSetRow[]): number | null {
-  const draft = rows.find((r) => r.status === 'draft');
-  if (draft) return Number(draft.id);
-  const active = rows.find((r) => r.status === 'active');
-  return active ? Number(active.id) : null;
+  const groups = [rows.filter((r) => r.own !== false), rows.filter((r) => r.own === false)];
+  for (const group of groups) {
+    for (const status of SELECTABLE_SET_STATUSES) {
+      const row = group.find((r) => r.status === status);
+      if (row) return Number(row.id);
+    }
+  }
+  return null;
+}
+
+/** The locale key the selected version's status badge reads under (#2663 §4), or `null` for none. */
+export function setStatusKey(view: Pick<MemberSetView, 'status'> | null): string | null {
+  if (!view) return null;
+  const known = ['draft', 'pending_payment', 'active', 'superseded'];
+  return known.includes(view.status) ? `membership.set_status.${view.status}` : null;
+}
+
+/** The plans *My Plans* lists: the selected version's, and only its (#2663 §2). */
+export function setPlans(view: MemberSetView | null): MemberSetPlan[] {
+  return view?.plans ?? [];
+}
+
+/** The Products *My Products* lists: the selected version's own lines (#2663 §3). */
+export function setProductLines(view: MemberSetView | null): MemberSetLine[] {
+  return view?.lines ?? [];
 }
 
 /**

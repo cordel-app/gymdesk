@@ -659,7 +659,10 @@ meProductSetsRouter.get('/', async (req, res) => {
                    WHERE b.gym_id = ? AND b.member_id = ?))
       ORDER BY ps.id DESC`,
     [ctx.gymId, memberId, ctx.gymId, memberId]);
-  res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId).map(shape));
+  // #2663: `own` says whose version a row is, so the Members App prefers the
+  // member's own version over a family version they are only covered by.
+  res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId)
+    .map((r) => ({ ...shape(r), own: Number(r.owner_member_id) === memberId })));
 });
 
 /**
@@ -730,16 +733,42 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
  */
 meProductSetsRouter.get('/:id', async (req, res, next) => {
   try {
-    const owned = await ownedSet(req, res);
+    const owned = await readableSet(req, res);
     if (!owned) return;
     const { gymId } = getTenantContext(req);
     const view = await loadMemberProductSetView(gymId, {
       id: Number(owned.set.id), status: String(owned.set.status),
       previous_product_set_id: owned.set.previous_product_set_id != null ? Number(owned.set.previous_product_set_id) : null,
-    });
+    }, { memberId: owned.memberId, ownerMemberId: Number(owned.set.owner_member_id) });
     res.json({ ...shape(owned.set), ...view });
   } catch (err) { next(err); }
 });
+
+/**
+ * #2663 — the read of `GET /me/product-sets/:id` also answers a covered family
+ * member for a committed version (never a Draft, which stays the owner's, as
+ * `GET /me/product-sets` already lists it), so *My Plans* and *My Products* can
+ * show a beneficiary the family's version. It reads only: every write keeps
+ * `ownedSet()`, and the view itself narrows what a non-owner sees.
+ */
+async function readableSet(req: any, res: any): Promise<{ memberId: number; set: any } | null> {
+  const ctx = getTenantContext(req);
+  let memberId: number;
+  try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { res.status(404).json({ error: 'ProductSet not found' }); return null; }
+  const set = await loadSet(ctx.gymId, req.params.id);
+  if (!set) { res.status(404).json({ error: 'ProductSet not found' }); return null; }
+  if (Number(set.owner_member_id) === memberId) return { memberId, set };
+  if (set.status !== 'draft') {
+    const { rows } = await db.query<any>(
+      `SELECT 1 FROM product_set_plan_snapshots j
+         JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND b.gym_id = ? AND b.member_id = ? LIMIT 1`,
+      [Number(set.id), ctx.gymId, memberId]);
+    if (rows.length > 0) return { memberId, set };
+  }
+  res.status(404).json({ error: 'ProductSet not found' });
+  return null;
+}
 
 meProductSetsRouter.get('/:id/review', async (req, res, next) => {
   if (!(await ownedSet(req, res))) return;

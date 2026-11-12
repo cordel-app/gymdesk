@@ -412,7 +412,7 @@
     "plan_no_image": "Sense imatge",
     "plan_ov_include": "Incloure",
     "plan_benefits_heading": "Elements inclosos",
-    "my_plans_heading": "Els meus plans de membresia",
+    "my_plans_heading": "Els meus plans",
     "choose_plan": "Triar aquest pla",
     "choose_plan_title": "Confirma el teu pla",
     "choose_plan_body": "Estàs triant {name}. El teu primer pagament serà de {price}. Introduiràs la targeta a la pàgina de pagament segura del teu gimnàs.",
@@ -433,7 +433,7 @@
     "product_package_price": "Preu total del paquet",
     "product_tax_included": "Impostos inclosos",
     "product_buy": "Comprar",
-    "own_products_heading": "Els meus productes",
+    "own_products_heading": "Les meves compres",
     "product_end_date": "Vàlid fins al {date}",
     "product_pay": "Pagar",
     "product_state_cancelled": "Cancel·lat",
@@ -522,7 +522,19 @@
     "plan_in_draft": "A la teva selecció",
     "plan_remove_from_draft": "Treu",
     "draft_error_has_plan": "La teva selecció ja inclou un pla.",
-    "draft_error_plan_via_gym": "Per canviar el teu pla, contacta amb el teu gimnàs."
+    "draft_error_plan_via_gym": "Per canviar el teu pla, contacta amb el teu gimnàs.",
+    "my_plans_empty": "No tens plans als teus productes actuals.",
+    "set_products_heading": "Els meus productes",
+    "set_products_empty": "No tens productes als teus productes actuals.",
+    "plan_for": "Per a {names}",
+    "plan_entitlement_only": "Fins a la seva data de fi",
+    "set_status": {
+      "draft": "Esborrany",
+      "pending_payment": "Pendent de pagament",
+      "active": "Actiu",
+      "superseded": "Substituït"
+    },
+    "set_status_label": "Estat"
   },
   "payments": {
     "title": "Pagaments",

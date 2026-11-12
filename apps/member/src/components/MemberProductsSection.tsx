@@ -128,16 +128,25 @@ function ProductImage({ src, fullSrc, title, alt, description, size = 64, round 
   );
 }
 
-export function MemberProductsSection({ title, emptyLabel, items, roundImages = false }: {
+export function MemberProductsSection({ title, emptyLabel, items, roundImages = false, badge }: {
   title: string;
   emptyLabel: string;
   items: MemberProductCardItem[];
+  /** #2663 §4 — drawn at the right of the heading (the selected Product Set's status). */
+  badge?: ReactNode;
   /** #2496 stage 3 — circular Product thumbnails with the placeholder (the catalogue). */
   roundImages?: boolean;
 }) {
   return (
     <section style={styles.section}>
-      <h2 style={styles.heading}>{title}</h2>
+      {badge ? (
+        <div style={styles.headingRow}>
+          <h2 style={{ ...styles.heading, margin: 0 }}>{title}</h2>
+          {badge}
+        </div>
+      ) : (
+        <h2 style={styles.heading}>{title}</h2>
+      )}
       {items.length === 0 ? (
         <div style={styles.emptyCard}>
           <p style={styles.empty}>{emptyLabel}</p>
@@ -198,6 +207,7 @@ export function MemberProductsSection({ title, emptyLabel, items, roundImages = 
 }
 
 const styles: Record<string, CSSProperties> = {
+  headingRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
   section: { marginTop: 24 },
   heading: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
