@@ -22,6 +22,8 @@ describe('item origin (#1883)', () => {
     // The plan snapshots (stage 17) are copied by `copyPlanSnapshotToVersion()`, origin included.
     const plans = readFileSync(join(__dirname, '../api/plan-snapshot-add.ts'), 'utf8');
     expect(plans).toMatch(/recurring_billing_unit, origin,/);
-    expect(src).toMatch(/line_ref, origin[,)]/);
+    expect(src).toMatch(/copyRecurringLines\(/);
+    const writer = readFileSync(join(__dirname, '../api/recurring-line-writer.ts'), 'utf8');
+    expect(writer).toMatch(/line_ref, origin[,)]/);
   });
 });
