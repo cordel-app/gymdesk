@@ -6,6 +6,21 @@
  * `professional_service_translations` (for a gym's own service as for a Base one).
  */
 
+/**
+ * #2664: a service's Booking Type, mirroring `SERVICE_BOOKING_TYPES` in
+ * `api/src/domain/serviceBookingType.ts` (and its CHECK). Configuration only:
+ * nothing in booking reads it yet.
+ */
+export const PS_BOOKING_TYPES = ['family_only', 'open_group'] as const;
+export type PsBookingType = typeof PS_BOOKING_TYPES[number];
+export const DEFAULT_PS_BOOKING_TYPE: PsBookingType = 'open_group';
+
+/** The locale key a Booking Type reads under; an unknown stored value falls back to the default's. */
+export function bookingTypeLabelKey(value: string | null | undefined): `booking_type_${PsBookingType}` {
+  const v = (PS_BOOKING_TYPES as readonly string[]).includes(value ?? '') ? (value as PsBookingType) : DEFAULT_PS_BOOKING_TYPE;
+  return `booking_type_${v}`;
+}
+
 export const PS_LOCALES = ['en', 'es', 'ca'] as const;
 export type Loc = typeof PS_LOCALES[number];
 
@@ -15,6 +30,7 @@ export interface PsRow {
   description: string | null;
   max_capacity: number | null;
   min_participants?: number | null;
+  booking_type?: PsBookingType;
   image_url?: string | null;
   base_professional_service_id?: number | null;
   image_thumbnail_url?: string | null;
@@ -36,6 +52,7 @@ export interface Form {
   /** #2293: Unlimited disables Max Capacity (stored as no capacity, NULL). */
   unlimited: boolean;
   min_participants: string;
+  booking_type: PsBookingType;
   texts: Record<Loc, { name: string; description: string }>;
 }
 
@@ -45,6 +62,7 @@ export function emptyForm(): Form {
     max_capacity: '',
     unlimited: true,
     min_participants: '',
+    booking_type: DEFAULT_PS_BOOKING_TYPE,
     texts: { en: { name: '', description: '' }, es: { name: '', description: '' }, ca: { name: '', description: '' } },
   };
 }
@@ -56,6 +74,7 @@ export function formFor(s: PsRow): Form {
     max_capacity: s.max_capacity == null ? '' : String(s.max_capacity),
     unlimited: s.max_capacity == null,
     min_participants: s.min_participants == null ? '' : String(s.min_participants),
+    booking_type: (PS_BOOKING_TYPES as readonly string[]).includes(s.booking_type ?? '') ? s.booking_type! : DEFAULT_PS_BOOKING_TYPE,
     texts: {
       en: { name: s.name, description: s.description ?? '' },
       es: { name: tr.es?.name ?? '', description: tr.es?.description ?? '' },
@@ -108,6 +127,7 @@ export function toPayload(f: Form) {
     description: f.texts.en.description.trim() || null,
     max_capacity: cap === '' ? null : Number(cap),
     min_participants: min === '' ? null : Number(min),
+    booking_type: f.booking_type,
     translations: { es: tr('es'), ca: tr('ca') },
   };
 }

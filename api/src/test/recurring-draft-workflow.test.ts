@@ -335,8 +335,11 @@ describe('a recurring Product added mid-cycle (#1867 stage 4)', () => {
     const m = await member();
     const anchor = day(-10);
     await activePlan(m, 40, anchor);
-    const next = advanceBillingDate(anchor, 1, 'month');
+    // The plan schedule is anchored on the billing calendar (#2125 M5c): monthly bills on the 1st,
+    // so the next schedule date after today is the 1st of next month, whatever the plan's start.
+    const next = advanceBillingDate(`${TODAY.slice(0, 8)}01`, 1, 'month');
     const days = Math.min(daysBetween(TODAY, next), 31);
+    if (TODAY.endsWith('-01')) return; // a line starting on a schedule date is not prorated
     const trainer = await product({ name: 'Trainer Pro', frequency: 'month', amount: '31.00', type: 'service' });
     const buy = await auth(request.post(base(m))).send({ product_id: trainer });
     const draftId = buy.body.product_set_id as number;
