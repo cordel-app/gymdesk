@@ -1424,15 +1424,6 @@ export default function MembershipPage() {
    * payment — above the current plan (§1), in both the with-plan and the
    * no-plan branches so the entry point is never missing.
    */
-  function renderBackLink() {
-    return (
-      <a href={`/${locale}${MEMBERSHIP_PATH}`} style={styles.backLink}
-        onClick={(e) => { e.preventDefault(); router.push(`/${locale}${MEMBERSHIP_PATH}`); }}>
-        {t('membership.back_to_products')}
-      </a>
-    );
-  }
-
   function renderPlansHeader() {
     return (
       <>
@@ -1867,7 +1858,6 @@ export default function MembershipPage() {
   if (mode === 'add_plan') {
     return (
       <main style={styles.container}>
-        {renderBackLink()}
         {renderPlansHeader()}
         {renderPlanCatalogue()}
         {renderDialogs()}
@@ -1878,7 +1868,6 @@ export default function MembershipPage() {
   if (mode === 'add_product') {
     return (
       <main style={styles.container}>
-        {renderBackLink()}
         {renderProducts()}
         {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
         {renderSetSummary()}
@@ -2087,7 +2076,6 @@ const styles: Record<string, React.CSSProperties> = {
   // #1122 — the Add plan row, the plan awaiting its first payment, and the
   // choose dialog's text. Every colour is the theme's (#983).
   addPlanRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginBottom: 12 },
-  backLink: { display: 'inline-block', marginBottom: 12, fontSize: 14, color: memberTheme.text, textDecoration: 'underline' },
   pendingPlanCard: { ...noticeStyle('warning'), marginBottom: 12 },
   pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
   pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },

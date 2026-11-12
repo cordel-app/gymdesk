@@ -8,6 +8,7 @@ import {
   ADD_PLAN_PATH,
   ADD_PRODUCT_PATH,
   MEMBERSHIP_PATH,
+  headerBackPath,
   membershipPageMode,
 } from '../../../apps/member/src/lib/membershipPages';
 import { productsPathForServices } from '../../../apps/member/src/lib/serviceRequired';
@@ -37,6 +38,14 @@ describe('membershipPageMode', () => {
     expect(membershipPageMode(`/en${ADD_PRODUCT_PATH}`)).toBe('add_product');
   });
 
+  it('sends the header back control to My Products from the purchasing pages only (#2741)', () => {
+    expect(headerBackPath('/en/membership/add-plan')).toBe(MEMBERSHIP_PATH);
+    expect(headerBackPath('/es/membership/add-product')).toBe(MEMBERSHIP_PATH);
+    expect(headerBackPath('/en/membership')).toBe('');
+    expect(headerBackPath('/en/schedule')).toBe('');
+    expect(headerBackPath(null)).toBe('');
+  });
+
   it('sends a refused booking to the Add Product page', () => {
     expect(productsPathForServices([3])).toBe(`${ADD_PRODUCT_PATH}?professional_service_ids=3`);
   });
@@ -56,18 +65,25 @@ describe('My Products page wiring', () => {
     expect(branch("if (mode === 'add_product') {", '</main>')).toContain('{renderProducts()}');
   });
 
-  it('offers + Add Plan and + Add Product side by side, with a way back from both pages', () => {
+  it('offers + Add Plan and + Add Product side by side', () => {
     expect(page).toContain("t('membership.add_plan')");
     expect(page).toContain("t('membership.add_product')");
-    expect(branch("if (mode === 'add_plan') {", '</main>')).toContain('{renderBackLink()}');
-    expect(branch("if (mode === 'add_product') {", '</main>')).toContain('{renderBackLink()}');
+  });
+
+  it('draws no back link of its own: the header\'s "← My Products" is the only one (#2741)', () => {
+    expect(page).not.toContain('back_to_products');
+    expect(page).not.toContain('renderBackLink');
+    const topBar = read('src', 'components', 'TopBar.tsx');
+    expect(topBar).toContain('headerBackPath(pathname)');
+    expect(topBar).toContain("t('nav.back_to_products')");
   });
 
   it('has every new label in the three languages', () => {
     for (const locale of ['en', 'es', 'ca']) {
       const m = JSON.parse(read('locales', 'base', `${locale}.json`)).membership;
       expect(m.add_product).toBeTruthy();
-      expect(m.back_to_products).toBeTruthy();
+      expect(m.back_to_products).toBeUndefined();
+      expect(JSON.parse(read('locales', 'base', `${locale}.json`)).nav.back_to_products).toBeTruthy();
     }
   });
 });
