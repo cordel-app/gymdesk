@@ -374,6 +374,7 @@
     "products_empty": "Tu gimnasio todavía no ofrece productos ni servicios adicionales.",
     "tab_products": "Planes y productos",
     "tab_services": "Servicios profesionales",
+    "tab_payments": "Pagos",
     "services_empty": "Tu gimnasio todavía no tiene servicios profesionales disponibles.",
     "services_error": "No se pudieron cargar tus servicios profesionales.",
     "services_balance": "{total, plural, one {# sesión} other {# sesiones}} ({available} disponibles + {booked} reservadas)",

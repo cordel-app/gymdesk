@@ -202,11 +202,12 @@ describe('how the Members App words one', () => {
   it('wears the app\'s one collapsible card rather than a second one', () => {
     // #1115/#1123 — a second expand affordance in this app is what promoting
     // the chrome out of the Payments card removed.
+    // Since #2740 Payments is a tab of its own and wears no outer card at all,
+    // so it must not grow a collapsible card of its own either.
     const card = read(MEMBER, 'src', 'components', 'PastMembershipPlansCard.tsx');
-    const payments = read(MEMBER, 'src', 'components', 'MemberPaymentsCard.tsx');
-    for (const source of [card, payments]) {
-      expect(source).toContain('MemberCollapsibleCard');
-    }
+    const payments = withoutComments(read(MEMBER, 'src', 'components', 'MemberPaymentsCard.tsx'));
+    expect(card).toContain('MemberCollapsibleCard');
+    expect(payments).not.toMatch(/CollapsibleCard/);
   });
 
   it('shows no status pill on a past plan — that is the current plan\'s emphasis (§8)', () => {
