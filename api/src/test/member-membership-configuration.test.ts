@@ -837,3 +837,29 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
     expect(res.body.current_product_set).toBeNull();
   });
 });
+
+// ─── #2742 — a Members App plan awaiting its first payment ────────────────────
+
+describe('GET /user-memberships/member/:memberId/configuration — pending payment plan (#2742)', () => {
+  it('reports the version with its plan and no assignment, and changes nothing', async () => {
+    const gymId = await createTestGym();
+    await createTestMembership(gymId, 'admin');
+    const memberId = await createMember(gymId, 'Pending Member');
+    const planId = await createPlan(gymId, `Gold ${uniq()}`);
+    const { insertId: setId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, membership_plan_id, status, starts_at, created_by)
+       VALUES (?, ?, ?, 'pending_payment', '2026-11-12', 'Pending Member')`,
+      [gymId, memberId, planId],
+    );
+
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    // No assignment exists until the payment activates the version.
+    expect(res.body.plans).toEqual([]);
+    expect(res.body.product_sets).toEqual([expect.objectContaining({
+      id: setId, status: 'pending_payment', membership_plan_id: planId, user_membership_id: null,
+    })]);
+    const { rows } = await db.query('SELECT status FROM product_sets WHERE id = ?', [setId]);
+    expect(rows[0].status).toBe('pending_payment');
+  });
+});
