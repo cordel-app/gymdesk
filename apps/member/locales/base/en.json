@@ -890,7 +890,9 @@
     "continue_with_apple": "Continue with Apple",
     "signing_in": "Signing in…",
     "google_failed": "Google sign-in didn't work. Please try again.",
-    "apple_failed": "Apple sign-in didn't work. Please try again."
+    "apple_failed": "Apple sign-in didn't work. Please try again.",
+    "pull_to_refresh": "Pull to refresh",
+    "refreshing": "Refreshing…"
   },
   "progress": {
     "loading": "Loading your progress…",
