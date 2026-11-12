@@ -16,7 +16,7 @@
 const PURCHASE_SNAPSHOT_COLUMNS = `
   source_id AS id, gym_id, member_id, product_id, status, product_name, product_type,
   billing_frequency, units, unit_price AS amount, currency, purchased_at, created_at, created_by,
-  origin, valid_until, cancelled_on, tax_rate_percent, list_price, direct_discount_percent,
+  origin, validity_days, valid_until, cancelled_on, tax_rate_percent, list_price, direct_discount_percent,
   direct_discount_amount, assigned_member_id, member_product_id`;
 
 /**
@@ -34,4 +34,25 @@ export const MEMBER_PURCHASE_SNAPSHOTS_SQL = `(
 
 export function memberPurchaseSnapshotParams(gymId: string, memberId: number): Array<string | number> {
   return [gymId, memberId, gymId, memberId];
+}
+
+/**
+ * #2126 stage 3p — the purchases matching `predicate` (a condition on the snapshot's own columns,
+ * e.g. `gym_id = ? AND status = ?`), in the same shape as `MEMBER_PURCHASE_SNAPSHOTS_SQL`, for a
+ * reader that is not about one member (the payment webhook completing a purchase, the cleanup
+ * cancelling abandoned ones). The predicate is applied in each arm, so its placeholders are bound
+ * twice: pass `purchaseSnapshotParams(params)`.
+ */
+export function purchaseSnapshotsSql(predicate: string): string {
+  return `(
+  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_session_snapshots
+   WHERE source_id IS NOT NULL AND ${predicate}
+  UNION ALL
+  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_oneoff_snapshots
+   WHERE source_id IS NOT NULL AND ${predicate}
+)`;
+}
+
+export function purchaseSnapshotParams(params: Array<string | number>): Array<string | number> {
+  return [...params, ...params];
 }
