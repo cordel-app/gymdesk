@@ -6,6 +6,7 @@ import { resolveRequestActor } from '../domain/auditActor';
 import { PAYER_CHANGE_MESSAGES } from '../domain/familyPayerChange';
 import { checkFamilyPayerChange } from './family-payer-change';
 import { createSoloFamily } from './family-membership';
+import { repointFamilyLedger } from './family-wallet';
 
 /**
  * #2123 stage 1: Family, a first-class entity independent of Product Sets. Mounted at
@@ -156,12 +157,17 @@ familiesRouter.post('/members', requireModuleWrite('MEMBERS'), handle(async (req
       if (current.id === family.id || await familySize(tx, gymId, current.id) > 1) {
         throw new FamilyError(409, 'already_in_family', 'The member already belongs to a family');
       }
-      await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [current.id, gymId]);
+      await tx.query('DELETE FROM family_members WHERE family_id = ? AND gym_id = ?', [current.id, gymId]);
     }
     const prev = await shape(tx, gymId, family);
     await tx.query(
       'INSERT INTO family_members (gym_id, family_id, member_id, is_owner, created_by) VALUES (?, ?, ?, 0, ?)',
       [gymId, family.id, added.id, actor]);
+    if (current) {
+      // #2670 stage 2: the joining member's Professional Services ledger joins the family wallet.
+      await repointFamilyLedger(tx, gymId, current.id);
+      await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [current.id, gymId]);
+    }
     await tx.query('UPDATE families SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
       [actor, family.id, gymId]);
     return { previous: prev, next: await shape(tx, gymId, family) };
@@ -238,9 +244,12 @@ familiesRouter.delete('/', requireModuleWrite('MEMBERS'), handle(async (req, res
     await assertPayerChangeSafe(tx, gymId,
       new Map(prev.members.filter((m) => !m.is_owner).map((m) => [m.member_id, m.member_id] as [number, number])));
     if (prev.members.length === 1) throw new FamilyError(409, 'family_required', FAMILY_REQUIRED);
-    await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
+    await tx.query('DELETE FROM family_members WHERE family_id = ? AND gym_id = ?', [family.id, gymId]);
     // #2670: dissolving splits the family — each member owns a family of their own.
     for (const m of prev.members) await createSoloFamily(tx, gymId, m.member_id, m.name, actor);
+    // #2670 stage 2: each Professional Services ledger row returns to the member it was recorded on.
+    await repointFamilyLedger(tx, gymId, family.id);
+    await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
     return prev;
   });
   recordAudit(req, { action: 'dissolve', entityType: 'family', entityId: out.id, previous: out });

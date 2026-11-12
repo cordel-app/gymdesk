@@ -2,6 +2,7 @@ import { Tx } from '../infra/db';
 import { loadRequiredServices } from './activity-eligibility';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
 import { ConsumptionReason, chooseSpendGrant } from '../domain/serviceConsumption';
+import { familyWalletOf, lockWallet, MEMBER_FAMILY_SQL } from './family-wallet';
 
 /**
  * #1189 stage 3: the SQL half of the Professional Service consumption ledger.
@@ -63,6 +64,8 @@ export async function spendSessionForBooking(
   const required = await loadRequiredServices(tx, gymId, activityTypeId, eventId);
   if (required.length === 0) return { spent: false, skipped: 'not_applicable' };
 
+  // #2670 stage 2: one wallet per family, so two family members' spends are serialised.
+  await lockWallet(tx, gymId, await familyWalletOf(tx, gymId, memberId), memberId);
   const grants = await loadMemberProfessionalServiceGrants(gymId, memberId);
   // #1985: the service the member chose at booking goes first; if its balance
   // has since run out the default order applies rather than losing the spend.
@@ -80,20 +83,24 @@ export async function spendSessionForBooking(
     if (debtServiceId == null) return { spent: false, skipped: 'no_balance' };
     await tx.query(
       `INSERT INTO professional_service_consumptions
-         (gym_id, member_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
+         (gym_id, member_id, family_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
           source_kind, source_reference_id, product_id, reason, created_by)
-       VALUES (?, ?, ?, ?, ?, 'manual_adjustment', 0, 0, ?, ?)`,
-      [gymId, memberId, bookingId, eventId, debtServiceId, reason, actor],
+       VALUES (?, ?, ${MEMBER_FAMILY_SQL}, ?, ?, ?, 'manual_adjustment', 0, 0, ?, ?)`,
+      [gymId, memberId, memberId, gymId, bookingId, eventId, debtServiceId, reason, actor],
     );
     return { spent: true };
   }
 
+  // #2670 stage 2: the grant may be another family member's; the row names its holder
+  // (so the grant and its spends move together) and the family, and the booking it
+  // references names the member who booked.
+  const holder = grant.kind !== 'manual_adjustment' && grant.holder_member_id != null ? grant.holder_member_id : memberId;
   await tx.query(
     `INSERT INTO professional_service_consumptions
-       (gym_id, member_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
+       (gym_id, member_id, family_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
         source_kind, source_reference_id, product_id, reason, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, memberId, bookingId, eventId, grant.professional_service_id,
+     VALUES (?, ?, ${MEMBER_FAMILY_SQL}, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, holder, memberId, gymId, bookingId, eventId, grant.professional_service_id,
       grant.kind, grant.reference_id, grant.product_id, reason, actor],
   );
 
