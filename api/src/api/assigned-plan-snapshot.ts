@@ -139,6 +139,12 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
    * (`domain/planUnitAssignees.ts`); `null` for a shared Product.
    */
   unit_assignees: UnitAssigneeMember[] | null;
+  /**
+   * #2657 stage 3 — the member this line is for when an Individual Product is held per
+   * member (one line each, with its own quantity and Direct Discount); `null` for a shared
+   * Product's one line and for a line not split yet.
+   */
+  assigned_member_id: number | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -278,6 +284,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     // #2609 stage 3 — the family member each unit is for (`null` for a shared Product).
     sharing_type: row.product_sharing_type ?? null,
     unit_assignees: row.unit_assignees ?? null,
+    assigned_member_id: row.assigned_member_id != null ? Number(row.assigned_member_id) : null,
   };
 }
 
@@ -413,7 +420,7 @@ export async function loadPlanBenefitsForSimulation(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, um.id AS user_membership_id, b.product_id, b.quantity,
              b.item_name, b.item_billing_frequency, b.unit_price, b.\`action\`, b.\`value\`,
-             b.direct_discount_percent,
+             b.direct_discount_percent, b.assigned_member_id,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM user_memberships um
       JOIN ${PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]} b
@@ -439,6 +446,8 @@ export async function loadPlanBenefitsForSimulation(
       // not configure reads as the neutral default rather than pricing.
       benefit: toProductBenefit('plan', row.action, row.value),
       directDiscountPercent: toLineDirectDiscount(row.direct_discount_percent),
+      // #2657 stage 3 — an Individual Product held per member is one line each.
+      assignedMemberId: row.assigned_member_id != null ? Number(row.assigned_member_id) : null,
     });
     byAssignment.set(row.user_membership_id, list);
   }

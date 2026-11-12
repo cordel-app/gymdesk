@@ -31,6 +31,8 @@ export interface AssignedPlanSnapshotBenefit {
    * server resolved it; `null` for a shared Product. Absent from an older response.
    */
   unit_assignees?: { member_id: number; name: string }[] | null;
+  /** #2657 stage 3 — the member this line is for when the Product is held per member. */
+  assigned_member_id?: number | null;
   product_id: number;
   quantity: number;
   item_name: string;

@@ -184,6 +184,12 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
     // Discount, the one thing staff change on an agreed line (§5).
     mandatory: b.mandatory !== false,
     direct_discount_percent: b.direct_discount_percent ?? null,
+    // #2657 stage 3: a line held per member keeps its member, so its own Direct
+    // Discount and ✕ edit that member's line alone.
+    ...(b.assigned_member_id != null && {
+      assigned_member_id: b.assigned_member_id,
+      member_name: b.unit_assignees?.[0]?.name ?? null,
+    }),
   };
 }
 
@@ -382,7 +388,16 @@ export function AssignedPlanConfiguration({
   }
 
   function openBenefitEdit(section: BenefitSection, rows: AssignedPlanSnapshotBenefit[]) {
-    setBenefitDraft(rows.map(toDraftRow));
+    // #2657 stage 3: an Individual Product is edited one member's line at a time. A line the
+    // server still holds unsplit opens as its members' rows (the units each holds), and saving
+    // them is what stores one line per member.
+    setBenefitDraft(rows.flatMap((b) => {
+      const row = toDraftRow(b);
+      if (b.assigned_member_id != null) return [row];
+      const allocations = memberAllocations(b);
+      if (allocations.every((a) => a.member_id == null)) return [row];
+      return allocations.map((a) => ({ ...row, assigned_member_id: a.member_id, member_name: a.member_name, quantity: a.quantity }));
+    }));
     setLockedIds(new Set(rows.map((r) => r.product_id)));
     setEditing(section);
     loadItems();

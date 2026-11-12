@@ -144,9 +144,9 @@ export async function copyPlanSnapshotToVersion(
     await tx.query(
       `INSERT INTO ${t.snapshot}
          (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, unit_price, item_billing_frequency,
-          currency, \`action\`, \`value\`, mandatory, unit_assignees, direct_discount_percent${extra})
+          currency, \`action\`, \`value\`, mandatory, unit_assignees, assigned_member_id, direct_discount_percent${extra})
        SELECT gym_id, ?, product_id, quantity, item_name, item_type, unit_price, item_billing_frequency,
-              currency, \`action\`, \`value\`, mandatory, unit_assignees, direct_discount_percent${extra}
+              currency, \`action\`, \`value\`, mandatory, unit_assignees, assigned_member_id, direct_discount_percent${extra}
          FROM ${t.snapshot} WHERE plan_snapshot_id = ?`, [insertId, fromSnapshotId]);
   }
   const { rows: promos } = await tx.query<any>(

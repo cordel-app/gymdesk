@@ -54,7 +54,7 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
   const { rows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, product_id, quantity, item_name, item_billing_frequency,
-             unit_price, \`action\`, \`value\`, direct_discount_percent,
+             unit_price, \`action\`, \`value\`, direct_discount_percent, assigned_member_id,
              ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
         FROM ${PLAN_BENEFIT_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ?`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, planSnapshotId]),
@@ -69,6 +69,7 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
     sessionFrequency: toSessionBenefitFrequency(b.session_frequency),
     benefit: toProductBenefit('plan', b.action, b.value),
     directDiscountPercent: toLineDirectDiscount(b.direct_discount_percent),
+    assignedMemberId: b.assigned_member_id != null ? Number(b.assigned_member_id) : null,
   }));
 }
 

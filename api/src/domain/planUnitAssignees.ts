@@ -43,8 +43,16 @@ export function effectiveUnitAssignees(input: {
   beneficiaryIds: readonly number[];
   /** Everyone a unit may be given to: the owner, their family and the beneficiaries. */
   eligibleIds: readonly number[];
+  /**
+   * #2657 stage 3 — the member the line is for once it is split per member: every unit is
+   * theirs, whatever the stored override or the default distribution would say.
+   */
+  assignedMemberId?: number | null;
 }): number[] | null {
   if (input.sharingType === 'shared') return null;
+  if (input.assignedMemberId != null) {
+    return Array.from({ length: Math.max(0, Math.trunc(input.quantity)) }, () => input.assignedMemberId as number);
+  }
   const defaults = defaultUnitAssignees(input.quantity, input.beneficiaryIds, input.ownerId);
   const stored = readStoredUnitAssignees(input.stored) ?? [];
   const eligible = new Set(input.eligibleIds);

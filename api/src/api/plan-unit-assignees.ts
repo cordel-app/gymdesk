@@ -11,6 +11,8 @@ import { loadEligibleAssignees } from './product-assignee';
 import { PLAN_LINE_TABLE, planSnapshotOfAssignment } from './plan-snapshot-lines';
 import { ownPlanSnapshot } from './plan-snapshot-ownership';
 import { touchDraft } from './product-sets';
+import { groupUnitAssignees } from '../domain/planLineAllocation';
+import { insertSiblingLine } from './plan-line-allocation';
 import type { DraftRefusal, LockedDraft } from './product-set-draft';
 
 type Queryable = Pick<Tx, 'query'>;
@@ -67,8 +69,17 @@ export async function withUnitAssignees<T extends Record<string, any>>(
     const ids = effectiveUnitAssignees({
       stored: row.unit_assignees, quantity: Number(row.quantity), sharingType: row.product_sharing_type,
       ownerId: ctx.ownerId, beneficiaryIds: ctx.beneficiaryIds, eligibleIds: ctx.eligible.map((e) => e.member_id),
+      assignedMemberId: row.assigned_member_id != null ? Number(row.assigned_member_id) : null,
     });
     const names = new Map(ctx.eligible.map((e) => [e.member_id, e.name]));
+    // A split line's member may have left the family since; their name is still theirs.
+    const missing = (ids ?? []).filter((id) => !names.has(id));
+    if (missing.length > 0) {
+      const { rows: extra } = await q.query<{ id: number; name: string }>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND id IN (${[...new Set(missing)].map(() => '?').join(',')})`,
+        [gymId, ...new Set(missing)]);
+      for (const m of extra) names.set(Number(m.id), m.name);
+    }
     out.push({ ...row, unit_assignees: ids == null ? null : ids.map((id) => ({ member_id: id, name: names.get(id) ?? '' })) });
   }
   return out;
@@ -87,9 +98,14 @@ export function parseSection(raw: unknown): ProductBenefitCategory | null {
 }
 
 /**
- * The Draft writer: replaces the per-unit distribution of one Individual Product line of the
+ * The Draft writer: replaces the per-unit distribution of one Individual Product of the
  * plan snapshot that is `userMembershipId`'s contract in this Draft. Owns the snapshot first
- * (#2125 M4b-2), so a snapshot another Product Set links is never written.
+ * (#2125 M4b-1), so a snapshot another Product Set links is never written.
+ *
+ * #2657 stage 3: an Individual Product is held as one line per member, so the distribution is
+ * written as those lines: the units are counted over every line of the Product, each member
+ * named keeps (or gets) one line with their units — the agreed facts of a new member's line
+ * copied from a line of the same Product — and a member no longer named loses theirs.
  */
 export async function writeUnitAssignees(
   tx: Tx, draft: LockedDraft, userMembershipId: number,
@@ -106,15 +122,36 @@ export async function writeUnitAssignees(
   if (!rows[0]) return { kind: 'invalid', message: 'The plan does not include this Product in that section' };
   const ctx = await loadPlanAssigneeContext(tx, draft.gym_id, snapshotId);
   if (!ctx) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
+  const total = rows.reduce((sum, r) => sum + Number(r.quantity), 0);
   const parsed = parseUnitAssigneesInput({
-    raw: input.assignees, quantity: Number(rows[0].quantity), sharingType: rows[0].sharing_type,
+    raw: input.assignees, quantity: total, sharingType: rows[0].sharing_type,
     eligibleIds: ctx.eligible.map((e) => e.member_id),
   });
   if (!parsed.ok) return { kind: 'invalid', message: UNIT_ASSIGNEES_MESSAGES[parsed.error] };
   const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
-  await tx.query(
-    `UPDATE ${table} SET unit_assignees = CAST(? AS JSON) WHERE plan_snapshot_id = ? AND gym_id = ? AND product_id = ?`,
-    [JSON.stringify(parsed.assignees), target, draft.gym_id, input.productId]);
+  const { rows: lines } = await tx.query<{ id: number; assigned_member_id: number | null }>(
+    `SELECT id, assigned_member_id FROM ${table} WHERE plan_snapshot_id = ? AND gym_id = ? AND product_id = ? ORDER BY id`,
+    [target, draft.gym_id, input.productId]);
+  const byMember = new Map(lines.filter((l) => l.assigned_member_id != null).map((l) => [Number(l.assigned_member_id), Number(l.id)]));
+  const unsplit = lines.filter((l) => l.assigned_member_id == null).map((l) => Number(l.id));
+  const kept = new Set<number>();
+  for (const group of groupUnitAssignees(parsed.assignees)) {
+    let lineId = byMember.get(group.memberId);
+    if (lineId == null && unsplit.length > 0) {
+      lineId = unsplit.shift() as number;
+      await tx.query(`UPDATE ${table} SET assigned_member_id = ? WHERE id = ?`, [group.memberId, lineId]);
+    }
+    if (lineId == null) {
+      lineId = await insertSiblingLine(tx, input.section, Number(lines[0].id), group.memberId, group.quantity);
+    } else {
+      await tx.query(`UPDATE ${table} SET quantity = ?, unit_assignees = NULL WHERE id = ?`, [group.quantity, lineId]);
+    }
+    kept.add(lineId);
+  }
+  const dropped = lines.map((l) => Number(l.id)).filter((id) => !kept.has(id));
+  if (dropped.length > 0) {
+    await tx.query(`DELETE FROM ${table} WHERE id IN (${dropped.map(() => '?').join(',')})`, dropped);
+  }
   await touchDraft(tx, draft.gym_id, draft.id);
   return { ok: true };
 }

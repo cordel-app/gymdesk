@@ -39,14 +39,18 @@ export interface EngineLineCharge {
 }
 
 /**
- * One charge per Product, for the cycle that matters on `today`. The engine
- * merges a Plan benefit and every grant on the same Product into one line
- * (`collectBillableItems()`), so the Product id is the line's identity.
+ * A line's identity in the engine's output: its Product and, for an Individual Product
+ * held as one line per member (#2657 stage 3), the member. The engine merges a Plan
+ * benefit and every grant on the same Product into that line (`collectBillableItems()`).
  */
+export const engineLineKey = (productId: number, memberId: number | null | undefined): string =>
+  `${productId}:${memberId ?? ''}`;
+
+/** One charge per line (`engineLineKey()`), for the cycle that matters on `today`. */
 export function currentProductCharges(
   simulation: BillingSimulationResult, today: string,
-): Map<number, EngineLineCharge> {
-  const byProduct = new Map<number, { past: EngineLineCharge | null; future: EngineLineCharge | null }>();
+): Map<string, EngineLineCharge> {
+  const byProduct = new Map<string, { past: EngineLineCharge | null; future: EngineLineCharge | null }>();
   if (!simulation.available) return new Map();
   const day = today.slice(0, 10);
   for (const section of simulation.sections) {
@@ -61,17 +65,18 @@ export function currentProductCharges(
           actual_charge: Number(line.actual_charge),
           promoted: line.benefits.some((b) => b.source === 'promotion'),
         };
-        const slot = byProduct.get(line.product_id) ?? { past: null, future: null };
+        const key = engineLineKey(line.product_id, line.assigned_member_id);
+        const slot = byProduct.get(key) ?? { past: null, future: null };
         if (event.date <= day) {
           if (!slot.past || event.date > slot.past.date) slot.past = charge;
         } else if (!slot.future || event.date < slot.future.date) {
           slot.future = charge;
         }
-        byProduct.set(line.product_id, slot);
+        byProduct.set(key, slot);
       }
     }
   }
-  const out = new Map<number, EngineLineCharge>();
+  const out = new Map<string, EngineLineCharge>();
   for (const [productId, slot] of byProduct) {
     const chosen = slot.past ?? slot.future;
     if (chosen) out.set(productId, chosen);

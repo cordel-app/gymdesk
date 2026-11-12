@@ -249,6 +249,13 @@ export interface SimulationPlanBenefit {
    * loader that forgot it would charge the full price for a discounted line.
    */
   directDiscountPercent: number | null;
+  /**
+   * #2657 stage 3 — the member this line is for when an Individual Product is held
+   * as one line per member; `null`/absent for a Shared Product's line and a line not
+   * split yet. Several lines of one Product are billed as the one merged line they
+   * replace (`collectBillableItems()`), each with its own Direct Discount.
+   */
+  assignedMemberId?: number | null;
 }
 
 export interface SimulationAssignment {
@@ -438,6 +445,8 @@ export interface SimulationLine {
    * (`domain/proration.ts`). `actual_charge` is already the prorated amount.
    */
   proration?: { prorated_days: number; period_days: number } | null;
+  /** #2657 stage 3 — the member a Plan line held per member is for; absent otherwise. */
+  assigned_member_id?: number;
 }
 
 export interface SimulationEvent {
@@ -1028,6 +1037,16 @@ interface BillableItem {
   /** #2490 stage 3 — the Plan line's Direct Discount (%); `null` for none and for a Promotion-only item. */
   directDiscountPercent: number | null;
   coverage: GrantCoverage[];
+  /**
+   * #2657 stage 3 — an Individual Product held as one line per member: the member,
+   * the units of the Product's earlier lines (`unitOffset`) and of all its lines
+   * (`productQuantity`). A one-off or session grant is a pool of units for the
+   * Product, so each line takes its slice of it exactly where the merged line
+   * would have; a single line has offset 0 and its own quantity.
+   */
+  assignedMemberId: number | null;
+  unitOffset: number;
+  productQuantity: number;
 }
 
 /**
@@ -1047,21 +1066,39 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   let orphan = 0;
   const keyOf = (productId: number) => (productId > 0 ? `item:${productId}` : `orphan:${orphan++}`);
 
+  // #2657 stage 3: the lines of one Product (one per member for an Individual Product).
+  const lineItems = new Map<number, BillableItem[]>();
   for (const benefit of a.planBenefits) {
-    byCharge.set(keyOf(benefit.productId), {
+    const quantity = Math.max(1, Math.trunc(benefit.quantity) || 1);
+    const memberId = benefit.assignedMemberId ?? null;
+    const siblings = benefit.productId > 0 ? (lineItems.get(benefit.productId) ?? []) : [];
+    const item: BillableItem = {
       productId: benefit.productId,
       name: benefit.name,
       category: benefit.category,
       billingFrequency: benefit.billingFrequency,
       unitPrice: benefit.unitPrice,
-      quantity: Math.max(1, Math.trunc(benefit.quantity) || 1),
+      quantity,
       // #918: only a Session Benefit carries one; the other two sections are
       // `null` whatever their row holds.
       sessionFrequency: benefit.category === 'session' ? benefit.sessionFrequency : null,
       benefit: benefit.benefit,
       directDiscountPercent: benefit.directDiscountPercent ?? null,
       coverage: [],
-    });
+      assignedMemberId: memberId,
+      unitOffset: siblings.reduce((sum, i) => sum + i.quantity, 0),
+      productQuantity: quantity,
+    };
+    const key = benefit.productId > 0 ? `item:${benefit.productId}${memberId != null ? `:m${memberId}` : ''}` : keyOf(0);
+    byCharge.set(key, item);
+    if (benefit.productId > 0) {
+      siblings.push(item);
+      lineItems.set(benefit.productId, siblings);
+    }
+  }
+  for (const items of lineItems.values()) {
+    const total = items.reduce((sum, i) => sum + i.quantity, 0);
+    for (const i of items) i.productQuantity = total;
   }
 
   // #1923 — a periodical grant for a Product the member already holds as an
@@ -1070,23 +1107,25 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   // Product twice, on alternating dates once the two cadences drifted.
   for (const promo of a.promotions) {
     for (const grant of promo.grants) {
+      const existing = grant.productId > 0 ? lineItems.get(grant.productId) : undefined;
       // #2374 — and a Product Promotion never bills a Product the member does not
       // hold: it discounts the lines they have, so a grant for another Product
       // (an optional one, or one not yet added) is not a charge of its own.
-      if (promo.productTarget && grant.category === 'periodical' && grant.productId > 0
-          && !byCharge.has(`item:${grant.productId}`)) continue;
-      const existing = grant.productId > 0 ? byCharge.get(`item:${grant.productId}`) : undefined;
+      if (promo.productTarget && grant.category === 'periodical' && grant.productId > 0 && !existing) continue;
       if (existing) {
-        existing.coverage.push({ promo, grant });
+        // Every line of the Product is covered: a periodical grant covers periods of each,
+        // and a one-off/session grant's units are sliced across them by `unitOffset`.
+        for (const item of existing) item.coverage.push({ promo, grant });
         continue;
       }
-      byCharge.set(keyOf(grant.productId), {
+      const quantity = grant.category === 'periodical' ? 1 : Math.max(1, Math.trunc(grant.quantity) || 1);
+      const item: BillableItem = {
         productId: grant.productId,
         name: grant.name,
         category: grant.category,
         billingFrequency: grant.billingFrequency,
         unitPrice: grant.unitPrice,
-        quantity: grant.category === 'periodical' ? 1 : Math.max(1, Math.trunc(grant.quantity) || 1),
+        quantity,
         // #918 is a Membership Plan field: a Promotion's session grant has no
         // renewal Frequency of its own, so an item that exists only because a
         // Promotion granted it keeps the single charge it has always been.
@@ -1097,7 +1136,12 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
         benefit: NO_PRODUCT_BENEFIT,
         directDiscountPercent: null,
         coverage: [{ promo, grant }],
-      });
+        assignedMemberId: null,
+        unitOffset: 0,
+        productQuantity: quantity,
+      };
+      byCharge.set(keyOf(grant.productId), item);
+      if (grant.productId > 0) lineItems.set(grant.productId, [item]);
     }
   }
 
@@ -1160,6 +1204,10 @@ function resolveCoveredCharge(
  * anything still gives 0, which is why every existing configuration keeps its
  * price to the cent.
  */
+/** #2657 stage 3 — the member a line held per member is for, as the line reports it. */
+const memberOf = (item: BillableItem): { assigned_member_id?: number } =>
+  (item.assignedMemberId != null ? { assigned_member_id: item.assignedMemberId } : {});
+
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
   const cadence = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
   if (!cadence) return null;
@@ -1203,6 +1251,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
       prepaid_periods: null,
+      ...memberOf(item),
     }),
   };
 }
@@ -1392,7 +1441,8 @@ function withLineDirectDiscount<T extends { amount: number; benefits: Simulation
 
 function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {
   const unit = round2(item.unitPrice);
-  const { amount, benefits } = allocateSessionUnits(item, unit, 0, item.quantity);
+  // #2657 stage 3: a member's line takes its slice of the Product's grant units.
+  const { amount, benefits } = allocateSessionUnits(item, unit, item.unitOffset, item.quantity);
   return {
     section: item.category === 'session' ? 'session' : 'one_off',
     date: a.startsAt,
@@ -1409,6 +1459,7 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
       actual_charge: amount,
       price_may_change: false,
       prepaid_periods: null,
+      ...memberOf(item),
     },
   };
 }
@@ -1453,6 +1504,11 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
   const unit = round2(item.unitPrice);
   const unitsIn = (from: string, to: string) =>
     item.quantity * renewalsInPeriod(a.startsAt, from, to, frequency);
+  // #2657 stage 3: the units every line of the Product granted before this cycle, then the
+  // earlier lines' units in this cycle — where the merged line's slice for this line began.
+  const offsetAt = (date: string, cycleEnd: string) =>
+    item.productQuantity * renewalsInPeriod(a.startsAt, a.startsAt, date, frequency)
+    + item.unitOffset * renewalsInPeriod(a.startsAt, date, cycleEnd, frequency);
 
   return {
     cadence,
@@ -1465,7 +1521,7 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
       // The units this cycle grants come after everything the earlier cycles
       // granted, so a Promotion's session grant is spent once rather than
       // renewed with the allowance.
-      const allocated = allocateSessionUnits(item, unit, unitsIn(a.startsAt, date), quantity);
+      const allocated = allocateSessionUnits(item, unit, offsetAt(date, cadence.advance(date)), quantity);
       return { ...allocated, pending: false, quantity };
     },
     line: (date, resolved) => {
@@ -1483,6 +1539,7 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
         actual_charge: resolved.amount,
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
         prepaid_periods: null,
+        ...memberOf(item),
       };
     },
   };
