@@ -1,3 +1,4 @@
+import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
@@ -777,6 +778,9 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       "ce.starts_at >= ?",
     ];
     const params: any[] = [gymId, memberId, from];
+    // #2686: a Private event is visible only to a member staff added to it.
+    where.push(memberCanSeeOccurrenceSql('ce', 'at'));
+    params.push(memberId);
     if (to) { where.push('ce.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
     if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }
@@ -1140,6 +1144,17 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #2686: a Private event is never self-booked, and is not acknowledged to a
+    // member who cannot see it (staff add members through POST /bookings).
+    const { rows: privacy } = Number.isInteger(Number(class_session_id)) ? await db.query(
+      `SELECT ${privateOccurrenceSql('ce', 'at')} AS is_private
+         FROM calendar_events ce LEFT JOIN activity_types at ON at.id = ce.activity_type_id
+        WHERE ce.id = ? AND ce.gym_id = ?`,
+      [Number(class_session_id), gymId],
+    ) : { rows: [] as any[] };
+    if (privacy.length > 0 && Number(privacy[0].is_private) === 1) {
+      return res.status(404).json({ error: 'Session not found', code: PRIVATE_EVENT_CODE });
+    }
     // #1985: the service the member picked when several qualify; null = none picked.
     const rawService = req.body.professional_service_id;
     const chosenService = rawService == null || rawService === '' ? null : Number(rawService);
