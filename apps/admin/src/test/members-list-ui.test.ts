@@ -312,8 +312,9 @@ describe('Members list: one list with Products (#928)', () => {
     expect(pageSrc).toMatch(/const toggle = \(\) => guardUnsaved\(\(\) => toggleExpand\(m\)\);/);
     expect(pageSrc).toMatch(/onClick=\{\(\) => guardUnsaved\(openAdd\)\}/);
     expect(pageSrc).toMatch(/function buildActions\(m: Member\): ContextMenuItem\[\]/);
+    // #2680: the three Members App invitation actions come from membersAppInvitation.ts.
+    expect(pageSrc).toContain('t(INVITATION_ACTION_LABEL_KEYS[action])');
     for (const action of [
-      "t('members.action_invite')", "t('members.action_reinvite')", "t('members.action_revoke')",
       "t('members.action_details')", "t('members.delete')",
     ]) {
       expect(pageSrc, `the ⋮ menu no longer offers ${action}`).toContain(action);

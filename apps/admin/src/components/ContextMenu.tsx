@@ -17,7 +17,12 @@ export interface ContextMenuItem {
  * Small self-contained 3-dot (⋮) menu. Uses position:fixed for the dropdown so
  * it escapes any overflow:hidden ancestors (e.g. table with border-radius).
  */
-export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ariaLabel?: string }) {
+export function ContextMenu({ items, ariaLabel, onOpen }: {
+  items: ContextMenuItem[];
+  ariaLabel?: string;
+  /** Called each time the menu opens — e.g. to re-read state the items depend on (#2680). */
+  onOpen?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -51,6 +56,7 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
         top: rect.bottom + 4,
         right: window.innerWidth - rect.right,
       });
+      onOpen?.();
     }
     setOpen((v) => !v);
   }
