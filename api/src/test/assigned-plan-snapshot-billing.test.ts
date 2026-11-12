@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { loadProductSetSimulationAssignment } from '../api/product-set-configuration';
 
 // The nightly run's success branch is what advances `next_billing_date`, and
 // no provider is configured in tests — so the provider is stubbed here (this
@@ -363,6 +364,27 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     }
     lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 7, actual_charge: 14 });
+  });
+
+  // #2126 stage 3o: the ProductSet engine loader (what the persisted obligations and the
+  // initial charge are planned from) reads the same Product snapshot, reporting the legacy
+  // line id the routes and the engine's labels are keyed on.
+  it('feeds the ProductSet engine the line from its Product snapshot, not the legacy row', async () => {
+    const { rows } = await db.query<any>(
+      `SELECT id, product_set_id FROM member_products_recurrent_snapshot
+        WHERE gym_id = ? AND product_id = ? ORDER BY id DESC LIMIT 1`, [gymId, serviceItemId]);
+    const lineId = Number(rows[0].id);
+    const setId = Number(rows[0].product_set_id);
+    await db.query('UPDATE member_products_recurrent_snapshot SET unit_price = 9 WHERE id = ?', [lineId]);
+
+    let version = await loadProductSetSimulationAssignment(gymId, setId);
+    let line = version!.services.find((sv) => Number(sv.id) === lineId);
+    expect(line).toMatchObject({ unitPrice: 7, quantity: 2 });
+
+    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    version = await loadProductSetSimulationAssignment(gymId, setId);
+    line = version!.services.find((sv) => Number(sv.id) === lineId);
+    expect(line).toMatchObject({ unitPrice: 9 });
   });
 });
 
