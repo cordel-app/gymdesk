@@ -47,3 +47,68 @@ export function bookingLocation(b: Pick<MemberBooking, 'center_name' | 'space_na
   const parts = [b.center_name, b.space_name].map((p) => p?.trim()).filter((p): p is string => !!p);
   return parts.length ? parts.join(' · ') : null;
 }
+
+/** #2731 — `GET /members/:id/bookings?scope=upcoming`: the Upcoming list alone. */
+export interface MemberUpcomingBookingsResponse {
+  upcoming: MemberBooking[];
+}
+
+export interface PastBookingOption {
+  id: number;
+  name: string | null;
+}
+
+/** The status values the API's Status filter accepts (`PAST_BOOKING_STATUS_FILTERS`). */
+export type PastBookingStatusFilter = 'booked' | 'present' | 'absent' | 'waitlisted' | 'cancelled';
+
+/** #2731 — `GET /members/:id/bookings/past`: one page of the filtered history. */
+export interface PastBookingsPage {
+  rows: MemberBooking[];
+  total: number;
+  page: number;
+  page_size: number;
+  options: {
+    activities: PastBookingOption[];
+    centers: PastBookingOption[];
+    trainers: PastBookingOption[];
+    professional_services: PastBookingOption[];
+    statuses: PastBookingStatusFilter[];
+  };
+}
+
+/** The five filters of the Past Events section; `''` is "any". */
+export interface PastBookingFilters {
+  activity_type_id: string;
+  center_id: string;
+  trainer_membership_id: string;
+  status: string;
+  professional_service_id: string;
+}
+
+export const EMPTY_PAST_BOOKING_FILTERS: PastBookingFilters = {
+  activity_type_id: '', center_id: '', trainer_membership_id: '', status: '', professional_service_id: '',
+};
+
+export function hasPastBookingFilters(f: PastBookingFilters): boolean {
+  return Object.values(f).some((v) => v !== '');
+}
+
+/** The query string of one page: every chosen filter, combined, plus the page. */
+export function pastBookingsQuery(f: PastBookingFilters, page: number): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v !== '') params.set(k, v);
+  params.set('page', String(page));
+  return params.toString();
+}
+
+/** How many pages `total` rows take (at least one, so "Page 1 of 1" on an empty list). */
+export function pastBookingsPageCount(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
+}
+
+/** The Status filter's label key for one value, the same words the Status column uses. */
+export function pastStatusFilterKey(s: PastBookingStatusFilter | string): string {
+  if (s === 'present') return 'calendar.attendance_present';
+  if (s === 'absent') return 'calendar.attendance_absent';
+  return bookingStatusKey({ status: s, attendance_status: null });
+}
