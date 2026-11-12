@@ -53,6 +53,10 @@ export interface AssignedPlanSnapshotBenefit {
    * session line the Plan never configured one on.
    */
   frequency: SessionBenefitFrequency | null;
+  /** #1184 stage 2 — Mandatory lines cannot be removed from the assignment (#2624 §4). */
+  mandatory?: boolean;
+  /** #2490 stage 3 — the line's own Direct Discount (%), `null` for none. */
+  direct_discount_percent?: number | null;
   /**
    * #924 stage 1 — what the line costs before and after its own treatment, VAT
    * included, as the server computed it from the **frozen** price (§17). The
