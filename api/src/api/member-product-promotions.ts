@@ -17,7 +17,7 @@ import { resolveTimeZone } from '../domain/homeDashboard';
 // request (#1036: every statement here is constrained on `(gym_id, member_id)`
 // or on a purchase already resolved from them).
 
-import { db, type Tx } from '../infra/db';
+import { db } from '../infra/db';
 import { isNewMemberStatus } from './new-member-eligibility';
 import { type ProductBenefitCategory } from '../domain/productClassification';
 import { toProductBenefit } from '../domain/productBenefitActions';
@@ -28,7 +28,6 @@ import {
   isOfferableBenefit,
   offerCategoryFor,
   promotionGrantTableFor,
-  promotionApplicationSnapshot,
   promotionalPrice,
   promotionDurationCycles,
   shapeAppliedPromotion,
@@ -196,65 +195,6 @@ export async function resolvePurchasePromotion(
 ): Promise<MemberProductPromotionOffer | null> {
   const offers = await loadPromotionOffers(gymId, memberId, [product]);
   return (offers.get(Number(product.id)) ?? []).find((o) => o.promotion_id === promotionId) ?? null;
-}
-
-/**
- * Freezes the applied Promotion onto the purchase, in the purchase's own
- * transaction.
- *
- * Written beside the `member_products_oneoff_snapshot` row rather than after it for #1121
- * stage 2's reason: a purchase and what it was priced under are one record, so
- * a failure that left the purchase without its Promotion would charge a
- * discounted amount with nothing on file explaining it (§15).
- */
-export async function writePurchasePromotion(
-  tx: Tx,
-  gymId: string,
-  memberProductId: number,
-  offer: MemberProductPromotionOffer,
-): Promise<void> {
-  const snapshot = promotionApplicationSnapshot(offer);
-  if (!snapshot) return;
-  await tx.query(
-    `INSERT INTO member_products_oneoff_promotion_snapshot
-       (gym_id, member_product_id, promotion_id, promotion_name,
-        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      gymId, memberProductId, offer.promotion_id, snapshot.promotion_name,
-      snapshot.benefit_action,
-      snapshot.benefit_value == null ? null : snapshot.benefit_value.toFixed(2),
-      snapshot.duration_cycles,
-      snapshot.regular_amount.toFixed(2), snapshot.final_amount.toFixed(2),
-    ],
-  );
-}
-
-/**
- * #1521 — freezes one step of a stacked purchase: the Promotion's own treatment
- * and the running price it was applied to and left (VAT-inclusive), in the
- * purchase's transaction.
- */
-export async function writePurchasePromotionStep(
-  tx: Tx,
-  gymId: string,
-  memberProductId: number,
-  step: {
-    promotion_id: number; promotion_name: string; action: string; value: number | null;
-    duration_cycles: number | null; regular_amount: number; final_amount: number;
-  },
-): Promise<void> {
-  await tx.query(
-    `INSERT INTO member_products_oneoff_promotion_snapshot
-       (gym_id, member_product_id, promotion_id, promotion_name,
-        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      gymId, memberProductId, step.promotion_id, step.promotion_name, step.action,
-      step.value == null ? null : step.value.toFixed(2), step.duration_cycles,
-      step.regular_amount.toFixed(2), step.final_amount.toFixed(2),
-    ],
-  );
 }
 
 /**

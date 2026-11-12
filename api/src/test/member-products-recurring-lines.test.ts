@@ -4,7 +4,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase, syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 let gymId: string;

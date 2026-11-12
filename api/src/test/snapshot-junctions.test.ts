@@ -7,7 +7,8 @@ import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { syncProductSnapshotForPurchase, syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 
 let gymId: string;
 let seq = 0;

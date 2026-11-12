@@ -233,7 +233,7 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
   });
 
   it('is written in the purchase\'s own transaction (§7, §10)', () => {
-    expect(purchaseSrc).toContain('writePurchasePromotionStep(tx,');
+    expect(purchaseSrc).toContain('insertPurchasePromotion(tx,');
   });
 
   it('is re-resolved server-side at purchase time, never trusted from the client', () => {
