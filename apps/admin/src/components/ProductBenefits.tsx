@@ -144,6 +144,14 @@ const derivedValueSt: React.CSSProperties = {
   display: 'block', fontSize: 11, color: '#888', marginTop: 2,
 };
 const hintSt: React.CSSProperties = { margin: 0, fontSize: 13, color: '#888' };
+/** #2624: one value per line, cut with an ellipsis rather than widening its column. */
+const truncatedLineSt: React.CSSProperties = {
+  display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+/** The same, as the flexible half of a thumbnail + name pair. */
+const truncatedInlineSt: React.CSSProperties = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
 /**
  * #896 §14: the value input names itself, because what it holds depends on the
  * action beside it — *Promotion (%)*, *Promotion amount*, *Promotion price*.
@@ -289,6 +297,16 @@ export function benefitQuantityLabelKey(column: BenefitQuantityColumn): string {
 /** How little the flexible name column may be squeezed to before the table scrolls. */
 export const BENEFIT_ITEM_COLUMN_MIN_WIDTH = 180;
 
+/**
+ * #2624 §6 — the Product column's fixed width on the dense breakdown grid (the
+ * Assigned Plan card, `showBreakdown`). There the name column taking "the rest"
+ * left a wide Product column beside narrow pricing and promotion columns, so it
+ * is sized like every other column instead: with every width fixed, a
+ * `table-layout: fixed` table spreads the spare room over all of them in
+ * proportion. A long name is truncated in its cell, its full value in `title`.
+ */
+export const BENEFIT_ITEM_COMPACT_WIDTH = 200;
+
 export function productBenefitColumns(opts: {
   showFrequency: boolean;
   showAction: boolean;
@@ -318,12 +336,35 @@ export function productBenefitColumns(opts: {
       return opts.showPrices && opts.showBreakdown === true;
     }
     return true;
-  }).map((col) => (col.key === 'quantity'
+  }).map((col) => {
     // #1135: the same column, named for what it counts in this section. The
     // declaration stays the one place a column's width, order and alignment
     // live — only its label key moves.
-    ? { ...col, labelKey: benefitQuantityLabelKey(opts.quantityColumn ?? 'quantity') }
-    : col));
+    if (col.key === 'quantity') {
+      return { ...col, labelKey: benefitQuantityLabelKey(opts.quantityColumn ?? 'quantity') };
+    }
+    // #2624 §6: on the breakdown grid the Product column stops taking the rest.
+    if (col.key === 'item' && opts.showPrices && opts.showBreakdown === true) {
+      return { ...col, width: BENEFIT_ITEM_COMPACT_WIDTH };
+    }
+    return col;
+  });
+}
+
+/**
+ * #2624 §7 — a cell listing several values (the Promotions touching a line, and
+ * what each does to it) draws one per line, each truncated with its full text in
+ * `title`, rather than joining them into one comma-separated string. `—` for none.
+ */
+function StackedCellValues({ values }: { values: string[] | null | undefined }) {
+  if (!values || values.length === 0) return <>—</>;
+  return (
+    <>
+      {values.map((v, i) => (
+        <span key={i} title={v} style={truncatedLineSt}>{v}</span>
+      ))}
+    </>
+  );
 }
 
 /**
@@ -788,9 +829,16 @@ export function ProductBenefitView({
             )}
           </>
         );
+        // #2624 §6: the name truncates inside its fixed column rather than
+        // widening it; the full name stays in `title`.
+        const nameTitle = row.product_name ?? undefined;
         return prefix
-          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{prefix}<span>{name}</span></span>
-          : name;
+          ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              {prefix}<span title={nameTitle} style={truncatedInlineSt}>{name}</span>
+            </span>
+          )
+          : <span title={nameTitle} style={truncatedLineSt}>{name}</span>;
       }
       case 'member':
         // #2657 stage 2: a Shared Product belongs to the whole plan, so its cell is empty.
@@ -836,11 +884,9 @@ export function ProductBenefitView({
       case 'tax':
         return row.applied_tax_percent != null ? `${row.applied_tax_percent}%` : '—';
       case 'promotion':
-        return row.applied_promotions && row.applied_promotions.length > 0
-          ? row.applied_promotions.join(', ') : '—';
+        return <StackedCellValues values={row.applied_promotions} />;
       case 'promotion_benefit':
-        return row.applied_promotion_benefits && row.applied_promotion_benefits.length > 0
-          ? row.applied_promotion_benefits.join(', ') : '—';
+        return <StackedCellValues values={row.applied_promotion_benefits} />;
       case 'direct_discount':
         return row.direct_discount_line_incl_tax != null && row.direct_discount_line_incl_tax > 0
           ? <BenefitPriceCell t={t} unit={row.direct_discount_line_incl_tax} line={null} />
