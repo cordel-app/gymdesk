@@ -42,7 +42,7 @@ import {
 } from './AssignedPlanPromotions';
 import { thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
-import { PlanUnitAssignees } from './PlanUnitAssignees';
+import { memberAllocations, splitLineAmount } from '@/lib/planUnitAssignees';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle,
@@ -210,6 +210,40 @@ function toViewRow(
     original_line_price_incl_tax: b.original_line_price_incl_tax,
     final_line_price_incl_tax: b.final_line_price_incl_tax,
   };
+}
+
+/**
+ * #2657 stage 2 — a frozen line as the rows of the Member column: one row per family
+ * member who holds units of an Individual Product, each with the units it holds, and one
+ * row with an empty Member for a Shared Product (`memberAllocations()`). The per-unit
+ * prices are the server's as they are; the line totals are the server's spread over the
+ * rows' units so the rows add up to the line (`splitLineAmount()`). Each row keeps its
+ * source line for the thumbnail.
+ */
+function toAllocationRows(
+  b: AssignedPlanSnapshotBenefit, promotionNames: Map<number, string[]>,
+  promotionBenefits: Map<number, string[]>,
+): { line: AssignedPlanSnapshotBenefit; row: ProductBenefitRow }[] {
+  const base = toViewRow(b, promotionNames, promotionBenefits);
+  const allocations = memberAllocations(b);
+  if (allocations.length === 1) {
+    return [{ line: b, row: { ...base, member_name: allocations[0].member_name } }];
+  }
+  const qty = allocations.map((a) => a.quantity);
+  const original = splitLineAmount(b.original_line_price_incl_tax, qty);
+  const final = splitLineAmount(b.final_line_price_incl_tax, qty);
+  const discount = splitLineAmount(b.direct_discount_line_incl_tax, qty);
+  return allocations.map((a, i) => ({
+    line: b,
+    row: {
+      ...base,
+      member_name: a.member_name,
+      quantity: a.quantity,
+      original_line_price_incl_tax: original[i],
+      final_line_price_incl_tax: final[i],
+      direct_discount_line_incl_tax: discount[i],
+    },
+  }));
 }
 
 export function AssignedPlanConfiguration({
@@ -626,6 +660,7 @@ export function AssignedPlanConfiguration({
           benefitContext="plan"
           showPrices
           showBreakdown
+          showMember
         />
       )}
       </CardSection>
@@ -636,6 +671,8 @@ export function AssignedPlanConfiguration({
         section, endpoint, titleKey, emptyKey, addKey, snapshotKey, showFrequency, viewFrequencyColumn,
       }) => {
         const rows = snapshot[snapshotKey] ?? [];
+        // #2657 stage 2 — one row per member for an Individual Product, one for a Shared one.
+        const viewRows = rows.flatMap((r) => toAllocationRows(r, promotionNamesByProduct, promotionBenefitsByProduct));
         return (
           <CardSection
             key={section}
@@ -673,14 +710,15 @@ export function AssignedPlanConfiguration({
               <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
-                rows={rows.map((r) => toViewRow(r, promotionNamesByProduct, promotionBenefitsByProduct))}
+                rows={viewRows.map((v) => v.row)}
                 showFrequency={showFrequency}
                 frequencyColumn={viewFrequencyColumn}
                 benefitContext="plan"
                 showPrices
                 showBreakdown
+                showMember
                 renderItemPrefix={(_row, idx) => {
-                  const line = rows[idx];
+                  const line = viewRows[idx].line;
                   return (
                     <CircularThumbnail
                       src={thumbnailSrc(line.image_thumbnail_url, line.image_url)}
@@ -710,16 +748,6 @@ export function AssignedPlanConfiguration({
           />
         ))}
       </CardSection>
-
-      {/* #2609 stage 3 — who each unit of the Individual Products is for. */}
-      <PlanUnitAssignees
-        assignedPlanId={assignedPlanId}
-        snapshot={snapshot}
-        cardEditing={cardEditing && editing === null}
-        canWrite={canWrite}
-        readOnlyTitle={readOnlyTitle}
-        onChanged={onChanged}
-      />
 
       {promotionToggle.dialogs}
       <ProductDetailModal product={productDetail} onClose={() => setProductDetail(null)} />

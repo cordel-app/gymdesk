@@ -36,14 +36,14 @@ describe('Assigned Plan section Save/Cancel placement (#2677)', () => {
   });
 
   it('closes each Product benefit section with its own pair', () => {
-    const body = sectionBody('BENEFIT_SECTIONS.map(', '<PlanUnitAssignees');
+    const body = sectionBody('BENEFIT_SECTIONS.map(', "t('section_plan_promotions')");
     const pair = body.indexOf('sectionActions(() => saveBenefits(endpoint))');
     expect(pair).toBeGreaterThan(body.indexOf('<ProductBenefitEditor'));
     expect(pair).toBeLessThan(body.indexOf('<ProductBenefitView'));
   });
 
   it('renders no pair after the last section', () => {
-    const tail = SRC.slice(SRC.indexOf('<PlanUnitAssignees'));
+    const tail = SRC.slice(SRC.indexOf("t('section_plan_promotions')"));
     expect(tail).not.toContain('<SaveCancel');
     expect(tail).not.toContain('sectionActions(');
   });

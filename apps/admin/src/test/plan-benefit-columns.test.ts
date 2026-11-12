@@ -50,8 +50,9 @@ describe('#916: one shared column declaration', () => {
     // between Benefit and the prices. It is off for every Plan section
     // (`showRequirement` defaults to false), so the Plan grid below is unchanged;
     // what the declaration pins is the order, not the length.
+    // #2657 stage 2: Member sits right after Product, off unless a caller asks (`showMember`).
     expect(keysOf([...PRODUCT_BENEFIT_COLUMNS])).toEqual([
-      'item', 'quantity', 'frequency', 'action', 'direct_discount_percent', 'requirement',
+      'item', 'member', 'quantity', 'frequency', 'action', 'direct_discount_percent', 'requirement',
       'original_price', 'tax', 'promotion', 'promotion_benefit', 'direct_discount', 'final_price', 'mandatory',
     ]);
   });
