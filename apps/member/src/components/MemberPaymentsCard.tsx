@@ -2,11 +2,10 @@
 
 import { type CSSProperties, type ReactNode, useState } from 'react';
 import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
-import { MemberCollapsibleCard } from './MemberCollapsibleCard';
 
 /**
- * #1123 — the look of the Members App's **Payments** card: the collapsible card
- * itself (§1), the three subcards inside it (§2/§4/§5) and the one Billing Event
+ * #1123 — the look of the Members App's **Payments** section: the section
+ * itself (the My Products tab since #2740), the three subcards inside it (§2/§4/§5) and the one Billing Event
  * card both the past and the forecast subcards list.
  *
  * It is this ticket's `NutritionItemRow` (#932): one place owns the chrome, so
@@ -51,24 +50,14 @@ export interface BillingEventCardLine {
 }
 
 /**
- * The outer **Payments** card (§1): collapsed by default, with the three
- * subcards appearing underneath when it is opened.
- *
- * Since #1122 the card itself is `MemberCollapsibleCard` — the same chrome the
- * Past Membership Plans card wears — so this is only what Payments puts inside
- * one. A second collapsible card of its own is what that promotion removed.
+ * The **Payments** tab of My Products (#2740): the three subcards laid out
+ * directly in the tab, with no outer card around them. Until #2740 they sat
+ * inside a collapsed `MemberCollapsibleCard` on the Plans & Products tab; the
+ * tab is now the section, so a card that had to be opened before anything
+ * showed would be a second step for nothing.
  */
-export function PaymentsCard({ title, summary, children }: {
-  title: string;
-  /** A one-line hint beside the title — the next payment, when there is one. */
-  summary?: string | null;
-  children: ReactNode;
-}) {
-  return (
-    <MemberCollapsibleCard title={title} summary={summary} bodyStyle={styles.subcards}>
-      {children}
-    </MemberCollapsibleCard>
-  );
+export function PaymentsSection({ children }: { children: ReactNode }) {
+  return <div style={styles.subcards}>{children}</div>;
 }
 
 /**
@@ -156,7 +145,7 @@ const styles: Record<string, CSSProperties> = {
   toggleRight: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
   caret: { fontSize: 12, color: memberTheme.textMuted },
-  subcards: { display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 12px' },
+  subcards: { display: 'flex', flexDirection: 'column', gap: 10 },
   subcard: { ...sectionCardStyle },
   subcardToggle: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
