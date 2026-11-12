@@ -33,11 +33,11 @@ exports.up = async (knex) => {
     if (!(await knex.schema.hasColumn(table, 'family_id'))) {
       await knex.raw(`ALTER TABLE ${table}
         ADD COLUMN family_id INT UNSIGNED NULL AFTER member_id,
-        ADD KEY ${prefix}_gym_family (gym_id, family_id),
+        ADD KEY ${prefix}_family_gym (family_id, gym_id),
         ADD CONSTRAINT ${prefix}_family_fk FOREIGN KEY (family_id) REFERENCES families (id) ON DELETE SET NULL`);
     }
     await knex.raw(`UPDATE ${table} t
-        JOIN family_members fm ON fm.member_id = t.member_id
+        JOIN family_members fm ON fm.member_id = t.member_id AND fm.gym_id = t.gym_id
          SET t.family_id = fm.family_id
        WHERE t.family_id IS NULL`);
   }
@@ -46,7 +46,7 @@ exports.up = async (knex) => {
 exports.down = async (knex) => {
   for (const [table, prefix] of TABLES) {
     if (await knex.schema.hasColumn(table, 'family_id')) {
-      await knex.raw(`ALTER TABLE ${table} DROP FOREIGN KEY ${prefix}_family_fk, DROP KEY ${prefix}_gym_family, DROP COLUMN family_id`);
+      await knex.raw(`ALTER TABLE ${table} DROP FOREIGN KEY ${prefix}_family_fk, DROP KEY ${prefix}_family_gym, DROP COLUMN family_id`);
     }
   }
 };
