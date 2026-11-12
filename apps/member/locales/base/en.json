@@ -412,7 +412,7 @@
     "plan_no_image": "No image",
     "plan_ov_include": "Include",
     "plan_benefits_heading": "Included elements",
-    "my_plans_heading": "My Membership Plans",
+    "my_plans_heading": "My Plans",
     "choose_plan": "Choose this plan",
     "choose_plan_title": "Confirm your plan",
     "choose_plan_body": "You are choosing {name}. Your first payment will be {price}. You will enter your card on your gym’s secure payment page.",
@@ -433,7 +433,7 @@
     "product_package_price": "Total price for the package",
     "product_tax_included": "Tax included",
     "product_buy": "Buy",
-    "own_products_heading": "My products",
+    "own_products_heading": "My purchases",
     "product_end_date": "Valid until {date}",
     "product_pay": "Pay",
     "product_state_cancelled": "Cancelled",
@@ -522,7 +522,19 @@
     "plan_in_draft": "In your selection",
     "plan_remove_from_draft": "Remove",
     "draft_error_has_plan": "Your selection already includes a plan.",
-    "draft_error_plan_via_gym": "To change your plan, please contact your gym."
+    "draft_error_plan_via_gym": "To change your plan, please contact your gym.",
+    "my_plans_empty": "You have no plans in your current products.",
+    "set_products_heading": "My Products",
+    "set_products_empty": "You have no products in your current products.",
+    "plan_for": "For {names}",
+    "plan_entitlement_only": "Until its end date",
+    "set_status": {
+      "draft": "Draft",
+      "pending_payment": "Pending Payment",
+      "active": "Active",
+      "superseded": "Superseded"
+    },
+    "set_status_label": "Status"
   },
   "payments": {
     "title": "Payments",
