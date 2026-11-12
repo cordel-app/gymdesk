@@ -13,7 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { loadProductSetSimulationAssignment } from '../api/product-set-configuration';
 
 // The nightly run's success branch is what advances `next_billing_date`, and
@@ -360,7 +360,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
 
     for (const setId of new Set(rows.map((r: any) => r.product_set_id))) {
-      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, Number(setId)));
+      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, Number(setId)));
     }
     lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 7, actual_charge: 14 });
@@ -381,7 +381,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     let line = version!.services.find((sv) => Number(sv.id) === lineId);
     expect(line).toMatchObject({ unitPrice: 7, quantity: 2 });
 
-    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     version = await loadProductSetSimulationAssignment(gymId, setId);
     line = version!.services.find((sv) => Number(sv.id) === lineId);
     expect(line).toMatchObject({ unitPrice: 9 });

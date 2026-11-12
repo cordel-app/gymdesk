@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
@@ -26,7 +26,7 @@ async function setWithLine(status: 'active' | 'superseded'): Promise<number> {
      VALUES (?, ?, ?, 2, '2026-01-01', 'Locker Rental', 'service', 'month', 8.00, 10.00, 20)`,
     [gymId, s.insertId, productId]);
   // #2126 stage 3g: the list reads `product_periodical_snapshots`, which the dual-write keeps equal.
-  await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, s.insertId));
+  await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, s.insertId));
   return s.insertId;
 }
 

@@ -19,6 +19,7 @@
 // the payment webhook, which is the one place a version is activated.
 
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { updateRecurringLine } from './recurring-line-writer';
 import type { Tx } from '../infra/db';
 import { addService, lockDraft, isRefusal, type DraftRefusal } from './product-set-draft';
 import { createDraft, type Actor } from './product-sets';
@@ -146,23 +147,22 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
 
   if (input.directDiscountPercent != null) {
     // #2126 stage 3r — the line's list price is read from its Product snapshot,
-    // which `addService()` has just synced (`touch()`); the write stays on the
-    // legacy line and is re-synced below.
+    // which `addService()` has just written; the discount goes onto both rows
+    // through the line's one writer (stage 5c).
     const { rows } = await tx.query<any>(
       'SELECT unit_price FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ?',
       [added.id, input.gymId]);
     const list = Number(rows[0].unit_price);
-    await tx.query(
-      `UPDATE member_products_recurrent_snapshot
-          SET list_unit_price = ?, direct_discount_percent = ?, unit_price = ?
-        WHERE id = ? AND gym_id = ?`,
-      [list.toFixed(2), input.directDiscountPercent.toFixed(2),
-        discountedUnitPrice(list, input.directDiscountPercent).toFixed(2), added.id, input.gymId]);
+    await updateRecurringLine(tx, input.gymId, added.id, {
+      list_unit_price: list.toFixed(2),
+      direct_discount_percent: input.directDiscountPercent.toFixed(2),
+      unit_price: discountedUnitPrice(list, input.directDiscountPercent).toFixed(2),
+    });
   }
 
   const refused = await applyPromotions(tx, input, draftId, added.id);
   if (refused) return refused;
-  // The line's direct discount was written after addService() synced it.
+  // The Promotions just applied are owned by the line: their snapshots follow it.
   await syncProductSnapshotsOfVersion(tx, input.gymId, draftId);
   return { kind: 'ok', productSetId: draftId, lineId: added.id };
 }

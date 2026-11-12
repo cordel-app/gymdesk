@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, insertTestPurchase, request,
 } from './helpers';
@@ -103,7 +103,7 @@ describe('DELETE /professional-services/:id with references', () => {
        VALUES (?, ?, ?, 1, '2026-01-01', 'Linked Locker', 'service', 'month', 10.00)`,
       [gymId, setId, productId],
     );
-    await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, setId));
+    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     const res = await del(id);
     expect(res.status).toBe(409);
     expect(res.body.references).toEqual({ activities: 0, calendar_events: 0, product_snapshots: 1 });

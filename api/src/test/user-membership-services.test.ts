@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
+import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -682,7 +682,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
       `SELECT DISTINCT product_set_id FROM member_products_recurrent_snapshot
         WHERE gym_id = ? AND ends_at = ?`, [gymId, dayOffset(-1)]);
     for (const line of lines) {
-      await db.transaction((tx) => syncProductSnapshotsOfVersion(tx, gymId, line.product_set_id));
+      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, line.product_set_id));
     }
 
     const list = await listServices(gymId, umId);

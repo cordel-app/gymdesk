@@ -2,6 +2,7 @@ import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
 import { copyProductTargetApplications } from './product-set-bridge';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { copyRecurringLines } from './recurring-line-writer';
 import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { toPlanDurationRepeats } from '../domain/planDuration';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
@@ -196,14 +197,8 @@ export async function mergeActiveVersionIntoDraft(
     await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
   }
 
-  await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
-        unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, is_inherited)
-     SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
-            unit_price, item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, line_ref, origin, 1
-       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
-    [draftSetId, gymId, activeSetId]);
+  // #2126 stage 5c: the recurring lines and their snapshots are copied by their one writer.
+  await copyRecurringLines(tx, gymId, activeSetId, draftSetId, { carryAssignee: false });
   await copyProductTargetApplications(tx, gymId, activeSetId, draftSetId);
   await syncPlanSnapshot(tx, gymId, draftSetId);
 }
