@@ -485,6 +485,11 @@ export interface MemberSetPlan {
   change: 'added' | 'inherited';
   /** #2663 — what *My Plans* draws, all off this version's own plan snapshot. */
   plan_description?: string | null;
+  /** #2744 — the Plan's picture and cadence, for the Add Plan catalogue's card. */
+  plan_image_url?: string | null;
+  plan_image_thumbnail_url?: string | null;
+  billing_interval?: number | null;
+  billing_unit?: string | null;
   status?: string;
   entitlement_only?: boolean;
   starts_at?: string | null;
@@ -492,7 +497,7 @@ export interface MemberSetPlan {
   membership_fee?: number | null;
   discount_reason?: string | null;
   beneficiaries?: { member_id: number; name: string | null; is_owner: boolean }[];
-  benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number }[];
+  benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean }[];
 }
 
 /** A row of `GET /me/product-sets`. */
@@ -541,6 +546,40 @@ export function setStatusKey(view: Pick<MemberSetView, 'status'> | null): string
 /** The plans *My Plans* lists: the selected version's, and only its (#2663 §2). */
 export function setPlans(view: MemberSetView | null): MemberSetPlan[] {
   return view?.plans ?? [];
+}
+
+/**
+ * #2744 — which plan card of *My Plans* carries the pending payment, with its
+ * *Pay now* and *Cancel*: the first billed plan of the member's **own** version
+ * awaiting its first payment. One card only, because the version is paid and
+ * cancelled as a whole (one initial Billing Event, one checkout), so naming the
+ * same amount on two cards would read as two payments. `null` when the version
+ * is not pending, is a family version the member is only covered by (the owner
+ * pays, #2123), or holds no billed plan (the Summary then keeps its own notice).
+ */
+export function pendingPaymentPlanSnapshotId(view: MemberSetView | null, viewerMemberId: number | null): number | null {
+  if (!view || view.status !== 'pending_payment') return null;
+  if (viewerMemberId == null || view.owner_member_id !== viewerMemberId) return null;
+  const plan = setPlans(view).find((p) => !p.entitlement_only);
+  return plan ? plan.plan_snapshot_id : null;
+}
+
+/**
+ * #2744 — the Home page's one pending payment notice: the plan awaiting its
+ * first payment (`pending_membership`, whose figure is the initial obligation
+ * Save & Pay wrote), else an open membership-fee payment request. Its *Pay now*
+ * opens the existing consent and checkout on My Products, so it creates nothing
+ * itself. `null` when nothing is pending.
+ */
+export function homePendingPayment(
+  pending: { membership_fee: number | null } | null | undefined,
+  requests: { status: string; source?: string | null; amount: string | number; currency?: string | null }[],
+): { amount: number; currency: string } | null {
+  if (pending?.membership_fee != null && pending.membership_fee > 0) return { amount: pending.membership_fee, currency: 'EUR' };
+  const request = requests.find((r) => r.status === 'pending' && isMembershipFeeRequest(r.source));
+  if (!request) return null;
+  const amount = Number(request.amount);
+  return Number.isFinite(amount) ? { amount, currency: request.currency ?? 'EUR' } : null;
 }
 
 /** The Products *My Products* lists: the selected version's own lines (#2663 §3). */
