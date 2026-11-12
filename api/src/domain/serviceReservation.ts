@@ -1,4 +1,5 @@
 import { ProfessionalServiceGrantRow } from './memberProfessionalServices';
+import { grantKey } from './serviceConsumption';
 
 /**
  * #2605 stage 1: pure rules of the Professional Service reservation.
@@ -10,6 +11,8 @@ export interface ReservedTotal {
   source_kind: string;
   source_reference_id: number;
   reserved: number;
+  /** #2670 stage 2: the grant holder the unit is held against (absent for the family's manual adjustment). */
+  member_id?: number | null;
 }
 
 /** Grants with the reserved units taken off, for choosing what a new booking holds. */
@@ -19,11 +22,11 @@ export function availableGrants(
 ): ProfessionalServiceGrantRow[] {
   const held = new Map<string, number>();
   for (const r of reserved) {
-    const k = `${r.source_kind}:${r.source_reference_id}`;
+    const k = grantKey(r.source_kind, r.source_reference_id, r.member_id);
     held.set(k, (held.get(k) ?? 0) + Number(r.reserved));
   }
   return rows.map((row) => {
-    const used = held.get(`${row.kind}:${row.reference_id}`) ?? 0;
+    const used = held.get(grantKey(row.kind, row.reference_id, row.holder_member_id)) ?? 0;
     return used > 0 ? { ...row, sessions: Number(row.sessions) - used } : row;
   });
 }

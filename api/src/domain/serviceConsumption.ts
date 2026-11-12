@@ -58,6 +58,15 @@ export interface ConsumedTotal {
    */
   professional_service_id?: number;
   name?: string;
+  /** #2670 stage 2: the grant holder the spend was taken from (absent for a manual adjustment, the family's). */
+  member_id?: number | null;
+}
+
+/** #2670 stage 2: a grant is (kind, reference, holder) — the same plan line covering two family members is two grants. */
+export function grantKey(kind: string, referenceId: number, holderMemberId?: number | null): string {
+  return kind === 'manual_adjustment' || holderMemberId == null
+    ? `${kind}:${referenceId}`
+    : `${kind}:${referenceId}:m${holderMemberId}`;
 }
 
 /**
@@ -73,7 +82,7 @@ export function applyConsumption(
   const add = (key: string, n: number) => spent.set(key, (spent.get(key) ?? 0) + n);
   const unscoped = new Map<string, number>();
   for (const c of consumed) {
-    add(`${c.source_kind}:${c.source_reference_id}`, Number(c.consumed));
+    add(grantKey(c.source_kind, c.source_reference_id, c.member_id), Number(c.consumed));
     if (c.professional_service_id != null) {
       add(`${c.source_kind}:${c.source_reference_id}:${c.professional_service_id}`, Number(c.consumed));
     } else {
@@ -86,7 +95,7 @@ export function applyConsumption(
     const used = row.kind === 'manual_adjustment'
       ? (spent.get(`${row.kind}:${row.reference_id}:${row.professional_service_id}`)
         ?? unscoped.get(`${row.kind}:${row.reference_id}`) ?? 0)
-      : (spent.get(`${row.kind}:${row.reference_id}`) ?? 0);
+      : (spent.get(grantKey(row.kind, row.reference_id, row.holder_member_id)) ?? 0);
     return used > 0 ? { ...row, sessions: Number(row.sessions) - used } : row;
   });
 }
