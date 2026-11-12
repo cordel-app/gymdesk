@@ -534,7 +534,26 @@
       "active": "Activo",
       "superseded": "Sustituido"
     },
-    "set_status_label": "Estado"
+    "set_status_label": "Estado",
+    "summary_heading": "Resumen",
+    "summary_contracted": "Productos contratados",
+    "summary_cancelled": "Productos cancelados",
+    "summary_none": "Todavía no has añadido nada.",
+    "summary_initial_payment": "Pago inicial",
+    "summary_nothing_due": "Hoy no hay nada que pagar.",
+    "summary_line_regular": "Precio habitual {amount}",
+    "summary_line_promotion": "Promoción: {name}",
+    "summary_line_discount": "Descuento −{amount}",
+    "summary_line_tax": "IVA {rate}% incl.",
+    "summary_total": "Total pago inicial",
+    "summary_save_and_pay": "Guardar y pagar",
+    "summary_confirm": "Confirmar",
+    "summary_pending": "Tu selección está pendiente de pago.",
+    "summary_cancel_pending": "Cancelar pago",
+    "summary_error_changed": "Tu selección ha cambiado. Revísala de nuevo.",
+    "summary_error_amount": "No se ha podido calcular el importe. Inténtalo más tarde.",
+    "summary_error_generic": "No se ha podido confirmar tu selección. Inténtalo de nuevo.",
+    "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde."
   },
   "payments": {
     "title": "Pagos",

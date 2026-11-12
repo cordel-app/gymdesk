@@ -469,6 +469,8 @@ export interface MemberSetLine {
 export interface MemberSetView {
   id: number;
   status: string;
+  /** #2496 stage 5 — whose version it is (a family version is read, never cancelled, by a beneficiary). */
+  owner_member_id?: number;
   expires_in_seconds?: number | null;
   lines: MemberSetLine[];
   /** #2496 stage 4 — the version's Membership Plans (`added` by this Draft, or `inherited`). */
@@ -619,5 +621,108 @@ export function draftErrorKey(message: string | null | undefined): string {
     case 'plan_change_via_gym':
     case 'plan_not_removable': return 'membership.draft_error_plan_via_gym';
     default: return 'membership.draft_error_generic';
+  }
+}
+
+/* ── #2496 stage 5 — the Summary and Save & Pay of the member's Draft ─────── */
+
+/** One item of `GET /me/product-sets/:id/review`'s `summary_items` (the Admin's own review). */
+export interface MemberSetReviewItem {
+  state: 'active' | 'draft' | 'cancelling';
+  type: 'plan' | 'product';
+  name: string;
+  quantity: number | null;
+  billing_frequency: string | null;
+  regular_price: number | null;
+  promotions: string[];
+  initial_amount: number | null;
+  final_price: number | null;
+}
+
+/** One line of the review's `immediate_lines`: what Save & Pay charges today, as the engine priced it. */
+export interface MemberSetReviewLine {
+  item_name: string | null;
+  quantity: number;
+  amount: number;
+  regular_unit_price: number | null;
+  promotion_name: string | null;
+  treatment_action: string | null;
+  treatment_value: number | null;
+  tax_rate_percent: number | null;
+  amount_excl_tax: number | null;
+}
+
+/** `GET /me/product-sets/:id/review`, as the Summary reads it. */
+export interface MemberSetReview {
+  product_set_id: number;
+  status: string;
+  summary_items: MemberSetReviewItem[];
+  immediate_lines: MemberSetReviewLine[];
+  amount_due: number | null;
+  payment_required: boolean;
+  tax_total: number | null;
+  currency: string;
+  error: string | null;
+}
+
+/** §8 — *Products Contracted* is what the Draft adds, *Products Cancelled* what it takes away. */
+export function reviewSections(review: MemberSetReview | null): { contracted: MemberSetReviewItem[]; cancelled: MemberSetReviewItem[] } {
+  const items = review?.summary_items ?? [];
+  return {
+    contracted: items.filter((i) => i.state === 'draft'),
+    cancelled: items.filter((i) => i.state === 'cancelling'),
+  };
+}
+
+export type SetCommitAction = 'save_and_pay' | 'activate';
+
+/**
+ * §9 — which one action commits the Draft, from the server's review alone:
+ * *Save & Pay* while something is owed today, the free activation when nothing
+ * is, and none at all when the review could not establish the amount, the
+ * version is not a Draft, or the Draft changes nothing. The amount is never
+ * decided here.
+ */
+export function setCommitAction(review: MemberSetReview | null): SetCommitAction | null {
+  if (!review || review.status !== 'draft' || review.error || review.amount_due == null) return null;
+  const { contracted, cancelled } = reviewSections(review);
+  if (contracted.length + cancelled.length === 0) return null;
+  return review.payment_required ? 'save_and_pay' : 'activate';
+}
+
+/** The discount a charge line carries off its regular price (promotion or benefit), or `null` for none. */
+export function reviewLineDiscount(line: MemberSetReviewLine): number | null {
+  if (line.regular_unit_price == null) return null;
+  const off = Math.round((line.regular_unit_price * line.quantity - line.amount) * 100) / 100;
+  return off > 0 ? off : null;
+}
+
+/**
+ * The `membership.frequency` key a Summary item reads under: a Product's own
+ * frequency, or a plan cadence spelled `<interval>_<unit>` by the review.
+ * `null` for one that names no period (#1135's rule: `/ Once` describes nothing).
+ */
+export function reviewFrequencyKey(frequency: string | null): string | null {
+  if (!frequency) return null;
+  const cadence: Record<string, string> = { '1_month': 'month', '4_week': 'four_weeks', '1_week': 'week', '1_year': 'year' };
+  const key = cadence[frequency] ?? frequency;
+  return ['week', 'four_weeks', 'month', 'year'].includes(key) ? `membership.frequency.${key}` : null;
+}
+
+/**
+ * Which locale key explains a refused commit or an unusable review. The API
+ * answers a code in `error`; a stale screen (`not_committable`,
+ * `nothing_to_pay`, `payment_required`) is told to look again.
+ */
+export function setCommitErrorKey(code: string | null | undefined): string {
+  switch (code) {
+    case 'draft_expired': return 'membership.draft_error_expired';
+    case 'edit_locked': return 'membership.draft_error_locked';
+    case 'in_flight': return 'membership.draft_error_in_flight';
+    case 'not_committable':
+    case 'nothing_to_pay':
+    case 'payment_required': return 'membership.summary_error_changed';
+    case 'amount_unavailable': return 'membership.summary_error_amount';
+    default: return 'membership.summary_error_generic';
   }
 }
