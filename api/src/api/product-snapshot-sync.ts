@@ -18,6 +18,7 @@
  * insert a legacy purchase row by hand.
  */
 import type { Tx } from '../infra/db';
+import { recurringLineSharedSql } from './recurring-line-sharing';
 import { syncProductSnapshotJunctions } from './snapshot-junction-sync';
 
 type Conn = Pick<Tx, 'query'>;
@@ -36,11 +37,15 @@ const GRANT_SOURCES: Array<{ kind: string; source: string }> = [
 export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 5c: the lines themselves are written by their one writer (`recurring-line-writer.ts`),
   // so only what moves with the set is refreshed here.
+  // #2126 stage 5c-2b: only the lines this set alone links follow it. A line another set links is that
+  // set's too, and a shared line is never written (`recurring-line-sharing.ts`).
   await tx.query(
     `UPDATE product_periodical_snapshots par
-       JOIN product_sets ps ON ps.id = par.product_set_id AND ps.gym_id = par.gym_id
+       JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
+       JOIN product_sets ps ON ps.id = lnk.product_set_id AND ps.gym_id = par.gym_id
         SET par.status = ps.status, par.member_id = ps.owner_member_id
-      WHERE par.gym_id = ? AND par.product_set_id = ?
+      WHERE par.gym_id = ? AND lnk.product_set_id = ?
+        AND NOT ${recurringLineSharedSql('par.id', 'lnk.product_set_id')}
         AND (par.status <> ps.status OR par.member_id <> ps.owner_member_id)`,
     [gymId, productSetId]);
 
@@ -52,6 +57,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     `DELETE pp FROM product_promotion_snapshots pp
        JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
       WHERE par.gym_id = ? AND par.product_set_id = ?
+        AND NOT ${recurringLineSharedSql('par.id', 'par.product_set_id')}
         AND (pp.source_application_id IS NULL OR pp.source_application_id NOT IN (${owned}))`,
     [gymId, productSetId, gymId, productSetId]);
   await tx.query(

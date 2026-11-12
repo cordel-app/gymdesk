@@ -13,6 +13,7 @@
  * consumption ledger and a line's Promotion applications are still keyed on.
  */
 import type { Tx } from '../infra/db';
+import { isRecurringLineIdShared, SharedRecurringLineError } from './recurring-line-sharing';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -147,12 +148,14 @@ const SNAPSHOT_COLUMN: Record<keyof RecurringLinePatch, string> = {
   direct_discount_percent: 'direct_discount_percent',
 };
 
-/** Changes one line, in the legacy record and in its snapshot. */
+/** Changes one line, in the legacy record and in its snapshot. Refuses a line another Product Set links. */
 export async function updateRecurringLine(
   tx: Conn, gymId: string, lineId: number, patch: RecurringLinePatch,
 ): Promise<void> {
   const keys = (Object.keys(patch) as Array<keyof RecurringLinePatch>).filter((k) => patch[k] !== undefined);
   if (keys.length === 0) return;
+  // #2126 stage 5c-2b: a line another Product Set links is immutable to every set that links it.
+  if (await isRecurringLineIdShared(tx, gymId, lineId)) throw new SharedRecurringLineError(lineId);
   const values = keys.map((k) => patch[k] ?? null);
   await tx.query(
     `UPDATE member_products_recurrent_snapshot SET ${keys.map((k) => `${k} = ?`).join(', ')}

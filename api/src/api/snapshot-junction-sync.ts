@@ -32,7 +32,10 @@ export const SET_JUNCTIONS = [
 type SetJunction = (typeof SET_JUNCTIONS)[number];
 
 async function syncOne(tx: Conn, gymId: string, productSetId: number, j: SetJunction): Promise<void> {
-  await tx.query(
+  // #2126 stage 5c-2b: the recurring line junction is the record of the link, as the plan one is (M4b-1).
+  // It only gains the link a line's own column implies and never loses one here: a line that leaves a set
+  // is deleted, and its links cascade. Stage 5c-2c links a line to a set that did not create it.
+  if (j.junction !== 'product_set_periodical_snapshots') await tx.query(
     `DELETE j FROM ${j.junction} j
        LEFT JOIN ${j.table} s ON s.id = j.${j.snapshotCol} AND s.gym_id = ? AND s.product_set_id = j.product_set_id
       WHERE j.product_set_id = ? AND s.id IS NULL`,
