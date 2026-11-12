@@ -35,6 +35,7 @@ import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { PromotionImageModal as ActivityImageModal } from '../promotions/PromotionImageModal';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { dashedAddBtnStyle, formControlStyle, inlineActionsRowStyle, rowRemoveBtnStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { bookingAccessLabelKey } from './bookingAccess';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -410,6 +411,12 @@ export default function ActivityTypesPage() {
   }
 
   // ─── Edit ─────────────────────────────────────────────────────────────────
+
+  // #2686: Public / restricted by Professional Service / private event.
+  function bookingAccessText(row: ActivityType): string {
+    const key = bookingAccessLabelKey(!!row.public_event, eligibleServicesMap.get(row.id));
+    return key ? t(key) : '—';
+  }
 
   async function openEdit(row: ActivityType) {
     // Editing happens in the List view only; Edit from a card switches to it (#1744).
@@ -1369,7 +1376,7 @@ export default function ActivityTypesPage() {
             </div>
 
             <SectionHeader title={t('section_booking_access')} />
-            <DetailRow label={t('label_public_event')} value={row.public_event ? t('public_event_yes') : t('public_event_no')} />
+            <DetailRow label={t('label_public_event')} value={bookingAccessText(row)} />
             <DetailRow label={t('label_waitlist_mode')} value={t(`waitlist_mode_${row.waitlist_mode}` as any)} />
             {!row.public_event && (
               <div style={{ margin: '4px 0 10px' }}>
@@ -1625,7 +1632,7 @@ export default function ActivityTypesPage() {
             )}
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={detailSectionLabelStyle}>{t('section_booking_access')}</div>
-            <ModalDetail label={t('label_public_event')} value={details.public_event ? t('public_event_yes') : t('public_event_no')} />
+            <ModalDetail label={t('label_public_event')} value={bookingAccessText(details)} />
             <ModalDetail label={t('label_waitlist_mode')} value={t(`waitlist_mode_${details.waitlist_mode}` as any)} />
             {!details.public_event && (
               <div>
