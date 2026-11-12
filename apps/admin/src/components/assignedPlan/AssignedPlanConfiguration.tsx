@@ -180,6 +180,10 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
     action: b.action,
     value: b.value,
     ...(b.frequency !== undefined && { frequency: b.frequency }),
+    // #2624 stage 2: whether the line may be removed, and its own Direct
+    // Discount, the one thing staff change on an agreed line (§5).
+    mandatory: b.mandatory !== false,
+    direct_discount_percent: b.direct_discount_percent ?? null,
   };
 }
 
@@ -319,6 +323,8 @@ export function AssignedPlanConfiguration({
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
   const [feeBenefitForm, setFeeBenefitForm] = useState<FeeBenefitForm | null>(null);
   const [benefitDraft, setBenefitDraft] = useState<ProductBenefitRow[]>([]);
+  // #2624 stage 2: the lines already agreed when the section editor opened.
+  const [lockedIds, setLockedIds] = useState<ReadonlySet<number>>(new Set());
   const [items, setItems] = useState<ProductOption[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -377,6 +383,7 @@ export function AssignedPlanConfiguration({
 
   function openBenefitEdit(section: BenefitSection, rows: AssignedPlanSnapshotBenefit[]) {
     setBenefitDraft(rows.map(toDraftRow));
+    setLockedIds(new Set(rows.map((r) => r.product_id)));
     setEditing(section);
     loadItems();
   }
@@ -386,6 +393,7 @@ export function AssignedPlanConfiguration({
     setDurationForm(null);
     setFeeBenefitForm(null);
     setBenefitDraft([]);
+    setLockedIds(new Set());
   }
 
   async function saveDuration() {
@@ -690,7 +698,10 @@ export function AssignedPlanConfiguration({
                   showFrequency={showFrequency}
                   frequencyColumn={viewFrequencyColumn}
                   benefitContext="plan"
+                  showDirectDiscount
+                  lockedProductIds={lockedIds}
                 />
+                <p style={hintSt}>{t('assigned_line_edit_hint')}</p>
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
                 {sectionActions(() => saveBenefits(endpoint))}
               </div>

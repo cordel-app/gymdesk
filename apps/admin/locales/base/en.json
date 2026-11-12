@@ -5196,7 +5196,11 @@
     "promo_detail_no_plans": "No Membership Plans.",
     "promo_detail_included_products": "Products",
     "section_plan_promotions": "Promotions",
-    "no_plan_promotions": "No promotions applied to this plan."
+    "no_plan_promotions": "No promotions applied to this plan.",
+    "assigned_line_edit_hint": "Agreed lines are read-only: only their Direct discount (%) can change, and only an Optional line can be removed.",
+    "col_direct_discount_percent": "Direct discount (%)",
+    "mandatory_item_tag": "Mandatory",
+    "remove_optional_line": "Remove {product}"
   },
   "taxes": {
     "title": "Taxes",

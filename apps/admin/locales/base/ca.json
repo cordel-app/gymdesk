@@ -5209,7 +5209,11 @@
     "promo_detail_no_plans": "Sense plans de membresia.",
     "promo_detail_included_products": "Productes",
     "section_plan_promotions": "Promocions",
-    "no_plan_promotions": "No hi ha promocions aplicades a aquest pla."
+    "no_plan_promotions": "No hi ha promocions aplicades a aquest pla.",
+    "assigned_line_edit_hint": "Les línies acordades són de només lectura: només se'n pot canviar el Descompte directe (%), i només una línia Opcional es pot eliminar.",
+    "col_direct_discount_percent": "Descompte directe (%)",
+    "mandatory_item_tag": "Obligatori",
+    "remove_optional_line": "Elimina {product}"
   },
   "taxes": {
     "title": "Impostos",

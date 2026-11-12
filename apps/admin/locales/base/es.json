@@ -5182,7 +5182,11 @@
     "promo_detail_no_plans": "Sin planes de membresía.",
     "promo_detail_included_products": "Productos",
     "section_plan_promotions": "Promociones",
-    "no_plan_promotions": "No hay promociones aplicadas a este plan."
+    "no_plan_promotions": "No hay promociones aplicadas a este plan.",
+    "assigned_line_edit_hint": "Las líneas acordadas son de solo lectura: solo puede cambiarse su Descuento directo (%), y solo una línea Opcional puede eliminarse.",
+    "col_direct_discount_percent": "Descuento directo (%)",
+    "mandatory_item_tag": "Obligatorio",
+    "remove_optional_line": "Eliminar {product}"
   },
   "taxes": {
     "title": "Impuestos",
