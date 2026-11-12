@@ -375,6 +375,7 @@
     "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
     "tab_products": "Plans i productes",
     "tab_services": "Serveis professionals",
+    "tab_payments": "Pagaments",
     "services_empty": "El teu gimnàs encara no té serveis professionals disponibles.",
     "services_error": "No s'han pogut carregar els teus serveis professionals.",
     "services_balance": "{total, plural, one {# sessió} other {# sessions}} ({available} disponibles + {booked} reservades)",
