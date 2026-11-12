@@ -75,7 +75,9 @@ async function createProduct(gymId: string, opts: {
 
 async function addPlanBenefit(gymId: string, table: string, planId: number, chargeId: number, quantity = 1) {
   await db.query(
-    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
+    // #2624 stage 2: Optional, so these tests may remove the line; Mandatory
+    // lines are assigned-plan-mandatory-lines.test.ts's.
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity, mandatory) VALUES (?, ?, ?, ?, 0)`,
     [gymId, planId, chargeId, quantity],
   );
 }

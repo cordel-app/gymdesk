@@ -113,6 +113,25 @@ const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
 
 /* ── Benefit sections ────────────────────────────────────────────────────── */
 
+/**
+ * #2624 stage 2 — the refusal a section write gets when it would drop a Mandatory
+ * line, or turn one Optional, or `null` when every Mandatory line survives as it is.
+ * Pure: `current` is what the plan snapshot holds, `next` what the request keeps.
+ */
+export function mandatoryLineRefusal(
+  current: { product_id: number; mandatory: boolean; item_name: string }[],
+  next: { product_id: number; mandatory?: boolean }[],
+): string | null {
+  const byId = new Map(next.map((n) => [n.product_id, n]));
+  for (const line of current) {
+    if (!line.mandatory) continue;
+    const kept = byId.get(line.product_id);
+    if (!kept) return `'${line.item_name}' is a Mandatory product of this plan and cannot be removed`;
+    if (kept.mandatory === false) return `'${line.item_name}' is a Mandatory product of this plan and cannot be made optional`;
+  }
+  return null;
+}
+
 export async function loadBenefitSection(gymId: string, productSetId: number, category: ProductBenefitCategory) {
   const snapshotId = await primaryPlanSnapshotId(db, gymId, productSetId);
   if (snapshotId == null) return [];
@@ -172,9 +191,18 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   const table = PLAN_LINE_TABLE[category];
   const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
-  const { rows: current } = await tx.query<{ product_id: number }>(
-    `SELECT product_id FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, snapshotId]);
+  const { rows: current } = await tx.query<{ product_id: number; mandatory: number; item_name: string }>(
+    `SELECT product_id, mandatory, item_name FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`,
+    [draft.gym_id, snapshotId]);
   const attached = new Set(current.map((r) => Number(r.product_id)));
+  // #2624 stage 2 (§4): only an Optional line may leave the plan, and a Mandatory
+  // line cannot be made Optional here either (that would be the same removal in
+  // two requests). The flag is the Plan's, frozen with the line (#1184).
+  const locked = mandatoryLineRefusal(
+    current.map((r) => ({ product_id: Number(r.product_id), mandatory: Number(r.mandatory) === 1, item_name: r.item_name })),
+    parsed,
+  );
+  if (locked) return { kind: 'conflict', error: 'mandatory_line_not_removable', message: locked };
   const added = parsed.filter((p) => !attached.has(p.product_id)).map((p) => p.product_id);
   if (added.length > 0) {
     const { rows: products } = await tx.query<any>(
@@ -218,6 +246,13 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
            FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
           WHERE gc.id = ? AND gc.gym_id = ?`,
         [draft.gym_id, target, p.quantity, p.product_id, draft.gym_id]);
+      // #2624 stage 2: a line staff add to this configuration is not one of the
+      // Plan's, so it is Optional (removable) unless the request says otherwise.
+      if (p.mandatory === undefined) {
+        await tx.query(
+          `UPDATE ${table} SET mandatory = 0 WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
+          [draft.gym_id, target, p.product_id]);
+      }
       if (extra.length) {
         await tx.query(
           `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,

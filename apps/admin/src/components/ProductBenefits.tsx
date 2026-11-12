@@ -382,11 +382,77 @@ export function formatBenefitPrice(amount: number): string {
   return `€${amount.toFixed(2)}`;
 }
 
+/**
+ * #2624 stage 2 (§5) — one agreed line of an Assigned Plan inside the section
+ * editor: every fact is a value, the Direct Discount (%) is the one input, and
+ * Remove exists only for an Optional line. It fills the same grid cells as an
+ * editable row, so the columns stay aligned.
+ */
+function LockedBenefitRow({
+  t, row, action, showFrequency, frequencyColumn, benefitContext, showDirectDiscount,
+  showRequirement, showPlanMandatory, frequencyLabel, onDirectDiscount, onRemove,
+}: {
+  t: Translate;
+  row: ProductBenefitRow;
+  action: ProductBenefitAction | null;
+  showFrequency: boolean;
+  frequencyColumn: BenefitFrequencyColumn;
+  benefitContext?: ProductBenefitContext;
+  showDirectDiscount: boolean;
+  showRequirement: boolean;
+  showPlanMandatory: boolean;
+  frequencyLabel: string;
+  onDirectDiscount: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const optional = row.mandatory === false;
+  const cell = { fontSize: 13 } as const;
+  return (
+    <div style={{ display: 'contents' }}>
+      <span style={{ ...cell, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.product_name}>
+        {row.product_name}
+        {!optional && <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>}
+      </span>
+      <span style={cell}>{row.quantity}</span>
+      {showFrequency && (
+        <span style={{ ...cell, color: '#666' }}>
+          {frequencyColumn === 'benefit' ? t(sessionFrequencyLabelKey(row.frequency ?? null)) : frequencyLabel}
+        </span>
+      )}
+      {benefitContext && <span style={cell}>{action ? t(`item_action_${action}`) : '—'}</span>}
+      {benefitContext && (
+        <span style={cell}>{action && benefitActionRequiresValue(action) ? (row.value ?? '—') : ''}</span>
+      )}
+      {showDirectDiscount && (
+        <input
+          type="number" min="0" max={100} step="1"
+          value={row.direct_discount_percent ?? ''}
+          onChange={(e) => onDirectDiscount(clampBenefitValue('percentage_discount', e.target.value) as string)}
+          placeholder="0"
+          aria-label={t('col_direct_discount_percent')}
+          style={{ ...inlineSelectSt, width: '100%' }}
+        />
+      )}
+      {showRequirement && <span />}
+      {showPlanMandatory && <span />}
+      {optional ? (
+        <button
+          onClick={onRemove}
+          style={rowRemoveBtnStyle}
+          aria-label={t('remove_optional_line', { product: row.product_name })}
+        >✕</button>
+      ) : <span />}
+    </div>
+  );
+}
+
+
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function ProductBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
   benefitContext, frequencyColumn = 'item', quantityColumn = 'quantity',
   showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
+  lockedProductIds,
 }: {
   t: Translate;
   addKey: string;
@@ -448,6 +514,14 @@ export function ProductBenefitEditor({
    * input beside its Benefit. The Plans page only; off by default.
    */
   showDirectDiscount?: boolean;
+  /**
+   * #2624 stage 2 (§5): the Assigned Plan's lines already agreed. Such a row is
+   * read-only except its Direct Discount (%), and it carries the Remove control
+   * only when it is Optional (`mandatory === false`) — the API refuses the rest
+   * (`mandatoryLineRefusal()`). A row added in this edit is not in the set and
+   * keeps the ordinary controls. Omitted means no row is locked.
+   */
+  lockedProductIds?: ReadonlySet<number>;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -498,6 +572,25 @@ export function ProductBenefitEditor({
           {draft.map((row, idx) => {
             const mandatory = enforceMandatory && isMandatoryBenefitRow(row);
             const action = benefitContext ? benefitActionOf(benefitContext, row.action) : null;
+            if (lockedProductIds?.has(row.product_id)) {
+              return (
+                <LockedBenefitRow
+                  key={row.product_id}
+                  t={t}
+                  row={row}
+                  action={action}
+                  showFrequency={showFrequency}
+                  frequencyColumn={frequencyColumn}
+                  benefitContext={benefitContext}
+                  showDirectDiscount={showDirectDiscount}
+                  showRequirement={showRequirement}
+                  showPlanMandatory={showPlanMandatory}
+                  frequencyLabel={billingFrequencyLabel(row.product_billing_frequency, tFreq) ?? '—'}
+                  onDirectDiscount={(v) => updateBenefitRow(setDraft, categoryItems, idx, { direct_discount_percent: v })}
+                  onRemove={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
+                />
+              );
+            }
             return (
               <div key={row.product_id} style={{ display: 'contents' }}>
                 {mandatory ? (
@@ -945,3 +1038,4 @@ export function ProductBenefitView({
     </div>
   );
 }
+
