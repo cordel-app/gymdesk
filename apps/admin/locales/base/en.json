@@ -5024,6 +5024,7 @@
     "unit_year": "Year",
     "snapshot_edit_hint": "Changes apply to this Assigned Plan only — the Membership Plan and other members keep their own configuration.",
     "col_product": "Product",
+    "col_benefit_member": "Member",
     "col_quantity": "Quantity",
     "col_frequency": "Frequency",
     "col_item_action": "Benefit",
@@ -5174,10 +5175,6 @@
     "promo_detail_included_plans": "Membership Plans",
     "promo_detail_no_plans": "No Membership Plans.",
     "promo_detail_included_products": "Products",
-    "unit_assignees_title": "Family members per unit",
-    "unit_assignees_hint": "Each unit of an individual product is for one family member. Several units may go to the same person.",
-    "unit_assignees_unit_label": "{product}, unit {unit}",
-    "unit_assignees_save_error": "Could not save the family members.",
     "section_plan_promotions": "Promotions",
     "no_plan_promotions": "No promotions applied to this plan."
   },

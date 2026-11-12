@@ -195,7 +195,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
  * shifting everything after it.
  */
 export type ProductBenefitColumnKey =
-  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
+  'item' | 'member' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
   | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
   | 'mandatory' | 'direct_discount_percent';
 
@@ -214,6 +214,9 @@ export interface ProductBenefitColumn {
  */
 export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   { key: 'item', labelKey: 'col_product', width: null, align: 'left' },
+  // #2657 stage 2: who an Individual Product's units are for, right after the
+  // Product. Empty for a Shared Product. The Assigned Plan card only (`showMember`).
+  { key: 'member', labelKey: 'col_benefit_member', width: 160, align: 'left' },
   { key: 'quantity', labelKey: 'col_quantity', width: 90, align: 'right' },
   { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
   { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
@@ -300,8 +303,11 @@ export function productBenefitColumns(opts: {
   showDirectDiscount?: boolean;
   /** #1135 — what the number column counts here. Defaults to a quantity. */
   quantityColumn?: BenefitQuantityColumn;
+  /** #2657 stage 2 — the Assigned Plan card's Member column. Absent means not rendered at all. */
+  showMember?: boolean;
 }): ProductBenefitColumn[] {
   return PRODUCT_BENEFIT_COLUMNS.filter((col) => {
+    if (col.key === 'member') return opts.showMember === true;
     if (col.key === 'frequency') return opts.showFrequency;
     if (col.key === 'action') return opts.showAction;
     if (col.key === 'requirement') return opts.showRequirement === true;
@@ -702,7 +708,7 @@ export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
   showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
-  renderItemPrefix, renderNestedRow,
+  showMember = false, renderItemPrefix, renderNestedRow,
 }: {
   t: Translate;
   emptyKey: string;
@@ -755,6 +761,8 @@ export function ProductBenefitView({
   showPlanMandatory?: boolean;
   /** #2490 stage 3: the read-only half of a Plan line's Direct Discount (%) column. */
   showDirectDiscount?: boolean;
+  /** #2657 stage 2: the Member column (the row's `member_name`, empty for a Shared Product). */
+  showMember?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -765,7 +773,7 @@ export function ProductBenefitView({
   // vanishing and shifting the columns after it out of line (#916).
   const columns = productBenefitColumns({
     showFrequency, showAction: benefitContext != null, showPrices, showBreakdown, showRequirement,
-    showPlanMandatory, showDirectDiscount, quantityColumn,
+    showPlanMandatory, showDirectDiscount, quantityColumn, showMember,
   });
 
   const cell = (col: ProductBenefitColumn, row: ProductBenefitRow, index: number): React.ReactNode => {
@@ -784,6 +792,9 @@ export function ProductBenefitView({
           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{prefix}<span>{name}</span></span>
           : name;
       }
+      case 'member':
+        // #2657 stage 2: a Shared Product belongs to the whole plan, so its cell is empty.
+        return row.member_name ?? '';
       case 'quantity':
         // #1135: a Duration reads as what it means — `3 months` rather than `3`,
         // from the item's own frequency. The stored number is the fallback, for

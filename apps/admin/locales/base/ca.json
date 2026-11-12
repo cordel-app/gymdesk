@@ -5037,6 +5037,7 @@
     "unit_year": "Any",
     "snapshot_edit_hint": "Els canvis s'apliquen només a aquest Pla Assignat — el Pla de Membresia i la resta de membres mantenen la seva configuració.",
     "col_product": "Producte",
+    "col_benefit_member": "Membre",
     "col_quantity": "Quantitat",
     "col_frequency": "Freqüència",
     "col_item_action": "Benefici",
@@ -5187,10 +5188,6 @@
     "promo_detail_included_plans": "Plans de membresia",
     "promo_detail_no_plans": "Sense plans de membresia.",
     "promo_detail_included_products": "Productes",
-    "unit_assignees_title": "Membres de la família per unitat",
-    "unit_assignees_hint": "Cada unitat d'un producte individual és per a un membre de la família. Diverses unitats poden ser per a la mateixa persona.",
-    "unit_assignees_unit_label": "{product}, unitat {unit}",
-    "unit_assignees_save_error": "No s'han pogut desar els membres de la família.",
     "section_plan_promotions": "Promocions",
     "no_plan_promotions": "No hi ha promocions aplicades a aquest pla."
   },

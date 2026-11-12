@@ -47,7 +47,6 @@ const CARD_FILES = [
   'AssignedPlanExpandedRow.tsx',
   'AssignedPlanConfiguration.tsx',
   'AssignedPlanPromotions.tsx',
-  'PlanUnitAssignees.tsx',
 ] as const;
 
 const sources = new Map(CARD_FILES.map((f) => [f, read(f)] as const));

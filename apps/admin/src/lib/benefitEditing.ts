@@ -24,6 +24,11 @@ import { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
  *  item that has since gone inactive still renders with its real name. */
 export interface ProductBenefitRow {
   product_id: number;
+  /**
+   * #2657 stage 2 — the family member this row's units are for, on the Assigned Plan
+   * card's Member column; `null`/absent for a Shared Product. Display only.
+   */
+  member_name?: string | null;
   quantity: number;
   product_name: string;
   product_type: string;
