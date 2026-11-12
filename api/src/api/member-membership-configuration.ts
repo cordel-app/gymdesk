@@ -128,7 +128,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // beside `plans` for the Member card to show and act on. A Draft idle past two
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by,
+    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ps.user_membership_id, ps.membership_plan_id,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             CASE WHEN ps.status = 'draft'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
@@ -189,6 +189,11 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       id: Number(r.id),
       status: String(r.status),
       plan_name: r.plan_name ?? null,
+      // #2742 — the assignment the version already projects or is linked to (an Admin
+      // Draft or Save & Pay), else null: a Members App plan awaiting its first payment has
+      // no assignment until activation, so the Member card lists it from this row.
+      user_membership_id: r.user_membership_id != null ? Number(r.user_membership_id) : null,
+      membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
       starts_at: toDateOnly(r.starts_at),
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,
       expired: Number(r.expired) === 1,

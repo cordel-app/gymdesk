@@ -79,6 +79,9 @@ export interface ProductSetRow {
   id: number;
   status: 'draft' | 'pending_payment' | string;
   plan_name: string | null;
+  /** #2742 — the assignment this version is linked to, or null (a Members App plan awaiting payment). */
+  user_membership_id?: number | null;
+  membership_plan_id?: number | null;
   starts_at: string | null;
   /** The initial payment Save & Pay wrote, or `null` for a Draft. */
   amount_due: number | null;

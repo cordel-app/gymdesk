@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true) => ({ id, status, is_live } as any);
 
@@ -22,6 +22,12 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
     const v = visiblePlans([plan(1, 'active'), plan(3, 'pending_payment')]);
     expect(v.rows.map((r) => r.id)).toEqual([3]);
     expect(v.showInFlightList).toBe(false);
+    // #2742: awaiting payment is listed in the Active category, labelled by its badge.
+    expect(v.heading).toBe('active');
+  });
+
+  it('#2742: a Draft beside a Pending Payment version still takes the view out of Active', () => {
+    expect(visiblePlans([plan(2, 'draft'), plan(3, 'pending_payment')]).heading).toBe('draft');
   });
 
   it('with no plan the empty state is untouched', () => {
@@ -69,5 +75,18 @@ describe('#2659 stage 3: a Draft lists the plans cancelling at their period end 
     const v = visiblePlans([plan(3, 'active'), cancelling, finished, plan(4, 'draft')]);
     expect(v.rows.map((r: any) => r.id)).toEqual([4, 1]);
     expect(v.heading).toBe('draft');
+  });
+});
+
+describe('#2742 pendingPaymentPlanSets', () => {
+  const set = (id: number, status: string, user_membership_id: number | null, membership_plan_id: number | null = 7) =>
+    ({ id, status, user_membership_id, membership_plan_id, plan_name: 'Gold', starts_at: '2026-11-12', amount_due: 30, expired: false, created_by: null });
+  it('lists a plan awaiting payment that no assignment represents yet', () => {
+    expect(pendingPaymentPlanSets([set(1, 'pending_payment', null)]).map((s) => s.id)).toEqual([1]);
+  });
+  it('never lists a version an assignment row already shows, a Draft, or a set with no plan', () => {
+    expect(pendingPaymentPlanSets([
+      set(1, 'pending_payment', 42), set(2, 'draft', null), set(3, 'pending_payment', null, null),
+    ])).toEqual([]);
   });
 });
