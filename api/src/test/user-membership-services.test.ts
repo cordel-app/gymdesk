@@ -759,3 +759,42 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(res.body.ends_at).toBe(today());
   });
 });
+
+// #2126 stage 3n — the line the staff screen shows is looked up in the Product
+// snapshot tables (`product_periodical_snapshots.source_id`), not in
+// `member_products_recurrent_snapshot`.
+describe('DELETE /user-memberships/:id/services/:serviceId — reads the Product snapshot (#2126 stage 3n)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UMS Snapshot Lookup Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('removes the line by the id the Services list reported', async () => {
+    const umId = await createAssignedPlan(gymId);
+    const itemId = await createProduct(gymId);
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-2) });
+    expect(created.status).toBe(201);
+    const list = await listServices(gymId, umId);
+    expect(list.body).toHaveLength(1);
+
+    const res = await removeService(gymId, umId, list.body[0].id);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: list.body[0].id, deleted: false, ends_at: today() });
+  });
+
+  it('answers 404 for a line with no Product snapshot, leaving the legacy line alone', async () => {
+    const umId = await createAssignedPlan(gymId);
+    const itemId = await createProduct(gymId);
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-2) });
+    expect(created.status).toBe(201);
+    await db.query('DELETE FROM product_periodical_snapshots WHERE gym_id = ? AND source_id = ?', [gymId, created.body.id]);
+
+    expect((await removeService(gymId, umId, created.body.id)).status).toBe(404);
+    const { rows } = await db.query(
+      'SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ends_at).toBeNull();
+  });
+});
