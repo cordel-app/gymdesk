@@ -421,8 +421,6 @@
     "add_plan_pending_error": "Ja tens un pla en curs a Els meus productes. Paga’l o cancel·la’l primer.",
     "add_plan_replace_body": "Ja tens un pla actiu ({current}). En triar {name} el substituiràs quan es confirmi el pagament.",
     "add_plan_replace_confirm": "Substituir el meu pla actual",
-    "pending_plan_heading": "Pla pendent de pagament",
-    "pending_plan_body": "{name} · {price}. Completa el pagament per activar-lo.",
     "pending_plan_pay": "Pagar ara",
     "plan_pending_payment_amount": "Pagament pendent: {amount}",
     "plan_pending_cancel": "Cancel·la",

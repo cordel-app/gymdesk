@@ -421,8 +421,6 @@
     "add_plan_pending_error": "Ya tienes un plan en curso en Mis productos. Págalo o cancélalo primero.",
     "add_plan_replace_body": "Ya tienes un plan activo ({current}). Al elegir {name} lo sustituirás cuando se confirme tu pago.",
     "add_plan_replace_confirm": "Sustituir mi plan actual",
-    "pending_plan_heading": "Plan pendiente de pago",
-    "pending_plan_body": "{name} · {price}. Completa el pago para activarlo.",
     "pending_plan_pay": "Pagar ahora",
     "plan_pending_payment_amount": "Pago pendiente: {amount}",
     "plan_pending_cancel": "Cancelar",

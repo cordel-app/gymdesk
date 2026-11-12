@@ -421,8 +421,6 @@
     "add_plan_pending_error": "You already have a plan in progress in My Products. Pay for it or cancel it first.",
     "add_plan_replace_body": "You already have an active plan ({current}). Choosing {name} will replace it once your payment is confirmed.",
     "add_plan_replace_confirm": "Replace my current plan",
-    "pending_plan_heading": "Plan awaiting payment",
-    "pending_plan_body": "{name} · {price}. Complete the payment to activate it.",
     "pending_plan_pay": "Pay now",
     "plan_pending_payment_amount": "Pending payment: {amount}",
     "plan_pending_cancel": "Cancel",
