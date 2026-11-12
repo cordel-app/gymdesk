@@ -529,6 +529,7 @@ Constraints that are purely about how the code is organised stay in `CLAUDE.md` 
 - **A recurring Product added mid-cycle pays only the days left in the period, then bills with the plan** (#1867 stage 4). A Product joining a running plan is charged the monthly price ÷ 31 × the days until the plan's next billing date (4-week and weekly cadences use their own length), shown as *Prorated: N of M days*, and from then on bills on the plan's dates at the full price; a Product added on a billing date pays the full price. Enforced in `domain/billingSimulation.ts` (`buildServiceStream()`).
 
 - **A Professional Service can require a minimum number of participants** (#2293). `min_participants` is optional, never above a limited Max Capacity, and an event delivered by that service cannot be completed with fewer booked members (staff cancel it instead). Enforced in `domain/baseProfessionalServices.ts` and `POST /class-sessions/:id/complete`.
+- **A Professional Service has a Booking Type** (#2664). `family_only` (the participants of one booking belong to the same family) or `open_group` (they may come from different families); existing services are `open_group`. It is configuration only for now: no booking rule reads it. Enforced in `domain/serviceBookingType.ts` and `chk_professional_services_booking_type`.
 
 - **A Membership Plan's center access is Specific centers, All centers (future ones included) or Only the Member's Default Center; a Member's access is the union of their live plans** (#2383) — `api/src/domain/planCenterAccess.ts`.
 

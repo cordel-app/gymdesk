@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capacityError, emptyForm, formErrorKey, formFor, matchesSearch, toPayload, type PsRow as BasePs } from '../components/professionalServices/psModel';
+import { bookingTypeLabelKey, capacityError, emptyForm, formErrorKey, formFor, matchesSearch, toPayload, type PsRow as BasePs } from '../components/professionalServices/psModel';
 
 const row: BasePs = {
   id: 3, name: 'PT', description: 'One to one', max_capacity: 4,
@@ -20,7 +20,7 @@ describe('base professional service form (#1817)', () => {
     expect(f.texts.ca.name).toBe('');
     f.texts.ca.name = ' EP-ca ';
     expect(toPayload(f)).toEqual({
-      name: 'PT', description: 'One to one', max_capacity: 4, min_participants: null,
+      name: 'PT', description: 'One to one', max_capacity: 4, min_participants: null, booking_type: 'open_group',
       translations: { es: { name: 'EP', description: null }, ca: { name: 'EP-ca', description: null } },
     });
   });
@@ -83,5 +83,21 @@ describe('translations modal helpers (#2331)', () => {
     expect(next.texts.ca.name).toBe('CA');
     expect(next.texts.en.description).toBe('One to one'); // other field untouched
     expect(f.texts.ca.name).toBe(''); // original not mutated (Cancel keeps saved values)
+  });
+});
+
+describe('Booking Type (#2664)', () => {
+  it('a new form and a row with none default to open_group; a stored value round-trips', () => {
+    expect(emptyForm().booking_type).toBe('open_group');
+    expect(formFor(row).booking_type).toBe('open_group');
+    const f = formFor({ ...row, booking_type: 'family_only' });
+    expect(f.booking_type).toBe('family_only');
+    expect(toPayload(f).booking_type).toBe('family_only');
+  });
+
+  it('labels each value and falls back to the default for an unknown one', () => {
+    expect(bookingTypeLabelKey('family_only')).toBe('booking_type_family_only');
+    expect(bookingTypeLabelKey('open_group')).toBe('booking_type_open_group');
+    expect(bookingTypeLabelKey(undefined)).toBe('booking_type_open_group');
   });
 });
