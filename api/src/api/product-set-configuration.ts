@@ -24,6 +24,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { productSetHistoryIds } from './product-set-history';
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -312,6 +313,8 @@ export async function addProductSetService(tx: Tx, input: {
     [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.origin ?? null, input.productId, input.gymId],
   );
   await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
+  // #2126 stage 3o: the engine loader reads the Product snapshot, so the new line is synced now.
+  await syncProductSnapshotsOfVersion(tx, input.gymId, input.productSetId);
   return insertId;
 }
 
