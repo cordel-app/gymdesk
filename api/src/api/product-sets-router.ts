@@ -36,6 +36,12 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { getRequestLocale } from '../infra/locale';
 import crypto from 'crypto';
+import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
+import { cartCounts } from '../domain/shoppingCart';
+import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
+import { pricingRefusalResponse } from '../domain/productPurchasePricing';
+import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
+import { AssigneeRefused } from './product-assignee';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -770,7 +776,10 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
       id: Number(owned.set.id), status: String(owned.set.status),
       previous_product_set_id: owned.set.previous_product_set_id != null ? Number(owned.set.previous_product_set_id) : null,
     }, { memberId: owned.memberId, ownerMemberId: Number(owned.set.owner_member_id) });
-    res.json({ ...shape(owned.set), ...view });
+    // #2746: the one-time Products in the cart, and what the cart holds, for the owner only.
+    const isOwner = Number(owned.set.owner_member_id) === owned.memberId;
+    const purchases = isOwner ? (await loadSetPurchases(db, gymId, Number(owned.set.id))).map(({ snapshot_id, snapshot_table, member_id, validity_days, ...p }) => p) : [];
+    res.json({ ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }) });
   } catch (err) { next(err); }
 });
 
@@ -896,4 +905,82 @@ meProductSetsRouter.delete('/:id/plans/:planSnapshotId', async (req, res, next) 
   if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
   return editDraft(req, res, 'update', (tx, d) => removeMemberPlanFromDraft(tx, d, snapshotId), next,
     { remove_plan: snapshotId, source: 'members_app' });
+});
+
+
+/**
+ * #2746 stage 1 — a one-time Product (a Sessions package included) joins the member's own Draft:
+ * written as a `draft` purchase by the very path a staff draft takes (`resolveDraftPurchase()`:
+ * the member catalogue, One per Member, the family assignee, every Promotion re-resolved and
+ * priced by `priceProductPurchase()`), then linked to the Draft (`set-purchases.ts`) under its
+ * lock. Nothing is charged: the Draft's own Save & Pay charges it. The body names a Product, its
+ * Promotions and who it is for — never a price or a discount.
+ */
+meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
+  const owned = await ownedSet(req, res);
+  if (!owned) return;
+  const { gymId } = getTenantContext(req);
+  const body = req.body ?? {};
+  const productId = Number(body.product_id);
+  if (!Number.isInteger(productId) || productId <= 0) return res.status(400).json({ error: 'product_id must be a positive integer' });
+  if (body.direct_discount_percent != null && body.direct_discount_percent !== '' && Number(body.direct_discount_percent) !== 0) {
+    return res.status(403).json({ error: 'direct_discount_not_allowed', message: 'A direct discount can only be applied by an Admin' });
+  }
+  const promotionIds = body.promotion_ids == null ? [] : parseIds(body.promotion_ids);
+  if (promotionIds === null) return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
+  try {
+    const { rows: m } = await db.query<{ name: string; email: string; billing_frequency: string | null }>(
+      `SELECT m.name, m.email, p.billing_frequency FROM members m
+         LEFT JOIN products p ON p.id = ? AND p.gym_id = m.gym_id
+        WHERE m.gym_id = ? AND m.id = ?`, [productId, gymId, owned.memberId]);
+    if (!m[0]) return res.status(404).json({ error: 'Member not found' });
+    // A recurring Product is a line of the Draft (`POST …/services`), never a one-time purchase.
+    if (isDraftAddable({ billing_frequency: m[0].billing_frequency })) {
+      return res.status(400).json({ error: 'recurring_product', message: 'A recurring Product is added through /services' });
+    }
+    if ((await loadSetPurchases(db, gymId, Number(owned.set.id))).some((p) => p.product_id === productId)) {
+      return res.status(409).json({ error: 'already_in_cart', message: 'This Product is already in the cart' });
+    }
+    const input = {
+      gymId, memberId: owned.memberId, memberName: m[0].name, memberEmail: m[0].email, productId,
+      promotionIds, assignedMemberInput: body.assigned_member_id,
+    };
+    const resolved = await resolveDraftPurchase(input);
+    return editDraft(req, res, 'update', async (tx, d) => {
+      const purchaseId = await writeDraftPurchase(tx, input, resolved);
+      await linkPurchaseToSet(tx, gymId, purchaseId, Number(d.id));
+      await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [Number(d.id)]);
+      return { ok: true as const, purchase_id: purchaseId, amount: resolved.snapshot.amount, currency: resolved.snapshot.currency };
+    }, next, { add_purchase: productId, promotion_ids: promotionIds, source: 'members_app' });
+  } catch (err: any) {
+    if (err instanceof PurchaseRefused) {
+      const { status, ...out } = purchaseBlockResponse(err.block);
+      return res.status(status).json(out);
+    }
+    if (err instanceof PricingRefused) {
+      const { status, ...out } = pricingRefusalResponse(err.refusal);
+      return res.status(status).json(out);
+    }
+    if (err instanceof PromotionRefused) {
+      return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is no longer available for this product' });
+    }
+    if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
+    if (err?.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #2746 stage 1 — removes one one-time Product from the member's Draft, leaving every other item. */
+meProductSetsRouter.delete('/:id/purchases/:purchaseId', async (req, res, next) => {
+  if (!(await ownedSet(req, res))) return;
+  const { gymId } = getTenantContext(req);
+  const purchaseId = Number(req.params.purchaseId);
+  if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'not_found' });
+  return editDraft(req, res, 'update', async (tx, d) => {
+    if (!(await removeSetPurchase(tx, gymId, Number(d.id), purchaseId))) {
+      throw Object.assign(new Error('not_found'), { status: 404 });
+    }
+    await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [Number(d.id)]);
+    return { ok: true as const, removed_purchase: purchaseId };
+  }, next, { remove_purchase: purchaseId, source: 'members_app' });
 });

@@ -15,6 +15,7 @@ import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
+import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -126,10 +127,16 @@ export async function initialCharge(
       }))
       .filter((e) => e.lines.length > 0);
   }
-  if (first.length === 0) return null;
-  const lines = first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l)));
+  // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
+  const purchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
+  if (first.length === 0 && purchases.length === 0) return null;
+  const lines = [...first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l))), ...purchases.map((p) => p.line)];
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
-  return { amount: linesTotal(lines), lines, simulationLines: first.flatMap((e) => e.lines), scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null };
+  return {
+    amount: linesTotal(lines), lines,
+    simulationLines: [...first.flatMap((e) => e.lines), ...purchases.map((p) => p.simulation)],
+    scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null,
+  };
 }
 
 async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
@@ -162,7 +169,10 @@ export async function ensureInitialEvent(tx: Tx, input: {
         AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
       ORDER BY be.id DESC LIMIT 1 FOR UPDATE`,
     [input.gymId, input.productSetId]);
-  if (existing[0]) return Number(existing[0].id);
+  if (existing[0]) {
+    await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, Number(existing[0].id));
+    return Number(existing[0].id);
+  }
 
   let scheduleId: number | null = null;
   if (input.charge.scheduleKey) {
@@ -180,6 +190,8 @@ export async function ensureInitialEvent(tx: Tx, input: {
       scheduleId, input.startsAt, input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
+  // #2746: each one-time Product of the cart reaches its payment through this event.
+  await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, insertId);
   return insertId;
 }
 
