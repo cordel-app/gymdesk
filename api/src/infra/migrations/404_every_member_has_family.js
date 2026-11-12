@@ -8,12 +8,13 @@
  * owner of a solo family is the member, so payer resolution (#2123 stage 2) answers the
  * member themself, as it did when they had no family.
  *
- * Idempotent: a member already in a family is skipped, and each family is written in its
- * own transaction, so a re-run after a crash finishes the rest.
+ * Idempotent: a member already in a family is skipped, including one whose family the
+ * application created while this ran (the unique `member_id` key answers ER_DUP_ENTRY, and
+ * the member's family is then simply theirs). Knex runs a migration in one transaction,
+ * so the per-member blocks are savepoints and a crash rolls the whole backfill back.
  *
- * `down` removes only the solo families this migration could have created: single-member
- * families created by 'System' whose name is still the member's own. It cannot tell them
- * apart from a solo family created the same way by hand, which is the same shape.
+ * `down` is a no-op: a solo family is indistinguishable from one the application created
+ * after the migration, and deleting families would break "every member has a family".
  */
 exports.up = async (knex) => {
   const [rows] = await knex.raw(`
@@ -32,16 +33,12 @@ exports.up = async (knex) => {
         'INSERT INTO family_members (gym_id, family_id, member_id, is_owner, created_by) VALUES (?, ?, ?, 1, ?)',
         [m.gym_id, res.insertId, m.id, 'System']);
       created += 1;
+    }).catch((err) => {
+      if (err && err.code === 'ER_DUP_ENTRY') return; // the application gave them one meanwhile
+      throw err;
     });
   }
   console.log(`migration 404: ${created} solo famil(ies) created`);
 };
 
-exports.down = async (knex) => {
-  await knex.raw(`
-    DELETE f FROM families f
-      JOIN family_members fm ON fm.family_id = f.id AND fm.is_owner = 1
-      JOIN members m ON m.id = fm.member_id
-     WHERE f.created_by = 'System' AND f.name = m.name
-       AND (SELECT COUNT(*) FROM family_members x WHERE x.family_id = f.id) = 1`);
-};
+exports.down = async () => {};
