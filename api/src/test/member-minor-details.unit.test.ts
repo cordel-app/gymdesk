@@ -57,6 +57,7 @@ describe('Add plan', () => {
   it('is absent when the gym has no plan to offer', () => {
     const src = read('src/app/[locale]/membership/page.tsx');
     expect(src).toContain('const gymOffersPlans = planCatalogue === null || planCatalogue.length > 0;');
-    expect(src).toMatch(/!pendingMembership && !catalogueOpen && gymOffersPlans/);
+    // #2737 — the inline catalogue is gone; the button opens the Add Plan page.
+    expect(src).toMatch(/!pendingMembership && gymOffersPlans && \(/);
   });
 });

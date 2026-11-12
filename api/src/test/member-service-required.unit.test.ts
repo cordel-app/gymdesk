@@ -39,8 +39,8 @@ describe('Members App routing helpers', () => {
     expect(requiredServiceIds(null)).toEqual([]);
   });
   it('builds and reads back the filtered path', () => {
-    expect(productsPathForServices([4, 7])).toBe('/membership?professional_service_ids=4,7');
-    expect(productsPathForServices([])).toBe('/membership');
+    expect(productsPathForServices([4, 7])).toBe('/membership/add-product?professional_service_ids=4,7');
+    expect(productsPathForServices([])).toBe('/membership/add-product');
     expect(serviceFilterFromParam('4,7')).toEqual([4, 7]);
     expect(serviceFilterFromParam('4,x')).toEqual([]);
   });

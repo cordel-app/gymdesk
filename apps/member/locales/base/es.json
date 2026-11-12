@@ -553,7 +553,9 @@
     "summary_error_changed": "Tu selección ha cambiado. Revísala de nuevo.",
     "summary_error_amount": "No se ha podido calcular el importe. Inténtalo más tarde.",
     "summary_error_generic": "No se ha podido confirmar tu selección. Inténtalo de nuevo.",
-    "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde."
+    "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde.",
+    "add_product": "+ Añadir producto",
+    "back_to_products": "← Mis Productos"
   },
   "payments": {
     "title": "Pagos",

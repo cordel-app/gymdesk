@@ -6,6 +6,8 @@
 // Pure: it decides the code, reads the ids off the error and spells the link
 // and the filter; the pages resolve every string.
 
+import { ADD_PRODUCT_PATH } from './membershipPages';
+
 export const PROFESSIONAL_SERVICE_REQUIRED_CODE = 'professional_service_required';
 
 /** The query parameter the Products page reads, and `GET /me/products` accepts. */
@@ -26,8 +28,9 @@ export function requiredServiceIds(err: unknown): number[] {
 }
 
 /** The in-app path of the filtered subsection (the caller prefixes the locale). */
+// #2737 — the Products catalogue is the Add Product page's, no longer My Products'.
 export function productsPathForServices(ids: number[]): string {
-  return ids.length ? `/membership?${SERVICE_FILTER_PARAM}=${ids.join(',')}` : '/membership';
+  return ids.length ? `${ADD_PRODUCT_PATH}?${SERVICE_FILTER_PARAM}=${ids.join(',')}` : ADD_PRODUCT_PATH;
 }
 
 /** Reads the filter back off the page's query string; garbage is no filter. */

@@ -1,0 +1,25 @@
+// #2737 — My Products shows what the member holds; buying happens on two
+// pages of their own. One component renders all three (the route decides which
+// part of it is shown), so the plan and product purchasing workflows are moved,
+// never copied.
+//
+// Pure: the paths and the mode a pathname selects. The caller prefixes the locale.
+
+export type MembershipPageMode = 'overview' | 'add_plan' | 'add_product';
+
+/** My Products. */
+export const MEMBERSHIP_PATH = '/membership';
+/** The Membership Plan purchasing page. */
+export const ADD_PLAN_PATH = '/membership/add-plan';
+/** The Product purchasing page (One-off, Sessions packages and recurring Products). */
+export const ADD_PRODUCT_PATH = '/membership/add-product';
+
+/** Which part of the page a pathname (`/{locale}/membership/…`) shows. */
+export function membershipPageMode(pathname: string | null | undefined): MembershipPageMode {
+  const segments = (pathname ?? '').split('/').filter(Boolean);
+  // segments: [locale, 'membership', sub?]
+  if (segments[1] !== 'membership') return 'overview';
+  if (segments[2] === 'add-plan') return 'add_plan';
+  if (segments[2] === 'add-product') return 'add_product';
+  return 'overview';
+}
