@@ -42,7 +42,7 @@ import {
   type MemberServiceBalanceItem,
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
-import { MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
+import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
 import {
   type MemberPendingPlan,
@@ -100,6 +100,7 @@ import {
   setProductLines,
   setStatusKey,
   type MemberSetPlan,
+  pendingPaymentPlanSnapshotId,
   draftAddedCount,
   draftErrorKey,
   draftProductState,
@@ -728,6 +729,7 @@ export default function MembershipPage() {
   function renderMyPlans() {
     if (!setViewLoaded) return null;
     const plans = setPlans(setView);
+    const payablePlanId = pendingPaymentPlanSnapshotId(setView, appMember?.id ?? null);
     return (
       <section style={styles.section}>
         <h2 style={styles.h2}>{t('membership.my_plans_heading')}</h2>
@@ -735,69 +737,109 @@ export default function MembershipPage() {
           <div style={styles.emptyCard}>
             <p style={styles.hint}>{t('membership.my_plans_empty')}</p>
           </div>
-        ) : plans.map((plan) => {
-          const status = plan.status ?? setView?.status ?? 'active';
-          const benefits = (plan.benefits ?? []) as Benefit[];
-          const forLine = planForLine(plan);
-          return (
-            <div key={plan.plan_snapshot_id} style={{ ...styles.card, marginBottom: 12 }}>
-              <div style={styles.cardHead}>
-                <div>
-                  <p style={styles.planName}>{plan.plan_name ?? '—'}</p>
-                  {plan.plan_description && <p style={styles.planDesc}>{plan.plan_description}</p>}
-                  {forLine && <p style={styles.planDesc}>{forLine}</p>}
-                  {plan.entitlement_only && <p style={styles.planDesc}>{t('membership.plan_entitlement_only')}</p>}
-                </div>
-                <StatusPill status={status} label={t(`membership.status.${status}` as any)} />
-              </div>
-              <dl style={styles.dl}>
-                <div style={styles.row}>
-                  <dt style={styles.dt}>{t('membership.price')}</dt>
-                  <dd style={styles.dd}>
-                    {plan.membership_fee != null ? plan.membership_fee.toFixed(2) : '—'}
-                    {plan.discount_reason && <span style={styles.discount}> · {plan.discount_reason}</span>}
-                  </dd>
-                </div>
-                <div style={styles.row}>
-                  <dt style={styles.dt}>{t('membership.member_since')}</dt>
-                  <dd style={styles.dd}>{day(plan.starts_at ?? null) ?? '—'}</dd>
-                </div>
-                <div style={styles.row}>
-                  <dt style={styles.dt}>{t('membership.ends')}</dt>
-                  <dd style={styles.dd}>{day(plan.ends_at ?? null) ?? t('membership.ongoing')}</dd>
-                </div>
-              </dl>
-              {benefits.length > 0 && (
-                <div style={styles.nestedBenefits}>
-                  <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
-                  {ITEM_GROUPS.map((group) => {
-                    const rows = benefits.filter((b) => itemGroupOf(b) === group);
-                    if (rows.length === 0) return null;
-                    return (
-                      <div key={group} style={styles.benefitGroup}>
-                        <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
-                        <ul style={styles.benefitList}>
-                          {rows.map((b) => (
-                            <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
-                              <span>{b.name}</span>
-                              <span style={styles.benefitMeta}>× {b.quantity}</span>
-                              <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
-                              {b.billing_frequency && (
-                                <span style={styles.benefitMeta}>· {t(`membership.frequency.${b.billing_frequency}` as any)}</span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        ) : (
+          <ul style={styles.planList}>
+            {plans.map((plan) => <MemberPlanCard key={plan.plan_snapshot_id} item={myPlanCardItem(plan, plan.plan_snapshot_id === payablePlanId)} />)}
+          </ul>
+        )}
       </section>
     );
+  }
+
+  /**
+   * #2744 — a plan the member holds, drawn with the Add Plan catalogue's own
+   * card (one plan card implementation): picture, name, description, included
+   * and optional Products, price and cadence, and the existing details once
+   * expanded. A plan awaiting its first payment says so under its name with its
+   * own *Pay now* (the existing consent + checkout) and *Cancel* (the existing
+   * cancellation of the version awaiting payment).
+   */
+  function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
+    const status = plan.status ?? setView?.status ?? 'active';
+    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean })[];
+    const forLine = planForLine(plan);
+    const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
+    const names = (mandatory: boolean) => benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name).join(', ') || null;
+    const pendingAmount = payable && pendingMembership?.membership_fee != null
+      ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
+    return {
+      key: String(plan.plan_snapshot_id),
+      name: plan.plan_name ?? '—',
+      description: [plan.plan_description, forLine, plan.entitlement_only ? t('membership.plan_entitlement_only') : null].filter(Boolean).join(' · ') || null,
+      price: plan.membership_fee != null ? formatPaymentAmount(plan.membership_fee, 'EUR', gymFmt) : null,
+      frequency: frequencyKey
+        ? t(frequencyKey as any)
+        : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
+      imageUrl: plan.plan_image_thumbnail_url ?? null,
+      imageFullUrl: plan.plan_image_url ?? null,
+      includedLabel: t('membership.plan_included'),
+      included: names(true),
+      optionalLabel: t('membership.plan_optional'),
+      optional: names(false),
+      status: <StatusPill status={status} label={t(`membership.status.${status}` as any)} />,
+      notice: payable ? (
+        <div style={styles.planPendingPayment} data-plan-pending-payment>
+          <span style={styles.planPendingText}>
+            {t('membership.plan_pending_payment_amount', { amount: pendingAmount ?? '—' })}
+          </span>
+          <span style={styles.planPendingActions}>
+            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy || submitting} onClick={cancelPendingSet}>
+              {t('membership.plan_pending_cancel')}
+            </button>
+            <button type="button" style={primaryButtonStyle} disabled={commitBusy || submitting} onClick={openConsent}>
+              {t('membership.pending_plan_pay')}
+            </button>
+          </span>
+          {commitError && <span role="alert" style={{ ...styles.draftError, flexBasis: '100%' }}>{t(commitError as any)}</span>}
+        </div>
+      ) : null,
+      details: (
+        <>
+          <dl style={styles.dl}>
+            {plan.discount_reason && (
+              <div style={styles.row}>
+                <dt style={styles.dt}>{t('membership.price')}</dt>
+                <dd style={styles.dd}><span style={styles.discount}>{plan.discount_reason}</span></dd>
+              </div>
+            )}
+            <div style={styles.row}>
+              <dt style={styles.dt}>{t('membership.member_since')}</dt>
+              <dd style={styles.dd}>{day(plan.starts_at ?? null) ?? '—'}</dd>
+            </div>
+            <div style={styles.row}>
+              <dt style={styles.dt}>{t('membership.ends')}</dt>
+              <dd style={styles.dd}>{day(plan.ends_at ?? null) ?? t('membership.ongoing')}</dd>
+            </div>
+          </dl>
+          {benefits.length > 0 && (
+            <div style={styles.nestedBenefits}>
+              <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
+              {ITEM_GROUPS.map((group) => {
+                const rows = benefits.filter((b) => itemGroupOf(b) === group);
+                if (rows.length === 0) return null;
+                return (
+                  <div key={group} style={styles.benefitGroup}>
+                    <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
+                    <ul style={styles.benefitList}>
+                      {rows.map((b) => (
+                        <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                          <span>{b.name}</span>
+                          <span style={styles.benefitMeta}>× {b.quantity}</span>
+                          <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
+                          {b.billing_frequency && (
+                            <span style={styles.benefitMeta}>· {t(`membership.frequency.${b.billing_frequency}` as any)}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ),
+    };
   }
 
   function renderMyProducts() {
@@ -916,7 +958,10 @@ export default function MembershipPage() {
    * offers to cancel it. Nothing here prices anything.
    */
   function renderSetSummary() {
-    if (setView?.status === 'pending_payment' && appMember != null && setView.owner_member_id === appMember.id) {
+    // #2744 — a version awaiting payment is paid and cancelled from its plan
+    // card; this notice is left only for a version that has no billed plan.
+    if (setView?.status === 'pending_payment' && appMember != null && setView.owner_member_id === appMember.id
+      && pendingPaymentPlanSnapshotId(setView, appMember.id) == null) {
       return (
         <section style={styles.section}>
           <div style={{ ...noticeStyle('info'), display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
@@ -1468,22 +1513,6 @@ export default function MembershipPage() {
   function renderPlansHeader() {
     return (
       <>
-        {pendingMembership && (
-          <div style={styles.pendingPlanCard}>
-            <p style={styles.pendingPlanHeading}>{t('membership.pending_plan_heading')}</p>
-            <p style={styles.pendingPlanBody}>
-              {t('membership.pending_plan_body', {
-                name: pendingMembership.plan_name ?? '—',
-                price: pendingMembership.membership_fee != null ? pendingMembership.membership_fee.toFixed(2) : '—',
-              })}
-            </p>
-            <div style={styles.pendingPlanAction}>
-              <button type="button" style={primaryButtonStyle} onClick={openConsent}>
-                {t('membership.pending_plan_pay')}
-              </button>
-            </div>
-          </div>
-        )}
         {mode === 'overview' && ((!pendingMembership && gymOffersPlans) || products !== null) && (
           <div style={styles.addPlanRow}>
             {!pendingMembership && gymOffersPlans && (
@@ -1911,23 +1940,6 @@ export default function MembershipPage() {
       {renderMyPlans()}
       {renderMyProducts()}
 
-      {/* Payment banner */}
-      {pendingRequest && (
-        <div style={styles.paymentBanner}>
-          <div style={styles.bannerContent}>
-            <div>
-              <p style={styles.bannerHeading}>{t('payment_banner.pending_heading')}</p>
-              <p style={styles.bannerAmount}>
-                {parseFloat(pendingRequest.amount).toFixed(2)} {pendingRequest.currency}
-              </p>
-            </div>
-            <button style={styles.payNowBtn} onClick={openConsent}>
-              {t('payment_banner.pay_now')}
-            </button>
-          </div>
-        </div>
-      )}
-
       {showStartPayment && (
         <div style={styles.startPaymentRow}>
           <button style={styles.startPaymentBtn} onClick={openConsent}>
@@ -2016,19 +2028,14 @@ const styles: Record<string, React.CSSProperties> = {
   // #1122 — the Add plan row, the plan awaiting its first payment, and the
   // choose dialog's text. Every colour is the theme's (#983).
   addPlanRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginBottom: 12 },
-  pendingPlanCard: { ...noticeStyle('warning'), marginBottom: 12 },
-  pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
-  pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },
-  pendingPlanAction: { display: 'flex', justifyContent: 'flex-end', marginTop: 10 },
+  planList: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+  planPendingPayment: { ...noticeStyle('warning'), display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 10px' },
+  planPendingText: { flex: '1 1 160px', fontSize: 13, fontWeight: 600 },
+  planPendingActions: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   emptyCard: { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },
   // Payment banner
-  paymentBanner: { ...noticeStyle('warning'), marginTop: 16, borderRadius: 12, padding: 16 },
-  bannerContent: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  bannerHeading: { margin: 0, fontSize: 14, fontWeight: 600, color: 'inherit' },
-  bannerAmount: { margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: memberTheme.text },
-  payNowBtn: { ...primaryButtonStyle, flexShrink: 0, padding: '10px 20px', fontSize: 14, fontWeight: 700 },
   startPaymentRow: { marginTop: 12, display: 'flex', justifyContent: 'flex-end' },
   startPaymentBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13 },
   // Consent modal

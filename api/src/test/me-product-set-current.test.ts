@@ -71,7 +71,9 @@ describe('GET /me/product-sets/:id — My Plans and My Products from one version
       entitlement_only: false, membership_fee: 40,
     });
     expect(p.beneficiaries).toEqual([expect.objectContaining({ member_id: a.id, name: 'Owner A', is_owner: true })]);
-    expect(p.benefits).toEqual([expect.objectContaining({ category: 'periodical', product_id: towel, quantity: 2 })]);
+    expect(p.benefits).toEqual([expect.objectContaining({ category: 'periodical', product_id: towel, quantity: 2, mandatory: true })]);
+    // #2744 — what the Add Plan catalogue's card draws: the plan's picture and cadence.
+    expect(p).toMatchObject({ plan_image_url: null, plan_image_thumbnail_url: null, billing_interval: 1, billing_unit: 'month' });
 
     // A later catalogue edit moves nothing the version shows.
     await db.query("UPDATE membership_plan_periodical SET quantity = 9 WHERE membership_plan_id = ?", [planId]);
