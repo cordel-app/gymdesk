@@ -4,12 +4,11 @@
 // snapshot tables (`product_{session,oneoff,periodical}_snapshots`, `product_promotion_snapshots`).
 // What still reads the three legacy tables does so on purpose, and this file is the list of it:
 //
-//   - the dual-write of the recurring lines (`product-snapshot-sync.ts`), which re-derives a
-//     version's snapshots *from* its legacy lines and so has to read them (until stage 5c; since
-//     stage 5b a one-time purchase is written by `purchase-writer.ts` and re-derived from nothing);
-//   - the copies a new Product Set version takes of the legacy lines (`cloneConfiguration()`,
-//     `mergeActiveVersionIntoDraft()`), which are writes of the legacy table that happen to
-//     select from it, until stage 5 retires the legacy writers;
+//   - the copies a new Product Set version takes of the legacy lines (`copyRecurringLines()` in
+//     `recurring-line-writer.ts`, for `cloneConfiguration()` and `mergeActiveVersionIntoDraft()`),
+//     which are writes of the legacy table that happen to select from it, until stage 5d retires
+//     the legacy writers. Since stage 5c nothing re-derives a recurring line's snapshot from its
+//     legacy row (since 5b, nothing a purchase's);
 //   - the row locks taken on a legacy recurring line before it is written (`SELECT id … FOR UPDATE`);
 //     a one-time purchase is locked on its snapshot since stage 5b (`lockPurchase()`);
 //   - (until stage 5a) the purchase record joined only for its `payment_request_id`; since 5a a
@@ -27,9 +26,7 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
-  'api/product-snapshot-sync.ts': { count: 2, why: 'the dual-write of the recurring lines: re-derives a version\'s snapshots from its legacy lines (until stage 5c)' },
-  'api/product-set-bridge.ts': { count: 1, why: 'cloneConfiguration() copies the legacy lines into the new version' },
-  'api/plan-snapshot-add.ts': { count: 1, why: 'mergeActiveVersionIntoDraft() copies the legacy lines into the Draft' },
+  'api/recurring-line-writer.ts': { count: 1, why: 'copyRecurringLines(): a new version (cloneConfiguration(), mergeActiveVersionIntoDraft()) copies the legacy lines it writes' },
   'api/product-set-draft.ts': { count: 2, why: 'removeService() / setServiceQuantity() lock the legacy line they write' },
   'scripts/validate-product-snapshots.ts': { count: 10, why: 'read-only report comparing the legacy and snapshot tables' },
 };

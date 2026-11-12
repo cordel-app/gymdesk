@@ -3,12 +3,14 @@
  * rows. Nothing reads these tables yet (stage 3): this module only keeps them equal to what the
  * legacy tables say, in the very transaction that changed the legacy rows.
  *
- * Two idempotent re-derivations, both keyed by the `source_*` columns stage 1 added so the
- * backfill and the dual-write can never disagree about which row is whose:
- *   - `syncProductSnapshotsOfVersion()` — the recurring lines of one ProductSet version
- *     (`member_products_recurrent_snapshot`), the Product-target applications owned by a line and
- *     the Products each froze. Copying a version (`cloneConfiguration()`) copies them by
- *     re-deriving, `is_inherited` included, and creates no purchase, application or charge.
+ * `syncProductSnapshotsOfVersion()` keeps one ProductSet version's recurring line snapshots in
+ * step with the version (status, owner) and re-derives the Product-target applications owned by a
+ * line and the Products each froze, keyed by the `source_*` columns stage 1 added.
+ *
+ * #2126 stage 5c: a recurring line is no longer re-derived from its legacy record. Its one writer
+ * (`recurring-line-writer.ts`) writes the record and the snapshot from the same values; the
+ * re-derivation is now only a test fixture (`src/test/recurringLineSnapshotFixture.ts`), for tests
+ * that insert a legacy line by hand.
  *
  * #2126 stage 5b: a bought one-time Product is no longer re-derived from its record. Its writers
  * write the snapshot from their own values (`purchase-writer.ts`); the re-derivation that used to
@@ -26,37 +28,20 @@ const GRANT_SOURCES: Array<{ kind: string; source: string }> = [
   { kind: 'periodical', source: 'user_membership_promotion_periodical_snapshot' },
 ];
 
-/** Re-derives the recurring Product snapshots of one ProductSet version from its legacy rows. */
+/**
+ * Keeps the recurring Product snapshots of one ProductSet version in step with the version: each
+ * line's status and owner follow the set, and the Product-target Promotions a line owns (with the
+ * Products they froze) are re-derived from their applications.
+ */
 export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  // A line that no longer exists takes its snapshot, promotions, grants and junction row with it (cascade).
+  // #2126 stage 5c: the lines themselves are written by their one writer (`recurring-line-writer.ts`),
+  // so only what moves with the set is refreshed here.
   await tx.query(
-    `DELETE FROM product_periodical_snapshots
-      WHERE gym_id = ? AND product_set_id = ?
-        AND (source_id IS NULL OR source_id NOT IN
-              (SELECT id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?))`,
-    [gymId, productSetId, gymId, productSetId]);
-
-  await tx.query(
-    `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
-        billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
-        origin, schedule_id, line_ref, created_at, assigned_member_id)
-     SELECT s.gym_id, ps.owner_member_id, s.product_set_id, s.product_id, s.id, ps.status, s.is_inherited,
-            COALESCE(s.item_name, p.name), COALESCE(s.item_type, p.type), s.item_billing_frequency, s.quantity,
-            s.currency, s.unit_price, s.list_unit_price, s.direct_discount_percent, s.starts_at, s.ends_at,
-            s.origin, s.schedule_id, s.line_ref, s.created_at, s.assigned_member_id
-       FROM member_products_recurrent_snapshot s
-       JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
-       JOIN products p ON p.id = s.product_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
-     ON DUPLICATE KEY UPDATE
-       member_id = VALUES(member_id), product_id = VALUES(product_id), status = VALUES(status),
-       is_inherited = VALUES(is_inherited), product_name = VALUES(product_name), product_type = VALUES(product_type),
-       billing_frequency = VALUES(billing_frequency), quantity = VALUES(quantity), currency = VALUES(currency),
-       unit_price = VALUES(unit_price), list_price = VALUES(list_price),
-       direct_discount_percent = VALUES(direct_discount_percent), starts_at = VALUES(starts_at),
-       ends_at = VALUES(ends_at), origin = VALUES(origin), schedule_id = VALUES(schedule_id),
-       line_ref = VALUES(line_ref), assigned_member_id = VALUES(assigned_member_id), modified_at = UTC_TIMESTAMP()`,
+    `UPDATE product_periodical_snapshots par
+       JOIN product_sets ps ON ps.id = par.product_set_id AND ps.gym_id = par.gym_id
+        SET par.status = ps.status, par.member_id = ps.owner_member_id
+      WHERE par.gym_id = ? AND par.product_set_id = ?
+        AND (par.status <> ps.status OR par.member_id <> ps.owner_member_id)`,
     [gymId, productSetId]);
 
   // Product-target applications owned by a line of this version.
