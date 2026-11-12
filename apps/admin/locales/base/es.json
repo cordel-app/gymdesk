@@ -343,6 +343,7 @@
     "prof_services_history_returned": "Sesión devuelta",
     "prof_services_history_consumption": "Sesión usada",
     "prof_services_history_plan_renewal": "Asignación del plan renovada",
+    "prof_services_history_member": "Miembro: {name}",
     "section_session_packages": "Bonos",
     "no_session_packages": "No hay bonos.",
     "package_purchased": "Comprado",
