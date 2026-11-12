@@ -46,6 +46,20 @@ export async function validateProductSnapshots(): Promise<{ checks: Check[]; gap
        UNION ALL SELECT g.user_membership_promotion_id FROM user_membership_promotion_periodical_snapshot g) x
        JOIN product_promotion_snapshots pp ON pp.source_application_id = x.user_membership_promotion_id`,
     'SELECT COUNT(*) n FROM product_promotion_grant_snapshots');
+  // #2126 stage 5a: a purchase reaches its payment through `billing_event_{oneoff,session}_snapshots`
+  // (the latest request of the linked event), and that must be the request the legacy record names.
+  await add('purchases whose Billing Event junction reaches the payment request the record names',
+    'SELECT COUNT(*) n FROM member_products_oneoff_snapshot WHERE payment_request_id IS NOT NULL',
+    `SELECT COUNT(*) n FROM member_products_oneoff_snapshot mp
+      WHERE mp.payment_request_id IS NOT NULL AND mp.payment_request_id = COALESCE(
+        (SELECT MAX(pr.id) FROM product_oneoff_snapshots s
+           JOIN billing_event_oneoff_snapshots j ON j.product_oneoff_snapshot_id = s.id
+           JOIN payment_requests pr ON pr.billing_event_id = j.billing_event_id AND pr.gym_id = s.gym_id
+          WHERE s.source_id = mp.id AND s.gym_id = mp.gym_id),
+        (SELECT MAX(pr.id) FROM product_session_snapshots s
+           JOIN billing_event_session_snapshots j ON j.product_session_snapshot_id = s.id
+           JOIN payment_requests pr ON pr.billing_event_id = j.billing_event_id AND pr.gym_id = s.gym_id
+          WHERE s.source_id = mp.id AND s.gym_id = mp.gym_id))`);
 
   const { rows: lines } = await db.query<Record<string, unknown>>(
     `SELECT s.id AS recurrent_snapshot_id, s.gym_id, s.product_id, 'recurring line with no Product Set version' AS reason
@@ -58,7 +72,13 @@ export async function validateProductSnapshots(): Promise<{ checks: Check[]; gap
        FROM user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
       WHERE ump.recurrent_snapshot_id IS NULL`);
-  return { checks, gaps: [...lines, ...apps] };
+  const { rows: unlinked } = await db.query<Record<string, unknown>>(
+    `SELECT mp.id AS member_product_id, mp.gym_id, mp.payment_request_id,
+            'purchase whose payment request has no Billing Event' AS reason
+       FROM member_products_oneoff_snapshot mp
+       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
+      WHERE pr.billing_event_id IS NULL`);
+  return { checks, gaps: [...lines, ...apps, ...unlinked] };
 }
 
 if (require.main === module) {

@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { db } from '../infra/db';
 import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
 import { cancelAbandonedPurchases, completeProductPurchase } from '../api/me-products';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, linkTestPurchaseRequestToEvent } from './helpers';
 
 let gymId: string;
 let memberId: number;
@@ -30,6 +30,7 @@ async function purchase(opts: {
      VALUES (?, NULL, ?, '20.00', 'EUR', NULL, ?, 'monei', UUID(), ?, ?,
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
     [gymId, memberId, opts.requestStatus, `pay_${token}`, token])).insertId;
+  await linkTestPurchaseRequestToEvent(gymId, memberId, requestId);
   const purchaseId = (await db.query<any>(
     `INSERT INTO member_products_oneoff_snapshot
        (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,

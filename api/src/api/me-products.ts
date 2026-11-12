@@ -712,14 +712,13 @@ export async function completeProductPurchase(
   // the end date is computed once, here. The UPDATE below is still constrained on
   // `pending_payment`, so a duplicate webhook rewrites neither date.
   // #2126 stage 3p: the pending purchase (its validity and frequency) is read from the Product
-  // snapshot tables, synced in the transaction that created it; the purchase record is joined
-  // only for its `payment_request_id` link.
+  // snapshot tables, synced in the transaction that created it; since stage 5a its payment
+  // request is reached through the Billing Event junction (`purchase-snapshots.ts`).
   const { rows: pending } = await tx.query<any>(
     `SELECT mp.id, mp.validity_days, mp.billing_frequency, g.time_zone
        FROM ${purchaseSnapshotsSql('gym_id = ? AND status = ?')} mp
-       JOIN member_products_oneoff_snapshot rec ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
        JOIN gyms g ON g.id = mp.gym_id
-      WHERE rec.payment_request_id = ?`,
+      WHERE mp.payment_request_id = ?`,
     [...purchaseSnapshotParams([gymId, PENDING_PURCHASE_STATUS]), paymentRequestId],
   );
   if (!pending[0]) return 0;
@@ -785,13 +784,12 @@ export async function cancelProductPurchase(
 export async function cancelAbandonedPurchases(
   conn: Pick<typeof db, 'query'> = db,
 ): Promise<number> {
-  // #2126 stage 3p: the abandoned purchases are listed from the Product snapshot tables; the
-  // purchase record is joined only for its `payment_request_id` link. The UPDATE below is still
+  // #2126 stage 3p: the abandoned purchases are listed from the Product snapshot tables, their
+  // payment reached through the Billing Event junction (stage 5a). The UPDATE below is still
   // the legacy row's (the writer), and each one is re-synced after it.
   const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
     `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ?')} mp
-       JOIN member_products_oneoff_snapshot rec ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
-       JOIN payment_requests pr ON pr.id = rec.payment_request_id AND pr.gym_id = mp.gym_id
+       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE pr.status IN ('expired', 'failed')`,
     purchaseSnapshotParams([PENDING_PURCHASE_STATUS]),
   );
@@ -838,11 +836,10 @@ export async function reissuePurchaseCheckout(input: {
   gymId: string; memberId: number; purchaseId: number; requestLocale?: string;
 }): Promise<{ checkoutUrl: string } | null> {
   // #2126 stage 3m: the purchase (its member and its pending status) is read from the Product
-  // snapshot tables; the purchase record is joined only for its `payment_request_id` link.
+  // snapshot tables; its payment through the Billing Event junction (stage 5a).
   const { rows } = await db.query<any>(
     `SELECT pr.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
-       JOIN member_products_oneoff_snapshot rec ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
-       JOIN payment_requests pr ON pr.id = rec.payment_request_id AND pr.gym_id = mp.gym_id
+       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE mp.id = ? AND mp.status = ? AND pr.status = 'pending'`,
     [...memberPurchaseSnapshotParams(input.gymId, input.memberId), input.purchaseId, PENDING_PURCHASE_STATUS],
   );

@@ -32,13 +32,15 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
         `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref, pr.source,
                 g.name AS gym_name,
                 m.name AS member_name,
-                -- #2126 stage 3f: the name comes from the Product snapshot of the purchase; the
-                -- purchase record is joined only for its payment_request_id link.
+                -- #2126 stage 5a: the name comes from the Product snapshot linked to this request's
+                -- Billing Event (billing_event_oneoff_snapshots / billing_event_session_snapshots), never the purchase record.
                 COALESCE(
-                  (SELECT pos.product_name FROM product_oneoff_snapshots pos
-                    WHERE pos.member_product_id = mprod.id AND pos.gym_id = mprod.gym_id LIMIT 1),
-                  (SELECT pss.product_name FROM product_session_snapshots pss
-                    WHERE pss.member_product_id = mprod.id AND pss.gym_id = mprod.gym_id LIMIT 1)
+                  (SELECT pos.product_name FROM billing_event_oneoff_snapshots jo
+                     JOIN product_oneoff_snapshots pos ON pos.id = jo.product_oneoff_snapshot_id
+                    WHERE jo.billing_event_id = pr.billing_event_id AND pos.gym_id = pr.gym_id LIMIT 1),
+                  (SELECT pss.product_name FROM billing_event_session_snapshots js
+                     JOIN product_session_snapshots pss ON pss.id = js.product_session_snapshot_id
+                    WHERE js.billing_event_id = pr.billing_event_id AND pss.gym_id = pr.gym_id LIMIT 1)
                 ) AS product_name,
                 bp.recurring_billing_interval,
                 bp.recurring_billing_unit,
@@ -54,7 +56,6 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
          -- nullable). An INNER JOIN answered "token not found or expired" for
          -- every purchase, which is indistinguishable from a real expiry.
          LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
-         LEFT JOIN member_products_oneoff_snapshot mprod ON mprod.payment_request_id = pr.id
          LEFT JOIN billing_policies bp
            ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL

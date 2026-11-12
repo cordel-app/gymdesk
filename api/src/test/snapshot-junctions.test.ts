@@ -103,4 +103,36 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
     expect((await db.query<any>('SELECT id FROM billing_event_oneoff_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
   });
+
+  it('a bought Sessions package snapshot is linked to the Billing Event of its payment request (#2126 stage 5a)', async () => {
+    const buyer = await member();
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, billing_frequency, amount, units, status, is_system, currency)
+       VALUES (?, ?, 'sessions', 'once', 50.00, 5, 'active', 0, 'EUR')`, [gymId, `JS-${uniq()}`]);
+    const { insertId: eventId } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, billing_date)
+       VALUES (?, ?, 'product_purchase', 'system', 50.00, ?)`, [gymId, buyer, TODAY]);
+    const { insertId: requestId } = await db.query(
+      `INSERT INTO payment_requests (gym_id, member_id, amount, status, source, billing_event_id)
+       VALUES (?, ?, 50.00, 'pending', 'product_purchase', ?)`, [gymId, buyer, eventId]);
+    const { insertId: purchaseId } = await db.query(
+      `INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, billing_frequency, units, amount, currency, status, payment_request_id)
+       VALUES (?, ?, ?, 'Five sessions', 'sessions', 'once', 5, 50.00, 'EUR', 'pending_payment', ?)`, [gymId, buyer, productId, requestId]);
+
+    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    const { rows } = await db.query<any>(
+      `SELECT s.source_id FROM billing_event_session_snapshots j
+         JOIN product_session_snapshots s ON s.id = j.product_session_snapshot_id
+        WHERE j.billing_event_id = ?`, [eventId]);
+    expect(rows.map((r: any) => Number(r.source_id))).toEqual([Number(purchaseId)]);
+    // Never in the one-off junction: a Sessions package keeps its own snapshot table.
+    expect((await db.query<any>('SELECT id FROM billing_event_oneoff_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
+
+    // Re-syncing adds nothing (idempotent), and discarding the purchase removes the snapshot and its link.
+    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(1);
+    await db.query('DELETE FROM member_products_oneoff_snapshot WHERE id = ?', [purchaseId]);
+    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
+  });
 });

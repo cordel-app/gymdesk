@@ -9,9 +9,11 @@
  * which every Promotion snapshot and route is still keyed on) and `amount` is what was charged
  * (`unit_price`, written from the purchase's `amount`).
  *
- * `member_products_oneoff_snapshot` stays the purchase and financial record (its
- * `payment_request_id` is how a purchase reaches its payment), so a reader that needs the payment
- * joins it through `member_product_id`; nothing else is read from it.
+ * #2126 stage 5a: each row also reports `payment_request_id`, the purchase's payment, reached through
+ * `Payment Request -> Billing Event <-> snapshot` (`billing_event_{oneoff,session}_snapshots`, the
+ * owner's option A) and never through the legacy `member_products_oneoff_snapshot` record: the
+ * **latest** request of the linked Billing Event, by id (the owner's default; a purchase has one request
+ * and *Pay* reuses it). A purchase whose snapshot is linked to no event (a draft) reports NULL.
  */
 const PURCHASE_SNAPSHOT_COLUMNS = `
   source_id AS id, gym_id, member_id, product_id, status, product_name, product_type,
@@ -19,16 +21,28 @@ const PURCHASE_SNAPSHOT_COLUMNS = `
   origin, validity_days, valid_until, cancelled_on, tax_rate_percent, list_price, direct_discount_percent,
   direct_discount_amount, assigned_member_id, member_product_id`;
 
+/** The purchase's payment request, from the arm's own Billing Event junction (see the header). */
+function paymentRequestColumn(table: string, junction: string, snapshotCol: string): string {
+  return `(SELECT MAX(pr.id) FROM ${junction} j
+            JOIN payment_requests pr ON pr.billing_event_id = j.billing_event_id AND pr.gym_id = ${table}.gym_id
+           WHERE j.${snapshotCol} = ${table}.id) AS payment_request_id`;
+}
+
+const SESSION_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
+  ${paymentRequestColumn('product_session_snapshots', 'billing_event_session_snapshots', 'product_session_snapshot_id')}`;
+const ONEOFF_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
+  ${paymentRequestColumn('product_oneoff_snapshots', 'billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id')}`;
+
 /**
  * The member's purchases as a derived table, filtered per arm so each table is read through its
  * own `(gym_id, member_id)` index rather than after the union. Bind `memberPurchaseSnapshotParams()`
  * in its place.
  */
 export const MEMBER_PURCHASE_SNAPSHOTS_SQL = `(
-  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_session_snapshots
+  SELECT ${SESSION_ARM_COLUMNS} FROM product_session_snapshots
    WHERE source_id IS NOT NULL AND gym_id = ? AND member_id = ?
   UNION ALL
-  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_oneoff_snapshots
+  SELECT ${ONEOFF_ARM_COLUMNS} FROM product_oneoff_snapshots
    WHERE source_id IS NOT NULL AND gym_id = ? AND member_id = ?
 )`;
 
@@ -45,10 +59,10 @@ export function memberPurchaseSnapshotParams(gymId: string, memberId: number): A
  */
 export function purchaseSnapshotsSql(predicate: string): string {
   return `(
-  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_session_snapshots
+  SELECT ${SESSION_ARM_COLUMNS} FROM product_session_snapshots
    WHERE source_id IS NOT NULL AND ${predicate}
   UNION ALL
-  SELECT ${PURCHASE_SNAPSHOT_COLUMNS} FROM product_oneoff_snapshots
+  SELECT ${ONEOFF_ARM_COLUMNS} FROM product_oneoff_snapshots
    WHERE source_id IS NOT NULL AND ${predicate}
 )`;
 }

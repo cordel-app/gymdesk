@@ -390,6 +390,23 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
  * function name only.
  */
 /**
+ * #2126 stage 5a — gives a one-time purchase's payment request the `product_purchase` Billing Event
+ * every real purchase path writes with it (#1325 PR 2). A purchase reaches its payment through its
+ * snapshot's Billing Event junction, so a fixture request with no event is unreachable. Call it
+ * before the purchase is synced (`syncProductSnapshotForPurchase()` writes the junction).
+ */
+export async function linkTestPurchaseRequestToEvent(
+  gymId: string, memberId: number, requestId: number, amount = '20.00',
+): Promise<number> {
+  const { insertId } = await db.query<any>(
+    `INSERT INTO billing_events (gym_id, member_id, event_type, amount, source, created_by)
+     VALUES (?, ?, 'product_purchase', ?, 'provider', 'Test')`, [gymId, memberId, amount]);
+  await db.query('UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?',
+    [insertId, requestId, gymId]);
+  return Number(insertId);
+}
+
+/**
  * #2126 stage 3d — inserts a one-time purchase row (`INSERT INTO member_products_oneoff_snapshot …`)
  * and re-derives its Product snapshot, as every application writer does in its own transaction:
  * the purchase readers read the snapshot tables, so a fixture written straight into the purchase
