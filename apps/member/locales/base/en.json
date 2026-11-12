@@ -384,7 +384,7 @@
     "past_plans_heading": "Past Membership Plans",
     "other_plans_heading": "Your other Membership Plans",
     "other_plans_count": "{count, plural, one {# plan} other {# plans}}",
-    "add_plan": "+ Add plan",
+    "add_plan": "+ Add Plan",
     "add_plan_title": "My new plan",
     "plan_ov_duration": "Billing & Duration",
     "plan_ov_free": "Free period (periods)",
@@ -553,7 +553,9 @@
     "summary_error_changed": "Your selection changed. Please review it again.",
     "summary_error_amount": "The amount due could not be calculated. Please try again later.",
     "summary_error_generic": "Your selection could not be confirmed. Please try again.",
-    "summary_error_unresolved": "A payment is still being processed. Please try again later."
+    "summary_error_unresolved": "A payment is still being processed. Please try again later.",
+    "add_product": "+ Add Product",
+    "back_to_products": "← My Products"
   },
   "payments": {
     "title": "Payments",

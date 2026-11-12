@@ -6,7 +6,8 @@ import { useDraftCountdown } from '@/lib/useDraftCountdown';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, MEMBERSHIP_PATH, membershipPageMode } from '@/lib/membershipPages';
 import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -230,6 +231,8 @@ export default function MembershipPage() {
   const locale = useLocale();
   const gymFmt = useGymFormatSettings();
   const router = useRouter();
+  // #2737 — My Products, Add Plan or Add Product: one component, three routes.
+  const mode = membershipPageMode(usePathname());
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
   const { isLinked, loading: appLoading, gymName, isSuperadmin, member: appMember } = useApp();
@@ -316,7 +319,6 @@ export default function MembershipPage() {
   // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
   // nothing to offer, so it is absent rather than leading to an empty list.
   const gymOffersPlans = planCatalogue === null || planCatalogue.length > 0;
-  const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [appliedPlanPromotions, setAppliedPlanPromotions] = useState<Record<number, number>>({});
   const [choosingPlan, setChoosingPlan] = useState<MemberPlanOffer | null>(null);
@@ -891,7 +893,7 @@ export default function MembershipPage() {
         <p style={{ fontSize: 13, margin: '0 0 8px' }}>
           {t('membership.products_filtered_notice')}{' '}
           <a
-            href={`/${locale}/membership`}
+            href={`/${locale}${ADD_PRODUCT_PATH}`}
             style={{ color: 'inherit', textDecoration: 'underline' }}
           >
             {t('membership.products_show_all')}
@@ -1335,8 +1337,13 @@ export default function MembershipPage() {
 
   // ── #1122 — Add Plan ──────────────────────────────────────────────────────
 
+  // #2737 — the Add Plan page shows the catalogue read with the page; a read
+  // that failed is tried once more here rather than reading as "no plans".
+  useEffect(() => {
+    if (mode === 'add_plan' && !loading && planCatalogue === null) void openCatalogue();
+  }, [mode, loading]);
+
   async function openCatalogue() {
-    setCatalogueOpen(true);
     if (planCatalogue !== null) return;
     setCatalogueLoading(true);
     try {
@@ -1398,8 +1405,9 @@ export default function MembershipPage() {
         }),
       });
       closeChoosePlan();
-      setCatalogueOpen(false);
-      setReloadKey((k) => k + 1);
+      // #2737 — back to My Products, which reads the new plan (awaiting its
+      // first payment, or active when it owes nothing) on mount.
+      router.push(`/${locale}${MEMBERSHIP_PATH}`);
     } catch (err: any) {
       if (err?.message === 'active_plan_exists' && !confirmReplacement) {
         setAssignNeedsConfirm(true);
@@ -1416,6 +1424,15 @@ export default function MembershipPage() {
    * payment — above the current plan (§1), in both the with-plan and the
    * no-plan branches so the entry point is never missing.
    */
+  function renderBackLink() {
+    return (
+      <a href={`/${locale}${MEMBERSHIP_PATH}`} style={styles.backLink}
+        onClick={(e) => { e.preventDefault(); router.push(`/${locale}${MEMBERSHIP_PATH}`); }}>
+        {t('membership.back_to_products')}
+      </a>
+    );
+  }
+
   function renderPlansHeader() {
     return (
       <>
@@ -1435,11 +1452,18 @@ export default function MembershipPage() {
             </div>
           </div>
         )}
-        {!pendingMembership && !catalogueOpen && gymOffersPlans && (
+        {mode === 'overview' && ((!pendingMembership && gymOffersPlans) || products !== null) && (
           <div style={styles.addPlanRow}>
-            <button type="button" style={primaryButtonStyle} onClick={openCatalogue}>
-              {t('membership.add_plan')}
-            </button>
+            {!pendingMembership && gymOffersPlans && (
+              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
+                {t('membership.add_plan')}
+              </button>
+            )}
+            {products !== null && (
+              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
+                {t('membership.add_product')}
+              </button>
+            )}
           </div>
         )}
       </>
@@ -1557,7 +1581,6 @@ export default function MembershipPage() {
   }
 
   function renderPlanCatalogue() {
-    if (!catalogueOpen) return null;
     const items: MemberPlanCardItem[] = (planCatalogue ?? []).map((plan) => {
       const applied = appliedPlanPromotions[plan.id] ?? null;
       const frequencyKey = planFrequencyKey(plan);
@@ -1609,7 +1632,7 @@ export default function MembershipPage() {
           title={t('membership.add_plan_title')}
           emptyLabel={catalogueLoading ? t('membership.add_plan_loading') : t('membership.add_plan_empty')}
           items={items}
-          onClose={() => setCatalogueOpen(false)}
+          onClose={() => router.push(`/${locale}${MEMBERSHIP_PATH}`)}
           closeLabel={t('membership.add_plan_close')}
         />
         {choosingPlan && (
@@ -1839,6 +1862,31 @@ export default function MembershipPage() {
     );
   }
 
+  // #2737 — the two purchasing pages: only their own catalogue, the dialogs it
+  // opens and a way back. Everything the member already holds is My Products'.
+  if (mode === 'add_plan') {
+    return (
+      <main style={styles.container}>
+        {renderBackLink()}
+        {renderPlansHeader()}
+        {renderPlanCatalogue()}
+        {renderDialogs()}
+      </main>
+    );
+  }
+
+  if (mode === 'add_product') {
+    return (
+      <main style={styles.container}>
+        {renderBackLink()}
+        {renderProducts()}
+        {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
+        {renderSetSummary()}
+        {renderDialogs()}
+      </main>
+    );
+  }
+
   if (!membership) {
     // A member may hold no plan at all (#956), and the catalogue is the gym's
     // rather than the plan's — so the products still belong on this screen.
@@ -1847,12 +1895,9 @@ export default function MembershipPage() {
         {renderTabs()}
         {tab === 'services' ? renderServicesTab() : (<>
         {renderPlansHeader()}
-        {renderPlanCatalogue()}
         {renderMyPlans()}
         {renderMyProducts()}
         {renderOwnPurchases()}
-        {renderProducts()}
-      {renderSetSummary()}
         {renderSetSummary()}
         </>)}
         {renderDialogs()}
@@ -1867,7 +1912,6 @@ export default function MembershipPage() {
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
-      {renderPlanCatalogue()}
 
       {/* #2663 — My Plans, then My Products, both from the one selected version. */}
       {renderMyPlans()}
@@ -1904,7 +1948,7 @@ export default function MembershipPage() {
           follows them rather than splitting the membership from its own
           pending payment. */}
       {renderOwnPurchases()}
-        {renderProducts()}
+      {renderSetSummary()}
 
       {packages.length > 0 && (
         <section style={styles.section}>
@@ -2042,7 +2086,8 @@ const styles: Record<string, React.CSSProperties> = {
   receiptBtn: { background: 'none', border: 'none', padding: 0, color: memberTheme.link, textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
   // #1122 — the Add plan row, the plan awaiting its first payment, and the
   // choose dialog's text. Every colour is the theme's (#983).
-  addPlanRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: 12 },
+  addPlanRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginBottom: 12 },
+  backLink: { display: 'inline-block', marginBottom: 12, fontSize: 14, color: memberTheme.text, textDecoration: 'underline' },
   pendingPlanCard: { ...noticeStyle('warning'), marginBottom: 12 },
   pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
   pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },
