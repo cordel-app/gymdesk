@@ -890,7 +890,9 @@
     "continue_with_apple": "Continua amb Apple",
     "signing_in": "Iniciant sessió…",
     "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar.",
-    "apple_failed": "No s'ha pogut iniciar la sessió amb Apple. Torna-ho a provar."
+    "apple_failed": "No s'ha pogut iniciar la sessió amb Apple. Torna-ho a provar.",
+    "pull_to_refresh": "Llisca per actualitzar",
+    "refreshing": "Actualitzant…"
   },
   "progress": {
     "loading": "Carregant el teu progrés…",
