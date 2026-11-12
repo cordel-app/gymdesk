@@ -121,6 +121,8 @@ paymentRequestsRouter.post(
       // initial Billing Event; the link raised here is an attempt on it, for
       // the amount that event owes.
       const open = await openInitialEventForAssignment(db, gymId, Number(user_membership_id));
+      // #2533 stage 2: a cancelled initial event is closed; no new attempt on it.
+      if (open?.cancelled) return res.status(409).json({ error: 'billing_event_cancelled', message: 'The payment of this membership was cancelled.' });
       const charged = open ? open.amount : fee;
       const amount = toMinorUnits(charged);
       // #2123: a family obligation is paid by the Family Owner, who also gets the checkout link.

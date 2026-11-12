@@ -219,12 +219,14 @@ export async function importAssignmentAsProductSet(
  * The open initial Billing Event of the pending ProductSet an assignment is
  * linked to: what a payment request raised for a Pending Payment assignment is
  * an attempt on. `null` for an assignment with no pending version.
+ * `cancelled` (#2533 stage 2): staff cancelled that event, so no new attempt
+ * may be raised on it — a payment collected there would activate nothing.
  */
 export async function openInitialEventForAssignment(
   exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
-): Promise<{ productSetId: number; eventId: number; amount: number } | null> {
+): Promise<{ productSetId: number; eventId: number; amount: number; cancelled: boolean } | null> {
   const { rows } = await exec.query<any>(
-    `SELECT ps.id AS product_set_id, be.id AS event_id, be.amount
+    `SELECT ps.id AS product_set_id, be.id AS event_id, be.amount, (be.cancelled_at IS NOT NULL) AS cancelled
        FROM product_sets ps
        JOIN billing_events be ON be.product_set_id = ps.id AND be.gym_id = ps.gym_id
         AND be.event_type = 'payment_recorded'
@@ -233,7 +235,11 @@ export async function openInitialEventForAssignment(
       ORDER BY be.id DESC LIMIT 1`,
     [gymId, userMembershipId]);
   if (!rows[0]) return null;
-  return { productSetId: Number(rows[0].product_set_id), eventId: Number(rows[0].event_id), amount: Number(rows[0].amount) };
+  return {
+    productSetId: Number(rows[0].product_set_id), eventId: Number(rows[0].event_id), amount: Number(rows[0].amount),
+    // #2533 stage 2: a cancelled initial event takes no new attempt (callers answer 409).
+    cancelled: Number(rows[0].cancelled) === 1,
+  };
 }
 
 /**

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decideRefund, refundBalance, refundMethodsFor, refundOutcomeFromProvider, refundState,
 } from '../domain/billingEventRefund';
-import { canCancelBillingEvent, deriveBillingEventStatus, isAwaitingAction } from '../domain/billingEventStatus';
+import { canCancelBillingEvent, deriveBillingEventStatus, isAwaitingAction, isPaymentCollected, paymentActionsFor } from '../domain/billingEventStatus';
 
 const lines = [{ id: 1, amount: '30.00', refundedCents: 0 }, { id: 2, amount: '10.00', refundedCents: 1000 }];
 
@@ -75,9 +75,12 @@ describe('refund methods and provider outcome', () => {
 });
 
 describe('cancelled status', () => {
-  it('reads cancelled unless money arrived, and is never awaiting action', () => {
+  it('reads cancelled even when money arrived, and is never awaiting action', () => {
     expect(deriveBillingEventStatus('payment_recorded', 'expired', true)).toBe('cancelled');
-    expect(deriveBillingEventStatus('payment_recorded', 'completed', true)).toBe('paid');
+    // #2533 stage 2: cancellation outranks a payment that completed afterwards.
+    expect(deriveBillingEventStatus('payment_recorded', 'completed', true)).toBe('cancelled');
+    expect(isPaymentCollected('payment_recorded', 'completed')).toBe(true);
+    expect(paymentActionsFor({ status: 'cancelled', eventType: 'payment_recorded', scheduledAndDue: true, linked: true, membershipStatus: null, hasMembership: false, amount: 10 }).retry).toBe(false);
     expect(isAwaitingAction('failed_billing', 'expired', true)).toBe(false);
     expect(canCancelBillingEvent('pending')).toBe(true);
     for (const s of ['paid', 'failed', 'scheduled', 'recorded', 'cancelled'] as const) expect(canCancelBillingEvent(s)).toBe(false);

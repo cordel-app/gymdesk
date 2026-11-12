@@ -2689,6 +2689,14 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     if (payer.viaFamily) {
       return res.status(403).json({ error: 'family_owner_pays', message: 'Your family owner pays for this membership' });
     }
+    // #1288: a row awaiting its first payment already has its Billing Event
+    // (written at Save & Pay); a retry links to it so the webhook settles that
+    // one event instead of adding a second for the same charge.
+    const openEvent = um.status === 'pending_payment' ? await openInitialEventForAssignment(db, gymId, um.id) : null;
+    // #2533 stage 2: staff cancelled that payment; no new attempt on it.
+    if (openEvent?.cancelled) {
+      return res.status(409).json({ error: 'billing_event_cancelled', message: 'The payment of this membership was cancelled.' });
+    }
     const amount = toMinorUnits(fee);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
@@ -2710,10 +2718,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
 
     req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
 
-    // #1288: a row awaiting its first payment already has its Billing Event
-    // (written at Save & Pay); a retry links to it so the webhook settles that
-    // one event instead of adding a second for the same charge.
-    const openEventId = um.status === 'pending_payment' ? (await openInitialEventForAssignment(db, gymId, um.id))?.eventId ?? null : null;
+    const openEventId = openEvent?.eventId ?? null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,

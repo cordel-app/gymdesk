@@ -104,6 +104,14 @@ async function storeCard(tx: Tx, pr: RequestRow, payload: WebhookPayload): Promi
   );
 }
 
+async function isEventCancelled(tx: Tx, gymId: string, billingEventId: number | null): Promise<boolean> {
+  if (billingEventId == null) return false;
+  const { rows } = await tx.query<{ cancelled: number }>(
+    'SELECT (cancelled_at IS NOT NULL) AS cancelled FROM billing_events WHERE id = ? AND gym_id = ?',
+    [billingEventId, gymId]);
+  return Number(rows[0]?.cancelled ?? 0) === 1;
+}
+
 export async function settlePaymentRequest(
   payload: WebhookPayload,
   opts: { via: SettleVia; log: Log },
@@ -160,6 +168,14 @@ async function settleInTransaction(
       return { kind: 'already_processed', status: pr.status };
     }
 
+    // #2533 stage 2: a Billing Event staff cancelled is an administrative
+    // terminal state. The payment result is still recorded on its attempt (the
+    // provider is the source of truth about money, and the raw and normalized
+    // statuses are kept), but nothing is activated or completed from it: the
+    // event stays `cancelled` and the money is left for staff to review and
+    // refund.
+    const eventCancelled = await isEventCancelled(tx, pr.gym_id, pr.billing_event_id);
+
     if (payload.status === 'completed' && pr.source === CARD_UPDATE_SOURCE) {
       // #788: a card replacement is a zero-amount verification, not a payment.
       // It settles no cycle, so it writes no Billing Event and clears none of
@@ -214,6 +230,11 @@ async function settleInTransaction(
       }
 
       await closeSiblingAttempts(tx, pr.gym_id, pr.billing_event_id, pr.id);
+      if (eventCancelled) {
+        log.warn({ ...ctx, paymentRequestId: pr.id, billingEventId: pr.billing_event_id },
+          'Payment settlement: payment collected on a cancelled billing event; purchase not completed, review for refund');
+        return { kind: 'settled', status: 'completed' };
+      }
       const completed = await completeProductPurchase(tx, pr.gym_id, pr.id);
       if (completed === 0) {
         log.warn(
@@ -242,6 +263,12 @@ async function settleInTransaction(
 
       if (payload.paymentToken && payload.sequenceId) {
         await storeCard(tx, pr, payload);
+      }
+
+      if (eventCancelled) {
+        log.warn({ ...ctx, paymentRequestId: pr.id, billingEventId: pr.billing_event_id },
+          'Payment settlement: payment collected on a cancelled billing event; nothing activated, review for refund');
+        return { kind: 'settled', status: 'completed' };
       }
 
       // #1108 stage 2: a first payment on a Pending Payment row activates it,
