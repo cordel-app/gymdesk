@@ -20,9 +20,10 @@
  * NULLs). The new key is added before the old one is dropped, so `plan_snapshot_id`'s FK keeps
  * an index throughout.
  *
- * FK `ON DELETE SET NULL` (migration 385's shape for the purchase-side column): a
- * hard-deleted member's line falls back to the default distribution rather than
- * blocking the delete. One statement per table, so a failure leaves nothing half-added
+ * FK `ON DELETE CASCADE`: a member's line is that member's allocation, so a hard-deleted
+ * member's line goes with them (members are normally soft-deleted). SET NULL would turn the
+ * line into an unsplit one and collide with the Product's other key-0 line in the UNIQUE key,
+ * failing the delete. One statement per table, so a failure leaves nothing half-added
  * behind the hasColumn guard (the old key's drop follows in its own statement,
  * guarded by its own existence check); ADD CONSTRAINT rebuilds the table under ALGORITHM=COPY.
  */
@@ -49,7 +50,7 @@ exports.up = async (knex) => {
         ADD KEY ${abbr}_member_index (assigned_member_id),
         ADD UNIQUE KEY ${abbr}_snapshot_line_key (plan_snapshot_id, product_id, member_key),
         ADD CONSTRAINT ${abbr}_member_fk FOREIGN KEY (assigned_member_id)
-          REFERENCES members (id) ON DELETE SET NULL`);
+          REFERENCES members (id) ON DELETE CASCADE`);
     if (await hasIndex(knex, table, `${abbr}_snapshot_product_key`)) {
       await knex.raw(`ALTER TABLE ${table} DROP INDEX ${abbr}_snapshot_product_key`);
     }
@@ -61,7 +62,9 @@ exports.down = async (knex) => {
     if (!(await knex.schema.hasColumn(table, 'assigned_member_id'))) continue;
     // A split line has siblings on its Product, which the old key refuses: down is only
     // possible while no plan holds one.
-    await knex.raw(`ALTER TABLE ${table} ADD UNIQUE KEY ${abbr}_snapshot_product_key (plan_snapshot_id, product_id)`);
+    if (!(await hasIndex(knex, table, `${abbr}_snapshot_product_key`))) {
+      await knex.raw(`ALTER TABLE ${table} ADD UNIQUE KEY ${abbr}_snapshot_product_key (plan_snapshot_id, product_id)`);
+    }
     await knex.raw(`
       ALTER TABLE ${table}
         DROP FOREIGN KEY ${abbr}_member_fk,
