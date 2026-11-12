@@ -309,16 +309,19 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
       // #1865: a purchase is recognised across versions by its line_ref, so two
       // lines of one Product are never confused; a line that predates it is the
       // Product's one line, found by Product and start date as before.
+      // #2126 stage 3s — the edited version's own copy is found in its synced
+      // snapshots too (`cloneConfiguration()` syncs the clone it makes, and every
+      // Draft writer syncs in `touch()`); its `source_id` is the legacy line id.
       const { rows: own } = rows[0].line_ref != null
         ? await tx.query<{ id: number }>(
-          `SELECT id FROM member_products_recurrent_snapshot
-            WHERE gym_id = ? AND product_set_id = ? AND line_ref = ?
-            ORDER BY id DESC LIMIT 1`,
+          `SELECT source_id AS id FROM product_periodical_snapshots
+            WHERE gym_id = ? AND product_set_id = ? AND line_ref = ? AND source_id IS NOT NULL
+            ORDER BY source_id DESC LIMIT 1`,
           [d.gym_id, d.id, rows[0].line_ref])
         : await tx.query<{ id: number }>(
-          `SELECT id FROM member_products_recurrent_snapshot
-            WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ?
-            ORDER BY id DESC LIMIT 1`,
+          `SELECT source_id AS id FROM product_periodical_snapshots
+            WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ? AND source_id IS NOT NULL
+            ORDER BY source_id DESC LIMIT 1`,
           [d.gym_id, d.id, rows[0].product_id, rows[0].starts_at]);
       if (!own[0]) return { kind: 'not_found' as const };
       const out = await psRemoveService(tx, d, Number(own[0].id), { legacy: true });
