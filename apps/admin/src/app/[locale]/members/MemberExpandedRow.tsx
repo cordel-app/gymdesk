@@ -38,6 +38,7 @@ import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWor
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
+import { MemberBookings } from './MemberBookings';
 import { MemberFamily } from './MemberFamily';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
 import { NutritionPlanTree, type Hierarchy } from '../nutrition/nutrition-plan-templates/NutritionPlanTree';
@@ -668,6 +669,15 @@ export function MemberExpandedRow({
                 })}
               </div>
             )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'bookings' && (
+        <>
+          {/* Bookings (#2720) — read-only: upcoming then past bookings of this Member. */}
+          <Section label={t('members.section_bookings')} divider={false}>
+            <MemberBookings memberId={memberId} />
           </Section>
         </>
       )}
