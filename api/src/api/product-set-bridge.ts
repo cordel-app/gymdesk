@@ -1,6 +1,7 @@
 import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -91,18 +92,26 @@ async function copyApplications(
        FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ?
         ${opts.onlyProductTarget ? "AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')" : ''}`,
     [gymId, from.productSetId]);
+  // #2126 stage 3u — a line-owned application finds its line in the successor through
+  // `product_periodical_snapshots`. The callers have just copied the legacy lines into the
+  // successor, so its snapshots are re-derived first; the predecessor's are already in step.
+  if (rows.some((app: any) => app.recurrent_snapshot_id != null)) {
+    await syncProductSnapshotsOfVersion(tx, gymId, to.productSetId);
+  }
   for (const app of rows) {
     // #1991 stage 3: a Product-target application follows its line into the new
     // version (a clone keeps `line_ref`), so the copy is owned by the copy.
     let ownerLine: number | null = null;
     if (app.recurrent_snapshot_id != null) {
+      // `source_id` is the legacy line id, which is what an application and the routes are keyed on.
       const { rows: lines } = await tx.query<any>(
-        `SELECT n.id FROM member_products_recurrent_snapshot o
-           JOIN member_products_recurrent_snapshot n
-             ON n.gym_id = o.gym_id AND n.product_set_id = ? AND COALESCE(n.line_ref, n.id) = COALESCE(o.line_ref, o.id)
-          WHERE o.id = ? AND o.gym_id = ? ORDER BY n.id LIMIT 1`,
+        `SELECT n.source_id FROM product_periodical_snapshots o
+           JOIN product_periodical_snapshots n
+             ON n.gym_id = o.gym_id AND n.product_set_id = ? AND n.source_id IS NOT NULL
+            AND COALESCE(n.line_ref, n.source_id) = COALESCE(o.line_ref, o.source_id)
+          WHERE o.source_id = ? AND o.gym_id = ? ORDER BY n.source_id LIMIT 1`,
         [to.productSetId, app.recurrent_snapshot_id, gymId]);
-      ownerLine = lines[0] ? Number(lines[0].id) : null;
+      ownerLine = lines[0] ? Number(lines[0].source_id) : null;
       if (ownerLine == null) continue; // the line is not part of the successor, nor is its application
     }
     const { insertId } = await tx.query(
