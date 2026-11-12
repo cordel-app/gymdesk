@@ -424,6 +424,8 @@
     "pending_plan_heading": "Pla pendent de pagament",
     "pending_plan_body": "{name} · {price}. Completa el pagament per activar-lo.",
     "pending_plan_pay": "Pagar ara",
+    "plan_pending_payment_amount": "Pagament pendent: {amount}",
+    "plan_pending_cancel": "Cancel·la",
     "promotion_duration_months": "{count, plural, one {# mes} other {# mesos}}",
     "past_plans_count": "{count, plural, one {# pla} other {# plans}}",
     "product_sessions_price": "{count, plural, one {Preu total per # sessió} other {Preu total per # sessions}}",

@@ -424,6 +424,8 @@
     "pending_plan_heading": "Plan awaiting payment",
     "pending_plan_body": "{name} · {price}. Complete the payment to activate it.",
     "pending_plan_pay": "Pay now",
+    "plan_pending_payment_amount": "Pending payment: {amount}",
+    "plan_pending_cancel": "Cancel",
     "promotion_duration_months": "{count, plural, one {# month} other {# months}}",
     "past_plans_count": "{count, plural, one {# plan} other {# plans}}",
     "product_sessions_price": "{count, plural, one {Total price for # session} other {Total price for # sessions}}",
