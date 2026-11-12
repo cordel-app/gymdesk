@@ -28,7 +28,7 @@ describe('MEMBER_MEMBERSHIP_SQL', () => {
   it('binds the Member twice and reads the owner column and the covered-member table', () => {
     expect(MEMBER_MEMBERSHIP_SQL.match(/\?/g)).toHaveLength(2);
     expect(MEMBER_MEMBERSHIP_SQL).toContain('um.member_id = ?');
-    expect(MEMBER_MEMBERSHIP_SQL).toContain('user_membership_members');
+    expect(MEMBER_MEMBERSHIP_SQL).toContain('plan_snapshot_beneficiaries');
   });
 });
 

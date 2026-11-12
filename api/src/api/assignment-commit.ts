@@ -6,6 +6,7 @@ import { ConflictResolution, LiveAssignment, addSharesOwnerChain, supersedeStart
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -87,7 +88,7 @@ async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
  */
 async function coveredMemberIds(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<number[]> {
   const { rows: coveredRows } = await tx.query<{ member_id: number }>(
-    `SELECT member_id FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?`,
+    `SELECT member_id FROM ${ASSIGNMENT_BENEFICIARIES} umm WHERE user_membership_id = ? AND gym_id = ?`,
     [row.id, gymId],
   );
   return [...new Set([Number(row.member_id), ...coveredRows.map((r) => Number(r.member_id))])];
@@ -110,7 +111,7 @@ async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member
   const { rows } = await tx.query<{ id: number }>(
     `SELECT DISTINCT um.id
        FROM user_memberships um
-       LEFT JOIN user_membership_members umm ON umm.user_membership_id = um.id AND umm.gym_id = um.gym_id
+       LEFT JOIN ${ASSIGNMENT_BENEFICIARIES} umm ON umm.user_membership_id = um.id AND umm.gym_id = um.gym_id
       WHERE um.gym_id = ? AND um.status = ? AND um.id <> ?
         AND (um.member_id IN (${marks}) OR umm.member_id IN (${marks}))
       FOR UPDATE`,

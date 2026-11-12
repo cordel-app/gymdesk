@@ -401,7 +401,7 @@ describe('POST /user-memberships', () => {
     expect(res.body.status).toBe('draft');
     expect(res.body.plan_member_limit).toBe('1');
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT member_id, is_owner FROM user_membership_members WHERE user_membership_id = ?',
       [res.body.id],
     );
@@ -1167,7 +1167,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
 
     // The new membership gets its own owner row in user_membership_members,
     // just like POST / does.
-    const { rows: newOwnerRows } = await db.query(
+    const { rows: newOwnerRows } = await legacyChildQuery(
       'SELECT member_id, is_owner FROM user_membership_members WHERE user_membership_id = ?',
       [res.body.id],
     );
@@ -1580,7 +1580,7 @@ describe('POST /user-memberships/:id/members', () => {
         .send({ member_id: extra });
       expect(res.status).toBe(201);
     }
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT COUNT(*) AS n FROM user_membership_members WHERE user_membership_id = ?',
       [umId],
     );
@@ -1679,7 +1679,7 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT * FROM user_membership_members WHERE user_membership_id = ? AND member_id = ?',
       [umId, partner],
     );

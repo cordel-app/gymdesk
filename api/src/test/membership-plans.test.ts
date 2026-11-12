@@ -1547,7 +1547,7 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(umRows[0].status).toBe('draft');
     expect(umRows[0].member_id).toBe(memberId);
 
-    const { rows: ummRows } = await db.query(
+    const { rows: ummRows } = await legacyChildQuery(
       'SELECT * FROM user_membership_members WHERE user_membership_id = ?',
       [userMembershipId],
     );
@@ -1592,7 +1592,7 @@ describe('POST /membership-plans/:id/assign', () => {
     );
     expect(umRows[0].member_id).toBe(owner);
 
-    const { rows: ummRows } = await db.query(
+    const { rows: ummRows } = await legacyChildQuery(
       'SELECT member_id, is_owner FROM user_membership_members WHERE user_membership_id = ?',
       [userMembershipId],
     );

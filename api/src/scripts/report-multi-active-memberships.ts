@@ -41,6 +41,7 @@
 import 'dotenv/config';
 import { db } from '../infra/db';
 import { LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export interface MultiActiveAssignment {
   user_membership_id: number;
@@ -111,7 +112,7 @@ export async function buildMultiActiveReport(): Promise<MultiActiveReport> {
     user_membership_id: number; member_id: number; member_name: string | null;
   }>(
     `SELECT umm.user_membership_id, umm.member_id, m.name AS member_name
-     FROM user_membership_members umm
+     FROM ${ASSIGNMENT_BENEFICIARIES} umm
      JOIN members m ON m.id = umm.member_id
      JOIN user_memberships um ON um.id = umm.user_membership_id
      WHERE um.status IN (${LIVE})`,

@@ -23,6 +23,7 @@ import { isNewMemberStatus } from './new-member-eligibility';
 import {
   PLAN_PROMOTION_TARGET, firstCycleFinalPrice, isOfferableFeeBenefit,
 } from '../domain/memberPlanCatalogue';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * #1122 §1–§6 — the Members App's **Add Plan**.
@@ -195,7 +196,7 @@ export async function judgeMemberPlanChoice(
   const { rows: held } = await db.query<{ status: string }>(
     `SELECT um.status FROM user_memberships um
       WHERE um.gym_id = ? AND um.status IN (${statusMarks})
-        AND (um.member_id = ? OR EXISTS (SELECT 1 FROM user_membership_members umm
+        AND (um.member_id = ? OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
                                           WHERE umm.user_membership_id = um.id AND umm.gym_id = um.gym_id AND umm.member_id = ?))
       ORDER BY FIELD(um.status, ?) DESC LIMIT 1`,
     [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],

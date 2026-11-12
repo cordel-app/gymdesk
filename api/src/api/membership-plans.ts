@@ -69,6 +69,7 @@ import {
   grossBenefitUnitPrice,
   withProductBenefitPrices,
 } from './product-benefit-pricing';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 interface PlanRow {
   id: number;
@@ -667,7 +668,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
     const { rows: over } = await db.query(
       `SELECT COUNT(*) AS n FROM (
          SELECT umm.user_membership_id
-         FROM user_membership_members umm
+         FROM ${ASSIGNMENT_BENEFICIARIES} umm
          JOIN user_memberships um ON um.id = umm.user_membership_id AND um.status = 'active'
          WHERE um.membership_plan_id = ? AND um.gym_id = ?
          GROUP BY umm.user_membership_id

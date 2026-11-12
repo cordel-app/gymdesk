@@ -1,3 +1,5 @@
+import { ASSIGNMENT_BENEFICIARIES } from './assignmentBeneficiaries';
+
 /**
  * #1191 — how an Assigned Plan relates to the Member whose context it is shown
  * in. A multi-member Membership (a Duo) is ONE `user_memberships` row: its
@@ -30,7 +32,7 @@ export function assignmentRelationship(
  * `user_membership_members` row.
  */
 export const MEMBER_MEMBERSHIP_SQL = `(um.member_id = ? OR EXISTS (
-    SELECT 1 FROM user_membership_members umm
+    SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
     WHERE umm.user_membership_id = um.id AND umm.gym_id = um.gym_id AND umm.member_id = ?))`;
 
 /** Whether a Linked context may perform a Membership-level write: it may not. */

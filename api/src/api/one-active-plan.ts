@@ -5,6 +5,7 @@ import {
   LiveAssignment,
   LiveAssignmentStatus,
 } from '../domain/oneActivePlan';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * #956 — the one enforcement point for "a member holds at most one Membership
@@ -59,7 +60,7 @@ export async function findLiveAssignmentsForMembers(
      WHERE um.gym_id = ?
        AND um.status IN (${statusPlaceholders})
        AND (um.member_id IN (${idPlaceholders})
-            OR EXISTS (SELECT 1 FROM user_membership_members umm
+            OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
                        WHERE umm.user_membership_id = um.id AND umm.gym_id = ?
                          AND umm.member_id IN (${idPlaceholders})))`;
   if (opts?.excludeUserMembershipId != null) {
@@ -106,7 +107,7 @@ export async function findLiveAssignmentsForMembers(
   // and the assignment is cancelled once either way.
   const covered = new Map<number, number>();
   const { rows: coveredRows } = await tx.query<{ user_membership_id: number; member_id: number }>(
-    `SELECT user_membership_id, member_id FROM user_membership_members
+    `SELECT user_membership_id, member_id FROM ${ASSIGNMENT_BENEFICIARIES} umm
      WHERE gym_id = ? AND user_membership_id IN (${rows.map(() => '?').join(',')})
        AND member_id IN (${idPlaceholders})
      ORDER BY member_id ASC`,
