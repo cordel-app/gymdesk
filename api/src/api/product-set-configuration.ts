@@ -24,6 +24,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { productSetHistoryIds } from './product-set-history';
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -312,6 +313,8 @@ export async function addProductSetService(tx: Tx, input: {
     [input.gymId, input.productSetId, input.quantity, input.startsAt, input.scheduleId, input.origin ?? null, input.productId, input.gymId],
   );
   await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [insertId]);
+  // #2126 stage 3o: the engine loader reads the Product snapshot, so the new line is synced now.
+  await syncProductSnapshotsOfVersion(tx, input.gymId, input.productSetId);
   return insertId;
 }
 
@@ -373,13 +376,21 @@ export async function loadProductSetSimulationAssignment(
     directDiscountPercent: toLineDirectDiscount(b.direct_discount_percent),
   }));
 
+  // #2126 stage 3o: the version's recurring lines are read from `product_periodical_snapshots`,
+  // which stage 2's dual-write keeps equal to `member_products_recurrent_snapshot`. Every writer of
+  // a legacy line re-syncs its version before the transaction can reach this loader (the Draft
+  // writers' `touch()`, `cloneConfiguration()`, `addPlanSnapshotToVersion()`, the recurring
+  // purchase's discount, `snapshotProductSetFromPlan()` after its schedule allocation, the
+  // realign script, which moves both tables). A line keeps reporting its legacy id (`source_id`),
+  // which is what the engine labels it with and what the routes address it by.
   const { rows: serviceRows } = await exec.query(
-    `SELECT s.id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at, s.item_name,
-            s.item_billing_frequency, s.unit_price, sch.anchor_date AS schedule_anchor
-       FROM member_products_recurrent_snapshot s
+    `SELECT s.source_id AS id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at,
+            s.product_name AS item_name, s.billing_frequency AS item_billing_frequency, s.unit_price,
+            sch.anchor_date AS schedule_anchor
+       FROM product_periodical_snapshots s
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
-      ORDER BY s.starts_at ASC, s.id ASC`,
+      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
+      ORDER BY s.starts_at ASC, s.source_id ASC`,
     [gymId, productSetId],
   );
   const services: SimulationService[] = (serviceRows as any[]).map((s) => ({
@@ -482,9 +493,10 @@ export async function planScheduledEvents(
   if (runs.length === 0) return [];
 
   const { rows: scheduled } = await exec.query(
+    // #2126 stage 3o: the recurring lines' schedules, from the Product snapshot (see above).
     `SELECT s.product_id, sch.schedule_key
-       FROM member_products_recurrent_snapshot s JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?
+       FROM product_periodical_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id
+      WHERE s.gym_id = ? AND s.product_set_id = ? AND s.source_id IS NOT NULL
      UNION
      SELECT p.product_id, sch.schedule_key
        FROM plan_periodical_snapshots p JOIN product_set_schedules sch ON sch.id = p.schedule_id
