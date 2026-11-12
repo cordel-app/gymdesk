@@ -231,20 +231,21 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
   // the INSERT rather than left to the column default, so a second write path
   // cannot create an `active` purchase nobody paid for.
   it('is written pending, with its status named', () => {
+    // #2126 stage 5b: one writer (`purchase-writer.ts`) names the status on the record and the snapshot.
+    const writer = read(REPO, 'api', 'src', 'api', 'purchase-writer.ts');
+    for (const table of ['INSERT INTO member_products_oneoff_snapshot', 'INSERT INTO ${table}']) {
+      expect(writer.slice(writer.indexOf(table), writer.indexOf(table) + 400)).toContain('status');
+    }
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    const insert = loader.slice(loader.indexOf('INSERT INTO member_products_oneoff_snapshot'));
-    expect(insert.slice(0, 400)).toContain('status');
-    expect(loader).toContain('PENDING_PURCHASE_STATUS');
+    expect(loader).toContain('status: PENDING_PURCHASE_STATUS');
   });
 
   it('completion and cancellation are both constrained on the pending status', () => {
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    const updates = loader.match(/UPDATE member_products_oneoff_snapshot[\s\S]*?`/g) ?? [];
-    expect(updates.length).toBeGreaterThanOrEqual(3);
-    for (const update of updates) {
-      expect(update).toMatch(/status = \?|status = 'cancelled'|mp\.status = \?/);
-    }
-    expect(loader).toContain('WHERE gym_id = ? AND payment_request_id = ? AND status = ?');
+    // complete, cancel and the abandoned-purchase cleanup all move only a `pending_payment` row.
+    expect(loader.match(/\{ fromStatus: PENDING_PURCHASE_STATUS \}/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    const writer = read(REPO, 'api', 'src', 'api', 'purchase-writer.ts');
+    expect(writer).toContain("const guardSql = 'fromStatus' in guard ? 'status = ?' : 'cancelled_on IS NULL';");
   });
 });
 

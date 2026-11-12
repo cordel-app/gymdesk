@@ -2,7 +2,7 @@ import supertest from 'supertest';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export const request = supertest(app);

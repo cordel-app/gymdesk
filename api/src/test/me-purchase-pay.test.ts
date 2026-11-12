@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import crypto from 'node:crypto';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, linkTestPurchaseRequestToEvent } from './helpers';
 
 let gymId: string;

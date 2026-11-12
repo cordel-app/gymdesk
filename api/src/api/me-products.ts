@@ -1,7 +1,7 @@
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { originOf } from '../domain/itemOrigin';
-import { syncProductSnapshotForPurchase, syncProductSnapshotForPaymentRequest } from './product-snapshot-sync';
+import { insertPurchase, insertPurchasePromotion, deletePurchase, lockPurchase, updatePurchase } from './purchase-writer';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -71,7 +71,6 @@ import {
 import {
   loadAppliedPromotions,
   loadPromotionOffers,
-  writePurchasePromotionStep,
 } from './member-product-promotions';
 
 /**
@@ -432,31 +431,20 @@ export async function saveProductPurchaseDraft(
 ): Promise<{ purchaseId: number; amount: number; currency: string }> {
   const { snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input);
   const purchaseId = await db.transaction(async (tx) => {
-    const { insertId } = await tx.query(
-      `INSERT INTO member_products_oneoff_snapshot
-         (gym_id, member_id, product_id, status,
-          product_name, product_type, billing_frequency, units,
-          amount, currency, tax_rate_percent,
-          payment_request_id, created_by,
-          list_price, direct_discount_percent, direct_discount_amount, origin, assigned_member_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
-      [
-        input.gymId, input.memberId, input.productId, DRAFT_PURCHASE_STATUS,
-        snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
-        snapshot.units, snapshot.amount.toFixed(2), snapshot.currency,
-        snapshot.tax_rate_percent, actorName,
-        price.list_price.toFixed(2),
-        price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
-        price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
-        originOf(!!input.staff),
-        assignedMemberId,
-      ],
-    );
+    const id = await insertPurchase(tx, {
+      gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
+      productName: snapshot.product_name, productType: snapshot.product_type,
+      billingFrequency: snapshot.billing_frequency, units: snapshot.units,
+      amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+      listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
+      directDiscountAmount: price.direct_discount_amount, validityDays: null,
+      origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
+      paymentRequestId: null, billingEventId: null,
+    });
     for (const step of price.promotions) {
-      await writePurchasePromotionStep(tx, input.gymId, insertId, step);
+      await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
     }
-    await syncProductSnapshotForPurchase(tx, input.gymId, insertId);
-    return insertId;
+    return id;
   });
   return { purchaseId, amount: snapshot.amount, currency: snapshot.currency };
 }
@@ -471,30 +459,15 @@ export async function deletePurchaseDraft(
   purchaseId: number,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
-    // #2126 stage 3r — the purchase record is what is deleted below, so its row
-    // is locked first (a repeat cancel waits here); whether it is still a draft
-    // is then read from the Product snapshot tables, kept equal to the record
-    // by `syncProductSnapshotForPurchase()`.
-    const { rows: locked } = await tx.query<{ id: number }>(
-      `SELECT id FROM member_products_oneoff_snapshot
-        WHERE id = ? AND gym_id = ? AND member_id = ? FOR UPDATE`,
-      [purchaseId, gymId, memberId],
-    );
-    if (!locked[0]) return false;
+    // #2126 stage 3r / 5b — the purchase is locked first (a repeat cancel waits
+    // here); whether it is still a draft is then read from the snapshot.
+    if (!(await lockPurchase(tx, gymId, memberId, purchaseId))) return false;
     const { rows } = await tx.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
       [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, DRAFT_PURCHASE_STATUS],
     );
     if (!rows[0]) return false;
-    await tx.query(
-      'DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? AND member_product_id = ?',
-      [gymId, purchaseId],
-    );
-    await tx.query(
-      'DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND status = ?',
-      [purchaseId, gymId, DRAFT_PURCHASE_STATUS],
-    );
-    await syncProductSnapshotForPurchase(tx, gymId, purchaseId);
+    await deletePurchase(tx, gymId, purchaseId, { memberId, status: DRAFT_PURCHASE_STATUS });
     return true;
   });
 }
@@ -583,15 +556,7 @@ export async function startProductPurchase(
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
-        await tx.query(
-          'DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? AND member_product_id = ?',
-          [input.gymId, input.fromDraftId],
-        );
-        await tx.query(
-          `DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
-          [input.fromDraftId, input.gymId, input.memberId],
-        );
-        await syncProductSnapshotForPurchase(tx, input.gymId, input.fromDraftId);
+        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: DRAFT_PURCHASE_STATUS });
       }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to
@@ -630,39 +595,27 @@ export async function startProductPurchase(
       );
       await recordPaymentAttempt(tx, paymentRequestId);
 
-      const { insertId } = await tx.query(
-        `INSERT INTO member_products_oneoff_snapshot
-           (gym_id, member_id, product_id, status,
-            product_name, product_type, billing_frequency, units,
-            amount, currency, tax_rate_percent,
-            payment_request_id, created_by,
-            list_price, direct_discount_percent, direct_discount_amount, validity_days, origin, assigned_member_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
-          snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
-          snapshot.units, snapshot.amount.toFixed(2), snapshot.currency,
-          snapshot.tax_rate_percent, paymentRequestId, actorName,
-          price.list_price.toFixed(2),
-          price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
-          price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
-          // #1693: the validity agreed at purchase time.
-          row.validity_days == null ? null : Number(row.validity_days),
-          originOf(!!input.staff),
-          assignedMemberId,
-        ],
-      );
+      const id = await insertPurchase(tx, {
+        gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: PENDING_PURCHASE_STATUS,
+        productName: snapshot.product_name, productType: snapshot.product_type,
+        billingFrequency: snapshot.billing_frequency, units: snapshot.units,
+        amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+        listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
+        directDiscountAmount: price.direct_discount_amount,
+        // #1693: the validity agreed at purchase time.
+        validityDays: row.validity_days == null ? null : Number(row.validity_days),
+        origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
+        paymentRequestId, billingEventId,
+      });
 
       // #1118 §7 — the application, frozen beside the purchase it priced. In
       // the same transaction for #1121 stage 2's reason: a purchase charged a
       // discounted amount with nothing on file explaining it is exactly what
       // §15's audit questions must never meet.
       for (const step of price.promotions) {
-        await writePurchasePromotionStep(tx, input.gymId, insertId, step);
+        await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
       }
-      await syncProductSnapshotForPurchase(tx, input.gymId, insertId);
-
-      return insertId;
+      return id;
     });
 
     return {
@@ -728,19 +681,13 @@ export async function completeProductPurchase(
     validityDays: pending[0].validity_days == null ? null : Number(pending[0].validity_days),
     billingFrequency: pending[0].billing_frequency ?? null,
   });
-  const { rowCount } = await tx.query(
-    // `gym_id` is in the WHERE although `payment_request_id` is unique on its
-    // own: every query of a domain table filters by the gym (CLAUDE.md), and
-    // the webhook has the request's own `gym_id` in hand.
-    `UPDATE member_products_oneoff_snapshot
-        SET status = 'active', purchased_at = UTC_TIMESTAMP(), valid_until = ?,
-            modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
-    // The provider's confirmation is the system's act, not the member's (#1182).
-    [validUntil, SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+  // #2126 stage 5b: the record and the snapshot move together (`updatePurchase()`), still
+  // constrained on `pending_payment`. The provider's confirmation is the system's act (#1182).
+  return updatePurchase(
+    tx, gymId, Number(pending[0].id),
+    { status: 'active', purchasedAt: new Date(), validUntil },
+    SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
   );
-  if (rowCount > 0) await syncProductSnapshotForPaymentRequest(tx, gymId, paymentRequestId);
-  return rowCount;
 }
 
 /**
@@ -756,14 +703,18 @@ export async function cancelProductPurchase(
   gymId: string,
   paymentRequestId: number,
 ): Promise<number> {
-  const { rowCount } = await conn.query(
-    `UPDATE member_products_oneoff_snapshot
-        SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
-    [SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+  // #2126 stage 5b: the pending purchase is found from its snapshot (its payment reached through
+  // the Billing Event junction), and the record and the snapshot move together.
+  const { rows } = await conn.query<{ id: number }>(
+    `SELECT mp.id FROM ${purchaseSnapshotsSql('gym_id = ? AND status = ?')} mp WHERE mp.payment_request_id = ?`,
+    [...purchaseSnapshotParams([gymId, PENDING_PURCHASE_STATUS]), paymentRequestId],
   );
-  if (rowCount > 0) await syncProductSnapshotForPaymentRequest(conn, gymId, paymentRequestId);
-  return rowCount;
+  let changed = 0;
+  for (const r of rows) {
+    changed += await updatePurchase(
+      conn, gymId, Number(r.id), { status: 'cancelled' }, SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS });
+  }
+  return changed;
 }
 
 /**
@@ -784,24 +735,22 @@ export async function cancelProductPurchase(
 export async function cancelAbandonedPurchases(
   conn: Pick<typeof db, 'query'> = db,
 ): Promise<number> {
-  // #2126 stage 3p: the abandoned purchases are listed from the Product snapshot tables, their
-  // payment reached through the Billing Event junction (stage 5a). The UPDATE below is still
-  // the legacy row's (the writer), and each one is re-synced after it.
+  // #2126 stage 3p / 5b: the abandoned purchases are listed from the Product snapshot tables,
+  // their payment reached through the Billing Event junction (stage 5a), and each one is moved
+  // on the record and the snapshot together, in a transaction of its own.
   const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
     `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ?')} mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE pr.status IN ('expired', 'failed')`,
     purchaseSnapshotParams([PENDING_PURCHASE_STATUS]),
   );
-  const { rowCount } = await conn.query(
-    `UPDATE member_products_oneoff_snapshot mp
-       JOIN payment_requests pr ON pr.id = mp.payment_request_id
-        SET mp.status = 'cancelled', mp.modified_at = UTC_TIMESTAMP(), mp.modified_by = ?
-      WHERE mp.status = ? AND pr.status IN ('expired', 'failed')`,
-    [SYSTEM_ACTOR, PENDING_PURCHASE_STATUS],
-  );
-  for (const a of abandoned) await syncProductSnapshotForPurchase(conn, a.gym_id, Number(a.id));
-  return rowCount;
+  let cancelled = 0;
+  for (const a of abandoned) {
+    const move = (c: Pick<typeof db, 'query'>) => updatePurchase(
+      c, a.gym_id, Number(a.id), { status: 'cancelled' }, SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS });
+    cancelled += conn === db ? await db.transaction((tx) => move(tx)) : await move(conn);
+  }
+  return cancelled;
 }
 
 

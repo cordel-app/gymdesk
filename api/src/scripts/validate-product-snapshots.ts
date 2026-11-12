@@ -61,6 +61,22 @@ export async function validateProductSnapshots(): Promise<{ checks: Check[]; gap
            JOIN payment_requests pr ON pr.billing_event_id = j.billing_event_id AND pr.gym_id = s.gym_id
           WHERE s.source_id = mp.id AND s.gym_id = mp.gym_id))`);
 
+  // #2126 stage 5b: the purchase writers write the record and the snapshot from the same values
+  // (`purchase-writer.ts`) instead of re-deriving the snapshot, so the two are compared field by field.
+  const sameAsRecord = (table: string) => `
+    SELECT COUNT(*) n FROM member_products_oneoff_snapshot mp
+      JOIN ${table} s ON s.source_id = mp.id AND s.gym_id = mp.gym_id
+     WHERE s.status = mp.status AND s.member_id = mp.member_id AND s.product_id <=> mp.product_id
+       AND s.unit_price <=> mp.amount AND s.list_price <=> mp.list_price
+       AND s.direct_discount_percent <=> mp.direct_discount_percent
+       AND s.direct_discount_amount <=> mp.direct_discount_amount AND s.tax_rate_percent <=> mp.tax_rate_percent
+       AND s.validity_days <=> mp.validity_days AND s.valid_until <=> mp.valid_until
+       AND s.cancelled_on <=> mp.cancelled_on AND s.purchased_at <=> mp.purchased_at
+       AND s.assigned_member_id <=> mp.assigned_member_id`;
+  await add('purchases whose snapshot holds the same values as the record',
+    'SELECT COUNT(*) n FROM member_products_oneoff_snapshot',
+    `SELECT (${sameAsRecord('product_session_snapshots')}) + (${sameAsRecord('product_oneoff_snapshots')}) AS n`);
+
   const { rows: lines } = await db.query<Record<string, unknown>>(
     `SELECT s.id AS recurrent_snapshot_id, s.gym_id, s.product_id, 'recurring line with no Product Set version' AS reason
        FROM member_products_recurrent_snapshot s

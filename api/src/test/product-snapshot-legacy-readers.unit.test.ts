@@ -4,13 +4,14 @@
 // snapshot tables (`product_{session,oneoff,periodical}_snapshots`, `product_promotion_snapshots`).
 // What still reads the three legacy tables does so on purpose, and this file is the list of it:
 //
-//   - the dual-write itself (`product-snapshot-sync.ts`, `snapshot-junction-sync.ts`), which
-//     re-derives the snapshot tables *from* the legacy rows and so has to read them;
+//   - the dual-write of the recurring lines (`product-snapshot-sync.ts`), which re-derives a
+//     version's snapshots *from* its legacy lines and so has to read them (until stage 5c; since
+//     stage 5b a one-time purchase is written by `purchase-writer.ts` and re-derived from nothing);
 //   - the copies a new Product Set version takes of the legacy lines (`cloneConfiguration()`,
 //     `mergeActiveVersionIntoDraft()`), which are writes of the legacy table that happen to
 //     select from it, until stage 5 retires the legacy writers;
-//   - the row locks taken on the legacy record before it is written (`SELECT id … FOR UPDATE`),
-//     because the legacy row is still the one being updated or deleted;
+//   - the row locks taken on a legacy recurring line before it is written (`SELECT id … FOR UPDATE`);
+//     a one-time purchase is locked on its snapshot since stage 5b (`lockPurchase()`);
 //   - (until stage 5a) the purchase record joined only for its `payment_request_id`; since 5a a
 //     purchase reaches its payment through `billing_event_{oneoff,session}_snapshots`, so none is left;
 //   - the read-only `validate-product-snapshots.ts` report, which compares the two.
@@ -26,14 +27,11 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
-  'api/product-snapshot-sync.ts': { count: 7, why: 'the dual-write: re-derives the snapshot tables from the legacy rows' },
-  'api/snapshot-junction-sync.ts': { count: 1, why: 'links a bought one-time Product to its Billing Event through its payment request (both junctions, one statement)' },
+  'api/product-snapshot-sync.ts': { count: 2, why: 'the dual-write of the recurring lines: re-derives a version\'s snapshots from its legacy lines (until stage 5c)' },
   'api/product-set-bridge.ts': { count: 1, why: 'cloneConfiguration() copies the legacy lines into the new version' },
   'api/plan-snapshot-add.ts': { count: 1, why: 'mergeActiveVersionIntoDraft() copies the legacy lines into the Draft' },
   'api/product-set-draft.ts': { count: 2, why: 'removeService() / setServiceQuantity() lock the legacy line they write' },
-  'api/member-product-purchases.ts': { count: 1, why: 'staff Cancel locks the purchase record it writes' },
-  'api/me-products.ts': { count: 1, why: 'a draft delete locks the record it deletes' },
-  'scripts/validate-product-snapshots.ts': { count: 8, why: 'read-only report comparing the legacy and snapshot tables' },
+  'scripts/validate-product-snapshots.ts': { count: 10, why: 'read-only report comparing the legacy and snapshot tables' },
 };
 
 /** Every production `.ts` under api/src (tests and migrations excluded). */

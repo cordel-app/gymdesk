@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cancelAbandonedPurchases, completeProductPurchase } from '../api/me-products';
 import { cleanupTestGyms, createTestGym, linkTestPurchaseRequestToEvent } from './helpers';
 

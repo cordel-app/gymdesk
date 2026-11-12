@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens } from '../domain/themeTokens';
 import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery, linkTestPurchaseRequestToEvent } from './helpers';
-import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
+import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
