@@ -15,6 +15,9 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
+import { useFamilyMembers } from '@/lib/useFamilyMembers';
+import { groupLimits, initialParticipants, isFamilyGroupService, participantsValid } from '@/lib/familyParticipants';
+import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -163,6 +166,9 @@ export default function MemberCalendarPage() {
   const [chosenServiceId, setChosenServiceId] = useState<number | null>(null);
   const [selectionAttempted, setSelectionAttempted] = useState(false);
   const serviceBalances = useServiceBalances(true, selected?.id);
+  // #2674 — the family members a family group booking may name.
+  const familyRead = useFamilyMembers();
+  const [participantIds, setParticipantIds] = useState<number[]>([]);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -295,6 +301,19 @@ export default function MemberCalendarPage() {
   useEffect(() => {
     if (chosenServiceId == null) setChosenServiceId(defaultChoice(serviceChoiceList));
   }, [serviceChoiceList]);
+  // #2674 §1/§2 — a qualifying service shows the selection, seeded again whenever
+  // the event or its service changes.
+  const groupService = useMemo(() => {
+    if (!selected || selected.my_booking_status) return null;
+    const s = (selected.professional_services ?? []).find((x) => x.id === chosenServiceId);
+    return s && isFamilyGroupService(s) ? s : null;
+  }, [selected, chosenServiceId]);
+  const groupLimit = groupService ? groupLimits(groupService) : null;
+  useEffect(() => {
+    if (!groupService || !familyRead) { setParticipantIds([]); return; }
+    setParticipantIds(initialParticipants(familyRead.member_id, familyRead.members, groupLimits(groupService).max));
+  }, [groupService, familyRead]);
+  const groupInvalid = !!groupLimit && (!familyRead || !participantsValid(participantIds, groupLimit.min, groupLimit.max));
 
   function handleEventClick(info: any) {
     setActionMsg(null);
@@ -312,12 +331,17 @@ export default function MemberCalendarPage() {
       setSelectionAttempted(true);
       return;
     }
+    if (groupInvalid) return; // #2674 §4: the picker already says why
     setActionLoading(true);
     setActionMsg(null);
     try {
       await apiFetch('/me/bookings', {
         method: 'POST',
-        body: JSON.stringify({ class_session_id: selected.id, ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}) }),
+        body: JSON.stringify({
+          class_session_id: selected.id,
+          ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}),
+          ...(groupService ? { participant_member_ids: participantIds } : {}),
+        }),
       });
       refetch();
       setSelected(null);
@@ -667,6 +691,16 @@ export default function MemberCalendarPage() {
               bookedId={selected.my_booking_status ? (selected.my_professional_service_id ?? null) : null}
               choose={serviceChoiceList.length > 0 ? { choices: serviceChoiceList, chosenId: chosenServiceId, onChoose: (id) => { setChosenServiceId(id); setSelectionAttempted(false); } } : null}
             />
+            {groupService && groupLimit && familyRead && (
+              <FamilyParticipantsPicker
+                bookerId={familyRead.member_id}
+                family={familyRead.members}
+                partnerIds={participantIds}
+                min={groupLimit.min}
+                max={groupLimit.max}
+                onChange={setParticipantIds}
+              />
+            )}
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
@@ -685,7 +719,7 @@ export default function MemberCalendarPage() {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading || noAvailableBalance(serviceChoiceList)} style={actionBtn()}>
+                <button onClick={book} disabled={actionLoading || noAvailableBalance(serviceChoiceList) || groupInvalid} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

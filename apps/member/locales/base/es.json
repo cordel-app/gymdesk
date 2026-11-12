@@ -939,5 +939,15 @@
     "capacity": "{n, plural, one {# plaza} other {# plazas}}",
     "image_alt": "Imagen de {name}",
     "no_image": "Sin imagen"
+  },
+  "family_participants": {
+    "title": "Participantes",
+    "count": "{n} de {min}–{max}",
+    "you": "Tú",
+    "remove": "Quitar a {name}",
+    "add": "+ Añadir familiar",
+    "min_reached": "Se necesitan al menos {min} participantes",
+    "below_min": "Este servicio necesita al menos {min} participantes de tu familia.",
+    "above_max": "Este servicio admite como máximo {max} participantes."
   }
 }

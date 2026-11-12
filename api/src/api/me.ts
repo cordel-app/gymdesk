@@ -18,6 +18,7 @@ import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
 import { canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
+import type { Tx } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
@@ -38,6 +39,8 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
 import { cancelGroupPartners, membersShareCoverage } from './duo-booking';
+import { FAMILY_GROUP_MESSAGES, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
+import { loadServiceCapacityViews, loadServiceOccupancy } from './service-capacity';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
@@ -1039,6 +1042,93 @@ meRouter.get('/activity-types', requireRole('member'), requireFeatureEnabled('ca
   } catch (err) { next(err); }
 });
 
+/**
+ * #2674: the chosen service when it takes a family participant selection on this
+ * occurrence — `family_only`, minimum above one, offered by the occurrence — with
+ * its limits: the minimum is the service's, the maximum its effective capacity on
+ * the occurrence (#2499, the figure `/me/schedule` reports). `null` otherwise.
+ */
+async function loadFamilyGroupService(gymId: string, sessionId: number, serviceId: number): Promise<{ min: number; max: number } | null> {
+  const { rows } = await db.query(
+    'SELECT booking_type, min_participants FROM professional_services WHERE id = ? AND deleted_at IS NULL', [serviceId]);
+  if (rows.length === 0 || !isFamilyGroupService(rows[0])) return null;
+  const views = (await loadServiceCapacityViews(db, gymId, [sessionId])).get(sessionId) ?? [];
+  const view = views.find((v) => v.id === serviceId);
+  if (!view) return null; // not offered here: the gate refuses it as before
+  return { min: Number(rows[0].min_participants), max: view.capacity };
+}
+
+/**
+ * #2674 §6: one group booking for the booker and the family members they named,
+ * in the caller's transaction. The booker passes the gate and holds the one
+ * reservation; the partners attend on that unit (no gate, no reservation of their
+ * own) and the group is spent once, charged to the booker (#1984 stage 2b-2). A
+ * group that does not fit as `booked` rolls back whole: no waiting list.
+ */
+async function bookFamilyGroup(tx: Tx, input: {
+  gymId: string; memberId: number; sessionId: number; serviceId: number;
+  partnerIds: number[]; min: number; max: number; actor: string | null;
+}) {
+  const { gymId, memberId, sessionId, serviceId, partnerIds, actor } = input;
+  const family = await loadEligibleAssignees(tx, gymId, memberId);
+  const judged = judgeFamilyParticipants({
+    bookerId: memberId, partnerIds, familyMemberIds: family.map((m) => m.member_id), min: input.min, max: input.max,
+  });
+  if (!judged.ok) {
+    throw Object.assign(new Error(FAMILY_GROUP_MESSAGES[judged.code]), {
+      status: judged.code === 'participant_not_in_family' ? 403 : 400, code: judged.code,
+    });
+  }
+  const first = await bookMemberOnSession(gymId, memberId, sessionId, false, false, tx, false, actor, serviceId);
+  if (first.status !== 'booked') {
+    throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
+  }
+  const ids = [Number(first.id)];
+  for (const partnerId of partnerIds) {
+    const row = await bookMemberOnSession(gymId, partnerId, sessionId, false, false, tx, true, actor, undefined, false);
+    if (row.status !== 'booked') {
+      throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
+    }
+    ids.push(Number(row.id));
+  }
+  const { rows: own } = await tx.query(
+    'SELECT professional_service_id FROM calendar_event_bookings WHERE id = ? AND gym_id = ?', [first.id, gymId]);
+  const resolvedService = own[0]?.professional_service_id == null ? serviceId : Number(own[0].professional_service_id);
+  const groupId = newBookingGroupId();
+  const ph = ids.map(() => '?').join(', ');
+  await tx.query(
+    `UPDATE calendar_event_bookings
+        SET booking_group_id = ?, booked_by_member_id = ?, professional_service_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE gym_id = ? AND id IN (${ph})`,
+    [groupId, memberId, resolvedService, actor, gymId, ...ids]);
+  // The partners were inserted without a service, so the service's places are
+  // checked once for the whole group, under the occurrence lock the booker took.
+  const { rows: ev } = await tx.query(
+    `SELECT COALESCE(ce.capacity, at.max_capacity) AS cap FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id WHERE ce.id = ? AND ce.gym_id = ?`, [sessionId, gymId]);
+  const occ = await loadServiceOccupancy(tx, gymId, sessionId, resolvedService, Number(ev[0].cap));
+  if (occ.occupied > occ.capacity) {
+    throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
+  }
+  return { ...first, booking_group_id: groupId, participant_booking_ids: ids.slice(1) };
+}
+
+/**
+ * #2674 §2/§3: the members of the caller's Family, the participants a family
+ * group booking may name (the caller first, then alphabetically). `[]` when the
+ * caller belongs to no family. The caller is never named by the request.
+ */
+meRouter.get('/family-members', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  try {
+    const memberId = await resolveMemberId(ctx.gymId, ctx);
+    const family = await loadEligibleAssignees(db, ctx.gymId, memberId);
+    const self = family.find((m) => m.member_id === memberId);
+    const others = family.filter((m) => m.member_id !== memberId).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ member_id: memberId, members: [...(self ? [self] : []), ...others].map((m) => ({ member_id: m.member_id, name: m.name })) });
+  } catch (err) { next(err); }
+});
+
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
 meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -1053,11 +1143,23 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     if (chosenService !== null && (!Number.isInteger(chosenService) || chosenService <= 0)) {
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
+    const actor = resolveRequestActor(ctx);
+    // #2674: a `family_only` service with a minimum above one is a family group
+    // booking — the booker plus family members, bounded by the service.
+    const groupService = chosenService === null ? null : await loadFamilyGroupService(gymId, Number(class_session_id), chosenService);
+    if (groupService) {
+      const parsedGroup = parseParticipantIds(req.body.participant_member_ids, memberId, Number.MAX_SAFE_INTEGER);
+      if (!parsedGroup.ok) return res.status(400).json({ error: parsedGroup.error });
+      const result = await db.transaction((tx) => bookFamilyGroup(tx, {
+        gymId, memberId, sessionId: Number(class_session_id), serviceId: chosenService!,
+        partnerIds: parsedGroup.partnerIds, min: groupService.min, max: groupService.max, actor,
+      }));
+      return res.status(201).json(result);
+    }
     // #1984 stage 2b-1: an optional second participant makes this a Duo booking,
     // written as one unit in one transaction.
     const parsed = parseParticipantIds(req.body.participant_member_ids, memberId);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-    const actor = resolveRequestActor(ctx);
     let result;
     if (parsed.partnerIds.length === 0) {
       result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, actor, chosenService);
