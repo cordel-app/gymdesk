@@ -2,10 +2,11 @@
 //
 // `GET /me/membership-plans` lists the plans a member may choose with the
 // Promotions compatible with each; `POST /me/membership-plans/:id/assign`
-// writes the member's own Draft, applies the chosen Promotions with their
-// snapshots, and runs Save & Pay — so the member lands in Pending Payment (or
-// Active, when the first cycle owes nothing) exactly as a staff assignment
-// would, and pays it through the same Pay now.
+// writes the member's own Draft and applies the chosen Promotions with their
+// snapshots — and nothing else (#2743): no Payment Request, no Billing Event,
+// no checkout. Payment starts only when the member commits the Draft through
+// its own Save & Pay (`POST /me/product-sets/:id/save-and-pay`), or, owing
+// nothing, its free activation.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
@@ -53,6 +54,11 @@ async function createMember(): Promise<{ id: number; userId: string }> {
 
 function asMember(userId: string) {
   vi.mocked(verifyToken).mockResolvedValueOnce({ sub: userId } as any);
+}
+// `/me/product-sets` is mounted behind `requireAuth()` and `tenantContext`, which
+// each verify the token.
+function asMemberTwice(userId: string) {
+  vi.mocked(verifyToken).mockResolvedValueOnce({ sub: userId } as any).mockResolvedValueOnce({ sub: userId } as any);
 }
 
 async function createPlan(opts: { price?: number | null; enrollment?: string; lifecycle?: string } = {}): Promise<number> {
@@ -105,6 +111,16 @@ const list = (userId: string) => { asMember(userId); return request.get('/me/mem
 const assign = (userId: string, planId: number, body: Record<string, unknown> = {}) => {
   asMember(userId); return request.post(`/me/membership-plans/${planId}/assign`).set(h()).send(body);
 };
+const pay = (userId: string, setId: number) => {
+  asMemberTwice(userId); return request.post(`/me/product-sets/${setId}/save-and-pay`).set(h()).send({});
+};
+
+async function moneyRowsOf(setId: number): Promise<{ events: number; requests: number }> {
+  const { rows: ev } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [setId]);
+  const { rows: pr } = await db.query<any>(
+    'SELECT COUNT(*) AS n FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id WHERE be.product_set_id = ?', [setId]);
+  return { events: Number(ev[0].n), requests: Number(pr[0].n) };
+}
 
 async function status(umId: number): Promise<string> {
   const { rows } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [umId]);
@@ -164,15 +180,18 @@ describe('GET /me/membership-plans', () => {
 });
 
 describe('POST /me/membership-plans/:id/assign', () => {
-  it('writes the member\'s own Draft, applies the Promotion with its snapshot, and lands in Pending Payment', async () => {
+  it('writes the member\'s own Draft with the Promotion and its snapshot, and starts no payment (#2743)', async () => {
     const member = await createMember();
     const planId = await createPlan({ price: 40 });
     const promoId = await createPromotion(planId, { action: 'percentage_discount', value: 50 });
     const res = await assign(member.userId, planId, { promotion_ids: [promoId] });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('pending_payment');
+    expect(res.body.status).toBe('draft');
+    // The figure the Draft's Save & Pay will charge, reported before paying.
     expect(Number(res.body.membership_fee)).toBe(proratedToNextFirst(20));
+    expect(res.body.payment_required).toBe(true);
     expect(res.body.promotion_ids).toEqual([promoId]);
+    expect(res.body.checkout_url).toBeUndefined();
 
     // #1325 PR 3a: the member's plan is a ProductSet version, with the plan frozen
     // beside it and the Promotion applied with its own snapshot.
@@ -180,7 +199,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
       'SELECT owner_member_id, created_by, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
     expect(ps[0].owner_member_id).toBe(member.id);
     expect(ps[0].created_by).toBe('MMP Member');
-    expect(ps[0].status).toBe('pending_payment');
+    expect(ps[0].status).toBe('draft');
     expect(ps[0].membership_plan_id).toBe(planId);
     const { rows: snap } = await db.query<any>(
       'SELECT membership_fee_price FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [res.body.id]);
@@ -190,25 +209,43 @@ describe('POST /me/membership-plans/:id/assign', () => {
     );
     expect(apps.map((a: any) => a.promotion_id)).toEqual([promoId]);
     expect(apps[0].snapshot).not.toBeNull();
-    // Nothing is an assignment yet: that is what activation projects.
+    // No Billing Event, no Payment Request, no assignment.
+    expect(await moneyRowsOf(res.body.id)).toEqual({ events: 0, requests: 0 });
     const { rows: um } = await db.query<any>('SELECT id FROM user_memberships WHERE member_id = ?', [member.id]);
     expect(um).toHaveLength(0);
 
-    // The member's own read tells the page about it, and Pay now reaches it.
+    // The Draft is listed as the member's own version; nothing awaits payment yet.
+    asMemberTwice(member.userId);
+    const sets = await request.get('/me/product-sets').set(h());
+    expect(sets.body.map((r: any) => [r.id, r.status])).toContainEqual([res.body.id, 'draft']);
     asMember(member.userId);
     const me = await request.get('/me/membership').set(h());
     expect(me.body.membership).toBeNull();
-    expect(me.body.pending_membership.id).toBe(res.body.id);
-    expect(Number(me.body.pending_membership.membership_fee)).toBe(proratedToNextFirst(20));
+    expect(me.body.pending_membership).toBeNull();
+
+    // Pay: only now is the version Pending Payment, at the same figure.
+    const paid = await pay(member.userId, res.body.id);
+    expect(paid.status).toBe(201);
+    expect(Number(paid.body.amount)).toBe(proratedToNextFirst(20));
+    asMember(member.userId);
+    const after = await request.get('/me/membership').set(h());
+    expect(after.body.pending_membership.id).toBe(res.body.id);
+    expect(Number(after.body.pending_membership.membership_fee)).toBe(proratedToNextFirst(20));
   });
 
-  it('activates straight away when the first cycle owes nothing', async () => {
+  it('leaves a plan that owes nothing a Draft until the member confirms it', async () => {
     const member = await createMember();
     const planId = await createPlan({ price: 40 });
     const waive = await createPromotion(planId, { action: 'waive', value: null, durationMonths: 2 });
     const res = await assign(member.userId, planId, { promotion_ids: [waive] });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('active');
+    expect(res.body.status).toBe('draft');
+    expect(res.body.payment_required).toBe(false);
+    asMemberTwice(member.userId);
+    const activated = await request.post(`/me/product-sets/${res.body.id}/activate`).set(h()).send({});
+    expect(activated.status).toBe(200);
+    const { rows } = await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [res.body.id]);
+    expect(rows[0].status).toBe('active');
   });
 
   it('refuses a plan that is not public, a Promotion that does not target the plan, and one about a Product', async () => {
@@ -243,26 +280,41 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(await status(liveId)).toBe('active');
   });
 
-  it('Save & Pay writes the initial pending Billing Event and its payment request, and a second plan is refused', async () => {
+  it('Pay writes the initial pending Billing Event and its payment request once, and a second plan or click is refused', async () => {
     const member = await createMember();
     const planId = await createPlan({ price: 40 });
     const res = await assign(member.userId, planId);
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('pending_payment');
-    expect(res.body.checkout_url).toContain('/checkout?token=');
+    expect(res.body.status).toBe('draft');
+    // A repeated Choose this plan creates no second Draft.
+    const again = await assign(member.userId, await createPlan({ price: 40 }));
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe('plan_pending_payment');
+    const { rows: drafts } = await db.query<any>('SELECT id FROM product_sets WHERE owner_member_id = ?', [member.id]);
+    expect(drafts).toHaveLength(1);
+
+    const paid = await pay(member.userId, res.body.id);
+    expect(paid.status).toBe(201);
+    expect(paid.body.status).toBe('pending_payment');
+    expect(paid.body.checkout_url).toContain('/checkout?token=');
     const { rows } = await db.query<any>(
       `SELECT be.event_type, be.amount, pr.status AS pr_status, pr.billing_event_id
          FROM billing_events be JOIN payment_requests pr ON pr.billing_event_id = be.id
-        WHERE be.id = ?`, [res.body.billing_event_id],
+        WHERE be.id = ?`, [paid.body.billing_event_id],
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].event_type).toBe('payment_recorded');
     expect(rows[0].pr_status).toBe('pending');
     expect(Number(rows[0].amount)).toBe(proratedToNextFirst(40));
 
-    const again = await assign(member.userId, await createPlan({ price: 40 }));
-    expect(again.status).toBe(409);
-    expect(again.body.error).toBe('plan_pending_payment');
+    // A second Pay click is refused and writes nothing more.
+    const twice = await pay(member.userId, res.body.id);
+    expect(twice.status).toBe(409);
+    expect(await moneyRowsOf(res.body.id)).toEqual({ events: 1, requests: 1 });
+
+    const third = await assign(member.userId, await createPlan({ price: 40 }));
+    expect(third.status).toBe(409);
+    expect(third.body.error).toBe('plan_pending_payment');
   });
 });
 
@@ -286,7 +338,9 @@ describe('a ProductSet plan paid through the webhook is the member\'s plan', () 
     const planId = await createPlan({ price: 40 });
     const res = await assign(member.userId, planId);
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('pending_payment');
+    expect(res.body.status).toBe('draft');
+    const paid = await pay(member.userId, res.body.id);
+    expect(paid.status).toBe(201);
 
     // Before payment: pending, not current.
     asMember(member.userId);
@@ -299,7 +353,7 @@ describe('a ProductSet plan paid through the webhook is the member\'s plan', () 
     const payNow = await request.post('/me/payment-requests').set(h()).send({});
     expect(payNow.status).toBe(201);
     const { rows: attempts } = await db.query<any>(
-      'SELECT attempt, provider_order FROM payment_requests WHERE billing_event_id = ? ORDER BY attempt', [res.body.billing_event_id]);
+      'SELECT attempt, provider_order FROM payment_requests WHERE billing_event_id = ? ORDER BY attempt', [paid.body.billing_event_id]);
     expect(attempts.map((a: any) => a.attempt)).toEqual([1, 2]);
 
     const raw = JSON.stringify({

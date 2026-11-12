@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { getRequestLocale } from '../infra/locale';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
@@ -14,9 +13,9 @@ import {
 } from './user-memberships';
 import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
-import { addCoverage, createDraft, submitForPayment as submitSetForPayment } from './product-sets';
-import { activateWithEvents, snapshotProductSetFromPlan } from './product-set-configuration';
-import { createProductSetCheckout, initialCharge } from './product-set-checkout';
+import { addCoverage, createDraft } from './product-sets';
+import { snapshotProductSetFromPlan } from './product-set-configuration';
+import { initialCharge } from './product-set-checkout';
 import { PENDING_PAYMENT_STATUS } from './assignment-commit';
 import { LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
 import { isNewMemberStatus } from './new-member-eligibility';
@@ -32,7 +31,8 @@ import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
  *                                          with the Promotions compatible with it
  *   POST /me/membership-plans/:id/assign   choose one: a Draft of the member's
  *                                          own, the chosen Promotions applied,
- *                                          then Save & Pay
+ *                                          and nothing else (#2743: payment is
+ *                                          the Draft's own Save & Pay)
  *
  * It is the staff assignment made self-service, and it invents no rule of its
  * own: which plans may be assigned is `planAssignabilityError()` (active and
@@ -41,10 +41,10 @@ import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
  * included), the Draft is written exactly as `POST /user-memberships` writes
  * one — snapshot, ledger row, covered member — each Promotion is applied
  * through `applyPromotionToMembership()` (its own snapshot, §6), and the
- * commit is #1108 stage 2's `submitForPayment()` / `commitAssignment()`, so
- * the member lands in the same **Pending Payment** state a staff Save & Pay
- * produces and pays it through the same *Pay now*. The member is never named
- * by a request (#1036's rule).
+ * commit is a separate, explicit step since #2743: the member's Draft is paid
+ * (or, owing nothing, activated) from My Products through the Draft's own
+ * `POST /me/product-sets/:id/save-and-pay` / `…/activate`, the Admin's Save &
+ * Pay. The member is never named by a request (#1036's rule).
  *
  * The one-plan rule is the member's too: a member holding a live plan is told
  * (`409 active_plan_exists`) and confirms the replacement with `confirm: true`,
@@ -312,12 +312,10 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
 
     // #1325 PR 3a: the member's plan is a ProductSet version, not an assignment
     // Draft. The Draft is created with its frozen plan, its declined benefits and
-    // each applied Promotion (its own snapshot, §16) in one transaction, and then
-    // either activated at once — a first cycle that owes nothing — or saved for
-    // payment with its initial event and checkout. The operational assignment the
-    // member's screens read is projected at activation (`product-set-projection`).
+    // each applied Promotion (its own snapshot, §16) in one transaction, and is
+    // left a Draft (#2743). The operational assignment the member's screens read
+    // is projected when the Draft is activated (`product-set-projection`).
     const actor = { name: memberRows[0].name, type: 'member' };
-    const today = new Date().toISOString().slice(0, 10);
     const created = await db.transaction(async (tx) => {
       const draft = await createDraft(tx, {
         gymId, ownerMemberId: memberId, membershipPlanId: planId, startsAt, actor,
@@ -341,28 +339,15 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     }
     const setId = created.productSet.id;
 
-    // Save & Pay: the point of no return. A first cycle that owes nothing — a
-    // free plan, or a Promotion waiving it — activates now.
+    // #2743: choosing a plan saves it as the member's Draft and nothing else —
+    // no Payment Request, no Billing Event, no checkout and no activation. The
+    // member reviews it on My Products and commits it there through the
+    // Draft's own Save & Pay (`POST /me/product-sets/:id/save-and-pay`) or, when
+    // nothing is owed today, its free activation (`…/activate`). The figure
+    // reported is the initial charge that commit will take (`initialCharge()`,
+    // the same engine), so the member sees it before paying.
     const charge = await initialCharge(gymId, setId, startsAt);
-    const owesNothing = !(charge != null && charge.amount > 0);
-    let checkout: { paymentRequestId: number; checkoutUrl: string; billingEventId: number } | null = null;
-    let status = 'active';
-    if (owesNothing) {
-      const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: setId, today, actor: actor.name }));
-      if (out.kind !== 'ok') return res.status(500).json({ error: 'Membership could not be saved' });
-    } else {
-      const moved = await db.transaction((tx) => submitSetForPayment(tx, gymId, setId));
-      if (moved.kind !== 'ok') return res.status(500).json({ error: 'Membership could not be saved' });
-      status = 'pending_payment';
-      const { rows: emailRows } = await db.query<{ email: string | null }>(
-        'SELECT email FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId],
-      );
-      checkout = await createProductSetCheckout({
-        gymId, productSetId: setId, memberId, memberEmail: emailRows[0]?.email ?? '',
-        startsAt, charge: charge as NonNullable<typeof charge>, actor: actor.name,
-        requestLocale: getRequestLocale(req),
-      });
-    }
+    const status = 'draft';
 
     const { rows: planNameRows } = await db.query<{ name: string }>(
       'SELECT name FROM membership_plans WHERE id = ?', [planId]);
@@ -375,9 +360,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     });
     res.status(201).json({
       ...body, membership_fee: charge?.amount ?? 0, promotion_ids: promotionIds,
-      checkout_url: checkout?.checkoutUrl ?? null,
-      payment_request_id: checkout?.paymentRequestId ?? null,
-      billing_event_id: checkout?.billingEventId ?? null,
+      payment_required: (charge?.amount ?? 0) > 0,
     });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

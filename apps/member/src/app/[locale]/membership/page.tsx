@@ -50,7 +50,6 @@ import {
   assignErrorKey,
   declinedBenefitsPayload,
   planBenefitKey,
-  choosingOwesNothing,
   planFinalPriceText,
   planFrequencyKey,
   planPriceText,
@@ -321,10 +320,9 @@ export default function MembershipPage() {
   const gymOffersPlans = planCatalogue === null || planCatalogue.length > 0;
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [appliedPlanPromotions, setAppliedPlanPromotions] = useState<Record<number, number>>({});
-  const [choosingPlan, setChoosingPlan] = useState<MemberPlanOffer | null>(null);
-  const [assignSubmitting, setAssignSubmitting] = useState(false);
-  const [assignError, setAssignError] = useState<string | null>(null);
-  const [assignNeedsConfirm, setAssignNeedsConfirm] = useState(false);
+  // #2743 — the plan whose Draft is being created; set while the request runs, so
+  // a second click (on any plan) does nothing.
+  const [choosingPlanId, setChoosingPlanId] = useState<number | null>(null);
   // #1184 stage 3b: optional Plan benefits the member unticked, per plan.
   const [declinedPlanBenefits, setDeclinedPlanBenefits] = useState<Record<number, string[]>>({});
   // #2495 — the server's re-quote of a plan's overview for the declined selection.
@@ -1434,50 +1432,31 @@ export default function MembershipPage() {
       .catch(() => { /* keep the last quote; the purchase still sends the selection */ });
   }
 
-  function openChoosePlan(plan: MemberPlanOffer) {
-    setChoosingPlan(plan);
-    setAssignError(null);
-    setAssignNeedsConfirm(false);
-  }
-
-  function closeChoosePlan() {
-    setChoosingPlan(null);
-    setAssignError(null);
-    setAssignNeedsConfirm(false);
-  }
-
   /**
-   * `POST /me/membership-plans/:id/assign` — the member's own Draft, the
-   * applied Promotion with its snapshot, then Save & Pay. A 409 `active_plan_exists`
-   * is the one-plan rule asking for the replacement to be confirmed, so the
-   * dialog turns into that question and resends with `confirm: true`.
+   * #2743 — `Choose this plan` creates the member's Draft at once (no confirmation
+   * step) through `POST /me/membership-plans/:id/assign`, which starts no
+   * payment, and returns to My Products, where the Draft is reviewed and paid
+   * through its own Save & Pay. A refusal is shown on the plan card it came from.
    */
-  async function confirmChoosePlan(confirmReplacement = false) {
-    if (!choosingPlan) return;
-    setAssignSubmitting(true);
-    setAssignError(null);
+  async function choosePlan(plan: MemberPlanOffer) {
+    if (choosingPlanId !== null) return;
+    setChoosingPlanId(plan.id);
+    setPlanDraftError(null);
     try {
-      const applied = appliedPlanPromotions[choosingPlan.id] ?? null;
-      await apiFetch(`/me/membership-plans/${choosingPlan.id}/assign`, {
+      const applied = appliedPlanPromotions[plan.id] ?? null;
+      await apiFetch(`/me/membership-plans/${plan.id}/assign`, {
         method: 'POST',
         body: JSON.stringify({
           promotion_ids: applied ? [applied] : [],
-          declined_benefits: declinedBenefitsPayload(choosingPlan.benefits, new Set(declinedPlanBenefits[choosingPlan.id] ?? [])),
-          ...(confirmReplacement ? { confirm: true } : {}),
+          declined_benefits: declinedBenefitsPayload(plan.benefits, new Set(declinedPlanBenefits[plan.id] ?? [])),
         }),
       });
-      closeChoosePlan();
-      // #2737 — back to My Products, which reads the new plan (awaiting its
-      // first payment, or active when it owes nothing) on mount.
+      // My Products reads the new Draft on mount; the button stays busy while
+      // the page changes, so the Draft cannot be submitted twice.
       router.push(`/${locale}${MEMBERSHIP_PATH}`);
     } catch (err: any) {
-      if (err?.message === 'active_plan_exists' && !confirmReplacement) {
-        setAssignNeedsConfirm(true);
-      } else {
-        setAssignError(t(assignErrorKey(err?.message) as any));
-      }
-    } finally {
-      setAssignSubmitting(false);
+      setPlanDraftError({ planId: plan.id, key: assignErrorKey(err?.message) });
+      setChoosingPlanId(null);
     }
   }
 
@@ -1610,8 +1589,14 @@ export default function MembershipPage() {
     const busy = draftBusy !== null;
     if (placed.state === 'no_draft') {
       return (
-        <button type="button" style={primaryButtonStyle} onClick={() => openChoosePlan(plan)}>
-          {t('membership.choose_plan')}
+        <button
+          type="button"
+          style={primaryButtonStyle}
+          disabled={choosingPlanId !== null}
+          aria-busy={choosingPlanId === plan.id}
+          onClick={() => choosePlan(plan)}
+        >
+          {choosingPlanId === plan.id ? t('membership.choose_plan_submitting') : t('membership.choose_plan')}
         </button>
       );
     }
@@ -1680,55 +1665,13 @@ export default function MembershipPage() {
       };
     });
     return (
-      <>
-        <MemberPlanCatalogue
-          title={t('membership.add_plan_title')}
-          emptyLabel={catalogueLoading ? t('membership.add_plan_loading') : t('membership.add_plan_empty')}
-          items={items}
-          onClose={() => router.push(`/${locale}${MEMBERSHIP_PATH}`)}
-          closeLabel={t('membership.add_plan_close')}
-        />
-        {choosingPlan && (
-          <MemberDialog
-            title={t('membership.choose_plan_title')}
-            onClose={assignSubmitting ? () => {} : closeChoosePlan}
-            labelledBy="choose-plan-title"
-            actions={(
-              <>
-                <button type="button" style={secondaryButtonStyle} onClick={closeChoosePlan} disabled={assignSubmitting}>
-                  {t('membership.choose_plan_cancel')}
-                </button>
-                <button
-                  type="button"
-                  style={primaryButtonStyle}
-                  onClick={() => confirmChoosePlan(assignNeedsConfirm)}
-                  disabled={assignSubmitting}
-                >
-                  {assignSubmitting
-                    ? t('membership.choose_plan_submitting')
-                    : assignNeedsConfirm ? t('membership.add_plan_replace_confirm') : t('membership.choose_plan_confirm')}
-                </button>
-              </>
-            )}
-          >
-            {assignNeedsConfirm ? (
-              <p style={styles.dialogBody}>
-                {t('membership.add_plan_replace_body', { current: membership?.plan_name ?? '—', name: choosingPlan.name })}
-              </p>
-            ) : (
-              <p style={styles.dialogBody}>
-                {choosingOwesNothing(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null)
-                  ? t('membership.choose_plan_body_free', { name: choosingPlan.name })
-                  : t('membership.choose_plan_body', {
-                    name: choosingPlan.name,
-                    price: planFinalPriceText(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null, gymFmt) ?? '—',
-                  })}
-              </p>
-            )}
-            {assignError && <p style={{ ...styles.dialogBody, color: memberTheme.statusError }}>{assignError}</p>}
-          </MemberDialog>
-        )}
-      </>
+      <MemberPlanCatalogue
+        title={t('membership.add_plan_title')}
+        emptyLabel={catalogueLoading ? t('membership.add_plan_loading') : t('membership.add_plan_empty')}
+        items={items}
+        onClose={() => router.push(`/${locale}${MEMBERSHIP_PATH}`)}
+        closeLabel={t('membership.add_plan_close')}
+      />
     );
   }
 
@@ -2077,7 +2020,6 @@ const styles: Record<string, React.CSSProperties> = {
   pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
   pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },
   pendingPlanAction: { display: 'flex', justifyContent: 'flex-end', marginTop: 10 },
-  dialogBody: { margin: '0 0 8px', fontSize: 14, color: memberTheme.text, lineHeight: 1.5 },
   emptyCard: { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },
