@@ -265,6 +265,7 @@ Tick items off in the PR that completes them.
       rollback-and-re-apply here would not leave the value empty but rewrite it as
       `mandatory`, which tells the member the opposite of what was configured.
 - [ ] **Run `npm run reservations:backfill` once after migration 381 is live** (#2605 stage 3). Dry run first, then `-- --execute`, from the VPS as the compiled `node dist/scripts/backfill-service-reservations.js`: it gives every future booking made before the reservation model its held unit, so Admin → Members → Professional Services reads the right `available + booked` split and the event-start pass can consume those bookings. A member whose remaining balance is already fully booked is reported, not reserved. Repeatable; a second run finds nothing.
+- [ ] **Run `npm run plan-lines:split` once after #2657 stage 4 is deployed** (#2657 stage 4). Dry run first, then `-- --execute`, from the VPS as the compiled `node dist/scripts/split-committed-plan-lines.js`: it splits every Individual Product line of an Active or Pending Payment plan committed before migration 409 into one line per member (a Session line's renewals and spends follow, so no balance moves; billing is unchanged). A Draft, a Shared line and history are left alone. Repeatable; a second run finds nothing.
 - [ ] **Run `npm run memberships:multi-active` before migration 213 — and read what it
       says** (#956). 213 restores the one-active-Membership-per-Member UNIQUE index, and
       it cannot be created while a Member owns two live rows, so the migration cancels
