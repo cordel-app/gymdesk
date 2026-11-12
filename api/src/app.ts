@@ -97,6 +97,7 @@ import { mePersonalGoalsRouter } from './api/me-personal-goals';
 import { meProgressRouter } from './api/me-progress';
 import { meStandaloneExercisesRouter } from './api/me-standalone-exercises';
 import { memberProgressRouter } from './api/member-progress';
+import { memberBookingsRouter } from './api/member-bookings';
 import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
@@ -369,6 +370,8 @@ app.use('/members/:memberId/professional-services', requireAuth(), tenantContext
 // gating as stage 1 — it is a read of one Member's slots, and it has nothing
 // to project when Professional Services are switched off.
 app.use('/members/:memberId/personal-training-slots', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberPersonalTrainingSlotsRouter);
+// #2720: the Member card's Bookings tab — the /bookings router's own gates.
+app.use('/members/:memberId/bookings', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), memberBookingsRouter);
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
