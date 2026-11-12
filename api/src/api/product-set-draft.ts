@@ -14,6 +14,9 @@ import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
 import { AssigneeRefused, resolveAssignedMember } from './product-assignee';
+import { insertSiblingLine, syncPlanLineAllocations } from './plan-line-allocation';
+import { loadPlanAssigneeContext } from './plan-unit-assignees';
+import { parsePlanLineMemberInput, planLineKey } from '../domain/planLineAllocation';
 
 /**
  * #1325 PR 4 — editing a Draft ProductSet's configuration.
@@ -75,31 +78,15 @@ export const isRefusal = (v: LockedDraft | DraftRefusal): v is DraftRefusal => '
  * #1187, on a version's own rows: a catalogue-mandatory line's quantity is the
  * number of Members the version covers — owner included, never below one —
  * and it *replaces* the configured quantity. Re-derived on every Draft write
- * (a section save, a coverage change), so no writer can leave it stale.
+ * (a section save, a coverage change), so no writer can leave it stale. Since
+ * #2657 stage 3 an Individual Product is one line per member, so the same pass
+ * splits a line still carrying no member and gives a catalogue-mandatory
+ * Individual Product one unit per beneficiary (`syncPlanLineAllocations()`).
  */
 export async function syncMandatoryQuantities(
   tx: Tx, gymId: string, productSetId: number,
 ): Promise<void> {
-  // #2125 stage 21: the number of Members is each plan snapshot's own beneficiaries.
-  // M4b-2: a snapshot another set links is immutable to this one; its quantities were derived when it
-  // was written, and the beneficiary change that moves them owns the plan first.
-  const { rows: snaps } = await tx.query<{ id: number; n: number }>(
-    `SELECT s.id, (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id AND b.gym_id = s.gym_id) AS n
-       FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0
-        AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
-    [productSetId, gymId]);
-  for (const snap of snaps) {
-    const count = Math.max(1, Number(snap.n ?? 0));
-    for (const category of PLAN_LINE_CATEGORIES) {
-      await tx.query(
-        `UPDATE ${PLAN_LINE_TABLE[category]} b
-           JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
-            SET b.quantity = ?
-          WHERE b.plan_snapshot_id = ? AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
-        [count, snap.id, gymId, count]);
-    }
-  }
+  await syncPlanLineAllocations(tx, gymId, productSetId);
 }
 
 async function touch(tx: Tx, draft: LockedDraft) {
@@ -119,13 +106,15 @@ const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
  * Pure: `current` is what the plan snapshot holds, `next` what the request keeps.
  */
 export function mandatoryLineRefusal(
-  current: { product_id: number; mandatory: boolean; item_name: string }[],
-  next: { product_id: number; mandatory?: boolean }[],
+  current: { product_id: number; assigned_member_id?: number | null; mandatory: boolean; item_name: string }[],
+  next: { product_id: number; assigned_member_id?: number | null; mandatory?: boolean }[],
 ): string | null {
-  const byId = new Map(next.map((n) => [n.product_id, n]));
+  // #2657 stage 3: a line is its Product and the member it is for, so dropping one
+  // member's Mandatory line is a removal too.
+  const byKey = new Map(next.map((n) => [planLineKey(n.product_id, n.assigned_member_id), n]));
   for (const line of current) {
     if (!line.mandatory) continue;
-    const kept = byId.get(line.product_id);
+    const kept = byKey.get(planLineKey(line.product_id, line.assigned_member_id));
     if (!kept) return `'${line.item_name}' is a Mandatory product of this plan and cannot be removed`;
     if (kept.mandatory === false) return `'${line.item_name}' is a Mandatory product of this plan and cannot be made optional`;
   }
@@ -136,7 +125,7 @@ export async function loadBenefitSection(gymId: string, productSetId: number, ca
   const snapshotId = await primaryPlanSnapshotId(db, gymId, productSetId);
   if (snapshotId == null) return [];
   const { rows } = await db.query<any>(
-    `SELECT product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency,
+    `SELECT product_id, assigned_member_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency,
             \`action\`, \`value\`, mandatory${category === 'session' ? ', frequency' : ''}
        FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id = ? ORDER BY id`,
     [gymId, snapshotId]);
@@ -158,19 +147,21 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   // keeps what the line is stored with, so a quantity-only client is unchanged.
   type Parsed = {
     product_id: number; quantity: number;
+    /** #2657 stage 3: `undefined` = not named, `null` = the unsplit line, a number = that member's line. */
+    member?: number | null;
     benefit: ProductBenefit | null;
     frequency?: SessionBenefitFrequency | null;
     mandatory?: boolean;
     direct_discount_percent?: number | null;
   };
   const parsed: Parsed[] = [];
-  const seen = new Set<number>();
   for (const item of items) {
     const productId = Number((item as any)?.product_id);
     const quantity = Number((item as any)?.quantity);
     if (!Number.isInteger(productId) || productId <= 0) return { kind: 'invalid', message: 'product_id is required' };
     if (!Number.isInteger(quantity) || quantity <= 0) return { kind: 'invalid', message: 'quantity must be a positive integer' };
-    if (seen.has(productId)) return { kind: 'invalid', message: `Duplicate product_id: ${productId}` };
+    const memberInput = parsePlanLineMemberInput(item);
+    if ('error' in memberInput) return { kind: 'invalid', message: memberInput.error };
     const pair = parseProductBenefitInput('plan', item as any);
     if (pair.error) return { kind: 'invalid', message: pair.error };
     const frequency = category === 'session' ? parseSessionBenefitFrequencyInput(item) : { keep: true as const };
@@ -179,9 +170,9 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (mandatoryInput.error) return { kind: 'invalid', message: mandatoryInput.error };
     const directInput = parseLineDirectDiscountInput(item);
     if (directInput.error) return { kind: 'invalid', message: directInput.error };
-    seen.add(productId);
     parsed.push({
       product_id: productId, quantity, benefit: pair.benefit,
+      ...(memberInput.keep ? {} : { member: memberInput.memberId }),
       ...(frequency.keep ? {} : { frequency: (frequency as any).frequency }),
       ...(mandatoryInput.keep ? {} : { mandatory: mandatoryInput.mandatory }),
       ...(directInput.keep ? {} : { direct_discount_percent: directInput.percent }),
@@ -191,22 +182,56 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   const table = PLAN_LINE_TABLE[category];
   const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
-  const { rows: current } = await tx.query<{ product_id: number; mandatory: number; item_name: string }>(
-    `SELECT product_id, mandatory, item_name FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`,
+  const { rows: currentRaw } = await tx.query<{
+    id: number; product_id: number; assigned_member_id: number | null; mandatory: number; item_name: string; sharing_type: string | null;
+  }>(
+    `SELECT b.id, b.product_id, b.assigned_member_id, b.mandatory, b.item_name, gc.sharing_type
+       FROM ${table} b LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
+      WHERE b.gym_id = ? AND b.plan_snapshot_id = ? ORDER BY b.id`,
     [draft.gym_id, snapshotId]);
-  const attached = new Set(current.map((r) => Number(r.product_id)));
+  const current = currentRaw.map((r) => ({
+    ...r, id: Number(r.id), product_id: Number(r.product_id),
+    assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
+  }));
+
+  // #2657 stage 3: each item names one line — its Product and, for an Individual Product held
+  // per member, the member it is for. An item naming no member matches the Product's only line;
+  // a Product held by several members needs the member, never a guess.
+  type Resolved = Parsed & { lineId: number | null; memberId: number | null };
+  const resolved: Resolved[] = [];
+  const seen = new Set<string>();
+  for (const p of parsed) {
+    const ofProduct = current.filter((c) => c.product_id === p.product_id);
+    let line: (typeof current)[number] | undefined;
+    if (p.member !== undefined) {
+      line = ofProduct.find((c) => c.assigned_member_id === p.member);
+    } else if (ofProduct.length > 1) {
+      return { kind: 'invalid', message: `assigned_member_id is required: '${ofProduct[0].item_name}' is held per member` };
+    } else {
+      line = ofProduct[0];
+    }
+    const memberId = line ? line.assigned_member_id : (p.member ?? null);
+    const key = planLineKey(p.product_id, memberId);
+    if (seen.has(key)) return { kind: 'invalid', message: `Duplicate line: product_id ${p.product_id}` };
+    seen.add(key);
+    resolved.push({ ...p, lineId: line ? line.id : null, memberId });
+  }
+
   // #2624 stage 2 (§4): only an Optional line may leave the plan, and a Mandatory
   // line cannot be made Optional here either (that would be the same removal in
   // two requests). The flag is the Plan's, frozen with the line (#1184).
   const locked = mandatoryLineRefusal(
-    current.map((r) => ({ product_id: Number(r.product_id), mandatory: Number(r.mandatory) === 1, item_name: r.item_name })),
-    parsed,
+    current.map((r) => ({ product_id: r.product_id, assigned_member_id: r.assigned_member_id, mandatory: Number(r.mandatory) === 1, item_name: r.item_name })),
+    resolved.map((r) => ({ product_id: r.product_id, assigned_member_id: r.memberId, mandatory: r.mandatory })),
   );
   if (locked) return { kind: 'conflict', error: 'mandatory_line_not_removable', message: locked };
-  const added = parsed.filter((p) => !attached.has(p.product_id)).map((p) => p.product_id);
+
+  const attached = new Set(current.map((r) => r.product_id));
+  const added = [...new Set(resolved.filter((p) => !attached.has(p.product_id)).map((p) => p.product_id))];
+  const sharing = new Map(current.map((c) => [c.product_id, c.sharing_type]));
   if (added.length > 0) {
     const { rows: products } = await tx.query<any>(
-      `SELECT id, type, billing_frequency, status FROM products
+      `SELECT id, type, billing_frequency, status, sharing_type FROM products
         WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${added.map(() => '?').join(',')})`,
       [draft.gym_id, ...added]);
     if (products.length !== added.length) return { kind: 'invalid', message: 'One or more Products not found in this gym' };
@@ -214,18 +239,42 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (inactive) return { kind: 'invalid', message: `Product ${inactive.id} is not active in this gym` };
     const mismatched = products.find((p: any) => classifyProduct(p) !== category);
     if (mismatched) return { kind: 'invalid', message: `Product ${mismatched.id} does not belong in the '${category}' category` };
+    for (const p of products) sharing.set(Number(p.id), p.sharing_type);
+  }
+  // A new member line: only an Individual Product is held per member, and only by someone the plan
+  // may give it to (the owner, their family or a beneficiary, #2609).
+  const newMemberLines = resolved.filter((r) => r.lineId == null && r.memberId != null);
+  if (newMemberLines.length > 0) {
+    const ctx = await loadPlanAssigneeContext(tx, draft.gym_id, snapshotId);
+    const eligible = new Set((ctx?.eligible ?? []).map((e) => e.member_id));
+    for (const r of newMemberLines) {
+      if (sharing.get(r.product_id) === 'shared') return { kind: 'invalid', message: 'A shared product is not assigned to one family member' };
+      if (!eligible.has(r.memberId as number)) {
+        return { kind: 'invalid', message: 'Each line must be for the plan owner or a member of their family' };
+      }
+    }
   }
 
   // M4b-2: the plan is being edited, so the Draft takes its own copy of it now (a no-op unless shared).
   const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
-  if (parsed.length === 0) {
+  // A copy-on-write gives every line a new id; the lines are matched again by their key.
+  const lineIdOf = new Map<string, number>();
+  {
+    const { rows } = await tx.query<{ id: number; product_id: number; assigned_member_id: number | null }>(
+      `SELECT id, product_id, assigned_member_id FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`,
+      [draft.gym_id, target]);
+    for (const r of rows) lineIdOf.set(planLineKey(Number(r.product_id), r.assigned_member_id == null ? null : Number(r.assigned_member_id)), Number(r.id));
+  }
+  const keptIds = resolved.filter((r) => r.lineId != null)
+    .map((r) => lineIdOf.get(planLineKey(r.product_id, r.memberId)) as number);
+  if (keptIds.length === 0) {
     await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ?`, [draft.gym_id, target]);
   } else {
     await tx.query(
-      `DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id NOT IN (${parsed.map(() => '?').join(',')})`,
-      [draft.gym_id, target, ...parsed.map((p) => p.product_id)]);
+      `DELETE FROM ${table} WHERE gym_id = ? AND plan_snapshot_id = ? AND id NOT IN (${keptIds.map(() => '?').join(',')})`,
+      [draft.gym_id, target, ...keptIds]);
   }
-  for (const p of parsed) {
+  for (const p of resolved) {
     // Columns this line's request named; everything else is left as stored.
     const extra: string[] = [];
     const extraParams: unknown[] = [];
@@ -233,32 +282,33 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
     if (p.frequency !== undefined) { extra.push('frequency = ?'); extraParams.push(p.frequency); }
     if (p.mandatory !== undefined) { extra.push('mandatory = ?'); extraParams.push(p.mandatory ? 1 : 0); }
     if (p.direct_discount_percent !== undefined) { extra.push('direct_discount_percent = ?'); extraParams.push(p.direct_discount_percent); }
-    if (attached.has(p.product_id)) {
+    if (p.lineId != null) {
       await tx.query(
-        `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''}
-          WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
-        [p.quantity, ...extraParams, draft.gym_id, target, p.product_id]);
+        `UPDATE ${table} SET quantity = ?${extra.length ? ', ' + extra.join(', ') : ''} WHERE id = ?`,
+        [p.quantity, ...extraParams, lineIdOf.get(planLineKey(p.product_id, p.memberId))]);
+      continue;
+    }
+    let newId: number;
+    const sibling = [...lineIdOf].find(([k]) => k.startsWith(`${p.product_id}:`))?.[1];
+    if (sibling != null) {
+      // Another member's line of the same Product: the new member's line is agreed on the same
+      // frozen facts (price, treatment, Mandatory flag), never re-read from the catalogue.
+      newId = await insertSiblingLine(tx, category, sibling, p.memberId, p.quantity);
     } else {
-      await tx.query(
+      const { insertId } = await tx.query(
         `INSERT INTO ${table}
-           (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency)
-         SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
+           (gym_id, plan_snapshot_id, product_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency, assigned_member_id)
+         SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency, ?
            FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
           WHERE gc.id = ? AND gc.gym_id = ?`,
-        [draft.gym_id, target, p.quantity, p.product_id, draft.gym_id]);
+        [draft.gym_id, target, p.quantity, p.memberId, p.product_id, draft.gym_id]);
+      newId = Number(insertId);
       // #2624 stage 2: a line staff add to this configuration is not one of the
       // Plan's, so it is Optional (removable) unless the request says otherwise.
-      if (p.mandatory === undefined) {
-        await tx.query(
-          `UPDATE ${table} SET mandatory = 0 WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
-          [draft.gym_id, target, p.product_id]);
-      }
-      if (extra.length) {
-        await tx.query(
-          `UPDATE ${table} SET ${extra.join(', ')} WHERE gym_id = ? AND plan_snapshot_id = ? AND product_id = ?`,
-          [...extraParams, draft.gym_id, target, p.product_id]);
-      }
+      if (p.mandatory === undefined) await tx.query(`UPDATE ${table} SET mandatory = 0 WHERE id = ?`, [newId]);
     }
+    lineIdOf.set(planLineKey(p.product_id, p.memberId), newId);
+    if (extra.length) await tx.query(`UPDATE ${table} SET ${extra.join(', ')} WHERE id = ?`, [...extraParams, newId]);
   }
   await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
