@@ -74,3 +74,47 @@ export function parsePlanLineMemberInput(item: unknown): PlanLineMemberInput {
   }
   return { keep: false, memberId: n };
 }
+
+/**
+ * #2657 stage 4 — splitting a line already committed before stage 3: a number of units recorded
+ * against the unsplit line (one allowance renewal) is shared out over its member lines in
+ * proportion to each line's quantity, by largest remainder with ties to the earlier line, so the
+ * shares always sum to `total` and a renewal equal to the line's quantity gives each member
+ * exactly their own quantity.
+ */
+export function shareUnits(total: number, weights: readonly number[]): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  if (weights.length === 0) return [];
+  if (sum <= 0 || total <= 0) return weights.map((_, i) => (i === 0 ? Math.max(0, total) : 0));
+  const exact = weights.map((w) => (total * w) / sum);
+  const out = exact.map((x) => Math.floor(x));
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    out[i] += 1;
+    left -= 1;
+  }
+  return out;
+}
+
+/**
+ * #2657 stage 4 — how many of one holder's sessions already spent from an unsplit line stay on each
+ * of its member lines once it is split: each line in order takes what it grants, and whatever is
+ * left over (a spend beyond the line's total, which the wallet already read as a debt) stays on the
+ * first line, the one that keeps the original id. The counts sum to `spent`.
+ */
+export function distributeSpends(spent: number, capacities: readonly number[]): number[] {
+  if (capacities.length === 0) return [];
+  const out = capacities.map(() => 0);
+  let left = Math.max(0, spent);
+  capacities.forEach((cap, i) => {
+    const take = Math.min(left, Math.max(0, cap));
+    out[i] = take;
+    left -= take;
+  });
+  out[0] += left;
+  return out;
+}
