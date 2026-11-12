@@ -74,6 +74,7 @@ export {
   saveBenefitSection,
   toBenefitItems,
   updateBenefitRow,
+  benefitRowKey,
 } from '@/lib/benefitEditing';
 export type {
   BenefitSectionAdapter,
@@ -409,8 +410,13 @@ function LockedBenefitRow({
   const cell = { fontSize: 13 } as const;
   return (
     <div style={{ display: 'contents' }}>
-      <span style={{ ...cell, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.product_name}>
+      <span
+        style={{ ...cell, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        title={row.member_name ? `${row.product_name} · ${row.member_name}` : row.product_name}
+      >
         {row.product_name}
+        {/* #2657 stage 3: an Individual Product is one line per member, so the row says whose. */}
+        {row.member_name && <span style={{ color: '#666' }}> · {row.member_name}</span>}
         {!optional && <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>}
       </span>
       <span style={cell}>{row.quantity}</span>
@@ -575,7 +581,7 @@ export function ProductBenefitEditor({
             if (lockedProductIds?.has(row.product_id)) {
               return (
                 <LockedBenefitRow
-                  key={row.product_id}
+                  key={benefitRowKey(row)}
                   t={t}
                   row={row}
                   action={action}
@@ -592,7 +598,7 @@ export function ProductBenefitEditor({
               );
             }
             return (
-              <div key={row.product_id} style={{ display: 'contents' }}>
+              <div key={benefitRowKey(row)} style={{ display: 'contents' }}>
                 {mandatory ? (
                   <span style={{ fontSize: 13 }}>
                     {row.product_name}

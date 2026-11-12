@@ -14,7 +14,7 @@ import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
 import { AssigneeRefused, resolveAssignedMember } from './product-assignee';
-import { insertSiblingLine, syncPlanLineAllocations } from './plan-line-allocation';
+import { insertSiblingLine, memberGroupsOf, splitPlanLines, syncPlanLineAllocations } from './plan-line-allocation';
 import { loadPlanAssigneeContext } from './plan-unit-assignees';
 import { parsePlanLineMemberInput, planLineKey } from '../domain/planLineAllocation';
 
@@ -183,16 +183,31 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
   const { rows: currentRaw } = await tx.query<{
-    id: number; product_id: number; assigned_member_id: number | null; mandatory: number; item_name: string; sharing_type: string | null;
+    id: number; product_id: number; assigned_member_id: number | null; mandatory: number; item_name: string;
+    sharing_type: string | null; quantity: number; unit_assignees: unknown;
   }>(
-    `SELECT b.id, b.product_id, b.assigned_member_id, b.mandatory, b.item_name, gc.sharing_type
+    `SELECT b.id, b.product_id, b.assigned_member_id, b.mandatory, b.item_name, b.quantity, b.unit_assignees, gc.sharing_type
        FROM ${table} b LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
       WHERE b.gym_id = ? AND b.plan_snapshot_id = ? ORDER BY b.id`,
     [draft.gym_id, snapshotId]);
-  const current = currentRaw.map((r) => ({
+  let current = currentRaw.map((r) => ({
     ...r, id: Number(r.id), product_id: Number(r.product_id),
     assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
   }));
+  // #2657 stage 3: a write that names a member's line of a Product still held as one unsplit line
+  // splits that line first (`splitPlanLines()`, below), so it is matched as the per-member lines it
+  // is about to become — each member keeping the units the default distribution gives them.
+  const splitProducts = new Set(current
+    .filter((c) => c.assigned_member_id == null && c.sharing_type !== 'shared'
+      && parsed.some((p) => p.product_id === c.product_id && p.member != null))
+    .map((c) => c.product_id));
+  const assigneeCtx = splitProducts.size > 0 ? await loadPlanAssigneeContext(tx, draft.gym_id, snapshotId) : null;
+  if (assigneeCtx) {
+    current = current.flatMap((c) => {
+      if (!splitProducts.has(c.product_id) || c.assigned_member_id != null) return [c];
+      return memberGroupsOf(c, assigneeCtx).map((g) => ({ ...c, id: -1, assigned_member_id: g.memberId, quantity: g.quantity }));
+    });
+  }
 
   // #2657 stage 3: each item names one line — its Product and, for an Individual Product held
   // per member, the member it is for. An item naming no member matches the Product's only line;
@@ -257,7 +272,8 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
 
   // M4b-2: the plan is being edited, so the Draft takes its own copy of it now (a no-op unless shared).
   const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
-  // A copy-on-write gives every line a new id; the lines are matched again by their key.
+  if (assigneeCtx) await splitPlanLines(tx, draft.gym_id, target, category, assigneeCtx, splitProducts);
+  // A copy-on-write or a split gives lines new ids; the lines are matched again by their key.
   const lineIdOf = new Map<string, number>();
   {
     const { rows } = await tx.query<{ id: number; product_id: number; assigned_member_id: number | null }>(
