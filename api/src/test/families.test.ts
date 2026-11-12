@@ -72,8 +72,10 @@ describe('families', () => {
     const removed = await api(gymId).del(`/members/${owner}/family/members/${kid}`);
     expect(removed.status).toBe(200);
     expect(removed.body.family.members).toHaveLength(1);
+    // #2670: the member who left owns a family of their own
     const gone = await api(gymId).get(`/members/${kid}/family`);
-    expect(gone.body.family).toBeNull();
+    expect(gone.body.family.members.map((x: any) => [x.member_id, x.is_owner])).toEqual([[kid, true]]);
+    expect(gone.body.family.id).not.toBe(created.body.family.id);
   });
 
   it('keeps exactly one owner: owner cannot be removed while others remain; ownership changes', async () => {
@@ -101,22 +103,62 @@ describe('families', () => {
       .rejects.toThrow();
   });
 
-  it('dissolves a family; removing the sole member dissolves it too', async () => {
+  it('dissolving a family gives each member a family of their own (#2670)', async () => {
     const a = await member(gymId, 'Dissolve A');
     const b = await member(gymId, 'Dissolve B');
-    await api(gymId).post(`/members/${a}/family`);
+    const created = await api(gymId).post(`/members/${a}/family`);
     await api(gymId).post(`/members/${a}/family/members`, { member_id: b });
     const del = await api(gymId).del(`/members/${a}/family`);
     expect(del.status).toBe(204);
-    expect((await api(gymId).get(`/members/${b}/family`)).body.family).toBeNull();
+    for (const m of [a, b]) {
+      const f = (await api(gymId).get(`/members/${m}/family`)).body.family;
+      expect(f.id).not.toBe(created.body.family.id);
+      expect(f.members.map((x: any) => [x.member_id, x.is_owner])).toEqual([[m, true]]);
+    }
+  });
 
+  it('a member alone in their family can neither leave nor dissolve it (#2670)', async () => {
     const solo = await member(gymId, 'Solo Owner');
     const c = await api(gymId).post(`/members/${solo}/family`);
     const rm = await api(gymId).del(`/members/${solo}/family/members/${solo}`);
-    expect(rm.status).toBe(200);
-    expect(rm.body.family).toBeNull();
-    const { rows } = await db.query('SELECT id FROM families WHERE id = ?', [c.body.family.id]);
+    expect(rm.status).toBe(409);
+    expect(rm.body.code).toBe('family_required');
+    const dis = await api(gymId).del(`/members/${solo}/family`);
+    expect(dis.status).toBe(409);
+    expect(dis.body.code).toBe('family_required');
+    const { rows } = await db.query('SELECT member_id FROM family_members WHERE family_id = ?', [c.body.family.id]);
+    expect(rows.map((r: any) => r.member_id)).toEqual([solo]);
+  });
+
+  it('a member created through the API owns a family of their own, and may join another one (#2670)', async () => {
+    const { insertId: centerId } = await db.query('INSERT INTO centers (gym_id, name) VALUES (?, ?)', [gymId, 'Family Center']);
+    const centers = [{ id: centerId as number }];
+    const res = await api(gymId).post('/members', {
+      name: 'Created Member', email: `fam-new-${Date.now()}@test.com`,
+      center_ids: [centers[0].id], default_center_id: centers[0].id,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const own = (await api(gymId).get(`/members/${res.body.id}/family`)).body.family;
+    expect(own.name).toBe('Created Member');
+    expect(own.members.map((x: any) => [x.member_id, x.is_owner])).toEqual([[res.body.id, true]]);
+
+    const parent = await member(gymId, 'Joining Parent');
+    const fam = await api(gymId).post(`/members/${parent}/family`);
+    const joined = await api(gymId).post(`/members/${parent}/family/members`, { member_id: res.body.id });
+    expect(joined.status).toBe(201);
+    expect(joined.body.family.id).toBe(fam.body.family.id);
+    // the solo family it left is gone, and it is in exactly one family
+    const { rows } = await db.query('SELECT id FROM families WHERE id = ?', [own.id]);
     expect(rows).toHaveLength(0);
+    const { rows: links } = await db.query('SELECT family_id FROM family_members WHERE member_id = ?', [res.body.id]);
+    expect(links.map((r: any) => r.family_id)).toEqual([fam.body.family.id]);
+
+    // a member of a family with others still cannot be moved into another one
+    const third = await member(gymId, 'Third Parent');
+    await api(gymId).post(`/members/${third}/family`);
+    const clash = await api(gymId).post(`/members/${third}/family/members`, { member_id: res.body.id });
+    expect(clash.status).toBe(409);
+    expect(clash.body.code).toBe('already_in_family');
   });
 
   it('isolates tenants: no cross-gym members or families', async () => {

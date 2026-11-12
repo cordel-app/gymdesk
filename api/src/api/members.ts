@@ -1,5 +1,6 @@
 import { memberInviteMetadata } from '../domain/memberInviteTarget';
 import { listItems, resolveInviteConflict } from '../domain/clerkInviteConflict';
+import { createSoloFamily } from './family-membership';
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -402,6 +403,8 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
         'INSERT INTO members (name, email, phone, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?)',
         [name, email, phone ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
       );
+      // #2670: every Member belongs to a Family — a new one owns a family of their own.
+      await createSoloFamily(tx, gymId, insertId, String(name), resolveRequestActor(tenantCtx));
       for (const centerId of centers.ids) {
         await tx.query(
           `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, created_by)
