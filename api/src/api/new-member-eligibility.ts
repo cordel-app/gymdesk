@@ -17,7 +17,7 @@ import {
  *
  * Only the assignments the Member *owns* (`user_memberships.member_id`) are
  * considered. A Member merely covered by somebody else's family plan
- * (`user_membership_members` with `is_owner = 0`) never booked a Membership
+ * (the coverage (`ASSIGNMENT_BENEFICIARIES`) with `is_owner = 0`) never booked a Membership
  * Plan of their own, which is what the answer in the issue thread measures.
  */
 

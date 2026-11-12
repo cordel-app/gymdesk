@@ -3,7 +3,7 @@ import { ASSIGNMENT_BENEFICIARIES } from './assignmentBeneficiaries';
 /**
  * #1191 — how an Assigned Plan relates to the Member whose context it is shown
  * in. A multi-member Membership (a Duo) is ONE `user_memberships` row: its
- * `member_id` is the owner and `user_membership_members` lists every covered
+ * `member_id` is the owner and the coverage (`ASSIGNMENT_BENEFICIARIES`) lists every covered
  * Member. Seen from the owner it is `primary`; seen from any other covered
  * Member it is `linked`.
  *
@@ -29,7 +29,7 @@ export function assignmentRelationship(
  * `um` is the `user_memberships` alias. Binds the Member id **twice** (owner
  * column, then covered-member row). The owner's own column is read as well as
  * the join table because a row written before #374 may carry no
- * `user_membership_members` row.
+ * the coverage (`ASSIGNMENT_BENEFICIARIES`) row.
  */
 export const MEMBER_MEMBERSHIP_SQL = `(um.member_id = ? OR EXISTS (
     SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm

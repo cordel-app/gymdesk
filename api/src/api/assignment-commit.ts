@@ -84,7 +84,7 @@ async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
  * The live plans of **every Member this assignment covers** (#956 Q4), the
  * assignment itself excluded — it is not live, so it never conflicts with
  * itself. The owner is unioned in because a row written before #374's
- * covered-member table may carry no `user_membership_members` row at all.
+ * covered-member table may carry no the coverage (`ASSIGNMENT_BENEFICIARIES`) row at all.
  */
 async function coveredMemberIds(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<number[]> {
   const { rows: coveredRows } = await tx.query<{ member_id: number }>(

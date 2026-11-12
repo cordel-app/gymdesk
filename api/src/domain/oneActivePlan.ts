@@ -23,7 +23,7 @@
  *     a nightly sweep to flip the status on the day, which this ticket does not
  *     introduce.
  *   - **Q4: a family plan's co-members are covered too.** `user_memberships`
- *     carries one row for the owner and a `user_membership_members` row per
+ *     carries one row for the owner and a the coverage (`ASSIGNMENT_BENEFICIARIES`) row per
  *     covered member, so the conflict query asks "does any live assignment
  *     *cover* this member", not "does this member own one". The restored UNIQUE
  *     index (migration 213) is keyed on the owner's `member_id` through

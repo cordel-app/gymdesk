@@ -24,12 +24,12 @@ import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 /**
  * Every live assignment *covering* any of `memberIds`, locked for update.
  *
- * "Covering" is `user_membership_members`, not `user_memberships.member_id`
+ * "Covering" is the coverage (`ASSIGNMENT_BENEFICIARIES`), not `user_memberships.member_id`
  * (#956 Q4): a family plan carries one row owned by one member and a covered-member
  * row per member, so a co-member of someone else's family plan already has a
  * plan. The owner's own `member_id` is read as well, because it is the column
  * `active_member_key` is derived from and a row written before #374's covered-member
- * table may carry no `user_membership_members` row at all.
+ * table may carry no the coverage (`ASSIGNMENT_BENEFICIARIES`) row at all.
  *
  * `FOR UPDATE` is what makes two concurrent replacements of the same member
  * serialise: the second blocks on the first's lock and then re-reads a row that
