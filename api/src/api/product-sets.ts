@@ -3,6 +3,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
+import { activateSetPurchases, moveSetPurchases } from './set-purchases';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -147,6 +148,8 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   // #2657 stage 3: a committed plan holds its Individual Products one line per member.
   const { syncPlanLineAllocations } = await import('./plan-line-allocation');
   await syncPlanLineAllocations(tx, gymId, id, { split: true });
+  // #2746: the one-time Products in the cart move with it.
+  await moveSetPurchases(tx, gymId, id, 'draft', 'pending_payment');
   await tx.query(
     `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
     [paymentRequestId, id],
@@ -196,6 +199,8 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
     `UPDATE product_sets SET status = 'active', activated_at = UTC_TIMESTAMP() WHERE id = ?`,
     [id],
   );
+  // #2746: and become the member's with it (a duplicate activation returned above, so this runs once).
+  await activateSetPurchases(tx, gymId, id);
   await syncPlanSnapshot(tx, gymId, id);
   if (previous) await syncPlanSnapshot(tx, gymId, Number(previous.id));
   return { kind: 'ok', productSet: { ...row, status: 'active' } };
@@ -283,6 +288,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     `DELETE FROM payment_requests WHERE gym_id = ? AND id IN (
        SELECT payment_request_id FROM (SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL) x)
       AND status <> 'completed'`, [gymId, id]);
+  await moveSetPurchases(tx, gymId, id, 'pending_payment', 'draft');
   await tx.query(
     `UPDATE product_sets SET status = 'draft', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND status = 'pending_payment'`, [id]);

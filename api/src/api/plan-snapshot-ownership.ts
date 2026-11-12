@@ -86,6 +86,13 @@ export async function deleteProductSetAndOwnPlanSnapshots(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
        JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = ? AND ps.status = ?
       WHERE j.product_set_id = ?`, [gymId, status, productSetId]);
+  // #2746: the one-time Products in a cart go with it (their snapshot would cascade, their record would not).
+  const { rows: setRow } = await tx.query<{ id: number }>(
+    'SELECT id FROM product_sets WHERE id = ? AND gym_id = ? AND status = ? FOR UPDATE', [productSetId, gymId, status]);
+  if (setRow[0]) {
+    const { deleteSetPurchases } = await import('./set-purchases');
+    await deleteSetPurchases(tx, gymId, productSetId, status);
+  }
   const { rowCount } = await tx.query(
     'DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = ?', [productSetId, gymId, status]);
   if (Number(rowCount ?? 0) === 0) return false;

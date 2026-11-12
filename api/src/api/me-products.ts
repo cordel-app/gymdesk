@@ -429,24 +429,43 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
 export async function saveProductPurchaseDraft(
   input: StartPurchaseInput,
 ): Promise<{ purchaseId: number; amount: number; currency: string }> {
-  const { snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input);
-  const purchaseId = await db.transaction(async (tx) => {
-    const id = await insertPurchase(tx, {
-      gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
-      productName: snapshot.product_name, productType: snapshot.product_type,
-      billingFrequency: snapshot.billing_frequency, units: snapshot.units,
-      amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
-      listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
-      directDiscountAmount: price.direct_discount_amount, validityDays: null,
-      origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
-      paymentRequestId: null, billingEventId: null,
-    });
-    for (const step of price.promotions) {
-      await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
-    }
-    return id;
+  const resolved = await resolveDraftPurchase(input);
+  const purchaseId = await db.transaction((tx) => writeDraftPurchase(tx, input, resolved));
+  return { purchaseId, amount: resolved.snapshot.amount, currency: resolved.snapshot.currency };
+}
+
+/**
+ * #2746 stage 1 — the two halves of `saveProductPurchaseDraft()`, so a member's
+ * cart can write the draft inside its Draft Product Set's own transaction: the
+ * read and pricing (outside any transaction, the very `resolvePurchase()` a paid
+ * purchase runs) and the write (the record, its snapshot and its Promotions).
+ */
+export async function resolveDraftPurchase(input: StartPurchaseInput) {
+  return resolvePurchase(input);
+}
+
+export async function writeDraftPurchase(
+  tx: Tx,
+  input: StartPurchaseInput,
+  resolved: Awaited<ReturnType<typeof resolvePurchase>>,
+): Promise<number> {
+  const { row, snapshot, price, actorName, assignedMemberId } = resolved;
+  const id = await insertPurchase(tx, {
+    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
+    productName: snapshot.product_name, productType: snapshot.product_type,
+    billingFrequency: snapshot.billing_frequency, units: snapshot.units,
+    amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+    listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
+    directDiscountAmount: price.direct_discount_amount,
+    // #1693: the validity agreed now; a staff draft's `/pay` re-resolves it anyway.
+    validityDays: row.validity_days == null ? null : Number(row.validity_days),
+    origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
+    paymentRequestId: null, billingEventId: null,
   });
-  return { purchaseId, amount: snapshot.amount, currency: snapshot.currency };
+  for (const step of price.promotions) {
+    await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
+  }
+  return id;
 }
 
 /**
@@ -739,7 +758,9 @@ export async function cancelAbandonedPurchases(
   // their payment reached through the Billing Event junction (stage 5a), and each one is moved
   // on the record and the snapshot together, in a transaction of its own.
   const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
-    `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ?')} mp
+    // #2746: a purchase in a member's cart is paid by its Product Set's checkout and moves with it
+    // (`set-purchases.ts`), so its request expiring returns it to the Draft rather than cancelling it.
+    `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ? AND product_set_id IS NULL')} mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE pr.status IN ('expired', 'failed')`,
     purchaseSnapshotParams([PENDING_PURCHASE_STATUS]),
