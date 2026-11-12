@@ -680,7 +680,10 @@ export async function applyPromotionToProductSet(
     }
     if (opts.lineId != null) {
       const { rows: lineRows } = await tx.query(
-        'SELECT 1 FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ? AND product_set_id = ?',
+        // #2126 stage 3q — the line is read in `product_periodical_snapshots` by its legacy
+        // id (`source_id`). The line was written earlier in this Draft's transaction by
+        // `addService()`, whose `touch()` already synced it.
+        'SELECT 1 FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ? AND product_set_id = ?',
         [opts.lineId, gymId, productSetId],
       );
       if (lineRows.length === 0) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });
