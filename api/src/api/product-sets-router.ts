@@ -220,7 +220,9 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
 /** `draft → pending_payment` for the assignment a version projects, audited as
  * every assignment status transition is. A row in any other status is left
  * alone (the assignment-side Save & Pay moves its own row first). */
-async function syncLinkedAssignmentToPendingPayment(tx: Tx, gymId: string, userMembershipId: number, actor: string | null) {
+async function syncLinkedAssignmentToPendingPayment(
+  tx: Tx, gymId: string, userMembershipId: number, actor: string | null, source: 'admin' | 'member' = 'admin',
+) {
   const { rows } = await tx.query<{ member_id: number }>(
     `SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft' FOR UPDATE`,
     [userMembershipId, gymId],
@@ -233,16 +235,24 @@ async function syncLinkedAssignmentToPendingPayment(tx: Tx, gymId: string, userM
   );
   await recordStatusChange(tx, {
     gymId, userMembershipId, memberId: Number(rows[0].member_id),
-    previousStatus: 'draft', newStatus: 'pending_payment', source: 'admin', actorUserId: null,
+    previousStatus: 'draft', newStatus: 'pending_payment', source, actorUserId: null,
   });
 }
 
-async function saveAndPayHandler(req: any, res: any) {
+/**
+ * `member` (#2496 stage 5): the member's own Save & Pay. Only a Draft is
+ * committable from the Members App — a version already awaiting payment has a
+ * checkout in flight, and a second one would be a second attempt on the same
+ * initial event; the member cancels it (`DELETE /me/product-sets/:id`, the
+ * #1535 guard) or it returns to Draft by itself (#1991 stage 4). Everything
+ * else is the Admin's handler unchanged.
+ */
+async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } = {}) {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
   if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
-  if (set.status !== 'draft' && set.status !== 'pending_payment') {
+  if (set.status !== 'draft' && (opts.member || set.status !== 'pending_payment')) {
     return res.status(409).json({ error: 'not_committable', status: set.status });
   }
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
@@ -262,7 +272,7 @@ async function saveAndPayHandler(req: any, res: any) {
       // 3e-1), so it moves with it: left `draft`, the Member card's plan row
       // read Draft beside a PS status of Pending Payment.
       if (out.kind === 'ok' && set.user_membership_id != null) {
-        await syncLinkedAssignmentToPendingPayment(tx, gymId, Number(set.user_membership_id), actorOf(req).name);
+        await syncLinkedAssignmentToPendingPayment(tx, gymId, Number(set.user_membership_id), actorOf(req).name, opts.member ? 'member' : 'admin');
       }
       return out;
     });
@@ -272,17 +282,23 @@ async function saveAndPayHandler(req: any, res: any) {
   const checkout = await createProductSetCheckout({
     gymId, productSetId: Number(set.id), memberId: Number(set.owner_member_id),
     memberEmail: m[0]?.email ?? '', startsAt, charge, actor: actorOf(req).name,
+    // #1480: the member paying is the caller, so their own language may decide the page.
+    requestLocale: opts.member ? getRequestLocale(req) : null,
   });
-  recordAudit(req, { action: 'save_and_pay', entityType: 'product_set', entityId: set.id, next: { status: 'pending_payment' } });
+  recordAudit(req, {
+    action: 'save_and_pay', entityType: 'product_set', entityId: set.id,
+    next: opts.member ? { status: 'pending_payment', source: 'members_app' } : { status: 'pending_payment' },
+  });
   res.status(201).json({
     product_set_id: Number(set.id), status: 'pending_payment',
     payment_request_id: checkout.paymentRequestId, billing_event_id: checkout.billingEventId,
     checkout_url: checkout.checkoutUrl, amount: charge.amount,
   });
 }
-productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), saveAndPayHandler);
+productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), (req, res) => saveAndPayHandler(req, res));
 
-productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res) => {
+/** The free commit of a Draft that owes nothing today (`member`: #2496 stage 5's audit source). */
+async function activateHandler(req: any, res: any, opts: { member?: boolean } = {}) {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
@@ -300,9 +316,13 @@ productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (r
 
   const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name }));
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
-  recordAudit(req, { action: 'activate', entityType: 'product_set', entityId: set.id, next: { status: 'active' } });
+  recordAudit(req, {
+    action: 'activate', entityType: 'product_set', entityId: set.id,
+    next: opts.member ? { status: 'active', source: 'members_app' } : { status: 'active' },
+  });
   res.json({ product_set_id: Number(set.id), status: 'active', events_created: (out as any).eventsCreated ?? 0 });
-});
+}
+productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), (req, res) => activateHandler(req, res));
 
 /**
  * #1664 — Save & Pay with the method staff chose in the confirmation modal.
@@ -773,6 +793,27 @@ async function readableSet(req: any, res: any): Promise<{ memberId: number; set:
 meProductSetsRouter.get('/:id/review', async (req, res, next) => {
   if (!(await ownedSet(req, res))) return;
   return reviewHandler(req, res, next);
+});
+
+/**
+ * #2496 stage 5 — the member commits their own Draft: the Admin's Save & Pay
+ * (Pending Payment, the initial Billing Event with its lines, one hosted
+ * checkout) or, when nothing is owed today, the Admin's free activation. Same
+ * handlers, same `commitCharge()` figure the review showed; the member is the
+ * session's and must own the Draft, and the body names nothing.
+ */
+meProductSetsRouter.post('/:id/save-and-pay', async (req, res, next) => {
+  try {
+    if (!(await ownedSet(req, res))) return;
+    return await saveAndPayHandler(req, res, { member: true });
+  } catch (err) { next(err); }
+});
+
+meProductSetsRouter.post('/:id/activate', async (req, res, next) => {
+  try {
+    if (!(await ownedSet(req, res))) return;
+    return await activateHandler(req, res, { member: true });
+  } catch (err) { next(err); }
 });
 
 meProductSetsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
