@@ -411,3 +411,27 @@ describe('Draft line writers read the Product snapshot (#2126 stage 3s)', () => 
     expect(await openLines(draftId)).toHaveLength(1);
   });
 });
+
+// #2126 stage 3t — schedule allocation reads a version's recurring lines from
+// `product_periodical_snapshots` (synced first) and writes the legacy line.
+describe('Schedule allocation reads the Product snapshot (#2126 stage 3t)', () => {
+  it('gives a newly added recurring line a schedule on both the legacy line and its snapshot', async () => {
+    const m = await member();
+    await activePlan(m);
+    const locker = await product({ name: 'Locker Y', frequency: 'year', amount: '60.00', type: 'service' });
+    const d = await auth(request.post(base(m))).send({ product_id: locker });
+    expect(d.status).toBeLessThan(300);
+    const draftId = d.body.product_set_id as number;
+    const [line] = await openLines(draftId);
+
+    const { rows: legacy } = await db.query<any>(
+      'SELECT schedule_id FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
+    const { rows: snap } = await db.query<any>(
+      'SELECT schedule_id FROM product_periodical_snapshots WHERE source_id = ?', [line.id]);
+    expect(legacy[0].schedule_id).not.toBeNull();
+    expect(Number(snap[0].schedule_id)).toBe(Number(legacy[0].schedule_id));
+    const { rows: sched } = await db.query<any>(
+      'SELECT cadence_unit FROM product_set_schedules WHERE id = ?', [legacy[0].schedule_id]);
+    expect(sched[0].cadence_unit).toBe('year');
+  });
+});
