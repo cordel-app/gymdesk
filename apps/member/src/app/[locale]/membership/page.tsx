@@ -104,6 +104,12 @@ import {
   draftErrorKey,
   draftProductState,
   draftPlanState,
+  type MemberSetReview,
+  reviewSections,
+  reviewLineDiscount,
+  reviewFrequencyKey,
+  setCommitAction,
+  setCommitErrorKey,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -226,7 +232,7 @@ export default function MembershipPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
-  const { isLinked, loading: appLoading, gymName, isSuperadmin } = useApp();
+  const { isLinked, loading: appLoading, gymName, isSuperadmin, member: appMember } = useApp();
   const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
 
@@ -294,6 +300,10 @@ export default function MembershipPage() {
   const [draftError, setDraftError] = useState<{ productId: number | null; key: string } | null>(null);
   // #2496 stage 4 — a refused plan edit, shown on the plan card it came from.
   const [planDraftError, setPlanDraftError] = useState<{ planId: number; key: string } | null>(null);
+  // #2496 stage 5 — the Draft's Summary (the Admin's own review) and its one commit.
+  const [review, setReview] = useState<MemberSetReview | null>(null);
+  const [commitBusy, setCommitBusy] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
 
   // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
   // the Promotion applied per plan is page state (its snapshot is written by
@@ -487,6 +497,57 @@ export default function MembershipPage() {
     } finally {
       await loadSetView();
       setDraftBusy(null);
+    }
+  }
+
+  // #2496 stage 5 — the Summary is re-read with the version, so every Draft
+  // edit is reflected at once; nothing is computed in the page.
+  useEffect(() => {
+    if (!setView || setView.status !== 'draft') { setReview(null); return; }
+    let cancelled = false;
+    apiFetch<MemberSetReview>(`/me/product-sets/${setView.id}/review`)
+      .then((r) => { if (!cancelled) setReview(r); })
+      .catch(() => { if (!cancelled) setReview(null); });
+    return () => { cancelled = true; };
+  }, [setView]);
+
+  /**
+   * #2496 stage 5 — one Save & Pay for the whole Draft: the Admin's own commit,
+   * behind the member's routes. Something owed today goes to the hosted page;
+   * nothing owed activates. The amount is the server's; the body names nothing.
+   */
+  async function commitSet() {
+    const action = setCommitAction(review);
+    if (!review || !action || commitBusy) return;
+    setCommitBusy(true);
+    setCommitError(null);
+    try {
+      if (action === 'save_and_pay') {
+        const out = await apiFetch<{ checkout_url: string }>(`/me/product-sets/${review.product_set_id}/save-and-pay`, { method: 'POST' });
+        window.location.href = out.checkout_url;
+        return; // stays busy while the browser leaves for the payment page
+      }
+      await apiFetch(`/me/product-sets/${review.product_set_id}/activate`, { method: 'POST' });
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      setCommitError(setCommitErrorKey(err?.message));
+      await loadSetView();
+    }
+    setCommitBusy(false);
+  }
+
+  /** A version awaiting payment, cancelled by the member: back to Draft under the #1535 guard. */
+  async function cancelPendingSet() {
+    if (!setView || setView.status !== 'pending_payment' || commitBusy) return;
+    setCommitBusy(true);
+    setCommitError(null);
+    try {
+      await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+    } catch (err: any) {
+      setCommitError(err?.message === 'payment_unresolved' ? 'membership.summary_error_unresolved' : 'membership.summary_error_generic');
+    } finally {
+      await loadSetView();
+      setCommitBusy(false);
     }
   }
 
@@ -845,6 +906,99 @@ export default function MembershipPage() {
       />
       {renderDraftSelection()}
       </>
+    );
+  }
+
+  /**
+   * #2496 stage 5 — §8/§9: what the Draft contracts and cancels, the itemised
+   * Initial Payment and the one Save & Pay, all off the server's review (the
+   * Admin's *Review your changes*). A version awaiting payment says so and
+   * offers to cancel it. Nothing here prices anything.
+   */
+  function renderSetSummary() {
+    if (setView?.status === 'pending_payment' && appMember != null && setView.owner_member_id === appMember.id) {
+      return (
+        <section style={styles.section}>
+          <div style={{ ...noticeStyle('info'), display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: '1 1 200px', fontSize: 13.5 }}>{t('membership.summary_pending')}</span>
+            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy} onClick={cancelPendingSet}>
+              {t('membership.summary_cancel_pending')}
+            </button>
+            {commitError && <span role="alert" style={styles.draftError}>{t(commitError as any)}</span>}
+          </div>
+        </section>
+      );
+    }
+    if (!review || setView?.status !== 'draft') return null;
+    const { contracted, cancelled } = reviewSections(review);
+    if (contracted.length + cancelled.length === 0 && !commitError) return null;
+    const action = setCommitAction(review);
+    const currency = review.currency ?? 'EUR';
+    const money = (n: number | null | undefined) => (n == null ? '—' : formatPaymentAmount(n, currency, gymFmt));
+    const itemRow = (i: typeof contracted[number], k: string) => {
+      const freqKey = reviewFrequencyKey(i.billing_frequency);
+      const price = i.final_price ?? i.regular_price;
+      return (
+        <li key={k} style={styles.benefitItem}>
+          <span style={i.state === 'cancelling' ? { textDecoration: 'line-through' } : undefined}>{i.name}</span>
+          {i.quantity != null && i.quantity > 1 && <span style={styles.benefitMeta}>× {i.quantity}</span>}
+          {price != null && <span style={styles.benefitMeta}>· {money(price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
+          {i.promotions.filter(Boolean).length > 0 && <span style={styles.benefitMeta}>· {i.promotions.filter(Boolean).join(', ')}</span>}
+        </li>
+      );
+    };
+    const reviewError = review.error ? setCommitErrorKey(review.error) : null;
+    return (
+      <section style={styles.section} data-set-summary>
+        <h2 style={styles.h2}>{t('membership.summary_heading')}</h2>
+        <div style={styles.card}>
+          <h3 style={styles.h3}>{t('membership.summary_contracted')}</h3>
+          {contracted.length === 0
+            ? <p style={styles.hint}>{t('membership.summary_none')}</p>
+            : <ul style={styles.benefitList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
+          {cancelled.length > 0 && (<>
+            <h3 style={styles.h3}>{t('membership.summary_cancelled')}</h3>
+            <ul style={styles.benefitList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
+          </>)}
+          <h3 style={styles.h3}>{t('membership.summary_initial_payment')}</h3>
+          {review.immediate_lines.length === 0
+            ? <p style={styles.hint}>{t('membership.summary_nothing_due')}</p>
+            : (
+              <ul style={styles.eventList}>
+                {review.immediate_lines.map((l, n) => {
+                  const discount = reviewLineDiscount(l);
+                  const sub = [
+                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price * l.quantity) }) : null,
+                    l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
+                    discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
+                    l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,
+                  ].filter(Boolean).join(' · ');
+                  return (
+                    <li key={`l-${n}`} style={styles.eventItem}>
+                      <div style={styles.eventLine}>
+                        <span style={styles.eventLabel}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
+                        <span style={styles.eventAmount}>{money(l.amount)}</span>
+                      </div>
+                      {sub && <div style={styles.eventSub}>{sub}</div>}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          <div style={styles.eventLine}>
+            <span style={{ ...styles.eventLabel, fontWeight: 700 }}>{t('membership.summary_total')}</span>
+            <span style={{ ...styles.eventAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
+          </div>
+          {(reviewError || commitError) && (
+            <p role="alert" style={{ ...styles.draftError, margin: '10px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
+          )}
+          {action && (
+            <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 14 }} disabled={commitBusy} onClick={commitSet}>
+              {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
+            </button>
+          )}
+        </div>
+      </section>
     );
   }
 
@@ -1698,6 +1852,8 @@ export default function MembershipPage() {
         {renderMyProducts()}
         {renderOwnPurchases()}
         {renderProducts()}
+      {renderSetSummary()}
+        {renderSetSummary()}
         </>)}
         {renderDialogs()}
       </main>

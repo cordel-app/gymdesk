@@ -534,7 +534,26 @@
       "active": "Active",
       "superseded": "Superseded"
     },
-    "set_status_label": "Status"
+    "set_status_label": "Status",
+    "summary_heading": "Summary",
+    "summary_contracted": "Products contracted",
+    "summary_cancelled": "Products cancelled",
+    "summary_none": "Nothing added yet.",
+    "summary_initial_payment": "Initial payment",
+    "summary_nothing_due": "Nothing is due today.",
+    "summary_line_regular": "Regular {amount}",
+    "summary_line_promotion": "Promotion: {name}",
+    "summary_line_discount": "Discount −{amount}",
+    "summary_line_tax": "VAT {rate}% incl.",
+    "summary_total": "Total initial payment",
+    "summary_save_and_pay": "Save & Pay",
+    "summary_confirm": "Confirm",
+    "summary_pending": "Your selection is awaiting payment.",
+    "summary_cancel_pending": "Cancel payment",
+    "summary_error_changed": "Your selection changed. Please review it again.",
+    "summary_error_amount": "The amount due could not be calculated. Please try again later.",
+    "summary_error_generic": "Your selection could not be confirmed. Please try again.",
+    "summary_error_unresolved": "A payment is still being processed. Please try again later."
   },
   "payments": {
     "title": "Payments",

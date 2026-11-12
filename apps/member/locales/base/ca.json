@@ -534,7 +534,26 @@
       "active": "Actiu",
       "superseded": "Substituït"
     },
-    "set_status_label": "Estat"
+    "set_status_label": "Estat",
+    "summary_heading": "Resum",
+    "summary_contracted": "Productes contractats",
+    "summary_cancelled": "Productes cancel·lats",
+    "summary_none": "Encara no has afegit res.",
+    "summary_initial_payment": "Pagament inicial",
+    "summary_nothing_due": "Avui no hi ha res a pagar.",
+    "summary_line_regular": "Preu habitual {amount}",
+    "summary_line_promotion": "Promoció: {name}",
+    "summary_line_discount": "Descompte −{amount}",
+    "summary_line_tax": "IVA {rate}% incl.",
+    "summary_total": "Total pagament inicial",
+    "summary_save_and_pay": "Desa i paga",
+    "summary_confirm": "Confirma",
+    "summary_pending": "La teva selecció està pendent de pagament.",
+    "summary_cancel_pending": "Cancel·la el pagament",
+    "summary_error_changed": "La teva selecció ha canviat. Revisa-la de nou.",
+    "summary_error_amount": "No s'ha pogut calcular l'import. Torna-ho a provar més tard.",
+    "summary_error_generic": "No s'ha pogut confirmar la teva selecció. Torna-ho a provar.",
+    "summary_error_unresolved": "Encara s'està processant un pagament. Torna-ho a provar més tard."
   },
   "payments": {
     "title": "Pagaments",
