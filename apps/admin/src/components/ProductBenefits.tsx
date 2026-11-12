@@ -63,6 +63,7 @@ import {
   clampBenefitValue,
   isMandatoryBenefitRow,
   updateBenefitRow,
+  benefitRowKey,
 } from '@/lib/benefitEditing';
 
 export {
@@ -74,7 +75,6 @@ export {
   saveBenefitSection,
   toBenefitItems,
   updateBenefitRow,
-  benefitRowKey,
 } from '@/lib/benefitEditing';
 export type {
   BenefitSectionAdapter,
