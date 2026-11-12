@@ -36,10 +36,11 @@ import {
 } from './membership-fee-pricing';
 import { assignedPlanFeeTimeline, assignedPlanFeeTimelineById } from './assigned-plan-fee-timeline';
 import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
+// #2624 stage 3 — the snapshot with each line's Final Price including its Promotion Benefit.
 import {
-  loadAssignedPlanBenefitSection,
-  loadAssignedPlanSnapshot,
-} from './assigned-plan-snapshot';
+  loadPricedAssignedPlanBenefitSection,
+  loadPricedAssignedPlanSnapshot,
+} from './assigned-plan-line-prices';
 import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import {
   ProductBenefitCategory,
@@ -551,7 +552,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // #635 — the assignment's own frozen commercial configuration, embedded
     // like every other section of the expanded card. Since stage 3 it is also
     // what billing and the Billing Simulation read.
-    loadAssignedPlanSnapshot(gymId, um.id),
+    loadPricedAssignedPlanSnapshot(gymId, Number(um.id)),
   ]);
   // #1191 — Billing Events are Membership-level and belong to the Primary
   // context alone: a Linked view carries none, and says why.
@@ -1828,7 +1829,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       if ((hasFee || hasCadence) && Object.keys(rest).length === 0) return { ok: true as const };
       return psSetBillingDuration(tx, d, rest);
     },
-    respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
+    respond: () => loadPricedAssignedPlanSnapshot(gymId, Number(req.params.id)),
   })) return;
   // #1325 PR 3e-3: an assignment's configuration is its ProductSet version, edited
   // above. What reaches here is one that version no longer takes an edit for (a
@@ -1874,7 +1875,7 @@ userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), as
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { personal_fee_benefit: req.body },
     mutate: (tx, d) => psSetFeeBenefit(tx, d, req.body),
-    respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
+    respond: () => loadPricedAssignedPlanSnapshot(gymId, Number(req.params.id)),
   })) return;
   // #1325 PR 3e-3: an assignment's configuration is its ProductSet version, edited
   // above. What reaches here is one that version no longer takes an edit for (a
@@ -1903,7 +1904,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     try {
       const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
       if (!um) return res.status(404).json({ error: 'Membership not found' });
-      res.json(await loadAssignedPlanBenefitSection(gymId, Number(um.id), category));
+      res.json(await loadPricedAssignedPlanBenefitSection(gymId, Number(um.id), category));
     } catch (err) { next(err); }
   });
 
@@ -1912,7 +1913,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     if (await redirectEditToProductSet(req, res, {
       userMembershipId: Number(req.params.id), action: 'update', detail: { [`${category}_benefits`]: req.body?.items },
       mutate: (tx, d) => psWriteBenefitSection(tx, d, category, req.body?.items),
-      respond: () => loadAssignedPlanBenefitSection(gymId, Number(req.params.id), category),
+      respond: () => loadPricedAssignedPlanBenefitSection(gymId, Number(req.params.id), category),
     })) return;
     // #1325 PR 3e-3: see the Billing & Duration route — only a plan whose version takes no edit arrives here.
     const closed = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
@@ -1956,7 +1957,7 @@ userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS
       userMembershipId: Number(um.id), action: 'update',
       detail: { benefit_assignees: { section, product_id: productId, assignees: req.body?.assignees } },
       mutate: (tx, d) => writeUnitAssignees(tx, d, Number(um.id), { section, productId, assignees: req.body?.assignees }),
-      respond: () => loadAssignedPlanBenefitSection(gymId, Number(um.id), section),
+      respond: () => loadPricedAssignedPlanBenefitSection(gymId, Number(um.id), section),
     })) return;
     return res.status(409).json({ error: 'not_a_draft', message: 'Family members are chosen per unit only before the plan is confirmed' });
   } catch (err) { next(err); }
