@@ -3712,6 +3712,7 @@
     "public_event_hint_restricted": "Solo los miembros con sesiones de uno de los servicios profesionales seleccionados pueden reservar esta actividad. Sin selección, cualquiera puede reservar.",
     "public_event_yes": "Sí — cualquiera puede reservar",
     "public_event_no": "No — restringido por servicio profesional",
+    "public_event_private": "No - evento privado",
     "label_waitlist_mode": "Lista de espera",
     "waitlist_mode_disabled": "Desactivada",
     "waitlist_mode_open": "Abierta",

@@ -3717,6 +3717,7 @@
     "public_event_hint_restricted": "Only members with sessions for one of the selected Professional Services can book this activity. Select none to let anyone book.",
     "public_event_yes": "Yes — anyone can book",
     "public_event_no": "No — restricted by Professional Service",
+    "public_event_private": "No - private event",
     "label_waitlist_mode": "Waiting list",
     "waitlist_mode_disabled": "Disabled",
     "waitlist_mode_open": "Open",
