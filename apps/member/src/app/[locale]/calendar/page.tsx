@@ -16,7 +16,7 @@ import { formatGymDateTime } from '@/lib/gymFormat';
 import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, initialParticipants, isFamilyGroupService, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
@@ -305,8 +305,7 @@ export default function MemberCalendarPage() {
   // the event or its service changes.
   const groupService = useMemo(() => {
     if (!selected || selected.my_booking_status) return null;
-    const s = (selected.professional_services ?? []).find((x) => x.id === chosenServiceId);
-    return s && isFamilyGroupService(s) ? s : null;
+    return groupServiceOf(selected.professional_services, chosenServiceId);
   }, [selected, chosenServiceId]);
   const groupLimit = groupService ? groupLimits(groupService) : null;
   useEffect(() => {

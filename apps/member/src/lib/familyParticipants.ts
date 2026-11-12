@@ -53,3 +53,40 @@ export function participantsValid(partnerIds: number[], min: number, max: number
   const n = 1 + partnerIds.length;
   return n >= min && n <= max;
 }
+
+/**
+ * #2674 follow-up — the service whose family selection the screen shows: the
+ * chosen one when it qualifies, else (nothing chosen yet, e.g. the member's
+ * balance leaves no service preselected) the event's one qualifying service.
+ * A chosen `open_group` service shows no selection.
+ */
+export function groupServiceOf<T extends GroupService & { id: number }>(
+  services: T[] | null | undefined, chosenId: number | null,
+): T | null {
+  const list = services ?? [];
+  if (chosenId != null) {
+    const chosen = list.find((s) => s.id === chosenId);
+    if (chosen) return isFamilyGroupService(chosen) ? chosen : null;
+  }
+  const qualifying = list.filter(isFamilyGroupService);
+  return qualifying.length === 1 ? qualifying[0] : null;
+}
+
+/** Whether a family member's toggle may move: off needs room above `min`, on needs room below `max`. */
+export function canToggleParticipant(partnerIds: number[], id: number, min: number, max: number): boolean {
+  return partnerIds.includes(id) ? canRemoveParticipant(partnerIds, min) : canAddParticipant(partnerIds, max);
+}
+
+/**
+ * The selection after toggling one family member, kept in the family's order
+ * (alphabetical, as §2 seeds it); a move the limits refuse changes nothing.
+ */
+export function toggleParticipant(
+  bookerId: number, family: FamilyMember[], partnerIds: number[], id: number, min: number, max: number,
+): number[] {
+  if (id === bookerId || !family.some((m) => m.member_id === id)) return partnerIds;
+  if (!canToggleParticipant(partnerIds, id, min, max)) return partnerIds;
+  const next = partnerIds.includes(id) ? partnerIds.filter((p) => p !== id) : [...partnerIds, id];
+  const order = addableMembers(bookerId, family, []).map((m) => m.member_id);
+  return order.filter((m) => next.includes(m));
+}
