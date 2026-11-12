@@ -141,6 +141,9 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   if (!row) return { kind: 'not_found' };
   if (row.status !== 'draft') return { kind: 'not_allowed', status: row.status };
   if (Number(row.expired) === 1) return { kind: 'expired' };
+  // #2624 stage 4: the Promotions applied while it was a Draft are captured now.
+  const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
+  await confirmDraftPromotionSnapshots(tx, gymId, id);
   await tx.query(
     `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
     [paymentRequestId, id],
@@ -161,6 +164,11 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
   if (row.status === 'active') return { kind: 'ok', productSet: row };
   if (row.status !== 'draft' && row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
   if (row.status === 'draft' && Number(row.expired) === 1) return { kind: 'expired' };
+  if (row.status === 'draft') {
+    // #2624 stage 4: a free commit confirms the Draft's Promotion snapshots too.
+    const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
+    await confirmDraftPromotionSnapshots(tx, gymId, id);
+  }
 
   const previous = await lockActive(tx, gymId, Number(row.owner_member_id));
   if (previous) {

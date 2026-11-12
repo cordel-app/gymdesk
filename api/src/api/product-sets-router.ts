@@ -247,6 +247,12 @@ async function syncLinkedAssignmentToPendingPayment(
  * #1535 guard) or it returns to Draft by itself (#1991 stage 4). Everything
  * else is the Admin's handler unchanged.
  */
+/** #2624 stage 4: re-takes the Draft's unconfirmed Promotion snapshots from the live Promotion. */
+async function refreshDraftPromotions(gymId: string, productSetId: number): Promise<void> {
+  const { refreshDraftPromotionSnapshots } = await import('./membership-promotions');
+  await db.transaction((tx) => refreshDraftPromotionSnapshots(tx, gymId, productSetId));
+}
+
 async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } = {}) {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
@@ -258,6 +264,9 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
   if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
+  // #2624 stage 4: the Draft's Promotions are re-captured from the live
+  // Promotion before the charge is priced, so the payment is the confirmed price.
+  if (set.status === 'draft') await refreshDraftPromotions(gymId, Number(set.id));
   // #1521: a version that replaces a running one owes only what is new, dated
   // today — never the plan's first cycle again.
   const { startsAt, charge } = await commitCharge(gymId, set);
@@ -357,6 +366,7 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
     const blocking = await loadEditLock(gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
+    await refreshDraftPromotions(gymId, Number(set.id)); // #2624 stage 4, as in Save & Pay
     const { startsAt, charge } = await commitCharge(gymId, set);
     if (!charge || charge.amount <= 0) return res.status(409).json({ error: 'nothing_to_pay' });
     const actor = actorOf(req).name;

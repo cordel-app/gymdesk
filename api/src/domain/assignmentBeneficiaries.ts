@@ -3,7 +3,7 @@
  * `plan_snapshot_beneficiaries`.
  *
  * This is the definition the `user_membership_members` view carried (migration 388), moved into the
- * code so the view can be dropped (migration 406): the latest plan snapshot of each assignment (the
+ * code so the view can be dropped (migration 407): the latest plan snapshot of each assignment (the
  * snapshot's own `source_user_membership_id`, else the assignment of the earliest Product Set linking
  * it) and that snapshot's beneficiaries, with the view's columns. It is a derived table, used as
  * `FROM ${ASSIGNMENT_BENEFICIARIES} umm` or `JOIN ${ASSIGNMENT_BENEFICIARIES} umm ON …`, and the one

@@ -25,7 +25,7 @@ const code = (file: string) => readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\
 describe('an assignment has no rows of its own (#1325 PR 3e-4b)', () => {
   const files = sources(SRC);
 
-  // #2125 M6a: the view is dropped (migration 406); coverage is read through ASSIGNMENT_BENEFICIARIES.
+  // #2125 M6a: the view is dropped (migration 407); coverage is read through ASSIGNMENT_BENEFICIARIES.
   it('nothing reads or writes the dropped user_membership_members view', () => {
     const offenders = files.filter((f) => /\buser_membership_members\b/.test(code(f)));
     expect(offenders).toEqual([]);
