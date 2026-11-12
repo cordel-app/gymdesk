@@ -74,8 +74,9 @@ const DISPLAY_SELECT = `
          ums.currency AS snapshot_currency,
          ${LIVE_PRODUCT_COLUMNS}
   FROM user_memberships um
+  JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ${assignmentLineVersionId('um.id')}
   JOIN product_periodical_snapshots ums
-    ON ums.product_set_id = ${assignmentLineVersionId('um.id')} AND ums.gym_id = um.gym_id
+    ON ums.id = lnk.product_periodical_snapshot_id AND ums.gym_id = um.gym_id
        AND ums.source_id IS NOT NULL
   JOIN products gc ON gc.id = ums.product_id
 `;
@@ -314,14 +315,16 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
       // Draft writer syncs in `touch()`); its `source_id` is the legacy line id.
       const { rows: own } = rows[0].line_ref != null
         ? await tx.query<{ id: number }>(
-          `SELECT source_id AS id FROM product_periodical_snapshots
-            WHERE gym_id = ? AND product_set_id = ? AND line_ref = ? AND source_id IS NOT NULL
-            ORDER BY source_id DESC LIMIT 1`,
+          `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
+             JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+            WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.line_ref = ? AND s.source_id IS NOT NULL
+            ORDER BY s.source_id DESC LIMIT 1`,
           [d.gym_id, d.id, rows[0].line_ref])
         : await tx.query<{ id: number }>(
-          `SELECT source_id AS id FROM product_periodical_snapshots
-            WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ? AND source_id IS NOT NULL
-            ORDER BY source_id DESC LIMIT 1`,
+          `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
+             JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+            WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ? AND s.starts_at <=> ? AND s.source_id IS NOT NULL
+            ORDER BY s.source_id DESC LIMIT 1`,
           [d.gym_id, d.id, rows[0].product_id, rows[0].starts_at]);
       if (!own[0]) return { kind: 'not_found' as const };
       const out = await psRemoveService(tx, d, Number(own[0].id), { legacy: true });
