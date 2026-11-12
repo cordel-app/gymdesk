@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens } from '../domain/themeTokens';
-import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery } from './helpers';
+import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery, linkTestPurchaseRequestToEvent } from './helpers';
 import { syncProductSnapshotForPurchase } from '../api/product-snapshot-sync';
 
 afterAll(async () => {
@@ -227,7 +227,7 @@ describe('GET /payment-page/token/:token', () => {
 
   // #2126 stage 3f: the item a one-off purchase page names is the Product snapshot's, for a
   // Sessions package (product_session_snapshots) and any other Product (product_oneoff_snapshots).
-  it('names the purchased Product from its Product snapshot (#2126 stage 3f)', async () => {
+  it('names the purchased Product from the snapshot linked to its Billing Event (#2126 stages 3f, 5a)', async () => {
     for (const [name, type] of [['Day Pass', 'other'], ['Ten Sessions', 'sessions']] as const) {
       const productId = (await db.query<any>(
         `INSERT INTO products (gym_id, name, type, amount, billing_frequency, status, enrollment_status)
@@ -240,6 +240,7 @@ describe('GET /payment-page/token/:token', () => {
          VALUES (?, NULL, ?, '20.00', 'EUR', NULL, 'pending', 'monei', UUID(), ?, ?,
                  DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
         [gymId, memberId, `pay_${pageToken}`, pageToken])).insertId;
+      await linkTestPurchaseRequestToEvent(gymId, memberId, requestId);
       const purchaseId = (await db.query<any>(
         `INSERT INTO member_products_oneoff_snapshot
            (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,

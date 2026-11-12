@@ -11,8 +11,8 @@
 //     select from it, until stage 5 retires the legacy writers;
 //   - the row locks taken on the legacy record before it is written (`SELECT id … FOR UPDATE`),
 //     because the legacy row is still the one being updated or deleted;
-//   - the purchase record joined **only** for its `payment_request_id`, which is how a purchase
-//     reaches its payment (`purchase-snapshots.ts`: the snapshot tables carry no payment link);
+//   - (until stage 5a) the purchase record joined only for its `payment_request_id`; since 5a a
+//     purchase reaches its payment through `billing_event_{oneoff,session}_snapshots`, so none is left;
 //   - the read-only `validate-product-snapshots.ts` report, which compares the two.
 //
 // The counts are exact, so a new `FROM`/`JOIN` of a legacy table fails the build until it is
@@ -27,15 +27,13 @@ const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
   'api/product-snapshot-sync.ts': { count: 7, why: 'the dual-write: re-derives the snapshot tables from the legacy rows' },
-  'api/snapshot-junction-sync.ts': { count: 1, why: 'links a bought one-time Product to its Billing Event through its payment request' },
+  'api/snapshot-junction-sync.ts': { count: 1, why: 'links a bought one-time Product to its Billing Event through its payment request (both junctions, one statement)' },
   'api/product-set-bridge.ts': { count: 1, why: 'cloneConfiguration() copies the legacy lines into the new version' },
   'api/plan-snapshot-add.ts': { count: 1, why: 'mergeActiveVersionIntoDraft() copies the legacy lines into the Draft' },
   'api/product-set-draft.ts': { count: 2, why: 'removeService() / setServiceQuantity() lock the legacy line they write' },
   'api/member-product-purchases.ts': { count: 1, why: 'staff Cancel locks the purchase record it writes' },
-  'api/me-products.ts': { count: 4, why: 'a draft delete locks the record; three joins read only payment_request_id' },
-  'api/member-product-promotions.ts': { count: 1, why: 'loadMemberPurchases() joins the record only for payment_request_id' },
-  'api/payment-page.ts': { count: 1, why: 'the hosted page joins the record only for payment_request_id' },
-  'scripts/validate-product-snapshots.ts': { count: 5, why: 'read-only report comparing the legacy and snapshot tables' },
+  'api/me-products.ts': { count: 1, why: 'a draft delete locks the record it deletes' },
+  'scripts/validate-product-snapshots.ts': { count: 8, why: 'read-only report comparing the legacy and snapshot tables' },
 };
 
 /** Every production `.ts` under api/src (tests and migrations excluded). */

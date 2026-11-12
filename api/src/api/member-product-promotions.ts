@@ -416,8 +416,8 @@ export interface MemberPurchasedProduct {
  * cancelled attempt is silent (it simply reads *available* again).
  *
  * Every column of the row is the purchase's **snapshot** (migration 228; read
- * from the Product snapshot tables since #2126 stage 3d, the purchase record
- * joined only for its payment request), so nothing here joins `products` either: a Product renamed or repriced since
+ * from the Product snapshot tables since #2126 stage 3d, its payment request
+ * reached through the Billing Event junction since stage 5a), so nothing here joins `products` either: a Product renamed or repriced since
  * must not move what a past purchase says it was.
  */
 export async function loadMemberPurchases(
@@ -436,10 +436,8 @@ export async function loadMemberPurchases(
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
        FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
-       LEFT JOIN member_products_oneoff_snapshot rec
-              ON rec.id = mp.member_product_id AND rec.gym_id = mp.gym_id
        LEFT JOIN payment_requests pr
-              ON pr.id = rec.payment_request_id AND pr.gym_id = mp.gym_id
+              ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       ORDER BY mp.created_at DESC, mp.id DESC`,
     memberPurchaseSnapshotParams(gymId, memberId),
   );

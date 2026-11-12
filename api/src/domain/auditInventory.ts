@@ -99,6 +99,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "product_set_oneoff_snapshots": ["parent", "product_sets (junction to Product snapshots, #2126 M1)"],
   "product_set_periodical_snapshots": ["parent", "product_sets (junction to Product snapshots, #2126 M1)"],
   "billing_event_oneoff_snapshots": ["parent", "billing_events (junction to one-time Product snapshots, #2126 M1)"],
+  "billing_event_session_snapshots": ["parent", "billing_events (junction to bought Sessions package snapshots, #2126 stage 5a)"],
   "plan_snapshot_beneficiaries": ["parent", "plan_snapshots"],
   "plan_session_snapshots": ["parent", "plan_snapshots"],
   "plan_oneoff_snapshots": ["parent", "plan_snapshots"],

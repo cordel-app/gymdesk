@@ -16,7 +16,7 @@
  *   plan snapshots          -> product_set_plan_snapshots
  *   recurring Product lines -> product_set_periodical_snapshots
  *   session / one-off buys  -> product_set_{session,oneoff}_snapshots (only when a snapshot names a set)
- *   a bought one-time Product -> billing_event_oneoff_snapshots (through its payment request's event)
+ *   a bought one-time Product -> billing_event_{oneoff,session}_snapshots (through its payment request's event)
  */
 import type { Tx } from '../infra/db';
 
@@ -48,14 +48,26 @@ export async function syncProductSnapshotJunctions(tx: Conn, gymId: string, prod
   for (const j of SET_JUNCTIONS) await syncOne(tx, gymId, productSetId, j);
 }
 
+/**
+ * The junction linking a bought one-time Product's snapshot to its Billing Event, per snapshot table: a
+ * Sessions package is frozen in `product_session_snapshots` (#2126 stage 5a, migration 408), anything else
+ * in `product_oneoff_snapshots` (migration 366). A purchase reaches its payment through these alone.
+ */
+export const PURCHASE_EVENT_JUNCTIONS = [
+  { junction: 'billing_event_oneoff_snapshots', snapshotCol: 'product_oneoff_snapshot_id', table: 'product_oneoff_snapshots' },
+  { junction: 'billing_event_session_snapshots', snapshotCol: 'product_session_snapshot_id', table: 'product_session_snapshots' },
+] as const;
+
 /** Links a bought one-time Product's snapshot to the Billing Event of its payment request. */
 export async function linkPurchaseToBillingEvent(tx: Conn, gymId: string, purchaseId: number): Promise<void> {
-  await tx.query(
-    `INSERT IGNORE INTO billing_event_oneoff_snapshots (billing_event_id, product_oneoff_snapshot_id)
-     SELECT pr.billing_event_id, s.id
-       FROM member_products_oneoff_snapshot mp
-       JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
-       JOIN product_oneoff_snapshots s ON s.source_id = mp.id AND s.gym_id = mp.gym_id
-      WHERE mp.id = ? AND mp.gym_id = ? AND pr.billing_event_id IS NOT NULL`,
-    [purchaseId, gymId]);
+  for (const j of PURCHASE_EVENT_JUNCTIONS) {
+    await tx.query(
+      `INSERT IGNORE INTO ${j.junction} (billing_event_id, ${j.snapshotCol})
+       SELECT pr.billing_event_id, s.id
+         FROM member_products_oneoff_snapshot mp
+         JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
+         JOIN ${j.table} s ON s.source_id = mp.id AND s.gym_id = mp.gym_id
+        WHERE mp.id = ? AND mp.gym_id = ? AND pr.billing_event_id IS NOT NULL`,
+      [purchaseId, gymId]);
+  }
 }

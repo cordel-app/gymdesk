@@ -1002,8 +1002,12 @@ describe('the Admin read of a member’s Products (#1118 §12, §13)', () => {
     const memberId = await createLinkedMember(gid, clerk);
     const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
     await buyAs(gid, clerk, productId);
+    // #2126 stage 5a: a purchase reaches its payment through its snapshot's Billing Event junction,
+    // so "no request" is a snapshot linked to no event (as a draft is).
     await db.query(
-      'UPDATE member_products_oneoff_snapshot SET payment_request_id = NULL WHERE gym_id = ? AND member_id = ?',
+      `DELETE j FROM billing_event_oneoff_snapshots j
+         JOIN product_oneoff_snapshots s ON s.id = j.product_oneoff_snapshot_id
+        WHERE s.gym_id = ? AND s.member_id = ?`,
       [gid, memberId],
     );
 
