@@ -88,7 +88,7 @@ async function copyApplications(
 ) {
   const { rows } = await tx.query<any>(
     `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-            modified_at, modified_by, recurrent_snapshot_id
+            modified_at, modified_by, recurrent_snapshot_id, snapshot_confirmed_at
        FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ?
         ${opts.onlyProductTarget ? "AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')" : ''}`,
     [gymId, from.productSetId]);
@@ -117,11 +117,13 @@ async function copyApplications(
     const { insertId } = await tx.query(
       `INSERT INTO user_membership_promotions
          (gym_id, product_set_id, recurrent_snapshot_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-          modified_at, modified_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          modified_at, modified_by, snapshot_confirmed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, to.productSetId, ownerLine, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
         app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
-        app.revoked_at, app.modified_at, app.modified_by]);
+        // #2624 stage 4: a copy keeps its source's confirmation, so a confirmed
+        // (historical) snapshot is never re-captured by the successor's Save & Pay.
+        app.revoked_at, app.modified_at, app.modified_by, app.snapshot_confirmed_at ?? null]);
     for (const table of [
       'user_membership_promotion_session_snapshot',
       'user_membership_promotion_oneoff_snapshot',
