@@ -214,6 +214,7 @@
     "prof_services_history_returned": "Session returned",
     "prof_services_history_consumption": "Session used",
     "prof_services_history_plan_renewal": "Plan allowance renewed",
+    "prof_services_history_member": "Member: {name}",
     "section_session_packages": "Session Packages",
     "no_session_packages": "No session packages.",
     "package_purchased": "Purchased",

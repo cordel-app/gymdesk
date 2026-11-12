@@ -40,6 +40,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { historyEntryMemberName } from './professionalServiceHistoryView';
 
 interface WalletRow {
   professional_service_id: number;
@@ -60,6 +61,9 @@ interface HistoryEntry {
   balance_before: number | null;
   balance_after: number | null;
   actor: string | null;
+  // #2670 stage 3: the family member the entry was recorded for (who booked).
+  member_id?: number | null;
+  member_name?: string | null;
 }
 
 const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'event_start', 'returned'];
@@ -274,7 +278,9 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                 {history.length === 0 ? (
                   <p style={cardMutedTextStyle}>{t('prof_services_history_empty')}</p>
                 ) : (
-                  history.map((h, i) => (
+                  history.map((h, i) => {
+                    const familyMember = historyEntryMemberName(h, memberId);
+                    return (
                     <div key={i} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 13, padding: '3px 0' }}>
                       <span>{formatGymDateTime(h.at, gymFmt)}</span>
                       <strong>{h.quantity > 0 ? `+${h.quantity}` : h.quantity}</strong>
@@ -283,9 +289,13 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                         <span style={cardMutedTextStyle}>{h.balance_before} → {h.balance_after}</span>
                       )}
                       {h.kind === 'adjustment' && h.reason && <span style={cardMutedTextStyle}>{h.reason}</span>}
+                      {familyMember && (
+                        <span style={cardMutedTextStyle}>{t('prof_services_history_member', { name: familyMember })}</span>
+                      )}
                       {h.actor && <span style={cardMutedTextStyle}>{h.actor}</span>}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
