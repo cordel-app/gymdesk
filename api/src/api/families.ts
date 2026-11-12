@@ -5,6 +5,7 @@ import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { PAYER_CHANGE_MESSAGES } from '../domain/familyPayerChange';
 import { checkFamilyPayerChange } from './family-payer-change';
+import { createSoloFamily } from './family-membership';
 
 /**
  * #2123 stage 1: Family, a first-class entity independent of Product Sets. Mounted at
@@ -12,6 +13,12 @@ import { checkFamilyPayerChange } from './family-payer-change';
  * the member a family is being created for. A member belongs to at most one family; a
  * family has exactly one owner (UNIQUE `owner_key` + the transactional checks here).
  * Nothing in stage 1 changes who pays: the owner is reported as the future payer only.
+ *
+ * #2670 stage 1: every member belongs to a family, so no route here leaves one without:
+ * a member alone in their own family may be added to another (their solo family is
+ * removed), a member removed from a family and every member of a dissolved family gets a
+ * solo family of their own (`createSoloFamily()`), and a solo family cannot be dissolved
+ * or emptied (409 `family_required`).
  */
 export const familiesRouter = Router({ mergeParams: true });
 
@@ -43,6 +50,15 @@ async function familyOf(q: Q, gymId: string, memberId: number, lock = false) {
   const { rows: fam } = await q.query<{ id: number; name: string }>(
     `SELECT id, name FROM families WHERE id = ? AND gym_id = ?${lock ? ' FOR UPDATE' : ''}`, [familyId, gymId]);
   return fam[0] ?? null;
+}
+
+const FAMILY_REQUIRED = 'Every member belongs to a family; a member alone in their family cannot leave it';
+
+/** How many members a family holds. */
+async function familySize(q: Q, gymId: string, familyId: number) {
+  const { rows } = await q.query<{ c: number }>(
+    'SELECT COUNT(*) AS c FROM family_members WHERE family_id = ? AND gym_id = ?', [familyId, gymId]);
+  return Number(rows[0]?.c ?? 0);
 }
 
 async function shape(q: Q, gymId: string, family: { id: number; name: string }) {
@@ -133,8 +149,14 @@ familiesRouter.post('/members', requireModuleWrite('MEMBERS'), handle(async (req
     if (!family) throw new FamilyError(404, 'family_not_found', 'The member does not belong to a family');
     const added = await loadMember(tx, gymId, (req.body as any)?.member_id);
     if (!added) throw new FamilyError(404, 'member_not_found', 'Member not found');
-    if (await familyOf(tx, gymId, added.id)) {
-      throw new FamilyError(409, 'already_in_family', 'The member already belongs to a family');
+    const current = await familyOf(tx, gymId, added.id, true);
+    if (current) {
+      // #2670: a member alone in their own family joins another one; a member of a
+      // family with others still has to leave it first.
+      if (current.id === family.id || await familySize(tx, gymId, current.id) > 1) {
+        throw new FamilyError(409, 'already_in_family', 'The member already belongs to a family');
+      }
+      await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [current.id, gymId]);
     }
     const prev = await shape(tx, gymId, family);
     await tx.query(
@@ -192,22 +214,22 @@ familiesRouter.delete('/members/:otherId', requireModuleWrite('MEMBERS'), handle
       throw new FamilyError(409, 'owner_cannot_be_removed',
         'Change the family owner before removing the current owner, or dissolve the family');
     }
-    if (prev.members.length === 1) {
-      await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
-      return { previous: prev, next: null, dissolved: true, id: family.id };
-    }
+    if (prev.members.length === 1) throw new FamilyError(409, 'family_required', FAMILY_REQUIRED);
     await assertPayerChangeSafe(tx, gymId, new Map([[otherId, otherId]]));
     await tx.query('DELETE FROM family_members WHERE family_id = ? AND gym_id = ? AND member_id = ?', [family.id, gymId, otherId]);
+    await createSoloFamily(tx, gymId, otherId, target.name, actor);
     await tx.query('UPDATE families SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
       [actor, family.id, gymId]);
-    return { previous: prev, next: await shape(tx, gymId, family), dissolved: false, id: family.id };
+    return { previous: prev, next: await shape(tx, gymId, family), id: family.id };
   });
-  recordAudit(req, { action: out.dissolved ? 'dissolve' : 'remove_member', entityType: 'family', entityId: out.id, previous: out.previous, next: out.next });
+  recordAudit(req, { action: 'remove_member', entityType: 'family', entityId: out.id, previous: out.previous, next: out.next });
   res.json({ family: out.next });
 }));
 
 familiesRouter.delete('/', requireModuleWrite('MEMBERS'), handle(async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const out = await db.transaction(async (tx) => {
     const family = await familyOf(tx, gymId, Number((req.params as any).memberId), true);
     if (!family) throw new FamilyError(404, 'family_not_found', 'The member does not belong to a family');
@@ -215,7 +237,10 @@ familiesRouter.delete('/', requireModuleWrite('MEMBERS'), handle(async (req, res
     // Each member goes back to paying for themself, which needs a card if they owe anything.
     await assertPayerChangeSafe(tx, gymId,
       new Map(prev.members.filter((m) => !m.is_owner).map((m) => [m.member_id, m.member_id] as [number, number])));
+    if (prev.members.length === 1) throw new FamilyError(409, 'family_required', FAMILY_REQUIRED);
     await tx.query('DELETE FROM families WHERE id = ? AND gym_id = ?', [family.id, gymId]);
+    // #2670: dissolving splits the family — each member owns a family of their own.
+    for (const m of prev.members) await createSoloFamily(tx, gymId, m.member_id, m.name, actor);
     return prev;
   });
   recordAudit(req, { action: 'dissolve', entityType: 'family', entityId: out.id, previous: out });

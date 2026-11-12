@@ -95,6 +95,9 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
   }
 
   const owner = family.members.find((m) => m.is_owner);
+  // #2670: every member belongs to a family, so a member alone in theirs can neither be
+  // removed from it nor dissolve it (the server answers 409 family_required).
+  const alone = family.members.length <= 1;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontWeight: 600 }}>{family.name}</div>
@@ -117,7 +120,7 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
               <a href={`/${locale}/members?member=${m.member_id}`} style={{ ...secondaryBtnSmall, textDecoration: 'none', display: 'inline-block' }}>
                 {t('members.family_view')}
               </a>
-              {canWrite && (<>
+              {canWrite && !alone && (<>
                 <button style={secondaryBtnSmall} disabled={busy} onClick={() => setPending({ kind: 'remove', member: m })}>
                   {t('members.family_remove')}
                 </button>
@@ -139,11 +142,13 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
               </button>
             </div>
           ))}
-          <div>
-            <button style={secondaryBtnSmall} disabled={busy} onClick={() => setPending({ kind: 'dissolve' })}>
-              {t('members.family_dissolve')}
-            </button>
-          </div>
+          {!alone && (
+            <div>
+              <button style={secondaryBtnSmall} disabled={busy} onClick={() => setPending({ kind: 'dissolve' })}>
+                {t('members.family_dissolve')}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {error && <p style={formErrorStyle}>{error}</p>}
@@ -172,9 +177,10 @@ export function MemberFamily({ memberId, canWrite }: { memberId: number | string
         onConfirm={() => {
           if (pending?.kind === 'remove') {
             const id = pending.member.member_id;
-            run(() => apiFetch(`${base}/members/${id}`, { method: 'DELETE' }));
+            // Re-read: the member on screen may be the one who left (they now own a family of their own).
+            run(async () => { await apiFetch(`${base}/members/${id}`, { method: 'DELETE' }); return apiFetch<{ family: Family | null }>(base); });
           } else {
-            run(async () => { await apiFetch(base, { method: 'DELETE' }); return { family: null }; });
+            run(async () => { await apiFetch(base, { method: 'DELETE' }); return apiFetch<{ family: Family | null }>(base); });
           }
         }}
       />

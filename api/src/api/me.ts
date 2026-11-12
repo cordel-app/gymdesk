@@ -38,6 +38,7 @@ import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
+import { createSoloFamily } from './family-membership';
 import { cancelGroupPartners, membersShareCoverage } from './duo-booking';
 import { FAMILY_GROUP_MESSAGES, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
 import { loadServiceCapacityViews, loadServiceOccupancy } from './service-capacity';
@@ -441,6 +442,8 @@ async function createSelfRegisteredMember(
         'INSERT INTO members (name, email, gym_id, clerk_user_id, enrolled_at, created_by) VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
         [name, email, gymId, userId, name],
       );
+      // #2670: every Member belongs to a Family — a new one owns a family of their own.
+      await createSoloFamily(tx, gymId, insertId, name, name);
       await tx.query(
         `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'member')`,
         [userId, gymId],
