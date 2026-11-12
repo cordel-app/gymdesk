@@ -1,56 +1,15 @@
-// #2478 — where each applied Promotion is drawn on the Assigned Plan card.
+// #2478 / #2657 — the pure helpers the Assigned Plan card's Promotion row uses.
 //
-// The separate Promotions section is gone: an application is drawn directly
-// under every Product line of the card that one of its grants names, and an
-// application whose grants name no Product line of the card (a Membership
-// Fee Promotion, or one granting a Product the plan does not carry) is drawn
-// under the Membership Fee instead, so no application disappears from the card.
-//
-// This module only *places*: one application drawn under two Products is still
-// one application (one checkbox, one revoke), and every price stays the
-// server's. Pure, so the placement is asserted without rendering.
+// #2478 drew each application under every Product line it granted; #2657 draws
+// it once, as a plan-level row below Period Benefits, so nothing is *placed*
+// any more. What is left is reading an application's grants and choosing the
+// thumbnail. Pure, so it is asserted without rendering.
 
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import type { AppliedPromotion, AppliedPromotionGrant } from './types';
 
-export interface PlacedPromotion {
-  promotion: AppliedPromotion;
-  /** The application's grant for this Product — its discount is what the row states. */
-  grant: AppliedPromotionGrant;
-}
-
-export interface PromotionPlacement {
-  /** Product id → the applications drawn under that Product's line(s), card order kept. */
-  byProduct: Map<number, PlacedPromotion[]>;
-  /** Applications no Product line of the card is granted by: drawn under the Membership Fee. */
-  unplaced: AppliedPromotion[];
-}
-
 export function promotionGrants(p: AppliedPromotion): AppliedPromotionGrant[] {
   return [...(p.oneoff_grants ?? []), ...(p.session_grants ?? []), ...(p.periodical_grants ?? [])];
-}
-
-export function placePromotionsUnderProducts(
-  promotions: AppliedPromotion[], productIds: Iterable<number>,
-): PromotionPlacement {
-  const onCard = new Set(productIds);
-  const byProduct = new Map<number, PlacedPromotion[]>();
-  const unplaced: AppliedPromotion[] = [];
-  for (const promotion of promotions) {
-    let placed = false;
-    const seen = new Set<number>();
-    for (const grant of promotionGrants(promotion)) {
-      const id = grant.product_id;
-      if (id == null || !onCard.has(id) || seen.has(id)) continue;
-      seen.add(id);
-      placed = true;
-      const list = byProduct.get(id) ?? [];
-      list.push({ promotion, grant });
-      byProduct.set(id, list);
-    }
-    if (!placed) unplaced.push(promotion);
-  }
-  return { byProduct, unplaced };
 }
 
 /**

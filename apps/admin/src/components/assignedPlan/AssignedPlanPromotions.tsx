@@ -2,13 +2,12 @@
 
 // #2478 — the Promotions an Assigned Plan was agreed with, drawn where they act.
 //
-// Until this ticket every application was a card in a separate Promotions
-// section under the Products. Now each application is a nested, indented row
-// directly under every Product line one of its grants names (an application
-// that names none — a Membership Fee Promotion — sits under the Membership
-// Fee), and its full configuration is a detail modal opened from its circular
-// thumbnail or its name. `promotionPlacement.ts` decides where a row goes; this
-// file draws the row, the checkbox and the two modals.
+// #2478 drew each application as a nested row under every Product line it
+// granted; #2657 draws it once, as a plan-level row below Period Benefits,
+// because a Promotion applies to the whole Membership Plan. Its full
+// configuration is a detail modal opened from its square thumbnail (the
+// original image, unstretched) or its name. This file draws the row, the
+// checkbox and the two modals.
 //
 // What did not move (#635 stages 7/9, #924 stage 5): everything shown is the
 // application's own snapshot (§16) — its name, window, Membership Fee Benefit
@@ -18,9 +17,7 @@
 // the card is in Edit mode, clearing it revokes the standing application and
 // ticking a spent one re-applies the Promotion as it stands today, each behind
 // its own confirmation; `can_reapply` and `display_status` are the server's.
-// One application drawn under two Products is still one application: both rows
-// drive the same revoke, so its effect is never counted twice. Nothing is
-// priced here (#817).
+// Nothing is priced here (#817).
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -40,7 +37,7 @@ import {
   ProductBenefitView,
   benefitTreatmentLabel,
 } from '@/components/ProductBenefits';
-import { thumbnailSrc } from './promotionPlacement';
+import { promotionGrants, thumbnailSrc } from './promotionPlacement';
 import type { AppliedPromotion, AppliedPromotionGrant, AssignedPlanSnapshotBenefit } from './types';
 
 const GRANT_SECTIONS: {
@@ -189,11 +186,13 @@ export function useAppliedPromotionToggle(assignedPlanId: number, onChanged: () 
  * placeholder, no reserved space — when there is no image. Its own button,
  * and the click stops there, so it never selects, edits or ticks anything.
  */
-export function CircularThumbnail({ src, label, onOpen, size = 28 }: {
+export function CircularThumbnail({ src, label, onOpen, size = 28, square = false }: {
   src: string | null;
   label: string;
   onOpen: () => void;
   size?: number;
+  /** #2657 — a 1:1 square (the plan's Promotion row) rather than a circle. */
+  square?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) return null;
@@ -208,40 +207,39 @@ export function CircularThumbnail({ src, label, onOpen, size = 28 }: {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src} alt="" loading="lazy" onError={() => setBroken(true)}
-        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+        style={{ width: size, height: size, borderRadius: square ? 4 : '50%', objectFit: 'cover', display: 'block' }}
       />
     </button>
   );
 }
 
-// ─── The nested row ───────────────────────────────────────────────────────────
+// ─── The plan-level row ───────────────────────────────────────────────────────
 
 /**
- * One application, indented under the Product it affects (or under the
- * Membership Fee): checkbox, thumbnail, name, the grant's discount and the
- * status. Secondary type so the Product stays the primary item.
+ * #2657 — one application drawn **once**, as a plan-level row below Period
+ * Benefits: a Promotion applies to the whole Membership Plan, so it is no
+ * longer repeated under every Product line it grants. Checkbox, a square 1:1
+ * thumbnail (opening the detail modal with the original image), the name, the
+ * benefit it carries and its status. Every figure is the snapshot's.
  */
-export function NestedPromotionRow({ promotion, grant, checkbox, onOpen }: {
+export function PlanPromotionRow({ promotion, checkbox, onOpen }: {
   promotion: AppliedPromotion;
-  /** The application's grant for the parent Product; absent under the Membership Fee. */
-  grant?: AppliedPromotionGrant;
   checkbox: React.ReactNode;
   onOpen: () => void;
 }) {
   const t = useTranslations('assigned_plans_page');
   const tp = useTranslations('promotions');
   const tStatus = useTranslations('status');
-  const discount = grant
-    ? benefitTreatmentLabel(tp as any, 'promotion', { action: grant.action, value: grant.value } as any)
-    : feeBenefitLabel(promotion, t);
+  const benefits = promotionBenefitSummary(promotion, t, tp);
   return (
-    <div style={nestedRowSt}>
+    <div style={planRowSt}>
       {checkbox}
       <CircularThumbnail
         src={thumbnailSrc(promotion.promotion_image_thumbnail_url, promotion.promotion_image_url)}
         label={t('promo_open_details', { promotion: promotion.promotion_name })}
         onOpen={onOpen}
-        size={24}
+        size={40}
+        square
       />
       <button
         type="button"
@@ -251,10 +249,27 @@ export function NestedPromotionRow({ promotion, grant, checkbox, onOpen }: {
       >
         {promotion.promotion_name}
       </button>
-      {discount && <span style={metaSt}>{discount}</span>}
+      {benefits && <span style={metaSt}>{benefits}</span>}
       <StatusBadge status={promotion.display_status} label={tStatus(promotion.display_status as any)} />
     </div>
   );
+}
+
+/**
+ * What an application gives, in a few words: its Membership Fee Benefit, then
+ * each granted Product with the grant's own frozen treatment. Null when none.
+ */
+function promotionBenefitSummary(
+  p: AppliedPromotion, t: ReturnType<typeof useTranslations>, tp: ReturnType<typeof useTranslations>,
+): string | null {
+  const parts: string[] = [];
+  const fee = feeBenefitLabel(p, t);
+  if (fee) parts.push(`${t('fee_breakdown_fee')}: ${fee}`);
+  for (const g of promotionGrants(p)) {
+    const label = benefitTreatmentLabel(tp as any, 'promotion', { action: g.action, value: g.value } as any);
+    parts.push(g.item_name ? `${g.item_name}: ${label}` : label);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** The Membership Fee Benefit an application carries, in a few words; null when none. */
@@ -436,16 +451,14 @@ const thumbButtonSt: React.CSSProperties = {
   padding: 0, border: 'none', background: 'none', cursor: 'pointer',
   borderRadius: '50%', flexShrink: 0, lineHeight: 0,
 };
-const nestedRowSt: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-  margin: '0 0 4px 16px', padding: '4px 0 4px 10px', borderLeft: '2px solid #e5e5e5',
-  fontSize: 12.5, color: '#555',
-};
 const nameBtnSt: React.CSSProperties = {
   padding: 0, border: 'none', background: 'none', cursor: 'pointer',
   font: 'inherit', color: 'inherit', fontWeight: 500, textAlign: 'left',
 };
 const metaSt: React.CSSProperties = { color: '#888', fontSize: 12 };
+const planRowSt: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 0',
+};
 const sectionHeadSt: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
 };
