@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { muscleLabel } from '@/lib/memberProgress';
+import { useMuscleName } from '@/lib/useMuscleNames';
 import { equipmentLabelKey } from '@/lib/exerciseEquipment';
 import { memberTheme } from '@/lib/memberChrome';
 
@@ -36,6 +37,7 @@ const ICONS: Record<string, React.ReactNode> = {
 
 export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
   const t = useTranslations();
+  const muscleName = useMuscleName();
   const muscles = (info.muscles ?? []).filter(Boolean);
   const category = filled(info.category);
   const equipment = filled(info.equipment);
@@ -70,8 +72,8 @@ export function ExerciseInfo({ info }: { info: ExerciseInfoFields }) {
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: memberTheme.textSecondary }}>
             {ICONS.muscles}{t('exercise_media.muscles')}
           </span>
-          {primary.length > 0 && <p style={text}><strong>{t('exercise_media.muscles_primary')}:</strong> {primary.map(muscleLabel).join(', ')}</p>}
-          {secondary.length > 0 && <p style={text}><strong>{t('exercise_media.muscles_secondary')}:</strong> {secondary.map(muscleLabel).join(', ')}</p>}
+          {primary.length > 0 && <p style={text}><strong>{t('exercise_media.muscles_primary')}:</strong> {primary.map(muscleName).join(', ')}</p>}
+          {secondary.length > 0 && <p style={text}><strong>{t('exercise_media.muscles_secondary')}:</strong> {secondary.map(muscleName).join(', ')}</p>}
         </div>
       )}
     </div>

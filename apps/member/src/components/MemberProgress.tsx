@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { LineChart } from '@gymdesk/charts';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { useMuscleName } from '@/lib/useMuscleNames';
 import { formatGymDayMonth } from '@/lib/gymFormat';
 import { MemberGoalCard } from '@/components/MemberGoalCard';
 import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
@@ -14,7 +15,7 @@ import { inputStyle, memberTheme, noticeStyle } from '@/lib/memberChrome';
 import {
   type ProgressDetail, type ProgressSummary,
   NO_PROGRESS_FILTERS, daysNewestFirst, filterProgress, formatBestResult, formatMaxWeight, formatSetValue,
-  gymToday, muscleLabel, progressChartPoints, progressMuscles, resultUnitKey,
+  gymToday, progressChartPoints, progressMuscles, resultUnitKey,
   type ProgressDateRange, type ProgressFilters,
 } from '@/lib/memberProgress';
 
@@ -29,6 +30,7 @@ export function MemberProgress() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const gym = useGymFormatSettings();
+  const muscleName = useMuscleName();
   const [items, setItems] = useState<ProgressSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [filters, setFilters] = useState<ProgressFilters>(NO_PROGRESS_FILTERS);
@@ -86,7 +88,7 @@ export function MemberProgress() {
               onChange={(e) => setFilters({ ...filters, muscle: e.target.value === '' ? null : e.target.value })}
             >
               <option value="">{t('progress.filter_all_muscles')}</option>
-              {muscles.map((m) => <option key={m} value={m}>{muscleLabel(m)}</option>)}
+              {muscles.map((m) => <option key={m} value={m}>{muscleName(m)}</option>)}
             </select>
           </label>
         )}
