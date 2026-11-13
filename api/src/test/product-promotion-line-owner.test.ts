@@ -75,7 +75,8 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(a1.status).toBe('applied');
     await activate(first.productSetId, m, true);
 
-    // The successor Draft copies the application onto the copied line.
+    // The successor Draft links the unchanged line (#2126 stage 5c-2c-2) and holds its own copy of the
+    // application, on that very line.
     const draft = await db.transaction(async (tx) => {
       const out = await ensureRecurringDraft(tx, { gymId, memberId: m, actor, today: TODAY });
       if (out.kind !== 'ok') throw new Error(out.kind);
@@ -86,8 +87,8 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(copied[0].id).not.toBe(a1.id);
     const { rows: line } = await db.query<any>(
       'SELECT id, product_set_id FROM member_products_recurrent_snapshot WHERE id = ?', [copied[0].recurrent_snapshot_id]);
-    expect(Number(line[0].product_set_id)).toBe(draft);
-    expect(Number(line[0].id)).not.toBe(first.lineId);
+    expect(Number(line[0].product_set_id)).toBe(first.productSetId);
+    expect(Number(line[0].id)).toBe(first.lineId);
     const { rows: grants } = await db.query<any>(
       'SELECT user_membership_promotion_id FROM user_membership_promotion_periodical_snapshot WHERE user_membership_promotion_id IN (?, ?)',
       [a1.id, copied[0].id]);

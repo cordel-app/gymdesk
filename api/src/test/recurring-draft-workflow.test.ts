@@ -114,7 +114,10 @@ async function activePlan(m: number, price = 40, startsAt = TODAY): Promise<numb
   return created.body.id as number;
 }
 const openLines = async (setId: number) => (await db.query<any>(
-  'SELECT id, product_id, quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? AND ends_at IS NULL ORDER BY id', [setId])).rows;
+  // #2126 stage 5c-2c-2: a set's lines are its links (a new version links its predecessor's lines).
+  `SELECT s.source_id AS id, s.product_id, s.quantity FROM product_set_periodical_snapshots lnk
+     JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+    WHERE lnk.product_set_id = ? AND s.ends_at IS NULL ORDER BY s.source_id`, [setId])).rows;
 
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';
@@ -259,6 +262,38 @@ describe('Review your changes (#1537)', () => {
     expect(act.status).toBe(200);
     expect((await auth(request.get(mset(first)))).body.status).toBe('superseded');
     expect((await auth(request.get(mset(draftId)))).body.status).toBe('active');
+  });
+
+  it('a new version links the active lines; only the line an edit changes is copied (#2126 stage 5c-2c-2)', async () => {
+    const m = await member();
+    const towel = await product({ name: 'Towel L', frequency: 'month', amount: '5.00', type: 'service' });
+    const locker = await product({ name: 'Locker L', frequency: 'month', amount: '12.00', type: 'service' });
+    const first = (await auth(request.post(base(m))).send({ product_id: towel })).body.product_set_id as number;
+    await auth(request.post(base(m))).send({ product_id: locker });
+    const sp = await auth(request.post(`${mset(first)}/save-and-pay`)).send({});
+    expect((await pay(sp.body.payment_request_id)).status).toBe(200);
+    const activeLines = await openLines(first);
+    expect(activeLines).toHaveLength(2);
+
+    // The Draft holds the very same lines (same ids), and an unchanged Draft owes nothing.
+    const draftId = (await auth(request.post('/product-sets/draft')).send({ member_id: m })).body.id as number;
+    expect((await openLines(draftId)).map((l: any) => l.id)).toEqual(activeLines.map((l: any) => l.id));
+    const untouched = await auth(request.get(`${mset(draftId)}/review`));
+    expect(untouched.body.changes).toEqual([]);
+
+    // Changing one line copies that line for the Draft; the other stays shared, the active set is untouched.
+    expect((await auth(request.put(`${mset(draftId)}/services/${activeLines[0].id}`)).send({ quantity: 2 })).status).toBe(200);
+    const draftLines = await openLines(draftId);
+    expect(draftLines).toHaveLength(2);
+    const changed = draftLines.find((l: any) => Number(l.product_id) === Number(activeLines[0].product_id));
+    const kept = draftLines.find((l: any) => Number(l.product_id) === Number(activeLines[1].product_id));
+    expect(changed.id).not.toBe(activeLines[0].id);
+    expect(Number(changed.quantity)).toBe(2);
+    expect(kept.id).toBe(activeLines[1].id);
+    expect((await openLines(first)).map((l: any) => [l.id, Number(l.quantity)]))
+      .toEqual(activeLines.map((l: any) => [l.id, Number(l.quantity)]));
+    const review = await auth(request.get(`${mset(draftId)}/review`));
+    expect(review.body.changes).toHaveLength(1);
   });
 
   it('is not available for an active version, and not across tenants', async () => {
@@ -408,7 +443,10 @@ describe('Draft line writers read the Product snapshot (#2126 stage 3s)', () => 
     await db.query('UPDATE product_periodical_snapshots SET ends_at = ? WHERE source_id = ?', [TODAY, line.id]);
 
     expect((await auth(request.delete(`${mset(draftId)}/services/${line.id}`))).status).toBe(409);
-    expect(await openLines(draftId)).toHaveLength(1);
+    // The legacy line was neither ended nor deleted.
+    const { rows: legacy } = await db.query<any>('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
+    expect(legacy).toHaveLength(1);
+    expect(legacy[0].ends_at).toBeNull();
   });
 });
 
