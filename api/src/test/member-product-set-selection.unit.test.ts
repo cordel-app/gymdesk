@@ -3,7 +3,7 @@
 // covered by, a newer Draft before a version awaiting payment before the
 // Active one, and never a superseded version as a fallback.
 import { describe, expect, it } from 'vitest';
-import { currentSetId, setPlans, setProductLines, setStatusKey } from '../../../apps/member/src/lib/memberProducts';
+import { currentSetId, setPlans, setLineStatusKey, setProductLines } from '../../../apps/member/src/lib/memberProducts';
 
 describe('currentSetId', () => {
   it('prefers the Draft over an older Active version (issue example)', () => {
@@ -26,13 +26,24 @@ describe('currentSetId', () => {
 });
 
 describe('the two sections read the same view', () => {
-  it('takes plans, lines and the status badge from that one view', () => {
+  it('takes plans and lines from that one view', () => {
     const view = { id: 3, status: 'draft', lines: [{ id: 1, product_id: 10, change: 'added' as const }],
       plans: [{ plan_snapshot_id: 8, membership_plan_id: 2, plan_name: 'C', change: 'added' as const }] };
     expect(setPlans(view).map((p) => p.plan_name)).toEqual(['C']);
     expect(setProductLines(view).map((l) => l.product_id)).toEqual([10]);
-    expect(setStatusKey(view)).toBe('membership.set_status.draft');
-    expect(setStatusKey(null)).toBeNull();
     expect(setPlans(null)).toEqual([]);
+  });
+});
+
+// #2781 — each Product card shows its own status chip, never the version's.
+describe('setLineStatusKey', () => {
+  it("reads the line's own status in the plans' status map", () => {
+    expect(setLineStatusKey({ status: 'active' })).toBe('membership.status.active');
+    expect(setLineStatusKey({ status: 'cancels_on_end_date' })).toBe('membership.status.cancels_on_end_date');
+    expect(setLineStatusKey({ status: 'draft' })).toBe('membership.status.draft');
+  });
+  it('shows no chip for a missing or unknown status', () => {
+    expect(setLineStatusKey({})).toBeNull();
+    expect(setLineStatusKey({ status: 'superseded' })).toBeNull();
   });
 });

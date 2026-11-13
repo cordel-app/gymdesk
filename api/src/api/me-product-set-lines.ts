@@ -5,6 +5,7 @@ import { assignedMemberSql } from '../domain/productAssignee';
 import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { currentMembershipFees } from './membership-fee-pricing';
+import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -48,13 +49,17 @@ export interface MemberProductSetLine {
   promotions: unknown[];
   change: 'added' | 'inherited';
   assigned_member_id: number | null;
+  /** #2781 — this line's own status (`productLineStatus()`), never the version's. */
+  status: ProductLineStatus;
+  ends_at: string | null;
 }
 
 const LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
   p.sharing_type AS sharing_type,
   s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price, s.direct_discount_percent,
   s.billing_frequency AS item_billing_frequency, s.currency,
-  s.starts_at, COALESCE(s.line_ref, s.source_id) AS line_ref,
+  s.starts_at, DATE_FORMAT(s.starts_at, '%Y-%m-%d') AS starts_on, DATE_FORMAT(s.ends_at, '%Y-%m-%d') AS ends_on,
+  DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today, COALESCE(s.line_ref, s.source_id) AS line_ref,
   p.description, p.image_url, p.image_thumbnail_url`;
 
 async function linesOf(gymId: string, setId: number, ownerSql: string): Promise<any[]> {
@@ -159,6 +164,11 @@ export async function loadMemberProductSetView(
       promotions: lp?.promotions ?? [],
       change,
       assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
+      status: productLineStatus({
+        setStatus: String(set.status), change,
+        endsAt: r.ends_on ?? null, startsAt: r.starts_on ?? null, today: String(r.today),
+      }),
+      ends_at: r.ends_on ?? null,
     };
   };
 

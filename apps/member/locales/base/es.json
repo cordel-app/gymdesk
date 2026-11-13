@@ -522,13 +522,6 @@
     "set_products_empty": "No tienes productos en tus productos actuales.",
     "plan_for": "Para {names}",
     "plan_entitlement_only": "Hasta su fecha de fin",
-    "set_status": {
-      "draft": "Borrador",
-      "pending_payment": "Pendiente de pago",
-      "active": "Activo",
-      "superseded": "Sustituido"
-    },
-    "set_status_label": "Estado",
     "summary_heading": "Resumen",
     "summary_contracted": "Productos contratados",
     "summary_cancelled": "Productos cancelados",
