@@ -127,7 +127,7 @@ export async function loadMemberProductSetView(
   const promos = await loadRecurringLinePromotions(gymId, lines.map((r) => {
     const unit = Number(r.unit_price);
     return {
-      id: Number(r.id), productId: Number(r.product_id),
+      id: Number(r.id), productSetId: Number(set.id), productId: Number(r.product_id),
       listUnit: r.list_unit_price == null ? unit : Number(r.list_unit_price),
       quantity: Number(r.quantity) || 1,
       pct: r.direct_discount_percent == null ? null : Number(r.direct_discount_percent),

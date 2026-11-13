@@ -1,6 +1,7 @@
 import { parseLineDirectDiscountInput } from '../domain/lineDirectDiscount';
 import { db, Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { recurringLineInheritedSql } from './recurring-line-sharing';
 import { deleteRecurringLine, insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { classifyProduct, isRecurringFrequency, ProductBenefitCategory } from '../domain/productClassification';
 import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenefitActions';
@@ -534,9 +535,9 @@ export async function addService(
   // except for a purchase (`allowRepeat`, #1865 stage 2): buying the same
   // recurring Product again is a line of its own, with its own price, discount
   // and lifecycle. What a repeat must not be is an accident, so a line of this
-  // Product written a moment ago (a clone carries another id than its `line_ref`, so only a
-  // line bought in this Draft counts) (a double-clicked button, a retried request) is
-  // still refused.
+  // Product written a moment ago (only a line bought in this Draft counts: a line carried over
+  // from the previous version — linked since #2126 stage 5c-2c-2, or a copy — is not one) (a
+  // double-clicked button, a retried request) is still refused.
   //
   // #2126 stage 3l: both guards read the Product snapshot of each line, keyed
   // back to the legacy line by `source_id`. They run before the line they guard
@@ -546,7 +547,8 @@ export async function addService(
       `SELECT s.source_id AS id FROM product_set_periodical_snapshots lnk
          JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
         WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ? AND s.ends_at IS NULL
-          AND s.line_ref = s.source_id AND s.created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
+          AND s.line_ref = s.source_id AND NOT ${recurringLineInheritedSql('s', 'lnk.product_set_id')}
+          AND s.created_at > (UTC_TIMESTAMP() - INTERVAL ${DUPLICATE_SUBMISSION_SECONDS} SECOND)`,
       [draft.gym_id, draft.id, productId]);
     if (recent.length > 0) {
       const message = 'This product was just added; wait a moment before adding it again';
