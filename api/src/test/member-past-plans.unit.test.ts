@@ -18,6 +18,7 @@ import {
   type MemberPlanHistoryRow,
   splitMemberPlanHistory,
   toMemberPastPlan,
+  withCancelledPlanSets,
 } from '../domain/memberPlanHistory';
 import {
   pastPlanEndedOn,
@@ -221,5 +222,25 @@ describe('how the Members App words one', () => {
     const page = withoutComments(read(MEMBER, 'src', 'app', '[locale]', 'membership', 'page.tsx'));
     expect(page).toContain('past_memberships');
     expect(page).not.toMatch(/filter\(\s*\(?\w+\)?\s*=>\s*\w+\.status === 'cancelled'/);
+  });
+});
+
+describe('#2747 stage 2 — a plan cancelled while awaiting payment, never assigned', () => {
+  const set = { id: 7, membership_plan_id: 3, plan_name: 'Gold', starts_at: '2026-11-10', cancelled_at: new Date('2026-11-12T09:00:00Z') };
+
+  it('reads as a cancelled past plan that ended the day it was cancelled, keyed as a Product Set', () => {
+    const [row] = withCancelledPlanSets([], [set]);
+    expect(row).toEqual({
+      id: 7, product_set_id: 7, membership_plan_id: 3, plan_name: 'Gold',
+      status: 'cancelled', lifecycle_status: 'cancelled', starts_at: '2026-11-10', ended_on: '2026-11-12',
+    });
+    expect(pastPlanStatusKey(row)).toBe('membership.status.cancelled');
+  });
+
+  it('is folded into the assignment history newest first, and leaves it untouched when there is none', () => {
+    const older = toMemberPastPlan({ id: 1, membership_plan_id: 2, plan_name: 'Old', status: 'cancelled', starts_at: '2025-01-01', ends_at: '2025-06-01', closed_at: null });
+    const newer = toMemberPastPlan({ id: 2, membership_plan_id: 2, plan_name: 'New', status: 'expired', starts_at: '2026-12-01', ends_at: null, closed_at: null });
+    expect(withCancelledPlanSets([newer, older], []).map((r) => r.plan_name)).toEqual(['New', 'Old']);
+    expect(withCancelledPlanSets([newer, older], [set]).map((r) => r.plan_name)).toEqual(['New', 'Gold', 'Old']);
   });
 });

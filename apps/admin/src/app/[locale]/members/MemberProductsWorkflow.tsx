@@ -14,7 +14,7 @@ import { primaryBtnSmall } from '@/components/ui';
 import { secondaryBtnSmall } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { ProductSetSummary } from './membershipConfiguration';
-import { psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
+import { cancelRequestFor, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
@@ -82,20 +82,25 @@ export function ProductsWorkflowActions({
   const [confirming, setConfirming] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
-  // #1881 — the same in-flight version the Recurring section's Cancel discards
-  // (`DELETE /product-sets/:id`); the server refuses it when a payment is unresolved.
-  const canDiscard = canWrite && !!current && (current.status === 'draft' || current.status === 'pending_payment');
+  // #1881 — the same in-flight version the Recurring section's Cancel acts on.
+  // #2747 stage 2: a Draft is discarded; a version awaiting payment is cancelled
+  // and kept (`cancelRequestFor()`), and the server refuses it while a payment
+  // settled or is still unresolved.
+  const request = canWrite ? cancelRequestFor(current) : null;
+  const canDiscard = request != null;
+  const pending = request?.kind === 'cancel_pending';
   const discard = async () => {
-    if (!current) return;
+    if (!request) return;
     setDiscarding(true);
     setDiscardError(null);
     try {
-      await apiFetch(`/product-sets/${current.id}`, { method: 'DELETE' });
+      await apiFetch(request.path, { method: request.method });
       setConfirming(false);
       onDiscarded?.();
     } catch (e: any) {
       setConfirming(false);
-      setDiscardError(e?.message || t('ps_discard_error'));
+      setDiscardError(pending ? t(pendingCancelErrorKey(e?.message) as any) : (e?.message || t('ps_discard_error')));
+      if (pending) onDiscarded?.();
     } finally {
       setDiscarding(false);
     }
@@ -125,9 +130,11 @@ export function ProductsWorkflowActions({
       {discardError && <p role="alert" style={{ ...formErrorStyle, flexBasis: '100%', margin: 0 }}>{discardError}</p>}
       <ConfirmDialog
         open={confirming}
-        message={`${t('ps_cancel_title')} ${t('ps_cancel_confirm')}`}
-        confirmLabel={t('ps_cancel_discard')}
-        cancelLabel={t('ps_cancel_keep')}
+        message={pending
+          ? `${t('ps_cancel_pending_title')} ${t('ps_cancel_pending_confirm')}`
+          : `${t('ps_cancel_title')} ${t('ps_cancel_confirm')}`}
+        confirmLabel={t(pending ? 'ps_cancel_pending_action' : 'ps_cancel_discard')}
+        cancelLabel={t(pending ? 'ps_cancel_pending_keep' : 'ps_cancel_keep')}
         busy={discarding}
         onConfirm={discard}
         onCancel={() => setConfirming(false)}

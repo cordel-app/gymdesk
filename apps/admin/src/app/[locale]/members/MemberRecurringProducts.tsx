@@ -29,6 +29,7 @@ import { AddProductPurchase } from './AddProductPurchase';
 import { DraftExpiryIndicator } from './DraftExpiryIndicator';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { editableLines, planSummary, recurringState, type EditableLine } from './recurringProductsView';
+import { cancelRequestFor, pendingCancelErrorKey } from './productsWorkflowView';
 
 interface Detail { configuration?: Parameters<typeof editableLines>[0] & Parameters<typeof planSummary>[0] }
 
@@ -125,10 +126,16 @@ export function MemberRecurringProducts({
     onChanged();
   });
 
+  // #2747 stage 2: a Draft is discarded, a version awaiting payment is cancelled
+  // and kept (`cancelRequestFor()`); a refused cancel says why.
+  const cancelRequest = cancelRequestFor(current);
   const cancelDraft = () => run(async () => {
-    if (setId == null) return;
+    if (!cancelRequest) return;
     try {
-      await apiFetch(`/product-sets/${setId}`, { method: 'DELETE' });
+      await apiFetch(cancelRequest.path, { method: cancelRequest.method });
+    } catch (e: any) {
+      if (cancelRequest.kind !== 'cancel_pending') throw e;
+      throw new Error(t(pendingCancelErrorKey(e?.message) as any));
     } finally {
       setConfirmCancel(false);
       onChanged();
@@ -228,7 +235,7 @@ export function MemberRecurringProducts({
           )}
           {state.canCancel && (
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => setConfirmCancel(true)}>
-              {t('recurring_cancel')}
+              {t(cancelRequest?.kind === 'cancel_pending' ? 'ps_cancel_pending_action' : 'recurring_cancel')}
             </button>
           )}
         </div>
@@ -251,8 +258,10 @@ export function MemberRecurringProducts({
 
       <ConfirmDialog
         open={confirmCancel}
-        message={t('recurring_cancel_confirm')}
-        confirmLabel={t('recurring_cancel')}
+        message={cancelRequest?.kind === 'cancel_pending'
+          ? `${t('ps_cancel_pending_title')} ${t('ps_cancel_pending_confirm')}`
+          : t('recurring_cancel_confirm')}
+        confirmLabel={t(cancelRequest?.kind === 'cancel_pending' ? 'ps_cancel_pending_action' : 'recurring_cancel')}
         cancelLabel={t('close')}
         busy={busy}
         onConfirm={cancelDraft}

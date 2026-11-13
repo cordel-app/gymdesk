@@ -206,7 +206,7 @@ describe('GET /user-memberships/member/:memberId/configuration — auth', () => 
 
     const res = await getConfiguration(readOnlyGym, readOnlyMember);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [], cancelled_product_sets: [] }); // #1325 PR 3b (#2747 stage 2: cancelled plan sets): in-flight versions ride beside the plans
   });
 });
 
@@ -274,7 +274,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     const memberId = await createMember(gymId);
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [], cancelled_product_sets: [] }); // #1325 PR 3b (#2747 stage 2: cancelled plan sets): in-flight versions ride beside the plans
   });
 
   it('returns the plan and its services, and never its promotions (#931)', async () => {
@@ -295,7 +295,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
+    expect(Object.keys(res.body).sort()).toEqual(['cancelled_product_sets', 'current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
 
     // ── MEMBERSHIP PLANS ──
     expect(res.body.plans).toHaveLength(1);
@@ -353,7 +353,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, mine);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [], cancelled_product_sets: [] }); // #1325 PR 3b (#2747 stage 2: cancelled plan sets): in-flight versions ride beside the plans
   });
 });
 
@@ -681,7 +681,7 @@ describe('GET /user-memberships/member/:memberId/configuration — no promotions
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
+    expect(Object.keys(res.body).sort()).toEqual(['cancelled_product_sets', 'current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
     expect(res.body.plans).toHaveLength(1);
 
     // Both applications are still there, exactly as they were.
