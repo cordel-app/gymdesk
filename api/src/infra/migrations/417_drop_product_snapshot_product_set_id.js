@@ -49,7 +49,7 @@ exports.up = async (knex) => {
       INSERT IGNORE INTO ${junction} (product_set_id, ${col})
       SELECT s.product_set_id, s.id
         FROM ${table} s
-        JOIN product_sets ps ON ps.id = s.product_set_id
+        JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id
        WHERE NOT EXISTS (SELECT 1 FROM ${junction} j WHERE j.${col} = s.id)
        ORDER BY s.id`);
     if (await hasForeignKey(knex, table, `${abbr}_set_fk`)) {
