@@ -9,18 +9,23 @@
  *   draft ──► pending_payment ──► active ──► superseded
  *     │                             ▲
  *     └──── (no payment owed) ──────┘
+ *                 │
+ *                 └──► cancelled   (#2747: kept, never deleted)
  *
  * - `draft`            being prepared; persisted section by section and expires
  *                      after `DRAFT_TTL_MINUTES` without activity.
  * - `pending_payment`  committed (Save & Pay); the initial payment is awaited.
  * - `active`           the current committed configuration of the chain.
  * - `superseded`       replaced by a newer version that reached `active`.
+ * - `cancelled`        a Pending Payment staff or the member cancelled before it
+ *                      was paid (#2747); terminal, kept with its snapshots and
+ *                      events for the record, and never activated afterwards.
  *
  * Two uniqueness rules are the database's (`product_sets_one_active`,
  * `product_sets_one_in_flight`); everything else here is the application's.
  */
 
-export const PRODUCT_SET_STATUSES = ['draft', 'pending_payment', 'active', 'superseded'] as const;
+export const PRODUCT_SET_STATUSES = ['draft', 'pending_payment', 'active', 'superseded', 'cancelled'] as const;
 export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
 
 /** A Draft expires after two hours without a successful update (#1325). */
@@ -31,9 +36,10 @@ export const PENDING_TTL_MINUTES = 120;
 
 const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]>> = {
   draft: ['pending_payment', 'active'],
-  pending_payment: ['active'],
+  pending_payment: ['active', 'cancelled'],
   active: ['superseded'],
   superseded: [],
+  cancelled: [],
 };
 
 export function isProductSetStatus(value: unknown): value is ProductSetStatus {
@@ -97,4 +103,24 @@ export function canCancelPending(attempts: readonly PendingAttempt[]): boolean {
     if (a.providerRef === null) return a.status !== 'completed';
     return LEGACY_TERMINAL_UNSUCCESSFUL.has(a.status);
   });
+}
+
+/** #2747: what cancelling a Pending Payment set may do, from its payment attempts. */
+export type PendingCancellation = 'cancellable' | 'payment_settled' | 'payment_unresolved';
+
+/**
+ * May a Pending Payment set be cancelled (#2747)? Not when an attempt settled
+ * (`completed`: money was received, so the set is the member's or about to be —
+ * refunding it is the existing Billing Event refund, a staff decision), and not
+ * while an attempt's outcome is unknown or the provider holds it in flight
+ * (`AUTHORIZED`, `PENDING_PROCESSING`: money may be captured). An attempt the
+ * provider itself reports `PENDING` is a payment the customer never submitted:
+ * nothing was captured, so it does not block (the provider's raw status is
+ * written onto the attempt by the read-back that precedes the cancel). Every
+ * other attempt follows `canCancelPending()`.
+ */
+export function pendingCancellation(attempts: readonly PendingAttempt[]): PendingCancellation {
+  if (attempts.some((a) => a.status === 'completed')) return 'payment_settled';
+  const blocking = attempts.filter((a) => (a.providerStatus ?? '').trim().toUpperCase() !== 'PENDING');
+  return canCancelPending(blocking) ? 'cancellable' : 'payment_unresolved';
 }
