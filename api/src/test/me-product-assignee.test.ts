@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 vi.mock('../payments', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../payments')>();
@@ -121,7 +122,7 @@ describe('POST /me/products/:id/purchase', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('assignee_not_in_family');
     const { rows } = await db.query<any>(
-      'SELECT id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ?', [gymId, owner]);
+      `SELECT id FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ?`, [gymId, owner]);
     expect(rows).toHaveLength(0);
   });
 
@@ -130,7 +131,7 @@ describe('POST /me/products/:id/purchase', () => {
       .send({ assigned_member_id: kid });
     expect(res.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT id, assigned_member_id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ?',
+      `SELECT id, assigned_member_id FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ? AND product_id = ?`,
       [gymId, owner, oneOff]);
     expect(rows[0].assigned_member_id).toBe(kid);
 
@@ -143,7 +144,7 @@ describe('POST /me/products/:id/purchase', () => {
     const res = await asMember(LONER_CLERK, request.post(`/me/products/${oneOff}/purchase`)).send({});
     expect(res.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT assigned_member_id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ?', [gymId, loner]);
+      `SELECT assigned_member_id FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ?`, [gymId, loner]);
     expect(rows[0].assigned_member_id).toBe(loner);
   });
 });

@@ -28,6 +28,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 
 const SECRET = 'test-1521-webhook';
 let gymId: string;
@@ -281,7 +282,7 @@ describe('a one-time purchase (#1521)', () => {
     expect(res.body).toMatchObject({ kind: 'one_time', amount: 40 });
 
     const { rows } = await db.query<any>(
-      `SELECT * FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ?`, [gymId, m]);
+      `SELECT * FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ?`, [gymId, m]);
     expect(rows[0]).toMatchObject({ status: 'pending_payment', created_by: expect.any(String) });
     expect(Number(rows[0].list_price)).toBe(100);
     expect(Number(rows[0].direct_discount_percent)).toBe(20);
@@ -305,12 +306,12 @@ describe('a one-time purchase (#1521)', () => {
     expect(dup.status).toBe(409);
     // …and once paid, the same Product can be bought again (#1864).
     const { rows } = await db.query<any>(
-      'SELECT payment_request_id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ?', [gymId, m]);
+      `SELECT payment_request_id FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ?`, [gymId, m]);
     expect((await pay(Number(rows[0].payment_request_id))).status).toBe(200);
     const again = await auth(request.post(base(m))).send({ product_id: p });
     expect(again.status).toBe(201);
     const { rows: both } = await db.query<any>(
-      'SELECT status FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ? ORDER BY id', [gymId, m, p]);
+      `SELECT status FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ? AND product_id = ? ORDER BY id`, [gymId, m, p]);
     expect(both.map((r: any) => r.status)).toEqual(['active', 'pending_payment']);
   });
 
@@ -340,7 +341,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(asked.status).toBe(409);
     expect(asked.body).toMatchObject({ error: 'billing_frequency_differs', existing: ['month'], incoming: 'four_weeks' });
     const lines = async () => (await db.query<any>(
-      'SELECT COUNT(*) AS n FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?',
+      `SELECT COUNT(*) AS n FROM ${TEST_RECURRING_LINES} AS legacy WHERE gym_id = ? AND product_set_id = ?`,
       [gymId, first.body.product_set_id])).rows[0].n;
     expect(Number(await lines())).toBe(1);
 
@@ -396,7 +397,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     const buy = await auth(request.post(base(m))).send({ product_id: weekly, direct_discount_percent: 25 });
     expect(buy.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT unit_price, list_unit_price, direct_discount_percent FROM member_products_recurrent_snapshot WHERE product_set_id = ?',
+      `SELECT unit_price, list_unit_price, direct_discount_percent FROM ${TEST_RECURRING_LINES} AS legacy WHERE product_set_id = ?`,
       [buy.body.product_set_id]);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].unit_price)).toBe(15);
@@ -426,7 +427,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(second.status).toBe(201);
     expect(second.body.product_set_id).toBe(first.body.product_set_id);
     const { rows: lines } = await db.query<any>(
-      'SELECT id, line_ref, quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [first.body.product_set_id]);
+      `SELECT id, line_ref, quantity FROM ${TEST_RECURRING_LINES} AS legacy WHERE product_set_id = ? ORDER BY id`, [first.body.product_set_id]);
     // #1865: a repeat purchase is a line of its own, not a quantity on the first.
     expect(lines.map((l: any) => Number(l.quantity))).toEqual([1, 1]);
     expect(lines.map((l: any) => Number(l.line_ref))).toEqual(lines.map((l: any) => Number(l.id)));
@@ -434,13 +435,13 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     const qty = await auth(request.put(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`)).send({ quantity: 2 });
     expect(qty.status).toBe(200);
     const { rows: afterQty } = await db.query<any>(
-      'SELECT quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [first.body.product_set_id]);
+      `SELECT quantity FROM ${TEST_RECURRING_LINES} AS legacy WHERE product_set_id = ? ORDER BY id`, [first.body.product_set_id]);
     expect(afterQty.map((l: any) => Number(l.quantity))).toEqual([2, 1]);
     // Removing one purchase leaves the other running.
     const del = await auth(request.delete(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`));
     expect(del.status).toBe(200);
     const { rows: left } = await db.query<any>(
-      'SELECT id FROM member_products_recurrent_snapshot WHERE product_set_id = ? AND ends_at IS NULL', [first.body.product_set_id]);
+      `SELECT id FROM ${TEST_RECURRING_LINES} AS legacy WHERE product_set_id = ? AND ends_at IS NULL`, [first.body.product_set_id]);
     expect(left.map((l: any) => Number(l.id))).toEqual([Number(lines[1].id)]);
 
     // Save & Pay + the webhook is the only way it becomes the member's…

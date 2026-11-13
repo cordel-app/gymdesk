@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, insertTestPurchase, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 
 let gymId: string;
 let seq = 0;
@@ -71,7 +72,7 @@ describe('one-time purchase', () => {
     const res = await auth(request.post(base(owner))).send({ product_id: oneOff, draft: true, assigned_member_id: kid });
     expect(res.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT assigned_member_id FROM member_products_oneoff_snapshot WHERE id = ?', [res.body.purchaseId]);
+      `SELECT assigned_member_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [res.body.purchaseId]);
     expect(rows[0].assigned_member_id).toBe(kid);
     const { rows: mirror } = await db.query<any>(
       'SELECT assigned_member_id FROM product_oneoff_snapshots WHERE source_id = ?', [res.body.purchaseId]);
@@ -87,7 +88,7 @@ describe('one-time purchase', () => {
     const res = await auth(request.post(base(loner))).send({ product_id: oneOff, draft: true });
     expect(res.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT assigned_member_id FROM member_products_oneoff_snapshot WHERE id = ?', [res.body.purchaseId]);
+      `SELECT assigned_member_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [res.body.purchaseId]);
     expect(rows[0].assigned_member_id).toBe(loner);
 
     const legacy = await insertTestPurchase(
@@ -111,7 +112,7 @@ describe('one-time purchase', () => {
     expect(bad.status).toBe(400);
     expect(bad.body.error).toBe('assignee_invalid');
     const { rows } = await db.query<any>(
-      'SELECT id FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND product_id = ?', [gymId, owner, fresh]);
+      `SELECT id FROM ${TEST_PURCHASES} AS legacy WHERE gym_id = ? AND member_id = ? AND product_id = ?`, [gymId, owner, fresh]);
     expect(rows.length).toBe(0); // nothing written for either refusal
   });
 
@@ -119,7 +120,7 @@ describe('one-time purchase', () => {
     const ok = await auth(request.post(base(owner))).send({ product_id: shared, draft: true, assigned_member_id: owner });
     expect(ok.status).toBe(201);
     const { rows } = await db.query<any>(
-      'SELECT assigned_member_id FROM member_products_oneoff_snapshot WHERE id = ?', [ok.body.purchaseId]);
+      `SELECT assigned_member_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [ok.body.purchaseId]);
     expect(rows[0].assigned_member_id).toBeNull();
     const list = await auth(request.get(`/members/${owner}/products`));
     const row = list.body.items.find((i: any) => i.id === ok.body.purchaseId);
@@ -138,7 +139,7 @@ describe('recurring line', () => {
     expect(res.status).toBe(201);
     expect(res.body.kind).toBe('recurring_draft');
     const { rows } = await db.query<any>(
-      'SELECT assigned_member_id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ? AND product_id = ?',
+      `SELECT assigned_member_id FROM ${TEST_RECURRING_LINES} AS legacy WHERE gym_id = ? AND product_set_id = ? AND product_id = ?`,
       [gymId, res.body.product_set_id, monthly]);
     expect(rows[0].assigned_member_id).toBe(kid);
     const { rows: mirror } = await db.query<any>(

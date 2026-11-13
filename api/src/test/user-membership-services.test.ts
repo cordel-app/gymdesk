@@ -10,13 +10,13 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
   request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -224,7 +224,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     expect(res.status).toBe(403);
     // Nothing was written.
     const { rows } = await db.query(
-      'SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?',
+      `SELECT ends_at FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`,
       [accountantServiceId],
     );
     expect(rows).toHaveLength(1);
@@ -283,14 +283,14 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
   it('returns 404 removing gym A\'s service with gym B\'s x-gym-id', async () => {
     const res = await removeService(gymB, umA, serviceA);
     expect(res.status).toBe(404);
-    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [serviceA]);
+    const { rows } = await db.query(`SELECT ends_at FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [serviceA]);
     expect(rows[0].ends_at).toBeNull();
   });
 
   it('returns 404 removing a service that belongs to a different Assigned Plan in the same gym', async () => {
     const res = await removeService(gymA, otherUmA, serviceA);
     expect(res.status).toBe(404);
-    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [serviceA]);
+    const { rows } = await db.query(`SELECT ends_at FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [serviceA]);
     expect(rows[0].ends_at).toBeNull();
   });
 
@@ -580,14 +580,14 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(list.body).toEqual([]);
     // Nothing is left on the version the assignment now reads.
     const { rows } = await legacyChildQuery(
-      'SELECT id FROM member_products_recurrent_snapshot WHERE user_membership_id = ?', [umId]);
+      `SELECT id FROM ${TEST_RECURRING_LINES} AS legacy WHERE user_membership_id = ?`, [umId]);
     expect(rows).toHaveLength(0);
   });
 
   // #1914 — a removed line keeps what was paid for.
   async function paidPeriod(umId: number, lineId: number, outcome: 'completed' | 'failed' | 'pending' | 'waive', start: number, end: number) {
     const { rows } = await db.query(
-      'SELECT product_set_id, schedule_id FROM member_products_recurrent_snapshot WHERE id = ?', [lineId]);
+      `SELECT product_set_id, schedule_id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [lineId]);
     const line = rows[0];
     expect(line.schedule_id).not.toBeNull();
     // The schedule bills on the 1st: a fixture period starting on a 1st would collide with the line's own
@@ -673,17 +673,11 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(created.status).toBe(201);
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
 
-    // Move the stamped removal date into the past, as it would be the day after.
-    await legacyChildQuery(
-      'UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE user_membership_id = ?', [dayOffset(-1), umId]);
-    // #2126 stage 3i: the list reads the Product snapshot tables, so a fixture that
-    // writes the legacy line re-derives its version's snapshots as a writer would.
-    const { rows: lines } = await db.query<any>(
-      `SELECT DISTINCT product_set_id FROM member_products_recurrent_snapshot
-        WHERE gym_id = ? AND ends_at = ?`, [gymId, dayOffset(-1)]);
-    for (const line of lines) {
-      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, line.product_set_id));
-    }
+    // Move the stamped removal date into the past, as it would be the day after (#2126 stage 5d-5:
+    // the line is its Product snapshot).
+    await db.query(
+      'UPDATE product_periodical_snapshots SET ends_at = ? WHERE gym_id = ? AND product_id = ? AND ends_at IS NOT NULL',
+      [dayOffset(-1), gymId, itemId]);
 
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(1);
@@ -723,7 +717,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(second.status).toBe(409);
 
     // The original end date was not moved by the second attempt.
-    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
+    const { rows } = await db.query(`SELECT ends_at FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [created.body.id]);
     expect(rows).toHaveLength(1);
   });
 
@@ -784,7 +778,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — reads the Product
     expect(res.body).toEqual({ id: list.body[0].id, deleted: false, ends_at: today() });
   });
 
-  it('answers 404 for a line with no Product snapshot, leaving the legacy line alone', async () => {
+  it('answers 404 for a line with no Product snapshot', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-2) });
@@ -792,9 +786,5 @@ describe('DELETE /user-memberships/:id/services/:serviceId — reads the Product
     await db.query('DELETE FROM product_periodical_snapshots WHERE gym_id = ? AND source_id = ?', [gymId, created.body.id]);
 
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(404);
-    const { rows } = await db.query(
-      'SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].ends_at).toBeNull();
   });
 });

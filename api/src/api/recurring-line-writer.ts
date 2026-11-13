@@ -1,19 +1,16 @@
 /**
  * #2126 stage 5c — the one writer of a recurring Product line.
  *
- * A recurring line of a Product Set version is written twice until stage 5d drops the legacy
- * table: the legacy record (`member_products_recurrent_snapshot`) and its Product snapshot
- * (`product_periodical_snapshots`, linked to the set through `product_set_periodical_snapshots`).
- * Every insert, copy, change and removal of a line goes through this module, which writes both
- * rows from the same values in the same call, so nothing re-derives a line's snapshot from the
- * legacy record any more (`syncProductSnapshotsOfVersion()` only keeps the snapshot's status and
- * owner in step with its Product Set, and the Promotions a line owns).
+ * A recurring line of a Product Set version is its Product snapshot (`product_periodical_snapshots`,
+ * linked to the set through `product_set_periodical_snapshots`). Every insert, copy, change and removal
+ * of a line goes through this module. Until stage 5d-5 it also wrote the legacy record
+ * (`member_products_recurrent_snapshot`) from the same values; that table is no longer written and holds
+ * the lines written before then, frozen, until it is dropped.
  *
  * The line's id is `source_id`, which the routes, the consumption ledger and a line's Promotion
  * applications are keyed on. Since stage 5d-2 a new line (and a copy) takes it from the snapshot's own
- * id (`source_id = id`), and the legacy record is written under that same id, so the legacy table no
- * longer allocates anything; migration 412 put the snapshot's AUTO_INCREMENT above every legacy id, so a
- * new id can never meet a historical one. A line written before stage 5d-2 keeps its legacy id.
+ * id (`source_id = id`); migration 412 put the snapshot's AUTO_INCREMENT above every legacy id, so a new
+ * id can never meet a historical one. A line written before stage 5d-2 keeps its legacy id.
  */
 import type { Tx } from '../infra/db';
 import { isRecurringLineIdShared, recurringLineSharedSql, SharedRecurringLineError } from './recurring-line-sharing';
@@ -53,8 +50,7 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
   const now = await utcNow(tx);
   const params = [line.quantity, line.startsAt, line.scheduleId ?? null, line.origin ?? null,
     line.assignedMemberId ?? null, now];
-  // #2126 stage 5d-2: the snapshot is written first and its own id becomes the line's id (`source_id`,
-  // `line_ref`); the legacy record mirrors it under that same id.
+  // #2126 stage 5d-2: the snapshot's own id becomes the line's id (`source_id`, `line_ref`).
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status, is_inherited,
@@ -71,15 +67,6 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
   const lineId = Number(insertId);
   await tx.query('UPDATE product_periodical_snapshots SET source_id = id, line_ref = id WHERE id = ?', [lineId]);
 
-  await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (id, gym_id, product_set_id, product_id, quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
-        item_name, item_type, unit_price, item_billing_frequency, currency, line_ref)
-     SELECT ?, gc.gym_id, ?, gc.id, ?, ?, ?, ?, ?, ?,
-            ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, ?
-       FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-      WHERE gc.id = ? AND gc.gym_id = ?`,
-    [lineId, line.productSetId, ...params, lineId, line.productId, line.gymId]);
   await linkToSet(tx, line.productSetId, lineId);
   return lineId;
 }
@@ -87,7 +74,7 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
 /**
  * #2126 stage 5c-2c-2 — the recurring lines of `fromSetId`, **linked** to `toSetId` (a new version's Draft,
  * `cloneConfiguration()`), as #2125 M4b-3 links a version's plan snapshots: an unchanged line is one snapshot
- * (and one legacy line) shared by the two sets, so it keeps its id, its `line_ref`, its schedule and who it is
+ * shared by the two sets, so it keeps its id, its `line_ref`, its schedule and who it is
  * for across versions. It is immutable to both sets (`updateRecurringLine()` refuses it); the first writer that
  * changes it for the new version takes a copy through `ownRecurringLine()`, which is when, and only when, a copy
  * is made. The predecessor's link order is kept.
@@ -131,20 +118,20 @@ export async function copyRecurringLines(
   return copied;
 }
 
-/** A line's values read from its snapshot (written from the same values as the legacy record), by their legacy names. */
+/** A line's values read from its snapshot, by the names `copyLine()` takes. */
 const SNAPSHOT_LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.product_type AS item_type, s.unit_price,
             s.billing_frequency AS item_billing_frequency, s.currency, s.schedule_id,
             s.list_price AS list_unit_price, s.direct_discount_percent, s.assigned_member_id, s.line_ref, s.origin`;
 
 /**
- * One legacy line written onto `toSetId` as an inherited line, with its snapshot from the very values the
+ * One line written onto `toSetId` as an inherited line, with its snapshot from the very values the
  * copy was written with. The snapshot is not linked: the caller links it, or re-points a link at it.
  */
 async function copyLine(
   tx: Conn, gymId: string, r: any, toSetId: number, assignee: number | null, now: string,
 ): Promise<{ lineId: number; snapshotId: number }> {
-  // #2126 stage 5d-2: the copy's snapshot id is the copy's line id; the legacy record mirrors it.
+  // #2126 stage 5d-2: the copy's snapshot id is the copy's line id.
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
@@ -160,22 +147,13 @@ async function copyLine(
   if (!insertId) throw new Error(`recurring line ${r.id} could not be copied`);
   const lineId = Number(insertId);
   await tx.query('UPDATE product_periodical_snapshots SET source_id = id WHERE id = ?', [lineId]);
-  await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (id, gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type, unit_price,
-        item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, assigned_member_id,
-        line_ref, origin, is_inherited, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-    [lineId, gymId, toSetId, r.product_id, r.quantity, r.starts_at, r.ends_at, r.item_name, r.item_type, r.unit_price,
-      r.item_billing_frequency, r.currency, r.schedule_id, r.list_unit_price, r.direct_discount_percent, assignee,
-      r.line_ref, r.origin, now]);
   return { lineId, snapshotId: lineId };
 }
 
 /**
  * #2126 stage 5c-2c — a Product Set writes only the recurring lines it owns, as #2125 M4a's
  * `ownPlanSnapshot()` does for plans. When the line `lineId` (a legacy id, the snapshot's `source_id`)
- * that `productSetId` links is linked by another Product Set too, the set takes a copy of it: a new legacy
+ * that `productSetId` links is linked by another Product Set too, the set takes a copy of it: a new
  * line and snapshot with the same values, `line_ref` and assignee, written onto the set; the set's link is
  * **re-pointed** at the copy (never re-created, so the line keeps its place), and the Product-target
  * Promotions the set applied to the line follow it to the copy. Answers the id the writer must then write
@@ -197,7 +175,7 @@ export async function ownRecurringLine(
   if (!linked[0]) return null;
   if (Number(linked[0].shared) !== 1) return lineId;
 
-  // The line's values are its snapshot's (written from the same values as the legacy record), read under
+  // The line's values are its snapshot's , read under
   // the snapshot's own lock, in the legacy column names `copyLine()` takes.
   const { rows } = await tx.query<any>(
     `SELECT ${SNAPSHOT_LINE_COLUMNS}
@@ -235,7 +213,7 @@ const SNAPSHOT_COLUMN: Record<keyof RecurringLinePatch, string> = {
   direct_discount_percent: 'direct_discount_percent',
 };
 
-/** Changes one line, in the legacy record and in its snapshot. Refuses a line another Product Set links. */
+/** Changes one line's snapshot. Refuses a line another Product Set links. */
 export async function updateRecurringLine(
   tx: Conn, gymId: string, lineId: number, patch: RecurringLinePatch,
 ): Promise<void> {
@@ -244,10 +222,6 @@ export async function updateRecurringLine(
   // #2126 stage 5c-2b: a line another Product Set links is immutable to every set that links it.
   if (await isRecurringLineIdShared(tx, gymId, lineId)) throw new SharedRecurringLineError(lineId);
   const values = keys.map((k) => patch[k] ?? null);
-  await tx.query(
-    `UPDATE member_products_recurrent_snapshot SET ${keys.map((k) => `${k} = ?`).join(', ')}
-      WHERE id = ? AND gym_id = ?`,
-    [...values, lineId, gymId]);
   await tx.query(
     `UPDATE product_periodical_snapshots SET ${keys.map((k) => `${SNAPSHOT_COLUMN[k]} = ?`).join(', ')},
             modified_at = UTC_TIMESTAMP()
@@ -258,5 +232,4 @@ export async function updateRecurringLine(
 /** Removes one line outright (a Draft's line that has charged nothing). Its snapshot's Promotions and link cascade. */
 export async function deleteRecurringLine(tx: Conn, gymId: string, lineId: number): Promise<void> {
   await tx.query('DELETE FROM product_periodical_snapshots WHERE source_id = ? AND gym_id = ?', [lineId, gymId]);
-  await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [lineId, gymId]);
 }

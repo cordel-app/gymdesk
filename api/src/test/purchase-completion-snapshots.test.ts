@@ -9,6 +9,7 @@ import { db } from '../infra/db';
 import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cancelAbandonedPurchases, completeProductPurchase } from '../api/me-products';
 import { cleanupTestGyms, createTestGym, linkTestPurchaseRequestToEvent } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 let gymId: string;
 let memberId: number;
@@ -45,7 +46,7 @@ async function purchase(opts: {
 async function state(purchaseId: number) {
   const { rows } = await db.query<any>(
     `SELECT status, DATE_FORMAT(valid_until, '%Y-%m-%d') AS valid_until, purchased_at
-       FROM member_products_oneoff_snapshot WHERE id = ?`, [purchaseId]);
+       FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [purchaseId]);
   const { rows: snap } = await db.query<any>(
     `SELECT status FROM product_oneoff_snapshots WHERE source_id = ?
      UNION ALL SELECT status FROM product_session_snapshots WHERE source_id = ?`, [purchaseId, purchaseId]);

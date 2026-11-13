@@ -25,6 +25,7 @@ vi.mock('../payments', async (importOriginal) => {
 import { advanceBillingDate } from '../domain/billingDate';
 import { daysBetween } from '../domain/proration';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 const SECRET = 'test-1537-webhook';
 let gymId: string;
@@ -429,7 +430,7 @@ describe('Draft line writers read the Product snapshot (#2126 stage 3s)', () => 
     await db.query('UPDATE product_periodical_snapshots SET ends_at = ? WHERE source_id = ?', [TODAY, line.id]);
 
     expect((await auth(request.put(`${mset(draftId)}/services/${line.id}`)).send({ quantity: 2 })).status).toBe(404);
-    const { rows } = await db.query<any>('SELECT quantity FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
+    const { rows } = await db.query<any>(`SELECT quantity FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [line.id]);
     expect(Number(rows[0].quantity)).toBe(1);
   });
 
@@ -443,17 +444,18 @@ describe('Draft line writers read the Product snapshot (#2126 stage 3s)', () => 
     await db.query('UPDATE product_periodical_snapshots SET ends_at = ? WHERE source_id = ?', [TODAY, line.id]);
 
     expect((await auth(request.delete(`${mset(draftId)}/services/${line.id}`))).status).toBe(409);
-    // The legacy line was neither ended nor deleted.
-    const { rows: legacy } = await db.query<any>('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
-    expect(legacy).toHaveLength(1);
-    expect(legacy[0].ends_at).toBeNull();
+    // The line was not deleted, and keeps the end its snapshot already had.
+    const { rows: kept } = await db.query<any>(
+      `SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [line.id]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].ends_at).toBe(TODAY);
   });
 });
 
 // #2126 stage 3t — schedule allocation reads a version's recurring lines from
 // `product_periodical_snapshots` (synced first) and writes the legacy line.
 describe('Schedule allocation reads the Product snapshot (#2126 stage 3t)', () => {
-  it('gives a newly added recurring line a schedule on both the legacy line and its snapshot', async () => {
+  it('gives a newly added recurring line a schedule on its snapshot', async () => {
     const m = await member();
     await activePlan(m);
     const locker = await product({ name: 'Locker Y', frequency: 'year', amount: '60.00', type: 'service' });
@@ -463,7 +465,7 @@ describe('Schedule allocation reads the Product snapshot (#2126 stage 3t)', () =
     const [line] = await openLines(draftId);
 
     const { rows: legacy } = await db.query<any>(
-      'SELECT schedule_id FROM member_products_recurrent_snapshot WHERE id = ?', [line.id]);
+      `SELECT schedule_id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [line.id]);
     const { rows: snap } = await db.query<any>(
       'SELECT schedule_id FROM product_periodical_snapshots WHERE source_id = ?', [line.id]);
     expect(legacy[0].schedule_id).not.toBeNull();

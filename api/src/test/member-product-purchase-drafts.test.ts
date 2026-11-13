@@ -23,6 +23,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 let gymId: string;
 let seq = 0;
@@ -46,7 +47,7 @@ async function product(name: string, amount = '40.00'): Promise<number> {
 }
 
 async function statusOf(id: number): Promise<string | null> {
-  const { rows } = await db.query<any>('SELECT status FROM member_products_oneoff_snapshot WHERE id = ?', [id]);
+  const { rows } = await db.query<any>(`SELECT status FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [id]);
   return rows[0]?.status ?? null;
 }
 
@@ -74,7 +75,7 @@ describe('Save persists a draft without paying', () => {
     expect(res.body.kind).toBe('one_time_draft');
     expect(await statusOf(res.body.purchaseId)).toBe('draft');
 
-    const { rows } = await db.query<any>('SELECT payment_request_id FROM member_products_oneoff_snapshot WHERE id = ?', [res.body.purchaseId]);
+    const { rows } = await db.query<any>(`SELECT payment_request_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [res.body.purchaseId]);
     expect(rows[0].payment_request_id).toBeNull();
     const events = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ? AND member_id = ?', [gymId, m]);
     expect(Number(events.rows[0].n)).toBe(0);
@@ -99,7 +100,7 @@ describe('Save persists a draft without paying', () => {
     const p = await product('Staff only draft');
     const res = await auth(request.post(base(m))).send({ product_id: p, draft: true });
     const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM member_products_oneoff_snapshot WHERE id = ? AND status IN ('pending_payment','active')`, [res.body.purchaseId]);
+      `SELECT COUNT(*) AS n FROM ${TEST_PURCHASES} AS legacy WHERE id = ? AND status IN ('pending_payment','active')`, [res.body.purchaseId]);
     expect(Number(rows[0].n)).toBe(0);
   });
 
@@ -124,7 +125,7 @@ describe('Pay promotes the draft to the pending purchase', () => {
     expect(await statusOf(saved.body.purchaseId)).toBeNull();
     expect(await statusOf(paid.body.purchaseId)).toBe('pending_payment');
     const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM member_products_oneoff_snapshot WHERE member_id = ? AND product_id = ?`, [m, p]);
+      `SELECT COUNT(*) AS n FROM ${TEST_PURCHASES} AS legacy WHERE member_id = ? AND product_id = ?`, [m, p]);
     expect(Number(rows[0].n)).toBe(1);
   });
 
