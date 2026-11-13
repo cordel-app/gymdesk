@@ -11,7 +11,7 @@
  * - `syncProductSnapshotsOfVersion()` moves the status and owner of, and re-derives the Promotions on,
  *   the lines only the set links;
  * - `updateRecurringLine()` refuses to write a shared line: a writer that must change one owns a copy of
- *   it first (stage 5c-2c, with the linking itself).
+ *   it first, through `ownRecurringLine()` (stage 5c-2c-1); the linking itself is 5c-2c-2.
  *
  * While `cloneConfiguration()` still copies every line, no line is linked by two sets, so nothing here
  * changes behaviour.
