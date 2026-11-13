@@ -437,22 +437,30 @@ export async function loadMemberPurchases(
  * from each application's own frozen grant (`user_membership_promotion_*_snapshot`),
  * never the live Promotion. Each step's `regular_amount` is the running price it
  * was applied to, as for a one-time purchase; the direct discount comes last.
+ *
+ * #2126 stage 5c-2c-2: a line unchanged across versions is one line linked by each of them, and each version
+ * holds its own copy of the line's applications, so a line names the Product Set it is read for
+ * (`productSetId`) and only that set's applications are its Promotions. The lines of one call are of one set
+ * each, so the result stays keyed by line id.
  */
 export async function loadRecurringLinePromotions(
   gymId: string,
-  lines: readonly { id: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
+  lines: readonly { id: number; productSetId: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
 ): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null }>> {
   const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null }>();
   if (lines.length === 0) return out;
   const ids = lines.map((l) => l.id);
-  const { rows } = await db.query<any>(
-    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.applied_at, ump.snapshot
+  const { rows: allRows } = await db.query<any>(
+    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.product_set_id, ump.applied_at, ump.snapshot
        FROM user_membership_promotions ump
       WHERE ump.gym_id = ? AND ump.status = 'applied'
         AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
       ORDER BY ump.id ASC`,
     [gymId, ...ids],
   );
+  const lineById = new Map(lines.map((l) => [l.id, l]));
+  const rows = (allRows as any[]).filter((r) =>
+    Number(r.product_set_id) === lineById.get(Number(r.recurrent_snapshot_id))?.productSetId);
   if (rows.length === 0) return out;
   const appIds = rows.map((r: any) => Number(r.id));
   const marks = appIds.map(() => '?').join(',');
@@ -466,7 +474,6 @@ export async function loadRecurringLinePromotions(
     );
     for (const r of g as any[]) grants.set(`${r.app_id}:${r.product_id}`, { ...r, category });
   }
-  const lineById = new Map(lines.map((l) => [l.id, l]));
   const running = new Map<number, number>();
   for (const row of rows as any[]) {
     const lineId = Number(row.recurrent_snapshot_id);
@@ -515,11 +522,11 @@ async function loadRecurringPurchases(
   gymId: string,
   memberId: number,
 ): Promise<MemberPurchasedProduct[]> {
-  const { rows } = await db.query<any>(
+  const { rows: setRows } = await db.query<any>(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status,
+            s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status, ps.id AS set_id,
             COALESCE(s.line_ref, s.source_id) AS line_ref,
             ps.created_by AS set_created_by,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
@@ -537,6 +544,13 @@ async function loadRecurringPurchases(
       ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],
   );
+  // #2126 stage 5c-2c-2: an unchanged line is linked by the Active version and by a Pending Payment one in
+  // flight; it is one purchase, listed once (as the Active version's).
+  const seenLines = new Set<number>();
+  const rows = (setRows as any[])
+    .sort((a, b) => Number(a.set_status !== 'active') - Number(b.set_status !== 'active'))
+    .filter((r) => !seenLines.has(Number(r.id)) && seenLines.add(Number(r.id)))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || Number(b.id) - Number(a.id));
   // #1882 — a line of the Active version that the member's open Draft no longer
   // carries (matched by `line_ref`, which a clone keeps) is pending termination:
   // the Draft only registers the removal, the Active version is untouched.
@@ -547,7 +561,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin,
+            s.currency, s.starts_at, s.created_at, s.origin, ps.id AS set_id,
             COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
@@ -568,16 +582,20 @@ async function loadRecurringPurchases(
   const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
   const activeRefs = new Set(rows.map((r: any) => Number(r.line_ref)));
   const draftLineRefs = new Set(draftByRef.keys());
-  const lineInputs = [...rows, ...draftRows].map((r: any) => {
+  const lineInput = (r: any) => {
     const quantity = Number(r.quantity) || 1;
     const unit = Number(r.unit_price);
     const listUnit = r.list_unit_price == null ? unit : Number(r.list_unit_price);
     return {
-      id: Number(r.id), productId: Number(r.product_id), listUnit, quantity,
+      id: Number(r.id), productSetId: Number(r.set_id), productId: Number(r.product_id), listUnit, quantity,
       pct: r.direct_discount_percent == null ? null : Number(r.direct_discount_percent),
     };
-  });
-  const linePromos = await loadRecurringLinePromotions(gymId, lineInputs);
+  };
+  // #2126 stage 5c-2c-2: a line the Draft links unchanged has the Active version's id, so the Draft's
+  // Promotions on it and the Active version's are read apart, each for its own set.
+  const activePromos = await loadRecurringLinePromotions(gymId, rows.map(lineInput));
+  const draftPromos = await loadRecurringLinePromotions(gymId, draftRows.map(lineInput));
+  const promosFor = (row: any) => (draftRows.includes(row) ? draftPromos : activePromos).get(Number(row.id));
   const figures = (row: any) => {
     const quantity = Number(row.quantity) || 1;
     const unit = Number(row.unit_price);
@@ -594,7 +612,7 @@ async function loadRecurringPurchases(
     .filter((r: any) => !activeRefs.has(Number(r.line_ref)))
     .map((row: any) => {
       const { amount: baseAmount, listPrice, pct } = figures(row);
-      const lp = linePromos.get(Number(row.id));
+      const lp = promosFor(row);
       const amount = lp?.final ?? baseAmount;
       return {
         id: -Number(row.id),
@@ -628,7 +646,7 @@ async function loadRecurringPurchases(
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
     const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
     const { amount: baseAmount, listPrice, pct } = figures(row);
-    const lp = linePromos.get(Number(row.id));
+    const lp = promosFor(row);
     const amount = lp?.final ?? baseAmount;
     return {
       id: -Number(active.id),

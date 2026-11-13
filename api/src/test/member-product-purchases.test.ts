@@ -106,6 +106,12 @@ async function pay(paymentRequestId: number) {
 
 const base = (memberId: number) => `/members/${memberId}/product-purchases`;
 
+/** #2126 stage 5c-2c-2: a set's recurring lines are its links (a new version links its predecessor's lines). */
+const setLines = async (setId: number) => (await db.query<any>(
+  `SELECT s.source_id AS id, s.product_id, s.quantity FROM product_set_periodical_snapshots lnk
+     JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+    WHERE lnk.product_set_id = ? ORDER BY s.source_id`, [setId])).rows;
+
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';
   process.env.MONEI_WEBHOOK_SECRET = SECRET;
@@ -450,9 +456,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     // new version carrying both lines.
     const again = await auth(request.post(base(m))).send({ product_id: weekly });
     expect(again.status).toBe(201);
-    const { rows } = await db.query<any>(
-      'SELECT quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ? AND product_id = ?',
-      [again.body.product_set_id, weekly]);
+    const rows = (await setLines(again.body.product_set_id)).filter((r: any) => Number(r.product_id) === weekly);
     // The remaining purchase is carried into the new version, and the new
     // purchase is a line of its own beside it.
     expect(rows.map((r: any) => Number(r.quantity))).toEqual([1, 1]);
@@ -537,12 +541,7 @@ describe('#1923 — a promoted line survives the next Draft clone', () => {
     const other = await product({ name: 'Towel 1923', frequency: 'month', amount: '5.00', type: 'service' });
     const next = await auth(request.post(base(m))).send({ product_id: other });
     expect(next.status).toBe(201);
-    const { rows } = await db.query<any>(
-      'SELECT id, product_id FROM member_products_recurrent_snapshot WHERE product_set_id = ? ORDER BY id', [next.body.product_set_id]);
-    console.log('CLONELINES', JSON.stringify(rows), 'locker', locker);
-    const apps = await db.query<any>(
-      `SELECT id, product_id, line_id FROM user_membership_promotions WHERE product_set_id = ? AND status='applied'`, [next.body.product_set_id]).catch((e: any) => ({ rows: [e.message] }));
-    console.log('CLONEAPPS', JSON.stringify(apps.rows));
+    const rows = await setLines(next.body.product_set_id);
     expect(rows.map((r: any) => Number(r.product_id))).toContain(locker);
     const sim = await auth(request.get(`/product-sets/${next.body.product_set_id}/billing-event-simulation`));
     expect(sim.status).toBe(200);

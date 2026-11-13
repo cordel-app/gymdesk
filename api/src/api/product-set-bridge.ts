@@ -2,7 +2,7 @@ import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-import { copyRecurringLines } from './recurring-line-writer';
+import { linkRecurringLines } from './recurring-line-writer';
 import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -61,8 +61,10 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
      SELECT ?, psj.plan_snapshot_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
       WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`, [toSetId, gymId, fromSetId]);
 
-  // #2126 stage 5c: the recurring lines and their snapshots are copied by their one writer.
-  await copyRecurringLines(tx, gymId, fromSetId, toSetId, { carryAssignee: true });
+  // #2126 stage 5c-2c-2: the recurring lines are linked the same way — an unchanged line is the
+  // predecessor's line, keeping its id, `line_ref`, schedule and assignee — and a writer that changes one
+  // for the new version owns a copy of it first (`ownRecurringLine()`, stage 5c-2c-1).
+  await linkRecurringLines(tx, gymId, fromSetId, toSetId);
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
   // #2659 stage 3: the plans the owner is cancelling at their period end are carried for entitlement
@@ -88,8 +90,8 @@ async function copyApplications(
         ${opts.onlyProductTarget ? "AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')" : ''}`,
     [gymId, from.productSetId]);
   // #2126 stage 3u — a line-owned application finds its line in the successor through
-  // `product_periodical_snapshots`. The callers have just copied the legacy lines into the
-  // successor, so its snapshots are re-derived first; the predecessor's are already in step.
+  // `product_periodical_snapshots` and the successor's links (since stage 5c-2c-2 a clone links the
+  // predecessor's line, so the application follows the very same line id; a merge still copies it).
   if (rows.some((app: any) => app.recurrent_snapshot_id != null)) {
     await syncProductSnapshotsOfVersion(tx, gymId, to.productSetId);
   }
