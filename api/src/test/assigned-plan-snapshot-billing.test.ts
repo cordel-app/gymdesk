@@ -13,7 +13,6 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { loadProductSetSimulationAssignment } from '../api/product-set-configuration';
 
 // The nightly run's success branch is what advances `next_billing_date`, and
@@ -32,6 +31,7 @@ import {
   createTestGym,
   createTestMembership,
   request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -348,40 +348,32 @@ describe('Billing Simulation — an attached service keeps the price it was atta
   // (`product_periodical_snapshots`), which the dual-write keeps equal to the
   // legacy line. A legacy row changed behind the writers' back must not reach
   // the simulation; a change that went through the sync must.
-  it('prices the line from its Product snapshot, not the legacy row', async () => {
-    const { rows } = await db.query<any>(
-      `SELECT id, product_set_id FROM member_products_recurrent_snapshot
-        WHERE gym_id = ? AND product_id = ?`, [gymId, serviceItemId]);
-    expect(rows.length).toBeGreaterThan(0);
-    await db.query(
-      'UPDATE member_products_recurrent_snapshot SET unit_price = 7 WHERE gym_id = ? AND product_id = ?',
-      [gymId, serviceItemId]);
+  it('prices the line from its Product snapshot', async () => {
+    // #2126 stage 5d-5: a line is written to its snapshot only, so changing the snapshot is what moves the price.
     let lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
-
-    for (const setId of new Set(rows.map((r: any) => r.product_set_id))) {
-      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, Number(setId)));
-    }
+    await db.query(
+      'UPDATE product_periodical_snapshots SET unit_price = 7 WHERE gym_id = ? AND product_id = ?',
+      [gymId, serviceItemId]);
     lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 7, actual_charge: 14 });
   });
 
   // #2126 stage 3o: the ProductSet engine loader (what the persisted obligations and the
-  // initial charge are planned from) reads the same Product snapshot, reporting the legacy
+  // initial charge are planned from) reads the same Product snapshot, reporting the
   // line id the routes and the engine's labels are keyed on.
-  it('feeds the ProductSet engine the line from its Product snapshot, not the legacy row', async () => {
+  it('feeds the ProductSet engine the line from its Product snapshot', async () => {
     const { rows } = await db.query<any>(
-      `SELECT id, product_set_id FROM member_products_recurrent_snapshot
+      `SELECT id, product_set_id FROM ${TEST_RECURRING_LINES} AS legacy
         WHERE gym_id = ? AND product_id = ? ORDER BY id DESC LIMIT 1`, [gymId, serviceItemId]);
     const lineId = Number(rows[0].id);
     const setId = Number(rows[0].product_set_id);
-    await db.query('UPDATE member_products_recurrent_snapshot SET unit_price = 9 WHERE id = ?', [lineId]);
 
     let version = await loadProductSetSimulationAssignment(gymId, setId);
     let line = version!.services.find((sv) => Number(sv.id) === lineId);
     expect(line).toMatchObject({ unitPrice: 7, quantity: 2 });
 
-    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
+    await db.query('UPDATE product_periodical_snapshots SET unit_price = 9 WHERE source_id = ? AND gym_id = ?', [lineId, gymId]);
     version = await loadProductSetSimulationAssignment(gymId, setId);
     line = version!.services.find((sv) => Number(sv.id) === lineId);
     expect(line).toMatchObject({ unitPrice: 9 });

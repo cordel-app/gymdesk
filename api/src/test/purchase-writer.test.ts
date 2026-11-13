@@ -1,10 +1,11 @@
 // #2126 stage 5b — a bought one-time Product is written by one writer (`api/purchase-writer.ts`)
-// into the legacy purchase record **and** its Product snapshot from the same values, rather than the
-// snapshot being re-derived from the record. Every step of a purchase's life (staff Save as draft,
-// Cancel of the draft, Pay of a draft, the webhook completing it, staff Cancel of a completed one)
-// must leave the two equal, link the snapshot to the purchase's Billing Event, and freeze its
-// Promotions on both sides. A Sessions package lands in `product_session_snapshots`, anything else in
-// `product_oneoff_snapshots`. Only the provider's `createPaymentRequest` is stubbed.
+// into its Product snapshot from the writer's own values. Every step of a purchase's life (staff Save
+// as draft, Cancel of the draft, Pay of a draft, the webhook completing it, staff Cancel of a completed
+// one) moves the snapshot, links it to the purchase's Billing Event and freezes its Promotions under it.
+// A Sessions package lands in `product_session_snapshots`, anything else in `product_oneoff_snapshots`.
+// Since stage 5d-5 the legacy record (`member_products_oneoff_snapshot`, its Promotions in
+// `member_products_oneoff_promotion_snapshot`) is never written. Only the provider's
+// `createPaymentRequest` is stubbed.
 
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 const SECRET = 'test-2126-5b-webhook';
 let gymId: string;
@@ -97,7 +99,7 @@ const EVENT_JUNCTION = {
   fee: ['billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id'],
 } as const;
 
-/** The record and its snapshot, the columns both hold, read side by side. */
+/** The (no longer written) legacy record and the snapshot, the columns both hold, read side by side. */
 async function pair(purchaseId: number, type: 'sessions' | 'fee') {
   const cols = `status, member_id, product_id, list_price, direct_discount_percent, direct_discount_amount,
     tax_rate_percent, validity_days, DATE_FORMAT(valid_until, '%Y-%m-%d') AS valid_until,
@@ -113,13 +115,12 @@ async function pair(purchaseId: number, type: 'sessions' | 'fee') {
   return { record: rec[0] ?? null, snapshot: snap[0] ?? null, stray: stray.length };
 }
 
-function expectEqual(p: Awaited<ReturnType<typeof pair>>) {
-  expect(p.record).not.toBeNull();
+/** The purchase is its snapshot alone: no legacy record, no row in the other snapshot table, no Product Set. */
+function expectWritten(p: Awaited<ReturnType<typeof pair>>) {
+  expect(p.record).toBeNull();
   expect(p.snapshot).not.toBeNull();
   expect(p.stray).toBe(0);
-  const { snapshot_id, member_product_id, product_set_id, ...snap } = p.snapshot;
-  expect(snap).toEqual(p.record);
-  expect(product_set_id).toBeNull();
+  expect(p.snapshot.product_set_id).toBeNull();
 }
 
 async function promotionCounts(purchaseId: number, type: 'sessions' | 'fee') {
@@ -129,8 +130,7 @@ async function promotionCounts(purchaseId: number, type: 'sessions' | 'fee') {
   const { rows: snap } = await db.query<any>(
     `SELECT COUNT(*) n FROM product_promotion_snapshots pp
        JOIN ${SNAPSHOT_TABLE[type]} s ON s.id = pp.${parent}
-       JOIN member_products_oneoff_promotion_snapshot x ON x.id = pp.source_purchase_promotion_id
-      WHERE s.source_id = ? AND x.final_amount = pp.final_amount AND x.applied_at = pp.applied_at`, [purchaseId]);
+      WHERE s.source_id = ? AND pp.source_purchase_promotion_id = pp.id`, [purchaseId]);
   return { record: Number(rec[0].n), snapshot: Number(snap[0].n) };
 }
 
@@ -153,21 +153,21 @@ afterAll(async () => {
 
 describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
   for (const type of ['fee', 'sessions'] as const) {
-    it(`keeps the record and the ${SNAPSHOT_TABLE[type]} row equal through draft, pay, completion and cancel`, async () => {
+    it(`writes the ${SNAPSHOT_TABLE[type]} row, and no legacy record, through draft, pay, completion and cancel`, async () => {
       const m = await member();
       const p = await product({ name: `Writer ${type} ${uniq()}`, amount: '80.00', type });
       const promo = await promotion({ name: `Writer promo ${uniq()}` });
       await grant(promo, p, type === 'sessions' ? 'session' : 'oneoff', 'percentage_discount', 50);
 
-      // Save as draft: no payment, no event, Promotions frozen on both sides.
+      // Save as draft: no payment, no event, Promotions frozen under the snapshot.
       const saved = await auth(request.post(base(m))).send({ product_id: p, promotion_ids: [promo], direct_discount_percent: 10, draft: true });
       expect(saved.status).toBe(201);
       const draftId = Number(saved.body.purchaseId);
-      expectEqual(await pair(draftId, type));
-      expect((await pair(draftId, type)).record.status).toBe('draft');
-      expect(await promotionCounts(draftId, type)).toEqual({ record: 1, snapshot: 1 });
+      expectWritten(await pair(draftId, type));
+      expect((await pair(draftId, type)).snapshot.status).toBe('draft');
+      expect(await promotionCounts(draftId, type)).toEqual({ record: 0, snapshot: 1 });
 
-      // Pay the draft: the draft goes on both sides, the pending purchase is written with its event link.
+      // Pay the draft: the draft goes, the pending purchase is written with its event link.
       const paid = await auth(request.post(`${base(m)}/${draftId}/pay`)).send({});
       expect(paid.status).toBe(201);
       const purchaseId = Number(paid.body.purchaseId);
@@ -175,39 +175,39 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
       expect(gone.record).toBeNull();
       expect(gone.snapshot).toBeNull();
       const pending = await pair(purchaseId, type);
-      expectEqual(pending);
-      expect(pending.record.status).toBe('pending_payment');
+      expectWritten(pending);
+      expect(pending.snapshot.status).toBe('pending_payment');
       expect(pending.snapshot.member_product_id).toBe(purchaseId);
-      expect(await promotionCounts(purchaseId, type)).toEqual({ record: 1, snapshot: 1 });
+      expect(await promotionCounts(purchaseId, type)).toEqual({ record: 0, snapshot: 1 });
 
       const { rows: req } = await db.query<any>(
         `SELECT pr.id, pr.billing_event_id FROM payment_requests pr
-           JOIN member_products_oneoff_snapshot mp ON mp.payment_request_id = pr.id WHERE mp.id = ?`, [purchaseId]);
+           JOIN ${TEST_PURCHASES} mp ON mp.payment_request_id = pr.id WHERE mp.id = ?`, [purchaseId]);
       const [junction, col] = EVENT_JUNCTION[type];
       const { rows: link } = await db.query<any>(
         `SELECT billing_event_id FROM ${junction} WHERE ${col} = ?`, [pending.snapshot.snapshot_id]);
       expect(link).toEqual([{ billing_event_id: req[0].billing_event_id }]);
 
-      // The webhook completes it on both sides, once.
+      // The webhook completes it, once.
       expect((await pay(req[0].id)).status).toBe(200);
       const active = await pair(purchaseId, type);
-      expectEqual(active);
-      expect(active.record.status).toBe('active');
-      expect(active.record.purchased_at).not.toBeNull();
+      expectWritten(active);
+      expect(active.snapshot.status).toBe('active');
+      expect(active.snapshot.purchased_at).not.toBeNull();
 
-      // Staff Cancel stamps the day on both sides; a repeat changes nothing.
+      // Staff Cancel stamps the day; a repeat changes nothing.
       const cancel = await auth(request.post(`${base(m)}/${purchaseId}/cancel`)).send({});
       expect(cancel.status).toBe(200);
       const cancelled = await pair(purchaseId, type);
-      expectEqual(cancelled);
-      expect(cancelled.record.cancelled_on).toBe(cancel.body.cancelled_on);
+      expectWritten(cancelled);
+      expect(cancelled.snapshot.cancelled_on).toBe(cancel.body.cancelled_on);
       const again = await auth(request.post(`${base(m)}/${purchaseId}/cancel`)).send({});
       expect(again.status).toBe(200);
-      expectEqual(await pair(purchaseId, type));
+      expectWritten(await pair(purchaseId, type));
     });
   }
 
-  it('deletes a draft on both sides, its Promotions with it', async () => {
+  it('deletes a draft, its Promotions with it', async () => {
     const m = await member();
     const p = await product({ name: `Writer del ${uniq()}`, amount: '30.00' });
     const promo = await promotion({ name: `Writer del promo ${uniq()}` });
@@ -241,11 +241,11 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
     expect(fee).toBeGreaterThan(before);
     expect(sessions).toBeGreaterThan(fee);
 
-    // Each id is registered once, for the gym, and the record and the snapshot carry it.
+    // Each id is registered once, for the gym, and the snapshot carries it.
     const { rows } = await db.query<any>('SELECT id, gym_id FROM product_purchase_ids WHERE id IN (?, ?) ORDER BY id', [fee, sessions]);
     expect(rows).toEqual([{ id: fee, gym_id: gymId }, { id: sessions, gym_id: gymId }]);
-    expectEqual(await pair(fee, 'fee'));
-    expectEqual(await pair(sessions, 'sessions'));
+    expectWritten(await pair(fee, 'fee'));
+    expectWritten(await pair(sessions, 'sessions'));
 
     // A discarded draft's id is never handed out again.
     expect((await auth(request.delete(`${base(m)}/${sessions}`))).status).toBe(200);
@@ -253,15 +253,15 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
     expect(next).toBeGreaterThan(sessions);
   });
 
-  it('takes a purchase Promotion id from its snapshot, which the legacy row mirrors (#2126 stage 5d-4)', async () => {
+  it('takes a purchase Promotion id from its snapshot (#2126 stage 5d-4)', async () => {
     const m = await member();
     const top = async () => Number((await db.query<any>(
       `SELECT GREATEST(
           COALESCE((SELECT MAX(id) FROM member_products_oneoff_promotion_snapshot), 0),
           COALESCE((SELECT MAX(id) FROM product_promotion_snapshots), 0)) AS top`)).rows[0].top);
     const before = await top();
-    // Open a gap between the two sequences (line-owned applications advance the snapshot's alone), so
-    // an id the legacy table allocated could not pass for the snapshot's.
+    // Move the snapshot's sequence ahead of the legacy one, so an id the legacy table allocated could not
+    // pass for the snapshot's.
     await db.query(`ALTER TABLE product_promotion_snapshots AUTO_INCREMENT = ${before + 50}`);
     const ids: number[] = [];
     for (const type of ['fee', 'sessions'] as const) {
@@ -273,7 +273,7 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
       const purchaseId = Number(saved.body.purchaseId);
       const parent = type === 'sessions' ? 'product_session_snapshot_id' : 'product_oneoff_snapshot_id';
       const { rows } = await db.query<any>(
-        `SELECT pp.id, pp.source_purchase_promotion_id, x.id AS legacy_id, x.final_amount AS legacy_final, pp.final_amount
+        `SELECT pp.id, pp.source_purchase_promotion_id, x.id AS legacy_id
            FROM product_promotion_snapshots pp
            JOIN ${SNAPSHOT_TABLE[type]} s ON s.id = pp.${parent}
            LEFT JOIN member_products_oneoff_promotion_snapshot x ON x.id = pp.id
@@ -281,8 +281,7 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
       expect(rows).toHaveLength(1);
       const id = Number(rows[0].id);
       expect(Number(rows[0].source_purchase_promotion_id)).toBe(id);
-      expect(Number(rows[0].legacy_id)).toBe(id);
-      expect(rows[0].legacy_final).toBe(rows[0].final_amount);
+      expect(rows[0].legacy_id).toBeNull();
       expect(id).toBeGreaterThan(before);
       ids.push(id);
 

@@ -10,6 +10,7 @@ import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { insertRecurringLine, ownRecurringLine } from '../api/recurring-line-writer';
 import { lockDraft, removeService, setServiceQuantity, type LockedDraft } from '../api/product-set-draft';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 let gymId: string;
 let seq = 0;
@@ -99,7 +100,7 @@ describe('owning a recurring line (#2126 stage 5c-2c)', () => {
     expect(Number(mine[0].line_ref)).toBe(lineId);
     const theirs = await linkedSnapshots(creatorSet);
     expect(theirs.map((r: any) => Number(r.id))).toEqual([snapshotId]);
-    const legacy = (await db.query<any>('SELECT product_set_id, line_ref FROM member_products_recurrent_snapshot WHERE id = ?', [owned])).rows[0];
+    const legacy = (await db.query<any>(`SELECT product_set_id, line_ref FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [owned])).rows[0];
     expect(Number(legacy.product_set_id)).toBe(otherSet);
     expect(Number(legacy.line_ref)).toBe(lineId);
   });
@@ -110,7 +111,7 @@ describe('owning a recurring line (#2126 stage 5c-2c)', () => {
     expect(res).toEqual({ ok: true, quantity: 4 });
     expect((await linkedSnapshots(otherSet)).map((r: any) => Number(r.quantity))).toEqual([4]);
     expect((await linkedSnapshots(creatorSet)).map((r: any) => Number(r.quantity))).toEqual([1]);
-    const original = (await db.query<any>('SELECT quantity FROM member_products_recurrent_snapshot WHERE id = ?', [lineId])).rows[0];
+    const original = (await db.query<any>(`SELECT quantity FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [lineId])).rows[0];
     expect(Number(original.quantity)).toBe(1);
   });
 
@@ -120,7 +121,7 @@ describe('owning a recurring line (#2126 stage 5c-2c)', () => {
     expect(res).toMatchObject({ ok: true, deleted: true });
     expect(await linkedSnapshots(otherSet)).toHaveLength(0);
     expect((await linkedSnapshots(creatorSet)).map((r: any) => Number(r.id))).toEqual([snapshotId]);
-    const original = (await db.query<any>('SELECT id FROM member_products_recurrent_snapshot WHERE id = ?', [lineId])).rows;
+    const original = (await db.query<any>(`SELECT id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [lineId])).rows;
     expect(original).toHaveLength(1);
   });
 });

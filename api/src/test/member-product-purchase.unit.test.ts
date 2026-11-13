@@ -231,11 +231,13 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
   // the INSERT rather than left to the column default, so a second write path
   // cannot create an `active` purchase nobody paid for.
   it('is written pending, with its status named', () => {
-    // #2126 stage 5b: one writer (`purchase-writer.ts`) names the status on the record and the snapshot.
+    // #2126 stage 5b: one writer (`purchase-writer.ts`) names the status on the snapshot; since stage
+    // 5d-5 it writes no legacy record.
     const writer = read(REPO, 'api', 'src', 'api', 'purchase-writer.ts');
-    for (const table of ['INSERT INTO member_products_oneoff_snapshot', 'INSERT INTO ${table}']) {
-      expect(writer.slice(writer.indexOf(table), writer.indexOf(table) + 400)).toContain('status');
-    }
+    const insert = 'INSERT INTO ${table}';
+    expect(writer.indexOf(insert)).toBeGreaterThan(-1);
+    expect(writer.slice(writer.indexOf(insert), writer.indexOf(insert) + 400)).toContain('status');
+    expect(writer).not.toContain('INSERT INTO member_products_oneoff_snapshot');
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
     expect(loader).toContain('status: PENDING_PURCHASE_STATUS');
   });

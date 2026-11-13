@@ -24,6 +24,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 const SECRET = 'test-1521-webhook';
 let gymId: string;
@@ -127,12 +128,12 @@ async function buy(m: number, frequency: string, validityDays?: number): Promise
   if (validityDays) await db.query('UPDATE products SET validity_days = ? WHERE id = ?', [validityDays, p]);
   const res = await auth(request.post(base(m))).send({ product_id: p });
   expect(res.status).toBe(201);
-  const { rows } = await db.query<any>('SELECT payment_request_id FROM member_products_oneoff_snapshot WHERE id = ?', [res.body.purchaseId]);
+  const { rows } = await db.query<any>(`SELECT payment_request_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [res.body.purchaseId]);
   return { purchaseId: res.body.purchaseId, prId: rows[0].payment_request_id };
 }
 const row = async (id: number) => (await db.query<any>(
   `SELECT status, purchased_at, DATE_FORMAT(valid_until,'%Y-%m-%d') AS valid_until,
-          DATE_FORMAT(cancelled_on,'%Y-%m-%d') AS cancelled_on FROM member_products_oneoff_snapshot WHERE id = ?`, [id])).rows[0];
+          DATE_FORMAT(cancelled_on,'%Y-%m-%d') AS cancelled_on FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [id])).rows[0];
 
 describe('purchase, cancellation and end dates (#1693)', () => {
   it('a pending purchase has no purchase or end date; the webhook stamps both once', async () => {

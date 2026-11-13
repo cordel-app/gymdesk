@@ -10,6 +10,7 @@ import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { insertRecurringLine, updateRecurringLine } from '../api/recurring-line-writer';
 import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 import { isRecurringLineShared, SharedRecurringLineError } from '../api/recurring-line-sharing';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 let gymId: string;
 let seq = 0;
@@ -101,7 +102,7 @@ describe('a shared recurring line (#2126 stage 5c-2b)', () => {
     const { lineId, snapshotId } = await sharedLine();
     await expect(db.transaction((tx) => updateRecurringLine(tx, gymId, lineId, { quantity: 3 })))
       .rejects.toBeInstanceOf(SharedRecurringLineError);
-    const legacy = (await db.query<any>('SELECT quantity FROM member_products_recurrent_snapshot WHERE id = ?', [lineId])).rows[0];
+    const legacy = (await db.query<any>(`SELECT quantity FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [lineId])).rows[0];
     const snap = (await db.query<any>('SELECT quantity FROM product_periodical_snapshots WHERE id = ?', [snapshotId])).rows[0];
     expect(Number(legacy.quantity)).toBe(1);
     expect(Number(snap.quantity)).toBe(1);

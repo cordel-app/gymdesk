@@ -17,6 +17,10 @@
 // The counts are exact, so a new `FROM`/`JOIN` of a legacy table fails the build until it is
 // either moved to the snapshot tables or added here with its reason, and a reader that is moved
 // away must lower its count. The list may only shrink; stage 5 empties it.
+//
+// Since stage 5d-5 nothing writes the three tables either (the second `describe` below): they hold
+// the purchases and lines written before then, frozen, until they are dropped. A `DELETE` is still
+// allowed (the dev billing reset empties them).
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,7 +29,7 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
-  'scripts/validate-product-snapshots.ts': { count: 10, why: 'read-only report comparing the legacy and snapshot tables' },
+  'scripts/validate-product-snapshots.ts': { count: 14, why: 'read-only report comparing the legacy and snapshot tables' },
 };
 
 /** Every production `.ts` under api/src (tests and migrations excluded). */
@@ -68,6 +72,28 @@ function legacyReadCounts(): Record<string, number> {
   }
   return counts;
 }
+
+/** `INSERT INTO` / `UPDATE` of a legacy table (a `DELETE` is not a write of new facts). */
+const LEGACY_WRITE =
+  /\b(?:INSERT\s+(?:IGNORE\s+)?INTO|UPDATE)\s+(?:member_products_recurrent_snapshot|member_products_oneoff_snapshot|member_products_oneoff_promotion_snapshot)\b/g;
+
+describe('legacy Product tables are never written (#2126 stage 5d-5)', () => {
+  it('no production source inserts into or updates a legacy Product table', () => {
+    const writers = sourceFiles(API_SRC)
+      .filter((file) => [...code(readFileSync(file, 'utf8')).matchAll(LEGACY_WRITE)].length > 0)
+      .map((file) => file.slice(API_SRC.length + 1).split('\\').join('/'));
+    expect(writers).toEqual([]);
+  });
+
+  it('recognises an insert and an update and ignores a delete', () => {
+    const sample = [
+      'INSERT INTO member_products_oneoff_snapshot (id) VALUES (?)',
+      'UPDATE member_products_recurrent_snapshot SET quantity = 1',
+      'DELETE FROM member_products_oneoff_promotion_snapshot WHERE id = ?',
+    ].join('\n');
+    expect([...sample.matchAll(LEGACY_WRITE)]).toHaveLength(2);
+  });
+});
 
 describe('legacy Product tables are read only where the list says (#2126 stage 3)', () => {
   it('matches the declared readers exactly', () => {

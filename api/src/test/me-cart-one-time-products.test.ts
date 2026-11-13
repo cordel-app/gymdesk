@@ -26,6 +26,7 @@ import { activateWithEvents } from '../api/product-set-configuration';
 import { returnPendingToDraft } from '../api/product-sets';
 import { cancelAbandonedPurchases } from '../api/me-products';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_PURCHASES } from './productSnapshotReads';
 
 let gymId: string;
 let seq = 0;
@@ -55,7 +56,7 @@ async function product(amount: string, frequency: 'once' | 'month', type = 'fee'
 }
 
 const purchaseStatus = async (purchaseId: number) =>
-  (await db.query<any>('SELECT status FROM member_products_oneoff_snapshot WHERE id = ?', [purchaseId])).rows[0]?.status ?? null;
+  (await db.query<any>(`SELECT status FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [purchaseId])).rows[0]?.status ?? null;
 const setStatus = async (id: number) =>
   (await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id])).rows[0]?.status ?? null;
 
@@ -138,7 +139,7 @@ describe('one-time Products in the member cart', () => {
     expect(await setStatus(id)).toBe('active');
     expect(await purchaseStatus(oneOffId)).toBe('active');
     expect(await purchaseStatus(sessionsId)).toBe('active');
-    const { rows: purchased } = await db.query<any>('SELECT purchased_at FROM member_products_oneoff_snapshot WHERE id = ?', [oneOffId]);
+    const { rows: purchased } = await db.query<any>(`SELECT purchased_at FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [oneOffId]);
     expect(purchased[0].purchased_at).not.toBeNull();
   });
 

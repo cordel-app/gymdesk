@@ -6,6 +6,7 @@ import { activateWithEvents } from '../api/product-set-configuration';
 import { ensureRecurringDraft, startRecurringPurchaseDraft } from '../api/recurring-purchase-draft';
 import { revokePromotionMutator } from '../api/product-set-bridge';
 import { deleteRecurringLine } from '../api/recurring-line-writer';
+import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 // #1991 stage 3: a Product-target Promotion application is owned by the
 // recurring line (Product snapshot) it applies to.
@@ -87,7 +88,7 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(copied).toHaveLength(1);
     expect(copied[0].id).not.toBe(a1.id);
     const { rows: line } = await db.query<any>(
-      'SELECT id, product_set_id FROM member_products_recurrent_snapshot WHERE id = ?', [copied[0].recurrent_snapshot_id]);
+      `SELECT id, product_set_id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [copied[0].recurrent_snapshot_id]);
     expect(Number(line[0].product_set_id)).toBe(first.productSetId);
     expect(Number(line[0].id)).toBe(first.lineId);
     const { rows: grants } = await db.query<any>(

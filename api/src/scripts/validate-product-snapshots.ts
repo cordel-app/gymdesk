@@ -7,6 +7,10 @@
  * rows they do, and lists the gaps that need manual handling (a recurring line with no Product
  * Set version, a Product-target application with no owning line) rather than guessing a home
  * for them. Exit code 1 when any count differs, so it can gate dropping a legacy table later.
+ *
+ * #2126 stage 5d-5: the legacy tables are no longer written, so a purchase or line made since then
+ * exists only in the snapshot tables. Every check therefore asks whether each **legacy** row has its
+ * snapshot (the legacy rows are a subset), never whether the totals are equal.
  */
 import 'dotenv/config';
 import { db } from '../infra/db';
@@ -25,20 +29,31 @@ export async function validateProductSnapshots(): Promise<{ checks: Check[]; gap
 
   await add('product_session_snapshots (Sessions purchases)',
     "SELECT COUNT(*) n FROM member_products_oneoff_snapshot WHERE product_type = 'sessions'",
-    'SELECT COUNT(*) n FROM product_session_snapshots');
+    `SELECT COUNT(*) n FROM member_products_oneoff_snapshot mp
+       JOIN product_session_snapshots s ON s.source_id = mp.id AND s.gym_id = mp.gym_id
+      WHERE mp.product_type = 'sessions'`);
   await add('product_oneoff_snapshots (other purchases)',
     "SELECT COUNT(*) n FROM member_products_oneoff_snapshot WHERE product_type <> 'sessions'",
-    'SELECT COUNT(*) n FROM product_oneoff_snapshots');
+    `SELECT COUNT(*) n FROM member_products_oneoff_snapshot mp
+       JOIN product_oneoff_snapshots s ON s.source_id = mp.id AND s.gym_id = mp.gym_id
+      WHERE mp.product_type <> 'sessions'`);
   await add('product_periodical_snapshots (recurring lines of a version)',
     `SELECT COUNT(*) n FROM member_products_recurrent_snapshot s
        JOIN product_sets ps ON ps.id = s.product_set_id AND ps.gym_id = s.gym_id`,
-    'SELECT COUNT(*) n FROM product_periodical_snapshots');
+    `SELECT COUNT(*) n FROM member_products_recurrent_snapshot l
+       JOIN product_sets ps ON ps.id = l.product_set_id AND ps.gym_id = l.gym_id
+      WHERE EXISTS (SELECT 1 FROM product_periodical_snapshots s WHERE s.source_id = l.id AND s.gym_id = l.gym_id)`);
   await add('product_promotion_snapshots (purchase Promotions + line-owned Product applications)',
     `SELECT (SELECT COUNT(*) FROM member_products_oneoff_promotion_snapshot)
           + (SELECT COUNT(*) FROM user_membership_promotions ump
                JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
               WHERE ump.recurrent_snapshot_id IS NOT NULL) AS n`,
-    'SELECT COUNT(*) n FROM product_promotion_snapshots');
+    `SELECT (SELECT COUNT(*) FROM member_products_oneoff_promotion_snapshot l
+              WHERE EXISTS (SELECT 1 FROM product_promotion_snapshots p WHERE p.source_purchase_promotion_id = l.id))
+          + (SELECT COUNT(*) FROM user_membership_promotions ump
+               JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
+              WHERE ump.recurrent_snapshot_id IS NOT NULL
+                AND EXISTS (SELECT 1 FROM product_promotion_snapshots p WHERE p.source_application_id = ump.id)) AS n`);
   await add('product_promotion_grant_snapshots (grants of copied applications)',
     `SELECT COUNT(*) n FROM (
        SELECT g.user_membership_promotion_id FROM user_membership_promotion_session_snapshot g

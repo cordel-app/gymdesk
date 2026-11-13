@@ -24,6 +24,7 @@ import {
   createTestMembership,
   request, legacyAssignmentQuery
 } from './helpers';
+import { TEST_PURCHASES, TEST_PURCHASE_PROMOTIONS } from './productSnapshotReads';
 
 const ROOT = '/me/products';
 const MONEI_WEBHOOK_SECRET = 'test-1121-webhook-secret';
@@ -337,7 +338,7 @@ async function purchaseRows(gid: string) {
   const { rows } = await db.query<any>(
     `SELECT mp.*, pr.source, pr.status AS request_status, pr.provider_order,
             pr.user_membership_id, pr.amount AS request_amount
-       FROM member_products_oneoff_snapshot mp
+       FROM ${TEST_PURCHASES} mp
        LEFT JOIN payment_requests pr ON pr.id = mp.payment_request_id
       WHERE mp.gym_id = ? ORDER BY mp.id`,
     [gid],
@@ -611,7 +612,7 @@ function buyWithPromotion(gid: string, clerkId: string, productId: number, promo
 
 async function applicationRows(gid: string) {
   const { rows } = await db.query<any>(
-    `SELECT * FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? ORDER BY id`, [gid],
+    `SELECT * FROM ${TEST_PURCHASE_PROMOTIONS} AS legacy WHERE gym_id = ? ORDER BY id`, [gid],
   );
   return rows;
 }
@@ -968,7 +969,7 @@ describe('the Admin read of a member’s Products (#1118 §12, §13)', () => {
 
     const { rows: purchase } = await db.query<any>(
       `SELECT mp.payment_request_id, mp.tax_rate_percent, pr.billing_event_id, pr.status
-         FROM member_products_oneoff_snapshot mp
+         FROM ${TEST_PURCHASES} mp
          JOIN payment_requests pr ON pr.id = mp.payment_request_id
         WHERE mp.gym_id = ? AND mp.member_id = ?`,
       [gid, memberId],

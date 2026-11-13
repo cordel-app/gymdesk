@@ -1,24 +1,17 @@
 /**
  * #2126 stage 5b — the one writer of a bought one-time Product.
  *
- * Until stage 5a a purchase was written to the legacy record (`member_products_oneoff_snapshot`,
- * its Promotions in `member_products_oneoff_promotion_snapshot`) and the Product snapshot tables
- * were then **re-derived from that record** by `syncProductSnapshotForPurchase()`. Every reader
- * already reads the snapshot tables (stage 3), so this module inverts the direction: each write
- * is made **from the writer's own values** into the snapshot (`product_session_snapshots` for a
- * Sessions package, `product_oneoff_snapshots` for anything else, `product_promotion_snapshots`
- * and the Billing Event junction) and, in the same transaction, into the legacy record. Nothing here
- * reads a legacy table, so stage 5d drops the legacy halves of these functions and nothing else.
+ * A purchase is its Product snapshot: `product_session_snapshots` for a Sessions package,
+ * `product_oneoff_snapshots` for anything else, its Promotions in `product_promotion_snapshots`, and
+ * its payment reached through the Billing Event junction. Stage 5b made every write go from the
+ * writer's own values into those tables (and, beside them, into the legacy record); since stage 5d-5
+ * the legacy record (`member_products_oneoff_snapshot`, `member_products_oneoff_promotion_snapshot`)
+ * is no longer written at all: it holds the purchases made before then, frozen, until it is dropped.
  *
  * The purchase id (`source_id`, what the routes and Promotion snapshots are keyed on) comes from
  * `product_purchase_ids` since stage 5d-3 (`allocatePurchaseId()`): a purchase's snapshot lives in one
- * of two tables, each with its own sequence, so neither can allocate an id unique across both. The
- * snapshot and the legacy record are written under that id; migration 413 registered every historical
- * id and put the allocator above them, so a new id can never meet one. A Promotion frozen onto a
- * purchase takes its id from its own snapshot row since stage 5d-4 (`insertPurchasePromotion()`).
- *
- * The two halves are written with the same values, timestamps included (one `now` per write), so
- * `npm run product-snapshots:validate` can compare them field by field.
+ * of two tables, each with its own sequence, so neither can allocate an id unique across both. A
+ * Promotion frozen onto a purchase takes its id from its own snapshot row since stage 5d-4.
  */
 import type { Tx } from '../infra/db';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
@@ -76,23 +69,10 @@ export async function allocatePurchaseId(tx: Conn, gymId: string): Promise<numbe
   return id;
 }
 
-/** Writes a purchase (record + snapshot + event link) and returns the purchase id. */
+/** Writes a purchase (snapshot + event link) and returns the purchase id. */
 export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<number> {
   const now = new Date();
   const purchaseId = await allocatePurchaseId(tx, v.gymId);
-  await tx.query(
-    `INSERT INTO member_products_oneoff_snapshot
-       (id, gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, units,
-        amount, currency, tax_rate_percent, payment_request_id, created_at, created_by,
-        list_price, direct_discount_percent, direct_discount_amount, validity_days, origin, assigned_member_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      purchaseId, v.gymId, v.memberId, v.productId, v.status, v.productName, v.productType, v.billingFrequency, v.units,
-      money(v.amount), v.currency, v.taxRatePercent, v.paymentRequestId, now, v.createdBy,
-      money(v.listPrice), money(v.directDiscountPercent), money(v.directDiscountAmount), v.validityDays,
-      v.origin, v.assignedMemberId,
-    ],
-  );
   const table = purchaseSnapshotTable(v.productType);
   const { insertId: snapshotId } = await tx.query(
     `INSERT INTO ${table}
@@ -130,12 +110,11 @@ export interface PurchasePromotionStep {
 
 /**
  * #1118 §7 / #1521 — freezes one applied Promotion onto a purchase written by `insertPurchase()`
- * in the same transaction (the snapshot's row under its purchase snapshot, and the record's row).
+ * in the same transaction, under its purchase snapshot.
  *
  * Since #2126 stage 5d-4 the Promotion's id comes from its snapshot: the `product_promotion_snapshots`
  * row is inserted first and its own id becomes `source_purchase_promotion_id` (what the purchase reads
- * report the application under), and the legacy row is written under that same id, so the legacy
- * table allocates nothing. Migration 414 put the snapshot's sequence above every historical id.
+ * report the application under). Migration 414 put the snapshot's sequence above every historical id.
  */
 export async function insertPurchasePromotion(
   tx: Conn,
@@ -162,35 +141,22 @@ export async function insertPurchasePromotion(
   const promotionId = Number(insertId);
   await tx.query(
     'UPDATE product_promotion_snapshots SET source_purchase_promotion_id = id WHERE id = ?', [promotionId]);
-  await tx.query(
-    `INSERT INTO member_products_oneoff_promotion_snapshot
-       (id, gym_id, member_product_id, promotion_id, promotion_name,
-        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [promotionId, gymId, purchaseId, ...values],
-  );
 }
 
 /**
- * Hard-deletes a purchase (only a staff draft is ever deleted, #1657): its Promotions, its record and
- * its snapshot, whose Promotion snapshots and junction rows cascade with it.
+ * Hard-deletes a purchase (only a staff draft is ever deleted, #1657): its snapshot, whose
+ * Promotion snapshots and junction rows cascade with it.
  */
 export async function deletePurchase(tx: Conn, gymId: string, purchaseId: number, where: { memberId: number; status: string }): Promise<boolean> {
-  await tx.query(
-    'DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? AND member_product_id = ?',
-    [gymId, purchaseId],
-  );
-  const { rowCount } = await tx.query(
-    'DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND member_id = ? AND status = ?',
-    [purchaseId, gymId, where.memberId, where.status],
-  );
+  let deleted = 0;
   for (const table of SNAPSHOT_TABLES) {
-    await tx.query(
+    const { rowCount } = await tx.query(
       `DELETE FROM ${table} WHERE gym_id = ? AND source_id = ? AND member_id = ? AND status = ?`,
       [gymId, purchaseId, where.memberId, where.status],
     );
+    deleted += rowCount;
   }
-  return rowCount > 0;
+  return deleted > 0;
 }
 
 /** The columns a purchase's lifecycle moves (the rest is frozen at purchase time). */
@@ -202,9 +168,9 @@ export interface PurchaseChange {
 }
 
 /**
- * Moves a purchase's lifecycle columns on the record and the snapshot alike, guarded by the status
+ * Moves a purchase's lifecycle columns on its snapshot, guarded by the status
  * it must still hold (`fromStatus`) or by the cancellation not having happened (`whenNotCancelled`),
- * so a duplicate webhook or a repeat cancel changes neither. Answers the rows changed on the record.
+ * so a duplicate webhook or a repeat cancel changes neither. Answers the rows changed.
  */
 export async function updatePurchase(
   tx: Conn,
@@ -225,25 +191,20 @@ export async function updatePurchase(
   const guardSql = 'fromStatus' in guard ? 'status = ?' : 'cancelled_on IS NULL';
   const guardParams = 'fromStatus' in guard ? [guard.fromStatus] : [];
 
-  const { rowCount } = await tx.query(
-    `UPDATE member_products_oneoff_snapshot SET ${assignments}, modified_by = ? WHERE id = ? AND gym_id = ? AND ${guardSql}`,
-    [...params, purchaseId, gymId, ...guardParams],
-  );
-  if (rowCount > 0) {
-    for (const table of SNAPSHOT_TABLES) {
-      await tx.query(
-        `UPDATE ${table} SET ${assignments}, modified_by = ? WHERE source_id = ? AND gym_id = ? AND ${guardSql}`,
-        [...params, purchaseId, gymId, ...guardParams],
-      );
-    }
+  let changed = 0;
+  for (const table of SNAPSHOT_TABLES) {
+    const { rowCount } = await tx.query(
+      `UPDATE ${table} SET ${assignments}, modified_by = ? WHERE source_id = ? AND gym_id = ? AND ${guardSql}`,
+      [...params, purchaseId, gymId, ...guardParams],
+    );
+    changed += rowCount;
   }
-  return rowCount;
+  return changed;
 }
 
 /**
  * Locks a member's purchase before one of the writers above moves it (a repeat cancel waits here).
- * The snapshot row is locked, not the record: every writer writes the snapshot, so it serialises
- * them exactly as the record's lock did, and it is the row that survives stage 5d.
+ * The snapshot row is locked: it is the row every writer writes.
  */
 export async function lockPurchase(tx: Conn, gymId: string, memberId: number, purchaseId: number): Promise<boolean> {
   for (const table of SNAPSHOT_TABLES) {
