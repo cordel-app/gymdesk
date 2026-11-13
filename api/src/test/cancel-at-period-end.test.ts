@@ -108,12 +108,14 @@ describe('access until ends_at', () => {
     const m = await member();
     const um = await assign(m);
     expect(await centers(m)).toHaveLength(1);
-    await db.query(
-      `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() + INTERVAL 10 DAY WHERE id = ?`,
-      [CANCELS_AT_PERIOD_END_STATUS, um]);
+    // Cancelled through the route: the plan runs to its last paid day (today).
+    expect((await cancel(um)).status).toBe(204);
+    expect((await stored(um)).status).toBe(CANCELS_AT_PERIOD_END_STATUS);
     expect(await centers(m)).toHaveLength(1);
-    // Past its end date but before the sweep has run: no access.
+    // Past its end date but before the sweep has run: no access. #2125 M6b-3: the access readers
+    // ask the assignment's plan snapshot, so the date is moved there as well as on the legacy row.
     await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [um]);
     expect(await centers(m)).toEqual([]);
   });
 });

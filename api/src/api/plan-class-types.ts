@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { entitledAssignmentSql } from '../domain/assignmentStatus';
+import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { registerBookingAccessHook } from './bookings';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * P2.7: /membership-plans/:id/class-types — nested list/replace.
@@ -83,15 +82,12 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
   // mapped plans, either as the owner or as a Member covered by a multi-member
   // Membership (#374)?
   const { rows: matchRows } = await tx.query(
-    `SELECT um.id
-     FROM user_memberships um
+    `SELECT pa.assignment_id
+     FROM plan_snapshots pa
      JOIN class_type_user_memberships ctum
-       ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
-       AND EXISTS (
-         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-       )
+       ON ctum.membership_plan_id = pa.membership_plan_id AND ctum.gym_id = pa.gym_id
+     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
+       AND ${assignmentCoversMemberSql('pa')}
        AND ctum.class_type_id = ?
      LIMIT 1`,
     [gymId, memberId, classTypeId],

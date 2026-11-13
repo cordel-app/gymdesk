@@ -4,7 +4,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
-import { entitledAssignmentSql } from '../domain/assignmentStatus';
+import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -106,7 +106,6 @@ import {
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -926,14 +925,11 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 SELECT COUNT(*) FROM class_type_user_memberships ctum
                 WHERE ctum.activity_type_id = ce.activity_type_id AND ctum.gym_id = ce.gym_id
               ) > 0 AND NOT EXISTS (
-                SELECT 1 FROM user_memberships um
+                SELECT 1 FROM plan_snapshots pa
                 JOIN class_type_user_memberships ctum
-                  ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-                WHERE um.gym_id = ce.gym_id AND ${entitledAssignmentSql('um')}
-                  AND EXISTS (
-                    SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-                    WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-                  )
+                  ON ctum.membership_plan_id = pa.membership_plan_id AND ctum.gym_id = pa.gym_id
+                WHERE pa.gym_id = ce.gym_id AND ${entitlingAssignmentSql('pa')}
+                  AND ${assignmentCoversMemberSql('pa')}
                   AND ctum.activity_type_id = ce.activity_type_id
               ) AS access_locked
        FROM calendar_events ce

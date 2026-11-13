@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, syncTestAssignmentSnapshots,
   createTestGym, createTestMembership, request,
 } from './helpers';
 
@@ -127,6 +127,7 @@ describe('GET /members/:memberId/centers/effective-access', () => {
     const um = await assign(m, await plan('specific_centers', [centerA]));
     expect((await read(m)).body.specific_centers).toHaveLength(1);
     await db.query(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [um]);
+    await syncTestAssignmentSnapshots(um);
     expect((await read(m)).body.specific_centers).toEqual([]);
   });
 });
