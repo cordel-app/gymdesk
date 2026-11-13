@@ -156,5 +156,6 @@ export function choosingOwesNothing(plan: MemberPlanOffer, appliedPromotionId: n
 export function assignErrorKey(message: string | null | undefined): string {
   if (message === 'active_plan_exists') return 'membership.add_plan_replace_body';
   if (message === 'plan_pending_payment') return 'membership.add_plan_pending_error';
+  if (message === 'family_owner_only') return 'membership.family_owner_only';
   return 'membership.add_plan_error';
 }

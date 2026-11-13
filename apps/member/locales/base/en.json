@@ -552,6 +552,7 @@
     "summary_error_generic": "Your selection could not be confirmed. Please try again.",
     "summary_error_unresolved": "A payment is still being processed. Please try again later.",
     "add_product": "+ Add Product",
+    "family_owner_only": "Only your family owner can add plans and products.",
     "cart_heading": "Your cart",
     "cart_plans": "{count, plural, one {# Plan} other {# Plans}}",
     "cart_products": "{count, plural, one {# Product} other {# Products}}",
