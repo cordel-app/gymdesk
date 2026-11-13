@@ -1,5 +1,5 @@
 import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
-import { memberMayAddPlansAndProducts, refuseUnlessMayAdd } from './family-add-rights';
+import { memberMayAddPlansAndProducts, memberMayViewPayments, refuseUnlessMayAdd, refuseUnlessMayViewPayments } from './family-add-rights';
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
@@ -2337,7 +2337,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // #2770: whether this member may add Plans and Products (the Family Owner); the
     // add routes refuse anyone else, this only lets the app hide the actions.
     const can_add_plans_and_products = await memberMayAddPlansAndProducts(db, gymId, memberId);
-    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships, pending_membership, active_products_count, professional_service_sessions, can_add_plans_and_products });
+    // #2776: whether this member sees the Payments tab (the Family Owner); the two
+    // reads it draws from refuse anyone else, this only lets the app hide the tab.
+    const can_view_payments = await memberMayViewPayments(db, gymId, memberId);
+    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships, pending_membership, active_products_count, professional_service_sessions, can_add_plans_and_products, can_view_payments });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.
@@ -2419,6 +2422,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       active_products_count,
       professional_service_sessions,
       can_add_plans_and_products,
+      can_view_payments,
     });
   } catch (err) {
     next(err);
@@ -2969,6 +2973,8 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #2776: the Payments tab is the Family Owner's.
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
     const { rows: countRows } = await db.query(
       `SELECT COUNT(*) AS total FROM billing_events be
         WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'`,
@@ -3018,6 +3024,8 @@ meRouter.get('/billing-event-forecast', requireRole('member'), requireFeatureEna
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #2776: the Payments tab is the Family Owner's.
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
     res.json(await memberBillingEventForecast(gymId, memberId));
   } catch (err) {
     next(err);
