@@ -13,7 +13,7 @@
  */
 import { themeHomeImageUrl } from '../domain/themeHomeImage';
 import { effectiveImageUrlSql } from '../domain/effectiveExerciseImage';
-import { assignmentPlanSnapshotId } from './assignment-config';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
@@ -29,7 +29,6 @@ import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 import { loadServiceCapacityViews } from './service-capacity';
 import { incompleteServiceRows, type IncompleteServiceRow } from '../domain/incompleteClasses';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export const homeDashboardRouter = Router();
 
@@ -195,19 +194,21 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
 /** Task D: members holding plan-included service sessions with none booked ahead. */
 async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
   const { rows: pairs } = await db.query<{ member_id: number; member_name: string; ps_id: number; ps_name: string }>(
-    `SELECT DISTINCT mm.member_id, m.name AS member_name, ps.id AS ps_id, ps.name AS ps_name
-       FROM user_memberships um
-       JOIN plan_session_snapshots umss ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id
-       JOIN product_professional_services pps ON pps.product_id = umss.product_id AND pps.gym_id = um.gym_id
+    // #2125 M6b-5: the assignment is its current plan snapshot, whose session lines are the ones the
+    // wallet grants from; its members are the owner and that snapshot's beneficiaries.
+    `SELECT DISTINCT m.id AS member_id, m.name AS member_name, ps.id AS ps_id, ps.name AS ps_name
+       FROM plan_snapshots pa
+       JOIN plan_session_snapshots umss ON umss.plan_snapshot_id = pa.id AND umss.gym_id = pa.gym_id
+       JOIN product_professional_services pps ON pps.product_id = umss.product_id AND pps.gym_id = pa.gym_id
        JOIN professional_services ps ON ps.id = pps.professional_service_id AND ps.deleted_at IS NULL
        JOIN gym_professional_services gps
-         ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-       JOIN (SELECT id AS um_id, member_id FROM user_memberships
-             UNION
-             SELECT user_membership_id, member_id FROM ${ASSIGNMENT_BENEFICIARIES} umm) mm ON mm.um_id = um.id
-       JOIN members m ON m.id = mm.member_id AND m.gym_id = um.gym_id AND m.deleted_at IS NULL
-      WHERE um.gym_id = ? AND um.status = 'active'
-        AND um.starts_at <= UTC_DATE() AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())
+         ON gps.professional_service_id = ps.id AND gps.gym_id = pa.gym_id AND gps.status = 'active'
+       JOIN members m ON m.gym_id = pa.gym_id AND m.deleted_at IS NULL
+        AND (m.id = pa.member_id OR EXISTS (
+              SELECT 1 FROM plan_snapshot_beneficiaries pab
+               WHERE pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id AND pab.member_id = m.id))
+      WHERE pa.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+        AND pa.starts_at <= UTC_DATE() AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())
       ORDER BY m.name ASC
       LIMIT ${SERVICE_TASK_MEMBER_CAP * 4}`,
     [gymId],
