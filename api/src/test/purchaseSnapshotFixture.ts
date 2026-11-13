@@ -35,7 +35,13 @@ export async function registerTestPurchaseId(tx: Conn, gymId: string, purchaseId
   await tx.query('INSERT IGNORE INTO product_purchase_ids (id, gym_id) VALUES (?, ?)', [purchaseId, gymId]);
 }
 
-/** Re-derives the snapshot of one bought one-time Product (and the Promotions frozen onto it). */
+/**
+ * Re-derives the snapshot of one bought one-time Product (and the Promotions frozen onto it). Since
+ * stage 5d-4 a purchase Promotion's snapshot id is its id (`source_purchase_promotion_id = id`), so a
+ * hand-inserted legacy Promotion row's snapshot is written under the legacy id, as the writer would have
+ * (unless a line-owned application's snapshot already holds that id: the row then takes a fresh one,
+ * which is above the legacy id, so no later writer can take the legacy id either).
+ */
 export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, purchaseId: number): Promise<void> {
   const { rows } = await tx.query<{ product_type: string | null }>(
     'SELECT product_type FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ?', [purchaseId, gymId]);
@@ -89,9 +95,10 @@ export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, pu
     [gymId, purchaseId, gymId, purchaseId]);
   await tx.query(
     `INSERT INTO product_promotion_snapshots
-       (gym_id, member_id, ${parentCol}, source_purchase_promotion_id, promotion_id, promotion_name, status,
+       (id, gym_id, member_id, ${parentCol}, source_purchase_promotion_id, promotion_id, promotion_name, status,
         benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at, created_at)
-     SELECT pp.gym_id, par.member_id, par.id, pp.id, pp.promotion_id, pp.promotion_name, 'applied',
+     SELECT IF(EXISTS (SELECT 1 FROM product_promotion_snapshots y WHERE y.id = pp.id), NULL, pp.id),
+            pp.gym_id, par.member_id, par.id, pp.id, pp.promotion_id, pp.promotion_name, 'applied',
             pp.benefit_action, pp.benefit_value, pp.duration_cycles, pp.regular_amount, pp.final_amount,
             pp.applied_at, pp.applied_at
        FROM member_products_oneoff_promotion_snapshot pp

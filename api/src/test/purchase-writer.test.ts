@@ -253,6 +253,48 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
     expect(next).toBeGreaterThan(sessions);
   });
 
+  it('takes a purchase Promotion id from its snapshot, which the legacy row mirrors (#2126 stage 5d-4)', async () => {
+    const m = await member();
+    const top = async () => Number((await db.query<any>(
+      `SELECT GREATEST(
+          COALESCE((SELECT MAX(id) FROM member_products_oneoff_promotion_snapshot), 0),
+          COALESCE((SELECT MAX(id) FROM product_promotion_snapshots), 0)) AS top`)).rows[0].top);
+    const before = await top();
+    // Open a gap between the two sequences (line-owned applications advance the snapshot's alone), so
+    // an id the legacy table allocated could not pass for the snapshot's.
+    await db.query(`ALTER TABLE product_promotion_snapshots AUTO_INCREMENT = ${before + 50}`);
+    const ids: number[] = [];
+    for (const type of ['fee', 'sessions'] as const) {
+      const p = await product({ name: `Writer promo id ${type} ${uniq()}`, amount: '60.00', type });
+      const promo = await promotion({ name: `Writer promo id ${uniq()}` });
+      await grant(promo, p, type === 'sessions' ? 'session' : 'oneoff', 'percentage_discount', 50);
+      const saved = await auth(request.post(base(m))).send({ product_id: p, promotion_ids: [promo], draft: true });
+      expect(saved.status).toBe(201);
+      const purchaseId = Number(saved.body.purchaseId);
+      const parent = type === 'sessions' ? 'product_session_snapshot_id' : 'product_oneoff_snapshot_id';
+      const { rows } = await db.query<any>(
+        `SELECT pp.id, pp.source_purchase_promotion_id, x.id AS legacy_id, x.final_amount AS legacy_final, pp.final_amount
+           FROM product_promotion_snapshots pp
+           JOIN ${SNAPSHOT_TABLE[type]} s ON s.id = pp.${parent}
+           LEFT JOIN member_products_oneoff_promotion_snapshot x ON x.id = pp.id
+          WHERE s.source_id = ?`, [purchaseId]);
+      expect(rows).toHaveLength(1);
+      const id = Number(rows[0].id);
+      expect(Number(rows[0].source_purchase_promotion_id)).toBe(id);
+      expect(Number(rows[0].legacy_id)).toBe(id);
+      expect(rows[0].legacy_final).toBe(rows[0].final_amount);
+      expect(id).toBeGreaterThan(before);
+      ids.push(id);
+
+      // The purchase list reports the application under that id.
+      const list = await auth(request.get(`/members/${m}/products`));
+      expect(list.status).toBe(200);
+      const item = (list.body.items as any[]).find((i) => Number(i.id) === purchaseId);
+      expect(item.promotions.map((a: any) => Number(a.id))).toEqual([id]);
+    }
+    expect(ids[1]).toBeGreaterThan(ids[0]);
+  });
+
   it("cannot cancel another member's purchase (the snapshot lock is scoped to the member)", async () => {
     const owner = await member();
     const other = await member();

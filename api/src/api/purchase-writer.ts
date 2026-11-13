@@ -14,7 +14,8 @@
  * `product_purchase_ids` since stage 5d-3 (`allocatePurchaseId()`): a purchase's snapshot lives in one
  * of two tables, each with its own sequence, so neither can allocate an id unique across both. The
  * snapshot and the legacy record are written under that id; migration 413 registered every historical
- * id and put the allocator above them, so a new id can never meet one.
+ * id and put the allocator above them, so a new id can never meet one. A Promotion frozen onto a
+ * purchase takes its id from its own snapshot row since stage 5d-4 (`insertPurchasePromotion()`).
  *
  * The two halves are written with the same values, timestamps included (one `now` per write), so
  * `npm run product-snapshots:validate` can compare them field by field.
@@ -129,8 +130,12 @@ export interface PurchasePromotionStep {
 
 /**
  * #1118 §7 / #1521 — freezes one applied Promotion onto a purchase written by `insertPurchase()`
- * in the same transaction (the record's row and the snapshot's row, the latter under its purchase
- * snapshot, keyed back to the record's row by `source_purchase_promotion_id`).
+ * in the same transaction (the snapshot's row under its purchase snapshot, and the record's row).
+ *
+ * Since #2126 stage 5d-4 the Promotion's id comes from its snapshot: the `product_promotion_snapshots`
+ * row is inserted first and its own id becomes `source_purchase_promotion_id` (what the purchase reads
+ * report the application under), and the legacy row is written under that same id, so the legacy
+ * table allocates nothing. Migration 414 put the snapshot's sequence above every historical id.
  */
 export async function insertPurchasePromotion(
   tx: Conn,
@@ -144,23 +149,26 @@ export async function insertPurchasePromotion(
     step.promotion_id, step.promotion_name, step.action, money(step.value), step.duration_cycles,
     money(step.regular_amount), money(step.final_amount), now,
   ];
-  const { insertId } = await tx.query(
-    `INSERT INTO member_products_oneoff_promotion_snapshot
-       (gym_id, member_product_id, promotion_id, promotion_name,
-        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, purchaseId, ...values],
-  );
   const table = purchaseSnapshotTable(productType);
-  const { rowCount } = await tx.query(
+  const { insertId } = await tx.query(
     `INSERT INTO product_promotion_snapshots
-       (gym_id, member_id, ${parentColumn(table)}, source_purchase_promotion_id, promotion_id, promotion_name, status,
+       (gym_id, member_id, ${parentColumn(table)}, promotion_id, promotion_name, status,
         benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at, created_at)
-     SELECT s.gym_id, s.member_id, s.id, ?, ?, ?, 'applied', ?, ?, ?, ?, ?, ?, ?
+     SELECT s.gym_id, s.member_id, s.id, ?, ?, 'applied', ?, ?, ?, ?, ?, ?, ?
        FROM ${table} s WHERE s.gym_id = ? AND s.source_id = ?`,
-    [insertId, ...values, now, gymId, purchaseId],
+    [...values, now, gymId, purchaseId],
   );
-  if (rowCount !== 1) throw new Error(`Purchase ${purchaseId} has no snapshot to freeze its Promotion onto`);
+  if (!insertId) throw new Error(`Purchase ${purchaseId} has no snapshot to freeze its Promotion onto`);
+  const promotionId = Number(insertId);
+  await tx.query(
+    'UPDATE product_promotion_snapshots SET source_purchase_promotion_id = id WHERE id = ?', [promotionId]);
+  await tx.query(
+    `INSERT INTO member_products_oneoff_promotion_snapshot
+       (id, gym_id, member_product_id, promotion_id, promotion_name,
+        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [promotionId, gymId, purchaseId, ...values],
+  );
 }
 
 /**
