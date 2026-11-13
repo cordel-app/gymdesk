@@ -107,6 +107,7 @@ describe('gate: audited tables', () => {
    */
   const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
     { file: 'api/membership-promotions.ts', table: 'user_membership_promotions', why: '#2624 stage 4: a Draft application\'s snapshot re-captured and stamped confirmed at Save & Pay; modified_by on an application records who revoked it, which this is not' },
+    { file: 'api/recurring-line-writer.ts', table: 'user_membership_promotions', why: '#2126 stage 5c-2c: ownRecurringLine() moves the set\'s line-owned applications onto the set\'s copy of a shared line; modified_by on an application records who revoked it, which this is not' },
     { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
     { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/product-image-storage.ts', table: 'products', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },

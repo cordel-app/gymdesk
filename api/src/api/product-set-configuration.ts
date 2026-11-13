@@ -24,7 +24,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { productSetHistoryIds } from './product-set-history';
-import { insertRecurringLine, updateRecurringLine } from './recurring-line-writer';
+import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -287,7 +287,9 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
       }
       if (scheduleId != null) {
         if (table === 'member_products_recurrent_snapshot') {
-          await updateRecurringLine(tx, gymId, row.id, { schedule_id: scheduleId });
+          // #2126 stage 5c-2c: a line another Product Set links is copied for this one before it is written.
+          const lineId = await ownRecurringLine(tx, gymId, productSetId, row.id);
+          if (lineId != null) await updateRecurringLine(tx, gymId, lineId, { schedule_id: scheduleId });
         } else {
           await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ? AND gym_id = ?`, [scheduleId, row.id, gymId]);
         }
