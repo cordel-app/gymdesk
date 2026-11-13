@@ -50,7 +50,7 @@ exports.up = async (knex) => {
   for (const { table } of PURCHASE_TABLES) {
     const [dups] = await knex.raw(
       `SELECT ${KEY_SQL} AS k, COUNT(*) AS n FROM ${table}
-        WHERE status = 'pending_payment' AND member_product_id IS NOT NULL
+        WHERE status = 'pending_payment' AND member_product_id IS NOT NULL AND product_id IS NOT NULL
         GROUP BY k HAVING n > 1`);
     if (dups.length > 0) {
       throw new Error(`migration 411: ${table} holds ${dups.length} duplicated pending purchase key(s): ${dups.slice(0, 20).map((r) => r.k).join(', ')}`);
@@ -84,6 +84,11 @@ exports.down = async (knex) => {
       await knex.raw(`ALTER TABLE ${table} DROP INDEX ${abbr}_pending_purchase_key, DROP COLUMN pending_purchase_key`);
     }
     if (!(await fkExists(knex, table, `${abbr}_purchase_fk`))) {
+      // A purchase record deleted while the FK was gone left its id behind; clear it as SET NULL would have.
+      await knex.raw(
+        `UPDATE ${table} t SET member_product_id = NULL
+          WHERE member_product_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM member_products_oneoff_snapshot mp WHERE mp.id = t.member_product_id)`);
       await knex.raw(
         `ALTER TABLE ${table} ADD CONSTRAINT ${abbr}_purchase_fk
            FOREIGN KEY (member_product_id) REFERENCES member_products_oneoff_snapshot (id) ON DELETE SET NULL`);
