@@ -49,8 +49,12 @@ import {
   cartCounts,
   cartErrorKey,
   cartItems,
+  cartItemsRemovable,
+  cartPendingAmount,
+  cartPhase,
   cartProductState,
   hasCart,
+  pendingCartCancelErrorKey,
 } from '@/lib/memberCart';
 import { RETRY_PAYMENT_PARAM, wantsPaymentRetry } from '@/lib/paymentReturn';
 import {
@@ -327,6 +331,8 @@ export default function MembershipPage() {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [cartBusy, setCartBusy] = useState<string | null>(null);
   const [cartError, setCartError] = useState<string | null>(null);
+  // #2746 stage 3 — the cart awaiting payment is cancelled as a whole (#2747), after a confirmation.
+  const [confirmPendingCancel, setConfirmPendingCancel] = useState(false);
 
   // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
   // the Promotion applied per plan is page state (its snapshot is written by
@@ -612,6 +618,27 @@ export default function MembershipPage() {
     }
   }
 
+  /**
+   * #2746 stage 3 — the cart awaiting payment is cancelled as one purchase,
+   * through #2747's route: the version is kept as `cancelled` with its items,
+   * and the server refuses while a payment settled or is still in flight.
+   */
+  async function cancelPendingCart() {
+    if (!setView || setView.status !== 'pending_payment' || commitBusy) return;
+    setCommitBusy(true);
+    setCommitError(null);
+    try {
+      await apiFetch(`/me/product-sets/${setView.id}/cancel`, { method: 'POST' });
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      setCommitError(pendingCartCancelErrorKey(err?.message));
+      await loadSetView();
+    } finally {
+      setCommitBusy(false);
+      setConfirmPendingCancel(false);
+    }
+  }
+
   const pendingRequest = paymentRequests
     .find(r => r.status === 'pending' && isMembershipFeeRequest(r.source)) ?? null;
   const showStartPayment = !pendingRequest
@@ -623,7 +650,11 @@ export default function MembershipPage() {
   // #1108 stage 2: the plan awaiting its first payment is what Pay now is
   // for while one exists — `POST /me/payment-requests` picks it ahead of an
   // active plan for the same reason.
-  const consentAmount = pendingRequest
+  // #2746 stage 3: a cart awaiting payment is paid as one, for its initial event's amount.
+  const pendingCartAmount = cartPhase(setView, appMember?.id ?? null) === 'pending_payment' ? cartPendingAmount(setView) : null;
+  const consentAmount = pendingCartAmount != null
+    ? pendingCartAmount.toFixed(2)
+    : pendingRequest
     ? parseFloat(pendingRequest.amount).toFixed(2)
     : pendingMembership?.membership_fee != null ? pendingMembership.membership_fee.toFixed(2)
     : membership?.membership_fee != null ? membership.membership_fee.toFixed(2) : '';
@@ -774,7 +805,9 @@ export default function MembershipPage() {
   function renderMyPlans() {
     if (!setViewLoaded) return null;
     const plans = setPlans(setView);
-    const payablePlanId = pendingPaymentPlanSnapshotId(setView, appMember?.id ?? null);
+    // #2746 stage 3 (§7): while the cart carries the pending payment, no plan card repeats it.
+    const payablePlanId = cartPhase(setView, appMember?.id ?? null) === 'pending_payment'
+      ? null : pendingPaymentPlanSnapshotId(setView, appMember?.id ?? null);
     return (
       <section style={styles.section}>
         <h2 style={styles.h2}>{t('membership.my_plans_heading')}</h2>
@@ -1006,7 +1039,7 @@ export default function MembershipPage() {
     // #2744 — a version awaiting payment is paid and cancelled from its plan
     // card; this notice is left only for a version that has no billed plan.
     if (setView?.status === 'pending_payment' && appMember != null && setView.owner_member_id === appMember.id
-      && pendingPaymentPlanSnapshotId(setView, appMember.id) == null) {
+      && pendingPaymentPlanSnapshotId(setView, appMember.id) == null && cartPhase(setView, appMember.id) == null) {
       return (
         <section style={styles.section}>
           <div style={{ ...noticeStyle('info'), display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
@@ -1113,6 +1146,71 @@ export default function MembershipPage() {
   }
 
   /**
+   * #2746 stage 3 (§6) — the cart once its payment has started: the same items,
+   * still grouped as one purchase, headed *You have a pending payment* with the
+   * amount being paid (the initial event's, `pending_amount`). Pay retries the
+   * one payment through the existing consent and checkout; Cancel cancels the
+   * whole purchase after a confirmation (#2747). No item leaves on its own.
+   */
+  function renderPendingCart() {
+    const { plans, products } = cartCounts(setView);
+    const items = cartItems(setView);
+    const amount = cartPendingAmount(setView);
+    const total = amount == null ? '—' : formatPaymentAmount(amount, 'EUR', gymFmt);
+    const busy = commitBusy || submitting;
+    const counts = [
+      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
+      products > 0 ? t('membership.cart_products', { count: products }) : null,
+    ].filter(Boolean).join(' · ');
+    return (
+      <section style={styles.section} data-cart data-cart-pending>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t('membership.cart_pending_heading')}</h2>
+              <span style={cartMutedStyle}>{counts}</span>
+              <span style={cartTotalStyle} data-cart-total>{total}</span>
+              <span style={cartMutedStyle}>{t('membership.cart_pending_hint')}</span>
+            </div>
+            <div style={styles.cartActions}>
+              <button
+                type="button"
+                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy ? styles.busy : null) }}
+                disabled={busy}
+                onClick={openConsent}
+              >
+                {t('membership.cart_pay')}
+              </button>
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
+                disabled={busy}
+                onClick={() => setConfirmPendingCancel(true)}
+              >
+                {t('membership.cart_cancel')}
+              </button>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                  {item.kind === 'purchase' && (
+                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
+        </div>
+      </section>
+    );
+  }
+
+  /**
    * #2746 stage 2 — the shopping cart (§4): the member's Draft Product Set as
    * one purchase, at the top of My Products. The counts are the server's
    * (`cart`), the total is the server's review (`commitCharge()`, the figure
@@ -1120,7 +1218,9 @@ export default function MembershipPage() {
    * actions commit or discard the whole Draft. Nothing here prices anything.
    */
   function renderCart() {
-    if (!hasCart(setView)) return null;
+    const phase = cartPhase(setView, appMember?.id ?? null);
+    if (phase == null) return null;
+    if (phase === 'pending_payment') return renderPendingCart();
     const { plans, products } = cartCounts(setView);
     const items = cartItems(setView);
     const action = cartCommitAction(setView, review);
@@ -1182,14 +1282,14 @@ export default function MembershipPage() {
                     <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
                   )}
                 </span>
-                <button
+                {cartItemsRemovable(setView) && (<button
                   type="button"
                   style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
                   disabled={busy}
                   onClick={() => removeCartItem(item)}
                 >
                   {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-                </button>
+                </button>)}
               </li>
             ))}
           </ul>
@@ -1978,6 +2078,37 @@ export default function MembershipPage() {
               )}
             >
               <p style={styles.modalBody}>{t('membership.cart_discard_body')}</p>
+            </MemberDialog>
+          )}
+
+          {/* #2746 stage 3 — cancelling a cart awaiting payment cancels the whole purchase (#2747), so it asks first. */}
+          {confirmPendingCancel && (
+            <MemberDialog
+              labelledBy="cart-pending-cancel-title"
+              title={t('membership.cart_pending_cancel_title')}
+              onClose={commitBusy ? () => {} : () => setConfirmPendingCancel(false)}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    style={styles.dialogSecondary}
+                    onClick={() => setConfirmPendingCancel(false)}
+                    disabled={commitBusy}
+                  >
+                    {t('membership.cart_pending_cancel_keep')}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...styles.dialogPrimary, ...(commitBusy ? styles.busy : null) }}
+                    onClick={cancelPendingCart}
+                    disabled={commitBusy}
+                  >
+                    {t('membership.cart_pending_cancel_confirm')}
+                  </button>
+                </>
+              )}
+            >
+              <p style={styles.modalBody}>{t('membership.cart_pending_cancel_body')}</p>
             </MemberDialog>
           )}
 

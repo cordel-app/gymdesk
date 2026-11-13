@@ -574,7 +574,15 @@
     "cart_discard_confirm": "Cancelar carrito",
     "cart_discard_keep": "Mantener el carrito",
     "cart_error_already_in_cart": "Este producto ya está en tu carrito.",
-    "cart_error_one_per_member": "Ya tienes este producto y solo se puede tener una vez."
+    "cart_error_one_per_member": "Ya tienes este producto y solo se puede tener una vez.",
+    "cart_pending_heading": "Tienes un pago pendiente",
+    "cart_pending_hint": "El pago de esta compra ya se ha iniciado. Paga para completarla o cancela la compra entera.",
+    "cart_pending_cancel_title": "¿Cancelar esta compra?",
+    "cart_pending_cancel_body": "Se cancelarán todos los planes y productos de esta compra y no se cobrará nada más por ella. Seguirá en tu historial.",
+    "cart_pending_cancel_confirm": "Cancelar compra",
+    "cart_pending_cancel_keep": "Mantener mi compra",
+    "cart_pending_error_settled": "Este pago ya se ha completado, así que la compra ya no se puede cancelar aquí. Contacta con tu gimnasio.",
+    "cart_pending_error_generic": "No se ha podido cancelar la compra. Inténtalo de nuevo."
   },
   "payments": {
     "title": "Pagos",

@@ -822,9 +822,28 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
     // #2746: the one-time Products in the cart, and what the cart holds, for the owner only.
     const isOwner = Number(owned.set.owner_member_id) === owned.memberId;
     const purchases = isOwner ? (await loadSetPurchases(db, gymId, Number(owned.set.id))).map(({ snapshot_id, snapshot_table, member_id, validity_days, ...p }) => p) : [];
-    res.json({ ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }) });
+    // #2746 stage 3: a version awaiting payment says what the cart's Pay charges —
+    // the initial event Save & Pay wrote, never a figure re-priced for the read.
+    const pending_amount = isOwner && owned.set.status === 'pending_payment'
+      ? await loadPendingInitialAmount(gymId, Number(owned.set.id)) : null;
+    res.json({ ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }), pending_amount });
   } catch (err) { next(err); }
 });
+
+/**
+ * #2746 stage 3 — the amount a Pending Payment version is being paid for: its
+ * latest live initial `payment_recorded` event (the figure every attempt on it,
+ * the member's Pay now included, charges). `null` when it has none.
+ */
+async function loadPendingInitialAmount(gymId: string, productSetId: number): Promise<number | null> {
+  const { rows } = await db.query<{ amount: string | number }>(
+    `SELECT be.amount FROM billing_events be
+      WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
+        AND be.cancelled_at IS NULL
+      ORDER BY be.id DESC LIMIT 1`,
+    [gymId, productSetId]);
+  return rows[0] ? Number(rows[0].amount) : null;
+}
 
 /**
  * #2663 — the read of `GET /me/product-sets/:id` also answers a covered family

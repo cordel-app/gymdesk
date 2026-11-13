@@ -574,7 +574,15 @@
     "cart_discard_confirm": "Cancel cart",
     "cart_discard_keep": "Keep my cart",
     "cart_error_already_in_cart": "This product is already in your cart.",
-    "cart_error_one_per_member": "You already have this product, and it can only be held once."
+    "cart_error_one_per_member": "You already have this product, and it can only be held once.",
+    "cart_pending_heading": "You have a pending payment",
+    "cart_pending_hint": "Payment has started for this purchase. Pay to complete it, or cancel the whole purchase.",
+    "cart_pending_cancel_title": "Cancel this purchase?",
+    "cart_pending_cancel_body": "Every plan and product in this purchase will be cancelled and nothing more will be charged for it. It stays in your history.",
+    "cart_pending_cancel_confirm": "Cancel purchase",
+    "cart_pending_cancel_keep": "Keep my purchase",
+    "cart_pending_error_settled": "This payment has already gone through, so the purchase can no longer be cancelled here. Please contact your gym.",
+    "cart_pending_error_generic": "The purchase could not be cancelled. Please try again."
   },
   "payments": {
     "title": "Payments",
