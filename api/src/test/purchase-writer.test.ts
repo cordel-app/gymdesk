@@ -222,6 +222,37 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
     expect(await promotionCounts(draftId, 'fee')).toEqual({ record: 0, snapshot: 0 });
   });
 
+  it('takes every purchase id from the one allocator, unique across both snapshot tables (#2126 stage 5d-3)', async () => {
+    const m = await member();
+    const top = async () => Number((await db.query<any>(
+      `SELECT GREATEST(
+          COALESCE((SELECT MAX(id) FROM member_products_oneoff_snapshot), 0),
+          COALESCE((SELECT MAX(source_id) FROM product_session_snapshots), 0),
+          COALESCE((SELECT MAX(source_id) FROM product_oneoff_snapshots), 0)) AS top`)).rows[0].top);
+    const before = await top();
+    const draft = async (type: 'fee' | 'sessions') => {
+      const p = await product({ name: `Writer id ${type} ${uniq()}`, amount: '20.00', type });
+      const res = await auth(request.post(base(m))).send({ product_id: p, draft: true });
+      expect(res.status).toBe(201);
+      return Number(res.body.purchaseId);
+    };
+    const fee = await draft('fee');
+    const sessions = await draft('sessions');
+    expect(fee).toBeGreaterThan(before);
+    expect(sessions).toBeGreaterThan(fee);
+
+    // Each id is registered once, for the gym, and the record and the snapshot carry it.
+    const { rows } = await db.query<any>('SELECT id, gym_id FROM product_purchase_ids WHERE id IN (?, ?) ORDER BY id', [fee, sessions]);
+    expect(rows).toEqual([{ id: fee, gym_id: gymId }, { id: sessions, gym_id: gymId }]);
+    expectEqual(await pair(fee, 'fee'));
+    expectEqual(await pair(sessions, 'sessions'));
+
+    // A discarded draft's id is never handed out again.
+    expect((await auth(request.delete(`${base(m)}/${sessions}`))).status).toBe(200);
+    const next = await draft('sessions');
+    expect(next).toBeGreaterThan(sessions);
+  });
+
   it("cannot cancel another member's purchase (the snapshot lock is scoped to the member)", async () => {
     const owner = await member();
     const other = await member();

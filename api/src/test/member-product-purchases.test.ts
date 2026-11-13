@@ -10,6 +10,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
+import { registerTestPurchaseId } from './purchaseSnapshotFixture';
 
 vi.mock('../payments', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../payments')>();
@@ -146,10 +147,11 @@ describe('who is offered what (#1521 decisions 1 and 3)', () => {
     const once = await product({ name: 'Registration fee', frequency: 'once' });
     const weekly = await product({ name: 'One class per week', frequency: 'month' });
     for (const id of [once, weekly]) {
-      await db.query(
+      const { insertId } = await db.query(
         `INSERT INTO member_products_oneoff_snapshot
            (gym_id, member_id, product_id, status, product_name, product_type, amount, currency)
          VALUES (?, ?, ?, 'active', 'x', 'fee', 10.00, 'EUR')`, [gymId, m, id]);
+      await registerTestPurchaseId(db, gymId, Number(insertId));
     }
     const res = await auth(request.get(`${base(m)}/catalogue`));
     const ids = res.body.items.map((i: any) => i.id);

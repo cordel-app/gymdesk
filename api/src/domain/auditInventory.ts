@@ -109,6 +109,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "product_periodical_snapshots": ["parent", "product_sets (a recurring Product line of one version, #2126)"],
   "product_promotion_snapshots": ["parent", "product snapshots (a Promotion applied to a purchase or a recurring line, #2126)"],
   "product_promotion_grant_snapshots": ["parent", "product_promotion_snapshots"],
+  "product_purchase_ids": ["technical", "purchase id allocator and registry (#2126 stage 5d-3): one row per one-time purchase id, written by the purchase writer"],
   "plan_promotion_snapshots": ["parent", "plan_snapshots"],
   "plan_promotion_session_product_snapshots": ["parent", "plan_promotion_snapshots"],
   "plan_promotion_oneoff_product_snapshots": ["parent", "plan_promotion_snapshots"],
