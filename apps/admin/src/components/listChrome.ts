@@ -60,6 +60,22 @@ export const listExpandedStyle: React.CSSProperties = {
 };
 
 /**
+ * #2783 — content that belongs to one row (a Product's Promotion), drawn under
+ * it as a child: indented past the row's own inset and hung off a rail in the
+ * divider colour, with no divider of its own, so it reads as part of the row
+ * above rather than as a new row or a separate section.
+ */
+export const LIST_NESTED_INDENT = LIST_PADDING_X + 24;
+export const listNestedCellStyle: React.CSSProperties = {
+  padding: `0 ${LIST_PADDING_X}px 12px ${LIST_NESTED_INDENT}px`,
+};
+export const listNestedBlockStyle: React.CSSProperties = {
+  borderLeft: `2px solid ${LIST_DIVIDER_COLOR}`,
+  paddingLeft: 12,
+  fontSize: 14,
+};
+
+/**
  * A metadata pill inside a row's name cell — `System`, `Mandatory`.
  *
  * Smaller and quieter than `StatusBadge`, which carries a row's *state* in its

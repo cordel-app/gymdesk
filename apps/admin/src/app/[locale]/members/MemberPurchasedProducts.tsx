@@ -323,6 +323,14 @@ export function MemberPurchasedProducts({
             };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}
+          // #2783 — the Promotion a purchase was bought with sits under its Product,
+          // indented as its child; a purchase with none draws no block at all.
+          renderNested={(item) => (item.promotion ? (
+            <div data-product-promotion style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span style={cardMutedTextStyle}>{t('purchase_col_applied_promotion')}:</span>
+              <span>{promotionLabel(item.promotion)}</span>
+            </div>
+          ) : null)}
           renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
       />
       {/* #1640: the action sits below the list, at the bottom of the section. */}
