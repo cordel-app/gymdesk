@@ -53,10 +53,10 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
   // #2126 stage 5d-2: the snapshot's own id becomes the line's id (`source_id`, `line_ref`).
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status,
+       (gym_id, member_id, product_id, source_id, line_ref, status,
         quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
         product_name, product_type, unit_price, billing_frequency, currency)
-     SELECT gc.gym_id, ps.owner_member_id, ps.id, gc.id, NULL, NULL, ps.status,
+     SELECT gc.gym_id, ps.owner_member_id, gc.id, NULL, NULL, ps.status,
             ?, ?, ?, ?, ?, ?,
             ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -136,11 +136,11 @@ async function copyLine(
   // #2126 stage 5d-2: the copy's snapshot id is the copy's line id.
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, status, copied_from_periodical_snapshot_id,
+       (gym_id, member_id, product_id, source_id, status, copied_from_periodical_snapshot_id,
         product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
         origin, schedule_id, line_ref, created_at, assigned_member_id)
-     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, NULL, ps.status, ?, COALESCE(?, p.name), COALESCE(?, p.type),
+     SELECT ps.gym_id, ps.owner_member_id, p.id, NULL, ps.status, ?, COALESCE(?, p.name), COALESCE(?, p.type),
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        FROM product_sets ps JOIN products p ON p.id = ?
       WHERE ps.id = ? AND ps.gym_id = ?`,

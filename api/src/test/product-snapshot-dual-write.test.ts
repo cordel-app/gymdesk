@@ -22,7 +22,11 @@ let setId: number;
 
 const auth = (r: any) => r.set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 const lines = async (set: number) =>
-  (await db.query<any>('SELECT * FROM product_periodical_snapshots WHERE gym_id = ? AND product_set_id = ?', [gymId, set])).rows;
+  (await db.query<any>(
+    // The lines `set` wrote: since #2126 stage 6b a line names no set, and its writer is the first set linking it.
+    `SELECT s.* FROM product_periodical_snapshots s
+      WHERE s.gym_id = ? AND (SELECT MIN(lk.product_set_id) FROM product_set_periodical_snapshots lk
+                               WHERE lk.product_periodical_snapshot_id = s.id) = ?`, [gymId, set])).rows;
 
 beforeAll(async () => {
   gymId = await createTestGym('Product Dual Write Gym');

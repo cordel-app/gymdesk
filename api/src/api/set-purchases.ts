@@ -4,8 +4,8 @@
  * The cart is the member's Draft Product Set (#2496). A recurring Product is a line of it; a
  * one-time Product (a Sessions package included) stays what #1657 made it — a `draft` purchase
  * (`member_products_oneoff_snapshot` + its Product snapshot) — and is **linked** to the Draft
- * through the snapshot's `product_set_id` and the `product_set_{oneoff,session}_snapshots`
- * junction (migration 366), which nothing used until now. From then on it moves with the set,
+ * through the `product_set_{oneoff,session}_snapshots` junction (migration 366; since #2126 stage 6b,
+ * migration 417, the snapshot names no set of its own). From then on it moves with the set,
  * and only with the set, through the functions below, each called from the one place the set
  * moves:
  *
@@ -18,7 +18,7 @@
  *   discard          `deleteProductSetAndOwnPlanSnapshots()` deletes them with the set
  *
  * A linked purchase is never paid on its own: the cleanup that cancels an abandoned purchase skips
- * it (`product_set_id IS NULL`), and its amount is the one `resolvePurchase()` froze — nothing here
+ * it (`purchaseSnapshotsSql(…, { notInProductSet: true })`), and its amount is the one `resolvePurchase()` froze — nothing here
  * prices anything.
  */
 import { DateTime } from 'luxon';
@@ -27,7 +27,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { deletePurchase, updatePurchase } from './purchase-writer';
-import { PURCHASE_EVENT_JUNCTIONS, syncProductSnapshotJunctions } from './snapshot-junction-sync';
+import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
 import type { SimulationLine } from '../domain/billingSimulation';
 import type { BillingEventLineRow } from '../domain/billingEventLines';
 import { lineFromSimulation } from '../domain/billingEventLines';
@@ -99,10 +99,11 @@ export async function loadSetPurchases(exec: Conn, gymId: string, productSetId: 
 /** Links a purchase (written as a draft in the same transaction) to the Draft Product Set. */
 export async function linkPurchaseToSet(tx: Conn, gymId: string, purchaseId: number, productSetId: number): Promise<void> {
   for (const arm of ARMS) {
-    await tx.query(`UPDATE ${arm.table} SET product_set_id = ? WHERE gym_id = ? AND source_id = ?`,
+    await tx.query(
+      `INSERT IGNORE INTO ${arm.setJunction} (product_set_id, ${arm.snapshotCol})
+       SELECT ?, s.id FROM ${arm.table} s WHERE s.gym_id = ? AND s.source_id = ?`,
       [productSetId, gymId, purchaseId]);
   }
-  await syncProductSnapshotJunctions(tx, gymId, productSetId);
 }
 
 /** Removes a draft purchase from the Draft (a hard delete: a draft has charged nothing). */

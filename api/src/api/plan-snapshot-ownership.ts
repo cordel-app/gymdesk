@@ -70,6 +70,13 @@ export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershi
   return ownPlanSnapshot(tx, gymId, Number(rows[0].set_id), Number(rows[0].id));
 }
 
+/** The Product junctions of a Product Set (#2126 stage 6b: the only record of the link). */
+const PRODUCT_SET_JUNCTIONS = [
+  { junction: 'product_set_periodical_snapshots', snapshotCol: 'product_periodical_snapshot_id', table: 'product_periodical_snapshots' },
+  { junction: 'product_set_session_snapshots', snapshotCol: 'product_session_snapshot_id', table: 'product_session_snapshots' },
+  { junction: 'product_set_oneoff_snapshots', snapshotCol: 'product_oneoff_snapshot_id', table: 'product_oneoff_snapshots' },
+] as const;
+
 /**
  * Deletes a Product Set and the plan snapshots only it linked (#2125 M5b). A snapshot names no Product Set
  * any more, so nothing cascades from the set to its snapshots: the set's links go with it (the junction
@@ -78,7 +85,11 @@ export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershi
  * "Draft-only snapshots are cleaned up according to their references and dependencies. Shared snapshots
  * must be preserved."). `status` guards the delete: a set in any other status is not deleted and its
  * snapshots are not touched. Answers whether the set was deleted.
+ *
+ * #2126 stage 6b: the same holds for the set's Product snapshots (its recurring lines, and a cart purchase
+ * still linked to it), which used to cascade from the set through their own `product_set_id`.
  */
+
 export async function deleteProductSetAndOwnPlanSnapshots(
   tx: Tx, gymId: string, productSetId: number, status: 'draft' | 'pending_payment',
 ): Promise<boolean> {
@@ -93,9 +104,26 @@ export async function deleteProductSetAndOwnPlanSnapshots(
     const { deleteSetPurchases } = await import('./set-purchases');
     await deleteSetPurchases(tx, gymId, productSetId, status);
   }
+  // #2126 stage 6b: a Product snapshot names no Product Set either (migration 417), so the set's recurring
+  // lines (and any cart purchase still linked) are collected before its links cascade away.
+  const ownProducts: Array<{ table: string; ids: number[] }> = [];
+  for (const j of PRODUCT_SET_JUNCTIONS) {
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT ${j.snapshotCol} AS id FROM ${j.junction} WHERE product_set_id = ?`, [productSetId]);
+    ownProducts.push({ table: j.table, ids: rows.map((r) => Number(r.id)) });
+  }
   const { rowCount } = await tx.query(
     'DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = ?', [productSetId, gymId, status]);
   if (Number(rowCount ?? 0) === 0) return false;
+  for (const { table, ids: snapIds } of ownProducts) {
+    if (snapIds.length === 0) continue;
+    const j = PRODUCT_SET_JUNCTIONS.find((x) => x.table === table)!;
+    await tx.query(
+      `DELETE FROM ${table}
+        WHERE gym_id = ? AND id IN (${snapIds.map(() => '?').join(',')})
+          AND NOT EXISTS (SELECT 1 FROM ${j.junction} lk_ WHERE lk_.${j.snapshotCol} = ${table}.id)`,
+      [gymId, ...snapIds]);
+  }
   const ids = linked.map((r) => Number(r.id));
   if (ids.length > 0) {
     await tx.query(
