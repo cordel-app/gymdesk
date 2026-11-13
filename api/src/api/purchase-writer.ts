@@ -6,7 +6,7 @@
  * its payment reached through the Billing Event junction. Stage 5b made every write go from the
  * writer's own values into those tables (and, beside them, into the legacy record); since stage 5d-5
  * the legacy record (`member_products_oneoff_snapshot`, `member_products_oneoff_promotion_snapshot`)
- * is no longer written at all: it holds the purchases made before then, frozen, until it is dropped.
+ * is no longer written at all, and since stage 5d-6 (migration 415) both tables are dropped.
  *
  * The purchase id (`source_id`, what the routes and Promotion snapshots are keyed on) comes from
  * `product_purchase_ids` since stage 5d-3 (`allocatePurchaseId()`): a purchase's snapshot lives in one
