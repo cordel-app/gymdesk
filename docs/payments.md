@@ -112,6 +112,33 @@ which cancels the pending version with it (`cancelPendingSetForAssignment()`; re
 `409 payment_unresolved` while an attempt on its event is still unresolved). See
 [Assigned Plan status model](#assigned-plan-status-model).
 
+**Cancelling a Pending Payment Product Set (#2747).** Staff (`POST /product-sets/:id/cancel`,
+PAYMENTS write) and the owning member (`POST /me/product-sets/:id/cancel`) can cancel a set that
+awaits its first payment, and the set is **kept** as `cancelled` (migration 410: the status plus
+`cancelled_at` / `cancelled_by`), unlike the expiry and the `DELETE` route, which return it to
+Draft (#1991 stage 4). `api/src/api/product-set-cancellation.ts` is the one place:
+
+1. **Ask the provider first** (`reconcileSetPayments()`, outside any transaction): every attempt
+   that was submitted and is still `pending` is read back through `settleFromProviderLookup()`.
+   A captured payment is settled (the set activates, and the cancel then answers
+   `409 not_pending_payment`); a refusal or expiry closes the attempt; an answer with no final
+   outcome only records the provider's raw status in `provider_status`.
+2. **Decide under the locks** (`pendingCancellation()`, `domain/productSet.ts`): a `completed`
+   attempt is `409 payment_settled`; an attempt whose outcome is unknown or that the provider
+   holds `AUTHORIZED` / `PENDING_PROCESSING` is `409 payment_unresolved`; a provider `PENDING`
+   (the customer never submitted the card) does not block.
+3. **Cancel, deleting nothing**: the set's Billing Events are stamped `cancelled_at` (#2480's
+   mechanism, amounts untouched), their open attempts closed as `expired` with `provider_status`
+   left exactly as the provider reported it, the assignment it carried `cancelled` (`closed_at`,
+   a `status_change` audit row), its one-time purchases `cancelled`, its plan snapshots follow
+   the set. The owner's in-flight slot is free again. A second cancel answers 200 and changes
+   nothing.
+
+A payment that arrives after the cancellation is recorded on its attempt but activates nothing
+(the event is cancelled, #2533 stage 2, and `activate()` refuses a `cancelled` set). The money is
+then a collected payment on a cancelled event, refunded by staff through the existing Billing
+Event refund; nothing refunds automatically.
+
 ### A3. A payment request is raised
 
 Two routes, same shape:

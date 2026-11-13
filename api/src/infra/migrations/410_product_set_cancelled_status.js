@@ -9,7 +9,8 @@
  * Nothing is backfilled: no set holds the value yet.
  *
  * Migration 395's device: drop and re-add the CHECK with the full list. It pays
- * `ALGORITHM=COPY` on `product_sets`. The `down` refuses while a row holds the
+ * `ALGORITHM=COPY` on `product_sets`, so merge it outside the nightly runs and the
+ * 15-minute booking-reminder pass. The `down` refuses while a row holds the
  * value: what a cancelled set should become is the operator's call.
  */
 const ER_CHECK_CONSTRAINT_NOT_FOUND = 3940;
