@@ -50,6 +50,19 @@ export function splitPaymentsTabEvents(events: readonly PaymentsTabEvent[]): {
   return { unresolved, past };
 }
 
+/**
+ * #2778 — the newest past event is shown on its own under *Last billing event*
+ * and the rest under *Past billing events*, so it is never listed twice. The
+ * input is `splitPaymentsTabEvents()`' `past` (already newest first); the order
+ * of the rest is unchanged. No past events means no last one (`null`).
+ */
+export function splitPastEvents<T>(past: readonly T[]): { last: T | null; rest: T[] } {
+  return past.length === 0 ? { last: null, rest: [] } : { last: past[0], rest: past.slice(1) };
+}
+
+/** #2778 — the three sections' initial open state: Past is the only one closed. */
+export const PAYMENTS_TAB_INITIAL_OPEN = { unresolved: true, last: true, past: false } as const;
+
 /** The locale key (in `members`) a status reads under, `null` for an unknown one. */
 export function paymentStatusKey(status: string): string | null {
   return ['paid', 'failed', 'pending', 'scheduled', 'recorded'].includes(status) ? `payments_status_${status}` : null;

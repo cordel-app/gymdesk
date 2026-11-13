@@ -732,6 +732,7 @@
     "payments_error": "No s'han pogut carregar els pagaments.",
     "payments_unresolved": "Esdeveniments de facturació sense resoldre",
     "payments_unresolved_empty": "No hi ha esdeveniments de facturació sense resoldre.",
+    "payments_last": "Últim esdeveniment de facturació",
     "payments_past": "Esdeveniments de facturació passats",
     "payments_past_empty": "No hi ha esdeveniments de facturació passats.",
     "payments_no_transactions": "Aquest esdeveniment no té transaccions de pagament.",
