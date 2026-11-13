@@ -1,21 +1,21 @@
 import type { Tx } from '../infra/db';
 import { db } from '../infra/db';
-import { MEMBER_MEMBERSHIP_SQL } from '../domain/assignmentRelationship';
+import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { cancelBooking } from './bookings';
 import { recordNotifications } from '../infra/notifications';
 
 /**
  * Whether two members are linked through plan coverage: some live assignment
  * is owned by or covers both (#1984 stage 2b-1: "only members linked through
- * plan coverage"). Read through `MEMBER_MEMBERSHIP_SQL`, never the owner
- * column alone.
+ * plan coverage"). Never the owner column alone. #2125 M6b-5: the assignment
+ * is its current plan snapshot and coverage is that snapshot's beneficiaries.
  */
 export async function membersShareCoverage(tx: Tx, gymId: string, a: number, b: number): Promise<boolean> {
   const { rows } = await tx.query(
-    `SELECT 1 FROM user_memberships um
-      WHERE um.gym_id = ? AND um.status = 'active'
-        AND ${MEMBER_MEMBERSHIP_SQL}
-        AND ${MEMBER_MEMBERSHIP_SQL}
+    `SELECT 1 FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+        AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})
+        AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})
       LIMIT 1`,
     [gymId, a, a, b, b],
   );
