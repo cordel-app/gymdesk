@@ -63,6 +63,15 @@ export function splitPastEvents<T>(past: readonly T[]): { last: T | null; rest: 
 /** #2778 — the three sections' initial open state: Past is the only one closed. */
 export const PAYMENTS_TAB_INITIAL_OPEN = { unresolved: true, last: true, past: false } as const;
 
+/**
+ * #2778 follow-up — the Billing Event rows open when the tab first loads: the
+ * one under *Last billing event*, so its Billing Event lines are read without
+ * a click. Nothing else starts open, and no last event means none.
+ */
+export function initialExpandedEventIds(last: Pick<PaymentsTabEvent, 'id'> | null): number[] {
+  return last?.id != null ? [last.id] : [];
+}
+
 /** The locale key (in `members`) a status reads under, `null` for an unknown one. */
 export function paymentStatusKey(status: string): string | null {
   return ['paid', 'failed', 'pending', 'scheduled', 'recorded'].includes(status) ? `payments_status_${status}` : null;

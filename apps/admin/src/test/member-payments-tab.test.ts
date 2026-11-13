@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitPaymentsTabEvents, splitPastEvents, PAYMENTS_TAB_INITIAL_OPEN, isUnresolvedEvent, type PaymentsTabEvent } from '../app/[locale]/members/paymentsTabView';
+import { splitPaymentsTabEvents, splitPastEvents, initialExpandedEventIds, PAYMENTS_TAB_INITIAL_OPEN, isUnresolvedEvent, type PaymentsTabEvent } from '../app/[locale]/members/paymentsTabView';
 
 const ev = (id: number | null, status: string, date: string, type?: 'real' | 'virtual'): PaymentsTabEvent => ({
   id, type, status, billing_date: date, created_at: null, amount: '10.00', event_type: 'payment_recorded', plan_name: null,
@@ -46,6 +46,12 @@ describe('Member Payments tab (#2099)', () => {
 
     it('no past events means no last one', () => {
       expect(splitPastEvents([])).toEqual({ last: null, rest: [] });
+    });
+
+    it('starts with the last event row expanded onto its lines, and no other', () => {
+      const { past } = splitPaymentsTabEvents([ev(1, 'paid', '2026-01-01'), ev(7, 'paid', '2026-03-01'), ev(2, 'failed', '2026-10-01')]);
+      expect(initialExpandedEventIds(splitPastEvents(past).last)).toEqual([7]);
+      expect(initialExpandedEventIds(null)).toEqual([]);
     });
 
     it('opens Unresolved and Last, keeps Past closed', () => {
