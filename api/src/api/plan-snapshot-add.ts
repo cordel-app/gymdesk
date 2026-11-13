@@ -7,6 +7,7 @@ import { copyRecurringLines } from './recurring-line-writer';
 import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { toPlanDurationRepeats } from '../domain/planDuration';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
+import { promotionHolderSql } from './plan-snapshot-lines';
 
 /**
  * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan: a plan beyond the
@@ -119,8 +120,12 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
  */
 export async function copyPlanSnapshotToVersion(
   tx: Tx, gymId: string, fromSnapshotId: number, toSetId: number,
-  /** `link: false` leaves the junction to the caller (`ownPlanSnapshot()` re-points an existing link). */
-  opts: { keepAssignment?: boolean; link?: boolean } = { keepAssignment: true },
+  /**
+   * `link: false` leaves the junction to the caller (`ownPlanSnapshot()` re-points an existing link).
+   * `reusePromotions` (#2125 M6b-2, a lifecycle copy) copies no Promotion snapshot: the copy points at
+   * the snapshot that holds them (`promotions_plan_snapshot_id`), so the same records serve both.
+   */
+  opts: { keepAssignment?: boolean; link?: boolean; reusePromotions?: boolean } = { keepAssignment: true },
 ): Promise<number> {
   const { insertId } = await tx.query(
     `INSERT INTO plan_snapshots
@@ -129,7 +134,8 @@ export async function copyPlanSnapshotToVersion(
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
         source_user_membership_id, created_by, owner_is_beneficiary,
-        assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by)
+        assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
+        promotions_plan_snapshot_id)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
@@ -137,7 +143,8 @@ export async function copyPlanSnapshotToVersion(
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary,
             ${opts.keepAssignment === false
               ? 'NULL, NULL, 0, NULL, NULL, NULL'
-              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by'}
+              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by'},
+            ${opts.reusePromotions ? 'COALESCE(s.promotions_plan_snapshot_id, s.id)' : 'NULL'}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
   // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); a copy that
@@ -160,8 +167,11 @@ export async function copyPlanSnapshotToVersion(
               currency, \`action\`, \`value\`, mandatory, unit_assignees, assigned_member_id, direct_discount_percent${extra}
          FROM ${t.snapshot} WHERE plan_snapshot_id = ?`, [insertId, fromSnapshotId]);
   }
-  const { rows: promos } = await tx.query<any>(
-    'SELECT id FROM plan_promotion_snapshots WHERE plan_snapshot_id = ? ORDER BY id', [fromSnapshotId]);
+  // A lifecycle copy reuses its source's Promotion snapshots (the pointer above). Any other copy takes
+  // its own, read from wherever the source's are held, since it may go on to change them.
+  const { rows: promos } = opts.reusePromotions ? { rows: [] as any[] } : await tx.query<any>(
+    `SELECT pps.id FROM plan_promotion_snapshots pps
+      WHERE pps.plan_snapshot_id = ${promotionHolderSql('?')} ORDER BY pps.id`, [fromSnapshotId]);
   for (const promo of promos) {
     const { insertId: promoId } = await tx.query(
       `INSERT INTO plan_promotion_snapshots

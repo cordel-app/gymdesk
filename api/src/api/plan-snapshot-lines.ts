@@ -109,3 +109,12 @@ export async function isPlanSnapshotShared(
     `SELECT ${planSnapshotSharedSql('?', '?')} AS shared`, [planSnapshotId, productSetId]);
   return Number(rows[0]?.shared ?? 0) === 1;
 }
+
+/**
+ * SQL for the id of the plan snapshot that holds the Promotion snapshots of `snapIdExpr` (#2125 M6b-2,
+ * migration 420): its own, unless it is a lifecycle copy, which reuses its source's records rather than
+ * copying them (`promotions_plan_snapshot_id`). Every reader of `plan_promotion_snapshots` by plan
+ * snapshot asks this, so a paused or cancelling copy prices and reports the Promotions it always had.
+ */
+export const promotionHolderSql = (snapIdExpr: string): string =>
+  `(SELECT COALESCE(ph_.promotions_plan_snapshot_id, ph_.id) FROM plan_snapshots ph_ WHERE ph_.id = ${snapIdExpr})`;

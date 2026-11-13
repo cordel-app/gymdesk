@@ -1,5 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
-import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
@@ -79,7 +79,7 @@ async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: num
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
        FROM plan_promotion_snapshots pps
        LEFT JOIN promotions p ON p.id = pps.promotion_id
-      WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ? AND pps.status = 'applied'
+      WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ${promotionHolderSql('?')} AND pps.status = 'applied'
       ORDER BY pps.id`,
     [gymId, planSnapshotId],
   );

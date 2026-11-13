@@ -65,8 +65,8 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
  * Identity is stamped on every snapshot the set links. The facts (`purchased_at`,
  * `replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
- * immutable to the sets that link it. Moving a lifecycle change onto a shared snapshot (copy first,
- * then write the copy) is the next stage's writer.
+ * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
+ * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number; replaces: number | null; shared: number }>(
@@ -100,7 +100,8 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
  * that assignment survives: the self FK refuses it, and such a row is skipped here so the rest of the
  * delete still happens. InnoDB also refuses to delete a row that references itself under RESTRICT, so
  * a snapshot about to go is un-anchored first, in the same transaction. Two passes, so an anchor whose
- * only dependants went in the first goes in the second.
+ * only dependants went in the first goes in the second. M6b-2: nor is a snapshot whose Promotion
+ * snapshots a lifecycle copy reuses (`promotions_plan_snapshot_id`), which would leave the copy with none.
  */
 export async function deleteUnlinkedPlanSnapshots(exec: Exec, gymId: string, planSnapshotIds: number[]): Promise<void> {
   if (planSnapshotIds.length === 0) return;
@@ -110,7 +111,8 @@ export async function deleteUnlinkedPlanSnapshots(exec: Exec, gymId: string, pla
       `SELECT s.id FROM plan_snapshots s
         WHERE s.gym_id = ? AND s.id IN (${marks})
           AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)
-          AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)`,
+          AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)
+          AND NOT EXISTS (SELECT 1 FROM plan_snapshots h WHERE h.promotions_plan_snapshot_id = s.id)`,
       [gymId, ...planSnapshotIds]);
     const ids = rows.map((r) => Number(r.id));
     if (ids.length === 0) return;

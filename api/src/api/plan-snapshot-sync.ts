@@ -7,6 +7,7 @@
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { syncPlanAssignment } from './plan-assignment-sync';
+import { settleSharedPlanLifecycle } from './plan-assignment-lifecycle';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
@@ -36,6 +37,9 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  * alone and this sync moves it again.
  */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  // M6b-2: a lifecycle change on a snapshot another Product Set links is written on a copy made for
+  // the Active set (same assignment), which the statements below then treat as the set's own.
+  await settleSharedPlanLifecycle(tx, gymId, productSetId);
   await syncPlanSnapshotConfiguration(tx, gymId, productSetId);
   // M6b-1: the assignment's identity and assignment-level facts follow every re-derivation.
   await syncPlanAssignment(tx, gymId, productSetId);
@@ -86,6 +90,12 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
 
   // #2125 stage 16: the included Products are the snapshot's own lines; nothing derives them here.
 
+  // M6b-2: a lifecycle copy reuses the Promotion snapshots of the snapshot it was copied from
+  // (`promotions_plan_snapshot_id`); none is derived onto it, or one application would be two records.
+  const { rows: holder } = await tx.query<{ holder: number | null }>(
+    'SELECT promotions_plan_snapshot_id AS holder FROM plan_snapshots WHERE id = ? AND gym_id = ?', [snapshotId, gymId]);
+  if (holder[0]?.holder != null) return;
+
   // Membership Plan Promotion applications of this version (Product-target ones are not plan snapshots).
   await tx.query(
     `DELETE FROM plan_promotion_snapshots
@@ -135,9 +145,20 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
   }
 }
 
-/** Re-derives the versions linked to an assignment — its status moved (paused, cancelled, expired). */
+/**
+ * Re-derives the versions linked to an assignment — its status moved (paused, cancelled, expired).
+ * M6b-2: and the owner's Active set whenever it links a snapshot of the assignment without being
+ * "its" version (a plan beside the set's first, or one carried for entitlement only), so the
+ * lifecycle change reaches the snapshot the assignment currently lives on.
+ */
 export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, userMembershipId]);
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?
+     UNION
+     SELECT p.id FROM product_sets p
+       JOIN product_set_plan_snapshots j ON j.product_set_id = p.id
+       JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = p.gym_id
+      WHERE p.gym_id = ? AND p.status = 'active' AND s.source_user_membership_id = ?
+     ORDER BY id`, [gymId, userMembershipId, gymId, userMembershipId]);
   for (const r of rows) await syncPlanSnapshot(tx, gymId, Number(r.id));
 }

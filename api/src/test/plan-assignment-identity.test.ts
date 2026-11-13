@@ -211,15 +211,32 @@ describe('the drift check', () => {
     expect((await snapshotsOf(um))[0]).toMatchObject({ id: snap.id, status: CANCELS_AT_PERIOD_END_STATUS });
   });
 
-  it('reports a cancelled plan whose shared snapshot the sync may not write, marked shared', async () => {
+  it('a cancelled plan is not reported: the cancellation is written on a copy of the shared snapshot (M6b-2)', async () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
     await activate(um);
     expect((await auth(request.delete(`/user-memberships/${um}`))).status).toBe(204);
+    expect((await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um)).toBeUndefined();
+    const snaps = await snapshotsOf(um);
+    expect(snaps.at(-1)).toMatchObject({ assignmentId: snaps[0].id, status: CANCELS_AT_PERIOD_END_STATUS });
+  });
+
+  it('reports a lifecycle change that never reached the shared snapshot, marked shared', async () => {
+    const um = await createTestDraftAssignment(gymId, await member(), await plan());
+    await activate(um);
+    expect((await auth(request.delete(`/user-memberships/${um}`))).status).toBe(204);
+    // What the sweep's change looks like when nothing re-syncs the set that carries the plan.
+    const { rows: carried } = await db.query<any>(
+      `SELECT j.product_set_id AS set_id, j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
+         JOIN plan_snapshots s ON s.id = j.plan_snapshot_id WHERE s.source_user_membership_id = ? AND j.entitlement_only = 1`, [um]);
+    const { rows: other } = await db.query<any>("SELECT id FROM product_sets WHERE gym_id = ? AND id <> ? ORDER BY id DESC LIMIT 1", [gymId, carried[0].set_id]);
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only) VALUES (?, ?, 1)', [other[0].id, carried[0].id]);
+    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     const row = (await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um);
     expect(row).toBeDefined();
     expect(String(row!.fields)).toContain('status');
     expect(Number(row!.shared)).toBe(1);
     expect((await findPlanAssignmentDrift(db, gymId)).clean).toBe(false);
+    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?', [other[0].id, carried[0].id]);
   });
 
   it('reports a snapshot with no identity and one that names the wrong anchor, and the backfill repairs both', async () => {
