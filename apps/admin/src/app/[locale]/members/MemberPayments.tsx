@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -8,7 +8,9 @@ import { cardMutedTextStyle, cardSectionLabelStyle, formErrorStyle } from '@/com
 import {
   BillingEventsTable, useBillingEventActions, type BillingEventsTableRow,
 } from '../payments/billing-events/BillingEventShared';
-import { splitPaymentsTabEvents, type PaymentsTabEvent } from './paymentsTabView';
+import {
+  PAYMENTS_TAB_INITIAL_OPEN, splitPastEvents, splitPaymentsTabEvents, type PaymentsTabEvent,
+} from './paymentsTabView';
 
 /** A ledger row as the shared Billing Events renderer reads it (#2571). */
 type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
@@ -19,7 +21,9 @@ type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
  * billing events*) and, on expanding one, its own payment transactions
  * (`payment_requests.billing_event_id`). No simulation is read or drawn.
  * Both lists are Payments → Billing Events' own table (`BillingEventsTable`),
- * header included (#2449 follow-up).
+ * header included (#2449 follow-up). Since #2778 the newest past event sits
+ * on its own under *Last billing event* (open by default) and is not repeated
+ * under *Past billing events*; every section collapses independently.
  */
 export function MemberPayments({ memberId }: { memberId: number | string }) {
   const t = useTranslations();
@@ -27,7 +31,8 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   const gym = useGymFormatSettings();
   const [events, setEvents] = useState<MemberBillingEvent[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [pastOpen, setPastOpen] = useState(false);
+  const [open, setOpen] = useState<{ unresolved: boolean; last: boolean; past: boolean }>({ ...PAYMENTS_TAB_INITIAL_OPEN });
+  const flip = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   const load = useCallback(() => {
     apiFetch<{ items: MemberBillingEvent[] }>(`/payments/billing-events?member_id=${memberId}&limit=200`)
@@ -40,6 +45,7 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   const { unresolved, past } = useMemo(() => splitPaymentsTabEvents(events ?? []) as {
     unresolved: MemberBillingEvent[]; past: MemberBillingEvent[];
   }, [events]);
+  const { last, rest } = useMemo(() => splitPastEvents(past), [past]);
 
   // Expansion lives here (not per row) so an action can open the event it acted on.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -56,26 +62,41 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {modal}
-      <div>
-        <div style={cardSectionLabelStyle}>{t('members.payments_unresolved')}</div>
+      <CollapsibleSection open={open.unresolved} onToggle={() => flip('unresolved')} label={t('members.payments_unresolved')}>
         {unresolved.length === 0
           ? <p style={cardMutedTextStyle}>{t('members.payments_unresolved_empty')}</p>
           : <BillingEventsTable rows={unresolved} {...table} />}
-      </div>
-      <div>
-        <button
-          type="button"
-          aria-expanded={pastOpen}
-          onClick={() => setPastOpen((o) => !o)}
-          style={{ all: 'unset', cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center' }}
-        >
-          <span style={{ display: 'inline-block', transform: pastOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
-          <span style={cardSectionLabelStyle}>{t('members.payments_past')} ({past.length})</span>
-        </button>
-        {pastOpen && (past.length === 0
+      </CollapsibleSection>
+      {last && (
+        <CollapsibleSection open={open.last} onToggle={() => flip('last')} label={t('members.payments_last')}>
+          <BillingEventsTable rows={[last]} {...table} />
+        </CollapsibleSection>
+      )}
+      <CollapsibleSection open={open.past} onToggle={() => flip('past')} label={`${t('members.payments_past')} (${rest.length})`}>
+        {rest.length === 0
           ? <p style={cardMutedTextStyle}>{t('members.payments_past_empty')}</p>
-          : <BillingEventsTable rows={past} {...table} />)}
-      </div>
+          : <BillingEventsTable rows={rest} {...table} />}
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+/** One collapsible section of the tab: a chevron and its label, the body when open. */
+function CollapsibleSection({ open, onToggle, label, children }: {
+  open: boolean; onToggle: () => void; label: string; children: ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        style={{ all: 'unset', cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center' }}
+      >
+        <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+        <span style={cardSectionLabelStyle}>{label}</span>
+      </button>
+      {open && children}
     </div>
   );
 }

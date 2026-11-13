@@ -731,6 +731,7 @@
     "payments_error": "Could not load payments.",
     "payments_unresolved": "Unresolved billing events",
     "payments_unresolved_empty": "No unresolved billing events.",
+    "payments_last": "Last billing event",
     "payments_past": "Past billing events",
     "payments_past_empty": "No past billing events.",
     "payments_no_transactions": "No payment transactions for this event.",
