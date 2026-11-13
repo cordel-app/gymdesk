@@ -522,13 +522,6 @@
     "set_products_empty": "You have no products in your current products.",
     "plan_for": "For {names}",
     "plan_entitlement_only": "Until its end date",
-    "set_status": {
-      "draft": "Draft",
-      "pending_payment": "Pending Payment",
-      "active": "Active",
-      "superseded": "Superseded"
-    },
-    "set_status_label": "Status",
     "summary_heading": "Summary",
     "summary_contracted": "Products contracted",
     "summary_cancelled": "Products cancelled",

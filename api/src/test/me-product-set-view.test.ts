@@ -59,6 +59,8 @@ describe('GET /me/product-sets/:id', () => {
       description: 'Locker description',
       image_thumbnail_url: 'https://cdn.test/Locker-thumbnail.webp',
       unit_price: 12, final_amount: 24, change: 'added', promotions: [],
+      // #2781: the line's own status — added by this Draft, not yet contracted.
+      status: 'draft', ends_at: null,
     });
     expect(res.body.removed_lines).toEqual([]);
   });

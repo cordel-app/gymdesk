@@ -124,7 +124,7 @@ import {
   currentSetId,
   setPlans,
   setProductLines,
-  setStatusKey,
+  setLineStatusKey,
   type MemberSetPlan,
   pendingPaymentPlanSnapshotId,
   draftErrorKey,
@@ -924,7 +924,6 @@ export default function MembershipPage() {
 
   function renderMyProducts() {
     if (!setViewLoaded) return null;
-    const statusKey = setStatusKey(setView);
     const items: MemberProductCardItem[] = setProductLines(setView).map((line) => {
       const quantity = line.quantity ?? 1;
       const currency = line.currency ?? 'EUR';
@@ -932,6 +931,8 @@ export default function MembershipPage() {
       const final = line.final_amount ?? null;
       const assignee = line.assigned_member_id != null && selfMemberId != null && line.assigned_member_id !== selfMemberId
         ? assignees.find((a) => a.member_id === line.assigned_member_id)?.name ?? null : null;
+      // #2781 — each Product carries its own status chip; the Product Set's is never shown.
+      const lineStatusKey = setLineStatusKey(line);
       return {
         key: `set-line-${line.id}`,
         name: line.product_name ?? '—',
@@ -945,7 +946,11 @@ export default function MembershipPage() {
         meta: [
           quantity > 1 ? `× ${quantity}` : null,
           assignee ? t('membership.product_assignee_line', { name: assignee }) : null,
+          line.status === 'cancels_on_end_date' && line.ends_at
+            ? t('membership.product_end_date', { date: formatGymDateOnly(line.ends_at, gymFmt) }) : null,
         ].filter(Boolean).join(' · ') || null,
+        action: lineStatusKey && line.status
+          ? <StatusPill status={line.status} label={t(lineStatusKey as any)} /> : undefined,
       };
     });
     return (
@@ -953,7 +958,6 @@ export default function MembershipPage() {
         title={t('membership.set_products_heading')}
         emptyLabel={t('membership.set_products_empty')}
         items={items}
-        badge={statusKey && setView ? <StatusPill status={setView.status} label={t(statusKey as any)} /> : undefined}
       />
     );
   }

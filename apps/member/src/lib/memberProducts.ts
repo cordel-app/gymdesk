@@ -463,6 +463,10 @@ export interface MemberSetLine {
   regular_amount?: number;
   final_amount?: number;
   assigned_member_id?: number | null;
+  /** #2781 — the line's own status (`productLineStatus()` in the API), never the version's. */
+  status?: string;
+  /** #2781 — the last day of a removed line that runs to its end date. */
+  ends_at?: string | null;
 }
 
 /** The member's current version (Draft, else Active) as `GET /me/product-sets/:id` answers it. */
@@ -536,14 +540,17 @@ export function currentSetId(rows: readonly MemberSetRow[]): number | null {
   return null;
 }
 
-/** The locale key the selected version's status badge reads under (#2663 §4), or `null` for none. */
-export function setStatusKey(view: Pick<MemberSetView, 'status'> | null): string | null {
-  if (!view) return null;
-  const known = ['draft', 'pending_payment', 'active', 'superseded'];
-  return known.includes(view.status) ? `membership.set_status.${view.status}` : null;
+/**
+ * #2781 — the locale key one Product line's status chip reads under: the line's
+ * own status, in the `membership.status` map Membership Plans already use, or
+ * `null` (no chip) for a response that predates it or a value the map lacks.
+ * The Product Set's own status is never shown in the Members App.
+ */
+const LINE_STATUS_KEYS = ['draft', 'pending_payment', 'cancels_on_end_date', 'pending', 'active'];
+export function setLineStatusKey(line: Pick<MemberSetLine, 'status'>): string | null {
+  return line.status && LINE_STATUS_KEYS.includes(line.status) ? `membership.status.${line.status}` : null;
 }
 
-/** The plans *My Plans* lists: the selected version's, and only its (#2663 §2). */
 export function setPlans(view: MemberSetView | null): MemberSetPlan[] {
   return view?.plans ?? [];
 }

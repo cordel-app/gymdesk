@@ -522,13 +522,6 @@
     "set_products_empty": "No tens productes als teus productes actuals.",
     "plan_for": "Per a {names}",
     "plan_entitlement_only": "Fins a la seva data de fi",
-    "set_status": {
-      "draft": "Esborrany",
-      "pending_payment": "Pendent de pagament",
-      "active": "Actiu",
-      "superseded": "Substituït"
-    },
-    "set_status_label": "Estat",
     "summary_heading": "Resum",
     "summary_contracted": "Productes contractats",
     "summary_cancelled": "Productes cancel·lats",
