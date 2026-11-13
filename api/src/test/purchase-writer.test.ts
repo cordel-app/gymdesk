@@ -245,11 +245,9 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
   it('takes a purchase Promotion id from its snapshot (#2126 stage 5d-4)', async () => {
     const m = await member();
     const top = async () => Number((await db.query<any>(
-      `SELECT GREATEST(
-          COALESCE((SELECT MAX(id) FROM product_promotion_snapshots), 0)) AS top`)).rows[0].top);
+      'SELECT COALESCE(MAX(id), 0) AS top FROM product_promotion_snapshots')).rows[0].top);
     const before = await top();
-    // Move the snapshot's sequence ahead of the legacy one, so an id the legacy table allocated could not
-    // pass for the snapshot's.
+    // Move the snapshot's sequence ahead, so the ids below are visibly the snapshot's own.
     await db.query(`ALTER TABLE product_promotion_snapshots AUTO_INCREMENT = ${before + 50}`);
     const ids: number[] = [];
     for (const type of ['fee', 'sessions'] as const) {
