@@ -502,10 +502,7 @@
       "month": "Mensual",
       "year": "Anual"
     },
-    "product_add_to_draft": "Añadir",
     "product_adding": "Añadiendo…",
-    "product_remove_from_draft": "Quitar",
-    "product_in_draft": "Añadido",
     "product_state_held": "En tus productos",
     "draft_selection_count": "{count, plural, one {# elemento añadido a tu selección.} other {# elementos añadidos a tu selección.}}",
     "draft_expires_in": "El borrador caduca en",

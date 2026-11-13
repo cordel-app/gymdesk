@@ -502,10 +502,7 @@
       "month": "Monthly",
       "year": "Yearly"
     },
-    "product_add_to_draft": "Add",
     "product_adding": "Adding…",
-    "product_remove_from_draft": "Remove",
-    "product_in_draft": "Added",
     "product_state_held": "In your products",
     "draft_selection_count": "{count, plural, one {# item added to your selection.} other {# items added to your selection.}}",
     "draft_expires_in": "Draft expires in",

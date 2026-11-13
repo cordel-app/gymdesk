@@ -502,10 +502,7 @@
       "month": "Mensual",
       "year": "Anual"
     },
-    "product_add_to_draft": "Afegeix",
     "product_adding": "Afegint…",
-    "product_remove_from_draft": "Treu",
-    "product_in_draft": "Afegit",
     "product_state_held": "Als teus productes",
     "draft_selection_count": "{count, plural, one {# element afegit a la teva selecció.} other {# elements afegits a la teva selecció.}}",
     "draft_expires_in": "L'esborrany caduca en",
