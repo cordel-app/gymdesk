@@ -9,8 +9,11 @@
  * legacy record any more (`syncProductSnapshotsOfVersion()` only keeps the snapshot's status and
  * owner in step with its Product Set, and the Promotions a line owns).
  *
- * The snapshot keeps the legacy record's id in `source_id`, which is the id the routes, the
- * consumption ledger and a line's Promotion applications are still keyed on.
+ * The line's id is `source_id`, which the routes, the consumption ledger and a line's Promotion
+ * applications are keyed on. Since stage 5d-2 a new line (and a copy) takes it from the snapshot's own
+ * id (`source_id = id`), and the legacy record is written under that same id, so the legacy table no
+ * longer allocates anything; migration 412 put the snapshot's AUTO_INCREMENT above every legacy id, so a
+ * new id can never meet a historical one. A line written before stage 5d-2 keeps its legacy id.
  */
 import type { Tx } from '../infra/db';
 import { isRecurringLineIdShared, recurringLineSharedSql, SharedRecurringLineError } from './recurring-line-sharing';
@@ -43,39 +46,41 @@ export interface NewRecurringLine {
 }
 
 /**
- * A new line, frozen from the Product as it stands now. Returns the line's id (the legacy record's,
- * which is the snapshot's `source_id`), or `null` when the Product is not one of the gym's.
+ * A new line, frozen from the Product as it stands now. Returns the line's id (the snapshot's own id,
+ * which is its `source_id`), or `null` when the Product is not one of the gym's.
  */
 export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Promise<number | null> {
   const now = await utcNow(tx);
   const params = [line.quantity, line.startsAt, line.scheduleId ?? null, line.origin ?? null,
     line.assignedMemberId ?? null, now];
+  // #2126 stage 5d-2: the snapshot is written first and its own id becomes the line's id (`source_id`,
+  // `line_ref`); the legacy record mirrors it under that same id.
   const { insertId } = await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
-        item_name, item_type, unit_price, item_billing_frequency, currency)
-     SELECT gc.gym_id, ?, gc.id, ?, ?, ?, ?, ?, ?,
-            ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
-       FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-      WHERE gc.id = ? AND gc.gym_id = ?`,
-    [line.productSetId, ...params, line.productId, line.gymId]);
-  if (!insertId) return null;
-  const lineId = Number(insertId);
-  await tx.query('UPDATE member_products_recurrent_snapshot SET line_ref = id WHERE id = ?', [lineId]);
-
-  const { insertId: snapshotId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status, is_inherited,
         quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
         product_name, product_type, unit_price, billing_frequency, currency)
-     SELECT gc.gym_id, ps.owner_member_id, ps.id, gc.id, ?, ?, ps.status, 0,
+     SELECT gc.gym_id, ps.owner_member_id, ps.id, gc.id, NULL, NULL, ps.status, 0,
             ?, ?, ?, ?, ?, ?,
             ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        JOIN product_sets ps ON ps.id = ? AND ps.gym_id = gc.gym_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
-    [lineId, lineId, ...params, line.productSetId, line.productId, line.gymId]);
-  await linkToSet(tx, line.productSetId, Number(snapshotId));
+    [...params, line.productSetId, line.productId, line.gymId]);
+  if (!insertId) return null;
+  const lineId = Number(insertId);
+  await tx.query('UPDATE product_periodical_snapshots SET source_id = id, line_ref = id WHERE id = ?', [lineId]);
+
+  await tx.query(
+    `INSERT INTO member_products_recurrent_snapshot
+       (id, gym_id, product_set_id, product_id, quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
+        item_name, item_type, unit_price, item_billing_frequency, currency, line_ref)
+     SELECT ?, gc.gym_id, ?, gc.id, ?, ?, ?, ?, ?, ?,
+            ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency, ?
+       FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+      WHERE gc.id = ? AND gc.gym_id = ?`,
+    [lineId, line.productSetId, ...params, lineId, line.productId, line.gymId]);
+  await linkToSet(tx, line.productSetId, lineId);
   return lineId;
 }
 
@@ -139,30 +144,32 @@ const SNAPSHOT_LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.st
 async function copyLine(
   tx: Conn, gymId: string, r: any, toSetId: number, assignee: number | null, now: string,
 ): Promise<{ lineId: number; snapshotId: number }> {
+  // #2126 stage 5d-2: the copy's snapshot id is the copy's line id; the legacy record mirrors it.
   const { insertId } = await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type, unit_price,
-        item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, assigned_member_id,
-        line_ref, origin, is_inherited, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-    [gymId, toSetId, r.product_id, r.quantity, r.starts_at, r.ends_at, r.item_name, r.item_type, r.unit_price,
-      r.item_billing_frequency, r.currency, r.schedule_id, r.list_unit_price, r.direct_discount_percent, assignee,
-      r.line_ref, r.origin, now]);
-  const lineId = Number(insertId);
-  const { insertId: snapshotId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
         origin, schedule_id, line_ref, created_at, assigned_member_id)
-     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, ?, ps.status, 1, COALESCE(?, p.name), COALESCE(?, p.type),
+     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, NULL, ps.status, 1, COALESCE(?, p.name), COALESCE(?, p.type),
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        FROM product_sets ps JOIN products p ON p.id = ?
       WHERE ps.id = ? AND ps.gym_id = ?`,
-    [lineId, r.item_name, r.item_type, r.item_billing_frequency, r.quantity, r.currency, r.unit_price,
+    [r.item_name, r.item_type, r.item_billing_frequency, r.quantity, r.currency, r.unit_price,
       r.list_unit_price, r.direct_discount_percent, r.starts_at, r.ends_at, r.origin, r.schedule_id, r.line_ref,
       now, assignee, r.product_id, toSetId, gymId]);
-  if (!snapshotId) throw new Error(`recurring line ${r.id} could not be copied`);
-  return { lineId, snapshotId: Number(snapshotId) };
+  if (!insertId) throw new Error(`recurring line ${r.id} could not be copied`);
+  const lineId = Number(insertId);
+  await tx.query('UPDATE product_periodical_snapshots SET source_id = id WHERE id = ?', [lineId]);
+  await tx.query(
+    `INSERT INTO member_products_recurrent_snapshot
+       (id, gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type, unit_price,
+        item_billing_frequency, currency, schedule_id, list_unit_price, direct_discount_percent, assigned_member_id,
+        line_ref, origin, is_inherited, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    [lineId, gymId, toSetId, r.product_id, r.quantity, r.starts_at, r.ends_at, r.item_name, r.item_type, r.unit_price,
+      r.item_billing_frequency, r.currency, r.schedule_id, r.list_unit_price, r.direct_discount_percent, assignee,
+      r.line_ref, r.origin, now]);
+  return { lineId, snapshotId: lineId };
 }
 
 /**

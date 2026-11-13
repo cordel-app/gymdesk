@@ -5,6 +5,9 @@
  * real writer would have written. It is the re-derivation `syncProductSnapshotsOfVersion()` ran
  * before stage 5c, and it reads the legacy table, which is why it lives here and not under `api/`
  * (`product-snapshot-legacy-readers.unit.test.ts`).
+ *
+ * Since stage 5d-2 a line's snapshot id is its line id (`source_id = id`), so the fixture writes the
+ * snapshot under the legacy row's id, as the writer would have.
  */
 import { db, type Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
@@ -22,10 +25,10 @@ export async function syncRecurringLinesFixture(tx: Conn, gymId: string, product
     [gymId, productSetId, gymId, productSetId]);
   await tx.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
+       (id, gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
         origin, schedule_id, line_ref, created_at, assigned_member_id)
-     SELECT s.gym_id, ps.owner_member_id, s.product_set_id, s.product_id, s.id, ps.status, s.is_inherited,
+     SELECT s.id, s.gym_id, ps.owner_member_id, s.product_set_id, s.product_id, s.id, ps.status, s.is_inherited,
             COALESCE(s.item_name, p.name), COALESCE(s.item_type, p.type), s.item_billing_frequency, s.quantity,
             s.currency, s.unit_price, s.list_unit_price, s.direct_discount_percent, s.starts_at, s.ends_at,
             s.origin, s.schedule_id, s.line_ref, s.created_at, s.assigned_member_id

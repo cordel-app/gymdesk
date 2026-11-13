@@ -136,6 +136,36 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     expectSameFacts(await legacy(lineId!), await snapshot(lineId!));
   });
 
+  it('a new line and a copy take their id from the snapshot, which the legacy record mirrors (#2126 stage 5d-2)', async () => {
+    const owner = await member();
+    const setId = await draftSet(owner);
+    const productId = await product(`Id-${uniq()}`);
+    const lineId = await db.transaction((tx) => insertRecurringLine(tx, {
+      gymId, productSetId: setId, productId, quantity: 1, startsAt: TODAY,
+    }));
+    const snap = await snapshot(lineId!);
+    expect(Number(snap.id)).toBe(lineId);
+    expect(Number(snap.source_id)).toBe(lineId);
+    expect(Number(snap.line_ref)).toBe(lineId);
+    expect(Number((await legacy(lineId!)).id)).toBe(lineId);
+
+    const nextSet = await draftSet(await member());
+    const copies = await db.transaction((tx) => copyRecurringLines(tx, gymId, setId, nextSet, { carryAssignee: true }));
+    const copyId = copies.get(lineId!)!;
+    const copySnap = await snapshot(copyId);
+    expect(Number(copySnap.id)).toBe(copyId);
+    expect(Number(copySnap.line_ref)).toBe(lineId);
+    expect(Number((await legacy(copyId)).id)).toBe(copyId);
+
+    // The snapshot sequence is the allocator: the next line id follows it, never a historical legacy id.
+    const { rows } = await db.query<{ top: number }>(
+      'SELECT GREATEST(MAX(id), (SELECT MAX(id) FROM member_products_recurrent_snapshot)) AS top FROM product_periodical_snapshots');
+    const nextId = await db.transaction((tx) => insertRecurringLine(tx, {
+      gymId, productSetId: setId, productId, quantity: 1, startsAt: TODAY,
+    }));
+    expect(nextId!).toBeGreaterThan(Number(rows[0].top));
+  });
+
   it('a line of a Product the gym does not have is not written', async () => {
     const owner = await member();
     const setId = await draftSet(owner);
