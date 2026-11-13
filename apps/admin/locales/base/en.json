@@ -295,6 +295,8 @@
     "enrollment_status_paused": "Paused",
     "enrollment_status_cancelled": "Cancelled",
     "enrollment_status_expired": "Expired",
+    "enrollment_status_active_cancel_at_period_end": "Cancels on End Date",
+    "enrollment_status_superseded": "Superseded",
     "header_plan_status": "Membership Plan Status",
     "header_payment_status": "Payment Status",
     "header_access_rights": "Access Rights",
