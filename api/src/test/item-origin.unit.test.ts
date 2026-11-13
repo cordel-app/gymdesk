@@ -25,6 +25,6 @@ describe('item origin (#1883)', () => {
     // A clone links the very lines (#2126 stage 5c-2c-2), so their origin is carried by construction.
     expect(src).toMatch(/linkRecurringLines\(/);
     const writer = readFileSync(join(__dirname, '../api/recurring-line-writer.ts'), 'utf8');
-    expect(writer).toMatch(/line_ref, origin[,)]/);
+    expect(writer).toMatch(/starts_at, ends_at,\s+origin, schedule_id, line_ref/);
   });
 });
