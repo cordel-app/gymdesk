@@ -42,6 +42,8 @@ import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPu
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
 import { AssigneeRefused } from './product-assignee';
+import { cancelPendingProductSet, cancelPendingResponse, reconcileSetPayments } from './product-set-cancellation';
+import { logger } from '../lib/logger';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -95,6 +97,7 @@ function shape(row: any) {
     starts_at: row.starts_at instanceof Date ? row.starts_at.toISOString().slice(0, 10) : String(row.starts_at).slice(0, 10),
     activated_at: row.activated_at ?? null,
     superseded_at: row.superseded_at ?? null,
+    cancelled_at: row.cancelled_at ?? null,
     last_activity_at: row.last_activity_at ?? null,
     expired: row.status === 'draft' && Number(row.stale) === 1,
   };
@@ -526,6 +529,37 @@ function cancelFailure(result: { kind: string; status?: string }) {
   return { error: result.kind, status: result.status };
 }
 
+/**
+ * #2747 — cancels a Pending Payment Product Set and keeps it as `cancelled`
+ * (`product-set-cancellation.ts`). The provider is asked about any submitted
+ * attempt first; a paid set answers `409 payment_settled`, an outcome still
+ * unknown `409 payment_unresolved`. Idempotent: a cancelled set answers 200.
+ */
+async function cancelPendingSet(req: any, res: any, set: any, source: 'admin' | 'member') {
+  const { gymId, userId } = getTenantContext(req);
+  await reconcileSetPayments(gymId, Number(set.id), logger);
+  const out = await db.transaction((tx) => cancelPendingProductSet(tx, gymId, Number(set.id), {
+    actor: actorOf(req).name, actorUserId: userId ?? null, source,
+  }));
+  const failure = cancelPendingResponse(out);
+  if (failure) return res.status(failure.status).json(failure.body);
+  if (out.kind === 'cancelled') {
+    recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id,
+      previous: { status: 'pending_payment' }, next: { status: 'cancelled', ...(source === 'member' ? { source: 'members_app' } : {}) } });
+  }
+  const fresh = await loadSet(gymId, set.id);
+  res.json({ product_set_id: Number(set.id), status: fresh?.status ?? 'cancelled', cancelled_at: fresh?.cancelled_at ?? null });
+}
+
+productSetsRouter.post('/:id/cancel', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    const set = await loadSet(gymId, req.params.id);
+    if (!set) return res.status(404).json({ error: 'ProductSet not found' });
+    await cancelPendingSet(req, res, set, 'admin');
+  } catch (err) { next(err); }
+});
+
 productSetsRouter.delete('/:id', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
@@ -707,6 +741,15 @@ meProductSetsRouter.get('/', async (req, res) => {
  * guard as the Admin's decides, so a payment whose outcome is unknown or that
  * settled is never discarded (`409 payment_unresolved`).
  */
+/** #2747 — the member cancels their own Pending Payment Product Set (never another member's: 404). */
+meProductSetsRouter.post('/:id/cancel', async (req, res, next) => {
+  try {
+    const owned = await ownedSet(req, res);
+    if (!owned) return;
+    await cancelPendingSet(req, res, owned.set, 'member');
+  } catch (err) { next(err); }
+});
+
 meProductSetsRouter.delete('/:id', async (req, res) => {
   const ctx = getTenantContext(req);
   let memberId: number;

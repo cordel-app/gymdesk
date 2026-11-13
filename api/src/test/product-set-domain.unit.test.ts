@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DRAFT_TTL_MINUTES, canCancelPending, canTransition, isDraftExpired, isInFlight, isProductSetStatus,
+  DRAFT_TTL_MINUTES, canCancelPending, canTransition, pendingCancellation, isDraftExpired, isInFlight, isProductSetStatus,
 } from '../domain/productSet';
 import {
   RESET_AUDIT_ENTITY_TYPES, RESET_CONFIRMATION, RESET_STEPS, blockingReferences, evaluateResetGuard,
@@ -16,10 +16,27 @@ describe('ProductSet lifecycle (#1325)', () => {
     expect(canTransition('active', 'draft')).toBe(false);
     expect(canTransition('superseded', 'active')).toBe(false);
     expect(canTransition('draft', 'superseded')).toBe(false);
+    // #2747: only a Pending Payment is cancelled, and a cancelled set is terminal.
+    expect(canTransition('pending_payment', 'cancelled')).toBe(true);
+    expect(canTransition('active', 'cancelled')).toBe(false);
+    expect(canTransition('cancelled', 'active')).toBe(false);
+  });
+
+  it('decides whether a Pending Payment set may be cancelled from its attempts (#2747)', () => {
+    const a = (status: string, providerRef: string | null, providerStatus: string | null) => ({ status, providerRef, providerStatus });
+    expect(pendingCancellation([])).toBe('cancellable');
+    expect(pendingCancellation([a('pending', null, null)])).toBe('cancellable');
+    expect(pendingCancellation([a('pending', 'ref', 'PENDING')])).toBe('cancellable');
+    expect(pendingCancellation([a('failed', 'ref', 'FAILED'), a('pending', 'ref2', 'pending')])).toBe('cancellable');
+    expect(pendingCancellation([a('pending', 'ref', null)])).toBe('payment_unresolved');
+    expect(pendingCancellation([a('pending', 'ref', 'AUTHORIZED')])).toBe('payment_unresolved');
+    expect(pendingCancellation([a('pending', 'ref', 'PENDING_PROCESSING')])).toBe('payment_unresolved');
+    expect(pendingCancellation([a('completed', 'ref', 'SUCCEEDED')])).toBe('payment_settled');
   });
 
   it('knows its vocabulary and the in-flight slot', () => {
-    expect(isProductSetStatus('cancelled')).toBe(false);
+    expect(isProductSetStatus('cancelled')).toBe(true); // #2747
+    expect(isProductSetStatus('expired')).toBe(false);
     expect(isProductSetStatus('active')).toBe(true);
     expect(isInFlight('draft')).toBe(true);
     expect(isInFlight('pending_payment')).toBe(true);
