@@ -219,4 +219,20 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('cancelled');
   });
+
+  it('#2746 stage 3: the owner\'s read of a pending set reports the initial event amount the cart pays', async () => {
+    const clerk = `ps-pending-read-${uniq()}`;
+    await createTestMembership(gymId, 'member', clerk);
+    const own = await pending(await member(clerk));
+    const event = await one(
+      `SELECT amount FROM billing_events WHERE product_set_id = ? AND event_type = 'payment_recorded' ORDER BY id DESC LIMIT 1`, [own.id]);
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any).mockResolvedValueOnce({ sub: clerk } as any);
+    const res = await request.get(`/me/product-sets/${own.id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('pending_payment');
+    expect(res.body.pending_amount).toBe(Number(event.amount));
+    expect(res.body.pending_amount).toBeGreaterThan(0);
+    expect(res.body.cart).toEqual({ plans: 1, products: 0 });
+  });
 });

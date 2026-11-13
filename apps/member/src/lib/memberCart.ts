@@ -35,6 +35,8 @@ export interface MemberSetPurchase {
 export type MemberCartView = MemberSetView & {
   purchases?: MemberSetPurchase[];
   cart?: { plans: number; products: number };
+  /** #2746 stage 3: a version awaiting payment — its initial event's amount (the owner's read only). */
+  pending_amount?: number | null;
 };
 
 /** One removable item of the cart, with what its own Cancel calls. */
@@ -48,13 +50,57 @@ function isDraft(view: MemberCartView | null): view is MemberCartView {
 }
 
 /**
+ * #2746 stage 3 — the version the cart is read from: a Draft, or the same
+ * purchase once its payment has started (§6 keeps it grouped as one).
+ */
+function isCartVersion(view: MemberCartView | null): view is MemberCartView {
+  return !!view && (view.status === 'draft' || view.status === 'pending_payment');
+}
+
+/** Which state the cart is in: being filled, or awaiting its one payment. */
+export type CartPhase = 'draft' | 'pending_payment';
+
+/**
+ * #2746 stage 3 — the cart's phase for the member looking at it, or `null`
+ * when there is no cart to show. A version awaiting payment is a cart only for
+ * its owner (the owner pays, #2123): a covered family member reads the family's
+ * version, but it is not their purchase to pay or cancel.
+ */
+export function cartPhase(view: MemberCartView | null, viewerMemberId: number | null): CartPhase | null {
+  if (!hasCart(view)) return null;
+  if (view!.status === 'draft') return 'draft';
+  if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;
+  return 'pending_payment';
+}
+
+/**
+ * Whether an item may still leave the cart on its own: only while it is a
+ * Draft. Once payment has started the purchase is one operation (§6).
+ */
+export function cartItemsRemovable(view: MemberCartView | null): boolean {
+  return isDraft(view);
+}
+
+/**
+ * The amount a cart awaiting payment is being paid for: the initial event the
+ * server reports (`pending_amount`). `null` outside that phase or when unknown —
+ * never a figure added up here.
+ */
+export function cartPendingAmount(view: MemberCartView | null): number | null {
+  if (!view || view.status !== 'pending_payment' || view.pending_amount == null) return null;
+  const n = Number(view.pending_amount);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * What the cart holds, each item once: the plans the Draft adds (not one the
  * member already holds, not one carried for entitlement only), the recurring
  * lines it adds and its one-time Products. A plan's included benefits are the
- * plan's, never items of their own (§4). Empty outside a Draft.
+ * plan's, never items of their own (§4). Empty outside a Draft or a version
+ * awaiting payment (stage 3: the same items stay grouped while it is paid).
  */
 export function cartItems(view: MemberCartView | null): CartItem[] {
-  if (!isDraft(view)) return [];
+  if (!isCartVersion(view)) return [];
   const plans: CartItem[] = (view.plans ?? [])
     .filter((p) => p.change === 'added' && !p.entitlement_only)
     .map((p) => ({
@@ -82,7 +128,7 @@ export function cartItems(view: MemberCartView | null): CartItem[] {
  * items above, so the two can only agree.
  */
 export function cartCounts(view: MemberCartView | null): { plans: number; products: number } {
-  if (!isDraft(view)) return { plans: 0, products: 0 };
+  if (!isCartVersion(view)) return { plans: 0, products: 0 };
   if (view.cart) return { plans: Number(view.cart.plans), products: Number(view.cart.products) };
   const items = cartItems(view);
   return {
@@ -91,7 +137,7 @@ export function cartCounts(view: MemberCartView | null): { plans: number; produc
   };
 }
 
-/** Whether the cart card is shown at all: a Draft holding at least one item. */
+/** Whether the version holds a cart at all: a Draft or a version awaiting payment, with at least one item. */
 export function hasCart(view: MemberCartView | null): boolean {
   const { plans, products } = cartCounts(view);
   return plans + products > 0;
@@ -142,5 +188,18 @@ export function cartErrorKey(message: string | null | undefined): string {
       return draftErrorKey(message);
     default:
       return purchaseErrorKey(message);
+  }
+}
+
+/**
+ * #2746 stage 3 — which locale key explains a refused cancellation of a cart
+ * awaiting payment (#2747's codes): the payment already went through, or its
+ * outcome is still being processed; anything else is the generic refusal.
+ */
+export function pendingCartCancelErrorKey(message: string | null | undefined): string {
+  switch (message) {
+    case 'payment_settled': return 'membership.cart_pending_error_settled';
+    case 'payment_unresolved': return 'membership.summary_error_unresolved';
+    default: return 'membership.cart_pending_error_generic';
   }
 }

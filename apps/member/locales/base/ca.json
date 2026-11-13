@@ -574,7 +574,15 @@
     "cart_discard_confirm": "Cancel·la la cistella",
     "cart_discard_keep": "Mantén la cistella",
     "cart_error_already_in_cart": "Aquest producte ja és a la teva cistella.",
-    "cart_error_one_per_member": "Ja tens aquest producte i només se’n pot tenir un."
+    "cart_error_one_per_member": "Ja tens aquest producte i només se’n pot tenir un.",
+    "cart_pending_heading": "Tens un pagament pendent",
+    "cart_pending_hint": "El pagament d'aquesta compra ja s'ha iniciat. Paga per completar-la o cancel·la la compra sencera.",
+    "cart_pending_cancel_title": "Vols cancel·lar aquesta compra?",
+    "cart_pending_cancel_body": "Es cancel·laran tots els plans i productes d'aquesta compra i no se'n cobrarà res més. Continuarà al teu historial.",
+    "cart_pending_cancel_confirm": "Cancel·la la compra",
+    "cart_pending_cancel_keep": "Mantén la meva compra",
+    "cart_pending_error_settled": "Aquest pagament ja s'ha completat, així que la compra ja no es pot cancel·lar aquí. Contacta amb el teu gimnàs.",
+    "cart_pending_error_generic": "No s'ha pogut cancel·lar la compra. Torna-ho a provar."
   },
   "payments": {
     "title": "Pagaments",

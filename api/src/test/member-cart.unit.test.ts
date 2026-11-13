@@ -16,8 +16,12 @@ import {
   cartCounts,
   cartErrorKey,
   cartItems,
+  cartItemsRemovable,
+  cartPendingAmount,
+  cartPhase,
   cartProductState,
   hasCart,
+  pendingCartCancelErrorKey,
 } from '../../../apps/member/src/lib/memberCart';
 import type { MemberSetReview } from '../../../apps/member/src/lib/memberProducts';
 
@@ -63,9 +67,9 @@ describe('what the cart holds (§3/§4)', () => {
     expect(cartCounts(draft({ cart: { plans: 1, products: 5 } }))).toEqual({ plans: 1, products: 5 });
   });
 
-  it('is empty outside a Draft, so a version awaiting payment shows no cart', () => {
-    expect(cartItems(draft({ status: 'pending_payment' }))).toEqual([]);
+  it('is empty outside a Draft or a version awaiting payment', () => {
     expect(hasCart(draft({ status: 'active' }))).toBe(false);
+    expect(cartItems(draft({ status: 'superseded' }))).toEqual([]);
     expect(hasCart(null)).toBe(false);
     expect(hasCart(draft({ lines: [], plans: [], purchases: [] }))).toBe(false);
   });
@@ -74,6 +78,51 @@ describe('what the cart holds (§3/§4)', () => {
     expect(cartProductState(9, draft())).toEqual({ state: 'in_cart', purchaseId: 31 });
     expect(cartProductState(3, draft())).toEqual({ state: 'none' });
     expect(cartProductState(9, draft({ status: 'pending_payment' }))).toEqual({ state: 'none' });
+  });
+});
+
+describe('the cart awaiting payment (#2746 stage 3, §6)', () => {
+  const pending = (over: Partial<MemberCartView> = {}) => draft({ status: 'pending_payment', owner_member_id: 5, pending_amount: 160, ...over });
+
+  it('keeps the same items grouped as one purchase once payment has started', () => {
+    expect(cartItems(pending()).map((i) => i.key)).toEqual(['plan-21', 'line-11', 'purchase-31']);
+    expect(cartCounts(pending())).toEqual({ plans: 1, products: 2 });
+  });
+
+  it('is the owner’s cart only: a covered family member is shown no pending purchase', () => {
+    expect(cartPhase(pending(), 5)).toBe('pending_payment');
+    expect(cartPhase(pending(), 6)).toBeNull();
+    expect(cartPhase(pending(), null)).toBeNull();
+    expect(cartPhase(draft(), 6)).toBe('draft');
+    expect(cartPhase(draft({ lines: [], plans: [], purchases: [] }), 5)).toBeNull();
+  });
+
+  it('lets no item leave on its own while payment is in progress', () => {
+    expect(cartItemsRemovable(draft())).toBe(true);
+    expect(cartItemsRemovable(pending())).toBe(false);
+  });
+
+  it('shows the amount the server reports for the initial payment, never one added up here', () => {
+    expect(cartPendingAmount(pending())).toBe(160);
+    expect(cartPendingAmount(pending({ pending_amount: null }))).toBeNull();
+    expect(cartPendingAmount(draft({ pending_amount: 160 }))).toBeNull();
+  });
+
+  it('never offers a one-time Product as “in the cart” to add or remove while paying', () => {
+    expect(cartProductState(9, pending())).toEqual({ state: 'none' });
+  });
+
+  it('explains a refused cancellation by #2747’s codes', () => {
+    expect(pendingCartCancelErrorKey('payment_settled')).toBe('membership.cart_pending_error_settled');
+    expect(pendingCartCancelErrorKey('payment_unresolved')).toBe('membership.summary_error_unresolved');
+    expect(pendingCartCancelErrorKey('boom')).toBe('membership.cart_pending_error_generic');
+  });
+
+  it('cancels the whole purchase through #2747’s route, after a confirmation', () => {
+    const page = readFileSync(PAGE, 'utf-8');
+    expect(page).toContain('/cancel`, { method: \'POST\' }');
+    expect(page).toContain('setConfirmPendingCancel(true)');
+    expect(page).toContain("t('membership.cart_pending_heading')");
   });
 });
 
