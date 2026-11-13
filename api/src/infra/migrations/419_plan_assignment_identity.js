@@ -27,7 +27,9 @@
  *   1. every snapshot naming a `user_memberships` row takes the lowest snapshot id naming that row;
  *   2. a snapshot naming none inherits its copy source's assignment, walked down the lineage;
  *   3. anything left is its own assignment;
- *   4. the assignment-level facts are copied from the `user_memberships` row each snapshot names.
+ *   4. the assignment-level facts are copied from the `user_memberships` row each snapshot names
+ *      (every snapshot, shared ones included: the columns are new, so nothing is overwritten. This
+ *      step is only valid while `user_memberships` is the source of truth, i.e. before M6b-4).
  * Status and dates are left to `syncPlanSnapshot()`'s existing rule, except the one value the old
  * CHECK could not hold: an un-shared snapshot of an Active set whose assignment cancels at its period
  * end takes `active_cancel_at_period_end` instead of `cancelled`.
@@ -37,6 +39,17 @@
 
 const STATUSES = "'draft','pending_payment','active','paused','active_cancel_at_period_end','cancelled','expired','superseded'";
 const OLD_STATUSES = "'draft','pending_payment','active','paused','cancelled','expired','superseded'";
+
+/** Makes `chk_plan_snapshots_status` the given list unless it already is (`isWanted` reads its clause). */
+async function setStatusCheck(knex, statuses, isWanted) {
+  const [rows] = await knex.raw(
+    `SELECT cc.CHECK_CLAUSE AS clause FROM information_schema.CHECK_CONSTRAINTS cc
+      WHERE cc.CONSTRAINT_SCHEMA = DATABASE() AND cc.CONSTRAINT_NAME = 'chk_plan_snapshots_status'`);
+  const chk = rows && rows[0];
+  if (chk && isWanted(String(chk.clause))) return;
+  if (chk) await knex.raw('ALTER TABLE plan_snapshots DROP CHECK chk_plan_snapshots_status');
+  await knex.raw(`ALTER TABLE plan_snapshots ADD CONSTRAINT chk_plan_snapshots_status CHECK (status IN (${statuses}))`);
+}
 
 async function backfillPlanAssignmentIdentity(knex) {
   await knex.raw(`
@@ -51,7 +64,8 @@ async function backfillPlanAssignmentIdentity(knex) {
     UPDATE plan_snapshots SET assignment_id = id
      WHERE assignment_id IS NULL AND source_user_membership_id IS NULL AND copied_from_plan_snapshot_id IS NULL`);
   // A copy that names no assignment of its own follows its source, one lineage step per pass.
-  for (let pass = 0; pass < 50; pass += 1) {
+  // Each pass resolves at least one row or ends the loop, so it terminates whatever the depth.
+  for (;;) {
     const [res] = await knex.raw(`
       UPDATE plan_snapshots s
         JOIN plan_snapshots src ON src.id = s.copied_from_plan_snapshot_id AND src.gym_id = s.gym_id
@@ -105,28 +119,29 @@ exports.up = async (knex) => {
           REFERENCES plan_snapshots (id) ON DELETE RESTRICT,
         ADD CONSTRAINT plan_snapshots_replaces_fk FOREIGN KEY (replaces_assignment_id)
           REFERENCES plan_snapshots (id) ON DELETE SET NULL`);
-    await knex.raw('ALTER TABLE plan_snapshots DROP CHECK chk_plan_snapshots_status');
-    await knex.raw(`ALTER TABLE plan_snapshots ADD CONSTRAINT chk_plan_snapshots_status CHECK (status IN (${STATUSES}))`);
   }
+  // Guarded on its own state, so a run that died between the statements above is finished by a re-run.
+  await setStatusCheck(knex, STATUSES, (clause) => clause.includes('active_cancel_at_period_end'));
   await backfillPlanAssignmentIdentity(knex);
 };
 
 exports.down = async (knex) => {
-  if (!(await knex.schema.hasColumn('plan_snapshots', 'assignment_id'))) return;
+  if (await knex.schema.hasColumn('plan_snapshots', 'assignment_id')) {
+    await knex.raw("UPDATE plan_snapshots SET status = 'cancelled' WHERE status = 'active_cancel_at_period_end'");
+    await knex.raw(`
+      ALTER TABLE plan_snapshots
+        DROP FOREIGN KEY plan_snapshots_assignment_fk,
+        DROP FOREIGN KEY plan_snapshots_replaces_fk,
+        DROP KEY plan_snapshots_assignment_index,
+        DROP KEY plan_snapshots_replaces_index,
+        DROP COLUMN assignment_id,
+        DROP COLUMN purchased_at,
+        DROP COLUMN replace_on_activation,
+        DROP COLUMN replaces_assignment_id,
+        DROP COLUMN deleted_at,
+        DROP COLUMN deleted_by`);
+  }
   await knex.raw("UPDATE plan_snapshots SET status = 'cancelled' WHERE status = 'active_cancel_at_period_end'");
-  await knex.raw('ALTER TABLE plan_snapshots DROP CHECK chk_plan_snapshots_status');
-  await knex.raw(`
-    ALTER TABLE plan_snapshots
-      DROP FOREIGN KEY plan_snapshots_assignment_fk,
-      DROP FOREIGN KEY plan_snapshots_replaces_fk,
-      DROP KEY plan_snapshots_assignment_index,
-      DROP KEY plan_snapshots_replaces_index,
-      DROP COLUMN assignment_id,
-      DROP COLUMN purchased_at,
-      DROP COLUMN replace_on_activation,
-      DROP COLUMN replaces_assignment_id,
-      DROP COLUMN deleted_at,
-      DROP COLUMN deleted_by,
-      MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'draft'`);
-  await knex.raw(`ALTER TABLE plan_snapshots ADD CONSTRAINT chk_plan_snapshots_status CHECK (status IN (${OLD_STATUSES}))`);
+  await setStatusCheck(knex, OLD_STATUSES, (clause) => !clause.includes('active_cancel_at_period_end'));
+  await knex.raw("ALTER TABLE plan_snapshots MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'draft'");
 };

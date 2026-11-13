@@ -19,26 +19,38 @@ import { planSnapshotSharedSql } from './plan-snapshot-lines';
 
 type Exec = { query: Tx['query'] };
 
-/** The lowest snapshot id naming each assignment, as a derived table (`gym_id`, `um_id`, `anchor_id`). */
-const ANCHOR_BY_ASSIGNMENT = `
-  (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
-     FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id IS NOT NULL
-    GROUP BY gym_id, source_user_membership_id)`;
+/**
+ * The lowest snapshot id naming each of the given `user_memberships` rows. Asked per assignment (the
+ * `source_user_membership_id` index), never as a scan of the gym's snapshots: the sync runs on every
+ * Draft edit.
+ */
+async function anchorsOf(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<Map<number, number>> {
+  const ids = [...new Set(userMembershipIds)];
+  const anchors = new Map<number, number>();
+  if (ids.length === 0) return anchors;
+  const { rows } = await exec.query<{ um_id: number; anchor_id: number }>(
+    `SELECT source_user_membership_id AS um_id, MIN(id) AS anchor_id FROM plan_snapshots
+      WHERE gym_id = ? AND source_user_membership_id IN (${ids.map(() => '?').join(',')})
+      GROUP BY source_user_membership_id`, [gymId, ...ids]);
+  for (const r of rows) anchors.set(Number(r.um_id), Number(r.anchor_id));
+  return anchors;
+}
 
 /** Stamps `assignment_id` on the given snapshots (see the module comment for the rule). */
 export async function stampAssignmentIds(exec: Exec, gymId: string, planSnapshotIds: number[]): Promise<void> {
   if (planSnapshotIds.length === 0) return;
   const marks = planSnapshotIds.map(() => '?').join(',');
-  await exec.query(
-    `UPDATE plan_snapshots s
-       JOIN ${ANCHOR_BY_ASSIGNMENT} a ON a.gym_id = s.gym_id AND a.um_id = s.source_user_membership_id
-        SET s.assignment_id = a.anchor_id
-      WHERE s.gym_id = ? AND s.id IN (${marks}) AND NOT (s.assignment_id <=> a.anchor_id)`,
-    [gymId, gymId, ...planSnapshotIds]);
-  await exec.query(
-    `UPDATE plan_snapshots SET assignment_id = id
-      WHERE gym_id = ? AND id IN (${marks}) AND assignment_id IS NULL`,
-    [gymId, ...planSnapshotIds]);
+  const { rows } = await exec.query<{ id: number; um_id: number | null; assignment_id: number | null }>(
+    `SELECT id, source_user_membership_id AS um_id, assignment_id FROM plan_snapshots
+      WHERE gym_id = ? AND id IN (${marks})`, [gymId, ...planSnapshotIds]);
+  const anchors = await anchorsOf(exec, gymId, rows.filter((r) => r.um_id != null).map((r) => Number(r.um_id)));
+  for (const r of rows) {
+    const current = r.assignment_id == null ? null : Number(r.assignment_id);
+    const wanted = r.um_id != null ? (anchors.get(Number(r.um_id)) ?? Number(r.id)) : (current ?? Number(r.id));
+    if (wanted !== current) {
+      await exec.query('UPDATE plan_snapshots SET assignment_id = ? WHERE id = ? AND gym_id = ?', [wanted, r.id, gymId]);
+    }
+  }
 }
 
 export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotId: number): Promise<void> {
@@ -57,25 +69,29 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
  * then write the copy) is the next stage's writer.
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number }>(
-    `SELECT psj.plan_snapshot_id AS id FROM product_set_plan_snapshots psj
+  const { rows } = await tx.query<{ id: number; replaces: number | null; shared: number }>(
+    `SELECT s.id, um.replaces_user_membership_id AS replaces,
+            ${planSnapshotSharedSql('s.id', 'psj.product_set_id')} AS shared
+       FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
+       LEFT JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
-  const ids = rows.map((r) => Number(r.id));
-  if (ids.length === 0) return;
-  await stampAssignmentIds(tx, gymId, ids);
-  await tx.query(
-    `UPDATE plan_snapshots s
-       JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ?
-       JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
-       LEFT JOIN ${ANCHOR_BY_ASSIGNMENT} r ON r.gym_id = um.gym_id AND r.um_id = um.replaces_user_membership_id
-        SET s.purchased_at = um.purchased_at,
-            s.replace_on_activation = um.replace_on_activation,
-            s.replaces_assignment_id = r.anchor_id,
-            s.deleted_at = um.deleted_at,
-            s.deleted_by = um.deleted_by
-      WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
-    [productSetId, gymId, gymId]);
+  if (rows.length === 0) return;
+  await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
+  const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
+  for (const r of rows) {
+    if (Number(r.shared) === 1) continue;
+    await tx.query(
+      `UPDATE plan_snapshots s
+         JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
+          SET s.purchased_at = um.purchased_at,
+              s.replace_on_activation = um.replace_on_activation,
+              s.replaces_assignment_id = ?,
+              s.deleted_at = um.deleted_at,
+              s.deleted_by = um.deleted_by
+        WHERE s.id = ? AND s.gym_id = ?`,
+      [r.replaces != null ? (replaced.get(Number(r.replaces)) ?? null) : null, r.id, gymId]);
+  }
 }
 
 /**
