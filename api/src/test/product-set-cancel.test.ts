@@ -73,16 +73,21 @@ async function plan(price: number): Promise<number> {
   return insertId;
 }
 
-async function pending(memberId?: number) {
+async function pending(memberId?: number, opts: { assignment?: boolean } = {}) {
   const ownerId = memberId ?? await member();
   const c = await auth(request.post('/product-sets')).send({ member_id: ownerId, membership_plan_id: await plan(40), starts_at: TODAY });
   expect(c.status).toBe(201);
   const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
   expect(pay.body.status).toBe('pending_payment');
-  const { insertId: umId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
-    [gymId, ownerId, TODAY]);
-  await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, c.body.id]);
+  // A plan chosen in the Members App has no assignment until it is paid (#2743);
+  // an Admin Save & Pay is linked to one.
+  let umId: number | null = null;
+  if (opts.assignment !== false) {
+    ({ insertId: umId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
+      [gymId, ownerId, TODAY]));
+    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, c.body.id]);
+  }
   const { rows } = await db.query<any>(
     `SELECT pr.id, pr.provider_ref, pr.provider_order FROM payment_requests pr
        JOIN billing_events be ON be.id = pr.billing_event_id WHERE be.product_set_id = ?`, [c.body.id]);
@@ -234,5 +239,43 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     expect(res.body.pending_amount).toBe(Number(event.amount));
     expect(res.body.pending_amount).toBeGreaterThan(0);
     expect(res.body.cart).toEqual({ plans: 1, products: 0 });
+  });
+
+  it('#2747 stage 2: a cancelled plan that never had an assignment is listed under Past in both apps', async () => {
+    const clerk = `ps-cancel-past-${uniq()}`;
+    await createTestMembership(gymId, 'member', clerk);
+    const memberId = await member(clerk);
+    const unassigned = await pending(memberId, { assignment: false });
+    lookups.set(unassigned.request.provider_ref, 'PENDING');
+    expect((await asMember(clerk, `/${unassigned.id}/cancel`)).status).toBe(200);
+
+    // The Admin's Member card: listed beside the plans, dated by the cancel.
+    const config = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(config.status).toBe(200);
+    expect(config.body.cancelled_product_sets).toEqual([
+      expect.objectContaining({ id: unassigned.id, status: 'cancelled', cancelled_at: TODAY, user_membership_id: null }),
+    ]);
+    expect(config.body.product_sets.map((r: any) => r.id)).not.toContain(unassigned.id);
+
+    // The member's own My Products: a past plan, status cancelled, ended the day it was cancelled.
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
+    const me = await request.get('/me/membership').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(me.status).toBe(200);
+    expect(me.body.pending_membership).toBeNull();
+    expect(me.body.past_memberships).toEqual([
+      expect.objectContaining({ product_set_id: unassigned.id, status: 'cancelled', lifecycle_status: 'cancelled', ended_on: TODAY }),
+    ]);
+  });
+
+  it('#2747 stage 2: a cancelled set linked to an assignment is listed through that assignment, not twice', async () => {
+    const p = await pending();
+    lookups.set(p.request.provider_ref, 'PENDING');
+    expect((await auth(request.post(`/product-sets/${p.id}/cancel`)).send({})).status).toBe(200);
+
+    const config = await auth(request.get(`/user-memberships/member/${p.memberId}/configuration`));
+    expect(config.body.cancelled_product_sets).toEqual([]);
+    const row = config.body.plans.find((r: any) => r.id === p.umId);
+    expect(row).toEqual(expect.objectContaining({ status: 'cancelled' }));
+    expect(Number(row.is_live)).toBe(0);
   });
 });

@@ -89,6 +89,9 @@ export interface ProductSetRow {
   /** Seconds left on a Draft by the server's clock (#2477); null for any other status. */
   expires_in_seconds?: number | null;
   created_by: string | null;
+  /** #2747 stage 2 — when a cancelled version was cancelled (date only), and by whom. */
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
 }
 
 /**
@@ -116,8 +119,10 @@ export interface MemberConfiguration {
   product_sets: ProductSetRow[];
   current_product_set: ProductSetSummary | null;
   past_product_sets: ProductSetSummary[];
+  /** #2747 stage 2 — plans cancelled while awaiting payment, never assigned: listed under Past. */
+  cancelled_product_sets?: ProductSetRow[];
 }
 
 export const EMPTY_CONFIGURATION: MemberConfiguration = {
-  plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [],
+  plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [], cancelled_product_sets: [],
 };

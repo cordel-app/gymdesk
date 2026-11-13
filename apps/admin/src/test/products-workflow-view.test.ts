@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
+  billingMode, cancelRequestFor, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -52,5 +52,23 @@ describe('#1613 products workflow', () => {
     expect(psStatusKey({ ...set('active'), plan_name: 'Gold' } as any, true)).toBe('active');
     expect(psStatusKey({ ...set('active'), plan_name: null } as any, false)).toBe('active');
     expect(psStatusKey(null)).toBeNull();
+  });
+});
+
+describe('#2747 stage 2 — what Cancel does to the in-flight version', () => {
+  it('discards a Draft and cancels-and-keeps a version awaiting payment', () => {
+    expect(cancelRequestFor({ id: 4, status: 'draft' })).toEqual({ kind: 'discard_draft', path: '/product-sets/4', method: 'DELETE' });
+    expect(cancelRequestFor({ id: 4, status: 'pending_payment' })).toEqual({ kind: 'cancel_pending', path: '/product-sets/4/cancel', method: 'POST' });
+  });
+
+  it('offers no Cancel for any other version', () => {
+    for (const status of ['active', 'superseded', 'cancelled']) expect(cancelRequestFor({ id: 4, status })).toBeNull();
+    expect(cancelRequestFor(null)).toBeNull();
+  });
+
+  it('explains a refused cancel by the server\'s code', () => {
+    expect(pendingCancelErrorKey('payment_settled')).toBe('ps_cancel_pending_error_settled');
+    expect(pendingCancelErrorKey('payment_unresolved')).toBe('ps_cancel_pending_error_unresolved');
+    expect(pendingCancelErrorKey('anything')).toBe('ps_cancel_pending_error');
   });
 });

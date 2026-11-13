@@ -66,6 +66,12 @@ export interface MemberPastPlan {
    * status alone rather than as a guessed date.
    */
   ended_on: string | null;
+  /**
+   * #2747 stage 2: set on a row that is a cancelled Product Set awaiting its
+   * first payment that never had an assignment (a plan chosen in the Members
+   * App); `id` is then the Product Set's id, not an assignment's.
+   */
+  product_set_id?: number;
 }
 
 /** A DATE or DATETIME column as the bare `YYYY-MM-DD` every member-facing date is. */
@@ -121,4 +127,47 @@ export function splitMemberPlanHistory<T extends MemberPlanHistoryRow>(
   const past = (isLive(current) ? rest.filter((r) => !isLive(r)) : rest).map(toMemberPastPlan);
   past.sort((a, b) => (b.starts_at ?? '').localeCompare(a.starts_at ?? '') || b.id - a.id);
   return { current, also_live: alsoLive, past };
+}
+
+/**
+ * #2747 stage 2 — a Product Set cancelled while awaiting its first payment, as
+ * the read projects it. Only a set that carried a Membership Plan and was never
+ * linked to an assignment is one: a linked assignment is cancelled with the set
+ * and already reaches the history as itself.
+ */
+export interface CancelledPlanSetRow {
+  id: number;
+  membership_plan_id: number | null;
+  plan_name: string | null;
+  starts_at: unknown;
+  cancelled_at: unknown;
+}
+
+/** One cancelled plan set as a Past Membership Plans row: status `cancelled`, ended the day it was cancelled. */
+export function toCancelledSetPastPlan(row: CancelledPlanSetRow): MemberPastPlan {
+  return {
+    id: Number(row.id),
+    product_set_id: Number(row.id),
+    membership_plan_id: row.membership_plan_id == null ? null : Number(row.membership_plan_id),
+    plan_name: row.plan_name ?? null,
+    status: 'cancelled',
+    lifecycle_status: 'cancelled',
+    starts_at: toDateOnly(row.starts_at),
+    ended_on: toDateOnly(row.cancelled_at),
+  };
+}
+
+/**
+ * The history with the cancelled plan sets folded in, newest first by the
+ * history's own key (`starts_at`), so a set reads exactly where an assignment
+ * started on the same day would.
+ */
+export function withCancelledPlanSets(
+  past: readonly MemberPastPlan[],
+  sets: readonly CancelledPlanSetRow[],
+): MemberPastPlan[] {
+  if (sets.length === 0) return [...past];
+  const all = [...past, ...sets.map(toCancelledSetPastPlan)];
+  all.sort((a, b) => (b.starts_at ?? '').localeCompare(a.starts_at ?? '') || b.id - a.id);
+  return all;
 }

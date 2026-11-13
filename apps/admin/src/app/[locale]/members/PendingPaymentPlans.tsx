@@ -9,6 +9,9 @@
 // paying or cancelling stays in the Summary's `/product-sets` workflow. It is not
 // an Assigned Plan row (#1051's table): the version has no assignment until the
 // payment activates it, and then it is one of the table's rows instead.
+//
+// #2747 stage 2: the same rows list such a version once it was cancelled
+// (`status="cancelled"`, under Past), dated by the day it was cancelled.
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
@@ -18,13 +21,20 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateOnly } from '@/lib/gymFormat';
 import type { ProductSetRow } from './membershipConfiguration';
 
-export function PendingPaymentPlans({ sets, spaced }: { sets: ProductSetRow[]; spaced: boolean }) {
+export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment' }: {
+  sets: ProductSetRow[];
+  spaced: boolean;
+  status?: 'pending_payment' | 'cancelled';
+}) {
   const t = useTranslations('members');
   const tStatus = useTranslations('status');
   const gymFmt = useGymFormatSettings();
   if (sets.length === 0) return null;
   return (
-    <div style={{ ...listSurfaceStyle, marginBottom: spaced ? 8 : 0 }} data-pending-payment-plans>
+    <div
+      style={{ ...listSurfaceStyle, marginBottom: spaced ? 8 : 0 }}
+      {...(status === 'cancelled' ? { 'data-cancelled-plan-sets': true } : { 'data-pending-payment-plans': true })}
+    >
       {sets.map((ps, i) => (
         <div
           key={ps.id}
@@ -35,9 +45,11 @@ export function PendingPaymentPlans({ sets, spaced }: { sets: ProductSetRow[]; s
           }}
         >
           <strong style={{ flex: 1, minWidth: 0 }}>{ps.plan_name ?? t('product_set_no_plan')}</strong>
-          {ps.starts_at && <span>{formatGymDateOnly(ps.starts_at, gymFmt)}</span>}
+          {status === 'cancelled'
+            ? ps.cancelled_at && <span>{formatGymDateOnly(ps.cancelled_at, gymFmt)}</span>
+            : ps.starts_at && <span>{formatGymDateOnly(ps.starts_at, gymFmt)}</span>}
           {ps.amount_due != null && <span>{formatGymAmount(ps.amount_due, gymFmt)}</span>}
-          <StatusBadge status="pending_payment" label={tStatus('pending_payment' as never)} />
+          <StatusBadge status={status} label={tStatus(status as never)} />
         </div>
       ))}
     </div>

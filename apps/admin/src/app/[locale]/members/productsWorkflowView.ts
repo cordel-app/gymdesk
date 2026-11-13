@@ -104,3 +104,32 @@ export function withoutZeroRows<
     .filter((d) => d.lines.length > 0);
   return { ...simulation, dates };
 }
+
+/**
+ * #2747 stage 2 — what Cancel does to the in-flight version, decided once for the
+ * Summary's and the Recurring section's buttons. A Draft is discarded
+ * (`DELETE /product-sets/:id`, #1881); a version awaiting its first payment is
+ * cancelled and kept (`POST /product-sets/:id/cancel`, stage 1), which is not a
+ * return to Draft. Anything else offers no Cancel.
+ */
+export type CancelRequest =
+  | { kind: 'discard_draft'; path: string; method: 'DELETE' }
+  | { kind: 'cancel_pending'; path: string; method: 'POST' };
+
+export function cancelRequestFor(set: { id: number; status: string } | null | undefined): CancelRequest | null {
+  if (!set) return null;
+  if (set.status === 'draft') return { kind: 'discard_draft', path: `/product-sets/${set.id}`, method: 'DELETE' };
+  if (set.status === 'pending_payment') {
+    return { kind: 'cancel_pending', path: `/product-sets/${set.id}/cancel`, method: 'POST' };
+  }
+  return null;
+}
+
+/** The `members.*` key explaining a refused cancellation of a pending version (stage 1's 409 codes). */
+export function pendingCancelErrorKey(code: string | null | undefined): string {
+  switch (code) {
+    case 'payment_settled': return 'ps_cancel_pending_error_settled';
+    case 'payment_unresolved': return 'ps_cancel_pending_error_unresolved';
+    default: return 'ps_cancel_pending_error';
+  }
+}

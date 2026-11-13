@@ -39,6 +39,8 @@ export interface MemberPastPlan {
   starts_at: string | null;
   /** The day it stopped running: its `ends_at`, else when it was closed. */
   ended_on: string | null;
+  /** #2747 stage 2: set when the row is a plan cancelled while awaiting payment (a Product Set). */
+  product_set_id?: number;
 }
 
 /** The locale key naming what became of a past plan — the `membership.status` map. */
