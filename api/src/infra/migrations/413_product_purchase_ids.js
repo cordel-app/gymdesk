@@ -20,7 +20,8 @@
  * deploy window (the previous API container still lets the legacy table allocate while this runs).
  * `ALTER TABLE … AUTO_INCREMENT` on this new table is a metadata change.
  *
- * `down` drops the table: the legacy record still holds every purchase id the writer handed out.
+ * `down` drops the table: the legacy record still holds every purchase id the writer handed out. Roll
+ * the API back with it — `insertPurchase()` allocates here and has no fallback.
  */
 
 const DEPLOY_HEADROOM = 1000;
