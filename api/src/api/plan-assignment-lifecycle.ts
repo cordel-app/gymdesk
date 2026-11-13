@@ -101,6 +101,7 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
       // The copy takes the link's place (a link is a plan's place in its set, M4b-3).
       await tx.query('UPDATE product_set_plan_snapshots SET plan_snapshot_id = ? WHERE id = ?', [target, r.link_id]);
       await moveInFlightLinks(tx, gymId, Number(r.owner_member_id), original, target, String(r.wanted_status));
+      await moveSessionLedger(tx, gymId, original, target);
       // Kept whenever anything still depends on it (a set's link, the assignment's anchor, the
       // Promotion snapshots the copy reuses); gone only when it was left with no reference at all.
       await deleteUnlinkedPlanSnapshots(tx, gymId, [original]);
@@ -116,6 +117,29 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
         WHERE s.id = ? AND s.gym_id = ?`, [entitlementOnly ? 1 : 0, target, gymId]);
   }
   return copied;
+}
+
+/**
+ * M6b-4: the assignment's Session Benefit ledger follows it onto the copy. A plan's session grant is
+ * identified by its `plan_session_snapshots` line (migration 354), and the copy has lines of its own,
+ * so the renewals granted, the sessions spent and the units reserved against the original's lines are
+ * re-pointed at the copy's matching lines (same Product, same member). They are the assignment's, and
+ * the copy is where the assignment lives from here on; left behind, a paused and resumed plan would
+ * read as never renewed and never spent.
+ */
+async function moveSessionLedger(tx: Tx, gymId: string, original: number, copy: number): Promise<void> {
+  const LINES = `
+    JOIN plan_session_snapshots o ON o.id = %REF% AND o.plan_snapshot_id = ? AND o.gym_id = l.gym_id
+    JOIN plan_session_snapshots c ON c.plan_snapshot_id = ? AND c.gym_id = o.gym_id
+                                 AND c.product_id = o.product_id AND c.assigned_member_id <=> o.assigned_member_id`;
+  await tx.query(
+    `UPDATE plan_allowance_renewals l ${LINES.replace('%REF%', 'l.plan_session_snapshot_id')}
+        SET l.plan_session_snapshot_id = c.id WHERE l.gym_id = ?`, [original, copy, gymId]);
+  for (const table of ['professional_service_consumptions', 'professional_service_reservations']) {
+    await tx.query(
+      `UPDATE ${table} l ${LINES.replace('%REF%', 'l.source_reference_id')}
+          SET l.source_reference_id = c.id WHERE l.gym_id = ? AND l.source_kind = 'plan_session'`, [original, copy, gymId]);
+  }
 }
 
 /** The owner's Draft / Pending Payment sets that link `original` follow the copy or let the plan go. */

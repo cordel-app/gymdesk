@@ -222,8 +222,13 @@ describe('a Draft bills nothing and books nothing', () => {
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
     expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))\"");
+    // #2125 M6b-4: only the Additional Services leg still asks that of `user_memberships`. The plan's
+    // own sessions and a Promotion's read the assignment's current plan snapshot through the access
+    // readers' predicate, which a Draft or Pending Payment snapshot never satisfies either.
     const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\}/g) ?? [];
-    expect(assignmentReads).toHaveLength(3);
+    expect(assignmentReads).toHaveLength(1);
+    const snapshotReads = loader.match(/FROM plan_snapshots pa[\s\S]*?WHERE[^;]*?\$\{entitlingAssignmentSql\('pa'\)\}/g) ?? [];
+    expect(snapshotReads).toHaveLength(2);
   });
 });
 

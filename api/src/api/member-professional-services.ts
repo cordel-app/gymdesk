@@ -1,4 +1,4 @@
-import { assignmentPlanSnapshotId } from './assignment-config';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -15,7 +15,6 @@ import {
   parseAdjustmentInput,
   sortHistory,
 } from '../domain/professionalServiceAdjustments';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * #647 stage 1: read-only view of the Member side of the Professional
@@ -158,12 +157,11 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
       `SELECT par.quantity, par.renewal_date
          FROM plan_allowance_renewals par
          JOIN plan_session_snapshots umss ON umss.id = par.plan_session_snapshot_id
-         JOIN user_memberships um ON um.gym_id = par.gym_id
-          AND ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} = umss.plan_snapshot_id
-        WHERE par.gym_id = ? AND um.status = 'active'
-          AND (um.member_id IN ${inList(ids)}
-               OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-                          WHERE umm.user_membership_id = um.id AND umm.member_id IN ${inList(ids)}))
+         JOIN plan_snapshots pa ON pa.id = umss.plan_snapshot_id AND pa.gym_id = par.gym_id
+        WHERE par.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+          AND (pa.member_id IN ${inList(ids)}
+               OR EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries umm
+                          WHERE umm.plan_snapshot_id = pa.id AND umm.gym_id = pa.gym_id AND umm.member_id IN ${inList(ids)}))
           AND EXISTS (SELECT 1 FROM product_professional_services sips
                        WHERE sips.product_id = umss.product_id AND sips.gym_id = par.gym_id
                          AND sips.professional_service_id = ?)
