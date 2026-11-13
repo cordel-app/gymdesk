@@ -150,6 +150,7 @@ export function MemberPurchasedProducts({
 
   const columns: Column<PurchasedProduct>[] = [
     {
+      key: 'product',
       header: t('purchase_col_product'),
       mobile: 'name',
       title: (item) => item.product_name,
@@ -157,11 +158,13 @@ export function MemberPurchasedProducts({
     },
     {
       // #2609 — who the Product is for; the server answers the purchaser when nobody was chosen.
+      key: 'assigned_to',
       header: t('purchase_col_assigned_to'),
       mobile: 'secondary',
       render: (item) => item.assigned_member_name ?? dash,
     },
     {
+      key: 'date',
       header: t('purchase_col_date'),
       mobile: 'secondary',
       render: (item) => (
@@ -169,6 +172,7 @@ export function MemberPurchasedProducts({
       ),
     },
     {
+      key: 'end_date',
       header: t('purchase_col_end_date'),
       mobile: 'secondary',
       render: (item) => {
@@ -178,22 +182,26 @@ export function MemberPurchasedProducts({
       },
     },
     {
+      key: 'price',
       header: t('purchase_col_price_incl_vat'),
       mobile: 'secondary',
       render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.regular_amount, item.currency)}</span>,
     },
     {
+      key: 'tax',
       header: t('purchase_col_applied_tax'),
       mobile: 'secondary',
       render: (item) => formatAppliedTax(item.tax_rate_percent) ?? dash,
     },
     {
+      key: 'promotion',
       header: t('purchase_col_applied_promotion'),
       mobile: 'secondary',
       render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
     },
     {
       // #2494 — what that Promotion gave this purchase, from the purchase's own frozen application.
+      key: 'promotion_benefit',
       header: t('purchase_col_promotion_benefit'),
       mobile: 'secondary',
       render: (item) => (item.promotion
@@ -201,21 +209,25 @@ export function MemberPurchasedProducts({
         : dash),
     },
     {
+      key: 'discount',
       header: t('purchase_col_direct_discount'),
       mobile: 'secondary',
       render: (item) => formatDirectDiscount(item.direct_discount_percent) ?? dash,
     },
     {
+      key: 'final',
       header: t('purchase_col_final_price'),
       mobile: 'secondary',
       render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.amount, item.currency)}</span>,
     },
     {
+      key: 'payment_status',
       header: t('purchase_col_payment_status'),
       mobile: 'secondary',
       render: paymentStatus,
     },
     {
+      key: 'status',
       header: t('purchase_col_status'),
       mobile: 'keep',
       render: (item) => (
@@ -303,11 +315,12 @@ export function MemberPurchasedProducts({
               benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
               pr.duration_cycles != null ? t('purchase_promotion_cycles', { count: pr.duration_cycles }) : null,
             ].filter(Boolean).join(' · ')).join(', ');
-            // Same order as `columns`: product, date, end date, price, tax, promotion, promotion benefit, discount, final, payment status, status, actions.
-            const cells: React.ReactNode[] = [
-              c.product, c.date, null, c.price, c.tax, c.promotion, draftBenefit, c.discount, c.final, null,
-              <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />, null,
-            ];
+            // #2786 — keyed by each column's `key`, so a column added to the table cannot shift these cells.
+            const cells: Record<string, React.ReactNode> = {
+              ...c,
+              promotion_benefit: draftBenefit,
+              status: <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />,
+            };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}
           renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}

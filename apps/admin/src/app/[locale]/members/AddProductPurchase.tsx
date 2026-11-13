@@ -216,6 +216,23 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
         ))}
       </select>
     ),
+    // #2786 — the Assigned to column's own cell; absent when the selector does not apply.
+    assigned_to: f.showAssignee && !f.outcome ? (
+      <select
+        id="add-product-assignee"
+        aria-label={t('add_product_assigned_to')}
+        title={t('add_product_assigned_to_help')}
+        style={{ ...formControlStyle, maxWidth: '100%' }}
+        value={f.assignedMemberId}
+        disabled={f.busy}
+        onChange={(e) => f.setAssignedMemberId(Number(e.target.value))}
+        data-add-product-assignee
+      >
+        {(f.assignees ?? []).map((m) => (
+          <option key={m.member_id} value={m.member_id}>{m.name}</option>
+        ))}
+      </select>
+    ) : '—',
     date: today,
     price: product?.price_incl_tax != null ? money(product.price_incl_tax, product.currency) : '—',
     tax: quote && quote.tax_rate_percent != null ? `${quote.tax_rate_percent}%` : '—',
@@ -271,23 +288,6 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
             </p>
           )}
         </>
-      )}
-      {product && !outcome && f.showAssignee && (
-        <div style={{ marginTop: 8, maxWidth: 360 }} data-add-product-assignee>
-          <label style={formFieldLabelStyle} htmlFor="add-product-assignee">{t('add_product_assigned_to')}</label>
-          <select
-            id="add-product-assignee"
-            style={{ ...formControlStyle, maxWidth: '100%' }}
-            value={f.assignedMemberId}
-            disabled={f.busy}
-            onChange={(e) => f.setAssignedMemberId(Number(e.target.value))}
-          >
-            {(f.assignees ?? []).map((m) => (
-              <option key={m.member_id} value={m.member_id}>{m.name}</option>
-            ))}
-          </select>
-          <p style={cardHintStyle}>{t('add_product_assigned_to_help')}</p>
-        </div>
       )}
       {quote && (
         <p style={cardHintStyle}>
@@ -353,6 +353,12 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
+        {form.showAssignee && !form.outcome && (
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <label style={formFieldLabelStyle} htmlFor="add-product-assignee">{t('add_product_assigned_to')}</label>
+            {cells.assigned_to}
+          </div>
+        )}
         {form.isAdmin && (
           <div style={{ flex: '0 0 110px' }}>
             <label style={formFieldLabelStyle} htmlFor="add-product-discount">{t('add_product_direct_discount')}</label>
