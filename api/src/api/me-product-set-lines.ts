@@ -256,7 +256,11 @@ export async function loadMemberProductSetView(
         benefits: benefits.get(Number(r.plan_snapshot_id)) ?? [],
       };
     })
-    .filter((p) => isOwnerView || p.beneficiaries.some((b) => b.member_id === viewer!.memberId));
+    .filter((p) => isOwnerView || p.beneficiaries.some((b) => b.member_id === viewer!.memberId))
+    // #2777: an entitlement-only link is a plan still running to its end date. Once that date has
+    // passed it reads `cancelled` (`LIFECYCLE_STATUS_SQL`) and belongs to Past Membership Plans
+    // (`past_memberships`), not My Plans — the link itself is only re-derived for the next set.
+    .filter((p) => !p.entitlement_only || p.status === 'cancels_on_end_date');
 
   return {
     expires_in_seconds: expiresIn,

@@ -15,8 +15,9 @@
 //    one ordering, hands the rows here in it, and the history is the tail. A
 //    `WHERE status = 'cancelled'` of its own would be that second rule, and it
 //    would describe the same assignment twice the day a member's only plan is
-//    cancelled — the card above would name it and the history under it would
-//    list it again.
+//    cancelled. (#2777: the page's plans are now My Plans, read from the Product
+//    Set, so a head that is no longer live is listed in the history as well —
+//    nothing else on the page names it.)
 //  - **A Draft is not history either.** The caller appends
 //    `MEMBER_CURRENT_ASSIGNMENT_FILTER` beside the ordering (#1108 Q2: a Draft
 //    is staff-side configuration that is not the member's plan), so a Draft
@@ -124,7 +125,11 @@ export function splitMemberPlanHistory<T extends MemberPlanHistoryRow>(
   const current = rows[currentIndex];
   const rest = rows.filter((_, i) => i !== currentIndex);
   const alsoLive = isLive(current) ? rest.filter(isLive).map(toMemberPastPlan) : [];
-  const past = (isLive(current) ? rest.filter((r) => !isLive(r)) : rest).map(toMemberPastPlan);
+  // #2777: a member with no live plan has none on My Plans either, so the head
+  // (still answered as `membership`, which the Home card and the payment prompts
+  // read) is history too — a plan whose end date has passed moves to Past
+  // rather than being shown nowhere.
+  const past = (isLive(current) ? rest.filter((r) => !isLive(r)) : rows).map(toMemberPastPlan);
   past.sort((a, b) => (b.starts_at ?? '').localeCompare(a.starts_at ?? '') || b.id - a.id);
   return { current, also_live: alsoLive, past };
 }
