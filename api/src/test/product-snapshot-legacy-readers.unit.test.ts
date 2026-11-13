@@ -25,7 +25,6 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
-  'api/product-set-draft.ts': { count: 2, why: 'removeService() / setServiceQuantity() lock the legacy line they write' },
   'scripts/validate-product-snapshots.ts': { count: 10, why: 'read-only report comparing the legacy and snapshot tables' },
 };
 

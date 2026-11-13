@@ -5,6 +5,7 @@ import { addCoverage } from '../api/product-sets';
 import { activateWithEvents } from '../api/product-set-configuration';
 import { ensureRecurringDraft, startRecurringPurchaseDraft } from '../api/recurring-purchase-draft';
 import { revokePromotionMutator } from '../api/product-set-bridge';
+import { deleteRecurringLine } from '../api/recurring-line-writer';
 
 // #1991 stage 3: a Product-target Promotion application is owned by the
 // recurring line (Product snapshot) it applies to.
@@ -108,7 +109,8 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect((await apps(draft))[0].status).toBe('revoked');
 
     // Deleting the line takes its application and grants with it.
-    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [copied[0].recurrent_snapshot_id]);
+    // #2126 stage 5d-1: through the line writer, which deletes the snapshot the application references.
+    await db.transaction((tx) => deleteRecurringLine(tx, gymId, Number(copied[0].recurrent_snapshot_id)));
     expect(await apps(draft)).toHaveLength(0);
     const { rows: gone } = await db.query<any>(
       'SELECT id FROM user_membership_promotion_periodical_snapshot WHERE user_membership_promotion_id = ?', [copied[0].id]);
