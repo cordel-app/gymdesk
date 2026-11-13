@@ -1,5 +1,5 @@
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { assignmentPlanSnapshotId } from './assignment-config';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { dueRenewals, type RenewalLine } from '../domain/planAllowanceRenewals';
@@ -35,20 +35,21 @@ function checkInternalSecret(req: Request, res: Response): boolean {
 export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: number; renewed: number }> {
   // Only an `active` assignment renews (the plan_session grant itself needs
   // `active`); a renewing frequency is the only line that can be owed one.
+  // #2125 M6b-4: the assignment is its current plan snapshot, whose lines are the ones the wallet reads.
   const { rows } = await db.query(
     `SELECT umss.id AS line_id, umss.gym_id, umss.quantity, umss.frequency,
-            DATE_FORMAT(um.starts_at, '%Y-%m-%d') AS starts_at,
-            DATE_FORMAT(um.ends_at, '%Y-%m-%d')   AS ends_at,
+            DATE_FORMAT(pa.starts_at, '%Y-%m-%d') AS starts_at,
+            DATE_FORMAT(pa.ends_at, '%Y-%m-%d')   AS ends_at,
             (SELECT DATE_FORMAT(MAX(par.renewal_date), '%Y-%m-%d')
                FROM plan_allowance_renewals par
               WHERE par.plan_session_snapshot_id = umss.id) AS last_renewal_date
-       FROM user_memberships um
+       FROM plan_snapshots pa
        JOIN plan_session_snapshots umss
-         ON umss.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND umss.gym_id = um.gym_id
-      WHERE um.status = 'active'
+         ON umss.plan_snapshot_id = pa.id AND umss.gym_id = pa.gym_id
+      WHERE pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND umss.frequency IS NOT NULL AND umss.frequency <> 'once'
         AND umss.quantity > 0
-        AND um.starts_at <= ?`,
+        AND pa.starts_at <= ?`,
     [today],
   );
 

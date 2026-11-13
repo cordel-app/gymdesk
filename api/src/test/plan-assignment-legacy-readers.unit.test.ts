@@ -62,7 +62,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/me-product-set-lines.ts': 1,
   'api/me.ts': 6,
   'api/member-membership-configuration.ts': 2,
-  'api/member-professional-services.ts': 1,
   'api/member-tab-counts.ts': 1,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
@@ -73,7 +72,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/payment-page.ts': 1,
   'api/payment-requests.ts': 1,
   'api/payments.ts': 4,
-  'api/plan-allowance-renewals.ts': 1,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 2,
   'api/plan-assignment-sync.ts': 2,
@@ -88,7 +86,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/user-memberships.ts': 29,
   'domain/billingEventPayments.ts': 3,
   'domain/memberEnrollment.ts': 1,
-  'domain/memberProfessionalServices.ts': 3,
+  'domain/memberProfessionalServices.ts': 1,
   'infra/audit-registry.ts': 1,
   'scripts/report-multi-active-memberships.ts': 3,
 };
@@ -113,6 +111,17 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     }
     // The Members App schedule's access-locked flag asks the same predicate.
     expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain('entitlingAssignmentSql(');
+  });
+
+  it('M6b-4: the wallet\'s plan and Promotion sessions and the allowance renewals read plan_snapshots', () => {
+    // The one statement left in the wallet is the Additional Services leg (the set's recurring lines).
+    const wallet = readFileSync(join(API_SRC, 'domain/memberProfessionalServices.ts'), 'utf8');
+    expect(wallet).toContain("entitlingAssignmentSql('pa')");
+    expect(wallet).not.toContain('assignmentPlanSnapshotId(');
+    for (const file of ['api/plan-allowance-renewals.ts', 'api/member-professional-services.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('isCurrentAssignmentSnapshotSql(');
+    }
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
