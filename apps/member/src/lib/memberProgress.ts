@@ -126,3 +126,12 @@ export function muscleLabel(slug: string): string {
   const s = slug.replace(/[_-]+/g, ' ').trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : slug;
 }
+
+/**
+ * #2333 stage 4: a muscle's name as Cordel → Muscles maintains it, in the
+ * member's language (`GET /me/muscles`); the humanised slug only covers a
+ * muscle the API reported no name for, or the frames before the names load.
+ */
+export function muscleName(slug: string, names: Record<string, string>): string {
+  return names[slug] || muscleLabel(slug);
+}
