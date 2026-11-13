@@ -7,7 +7,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
-import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, membershipPageMode } from '@/lib/membershipPages';
+import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, canViewPayments, membershipPageMode, membershipTabs } from '@/lib/membershipPages';
 import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -343,6 +343,8 @@ export default function MembershipPage() {
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
   // #2770: only the Family Owner adds Plans and Products (the API decides; this hides the actions).
   const [canAdd, setCanAdd] = useState(true);
+  // #2776 — the Payments tab is the Family Owner's; the API decides.
+  const [paymentsVisible, setPaymentsVisible] = useState(true);
   const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
   // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
   // nothing to offer, so it is absent rather than leading to an empty list.
@@ -378,8 +380,9 @@ export default function MembershipPage() {
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes, assigneeRes] = await Promise.all([
-          apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null; can_add_plans_and_products?: boolean }>('/me/membership'),
-          apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
+          apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null; can_add_plans_and_products?: boolean; can_view_payments?: boolean }>('/me/membership'),
+          // #2776: a family member who is not the owner is refused (403); the tab is then hidden.
+          apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50').catch(() => ({ items: [] as BillingEvent[] })),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
@@ -399,6 +402,9 @@ export default function MembershipPage() {
         setPastPlans(mship.past_memberships ?? []);
         setPendingMembership(mship.pending_membership ?? null);
         setCanAdd(canAddPlansAndProducts(mship.can_add_plans_and_products));
+        const showPayments = canViewPayments(mship.can_view_payments);
+        setPaymentsVisible(showPayments);
+        if (!showPayments) setTab((current) => (current === 'payments' ? 'products' : current));
         setEvents(ledger.items);
         setPackages(pkgs);
         setPromotions(promos);
@@ -1305,9 +1311,11 @@ export default function MembershipPage() {
         <button type="button" role="tab" aria-selected={tab === 'services'} style={tabStyle(tab === 'services')} onClick={() => setTab('services')}>
           {t('membership.tab_services')}
         </button>
-        <button type="button" role="tab" aria-selected={tab === 'payments'} style={tabStyle(tab === 'payments')} onClick={() => setTab('payments')}>
-          {t('membership.tab_payments')}
-        </button>
+        {membershipTabs(paymentsVisible).includes('payments') && (
+          <button type="button" role="tab" aria-selected={tab === 'payments'} style={tabStyle(tab === 'payments')} onClick={() => setTab('payments')}>
+            {t('membership.tab_payments')}
+          </button>
+        )}
       </div>
     );
   }
@@ -2219,7 +2227,7 @@ export default function MembershipPage() {
     return (
       <main style={styles.container}>
         {renderTabs()}
-        {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
+        {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
         {renderCart()}
         {renderPlansHeader()}
         {renderMyPlans()}
@@ -2235,7 +2243,7 @@ export default function MembershipPage() {
   return (
     <main style={styles.container}>
       {renderTabs()}
-      {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
+      {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
       {/* #2746 stage 2 — the cart, at the top of My Products. */}
       {renderCart()}
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting

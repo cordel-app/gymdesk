@@ -20,3 +20,21 @@ export function familyOwnerOnlyBody() {
     message: 'Only the Family Owner can add Plans or Products',
   };
 }
+
+/**
+ * #2776: who may see the Members App's Payments tab (the member's own Billing
+ * Events and their forecast). The same rule as adding: the Family Owner, or a
+ * Member with no family row. One rule, so the tab and the add actions can never
+ * disagree about who manages a Family's money.
+ */
+export function mayViewPayments(memberId: number, familyOwnerMemberId: number | null): boolean {
+  return mayAddPlansAndProducts(memberId, familyOwnerMemberId);
+}
+
+/** The 403 body the Payments reads answer a Family member who is not its owner. */
+export function familyOwnerOnlyPaymentsBody() {
+  return {
+    error: FAMILY_OWNER_ONLY,
+    message: 'Only the Family Owner can view Payments',
+  };
+}

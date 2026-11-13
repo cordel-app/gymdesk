@@ -44,6 +44,22 @@ export function canAddPlansAndProducts(flag: boolean | null | undefined): boolea
   return flag !== false;
 }
 
+/**
+ * #2776 — whether the member sees the Payments tab: the Family Owner (or a
+ * member with no family) only. The flag is `GET /me/membership`'s
+ * `can_view_payments`, decided by the API; an absent flag (an older API) keeps
+ * the tab, since the two reads it draws from refuse a non-owner on their own.
+ */
+export function canViewPayments(flag: boolean | null | undefined): boolean {
+  return flag !== false;
+}
+
+/** The tabs of My Products, in order; Payments only for who may view it (#2776). */
+export type MembershipTab = 'products' | 'services' | 'payments';
+export function membershipTabs(paymentsVisible: boolean): MembershipTab[] {
+  return paymentsVisible ? ['products', 'services', 'payments'] : ['products', 'services'];
+}
+
 /** The refusal code every add route answers a family member who is not the owner. */
 export const FAMILY_OWNER_ONLY = 'family_owner_only';
 /** Its locale key. */
