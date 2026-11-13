@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitPaymentsTabEvents, isUnresolvedEvent, type PaymentsTabEvent } from '../app/[locale]/members/paymentsTabView';
+import { splitPaymentsTabEvents, splitPastEvents, PAYMENTS_TAB_INITIAL_OPEN, isUnresolvedEvent, type PaymentsTabEvent } from '../app/[locale]/members/paymentsTabView';
 
 const ev = (id: number | null, status: string, date: string, type?: 'real' | 'virtual'): PaymentsTabEvent => ({
   id, type, status, billing_date: date, created_at: null, amount: '10.00', event_type: 'payment_recorded', plan_name: null,
@@ -26,5 +26,30 @@ describe('Member Payments tab (#2099)', () => {
   it('reads unresolved from the API-derived status only', () => {
     expect(isUnresolvedEvent('paid')).toBe(false);
     expect(isUnresolvedEvent('failed')).toBe(true);
+  });
+
+  describe('Last billing event (#2778)', () => {
+    it('shows the newest past event once and keeps the rest in their order', () => {
+      const { past } = splitPaymentsTabEvents([
+        ev(1, 'paid', '2026-01-01'), ev(2, 'failed', '2026-10-01'), ev(5, 'recorded', '2026-02-01'), ev(7, 'paid', '2026-03-01'),
+      ]);
+      const { last, rest } = splitPastEvents(past);
+      expect(last?.id).toBe(7);
+      expect(rest.map((e) => e.id)).toEqual([5, 1]);
+    });
+
+    it('a single past event is the last one and leaves Past empty', () => {
+      const { last, rest } = splitPastEvents([ev(1, 'paid', '2026-01-01')]);
+      expect(last?.id).toBe(1);
+      expect(rest).toEqual([]);
+    });
+
+    it('no past events means no last one', () => {
+      expect(splitPastEvents([])).toEqual({ last: null, rest: [] });
+    });
+
+    it('opens Unresolved and Last, keeps Past closed', () => {
+      expect(PAYMENTS_TAB_INITIAL_OPEN).toEqual({ unresolved: true, last: true, past: false });
+    });
   });
 });

@@ -731,6 +731,7 @@
     "payments_error": "No se pudieron cargar los pagos.",
     "payments_unresolved": "Eventos de facturación sin resolver",
     "payments_unresolved_empty": "No hay eventos de facturación sin resolver.",
+    "payments_last": "Último evento de facturación",
     "payments_past": "Eventos de facturación pasados",
     "payments_past_empty": "No hay eventos de facturación pasados.",
     "payments_no_transactions": "Este evento no tiene transacciones de pago.",
