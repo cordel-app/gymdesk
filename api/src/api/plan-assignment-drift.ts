@@ -9,8 +9,9 @@
  *
  * `lifecycle_mismatch` reports `shared = 1` when the snapshot is linked by more than one Product
  * Set. Such a snapshot is immutable to the sync, so a status or date that moved on the assignment
- * has not reached it; those rows are the work of the lifecycle writer that copies before it writes
- * (the next stage), not a defect of the dual-write.
+ * has not reached it. Since M6b-2 the Active set gets a copy for such a change
+ * (`settleSharedPlanLifecycle()`), so what is left under `shared = 1` is history (a superseded set's
+ * snapshot) or a change made before that stage (`npm run plan-assignments:settle`).
  */
 import { assignmentPlanSnapshotId } from './assignment-config';
 
