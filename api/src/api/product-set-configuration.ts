@@ -1,3 +1,4 @@
+import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
 import { db, Tx } from '../infra/db';
@@ -207,6 +208,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
         set.created_by ?? null]);
     snapshotId = Number(insertId);
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, snapshotId]);
+    await stampAssignmentId(tx, gymId, snapshotId);
     await tx.query(
       'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gymId, snapshotId, set.owner_member_id]);

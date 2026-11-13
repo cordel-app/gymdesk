@@ -173,9 +173,18 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
 
 /** #2125 M5b: a fixture that deletes a set by hand deletes the plan snapshots no set links any more. */
 export async function deleteUnlinkedPlanSnapshots(): Promise<void> {
-  await db.query(
-    `DELETE s FROM plan_snapshots s
-      WHERE NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)`);
+  // M6b-1: an assignment's anchor is not deletable while another snapshot of it survives (self FK,
+  // RESTRICT), and InnoDB refuses to delete a row that names itself, so the rows about to go are
+  // un-anchored first. A kept anchor goes on the next call, once its dependants have.
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT s.id FROM plan_snapshots s
+      WHERE NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)
+        AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)`);
+  if (rows.length === 0) return;
+  const marks = rows.map(() => '?').join(',');
+  const ids = rows.map((r) => Number(r.id));
+  await db.query(`UPDATE plan_snapshots SET assignment_id = NULL WHERE id IN (${marks}) AND assignment_id = id`, ids);
+  await db.query(`DELETE FROM plan_snapshots WHERE id IN (${marks})`, ids);
 }
 
 /** #2125 stage 5: readers use `plan_snapshots`, so a fixture writing the legacy row re-derives it as the routes do. */
@@ -610,6 +619,8 @@ export async function cleanupTestGyms() {
   await db.query(
     `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);
   // #2125 M5b: a plan snapshot names no set, so none went with them; `member_id` is RESTRICT.
+  // M6b-1: `assignment_id` is a RESTRICT self FK, so the identities go before the rows.
+  await db.query(`UPDATE plan_snapshots SET assignment_id = NULL WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM plan_snapshots WHERE gym_id IN (${marks})`, ids);
   // #1118 / #2126 stage 5d-6: a purchase's frozen Promotions point at `promotions` with ON DELETE
   // RESTRICT, and MySQL does not order the cascades one gym DELETE produces, so they go first.
