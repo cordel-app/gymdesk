@@ -306,11 +306,10 @@ describe('migration 229', () => {
 
   it('is cleaned up before the catalogue tables it points at', () => {
     const helpers = read(__dirname, 'helpers.ts');
-    const applications = helpers.indexOf('DELETE FROM member_products_oneoff_promotion_snapshot');
-    const purchases = helpers.indexOf('DELETE FROM member_products_oneoff_snapshot');
+    // #2126 stage 5d-6: the applications are Product snapshots (the legacy table is dropped).
+    const applications = helpers.indexOf('DELETE FROM product_promotion_snapshots');
     const promotions = helpers.indexOf('DELETE FROM promotions WHERE');
     expect(applications).toBeGreaterThan(-1);
-    expect(applications).toBeLessThan(purchases);
     // The RESTRICT half, which is the one that actually matters: a gym delete
     // fans CASCADE into `promotions` and into this table at once and MySQL does
     // not order the cascades one DELETE produces (the hazard `helpers.ts`

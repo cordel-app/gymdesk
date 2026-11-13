@@ -4,9 +4,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -19,14 +18,12 @@ async function setWithLine(status: 'active' | 'superseded'): Promise<number> {
   const s = await db.query(
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, ?, '2026-01-01')`,
     [gymId, memberId, status]);
-  await db.query(
-    `INSERT INTO member_products_recurrent_snapshot
+  await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type,
         item_billing_frequency, unit_price, list_unit_price, direct_discount_percent)
      VALUES (?, ?, ?, 2, '2026-01-01', 'Locker Rental', 'service', 'month', 8.00, 10.00, 20)`,
     [gymId, s.insertId, productId]);
   // #2126 stage 3g: the list reads `product_periodical_snapshots`, which the dual-write keeps equal.
-  await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, s.insertId));
   return s.insertId;
 }
 
@@ -44,7 +41,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM member_products_recurrent_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
 });
@@ -79,22 +75,19 @@ describe('GET /members/:id/products — recurring lines (#1661)', () => {
     const dayPass = (await db.query<any>(
       `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount)
        VALUES (?, 'Day Pass', 'other', 'once', 'active', 'public', 'EUR', '100.00')`, [gymId])).insertId;
-    const purchaseId = (await db.query<any>(
-      `INSERT INTO member_products_oneoff_snapshot
+    const purchaseId = (await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
          (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
           amount, currency, list_price, created_by)
        VALUES (?, ?, ?, 'active', 'Day Pass', 'other', 'once', '40.00', 'EUR', '100.00', 'Test')`,
       [gymId, memberId, dayPass])).insertId;
     const applicationIds: number[] = [];
     for (const [promotionId, name, regular, final] of [[first, 'Spring 50', 100, 50], [second, 'Loyalty 20', 50, 40]] as const) {
-      applicationIds.push((await db.query<any>(
-        `INSERT INTO member_products_oneoff_promotion_snapshot
+      applicationIds.push((await legacyProductInsert(`INSERT INTO member_products_oneoff_promotion_snapshot
            (gym_id, member_product_id, promotion_id, promotion_name, benefit_action, benefit_value,
             regular_amount, final_amount)
          VALUES (?, ?, ?, ?, 'percentage_discount', 20, ?, ?)`,
         [gymId, purchaseId, promotionId, name, regular, final])).insertId);
     }
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
 
     const res = await auth(request.get(`/members/${memberId}/products`));
     expect(res.status).toBe(200);

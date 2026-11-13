@@ -23,7 +23,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -249,11 +248,7 @@ async function attachMembershipService(
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, userMembershipId, productId, quantity, startsAt, endsAt],
   );
-  // #2126 stage 3j: the wallet reads the Product snapshot tables, which every
-  // real writer keeps in step; this direct insert re-derives them the same way.
-  const { rows } = await db.query<{ product_set_id: number }>(
-    'SELECT product_set_id FROM member_products_recurrent_snapshot WHERE id = ?', [insertId]);
-  await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, Number(rows[0].product_set_id)));
+  // #2126 stage 5d-6: the fixture writes the line's Product snapshot, which the wallet reads.
   return insertId;
 }
 

@@ -1,9 +1,8 @@
 import supertest from 'supertest';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
+import { legacyProductInsert } from './legacyProductFixture';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 export const request = supertest(app);
@@ -184,8 +183,6 @@ async function syncFixtureSnapshot(setId: number): Promise<void> {
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM product_sets WHERE id = ?', [setId]);
   if (!rows[0]) return;
   await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
-  // #2126 stage 5c: a legacy recurring line written by a fixture gets the snapshot its one writer would have written.
-  await syncRecurringLinesFixture(db as any, rows[0].gym_id, setId);
 }
 
 /** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */
@@ -369,7 +366,11 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       tokens.push('?');
       queue.push(assignmentId);
     }
-    const written = await db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
+    const rewritten = `${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`;
+    // #2126 stage 5d-6: the legacy recurring line table is dropped; the line is its Product snapshot.
+    const written = /^\s*INSERT INTO member_products_recurrent_snapshot\b/i.test(insert[1])
+      ? await legacyProductInsert(rewritten, queue)
+      : await db.query(rewritten, queue);
     // #2125 stage 11: readers use the plan snapshot tables, so a fixture writing the legacy row re-derives them.
     if (!isLineTable) await syncFixtureSnapshot(Number(queue[placeholders]));
     return written;
@@ -411,17 +412,12 @@ export async function linkTestPurchaseRequestToEvent(
 }
 
 /**
- * #2126 stage 3d — inserts a one-time purchase row (`INSERT INTO member_products_oneoff_snapshot …`)
- * and re-derives its Product snapshot, as every application writer does in its own transaction:
- * the purchase readers read the snapshot tables, so a fixture written straight into the purchase
- * table is invisible to them otherwise. Returns the purchase id.
+ * #2126 stage 3d — a one-time purchase seeded with a legacy-shaped statement
+ * (`INSERT INTO member_products_oneoff_snapshot …`). Since stage 5d-6 that table is dropped and
+ * `legacyProductInsert()` writes the purchase's Product snapshot instead. Returns the purchase id.
  */
 export async function insertTestPurchase(sql: string, params: unknown[] = []): Promise<number> {
-  const { insertId } = await db.query<any>(sql, params);
-  const id = Number(insertId);
-  const { rows: r } = await db.query<any>('SELECT gym_id FROM member_products_oneoff_snapshot WHERE id = ?', [id]);
-  await db.transaction((tx) => syncProductSnapshotForPurchase(tx, String(r[0].gym_id), id));
-  return id;
+  return (await legacyProductInsert(sql, params)).insertId;
 }
 
 export async function legacyAssignmentQuery(sql: string, params: unknown[] = []): Promise<any> {
@@ -604,14 +600,8 @@ export async function cleanupTestGyms() {
   if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');
   // Delete in FK dependency order to avoid constraint violations.
-  // #1121 stage 2: before `payment_requests` (its FK to them is ON DELETE SET
-  // NULL, so leaving it would null the link rather than fail) and well before
-  // `products`, whose FK from here is ON DELETE RESTRICT — a purchase is the
-  // record of money that moved, so a Product may not be hard-deleted under it.
-  // #1118: before `member_products_oneoff_snapshot` (CASCADE would take them anyway) and well
-  // before `promotions`, whose FK from here is ON DELETE RESTRICT for the same
-  // reason the Product's is — the application is the record of what the member
-  // was charged under.
+  // #2126 stage 5d-6: purchases and recurring lines are Product snapshots only (the legacy
+  // tables are dropped); they cascade from the gym and their Product FK is SET NULL.
   // #1325: ProductSet children cascade from `product_sets`, which cascades from
   // the gym; `owner_member_id` is RESTRICT, so the sets go before `members`.
   // #2567 stage 4: `related_invoice_id` is RESTRICT, so rectifying invoices go before the ones they correct.
@@ -621,8 +611,9 @@ export async function cleanupTestGyms() {
     `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);
   // #2125 M5b: a plan snapshot names no set, so none went with them; `member_id` is RESTRICT.
   await db.query(`DELETE FROM plan_snapshots WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM member_products_oneoff_snapshot WHERE gym_id IN (${marks})`, ids);
+  // #1118 / #2126 stage 5d-6: a purchase's frozen Promotions point at `promotions` with ON DELETE
+  // RESTRICT, and MySQL does not order the cascades one gym DELETE produces, so they go first.
+  await db.query(`DELETE FROM product_promotion_snapshots WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_event_shared_training_requests WHERE gym_id IN (${marks})`, ids);
@@ -641,10 +632,6 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM member_nutrition_plan_meals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plans WHERE gym_id IN (${marks})`, ids);
-  // #631: member_products_recurrent_snapshot.product_id has no ON DELETE CASCADE, so
-  // these rows must go before products below (deleting members cascades them
-  // via user_memberships, but only for gyms whose members are deleted here).
-  await db.query(`DELETE FROM member_products_recurrent_snapshot WHERE gym_id IN (${marks})`, ids);
   // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
   // every one of its FKs (gym, member, activity type, professional service,
   // center) is ON DELETE CASCADE, so the members delete below clears it.
@@ -714,7 +701,7 @@ export async function cleanupTestGyms() {
   // #635 stage 2: the Assigned Plan snapshot tables key to `products`
   // *without* ON DELETE CASCADE (the snapshot must outlive a retired item), so
   // unlike the Plan-side tables above these genuinely have to go before
-  // products — same reason as `member_products_recurrent_snapshot` further up.
+  // products.
   await db.query(`DELETE FROM plan_session_snapshots WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM plan_oneoff_snapshots WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM plan_periodical_snapshots WHERE gym_id IN (${marks})`, ids);

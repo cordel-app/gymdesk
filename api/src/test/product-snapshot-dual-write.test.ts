@@ -1,19 +1,13 @@
-// #2126 stage 2: the Product snapshot tables follow every legacy write, in the same transaction.
+// #2126 stage 2: the Product snapshot tables follow every write of a Draft's recurring lines (since
+// stage 5d-6 they are the only tables a line lives in).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createRequire } from 'node:module';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment, createTestGym,
   createTestMembership, request,
 } from './helpers';
 
-const require = createRequire(import.meta.url);
-const migration = require('../infra/migrations/348_product_snapshots.js');
-const knex = require('knex')({ client: 'mysql2', connection: process.env.DATABASE_URL });
-
 afterAll(async () => {
-  await knex.destroy();
   await cleanupTestGyms();
   await db.end();
 });
@@ -29,10 +23,6 @@ let setId: number;
 const auth = (r: any) => r.set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 const lines = async (set: number) =>
   (await db.query<any>('SELECT * FROM product_periodical_snapshots WHERE gym_id = ? AND product_set_id = ?', [gymId, set])).rows;
-const noBackfillDrift = async () => {
-  const counts = await migration.backfillProductSnapshots(knex);
-  expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-};
 
 beforeAll(async () => {
   gymId = await createTestGym('Product Dual Write Gym');
@@ -63,7 +53,6 @@ describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {
     const qty = await auth(request.put(`/product-sets/${setId}/services/${lineId}`)).send({ quantity: 3 });
     expect(qty.status).toBeLessThan(300);
     expect((await lines(setId))[0].quantity).toBe(3);
-    await noBackfillDrift();
 
     const del = await auth(request.delete(`/product-sets/${setId}/services/${lineId}`));
     expect(del.status).toBeLessThan(300);
@@ -89,42 +78,5 @@ describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {
     expect(linked[0].id).toBe((await lines(setId))[0].id);
     expect(linked[0].status).toBe('active');
     expect(linked[0].quantity).toBe(2);
-    await noBackfillDrift();
-  });
-});
-
-describe('purchases follow the legacy purchase row (#2126 stage 2)', () => {
-  it('a purchase, its Promotion and every later change are mirrored, and a discarded draft leaves nothing', async () => {
-    const promo = (await db.query(
-      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
-         only_applicable_for_new_members, free_months, paid_months, bonus_months, applies_to)
-       VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 1, 0, 0, 6, 0, 'product')`, [gymId, `PDW-Promo-${uniq()}`])).insertId as number;
-    const id = (await db.query(
-      `INSERT INTO member_products_oneoff_snapshot
-         (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, units, amount, currency)
-       VALUES (?, ?, ?, 'draft', 'Pack', 'sessions', 'once', 10, 90, 'EUR')`, [gymId, owner, productId])).insertId as number;
-    await db.query(
-      `INSERT INTO member_products_oneoff_promotion_snapshot
-         (gym_id, member_product_id, promotion_id, promotion_name, benefit_action, benefit_value, regular_amount, final_amount)
-       VALUES (?, ?, ?, 'Offer', 'percentage_discount', 10.00, 100.00, 90.00)`, [gymId, id, promo]);
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, id));
-
-    const one = async (table: string) => (await db.query<any>(`SELECT * FROM ${table} WHERE source_id = ?`, [id])).rows;
-    expect((await one('product_session_snapshots'))[0].status).toBe('draft');
-    expect(await one('product_oneoff_snapshots')).toHaveLength(0);
-    const { rows: promos } = await db.query<any>('SELECT * FROM product_promotion_snapshots WHERE gym_id = ? AND source_purchase_promotion_id IS NOT NULL AND member_id = ?', [gymId, owner]);
-    expect(promos).toHaveLength(1);
-
-    await db.query("UPDATE member_products_oneoff_snapshot SET status = 'active', valid_until = '2027-01-31' WHERE id = ?", [id]);
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, id));
-    const [snap] = await one('product_session_snapshots');
-    expect(snap.status).toBe('active');
-    expect(String(snap.valid_until)).toContain('2027');
-    await noBackfillDrift();
-
-    await db.query('DELETE FROM member_products_oneoff_promotion_snapshot WHERE member_product_id = ?', [id]);
-    await db.query('DELETE FROM member_products_oneoff_snapshot WHERE id = ?', [id]);
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, id));
-    expect(await one('product_session_snapshots')).toHaveLength(0);
   });
 });

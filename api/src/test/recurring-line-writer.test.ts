@@ -1,6 +1,6 @@
 // #2126 stage 5c — a recurring Product line is written by one writer, into its Product snapshot;
-// nothing re-derives the snapshot from the legacy line. Since stage 5d-5 the legacy line
-// (`member_products_recurrent_snapshot`) is never written.
+// nothing re-derives the snapshot from the legacy line. Since stage 5d-6 the legacy line table
+// (`member_products_recurrent_snapshot`) is dropped (migration 415).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -50,8 +50,6 @@ async function draftSet(owner: number): Promise<number> {
     return d.productSet.id;
   });
 }
-const legacy = async (id: number) =>
-  (await db.query<any>('SELECT * FROM member_products_recurrent_snapshot WHERE id = ?', [id])).rows[0];
 const snapshot = async (sourceId: number) =>
   (await db.query<any>('SELECT * FROM product_periodical_snapshots WHERE source_id = ?', [sourceId])).rows[0];
 const linked = async (setId: number) =>
@@ -81,7 +79,6 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     expect(Number(snap.product_set_id)).toBe(setId);
     expect(snap.status).toBe('draft');
     expect(Number(snap.member_id)).toBe(owner);
-    expect(await legacy(lineId!)).toBeUndefined();
     expect(await linked(setId)).toEqual([lineId]);
 
     await db.transaction((tx) => updateRecurringLine(tx, gymId, lineId!, {
@@ -93,7 +90,6 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     expect(snap.list_price).toBe('12.50');
     expect(snap.direct_discount_percent).toBe('20.00');
     expect(snap.modified_at).not.toBeNull();
-    expect(await legacy(lineId!)).toBeUndefined();
 
     // A new version takes the lines as inherited copies, with their own ids and snapshots.
     const nextSet = await draftSet(await member());
@@ -107,7 +103,6 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     expect(Number(copySnap.quantity)).toBe(3);
     expect(copySnap.unit_price).toBe('10.00');
     expect(Number(copySnap.assigned_member_id)).toBe(owner);
-    expect(await legacy(copyId)).toBeUndefined();
     expect(await linked(nextSet)).toEqual([copyId]);
 
     // A merge into a Draft does not carry who the line is for.
@@ -146,7 +141,7 @@ describe('recurring line writer (#2126 stage 5c)', () => {
 
     // The snapshot sequence is the allocator: the next line id follows it, never a historical legacy id.
     const { rows } = await db.query<{ top: number }>(
-      'SELECT GREATEST(MAX(id), (SELECT COALESCE(MAX(id), 0) FROM member_products_recurrent_snapshot)) AS top FROM product_periodical_snapshots');
+      'SELECT MAX(id) AS top FROM product_periodical_snapshots');
     const nextId = await db.transaction((tx) => insertRecurringLine(tx, {
       gymId, productSetId: setId, productId, quantity: 1, startsAt: TODAY,
     }));
@@ -179,6 +174,5 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     const snap = await snapshot(lineId!);
     expect(Number(snap.quantity)).toBe(1);
     expect(snap.status).toBe('pending_payment');
-    expect(await legacy(lineId!)).toBeUndefined();
   });
 });

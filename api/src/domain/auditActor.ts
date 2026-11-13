@@ -180,7 +180,6 @@ export const AUDITED_TABLES: readonly string[] = [
   'gym_professional_services',
   'member_centers',
   'member_personal_goal_readings',
-  'member_products_oneoff_snapshot',
   'member_recurring_slots',
   'member_training_plans',
   'product_sets',

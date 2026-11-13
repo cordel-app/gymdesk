@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens } from '../domain/themeTokens';
 import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery, linkTestPurchaseRequestToEvent } from './helpers';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
+import { legacyProductInsert } from './legacyProductFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -241,13 +241,11 @@ describe('GET /payment-page/token/:token', () => {
                  DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
         [gymId, memberId, `pay_${pageToken}`, pageToken])).insertId;
       await linkTestPurchaseRequestToEvent(gymId, memberId, requestId);
-      const purchaseId = (await db.query<any>(
-        `INSERT INTO member_products_oneoff_snapshot
+      const purchaseId = (await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
            (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
             units, amount, currency, payment_request_id, created_by)
          VALUES (?, ?, ?, 'pending_payment', ?, ?, 'once', ?, '20.00', 'EUR', ?, 'Test')`,
         [gymId, memberId, productId, name, type, type === 'sessions' ? 10 : null, requestId])).insertId;
-      await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
 
       const res = await request.get(`/payment-page/token/${pageToken}`);
       expect(res.status).toBe(200);
