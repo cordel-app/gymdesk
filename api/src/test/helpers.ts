@@ -804,6 +804,19 @@ export async function createTestDraftAssignment(
 }
 
 /**
+ * #2125 M6b-3: re-derives an assignment's plan snapshots after a fixture wrote its
+ * `user_memberships` row by hand (a status, a closure). The readers that moved onto
+ * `plan_snapshots` see the fixture's change only through this, as they see a real route's
+ * through the sync that route runs.
+ */
+export async function syncTestAssignmentSnapshots(umId: number): Promise<void> {
+  const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
+  const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM user_memberships WHERE id = ?', [umId]);
+  if (!rows[0]) throw new Error(`syncTestAssignmentSnapshots: no assignment ${umId}`);
+  await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, rows[0].gym_id, umId));
+}
+
+/**
  * Commits a Draft assignment through the real route (`POST /:id/activate`,
  * `confirm: true` so a plan it replaces is superseded), for a test that needs a
  * running plan carrying a Promotion applied while it was a Draft (#1863).

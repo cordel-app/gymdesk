@@ -1,11 +1,10 @@
 import { db } from '../infra/db';
-import { entitledAssignmentSql } from '../domain/assignmentStatus';
+import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { registerBookingAccessHook } from './bookings';
 import { soleActiveCenterId } from '../infra/centerContext';
 import {
   centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
 } from '../domain/planCenterAccess';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 /**
  * Booking-time center validation: if the member's active Membership Plan has
@@ -30,13 +29,10 @@ export async function loadMemberCenterAccessInputs(
   memberId: string | number,
 ): Promise<{ plans: PlanCenterAccessInput[]; defaultCenterId: number | null }> {
   const { rows: memberships } = await tx.query(
-    `SELECT DISTINCT um.membership_plan_id, mp.center_access_mode, mp.online_access FROM user_memberships um
-     JOIN membership_plans mp ON mp.id = um.membership_plan_id
-     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
-       AND EXISTS (
-         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-       )`,
+    `SELECT DISTINCT pa.membership_plan_id, mp.center_access_mode, mp.online_access FROM plan_snapshots pa
+     JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
+       AND ${assignmentCoversMemberSql('pa')}`,
     [gymId, memberId],
   );
   if (memberships.length === 0) return { plans: [], defaultCenterId: null };
@@ -147,12 +143,9 @@ export async function centersAvailableToMember(
   memberId: string | number,
 ): Promise<{ id: number; name: string }[]> {
   const { rows: memberships } = await db.query<{ membership_plan_id: number }>(
-    `SELECT DISTINCT um.membership_plan_id FROM user_memberships um
-     WHERE um.gym_id = ? AND ${entitledAssignmentSql('um')}
-       AND (um.member_id = ? OR EXISTS (
-         SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
-       ))`,
+    `SELECT DISTINCT pa.membership_plan_id FROM plan_snapshots pa
+     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
+       AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})`,
     [gymId, memberId, memberId],
   );
   const planIds = memberships.map((m) => m.membership_plan_id);
