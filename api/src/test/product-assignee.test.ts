@@ -142,7 +142,9 @@ describe('recurring line', () => {
       [gymId, res.body.product_set_id, monthly]);
     expect(rows[0].assigned_member_id).toBe(kid);
     const { rows: mirror } = await db.query<any>(
-      'SELECT assigned_member_id FROM product_periodical_snapshots WHERE gym_id = ? AND product_set_id = ? AND product_id = ?',
+      `SELECT s.assigned_member_id FROM product_periodical_snapshots s
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = s.id
+        WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.product_id = ?`,
       [gymId, res.body.product_set_id, monthly]);
     expect(mirror[0].assigned_member_id).toBe(kid);
 

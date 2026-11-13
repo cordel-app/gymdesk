@@ -760,7 +760,7 @@ export async function cancelAbandonedPurchases(
   const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
     // #2746: a purchase in a member's cart is paid by its Product Set's checkout and moves with it
     // (`set-purchases.ts`), so its request expiring returns it to the Draft rather than cancelling it.
-    `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ? AND product_set_id IS NULL')} mp
+    `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ?', { notInProductSet: true })} mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE pr.status IN ('expired', 'failed')`,
     purchaseSnapshotParams([PENDING_PURCHASE_STATUS]),

@@ -51,7 +51,10 @@ async function draftSet(owner: number): Promise<number> {
   });
 }
 const snapshot = async (sourceId: number) =>
-  (await db.query<any>('SELECT * FROM product_periodical_snapshots WHERE source_id = ?', [sourceId])).rows[0];
+  (await db.query<any>(
+    `SELECT s.*, (SELECT MIN(lk.product_set_id) FROM product_set_periodical_snapshots lk
+                   WHERE lk.product_periodical_snapshot_id = s.id) AS product_set_id
+       FROM product_periodical_snapshots s WHERE s.source_id = ?`, [sourceId])).rows[0];
 const linked = async (setId: number) =>
   (await db.query<any>(
     `SELECT s.source_id FROM product_set_periodical_snapshots j JOIN product_periodical_snapshots s ON s.id = j.product_periodical_snapshot_id
