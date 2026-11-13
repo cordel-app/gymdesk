@@ -40,5 +40,5 @@ export const TEST_RECURRING_LINES = `(
          s.product_name AS item_name, s.product_type AS item_type, s.unit_price,
          s.billing_frequency AS item_billing_frequency, s.currency, s.schedule_id,
          s.list_price AS list_unit_price, s.direct_discount_percent, s.assigned_member_id, s.line_ref, s.origin,
-         s.is_inherited, s.created_at
+         s.copied_from_periodical_snapshot_id, s.created_at
     FROM product_periodical_snapshots s WHERE s.source_id IS NOT NULL)`;

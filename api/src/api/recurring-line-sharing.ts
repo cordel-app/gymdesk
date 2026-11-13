@@ -57,11 +57,13 @@ export class SharedRecurringLineError extends Error {
 /**
  * #2126 stage 5c-2c-2 — SQL for "the recurring line snapshot `snapIdExpr` is carried over from the Product Set
  * before `setExpr`": the previous Product Set links it too (a new version links its predecessor's unchanged lines),
- * or it is a copy written as inherited (`is_inherited`, the merge's copies and a shared line a writer owned). The
+ * or it is a copy of another line snapshot (`copied_from_periodical_snapshot_id`, #2126 stage 6a: the merge's
+ * copies and a shared line a writer owned; the FK is SET NULL, so a copy's source must outlive it: `copyLine()` copies
+ * only a line a committed set or another set still links, never a Draft's own line). The
  * one derivation of a line's inheritance, as `planSnapshotInheritedSql()` is for plans.
  */
 export const recurringLineInheritedSql = (snapAlias: string, setExpr: string): string =>
-  `(${snapAlias}.is_inherited = 1 OR EXISTS (
+  `(${snapAlias}.copied_from_periodical_snapshot_id IS NOT NULL OR EXISTS (
      SELECT 1 FROM product_sets ihs_
        JOIN product_set_periodical_snapshots ihl_ ON ihl_.product_set_id = ihs_.previous_product_set_id
       WHERE ihs_.id = ${setExpr} AND ihl_.product_periodical_snapshot_id = ${snapAlias}.id))`;

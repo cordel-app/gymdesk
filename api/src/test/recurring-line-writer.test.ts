@@ -97,7 +97,7 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     const copyId = copies.get(lineId!)!;
     expect(copyId).toBeGreaterThan(lineId!);
     const copySnap = await snapshot(copyId);
-    expect(Number(copySnap.is_inherited)).toBe(1);
+    expect(Number(copySnap.copied_from_periodical_snapshot_id)).toBe(lineId);
     expect(Number(copySnap.line_ref)).toBe(lineId);
     expect(Number(copySnap.product_set_id)).toBe(nextSet);
     expect(Number(copySnap.quantity)).toBe(3);

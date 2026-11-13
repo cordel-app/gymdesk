@@ -76,11 +76,11 @@ export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<numbe
   const table = purchaseSnapshotTable(v.productType);
   const { insertId: snapshotId } = await tx.query(
     `INSERT INTO ${table}
-       (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
+       (gym_id, member_id, product_set_id, product_id, source_id, status, product_name, product_type,
         billing_frequency, units, quantity, currency, unit_price, list_price, direct_discount_percent,
         direct_discount_amount, tax_rate_percent, origin, member_product_id, validity_days,
         created_at, created_by, assigned_member_id)
-     VALUES (?, ?, NULL, ?, ?, ?, 0, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       v.gymId, v.memberId, v.productId, purchaseId, v.status, v.productName, v.productType,
       v.billingFrequency, v.units, v.currency, money(v.amount), money(v.listPrice), money(v.directDiscountPercent),

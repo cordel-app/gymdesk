@@ -13,11 +13,12 @@ describe('Promotions only on lines added in the Draft (#1863)', () => {
     expect(read('../api/plan-snapshot-lines.ts')).toMatch(/copied_from_plan_snapshot_id IS NOT NULL/);
     // The clone links the predecessor's recurring lines (#2126 stage 5c-2c-2); a copy (the merge, or a
     // writer owning a shared line) is written inherited (its snapshot; the legacy line is no longer
-    // written since #2126 stage 5d-5).
+    // written since #2126 stage 5d-5). Since #2126 stage 6a the copy records its source snapshot instead of a flag.
     expect(src).toMatch(/linkRecurringLines\(/);
     const writer = read('../api/recurring-line-writer.ts');
     expect(writer).not.toMatch(/INSERT INTO member_products_recurrent_snapshot/);
-    expect(writer).toMatch(/ps\.status, 1, COALESCE\(\?, p\.name\)/);
+    expect(writer).toMatch(/ps\.status, \?, COALESCE\(\?, p\.name\)/);
+    expect(read('../api/recurring-line-sharing.ts')).toMatch(/copied_from_periodical_snapshot_id IS NOT NULL/);
   });
 
   it('refuses a Plan Promotion on an inherited plan in the one writer', () => {

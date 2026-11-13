@@ -63,10 +63,10 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
   await tx.query(
     `INSERT INTO product_promotion_snapshots
        (gym_id, member_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
-        status, is_inherited, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
+        status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
         modified_at, modified_by)
      SELECT ump.gym_id, par.member_id, par.id, ump.id, ump.promotion_id,
-            JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), ump.status, 0, ump.snapshot, ump.applied_at,
+            JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), ump.status, ump.snapshot, ump.applied_at,
             ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
             ump.modified_by
        FROM user_membership_promotions ump

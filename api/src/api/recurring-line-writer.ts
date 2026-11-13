@@ -53,10 +53,10 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
   // #2126 stage 5d-2: the snapshot's own id becomes the line's id (`source_id`, `line_ref`).
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status, is_inherited,
+       (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status,
         quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
         product_name, product_type, unit_price, billing_frequency, currency)
-     SELECT gc.gym_id, ps.owner_member_id, ps.id, gc.id, NULL, NULL, ps.status, 0,
+     SELECT gc.gym_id, ps.owner_member_id, ps.id, gc.id, NULL, NULL, ps.status,
             ?, ?, ?, ?, ?, ?,
             ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -119,7 +119,7 @@ export async function copyRecurringLines(
 }
 
 /** A line's values read from its snapshot, by the names `copyLine()` takes. */
-const SNAPSHOT_LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.starts_at, s.ends_at,
+const SNAPSHOT_LINE_COLUMNS = `s.id AS snapshot_id, s.source_id AS id, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.product_type AS item_type, s.unit_price,
             s.billing_frequency AS item_billing_frequency, s.currency, s.schedule_id,
             s.list_price AS list_unit_price, s.direct_discount_percent, s.assigned_member_id, s.line_ref, s.origin`;
@@ -127,6 +127,8 @@ const SNAPSHOT_LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.st
 /**
  * One line written onto `toSetId` as an inherited line, with its snapshot from the very values the
  * copy was written with. The snapshot is not linked: the caller links it, or re-points a link at it.
+ * #2126 stage 6a: the copy records the snapshot it was taken from (`copied_from_periodical_snapshot_id`),
+ * which is what `recurringLineInheritedSql()` reads it as inherited by; this is the column's one writer.
  */
 async function copyLine(
   tx: Conn, gymId: string, r: any, toSetId: number, assignee: number | null, now: string,
@@ -134,14 +136,15 @@ async function copyLine(
   // #2126 stage 5d-2: the copy's snapshot id is the copy's line id.
   const { insertId } = await tx.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, status, is_inherited, product_name, product_type,
+       (gym_id, member_id, product_set_id, product_id, source_id, status, copied_from_periodical_snapshot_id,
+        product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
         origin, schedule_id, line_ref, created_at, assigned_member_id)
-     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, NULL, ps.status, 1, COALESCE(?, p.name), COALESCE(?, p.type),
+     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, NULL, ps.status, ?, COALESCE(?, p.name), COALESCE(?, p.type),
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        FROM product_sets ps JOIN products p ON p.id = ?
       WHERE ps.id = ? AND ps.gym_id = ?`,
-    [r.item_name, r.item_type, r.item_billing_frequency, r.quantity, r.currency, r.unit_price,
+    [Number(r.snapshot_id), r.item_name, r.item_type, r.item_billing_frequency, r.quantity, r.currency, r.unit_price,
       r.list_unit_price, r.direct_discount_percent, r.starts_at, r.ends_at, r.origin, r.schedule_id, r.line_ref,
       now, assignee, r.product_id, toSetId, gymId]);
   if (!insertId) throw new Error(`recurring line ${r.id} could not be copied`);
