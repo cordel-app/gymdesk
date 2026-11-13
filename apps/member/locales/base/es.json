@@ -580,7 +580,19 @@
     "cart_pending_cancel_confirm": "Cancelar compra",
     "cart_pending_cancel_keep": "Mantener mi compra",
     "cart_pending_error_settled": "Este pago ya se ha completado, así que la compra ya no se puede cancelar aquí. Contacta con tu gimnasio.",
-    "cart_pending_error_generic": "No se ha podido cancelar la compra. Inténtalo de nuevo."
+    "cart_pending_error_generic": "No se ha podido cancelar la compra. Inténtalo de nuevo.",
+    "past_plan_period": "{start} – {end}",
+    "past_plan_period_start": "Desde {start}",
+    "past_plan_period_end": "Hasta {end}",
+    "past_plan_fee": "Cuota de membresía",
+    "past_plan_quantity": "{count, plural, one {# unidad} other {# unidades}}",
+    "past_plan_direct_discount": "{value}% de descuento directo",
+    "past_plan_promotion_revoked": "Revocada",
+    "past_plan_type_fee": "Cuota",
+    "past_plan_type_service": "Servicio",
+    "past_plan_type_sessions": "Sesiones",
+    "past_plan_type_merchandise": "Artículo",
+    "past_plan_type_other": "Otro"
   },
   "payments": {
     "title": "Pagos",

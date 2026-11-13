@@ -90,6 +90,7 @@ import {
   withCancelledPlanSets,
   toMemberPastPlan,
 } from '../domain/memberPlanHistory';
+import { attachPastPlanDetails } from './me-past-plan-details';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -2245,7 +2246,9 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],
     );
-    const past_memberships = withCancelledPlanSets(assignmentHistory, cancelledSetRows);
+    // #2779: each past plan carries the Product lines and Promotions it was agreed
+    // with, read from its snapshots only (`attachPastPlanDetails()`).
+    const past_memberships = await attachPastPlanDetails(gymId, withCancelledPlanSets(assignmentHistory, cancelledSetRows));
     // #2660: the member's Draft assignments are listed beside their live plans
     // under the Admin's own status (`draft`), never as the member's plan — the
     // ordering and filter above still decide `membership` without them.
