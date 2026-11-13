@@ -156,6 +156,8 @@
     "enrollment_status_paused": "Pausado",
     "enrollment_status_cancelled": "Cancelado",
     "enrollment_status_expired": "Expirado",
+    "enrollment_status_active_cancel_at_period_end": "Se cancela en la fecha de fin",
+    "enrollment_status_superseded": "Reemplazado",
     "header_plan_status": "Estado del plan de membresía",
     "header_payment_status": "Estado de pago",
     "header_access_rights": "Derechos de acceso",

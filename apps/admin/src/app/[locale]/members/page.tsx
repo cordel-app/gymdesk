@@ -109,7 +109,9 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'email', labelKey: 'col_email', width: 200, mobile: 'secondary' },
   { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
   { key: 'payment_status', labelKey: 'col_payment_status', width: 110, mobile: 'secondary' },
-  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110, mobile: 'keep' },
+  // #2803: wide enough for the longest plan status ("Cancels on End Date" and
+  // its translations), which a 110px track pushed into the next column.
+  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 220, mobile: 'keep' },
   // #2550: the Member's access rights, a column rather than a chip by the name.
   { key: 'access_rights', labelKey: 'col_access_rights', width: 110, mobile: 'secondary' },
   // Wide enough for the longest translated title ("ACCIONES") next to the
@@ -727,7 +729,7 @@ export default function MembersPage() {
               ? <StatusBadge status={m.payment_status} label={t(`members.payment_status_${m.payment_status}`) || m.payment_status} />
               : <span style={noStatusStyle}>{t('members.payment_status_none')}</span>}
           </div>
-          <div className={CELL_CLASS.enrollment_status} style={badgeCellStyle}>
+          <div className={CELL_CLASS.enrollment_status} style={planStatusCellStyle}>
             {m.enrollment_status
               ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
               : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
@@ -1063,6 +1065,8 @@ const nameCellStyle: React.CSSProperties = { ...cellStyle, fontWeight: 600, font
 const mutedCellStyle: React.CSSProperties = { ...cellStyle, fontSize: 13, color: '#555' };
 /** Badges size themselves, so this cell only needs to not stretch them. */
 const badgeCellStyle: React.CSSProperties = { minWidth: 0, display: 'flex', alignItems: 'center' };
+/** #2803: the plan status badge never spills into the column beside it. */
+const planStatusCellStyle: React.CSSProperties = { ...badgeCellStyle, overflow: 'hidden' };
 const actionsCellStyle: React.CSSProperties = {
   minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
 };

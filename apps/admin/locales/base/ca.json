@@ -157,6 +157,8 @@
     "enrollment_status_paused": "Pausat",
     "enrollment_status_cancelled": "Cancel·lat",
     "enrollment_status_expired": "Expirat",
+    "enrollment_status_active_cancel_at_period_end": "Es cancel·la a la data de fi",
+    "enrollment_status_superseded": "Reemplaçat",
     "header_plan_status": "Estat del pla de membresia",
     "header_payment_status": "Estat de pagament",
     "header_access_rights": "Drets d'accés",
