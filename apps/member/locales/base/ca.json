@@ -580,7 +580,19 @@
     "cart_pending_cancel_confirm": "Cancel·la la compra",
     "cart_pending_cancel_keep": "Mantén la meva compra",
     "cart_pending_error_settled": "Aquest pagament ja s'ha completat, així que la compra ja no es pot cancel·lar aquí. Contacta amb el teu gimnàs.",
-    "cart_pending_error_generic": "No s'ha pogut cancel·lar la compra. Torna-ho a provar."
+    "cart_pending_error_generic": "No s'ha pogut cancel·lar la compra. Torna-ho a provar.",
+    "past_plan_period": "{start} – {end}",
+    "past_plan_period_start": "Des del {start}",
+    "past_plan_period_end": "Fins al {end}",
+    "past_plan_fee": "Quota de membresia",
+    "past_plan_quantity": "{count, plural, one {# unitat} other {# unitats}}",
+    "past_plan_direct_discount": "{value}% de descompte directe",
+    "past_plan_promotion_revoked": "Revocada",
+    "past_plan_type_fee": "Quota",
+    "past_plan_type_service": "Servei",
+    "past_plan_type_sessions": "Sessions",
+    "past_plan_type_merchandise": "Article",
+    "past_plan_type_other": "Altres"
   },
   "payments": {
     "title": "Pagaments",

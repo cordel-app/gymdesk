@@ -580,7 +580,19 @@
     "cart_pending_cancel_confirm": "Cancel purchase",
     "cart_pending_cancel_keep": "Keep my purchase",
     "cart_pending_error_settled": "This payment has already gone through, so the purchase can no longer be cancelled here. Please contact your gym.",
-    "cart_pending_error_generic": "The purchase could not be cancelled. Please try again."
+    "cart_pending_error_generic": "The purchase could not be cancelled. Please try again.",
+    "past_plan_period": "{start} – {end}",
+    "past_plan_period_start": "From {start}",
+    "past_plan_period_end": "Until {end}",
+    "past_plan_fee": "Membership fee",
+    "past_plan_quantity": "{count, plural, one {# unit} other {# units}}",
+    "past_plan_direct_discount": "{value}% direct discount",
+    "past_plan_promotion_revoked": "Revoked",
+    "past_plan_type_fee": "Fee",
+    "past_plan_type_service": "Service",
+    "past_plan_type_sessions": "Sessions",
+    "past_plan_type_merchandise": "Merchandise",
+    "past_plan_type_other": "Other"
   },
   "payments": {
     "title": "Payments",
