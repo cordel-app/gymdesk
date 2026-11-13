@@ -71,6 +71,9 @@ beforeAll(async () => {
        (gym_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency, product_set_id, line_ref)
      VALUES (?, ?, 2, '2026-03-01', 'Frozen locker', 'service', 12.50, 'month', 'EUR', ?, 1)`,
     [gymId, productId, setId])).insertId as number;
+  // #2126 stage 5d-1: a line-owned application references the line's snapshot (migration 411), so the
+  // line is backfilled before the application is written; the backfill is repeatable.
+  await migration.backfillProductSnapshots(knex);
   applicationId = (await db.query(
     `INSERT INTO user_membership_promotions (gym_id, promotion_id, status, snapshot, product_set_id, recurrent_snapshot_id)
      VALUES (?, ?, 'applied', JSON_OBJECT('name', 'Frozen line offer'), ?, ?)`, [gymId, promo, setId, lineId])).insertId as number;

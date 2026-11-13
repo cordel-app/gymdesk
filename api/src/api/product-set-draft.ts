@@ -600,8 +600,9 @@ export async function addService(
 export async function removeService(
   tx: Tx, draft: LockedDraft, serviceId: number, opts: { legacy?: boolean } = {},
 ): Promise<{ ok: true; deleted: boolean; ends_at: string | null } | DraftRefusal> {
-  // #2126 stage 3s — the legacy line is the writer below, so its row is locked
-  // first; what the removal decides on (already removed, started, its schedule)
+  // #2126 stage 3s — the line is locked first (since stage 5d-1 its snapshot
+  // row, the lock `ownRecurringLine()` takes too, so the legacy table is read by
+  // nothing here); what the removal decides on (already removed, started, its schedule)
   // is then read from `product_periodical_snapshots`, kept equal to the line by
   // `syncProductSnapshotsOfVersion()` (every Draft writer's `touch()`, and the
   // clone that made the version).
@@ -609,8 +610,8 @@ export async function removeService(
   // Draft links but another Product Set wrote is still the Draft's to change
   // (through a copy, below); the junction read then says whether the Draft links it.
   const { rows: locked } = await tx.query<any>(
-    `SELECT id FROM member_products_recurrent_snapshot
-      WHERE id = ? AND gym_id = ? FOR UPDATE`,
+    `SELECT id FROM product_periodical_snapshots
+      WHERE source_id = ? AND gym_id = ? FOR UPDATE`,
     [serviceId, draft.gym_id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
@@ -655,14 +656,14 @@ export async function setServiceQuantity(
   if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 999) {
     return { kind: 'invalid', message: 'quantity must be a positive integer' };
   }
-  // #2126 stage 3s — lock the legacy line (the writer below), then read whether
-  // it is still running from its synced snapshot.
+  // #2126 stage 3s / 5d-1 — lock the line's snapshot row (the lock
+  // `ownRecurringLine()` takes too), then read whether it is still running.
   // #2126 stage 5c-2c: the line is locked by its id alone, since a line the
   // Draft links but another Product Set wrote is still the Draft's to change
   // (through a copy, below); the junction read then says whether the Draft links it.
   const { rows: locked } = await tx.query<any>(
-    `SELECT id FROM member_products_recurrent_snapshot
-      WHERE id = ? AND gym_id = ? FOR UPDATE`,
+    `SELECT id FROM product_periodical_snapshots
+      WHERE source_id = ? AND gym_id = ? FOR UPDATE`,
     [serviceId, draft.gym_id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
