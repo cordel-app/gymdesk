@@ -6,6 +6,7 @@
  */
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { syncPlanAssignment } from './plan-assignment-sync';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
@@ -20,7 +21,8 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  * configuration; nothing here derives it from another table any more).
  *
  *   - every snapshot's status follows its version's, except where the assignment it names has
- *     moved on (paused, cancelled, expired), and `closed_at` follows that assignment;
+ *     moved on (paused, cancelling at its period end, cancelled, expired; the assignment's own stored
+ *     value since M6b-1, migration 419), and `closed_at` follows that assignment;
  *   - the version's primary snapshot (the lowest id) takes the version's own member, plan, dates
  *     and linked assignment;
  *   - the primary snapshot's beneficiaries are the owner plus whoever the chain covers, and its
@@ -34,6 +36,12 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  * alone and this sync moves it again.
  */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  await syncPlanSnapshotConfiguration(tx, gymId, productSetId);
+  // M6b-1: the assignment's identity and assignment-level facts follow every re-derivation.
+  await syncPlanAssignment(tx, gymId, productSetId);
+}
+
+async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
   // Status and closed_at of every snapshot the version links and no other set does.
@@ -42,8 +50,8 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
-        SET s.status = CASE WHEN ps.status = 'active' AND um.status = 'active_cancel_at_period_end' THEN 'cancelled'
-                            WHEN ps.status = 'active' AND um.status IN ('paused','cancelled','expired') THEN um.status
+        SET s.status = CASE WHEN ps.status = 'active'
+                                 AND um.status IN ('paused','active_cancel_at_period_end','cancelled','expired') THEN um.status
                             ELSE ps.status END,
             s.closed_at = um.closed_at
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,

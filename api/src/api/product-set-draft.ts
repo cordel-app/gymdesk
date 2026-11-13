@@ -11,6 +11,7 @@ import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../dom
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
+import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotInheritedSql, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, primaryPlanSnapshotSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
 import { loadPaidThroughForSchedule } from './cancellation-entitlement';
@@ -821,7 +822,7 @@ export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, plan
         AND p.applies_to = 'membership_plan'`, [draft.gym_id, draft.id]);
   await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
     [draft.id, planSnapshotId]);
-  await tx.query('DELETE FROM plan_snapshots WHERE id = ? AND gym_id = ?', [planSnapshotId, draft.gym_id]);
+  await deleteUnlinkedPlanSnapshots(tx, draft.gym_id, [planSnapshotId]);
   const remaining = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (remaining == null) {
     await tx.query('UPDATE product_sets SET membership_plan_id = NULL WHERE id = ? AND gym_id = ?', [draft.id, draft.gym_id]);

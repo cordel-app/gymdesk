@@ -15,6 +15,7 @@
  */
 import type { Tx } from '../infra/db';
 import { assignmentPlanSnapshotId } from './assignment-config';
+import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { isPlanSnapshotShared, planSnapshotOfAssignment, primaryPlanSnapshotId } from './plan-snapshot-lines';
 
@@ -124,14 +125,8 @@ export async function deleteProductSetAndOwnPlanSnapshots(
           AND NOT EXISTS (SELECT 1 FROM ${j.junction} lk_ WHERE lk_.${j.snapshotCol} = ${table}.id)`,
       [gymId, ...snapIds]);
   }
-  const ids = linked.map((r) => Number(r.id));
-  if (ids.length > 0) {
-    await tx.query(
-      `DELETE FROM plan_snapshots
-        WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})
-          AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = plan_snapshots.id)`,
-      [gymId, ...ids]);
-  }
+  // M6b-1: by reference, and never an assignment's anchor while another snapshot of it survives.
+  await deleteUnlinkedPlanSnapshots(tx, gymId, linked.map((r) => Number(r.id)));
   return true;
 }
 

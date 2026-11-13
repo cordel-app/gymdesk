@@ -1,3 +1,4 @@
+import { stampAssignmentId } from './plan-assignment-sync';
 import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
 import { copyProductTargetApplications } from './product-set-bridge';
@@ -82,6 +83,8 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null, input.actor ?? null]);
 
+  // M6b-1: a plan added to a Product Set is a new logical assignment, anchored on this snapshot.
+  await stampAssignmentId(tx, gymId, Number(insertId));
   await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, insertId]);
   await tx.query(
     'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
@@ -125,14 +128,21 @@ export async function copyPlanSnapshotToVersion(
         schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
-        source_user_membership_id, created_by, owner_is_beneficiary)
+        source_user_membership_id, created_by, owner_is_beneficiary,
+        assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
-            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary
+            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary,
+            ${opts.keepAssignment === false
+              ? 'NULL, NULL, 0, NULL, NULL, NULL'
+              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by'}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
+  // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); a copy that
+  // drops the assignment is a new one, anchored on itself.
+  await stampAssignmentId(tx, gymId, Number(insertId));
   if (opts.link !== false) {
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }
