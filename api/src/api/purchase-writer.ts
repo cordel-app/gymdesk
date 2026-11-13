@@ -7,10 +7,14 @@
  * already reads the snapshot tables (stage 3), so this module inverts the direction: each write
  * is made **from the writer's own values** into the snapshot (`product_session_snapshots` for a
  * Sessions package, `product_oneoff_snapshots` for anything else, `product_promotion_snapshots`
- * and the Billing Event junction) and, in the same transaction, into the legacy record, which is
- * still written only because it allocates the purchase id (`source_id`, what the routes and
- * Promotion snapshots are keyed on) and carries the pending-purchase UNIQUE key. Nothing here
+ * and the Billing Event junction) and, in the same transaction, into the legacy record. Nothing here
  * reads a legacy table, so stage 5d drops the legacy halves of these functions and nothing else.
+ *
+ * The purchase id (`source_id`, what the routes and Promotion snapshots are keyed on) comes from
+ * `product_purchase_ids` since stage 5d-3 (`allocatePurchaseId()`): a purchase's snapshot lives in one
+ * of two tables, each with its own sequence, so neither can allocate an id unique across both. The
+ * snapshot and the legacy record are written under that id; migration 413 registered every historical
+ * id and put the allocator above them, so a new id can never meet one.
  *
  * The two halves are written with the same values, timestamps included (one `now` per write), so
  * `npm run product-snapshots:validate` can compare them field by field.
@@ -58,17 +62,31 @@ export interface PurchaseValues {
   billingEventId: number | null;
 }
 
+/**
+ * #2126 stage 5d-3 — hands out a new purchase id. One row per id in `product_purchase_ids`, whose
+ * primary key is what makes a purchase id unique across `product_session_snapshots` and
+ * `product_oneoff_snapshots`. In the caller's transaction, so a rolled-back purchase registers nothing
+ * (InnoDB does not hand the id out again either).
+ */
+export async function allocatePurchaseId(tx: Conn, gymId: string): Promise<number> {
+  const { insertId } = await tx.query('INSERT INTO product_purchase_ids (gym_id) VALUES (?)', [gymId]);
+  const id = Number(insertId);
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Purchase id allocation returned no id');
+  return id;
+}
+
 /** Writes a purchase (record + snapshot + event link) and returns the purchase id. */
 export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<number> {
   const now = new Date();
-  const { insertId: purchaseId } = await tx.query(
+  const purchaseId = await allocatePurchaseId(tx, v.gymId);
+  await tx.query(
     `INSERT INTO member_products_oneoff_snapshot
-       (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, units,
+       (id, gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, units,
         amount, currency, tax_rate_percent, payment_request_id, created_at, created_by,
         list_price, direct_discount_percent, direct_discount_amount, validity_days, origin, assigned_member_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      v.gymId, v.memberId, v.productId, v.status, v.productName, v.productType, v.billingFrequency, v.units,
+      purchaseId, v.gymId, v.memberId, v.productId, v.status, v.productName, v.productType, v.billingFrequency, v.units,
       money(v.amount), v.currency, v.taxRatePercent, v.paymentRequestId, now, v.createdBy,
       money(v.listPrice), money(v.directDiscountPercent), money(v.directDiscountAmount), v.validityDays,
       v.origin, v.assignedMemberId,

@@ -26,6 +26,15 @@ export async function linkPurchaseToBillingEvent(tx: Conn, gymId: string, purcha
 
 const PURCHASE_TABLES = ['product_session_snapshots', 'product_oneoff_snapshots'] as const;
 
+/**
+ * #2126 stage 5d-3 — registers a purchase id a test took from the legacy table's own sequence in
+ * `product_purchase_ids`, as the writer would have allocated it there. An explicit id also moves the
+ * allocator's AUTO_INCREMENT past it, so a later real purchase can never take the same id.
+ */
+export async function registerTestPurchaseId(tx: Conn, gymId: string, purchaseId: number): Promise<void> {
+  await tx.query('INSERT IGNORE INTO product_purchase_ids (id, gym_id) VALUES (?, ?)', [purchaseId, gymId]);
+}
+
 /** Re-derives the snapshot of one bought one-time Product (and the Promotions frozen onto it). */
 export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, purchaseId: number): Promise<void> {
   const { rows } = await tx.query<{ product_type: string | null }>(
@@ -38,6 +47,7 @@ export async function syncProductSnapshotForPurchase(tx: Conn, gymId: string, pu
     return;
   }
 
+  await registerTestPurchaseId(tx, gymId, purchaseId);
   const isSessions = rows[0].product_type === 'sessions';
   const target = isSessions ? 'product_session_snapshots' : 'product_oneoff_snapshots';
   const other = isSessions ? 'product_oneoff_snapshots' : 'product_session_snapshots';

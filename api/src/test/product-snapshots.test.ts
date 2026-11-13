@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
+import { registerTestPurchaseId } from './purchaseSnapshotFixture';
 import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership } from './helpers';
 
 const require = createRequire(import.meta.url);
@@ -47,13 +48,16 @@ beforeAll(async () => {
   productId = await product('Locker', 'service', 'month');
   const pack = await product('Pack', 'sessions', 'once');
 
-  const buy = async (pid: number, name: string, type: string, units: number | null, amount: number) =>
-    (await db.query(
+  const buy = async (pid: number, name: string, type: string, units: number | null, amount: number) => {
+    const id = (await db.query(
       `INSERT INTO member_products_oneoff_snapshot
          (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency, units, amount,
           currency, list_price, direct_discount_percent, direct_discount_amount, valid_until)
        VALUES (?, ?, ?, 'active', ?, ?, 'once', ?, ?, 'EUR', 100.00, 10.00, 10.00, '2027-01-31')`,
       [gymId, owner, pid, name, type, units, amount])).insertId as number;
+    await registerTestPurchaseId(db, gymId, id);
+    return id;
+  };
   sessionsPurchase = await buy(pack, 'Frozen pack', 'sessions', 10, 90);
   oneoffPurchase = await buy(productId, 'Frozen towel', 'merchandise', null, 90);
 
