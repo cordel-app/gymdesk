@@ -3,7 +3,7 @@
 import React from 'react';
 import {
   LIST_NAME_VALUE_CLASS, type ListColumnMobile, listCellClass, listCellStyle,
-  listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle, listRowDividerStyle,
+  listExpandedStyle, listHeaderCellStyle, listNestedBlockStyle, listNestedCellStyle, listHeaderRowStyle, listRowDividerStyle,
   listScrollerClass, listSurfaceStyle,
 } from './listChrome';
 import { draftRowCells } from './draftRowCells';
@@ -51,11 +51,15 @@ interface DataTableProps<T> {
   // column added later cannot shift the cells after it); `form` is its
   // always-open expanded editor. It is outside `rows`, so a row filter never hides it.
   draftRow?: { cells: Record<string, React.ReactNode>; form: React.ReactNode };
+  // #2783: content that belongs to a row and is always shown, indented under it
+  // as its child (a Product's Promotion). `null` draws nothing, so a row with
+  // nothing to nest gets no empty block.
+  renderNested?: (row: T) => React.ReactNode | null;
 }
 
 export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
-  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow,
+  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow, renderNested,
 }: DataTableProps<T>) {
   if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
   if (rows.length === 0 && !draftRow) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
@@ -108,6 +112,7 @@ export function DataTable<T>({
           {rows.map((row) => {
             const key = rowKey(row);
             const isExpanded = expandable && !!expandedRowKeys?.has(key);
+            const nested = renderNested ? renderNested(row) : null;
             return (
               <React.Fragment key={key}>
                 <tr
@@ -146,6 +151,13 @@ export function DataTable<T>({
                     );
                   })}
                 </tr>
+                {nested != null && (
+                  <tr data-nested-row>
+                    <td colSpan={totalCols} style={listNestedCellStyle}>
+                      <div style={listNestedBlockStyle}>{nested}</div>
+                    </td>
+                  </tr>
+                )}
                 {isExpanded && (
                   <tr>
                     <td colSpan={totalCols} style={expandedCell}>{renderExpanded!(row)}</td>

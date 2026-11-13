@@ -19,13 +19,14 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { listNestedBlockStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
-  parseDiscountInput, purchaseErrorKey, showsAssigneeSelector,
+  hasPromotionBlock, parseDiscountInput, purchaseErrorKey, showsAssigneeSelector,
   type EligibleAssignee, type PurchasableProductOption, type PurchaseQuote,
 } from './purchasedProductsView';
 
@@ -262,8 +263,10 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
   return (
     <div style={{ padding: '12px 16px' }} data-add-product-form>
       {f.catalogue != null && f.catalogue.length === 0 && <p style={cardHintStyle}>{t('add_product_none_available')}</p>}
-      {product && !outcome && (
-        <>
+      {product && !outcome && hasPromotionBlock(product) && (
+        // #2783 — the Promotions belong to the Product being added: indented under
+        // its row as a child, and absent when the Product has none to offer.
+        <div style={{ ...listNestedBlockStyle, marginLeft: 24 }} data-product-promotions>
           <div style={formFieldLabelStyle}>{t('add_product_promotions')}</div>
           <PromotionPicker
             promotions={product.promotions.map((promo) => {
@@ -287,7 +290,7 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
               })}
             </p>
           )}
-        </>
+        </div>
       )}
       {quote && (
         <p style={cardHintStyle}>

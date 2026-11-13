@@ -129,6 +129,19 @@ export interface PurchasableProductOption {
   sharing_type?: string | null;
 }
 
+/**
+ * #2783 — whether the Product being added shows its nested Promotions block:
+ * only when it has a Promotion to offer, or one it would offer a new member
+ * (the hint that says why it is not offered). Otherwise no empty block is drawn.
+ */
+export function hasPromotionBlock(product: {
+  promotions?: readonly unknown[] | null;
+  unavailable_promotions?: readonly unknown[] | null;
+} | null): boolean {
+  if (!product) return false;
+  return (product.promotions?.length ?? 0) > 0 || (product.unavailable_promotions?.length ?? 0) > 0;
+}
+
 /** #2609 — a family member a Product bought for this member may be assigned to. */
 export interface EligibleAssignee {
   member_id: number;
