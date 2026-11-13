@@ -473,9 +473,8 @@ export async function retireProjected(
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
   // #2659 stage 3: the activation has just closed the plan (as `active_cancel_at_period_end` when it
-  // still runs to a paid day), so the new Active set carries it — and any other plan the owner is
-  // cancelling — for entitlement only. Nothing is billed or projected from these links.
-  await linkCancellingPlans(tx, input.gymId, created.productSet.id);
+  // still runs to a paid day) and linked it — with any other plan the owner is cancelling — to the
+  // new Active set for entitlement only (`activateWithEvents()`, #2777). Nothing is billed from it.
   return { kind: 'ok', productSetId: created.productSet.id };
 }
 

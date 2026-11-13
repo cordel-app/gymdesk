@@ -102,6 +102,17 @@ describe('which plans are history', () => {
     expect(past.map((p) => p.id)).toEqual([3]);
   });
 
+  it('lists the head too when no plan is live, so an ended plan reaches Past (#2777)', () => {
+    const rows = [
+      row({ id: 7, status: 'active_cancel_at_period_end', lifecycle_status: 'cancelled', starts_at: '2026-05-01' }),
+      row({ id: 6, status: 'cancelled', starts_at: '2026-01-01' }),
+    ];
+    const { current, also_live, past } = splitMemberPlanHistory(rows);
+    expect(current?.id).toBe(7);
+    expect(also_live).toEqual([]);
+    expect(past.map((p) => p.id)).toEqual([7, 6]);
+  });
+
   it('answers nothing at all for a member with no assignment', () => {
     expect(splitMemberPlanHistory([])).toEqual({ current: null, also_live: [], past: [] });
   });

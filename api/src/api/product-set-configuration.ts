@@ -25,6 +25,7 @@ import { PLAN_LINE_TABLE, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { productSetHistoryIds } from './product-set-history';
 import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
+import { linkCancellingPlans } from './entitlement-plan-links';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -704,6 +705,10 @@ export async function activateWithEvents(tx: Tx, input: {
   // screens still read is a projection of this version, written here and only
   // here, in the same transaction as the activation.
   await projectActiveProductSet(tx, input.gymId, input.productSetId, input.actor);
+  // #2659 stage 3 / #2777: the Active set carries every plan the owner is cancelling at its period
+  // end, for entitlement only — whatever path activated it (a cancellation closes the plan in the
+  // projection just above, as `active_cancel_at_period_end`). Idempotent; nothing is billed from it.
+  await linkCancellingPlans(tx, input.gymId, input.productSetId);
   // #2125 stage 2: the plan snapshots follow — this version is active, its predecessor history.
   await syncPlanSnapshot(tx, input.gymId, input.productSetId);
   if (previousId != null) await syncPlanSnapshot(tx, input.gymId, previousId);
