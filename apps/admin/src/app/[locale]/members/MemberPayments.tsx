@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -9,7 +9,7 @@ import {
   BillingEventsTable, useBillingEventActions, type BillingEventsTableRow,
 } from '../payments/billing-events/BillingEventShared';
 import {
-  PAYMENTS_TAB_INITIAL_OPEN, splitPastEvents, splitPaymentsTabEvents, type PaymentsTabEvent,
+  PAYMENTS_TAB_INITIAL_OPEN, initialExpandedEventIds, splitPastEvents, splitPaymentsTabEvents, type PaymentsTabEvent,
 } from './paymentsTabView';
 
 /** A ledger row as the shared Billing Events renderer reads it (#2571). */
@@ -23,7 +23,8 @@ type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
  * Both lists are Payments → Billing Events' own table (`BillingEventsTable`),
  * header included (#2449 follow-up). Since #2778 the newest past event sits
  * on its own under *Last billing event* (open by default) and is not repeated
- * under *Past billing events*; every section collapses independently.
+ * under *Past billing events*; every section collapses independently. That
+ * last event's row starts expanded, so its Billing Event lines are on screen.
  */
 export function MemberPayments({ memberId }: { memberId: number | string }) {
   const t = useTranslations();
@@ -49,6 +50,14 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
 
   // Expansion lives here (not per row) so an action can open the event it acted on.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // The last event's row is opened once per member, on the first load: a reload
+  // after an action must not reopen a row the administrator closed.
+  const seededFor = useRef<number | string | null>(null);
+  useEffect(() => {
+    if (events === null || seededFor.current === memberId) return;
+    seededFor.current = memberId;
+    setExpanded(new Set(initialExpandedEventIds(last)));
+  }, [events, last, memberId]);
   const toggle = (id: number) => setExpanded((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const { menuItems, modal, canWrite, readOnlyTitle } = useBillingEventActions<MemberBillingEvent>({
     onChanged: load,
