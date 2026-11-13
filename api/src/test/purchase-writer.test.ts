@@ -93,6 +93,8 @@ async function pay(paymentRequestId: number) {
 const base = (memberId: number) => `/members/${memberId}/product-purchases`;
 
 const SNAPSHOT_TABLE = { sessions: 'product_session_snapshots', fee: 'product_oneoff_snapshots' } as const;
+const SET_JUNCTION = { sessions: 'product_set_session_snapshots', fee: 'product_set_oneoff_snapshots' } as const;
+const SNAPSHOT_COL = { sessions: 'product_session_snapshot_id', fee: 'product_oneoff_snapshot_id' } as const;
 const EVENT_JUNCTION = {
   sessions: ['billing_event_session_snapshots', 'product_session_snapshot_id'],
   fee: ['billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id'],
@@ -105,8 +107,9 @@ async function pair(purchaseId: number, type: 'sessions' | 'fee') {
     DATE_FORMAT(cancelled_on, '%Y-%m-%d') AS cancelled_on, purchased_at, assigned_member_id, product_name,
     product_type, units, currency, created_by, modified_by`;
   const { rows: snap } = await db.query<any>(
-    `SELECT ${cols}, unit_price AS amount, id AS snapshot_id, member_product_id, product_set_id
-       FROM ${SNAPSHOT_TABLE[type]} WHERE source_id = ?`, [purchaseId]);
+    `SELECT ${cols}, unit_price AS amount, id AS snapshot_id, member_product_id,
+            (SELECT COUNT(*) FROM ${SET_JUNCTION[type]} sj WHERE sj.${SNAPSHOT_COL[type]} = s.id) AS set_links
+       FROM ${SNAPSHOT_TABLE[type]} s WHERE source_id = ?`, [purchaseId]);
   const other = type === 'sessions' ? SNAPSHOT_TABLE.fee : SNAPSHOT_TABLE.sessions;
   const { rows: stray } = await db.query<any>(`SELECT id FROM ${other} WHERE source_id = ?`, [purchaseId]);
   return { snapshot: snap[0] ?? null, stray: stray.length };
@@ -116,7 +119,7 @@ async function pair(purchaseId: number, type: 'sessions' | 'fee') {
 function expectWritten(p: Awaited<ReturnType<typeof pair>>) {
   expect(p.snapshot).not.toBeNull();
   expect(p.stray).toBe(0);
-  expect(p.snapshot.product_set_id).toBeNull();
+  expect(Number(p.snapshot.set_links)).toBe(0);
 }
 
 async function promotionCounts(purchaseId: number, type: 'sessions' | 'fee') {

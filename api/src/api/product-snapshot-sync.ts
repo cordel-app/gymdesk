@@ -19,7 +19,6 @@
  */
 import type { Tx } from '../infra/db';
 import { recurringLineSharedSql } from './recurring-line-sharing';
-import { syncProductSnapshotJunctions } from './snapshot-junction-sync';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -56,8 +55,9 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
   await tx.query(
     `DELETE pp FROM product_promotion_snapshots pp
        JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-      WHERE par.gym_id = ? AND par.product_set_id = ?
-        AND NOT ${recurringLineSharedSql('par.id', 'par.product_set_id')}
+       JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
+      WHERE par.gym_id = ? AND lnk.product_set_id = ?
+        AND NOT ${recurringLineSharedSql('par.id', 'lnk.product_set_id')}
         AND (pp.source_application_id IS NULL OR pp.source_application_id NOT IN (${owned}))`,
     [gymId, productSetId, gymId, productSetId]);
   await tx.query(
@@ -84,7 +84,8 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
       `DELETE g FROM product_promotion_grant_snapshots g
          JOIN product_promotion_snapshots pp ON pp.id = g.product_promotion_snapshot_id
          JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-        WHERE g.grant_kind = '${kind}' AND par.gym_id = ? AND par.product_set_id = ?
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
+        WHERE g.grant_kind = '${kind}' AND par.gym_id = ? AND lnk.product_set_id = ?
           AND (g.source_id IS NULL OR g.source_id NOT IN
                 (SELECT x.id FROM ${source} x WHERE x.gym_id = ? AND x.user_membership_promotion_id = pp.source_application_id))`,
       [gymId, productSetId, gymId]);
@@ -98,7 +99,8 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
          JOIN product_promotion_snapshots pp
            ON pp.source_application_id = g.user_membership_promotion_id AND pp.gym_id = g.gym_id
          JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-        WHERE par.gym_id = ? AND par.product_set_id = ?
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
+        WHERE par.gym_id = ? AND lnk.product_set_id = ?
        ON DUPLICATE KEY UPDATE
          product_id = VALUES(product_id), product_name = VALUES(product_name), quantity = VALUES(quantity),
          item_type = VALUES(item_type), item_billing_frequency = VALUES(item_billing_frequency),
@@ -106,5 +108,4 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
          value = VALUES(value), requirement = VALUES(requirement)`,
       [gymId, productSetId]);
   }
-  await syncProductSnapshotJunctions(tx, gymId, productSetId);
 }

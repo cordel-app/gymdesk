@@ -416,7 +416,8 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     // …while a deliberate repeat a moment later is.
     // #2126 stage 3l: the guard reads the line's Product snapshot.
     await db.query(
-      'UPDATE product_periodical_snapshots SET created_at = created_at - INTERVAL 1 MINUTE WHERE product_set_id = ?',
+      `UPDATE product_periodical_snapshots s JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = s.id
+         SET s.created_at = s.created_at - INTERVAL 1 MINUTE WHERE lnk.product_set_id = ?`,
       [first.body.product_set_id]);
     const second = await auth(request.post(base(m))).send({ product_id: weekly });
     expect(second.status).toBe(201);

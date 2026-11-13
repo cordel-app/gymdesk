@@ -57,13 +57,17 @@ export function memberPurchaseSnapshotParams(gymId: string, memberId: number): A
  * cancelling abandoned ones). The predicate is applied in each arm, so its placeholders are bound
  * twice: pass `purchaseSnapshotParams(params)`.
  */
-export function purchaseSnapshotsSql(predicate: string): string {
+export function purchaseSnapshotsSql(predicate: string, opts: { notInProductSet?: boolean } = {}): string {
+  // #2746 / #2126 stage 6b: a purchase in a member's cart is linked to its Product Set through the
+  // arm's `product_set_{session,oneoff}_snapshots` junction, the only record of that link.
+  const notLinked = (table: string, junction: string, col: string) => opts.notInProductSet
+    ? ` AND NOT EXISTS (SELECT 1 FROM ${junction} psj_ WHERE psj_.${col} = ${table}.id)` : '';
   return `(
   SELECT ${SESSION_ARM_COLUMNS} FROM product_session_snapshots
-   WHERE source_id IS NOT NULL AND ${predicate}
+   WHERE source_id IS NOT NULL AND ${predicate}${notLinked('product_session_snapshots', 'product_set_session_snapshots', 'product_session_snapshot_id')}
   UNION ALL
   SELECT ${ONEOFF_ARM_COLUMNS} FROM product_oneoff_snapshots
-   WHERE source_id IS NOT NULL AND ${predicate}
+   WHERE source_id IS NOT NULL AND ${predicate}${notLinked('product_oneoff_snapshots', 'product_set_oneoff_snapshots', 'product_oneoff_snapshot_id')}
 )`;
 }
 

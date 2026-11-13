@@ -19,7 +19,7 @@
  * result is `{ insertId }`, the id a reader reports the row under, as `db.query` answered for the table.
  */
 import { db, type Tx } from '../infra/db';
-import { PURCHASE_EVENT_JUNCTIONS, syncProductSnapshotJunctions } from '../api/snapshot-junction-sync';
+import { PURCHASE_EVENT_JUNCTIONS } from '../api/snapshot-junction-sync';
 import { syncProductSnapshotsOfVersion } from '../api/product-snapshot-sync';
 
 type Conn = Pick<Tx, 'query'>;
@@ -61,11 +61,11 @@ async function insertPurchase(conn: Conn, v: Record<string, any>): Promise<numbe
   const table = isSessions ? 'product_session_snapshots' : 'product_oneoff_snapshots';
   const { insertId: snapshotId } = await conn.query(
     `INSERT INTO ${table}
-       (gym_id, member_id, product_set_id, product_id, source_id, status, product_name, product_type,
+       (gym_id, member_id, product_id, source_id, status, product_name, product_type,
         billing_frequency, units, quantity, currency, unit_price, list_price, direct_discount_percent,
         direct_discount_amount, tax_rate_percent, origin, member_product_id, purchased_at, validity_days,
         valid_until, cancelled_on, created_at, created_by, modified_at, modified_by, assigned_member_id)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), ?, ?, ?, ?)`,
     [
       v.gym_id, v.member_id, opt(v, 'product_id'), id, opt(v, 'status') ?? 'pending_payment', v.product_name,
       v.product_type, opt(v, 'billing_frequency'), opt(v, 'units'), opt(v, 'currency') ?? 'EUR', v.amount,
@@ -114,10 +114,10 @@ async function insertRecurringLine(conn: Conn, v: Record<string, any>): Promise<
   if (setId == null) throw new Error('legacy product fixture: a recurring line names its product_set_id');
   const { insertId } = await conn.query(
     `INSERT INTO product_periodical_snapshots
-       (gym_id, member_id, product_set_id, product_id, source_id, line_ref, status, product_name,
+       (gym_id, member_id, product_id, source_id, line_ref, status, product_name,
         product_type, billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent,
         starts_at, ends_at, origin, schedule_id, created_at, assigned_member_id)
-     SELECT ps.gym_id, ps.owner_member_id, ps.id, p.id, NULL, ?, ps.status, COALESCE(?, p.name), COALESCE(?, p.type),
+     SELECT ps.gym_id, ps.owner_member_id, p.id, NULL, ?, ps.status, COALESCE(?, p.name), COALESCE(?, p.type),
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), ?
        FROM product_sets ps JOIN products p ON p.id = ?
       WHERE ps.id = ? AND ps.gym_id = ?`,
@@ -134,7 +134,6 @@ async function insertRecurringLine(conn: Conn, v: Record<string, any>): Promise<
   await conn.query(
     'INSERT IGNORE INTO product_set_periodical_snapshots (product_set_id, product_periodical_snapshot_id) VALUES (?, ?)',
     [setId, id]);
-  await syncProductSnapshotJunctions(conn, String(v.gym_id), Number(setId));
   await syncProductSnapshotsOfVersion(conn, String(v.gym_id), Number(setId));
   return id;
 }

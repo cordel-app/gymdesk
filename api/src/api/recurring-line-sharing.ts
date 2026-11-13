@@ -6,8 +6,8 @@
  * link and makes a shared line immutable, exactly as M4b-1 did for plan snapshots
  * (`planSnapshotSharedSql()` in `plan-snapshot-lines.ts`):
  *
- * - `syncProductSnapshotJunctions()` only adds the link a line's own `product_set_id` implies and never
- *   removes one (a link is released by deleting the line, whose junction rows cascade);
+ * - the junction is never derived from a column (since stage 6b the line has none): its writers link what
+ *   they write, and a link is released by deleting the line, whose junction rows cascade;
  * - `syncProductSnapshotsOfVersion()` moves the status and owner of, and re-derives the Promotions on,
  *   the lines only the set links;
  * - `updateRecurringLine()` refuses to write a shared line: a writer that must change one owns a copy of

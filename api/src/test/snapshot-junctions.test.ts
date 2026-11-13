@@ -8,6 +8,8 @@ import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { legacyProductInsert } from './legacyProductFixture';
+import { discardDraftSet } from '../api/plan-snapshot-ownership';
+import { insertRecurringLine, linkRecurringLines } from '../api/recurring-line-writer';
 
 let gymId: string;
 let seq = 0;
@@ -59,7 +61,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
 
     const { insertId: lineId } = await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, 1, ?, 'Locker', 'service', 'month', 10.00, 'EUR')`, [gymId, setId, productId, TODAY]);
-    const { rows: pers } = await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId]);
+    const { rows: pers } = await db.query<any>('SELECT product_periodical_snapshot_id AS id FROM product_set_periodical_snapshots WHERE product_set_id = ?', [setId]);
     expect(pers).toHaveLength(1);
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([Number(pers[0].id)]);
 
@@ -70,7 +72,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     // Removing the line removes its snapshot and, by cascade, its link.
     await db.query('DELETE FROM product_periodical_snapshots WHERE id = ?', [lineId]);
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([]);
-    expect((await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId])).rows).toHaveLength(0);
+    expect((await db.query<any>('SELECT product_periodical_snapshot_id AS id FROM product_set_periodical_snapshots WHERE product_set_id = ?', [setId])).rows).toHaveLength(0);
 
     // Deleting the Product Set takes the plan snapshot and its junction row together.
     await db.query('DELETE FROM product_sets WHERE id = ?', [setId]);
@@ -124,5 +126,33 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(1);
     await db.query('DELETE FROM product_session_snapshots WHERE source_id = ?', [purchaseId]);
     expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
+  });
+  it('a Product snapshot names no Product Set: a discarded Draft deletes its own lines and keeps the shared ones (#2126 stage 6b)', async () => {
+    const productId = await product();
+    const cols = (await db.query<any>(
+      `SELECT TABLE_NAME AS t FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'product_set_id'
+          AND TABLE_NAME IN ('product_periodical_snapshots', 'product_oneoff_snapshots', 'product_session_snapshots')`)).rows;
+    expect(cols).toEqual([]);
+
+    const draft = async () => db.transaction(async (tx) => {
+      const d = await createDraft(tx, { gymId, ownerMemberId: await member(), membershipPlanId: null, startsAt: TODAY, actor });
+      if (d.kind !== 'created') throw new Error(d.kind);
+      return d.productSet.id;
+    });
+    const activeSet = await draft();
+    const shared = await db.transaction((tx) => insertRecurringLine(tx, { gymId, productSetId: activeSet, productId, quantity: 1, startsAt: TODAY }));
+    const draftSet = await draft();
+    await db.transaction(async (tx) => {
+      await linkRecurringLines(tx, gymId, activeSet, draftSet);
+    });
+    const own = await db.transaction((tx) => insertRecurringLine(tx, { gymId, productSetId: draftSet, productId, quantity: 2, startsAt: TODAY }));
+    expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', draftSet)).toEqual([shared, own]);
+
+    expect(await db.transaction((tx) => discardDraftSet(tx, gymId, draftSet))).toBe(true);
+    const left = (await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE id IN (?, ?)', [shared, own])).rows
+      .map((r: any) => Number(r.id));
+    expect(left).toEqual([shared]);
+    expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', activeSet)).toEqual([shared]);
   });
 });
