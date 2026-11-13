@@ -79,12 +79,18 @@ import {
 import {
   PastMembershipPlansCard,
   type PastMembershipPlanItem,
+  type PastPlanExpanded,
 } from '@/components/PastMembershipPlansCard';
 import {
   type MemberPastPlan,
-  pastPlanEndedOn,
+  type PastPlanText,
+  pastPlanHasDetails,
+  pastPlanLineFacts,
   pastPlanName,
+  pastPlanPeriod,
   pastPlanStatusKey,
+  pastPromotionBenefitText,
+  pastPromotionName,
 } from '@/lib/memberPlans';
 import {
   type AppliedMemberProductPromotion,
@@ -1395,17 +1401,61 @@ export default function MembershipPage() {
 
   /* ── #1122 Past Membership Plans ────────────────────────────────────────── */
 
+  function pastText(text: PastPlanText): string {
+    return t(text.key as any, text.values as any);
+  }
+
+  /** #2779: what a past plan expands into, worded from its snapshot details. */
+  function pastPlanExpanded(plan: MemberPastPlan): PastPlanExpanded | null {
+    const details = plan.details;
+    if (!details || !pastPlanHasDetails(details)) return null;
+    const fee = formatPaymentAmount(details.membership_fee_price, null, gymFmt);
+    return {
+      fee: fee ? { label: t('membership.past_plan_fee'), value: fee } : null,
+      linesHeading: t('membership.plan_ov_products'),
+      lines: details.lines.map((line, i) => ({
+        key: `${line.category}-${i}`,
+        name: line.product_name,
+        facts: pastPlanLineFacts(line).map(pastText).join(' · '),
+      })),
+      promotionsHeading: t('membership.promotion_heading'),
+      promotions: details.promotions.map((promo) => {
+        const revoked = promo.status === 'revoked';
+        const revokedOn = promo.revoked_at ? formatPaymentDate(promo.revoked_at, gymFmt) : null;
+        const feeFacts = promo.membership_fee_benefits.flatMap((b) => {
+          const benefit = pastPromotionBenefitText(b.action, b.value, null, gymFmt);
+          if (!benefit) return [];
+          const duration = b.duration_months != null
+            ? ` (${t('membership.promotion_duration_months', { count: b.duration_months })})` : '';
+          return [`${t('membership.past_plan_fee')}: ${pastText(benefit)}${duration}`];
+        });
+        return {
+          key: String(promo.id),
+          name: pastPromotionName(promo) ?? t('membership.promotion_heading'),
+          note: revoked
+            ? (revokedOn ? `${t('membership.past_plan_promotion_revoked')} · ${revokedOn}` : t('membership.past_plan_promotion_revoked'))
+            : null,
+          facts: feeFacts.length > 0 ? feeFacts.join(' · ') : null,
+          products: promo.products.map((g, i) => {
+            const benefit = pastPromotionBenefitText(g.action, g.value, null, gymFmt);
+            const quantity = t('membership.past_plan_quantity', { count: g.quantity });
+            return { key: `${promo.id}-${i}`, name: g.product_name, facts: benefit ? `${quantity} · ${pastText(benefit)}` : quantity };
+          }),
+        };
+      }),
+    };
+  }
+
   function pastPlanItems(plans: MemberPastPlan[]): PastMembershipPlanItem[] {
     return plans.map((plan) => {
-      const endedOn = pastPlanEndedOn(plan, gymFmt);
-      const status = t(pastPlanStatusKey(plan) as any);
+      const period = pastPlanPeriod(plan, gymFmt);
       return {
         // #2747 stage 2: a cancelled Product Set's id is not an assignment's.
         key: plan.product_set_id != null ? `ps-${plan.product_set_id}` : String(plan.id),
         name: pastPlanName(plan),
-        // A row with no end date on file reads as its status alone, rather than
-        // as a date the assignment does not actually carry.
-        meta: endedOn ? `${status} · ${endedOn}` : status,
+        period: period ? pastText(period) : null,
+        meta: t(pastPlanStatusKey(plan) as any),
+        details: pastPlanExpanded(plan),
       };
     });
   }
