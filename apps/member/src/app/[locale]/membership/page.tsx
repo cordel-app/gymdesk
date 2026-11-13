@@ -14,6 +14,12 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import {
+  cartDividerStyle,
+  cartHeadingStyle,
+  cartMutedStyle,
+  cartSecondaryButtonStyle,
+  cartSummaryStyle,
+  cartTotalStyle,
   inputStyle,
   memberTheme,
   noticeStyle,
@@ -36,6 +42,16 @@ import {
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
 import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
+import {
+  type CartItem,
+  type MemberCartView,
+  cartCommitAction,
+  cartCounts,
+  cartErrorKey,
+  cartItems,
+  cartProductState,
+  hasCart,
+} from '@/lib/memberCart';
 import { RETRY_PAYMENT_PARAM, wantsPaymentRetry } from '@/lib/paymentReturn';
 import {
   MemberProfessionalServices,
@@ -101,7 +117,6 @@ import {
   setStatusKey,
   type MemberSetPlan,
   pendingPaymentPlanSnapshotId,
-  draftAddedCount,
   draftErrorKey,
   draftProductState,
   draftPlanState,
@@ -296,7 +311,7 @@ export default function MembershipPage() {
   // Active one) as the server reads it, the Product an Add/Remove is in flight
   // for, and the refusal of the last one (keyed by Product). Every figure and
   // every rule stays the server's; this is which card says what.
-  const [setView, setSetView] = useState<MemberSetView | null>(null);
+  const [setView, setSetView] = useState<MemberCartView | null>(null);
   // #2663 — `My Plans` and `My Products` render only once the one selected version is known.
   const [setViewLoaded, setSetViewLoaded] = useState(false);
   const [draftBusy, setDraftBusy] = useState<number | null>(null);
@@ -307,6 +322,11 @@ export default function MembershipPage() {
   const [review, setReview] = useState<MemberSetReview | null>(null);
   const [commitBusy, setCommitBusy] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  // #2746 stage 2 — the cart's global Cancel asks first; the item a per-item
+  // Cancel is in flight for, and the refusal of the last cart edit.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [cartBusy, setCartBusy] = useState<string | null>(null);
+  const [cartError, setCartError] = useState<string | null>(null);
 
   // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
   // the Promotion applied per plan is page state (its snapshot is written by
@@ -395,13 +415,13 @@ export default function MembershipPage() {
     try {
       const rows = await apiFetch<MemberSetRow[]>('/me/product-sets');
       const id = currentSetId(rows);
-      let view = id == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${id}`);
+      let view = id == null ? null : await apiFetch<MemberCartView>(`/me/product-sets/${id}`);
       // #2477 stage 3 — a Draft past its two hours is no longer the member's to
       // edit, even before the discard pass removes it: read their Active
       // version instead and say what happened.
       if (isExpiredDraft(view)) {
         const activeId = currentSetId(rows.filter((r) => r.status !== 'draft'));
-        view = activeId == null ? null : await apiFetch<MemberSetView>(`/me/product-sets/${activeId}`);
+        view = activeId == null ? null : await apiFetch<MemberCartView>(`/me/product-sets/${activeId}`);
         setDraftError({ productId: null, key: 'membership.draft_error_expired' });
       }
       setSetView(view);
@@ -518,7 +538,7 @@ export default function MembershipPage() {
    * nothing owed activates. The amount is the server's; the body names nothing.
    */
   async function commitSet() {
-    const action = setCommitAction(review);
+    const action = cartCommitAction(setView, review);
     if (!review || !action || commitBusy) return;
     setCommitBusy(true);
     setCommitError(null);
@@ -564,6 +584,31 @@ export default function MembershipPage() {
     } finally {
       await loadSetView();
       setDraftBusy(null);
+      setConfirmDiscard(false);
+    }
+  }
+
+  /**
+   * #2746 stage 2 — one item's own Cancel: only that plan, recurring line or
+   * one-time Product leaves the Draft, through the route that added it. The
+   * server keeps every other item and re-prices the cart.
+   */
+  async function removeCartItem(item: CartItem) {
+    if (!setView || setView.status !== 'draft' || cartBusy !== null) return;
+    setCartBusy(item.key);
+    setCartError(null);
+    const path = item.kind === 'plan'
+      ? `/me/product-sets/${setView.id}/plans/${item.planSnapshotId}`
+      : item.kind === 'line'
+        ? `/me/product-sets/${setView.id}/services/${item.lineId}`
+        : `/me/product-sets/${setView.id}/purchases/${item.purchaseId}`;
+    try {
+      await apiFetch(path, { method: 'DELETE' });
+    } catch (err: any) {
+      setCartError(cartErrorKey(err?.message));
+    } finally {
+      await loadSetView();
+      setCartBusy(null);
     }
   }
 
@@ -1037,7 +1082,10 @@ export default function MembershipPage() {
           {(reviewError || commitError) && (
             <p role="alert" style={{ ...styles.draftError, margin: '10px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
           )}
-          {action && (
+          {/* #2746 stage 2 — the cart card above carries the one Pay; the
+              button stays here only for a Draft that changes something without
+              adding an item (it only cancels one). */}
+          {action && !hasCart(setView) && (
             <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 14 }} disabled={commitBusy} onClick={commitSet}>
               {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
             </button>
@@ -1053,33 +1101,101 @@ export default function MembershipPage() {
    * the server's (`GET /me/product-sets/:id`).
    */
   function renderDraftSelection() {
-    const count = draftAddedCount(setView);
+    // #2746 stage 2 — the cart card carries the count, the countdown and the
+    // global Cancel; this notice is left for a refusal with no cart to show it.
     const generalError = draftError && draftError.productId === null ? draftError.key : null;
-    if (count === 0 && !generalError) return null;
+    if (hasCart(setView) || !generalError) return null;
+    return (
+      <div style={{ ...noticeStyle('info'), marginTop: 12 }}>
+        <span role="alert" style={styles.draftError}>{t(generalError as any)}</span>
+      </div>
+    );
+  }
+
+  /**
+   * #2746 stage 2 — the shopping cart (§4): the member's Draft Product Set as
+   * one purchase, at the top of My Products. The counts are the server's
+   * (`cart`), the total is the server's review (`commitCharge()`, the figure
+   * Save & Pay charges), each item has its own Cancel and the two global
+   * actions commit or discard the whole Draft. Nothing here prices anything.
+   */
+  function renderCart() {
+    if (!hasCart(setView)) return null;
+    const { plans, products } = cartCounts(setView);
+    const items = cartItems(setView);
+    const action = cartCommitAction(setView, review);
+    const currency = review?.currency ?? 'EUR';
+    const total = review?.amount_due == null ? '—' : formatPaymentAmount(review.amount_due, currency, gymFmt);
     const remaining = formatDraftRemaining(draftSecondsLeft);
     const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
     const exact = draftSecondsLeft != null && showsDraftExactTime(draftSecondsLeft)
       ? formatGymTime(new Date(Date.now() + draftSecondsLeft * 1000), gymFmt)
       : null;
+    const generalError = draftError && draftError.productId === null ? draftError.key : null;
+    const reviewError = review?.error ? setCommitErrorKey(review.error) : null;
+    const error = cartError ?? commitError ?? generalError ?? reviewError;
+    const busy = commitBusy || draftBusy !== null || cartBusy !== null;
+    const counts = [
+      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
+      products > 0 ? t('membership.cart_products', { count: products }) : null,
+    ].filter(Boolean).join(' · ');
     return (
-      <div style={{ ...noticeStyle('info'), marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-        {count > 0 && (
-          <span style={{ flex: '1 1 200px', fontSize: 13.5 }}>
-            {t('membership.draft_selection_count', { count })}
-          </span>
-        )}
-        {count > 0 && remaining != null && (
-          <span data-draft-expiry style={warn ? styles.draftExpiryWarning : styles.draftExpiry}>
-            {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
-          </span>
-        )}
-        {count > 0 && (
-          <button type="button" style={styles.draftSecondaryBtn} disabled={draftBusy !== null} onClick={discardDraft}>
-            {t('membership.draft_discard')}
-          </button>
-        )}
-        {generalError && <span role="alert" style={styles.draftError}>{t(generalError as any)}</span>}
-      </div>
+      <section style={styles.section} data-cart>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t('membership.cart_heading')}</h2>
+              <span style={cartMutedStyle}>{counts}</span>
+              <span style={cartTotalStyle} data-cart-total>{total}</span>
+              {remaining != null && (
+                <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+                  {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
+                </span>
+              )}
+            </div>
+            <div style={styles.cartActions}>
+              <button
+                type="button"
+                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
+                disabled={busy || !action}
+                onClick={commitSet}
+              >
+                {commitBusy ? t('membership.cart_paying') : t('membership.cart_pay')}
+              </button>
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
+                disabled={busy}
+                onClick={() => setConfirmDiscard(true)}
+              >
+                {t('membership.cart_cancel')}
+              </button>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                  {item.kind === 'purchase' && (
+                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
+                  disabled={busy}
+                  onClick={() => removeCartItem(item)}
+                >
+                  {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
+        </div>
+      </section>
     );
   }
 
@@ -1346,6 +1462,22 @@ export default function MembershipPage() {
     // #2496 stage 3 — a recurring Product is added to the member's Draft
     // Product Set, never bought on its own (the server's `addable_to_draft`).
     if (product.addable_to_draft) return draftAction(product);
+    // #2746 stage 2 — a one-time Product joins the cart, or is already in it.
+    const inCart = cartProductState(product.id, setView);
+    if (inCart.state === 'in_cart') {
+      const key = `purchase-${inCart.purchaseId}`;
+      const item = cartItems(setView).find((i) => i.key === key);
+      return (
+        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+          <StatusPill status="pending" label={t('membership.cart_in_cart')} />
+          {item && (
+            <button type="button" style={styles.draftSecondaryBtn} disabled={cartBusy !== null} onClick={() => removeCartItem(item)}>
+              {t('membership.cart_item_cancel')}
+            </button>
+          )}
+        </span>
+      );
+    }
     if (showsBuyAction(product)) {
       return (
         <button
@@ -1353,7 +1485,7 @@ export default function MembershipPage() {
           style={styles.buyBtn}
           onClick={() => openPurchase(product)}
         >
-          {t('membership.product_buy')}
+          {t('membership.cart_add')}
         </button>
       );
     }
@@ -1408,34 +1540,34 @@ export default function MembershipPage() {
   }
 
   /**
-   * Starts the purchase and hands the member to the hosted page, exactly as the
-   * membership fee's own consent flow does — the card is typed on
-   * `pay.<host>`, never here (the Admin and Members apps never see card data).
+   * #2746 stage 2 — a one-time Product goes into the member's cart (their Draft
+   * Product Set, created if there is none) instead of starting a payment of its
+   * own: nothing is charged until the cart's Pay (§2). The body names the
+   * Product, the applied Promotion and who it is for — the route re-reads and
+   * re-prices the Promotion (#1118 §8), so the browser never names a price.
    */
   async function confirmPurchase(product: MemberProduct) {
     setPurchaseSubmitting(true);
     setPurchaseError(null);
     try {
       const applied = appliedPromotionFor(product);
-      const result = await apiFetch<{ checkoutUrl: string }>(
-        `/me/products/${product.id}/purchase`,
-        {
-          method: 'POST',
-          // The id alone: the route re-reads and re-prices the Promotion, so a
-          // price named here would be ignored (§8) — and one that has lapsed in
-          // the meantime refuses the purchase rather than charging another.
-          body: JSON.stringify({
-            ...(applied ? { promotion_id: applied.promotion_id } : {}),
-            // #2609: the chosen family member, only when the dialog asked.
-            ...assigneePayload(product, assignees, purchaseAssignee),
-          }),
-        },
-      );
-      window.location.href = result.checkoutUrl;
+      const draft = await apiFetch<{ id: number }>('/me/product-sets/draft', { method: 'POST' });
+      await apiFetch(`/me/product-sets/${draft.id}/purchases`, {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: product.id,
+          ...(applied ? { promotion_ids: [applied.promotion_id] } : {}),
+          // #2609: the chosen family member, only when the dialog asked.
+          ...assigneePayload(product, assignees, purchaseAssignee),
+        }),
+      });
+      await loadSetView();
+      setPurchasing(null);
     } catch (err: any) {
       // The API answers the refusal code, so the member reads it in their own
       // language; anything else falls back to the generic key.
-      setPurchaseError(t(purchaseErrorKey(err?.message) as any));
+      setPurchaseError(t(cartErrorKey(err?.message) as any));
+    } finally {
       setPurchaseSubmitting(false);
     }
   }
@@ -1762,7 +1894,7 @@ export default function MembershipPage() {
           {purchasing && (
             <MemberDialog
               labelledBy="product-purchase-title"
-              title={t('membership.product_purchase_title')}
+              title={t('membership.cart_add_title')}
               onClose={purchaseSubmitting ? () => {} : closePurchase}
               actions={(
                 <>
@@ -1781,8 +1913,8 @@ export default function MembershipPage() {
                     disabled={purchaseSubmitting}
                   >
                     {purchaseSubmitting
-                      ? t('membership.product_purchase_submitting')
-                      : t('membership.product_purchase_confirm')}
+                      ? t('membership.cart_adding')
+                      : t('membership.cart_add_confirm')}
                   </button>
                 </>
               )}
@@ -1791,7 +1923,7 @@ export default function MembershipPage() {
                 {/* §8: the member must always see the **actual** final price before
                     completing the purchase — so the dialog quotes the price with
                     their applied Promotion, exactly as the card does. */}
-                {t('membership.product_purchase_body', {
+                {t('membership.cart_add_body', {
                   name: purchasing.name,
                   price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), gymFmt) ?? '—',
                 })}
@@ -1813,8 +1945,39 @@ export default function MembershipPage() {
                   </select>
                 </label>
               )}
-              <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
+              <p style={styles.hintLeft}>{t('membership.cart_add_hint')}</p>
               {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
+            </MemberDialog>
+          )}
+
+          {/* #2746 stage 2 — the cart's global Cancel discards the whole Draft, so it asks first. */}
+          {confirmDiscard && (
+            <MemberDialog
+              labelledBy="cart-discard-title"
+              title={t('membership.cart_discard_title')}
+              onClose={draftBusy !== null ? () => {} : () => setConfirmDiscard(false)}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    style={styles.dialogSecondary}
+                    onClick={() => setConfirmDiscard(false)}
+                    disabled={draftBusy !== null}
+                  >
+                    {t('membership.cart_discard_keep')}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...styles.dialogPrimary, ...(draftBusy !== null ? styles.busy : null) }}
+                    onClick={discardDraft}
+                    disabled={draftBusy !== null}
+                  >
+                    {t('membership.cart_discard_confirm')}
+                  </button>
+                </>
+              )}
+            >
+              <p style={styles.modalBody}>{t('membership.cart_discard_body')}</p>
             </MemberDialog>
           )}
 
@@ -1902,6 +2065,7 @@ export default function MembershipPage() {
   if (mode === 'add_product') {
     return (
       <main style={styles.container}>
+        {renderCart()}
         {renderProducts()}
         {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
         {renderSetSummary()}
@@ -1917,6 +2081,7 @@ export default function MembershipPage() {
       <main style={styles.container}>
         {renderTabs()}
         {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
+        {renderCart()}
         {renderPlansHeader()}
         {renderMyPlans()}
         {renderMyProducts()}
@@ -1932,6 +2097,8 @@ export default function MembershipPage() {
     <main style={styles.container}>
       {renderTabs()}
       {tab === 'services' ? renderServicesTab() : tab === 'payments' ? renderPaymentsTab() : (<>
+      {/* #2746 stage 2 — the cart, at the top of My Products. */}
+      {renderCart()}
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -2050,6 +2217,15 @@ const styles: Record<string, React.CSSProperties> = {
   // #1121 stage 2 — the Buy action and the purchase dialog's own pair. Both
   // spread `memberChrome`'s buttons; neither spells a colour (#983).
   buyBtn: { ...primaryButtonStyle, padding: '8px 18px', fontSize: 13.5, fontWeight: 600 },
+  // #2746 stage 2 — the cart card's layout; its colours are memberChrome's.
+  cartTop: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
+  cartInfo: { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 200px', minWidth: 0 },
+  cartActions: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
+  cartBtn: { padding: '11px 22px', fontSize: 15, fontWeight: 700 },
+  cartList: { listStyle: 'none', margin: '14px 0 0', padding: '10px 0 0', display: 'flex', flexDirection: 'column', gap: 8 },
+  cartItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  cartItemName: { fontSize: 14, minWidth: 0, overflowWrap: 'anywhere' },
+  cartItemBtn: { padding: '6px 12px', fontSize: 13, fontWeight: 600 },
   draftSecondaryBtn: { ...secondaryButtonStyle, padding: '8px 14px', fontSize: 13.5, fontWeight: 600 },
   draftError: { fontSize: 12.5, color: memberTheme.statusError },
   draftExpiry: { fontSize: 12.5, color: memberTheme.textSecondary },

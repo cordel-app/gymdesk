@@ -291,6 +291,60 @@ export function noticeStyle(tone: StatusTone): CSSProperties {
 }
 
 /**
+ * #2746 stage 2 — the shopping-cart summary at the top of My Products: a dark,
+ * warm surface carrying the cart's heading, counts, total and its Pay/Cancel.
+ *
+ * The surface is the one fixed role here (the ticket's reference is a dark
+ * warm grey whatever the gym's page colour, since the cart must stand out from
+ * the cards around it), and everything that says *this is the action* is the
+ * Theme's own primary button colour mixed over it — the heading, the border's
+ * warm edge — so a gym's brand still reaches the card. Pay is the ordinary
+ * `primaryButtonStyle`; Cancel is the outline below, light over the dark
+ * surface, because `secondaryButtonStyle`'s text colour is for a light card.
+ */
+const CART_SURFACE = '#2b2420';
+const CART_TEXT = '#ffffff';
+
+export const cartSummaryStyle: CSSProperties = {
+  background: `color-mix(in srgb, ${memberTheme.primaryButton} 8%, ${CART_SURFACE})`,
+  border: `1px solid color-mix(in srgb, ${memberTheme.primaryButton} 45%, ${CART_SURFACE})`,
+  borderRadius: 14,
+  padding: '16px 18px',
+  color: CART_TEXT,
+};
+
+export const cartHeadingStyle: CSSProperties = {
+  color: memberTheme.primaryButton,
+  fontSize: 15,
+  fontWeight: 700,
+  margin: 0,
+};
+
+export const cartTotalStyle: CSSProperties = {
+  color: CART_TEXT,
+  fontSize: 28,
+  fontWeight: 800,
+  lineHeight: 1.15,
+};
+
+export const cartMutedStyle: CSSProperties = {
+  color: `color-mix(in srgb, ${CART_TEXT} 72%, ${CART_SURFACE})`,
+  fontSize: 13,
+};
+
+export const cartDividerStyle: CSSProperties = {
+  borderTop: `1px solid color-mix(in srgb, ${CART_TEXT} 14%, ${CART_SURFACE})`,
+};
+
+export const cartSecondaryButtonStyle: CSSProperties = {
+  background: 'transparent',
+  color: CART_TEXT,
+  border: `1px solid color-mix(in srgb, ${CART_TEXT} 45%, ${CART_SURFACE})`,
+  borderRadius: 8,
+  cursor: 'pointer',
+};
+
+/**
  * The display's safe areas (#1073, mobile app WP2).
  *
  * `env(safe-area-inset-*)` is `0px` in every context that has no inset to
