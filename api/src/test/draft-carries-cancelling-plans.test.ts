@@ -109,7 +109,12 @@ describe('a Draft carries the plans cancelling at their period end', () => {
     expect(fees.every((f) => f === 25)).toBe(true);
     const { rows: draftSnaps } = await db.query<{ id: number }>(
       'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 1', [draft]);
-    expect(Number(draftSnaps[0].id)).toBe(Number(aSnap[0].id));
+    // #2125 M6b-2: the cancellation is written on a copy made for the set it activated, and that
+    // snapshot (not the one the cancelled version still links) is the one the Draft links.
+    const { rows: carried } = await db.query<{ id: number }>(
+      'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 1', [afterCancel]);
+    expect(Number(carried[0].id)).not.toBe(Number(aSnap[0].id));
+    expect(Number(draftSnaps[0].id)).toBe(Number(carried[0].id));
 
     // Commit B: A keeps its status and end date, no event of the new set charges A's fee.
     await activate(b);
