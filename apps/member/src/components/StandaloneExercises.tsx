@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { useMuscleName } from '@/lib/useMuscleNames';
 import { MemberDialog } from '@/components/MemberDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
@@ -19,13 +20,6 @@ interface StandaloneExercise {
   logs: { id: number; sets: LoggedSet[] | null }[];
 }
 
-/** `quads` / `lower_back` → `Quads` / `Lower back`; the muscle slug has no Members App label. */
-function muscleLabel(slug: string | null): string | null {
-  if (!slug) return null;
-  const s = slug.replace(/[_-]+/g, ' ').trim();
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : null;
-}
-
 /**
  * #1916 — the **Add Exercise** section at the bottom of My Training: extra
  * exercises a member adds to the selected day without touching their plan, and
@@ -36,6 +30,8 @@ function muscleLabel(slug: string | null): string | null {
 export function StandaloneExercises({ date }: { date: string }) {
   const t = useTranslations('training');
   const { apiFetch } = useApiClient();
+  const muscleName = useMuscleName();
+  const muscleLabel = (slug: string | null) => (slug ? muscleName(slug) : null);
   const [items, setItems] = useState<StandaloneExercise[]>([]);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
