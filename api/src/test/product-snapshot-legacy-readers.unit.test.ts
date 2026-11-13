@@ -4,11 +4,10 @@
 // snapshot tables (`product_{session,oneoff,periodical}_snapshots`, `product_promotion_snapshots`).
 // What still reads the three legacy tables does so on purpose, and this file is the list of it:
 //
-//   - the copies a new Product Set version takes of the legacy lines (`copyRecurringLines()` in
-//     `recurring-line-writer.ts`, for `cloneConfiguration()` and `mergeActiveVersionIntoDraft()`),
-//     which are writes of the legacy table that happen to select from it, until stage 5d retires
-//     the legacy writers. Since stage 5c nothing re-derives a recurring line's snapshot from its
-//     legacy row (since 5b, nothing a purchase's);
+//   - (until stage 5c-2c-2) the copies a new Product Set version took of the legacy lines; since then a
+//     clone links its predecessor's lines and a merge copies them from their snapshots, so none is left.
+//     Since stage 5c nothing re-derives a recurring line's snapshot from its legacy row (since 5b,
+//     nothing a purchase's);
 //   - the row locks taken on a legacy recurring line before it is written (`SELECT id … FOR UPDATE`);
 //     a one-time purchase is locked on its snapshot since stage 5b (`lockPurchase()`);
 //   - (until stage 5a) the purchase record joined only for its `payment_request_id`; since 5a a
@@ -26,7 +25,6 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = join(__dirname, '..');
 
 const LEGACY_READS: Record<string, { count: number; why: string }> = {
-  'api/recurring-line-writer.ts': { count: 1, why: 'copyRecurringLines(): a new version (cloneConfiguration(), mergeActiveVersionIntoDraft()) copies the legacy lines it writes' },
   'api/product-set-draft.ts': { count: 2, why: 'removeService() / setServiceQuantity() lock the legacy line they write' },
   'scripts/validate-product-snapshots.ts': { count: 10, why: 'read-only report comparing the legacy and snapshot tables' },
 };

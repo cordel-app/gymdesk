@@ -70,7 +70,7 @@ describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {
     expect(await lines(setId)).toHaveLength(0);
   });
 
-  it('committing makes the line active and a successor inherits a copy', async () => {
+  it('committing makes the line active and a successor links the same line (#2126 stage 5c-2c-2)', async () => {
     const add = await auth(request.post(`/product-sets/${setId}/services`)).send({ product_id: productId, quantity: 2 });
     expect(add.status).toBeLessThan(300);
     await activateTestAssignment(gymId, umId);
@@ -79,11 +79,16 @@ describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {
     const draft = await auth(request.post('/product-sets/draft')).send({ member_id: owner });
     expect(draft.status).toBeLessThan(300);
     const newSet = Number(draft.body.product_set_id ?? draft.body.id);
-    const copy = await lines(newSet);
-    expect(copy).toHaveLength(1);
-    expect(copy[0].is_inherited).toBe(1);
-    expect(copy[0].status).toBe('draft');
-    expect(copy[0].quantity).toBe(2);
+    // No copy: the Draft links the active set's own line, which keeps the active set's status.
+    expect(await lines(newSet)).toHaveLength(0);
+    const { rows: linked } = await db.query<any>(
+      `SELECT s.* FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE lnk.product_set_id = ?`, [newSet]);
+    expect(linked).toHaveLength(1);
+    expect(linked[0].id).toBe((await lines(setId))[0].id);
+    expect(linked[0].status).toBe('active');
+    expect(linked[0].quantity).toBe(2);
     await noBackfillDrift();
   });
 });
