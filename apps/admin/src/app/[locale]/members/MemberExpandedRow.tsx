@@ -514,6 +514,7 @@ export function MemberExpandedRow({
               memberEmail={member.email ?? ''}
               plans={configuration.plans}
               productSets={configuration.product_sets}
+              cancelledSets={configuration.cancelled_product_sets ?? []}
               canWrite={isAdmin}
               onChanged={reloadConfiguration}
               onAssignNewPlan={setAssigningFor}

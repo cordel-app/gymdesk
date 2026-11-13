@@ -563,21 +563,6 @@ export default function MembershipPage() {
     setCommitBusy(false);
   }
 
-  /** A version awaiting payment, cancelled by the member: back to Draft under the #1535 guard. */
-  async function cancelPendingSet() {
-    if (!setView || setView.status !== 'pending_payment' || commitBusy) return;
-    setCommitBusy(true);
-    setCommitError(null);
-    try {
-      await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
-    } catch (err: any) {
-      setCommitError(err?.message === 'payment_unresolved' ? 'membership.summary_error_unresolved' : 'membership.summary_error_generic');
-    } finally {
-      await loadSetView();
-      setCommitBusy(false);
-    }
-  }
-
   /** Discards the whole selection: the member's unpaid Draft, through its own route. */
   async function discardDraft() {
     if (!setView || setView.status !== 'draft') return;
@@ -620,6 +605,8 @@ export default function MembershipPage() {
 
   /**
    * #2746 stage 3 — the cart awaiting payment is cancelled as one purchase,
+   * and (#2747 stage 2) so is a plan awaiting payment from its own card: every
+   * Cancel of a version awaiting payment asks first and reaches this one route,
    * through #2747's route: the version is kept as `cancelled` with its items,
    * and the server refuses while a payment settled or is still in flight.
    */
@@ -861,7 +848,7 @@ export default function MembershipPage() {
             {t('membership.plan_pending_payment_amount', { amount: pendingAmount ?? '—' })}
           </span>
           <span style={styles.planPendingActions}>
-            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy || submitting} onClick={cancelPendingSet}>
+            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy || submitting} onClick={() => setConfirmPendingCancel(true)}>
               {t('membership.plan_pending_cancel')}
             </button>
             <button type="button" style={primaryButtonStyle} disabled={commitBusy || submitting} onClick={openConsent}>
@@ -1044,7 +1031,7 @@ export default function MembershipPage() {
         <section style={styles.section}>
           <div style={{ ...noticeStyle('info'), display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
             <span style={{ flex: '1 1 200px', fontSize: 13.5 }}>{t('membership.summary_pending')}</span>
-            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy} onClick={cancelPendingSet}>
+            <button type="button" style={styles.draftSecondaryBtn} disabled={commitBusy} onClick={() => setConfirmPendingCancel(true)}>
               {t('membership.summary_cancel_pending')}
             </button>
             {commitError && <span role="alert" style={styles.draftError}>{t(commitError as any)}</span>}
@@ -1402,7 +1389,8 @@ export default function MembershipPage() {
       const endedOn = pastPlanEndedOn(plan, gymFmt);
       const status = t(pastPlanStatusKey(plan) as any);
       return {
-        key: String(plan.id),
+        // #2747 stage 2: a cancelled Product Set's id is not an assignment's.
+        key: plan.product_set_id != null ? `ps-${plan.product_set_id}` : String(plan.id),
         name: pastPlanName(plan),
         // A row with no end date on file reads as its status alone, rather than
         // as a date the assignment does not actually carry.

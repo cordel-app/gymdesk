@@ -73,6 +73,8 @@ interface Props {
   plans: MemberPlanRow[];
   /** #1325 PR 3b: the member's in-flight ProductSet versions. */
   productSets?: ProductSetRow[];
+  /** #2747 stage 2: plans cancelled while awaiting their first payment, never assigned. */
+  cancelledSets?: ProductSetRow[];
   canWrite: boolean;
   /** Re-reads the Member's configuration and re-runs the Billing Simulation (§12). */
   onChanged: () => void;
@@ -84,7 +86,7 @@ interface Props {
 }
 
 export function MemberMembershipPlans({
-  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
+  memberId, memberName, memberEmail, plans, productSets = [], cancelledSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
   const locale = useLocale();
@@ -280,7 +282,7 @@ export function MemberMembershipPlans({
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
           live one does. Absent rather than empty, as the card group was. */}
-      {history.length > 0 && (
+      {(history.length > 0 || cancelledSets.length > 0) && (
         <div style={{ marginTop: 16 }}>
           <button
             type="button"
@@ -292,10 +294,15 @@ export function MemberMembershipPlans({
             }}
           >
             <span>{t('membership_plans_history')}</span>
-            <span>({history.length})</span>
+            <span>({history.length + cancelledSets.length})</span>
             <span aria-hidden="true" style={{ marginLeft: 'auto' }}>{pastOpen ? '▾' : '▸'}</span>
           </button>
-          {pastOpen && (
+          {pastOpen && cancelledSets.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <PendingPaymentPlans sets={cancelledSets} spaced={history.length > 0} status="cancelled" />
+            </div>
+          )}
+          {pastOpen && history.length > 0 && (
             <AssignedPlansTable
               rows={history}
               loadingText={t('add_membership_plan_loading')}

@@ -86,6 +86,7 @@ import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
   splitMemberPlanHistory,
+  withCancelledPlanSets,
   toMemberPastPlan,
 } from '../domain/memberPlanHistory';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
@@ -2229,7 +2230,21 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // card above is about can then never also appear in the history under it.
     // The limit is a declared constant written into the statement, never a bound
     // parameter — `db.query` is a prepared statement and MySQL refuses `LIMIT ?`.
-    const { current, also_live: liveOthers, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
+    const { current, also_live: liveOthers, past: assignmentHistory } = splitMemberPlanHistory(mships as any[]);
+    // #2747 stage 2: a plan the member chose and then cancelled while it awaited
+    // its first payment never had an assignment, so the history above cannot
+    // see it; the kept `cancelled` Product Set is what it reads as instead.
+    const { rows: cancelledSetRows } = await db.query<any>(
+      `SELECT ps.id, ps.membership_plan_id, mp.name AS plan_name, ps.starts_at, ps.cancelled_at
+         FROM product_sets ps
+         LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
+          AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+        ORDER BY ps.id DESC
+        LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
+      [gymId, memberId],
+    );
+    const past_memberships = withCancelledPlanSets(assignmentHistory, cancelledSetRows);
     // #2660: the member's Draft assignments are listed beside their live plans
     // under the Admin's own status (`draft`), never as the member's plan — the
     // ordering and filter above still decide `membership` without them.
@@ -2318,7 +2333,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const professional_service_sessions = (await resolveMemberProfessionalServices(gymId, memberId))
       .filter((b) => activeServiceIds.has(b.professional_service_id))
       .reduce((sum, b) => sum + b.sessions, 0);
-    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships: [], pending_membership, active_products_count, professional_service_sessions });
+    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships, pending_membership, active_products_count, professional_service_sessions });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.

@@ -143,6 +143,22 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     [gymId, memberId],
   );
 
+  // #2747 stage 2 — a plan chosen and then cancelled while it awaited its first
+  // payment: the Product Set is kept as `cancelled` and, having never been linked
+  // to an assignment, is not one of `plans`. The Member card lists it under Past.
+  const { rows: cancelledSets } = await db.query<any>(
+    `SELECT ps.id, ps.membership_plan_id, mp.name AS plan_name, ps.starts_at, ps.cancelled_at, ps.cancelled_by,
+            (SELECT be.amount FROM billing_events be
+              WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
+              ORDER BY be.id DESC LIMIT 1) AS amount_due
+       FROM product_sets ps
+       LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
+        AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+      ORDER BY ps.id DESC`,
+    [gymId, memberId],
+  );
+
   // #1463 — the Products tab is organised around one ProductSet: the version
   // being configured (or awaiting payment) if there is one, otherwise the Active
   // one, with every Superseded version as history. A pure read: nothing here
@@ -199,6 +215,19 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       expired: Number(r.expired) === 1,
       expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
       created_by: r.created_by ?? null,
+    })),
+    cancelled_product_sets: cancelledSets.map((r: any) => ({
+      id: Number(r.id),
+      status: 'cancelled',
+      plan_name: r.plan_name ?? null,
+      user_membership_id: null,
+      membership_plan_id: Number(r.membership_plan_id),
+      starts_at: toDateOnly(r.starts_at),
+      cancelled_at: toDateOnly(r.cancelled_at),
+      cancelled_by: r.cancelled_by ?? null,
+      amount_due: r.amount_due != null ? Number(r.amount_due) : null,
+      expired: false,
+      created_by: null,
     })),
     plans: plans.map((p: any) => ({
       id: p.id,

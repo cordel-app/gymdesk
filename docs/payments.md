@@ -134,6 +134,9 @@ Draft (#1991 stage 4). `api/src/api/product-set-cancellation.ts` is the one plac
    the set. The owner's in-flight slot is free again. A second cancel answers 200 and changes
    nothing.
 
+Since stage 2 this is what every Cancel button on a version awaiting payment does, in both apps,
+after a confirmation; no screen sends a Pending Payment set back to Draft any more.
+
 A payment that arrives after the cancellation is recorded on its attempt but activates nothing
 (the event is cancelled, #2533 stage 2, and `activate()` refuses a `cancelled` set). The money is
 then a collected payment on a cancelled event, refunded by staff through the existing Billing
