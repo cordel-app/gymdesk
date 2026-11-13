@@ -178,6 +178,7 @@ export function cartErrorKey(message: string | null | undefined): string {
     case 'already_in_cart':
     case 'draft_exists': return 'membership.cart_error_already_in_cart';
     case 'one_per_member': return 'membership.cart_error_one_per_member';
+    case 'family_owner_only': return 'membership.family_owner_only';
     case 'in_flight':
     case 'edit_locked':
     case 'duplicate_submission':

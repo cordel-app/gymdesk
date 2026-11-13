@@ -7,7 +7,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
-import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, MEMBERSHIP_PATH, membershipPageMode } from '@/lib/membershipPages';
+import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, membershipPageMode } from '@/lib/membershipPages';
 import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -341,6 +341,8 @@ export default function MembershipPage() {
   const [ownPurchases, setOwnPurchases] = useState<OwnPurchase[]>([]);
   const [payingPurchase, setPayingPurchase] = useState<number | null>(null);
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
+  // #2770: only the Family Owner adds Plans and Products (the API decides; this hides the actions).
+  const [canAdd, setCanAdd] = useState(true);
   const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
   // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
   // nothing to offer, so it is absent rather than leading to an empty list.
@@ -376,7 +378,7 @@ export default function MembershipPage() {
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes, assigneeRes] = await Promise.all([
-          apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
+          apiFetch<{ membership: Membership | null; other_memberships?: MemberPastPlan[]; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null; can_add_plans_and_products?: boolean }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
@@ -396,6 +398,7 @@ export default function MembershipPage() {
         setMembership(mship.membership);
         setPastPlans(mship.past_memberships ?? []);
         setPendingMembership(mship.pending_membership ?? null);
+        setCanAdd(canAddPlansAndProducts(mship.can_add_plans_and_products));
         setEvents(ledger.items);
         setPackages(pkgs);
         setPromotions(promos);
@@ -1733,7 +1736,7 @@ export default function MembershipPage() {
   function renderPlansHeader() {
     return (
       <>
-        {mode === 'overview' && ((!pendingMembership && gymOffersPlans) || products !== null) && (
+        {mode === 'overview' && canAdd && ((!pendingMembership && gymOffersPlans) || products !== null) && (
           <div style={styles.addPlanRow}>
             {!pendingMembership && gymOffersPlans && (
               <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
@@ -2171,6 +2174,16 @@ export default function MembershipPage() {
 
   // #2737 — the two purchasing pages: only their own catalogue, the dialogs it
   // opens and a way back. Everything the member already holds is My Products'.
+  // #2770 — a family member who is not the owner reaches neither purchasing page,
+  // even by typing its address: the page says why and offers nothing to add.
+  if ((mode === 'add_plan' || mode === 'add_product') && !canAdd) {
+    return (
+      <main style={styles.container}>
+        <p style={noticeStyle('info')}>{t(FAMILY_OWNER_ONLY_KEY as any)}</p>
+      </main>
+    );
+  }
+
   if (mode === 'add_plan') {
     return (
       <main style={styles.container}>

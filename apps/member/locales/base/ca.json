@@ -552,6 +552,7 @@
     "summary_error_generic": "No s'ha pogut confirmar la teva selecció. Torna-ho a provar.",
     "summary_error_unresolved": "Encara s'està processant un pagament. Torna-ho a provar més tard.",
     "add_product": "+ Afegir producte",
+    "family_owner_only": "Només el titular de la teva família pot afegir plans i productes.",
     "cart_heading": "La teva cistella",
     "cart_plans": "{count, plural, one {# pla} other {# plans}}",
     "cart_products": "{count, plural, one {# producte} other {# productes}}",

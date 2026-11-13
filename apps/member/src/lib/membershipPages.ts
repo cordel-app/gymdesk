@@ -33,3 +33,18 @@ export function membershipPageMode(pathname: string | null | undefined): Members
 export function headerBackPath(pathname: string | null | undefined): string {
   return membershipPageMode(pathname) === 'overview' ? '' : MEMBERSHIP_PATH;
 }
+
+/**
+ * #2770 — whether the member may add Plans and Products: the Family Owner (or a
+ * member with no family) only. The flag is `GET /me/membership`'s
+ * `can_add_plans_and_products`, decided by the API; an absent flag (an older API)
+ * keeps the actions, since every add route refuses a non-owner on its own.
+ */
+export function canAddPlansAndProducts(flag: boolean | null | undefined): boolean {
+  return flag !== false;
+}
+
+/** The refusal code every add route answers a family member who is not the owner. */
+export const FAMILY_OWNER_ONLY = 'family_owner_only';
+/** Its locale key. */
+export const FAMILY_OWNER_ONLY_KEY = 'membership.family_owner_only';

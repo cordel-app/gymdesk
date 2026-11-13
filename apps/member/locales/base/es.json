@@ -552,6 +552,7 @@
     "summary_error_generic": "No se ha podido confirmar tu selección. Inténtalo de nuevo.",
     "summary_error_unresolved": "Todavía se está procesando un pago. Inténtalo más tarde.",
     "add_product": "+ Añadir producto",
+    "family_owner_only": "Solo el titular de tu familia puede añadir planes y productos.",
     "cart_heading": "Tu carrito",
     "cart_plans": "{count, plural, one {# plan} other {# planes}}",
     "cart_products": "{count, plural, one {# producto} other {# productos}}",

@@ -1,4 +1,5 @@
 import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
+import { memberMayAddPlansAndProducts, refuseUnlessMayAdd } from './family-add-rights';
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
@@ -2333,7 +2334,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const professional_service_sessions = (await resolveMemberProfessionalServices(gymId, memberId))
       .filter((b) => activeServiceIds.has(b.professional_service_id))
       .reduce((sum, b) => sum + b.sessions, 0);
-    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships, pending_membership, active_products_count, professional_service_sessions });
+    // #2770: whether this member may add Plans and Products (the Family Owner); the
+    // add routes refuse anyone else, this only lets the app hide the actions.
+    const can_add_plans_and_products = await memberMayAddPlansAndProducts(db, gymId, memberId);
+    if (!current) return res.json({ membership: null, other_memberships: also_live, past_memberships, pending_membership, active_products_count, professional_service_sessions, can_add_plans_and_products });
 
     // #1325: the next billing date (and so the upcoming payments below) of a plan
     // a ProductSet bills is read off its ledger, not the legacy column.
@@ -2414,6 +2418,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       pending_membership,
       active_products_count,
       professional_service_sessions,
+      can_add_plans_and_products,
     });
   } catch (err) {
     next(err);
@@ -3152,6 +3157,8 @@ meRouter.post(
       );
       const member = rows[0];
       if (!member) return res.status(404).json({ error: 'Member profile not found' });
+      // #2770: only the Family Owner buys a Product.
+      if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
 
       // #1118 §5 — the Promotion the member applied, if any. It is the only
       // thing this body carries: the price is never the client's to name (it is

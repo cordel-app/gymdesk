@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { refuseUnlessMayAdd } from './family-add-rights';
 import { recordPaymentAttempt } from './payment-attempt';
 import { db, type Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
@@ -787,6 +788,8 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
   try {
     let memberId: number;
     try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'Member not found' }); }
+    // #2770: only the Family Owner starts a Draft to add Plans or Products to.
+    if (await refuseUnlessMayAdd(res, ctx.gymId, memberId)) return;
     const blocking = await loadEditLock(ctx.gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
     const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
@@ -905,6 +908,7 @@ meProductSetsRouter.get('/:id/billing-event-simulation', async (req, res, next) 
 meProductSetsRouter.post('/:id/services', async (req, res, next) => {
   const owned = await ownedSet(req, res);
   if (!owned) return;
+  if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
   const productId = Number(req.body?.product_id);
   if (!Number.isInteger(productId) || productId <= 0) return res.status(400).json({ error: 'product_id must be a positive integer' });
@@ -943,6 +947,7 @@ meProductSetsRouter.delete('/:id/services/:serviceId', async (req, res, next) =>
 meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
   const owned = await ownedSet(req, res);
   if (!owned) return;
+  if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
   const planId = Number(req.body?.membership_plan_id);
   if (!Number.isInteger(planId) || planId <= 0) return res.status(400).json({ error: 'membership_plan_id must be a positive integer' });
@@ -981,6 +986,7 @@ meProductSetsRouter.delete('/:id/plans/:planSnapshotId', async (req, res, next) 
 meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
   const owned = await ownedSet(req, res);
   if (!owned) return;
+  if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
   const body = req.body ?? {};
   const productId = Number(body.product_id);
