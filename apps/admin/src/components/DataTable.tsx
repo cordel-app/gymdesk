@@ -6,8 +6,11 @@ import {
   listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle, listRowDividerStyle,
   listScrollerClass, listSurfaceStyle,
 } from './listChrome';
+import { draftRowCells } from './draftRowCells';
 
 export interface Column<T> {
+  /** #2786 — names the column, so a draft row's cells are matched to it by key. */
+  key?: string;
   header: React.ReactNode;
   width?: number | string;
   render: (row: T) => React.ReactNode;
@@ -44,9 +47,10 @@ interface DataTableProps<T> {
   // control such as a button, link, input or the context menu) toggles it.
   clickRowToExpand?: boolean;
   // #1807: an unsaved row shown first in the body, before the real rows. `cells`
-  // fills its columns (same order as `columns`); `form` is its always-open
-  // expanded editor. It is outside `rows`, so a row filter never hides it.
-  draftRow?: { cells: React.ReactNode[]; form: React.ReactNode };
+  // fills its columns by each column's `key` (#2786 — never by position, so a
+  // column added later cannot shift the cells after it); `form` is its
+  // always-open expanded editor. It is outside `rows`, so a row filter never hides it.
+  draftRow?: { cells: Record<string, React.ReactNode>; form: React.ReactNode };
 }
 
 export function DataTable<T>({
@@ -81,15 +85,17 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {draftRow && (
+          {draftRow && (() => {
+            const cells = draftRowCells(columns, draftRow.cells);
+            return (
             <React.Fragment>
               <tr style={listRowDividerStyle} data-draft-row>
                 {expandable && <td style={td} />}
                 {columns.map((col, i) => (
                   <td key={i} className={listCellClass(col.mobile)} style={td}>
                     {col.mobile === 'name'
-                      ? <div className={LIST_NAME_VALUE_CLASS}>{draftRow.cells[i]}</div>
-                      : draftRow.cells[i]}
+                      ? <div className={LIST_NAME_VALUE_CLASS}>{cells[i]}</div>
+                      : cells[i]}
                   </td>
                 ))}
               </tr>
@@ -97,7 +103,8 @@ export function DataTable<T>({
                 <td colSpan={totalCols} style={expandedCell}>{draftRow.form}</td>
               </tr>
             </React.Fragment>
-          )}
+            );
+          })()}
           {rows.map((row) => {
             const key = rowKey(row);
             const isExpanded = expandable && !!expandedRowKeys?.has(key);
