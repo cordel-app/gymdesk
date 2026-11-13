@@ -51,7 +51,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
 });

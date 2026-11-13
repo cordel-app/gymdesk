@@ -57,15 +57,12 @@ export function blockingReferences(
 /** Children before parents, so no statement depends on a cascade. */
 export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'billing_event_lines', reason: 'child of billing_events', optional: true },
-  { table: 'member_products_oneoff_promotion_snapshot', reason: 'child of member_products_oneoff_snapshot' },
-  { table: 'member_products_oneoff_snapshot', reason: 'purchases hang from the payments being deleted' },
   { table: 'payment_requests', reason: 'would survive with no billing event (all sources, card_update included)' },
   { table: 'billing_events', reason: 'the ledger being reset' },
   { table: 'user_membership_promotion_oneoff_snapshot', reason: 'child of applied promotions' },
   { table: 'user_membership_promotion_periodical_snapshot', reason: 'child of applied promotions' },
   { table: 'user_membership_promotion_session_snapshot', reason: 'child of applied promotions' },
   { table: 'user_membership_promotions', reason: 'applied promotions of the assignments' },
-  { table: 'member_products_recurrent_snapshot', reason: 'assignment service rows' },
   { table: 'user_memberships', reason: 'the assigned Membership Plans' },
   { table: 'product_set_schedules', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_sets', reason: 'ProductSet rows created since PR 1', optional: true, uncascaded: true },

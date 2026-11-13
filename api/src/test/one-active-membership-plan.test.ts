@@ -27,7 +27,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -36,6 +35,7 @@ import {
   request, legacyChildQuery } from './helpers';
 import { ACTIVE_PLAN_EXISTS } from '../domain/oneActivePlan';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
+import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -547,11 +547,9 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
 
     await assignLive(memberId, first, '2026-01-01');
     const { rows: active } = await db.query<any>("SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
-    await db.query(
-      `INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at,
+    await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at,
          item_name, item_type, unit_price, item_billing_frequency, currency)
        VALUES (?, ?, ?, 1, '2026-01-01', 'Pack', 'sessions', 10, 'month', 'EUR')`, [gymId, active[0].id, productId]);
-    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, Number(active[0].id)));
     const before = (await loadMemberProfessionalServiceGrants(gymId, memberId)).filter((g) => g.kind === 'membership_service');
     expect(before).toHaveLength(1);
 

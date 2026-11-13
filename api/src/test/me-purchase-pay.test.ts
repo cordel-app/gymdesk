@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import crypto from 'node:crypto';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, linkTestPurchaseRequestToEvent } from './helpers';
+import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
 let seq = 0;
@@ -45,13 +45,11 @@ async function purchase(opts: {
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
     [gymId, opts.owner, opts.requestStatus, `pay_${pageToken}`, pageToken])).insertId;
   await linkTestPurchaseRequestToEvent(gymId, opts.owner, requestId);
-  const purchaseId = (await db.query<any>(
-    `INSERT INTO member_products_oneoff_snapshot
+  const purchaseId = (await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
        (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
         units, amount, currency, payment_request_id, created_by)
      VALUES (?, ?, ?, ?, 'Item', ?, 'once', ?, '20.00', 'EUR', ?, 'Test')`,
     [gymId, opts.owner, productId, opts.status, opts.type, opts.type === 'sessions' ? 10 : null, requestId])).insertId;
-  await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
   return { purchaseId, requestId, pageToken };
 }
 
@@ -64,7 +62,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
 });

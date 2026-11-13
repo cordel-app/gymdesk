@@ -10,7 +10,6 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { registerTestPurchaseId } from './purchaseSnapshotFixture';
 
 vi.mock('../payments', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../payments')>();
@@ -29,6 +28,7 @@ vi.mock('../payments', async (importOriginal) => {
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
+import { legacyProductInsert } from './legacyProductFixture';
 
 const SECRET = 'test-1521-webhook';
 let gymId: string;
@@ -148,11 +148,9 @@ describe('who is offered what (#1521 decisions 1 and 3)', () => {
     const once = await product({ name: 'Registration fee', frequency: 'once' });
     const weekly = await product({ name: 'One class per week', frequency: 'month' });
     for (const id of [once, weekly]) {
-      const { insertId } = await db.query(
-        `INSERT INTO member_products_oneoff_snapshot
+      const { insertId } = await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
            (gym_id, member_id, product_id, status, product_name, product_type, amount, currency)
          VALUES (?, ?, ?, 'active', 'x', 'fee', 10.00, 'EUR')`, [gymId, m, id]);
-      await registerTestPurchaseId(db, gymId, Number(insertId));
     }
     const res = await auth(request.get(`${base(m)}/catalogue`));
     const ids = res.body.items.map((i: any) => i.id);
@@ -416,9 +414,6 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(dupe.status).toBe(409);
     expect(dupe.body.error).toBe('duplicate_submission');
     // …while a deliberate repeat a moment later is.
-    await db.query(
-      'UPDATE member_products_recurrent_snapshot SET created_at = created_at - INTERVAL 1 MINUTE WHERE product_set_id = ?',
-      [first.body.product_set_id]);
     // #2126 stage 3l: the guard reads the line's Product snapshot.
     await db.query(
       'UPDATE product_periodical_snapshots SET created_at = created_at - INTERVAL 1 MINUTE WHERE product_set_id = ?',

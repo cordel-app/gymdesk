@@ -66,7 +66,7 @@ export interface ScheduleConsolidation {
 
 /** Every table whose rows name the schedule they bill on (FK `ON DELETE SET NULL`). */
 const SCHEDULED_SNAPSHOT_TABLES = [
-  'plan_snapshots', 'plan_periodical_snapshots', 'member_products_recurrent_snapshot', 'product_periodical_snapshots',
+  'plan_snapshots', 'plan_periodical_snapshots', 'product_periodical_snapshots',
 ] as const;
 
 const toDateOnly = (v: unknown): string =>

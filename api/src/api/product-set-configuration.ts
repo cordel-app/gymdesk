@@ -268,7 +268,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
 
   const allocate = async (
     candidates: Array<{ id: number; frequency: string | null; startsAt: unknown }>,
-    table: 'plan_periodical_snapshots' | 'member_products_recurrent_snapshot',
+    table: 'plan_periodical_snapshots' | 'product_periodical_snapshots',
   ) => {
     for (const row of candidates) {
       const cadence = cadenceForFrequency(row.frequency as any);
@@ -286,7 +286,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
         scheduleId = schedules.find((s) => s.key === allocation.key)?.id ?? null;
       }
       if (scheduleId != null) {
-        if (table === 'member_products_recurrent_snapshot') {
+        if (table === 'product_periodical_snapshots') {
           // #2126 stage 5c-2c: a line another Product Set links is copied for this one before it is written.
           const lineId = await ownRecurringLine(tx, gymId, productSetId, row.id);
           if (lineId != null) await updateRecurringLine(tx, gymId, lineId, { schedule_id: scheduleId });
@@ -308,9 +308,8 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     'plan_periodical_snapshots');
 
   // #2126 stage 3t — the version's recurring Product lines are read from
-  // `product_periodical_snapshots`, kept in step with the legacy line by its one
-  // writer (`recurring-line-writer.ts`, stage 5c), which also writes the schedule
-  // onto both, keyed by the snapshot's `source_id`.
+  // `product_periodical_snapshots`, written by its one writer (`recurring-line-writer.ts`,
+  // stage 5c), which also writes the schedule, keyed by the snapshot's `source_id`.
   const { rows: productLines } = await tx.query<any>(
     `SELECT s.source_id, s.billing_frequency, s.starts_at
        FROM product_set_periodical_snapshots lnk
@@ -320,7 +319,7 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     [gymId, productSetId]);
   await allocate(productLines.map((r: any) => ({
     id: Number(r.source_id), frequency: r.billing_frequency, startsAt: r.starts_at,
-  })), 'member_products_recurrent_snapshot');
+  })), 'product_periodical_snapshots');
 }
 
 
@@ -397,12 +396,9 @@ export async function loadProductSetSimulationAssignment(
   }));
 
   // #2126 stage 3o: the version's recurring lines are read from `product_periodical_snapshots`,
-  // which stage 2's dual-write keeps equal to `member_products_recurrent_snapshot`. Every writer of
-  // a legacy line re-syncs its version before the transaction can reach this loader (the Draft
-  // writers' `touch()`, `cloneConfiguration()`, `addPlanSnapshotToVersion()`, the recurring
-  // purchase's discount, `snapshotProductSetFromPlan()` after its schedule allocation, the
-  // realign script, which moves both tables). A line keeps reporting its legacy id (`source_id`),
-  // which is what the engine labels it with and what the routes address it by.
+  // the one table a recurring line lives in since stage 5d-6 dropped the legacy one. A line reports
+  // its `source_id` (its own id since stage 5d-2), which is what the engine labels it with and what
+  // the routes address it by.
   const { rows: serviceRows } = await exec.query(
     `SELECT s.source_id AS id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.billing_frequency AS item_billing_frequency, s.unit_price,

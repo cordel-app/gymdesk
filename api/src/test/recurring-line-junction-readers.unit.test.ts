@@ -13,12 +13,11 @@ import { describe, expect, it } from 'vitest';
 
 const API_SRC = join(__dirname, '..');
 
-/** The writers of the column (and the read-only comparison report), which keep it until 5d. */
+/** The writers of the column. */
 const WRITERS = new Set([
   'api/recurring-line-writer.ts',
   'api/product-snapshot-sync.ts',
   'api/snapshot-junction-sync.ts',
-  'scripts/validate-product-snapshots.ts',
 ]);
 
 function sourceFiles(dir: string, found: string[] = []): string[] {

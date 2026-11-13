@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, insertTestPurchase, request,
 } from './helpers';
+import { legacyProductInsert } from './legacyProductFixture';
 
 // #2129: deleting a gym Professional Service is refused while Activities, calendar
 // events or Product snapshots still reference it; the refusal changes nothing.
@@ -97,13 +97,11 @@ describe('DELETE /professional-services/:id with references', () => {
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'superseded', '2026-01-01')`,
       [gymId, memberId],
     );
-    await db.query(
-      `INSERT INTO member_products_recurrent_snapshot
+    await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot
          (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price)
        VALUES (?, ?, ?, 1, '2026-01-01', 'Linked Locker', 'service', 'month', 10.00)`,
       [gymId, setId, productId],
     );
-    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     const res = await del(id);
     expect(res.status).toBe(409);
     expect(res.body.references).toEqual({ activities: 0, calendar_events: 0, product_snapshots: 1 });

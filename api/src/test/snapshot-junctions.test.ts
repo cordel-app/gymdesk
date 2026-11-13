@@ -7,8 +7,7 @@ import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
+import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
 let seq = 0;
@@ -58,10 +57,8 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     expect(snaps).toHaveLength(1);
     expect(await pairs('product_set_plan_snapshots', 'plan_snapshot_id', setId)).toEqual([Number(snaps[0].id)]);
 
-    const { insertId: lineId } = await db.query(
-      `INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price, currency)
+    const { insertId: lineId } = await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, 1, ?, 'Locker', 'service', 'month', 10.00, 'EUR')`, [gymId, setId, productId, TODAY]);
-    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
     const { rows: pers } = await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId]);
     expect(pers).toHaveLength(1);
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([Number(pers[0].id)]);
@@ -71,8 +68,7 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toHaveLength(1);
 
     // Removing the line removes its snapshot and, by cascade, its link.
-    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [lineId]);
-    await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, setId));
+    await db.query('DELETE FROM product_periodical_snapshots WHERE id = ?', [lineId]);
     expect(await pairs('product_set_periodical_snapshots', 'product_periodical_snapshot_id', setId)).toEqual([]);
     expect((await db.query<any>('SELECT id FROM product_periodical_snapshots WHERE product_set_id = ?', [setId])).rows).toHaveLength(0);
 
@@ -90,18 +86,15 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     const { insertId: requestId } = await db.query(
       `INSERT INTO payment_requests (gym_id, member_id, amount, status, source, billing_event_id)
        VALUES (?, ?, 10.00, 'pending', 'product_purchase', ?)`, [gymId, buyer, eventId]);
-    const { insertId: purchaseId } = await db.query(
-      `INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, billing_frequency, amount, currency, status, payment_request_id)
+    const { insertId: purchaseId } = await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, billing_frequency, amount, currency, status, payment_request_id)
        VALUES (?, ?, ?, 'Towel', 'service', 'once', 10.00, 'EUR', 'pending_payment', ?)`, [gymId, buyer, productId, requestId]);
 
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
     const { rows } = await db.query<any>(
       `SELECT j.product_oneoff_snapshot_id FROM billing_event_oneoff_snapshots j WHERE j.billing_event_id = ?`, [eventId]);
     expect(rows).toHaveLength(1);
 
     // Discarding the purchase removes the snapshot and its link.
-    await db.query('DELETE FROM member_products_oneoff_snapshot WHERE id = ?', [purchaseId]);
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    await db.query('DELETE FROM product_oneoff_snapshots WHERE source_id = ?', [purchaseId]);
     expect((await db.query<any>('SELECT id FROM billing_event_oneoff_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
   });
 
@@ -116,11 +109,9 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     const { insertId: requestId } = await db.query(
       `INSERT INTO payment_requests (gym_id, member_id, amount, status, source, billing_event_id)
        VALUES (?, ?, 50.00, 'pending', 'product_purchase', ?)`, [gymId, buyer, eventId]);
-    const { insertId: purchaseId } = await db.query(
-      `INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, billing_frequency, units, amount, currency, status, payment_request_id)
+    const { insertId: purchaseId } = await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot (gym_id, member_id, product_id, product_name, product_type, billing_frequency, units, amount, currency, status, payment_request_id)
        VALUES (?, ?, ?, 'Five sessions', 'sessions', 'once', 5, 50.00, 'EUR', 'pending_payment', ?)`, [gymId, buyer, productId, requestId]);
 
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
     const { rows } = await db.query<any>(
       `SELECT s.source_id FROM billing_event_session_snapshots j
          JOIN product_session_snapshots s ON s.id = j.product_session_snapshot_id
@@ -129,11 +120,9 @@ describe('Product Set <-> snapshot junctions (M2)', () => {
     // Never in the one-off junction: a Sessions package keeps its own snapshot table.
     expect((await db.query<any>('SELECT id FROM billing_event_oneoff_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
 
-    // Re-syncing adds nothing (idempotent), and discarding the purchase removes the snapshot and its link.
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    // Linked once, and discarding the purchase removes the snapshot and its link.
     expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(1);
-    await db.query('DELETE FROM member_products_oneoff_snapshot WHERE id = ?', [purchaseId]);
-    await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
+    await db.query('DELETE FROM product_session_snapshots WHERE source_id = ?', [purchaseId]);
     expect((await db.query<any>('SELECT id FROM billing_event_session_snapshots WHERE billing_event_id = ?', [eventId])).rows).toHaveLength(0);
   });
 });

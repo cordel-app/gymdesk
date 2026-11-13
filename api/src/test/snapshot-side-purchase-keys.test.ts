@@ -53,14 +53,17 @@ function purchase(memberId: number, productId: number, productType: string, stat
 }
 
 describe('migration 411 (#2126 stage 5d-1)', () => {
-  it('leaves no foreign key pointing at a legacy Product table outside the three', async () => {
+  // #2126 stage 5d-6: what 411 made possible — migration 415 drops the three legacy tables.
+  it('leaves no legacy Product table and no foreign key pointing at one (migration 415)', async () => {
+    const legacy = ['member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
+      'member_products_oneoff_promotion_snapshot'];
+    const { rows: tables } = await db.query<any>(
+      `SELECT TABLE_NAME AS t FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?)`, legacy);
+    expect(tables).toEqual([]);
     const { rows } = await db.query<any>(
       `SELECT TABLE_NAME AS t, CONSTRAINT_NAME AS c FROM information_schema.KEY_COLUMN_USAGE
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND REFERENCED_TABLE_NAME IN ('member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
-                                        'member_products_oneoff_promotion_snapshot')
-          AND TABLE_NAME NOT IN ('member_products_oneoff_snapshot', 'member_products_recurrent_snapshot',
-                                 'member_products_oneoff_promotion_snapshot')`);
+        WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IN (?, ?, ?)`, legacy);
     expect(rows).toEqual([]);
   });
 

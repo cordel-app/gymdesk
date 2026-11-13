@@ -6,10 +6,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import { db } from '../infra/db';
-import { syncProductSnapshotForPurchase } from './purchaseSnapshotFixture';
 import { cancelAbandonedPurchases, completeProductPurchase } from '../api/me-products';
 import { cleanupTestGyms, createTestGym, linkTestPurchaseRequestToEvent } from './helpers';
 import { TEST_PURCHASES } from './productSnapshotReads';
+import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
 let memberId: number;
@@ -32,14 +32,12 @@ async function purchase(opts: {
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
     [gymId, memberId, opts.requestStatus, `pay_${token}`, token])).insertId;
   await linkTestPurchaseRequestToEvent(gymId, memberId, requestId);
-  const purchaseId = (await db.query<any>(
-    `INSERT INTO member_products_oneoff_snapshot
+  const purchaseId = (await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
        (gym_id, member_id, product_id, status, product_name, product_type, billing_frequency,
         units, amount, currency, payment_request_id, validity_days, created_by)
      VALUES (?, ?, ?, 'pending_payment', 'Item', ?, 'once', ?, '20.00', 'EUR', ?, ?, 'Test')`,
     [gymId, memberId, productId, opts.type, opts.type === 'sessions' ? 10 : null, requestId,
       opts.validityDays ?? null])).insertId;
-  await db.transaction((tx) => syncProductSnapshotForPurchase(tx, gymId, purchaseId));
   return { purchaseId, requestId };
 }
 
@@ -60,7 +58,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
 });

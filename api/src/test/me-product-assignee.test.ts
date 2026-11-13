@@ -80,7 +80,6 @@ beforeAll(async () => {
 afterAll(async () => {
   delete process.env.MONEI_API_KEY;
   delete process.env.MONEI_WEBHOOK_SECRET;
-  await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
   await db.end();
 });

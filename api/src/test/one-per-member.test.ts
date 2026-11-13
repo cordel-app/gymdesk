@@ -6,8 +6,8 @@ import { db } from '../infra/db';
 import { importBaseProducts } from '../api/gym-default-products';
 import { parseBaseProductInput } from '../domain/baseProducts';
 import { violatesOnePerMember } from '../api/one-per-member';
-import { syncRecurringLinesFixture } from './recurringLineSnapshotFixture';
 import { cleanupTestGyms, createTestGym, insertTestPurchase } from './helpers';
+import { legacyProductInsert } from './legacyProductFixture';
 
 const NAME = 'One Per Member Template (#2607)';
 let gymId: string;
@@ -41,8 +41,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM member_products_oneoff_snapshot WHERE gym_id = ?', [gymId]);
-  await db.query('DELETE FROM member_products_recurrent_snapshot WHERE gym_id = ?', [gymId]);
   await db.query('DELETE FROM product_sets WHERE gym_id = ?', [gymId]);
   await db.query('DELETE FROM products WHERE base_product_id = ?', [templateId]);
   await db.query('DELETE FROM base_products WHERE id = ?', [templateId]);
@@ -88,13 +86,11 @@ describe('One per Member', () => {
       const s = await db.query(
         `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, ?, '2019-01-01')`,
         [gymId, owner, status]);
-      await db.query(
-        `INSERT INTO member_products_recurrent_snapshot
+      await legacyProductInsert(`INSERT INTO member_products_recurrent_snapshot
            (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
             item_billing_frequency, unit_price)
          VALUES (?, ?, ?, 1, '2019-01-01', ?, 'Locker Monthly OPM', 'service', 'month', 10.00)`,
         [gymId, s.insertId, lineProduct, endsAt]);
-      await db.transaction((tx) => syncRecurringLinesFixture(tx, gymId, s.insertId));
       return s.insertId;
     };
 
@@ -108,7 +104,6 @@ describe('One per Member', () => {
     await setWithLine('active', null);
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct)).toBe(true);
     // One in-flight version per owner: the ended Draft goes before the open one is written.
-    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE product_set_id = ?', [draftId]);
     await db.query('DELETE FROM product_sets WHERE id = ?', [draftId]);
     const openDraft = await setWithLine('draft', null);
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct, { draftSetId: openDraft })).toBe(true);

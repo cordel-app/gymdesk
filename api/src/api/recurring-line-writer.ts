@@ -4,8 +4,8 @@
  * A recurring line of a Product Set version is its Product snapshot (`product_periodical_snapshots`,
  * linked to the set through `product_set_periodical_snapshots`). Every insert, copy, change and removal
  * of a line goes through this module. Until stage 5d-5 it also wrote the legacy record
- * (`member_products_recurrent_snapshot`) from the same values; that table is no longer written and holds
- * the lines written before then, frozen, until it is dropped.
+ * (`member_products_recurrent_snapshot`) from the same values; that table is dropped since stage 5d-6
+ * (migration 415).
  *
  * The line's id is `source_id`, which the routes, the consumption ledger and a line's Promotion
  * applications are keyed on. Since stage 5d-2 a new line (and a copy) takes it from the snapshot's own
