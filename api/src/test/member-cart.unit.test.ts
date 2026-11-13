@@ -172,6 +172,22 @@ describe('the page (§1–§2)', () => {
     expect(page).not.toContain('/me/products/${product.id}/purchase`');
   });
 
+  // #2771 §1 — every purchasable Product reads *Add to cart*, recurring included:
+  // there is no second, recurring-only *Add* action beside the cart.
+  it('offers every Product, recurring or one-time, through the one cart wording', () => {
+    const draftAction = page.slice(page.indexOf('function draftAction('), page.indexOf('function openPurchase('));
+    expect(draftAction).toContain("t('membership.cart_add')");
+    expect(draftAction).toContain("t('membership.cart_in_cart')");
+    expect(draftAction).toContain("t('membership.cart_item_cancel')");
+    for (const retired of ['product_add_to_draft', 'product_in_draft', 'product_remove_from_draft']) {
+      expect(page).not.toContain(`membership.${retired}`);
+      for (const code of ['en', 'es', 'ca']) {
+        const ns = JSON.parse(readFileSync(join(MEMBER, 'locales', 'base', `${code}.json`), 'utf-8')).membership;
+        expect(ns[retired]).toBeUndefined();
+      }
+    }
+  });
+
   it('asks before the global Cancel discards the whole Draft', () => {
     expect(page).toContain('setConfirmDiscard(true)');
     expect(page).toContain("t('membership.cart_discard_body')");

@@ -1586,7 +1586,14 @@ export default function MembershipPage() {
     return <StatusPill status={statusWord} label={t(stateKey as any)} />;
   }
 
-  /** Add, or the line it already is: Remove for one this Draft added, a pill for one held. */
+  /**
+   * Add to cart, or the line it already is: Cancel for one this Draft added, a
+   * pill for one held. #2771 — a recurring Product reads exactly as a one-time
+   * one does (*Add to cart*, *In your cart*, *Cancel*): both join the one cart,
+   * the member's Draft Product Set, and are paid by its one Pay. The recurring
+   * line is still added straight to the Draft (no dialog: it takes no
+   * recipient or Promotion choice there), nothing is charged by adding it.
+   */
   function draftAction(product: MemberProduct) {
     const placed = draftProductState(product, setView);
     const busy = draftBusy !== null;
@@ -1595,9 +1602,9 @@ export default function MembershipPage() {
     if (placed.state === 'added') {
       control = (
         <>
-          <StatusPill status="pending" label={t('membership.product_in_draft')} />
+          <StatusPill status="pending" label={t('membership.cart_in_cart')} />
           <button type="button" style={styles.draftSecondaryBtn} disabled={busy} onClick={() => removeFromDraft(product, placed.lineId)}>
-            {t('membership.product_remove_from_draft')}
+            {t('membership.cart_item_cancel')}
           </button>
         </>
       );
@@ -1606,7 +1613,7 @@ export default function MembershipPage() {
     } else {
       control = (
         <button type="button" style={styles.buyBtn} disabled={busy} onClick={() => addToDraft(product)}>
-          {draftBusy === product.id ? t('membership.product_adding') : t('membership.product_add_to_draft')}
+          {draftBusy === product.id ? t('membership.cart_adding') : t('membership.cart_add')}
         </button>
       );
     }
