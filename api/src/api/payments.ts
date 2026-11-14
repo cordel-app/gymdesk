@@ -1,4 +1,5 @@
 import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
 import { loadDerivedBilling } from './derived-billing';
@@ -167,7 +168,9 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
   let memberId: number | null = member_id ?? null;
   if (user_membership_id) {
     const { rows } = await db.query(
-      'SELECT id, member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
+      // #2125 M6b-10: the assignment's owner is its current plan snapshot's.
+      `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
+        WHERE ${assignmentOfLegacyIdSql('?')} AND pa.gym_id = ?`,
       [user_membership_id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
@@ -576,8 +579,8 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
               pm.card_brand, pm.card_last4
        FROM payment_requests pr
        LEFT JOIN members m ON m.id = pr.member_id
-       LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
-       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
+       LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
        LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
        WHERE pr.gym_id = ?
          AND (pr.billing_event_id = ?
