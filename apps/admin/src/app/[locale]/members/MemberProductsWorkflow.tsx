@@ -35,16 +35,14 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
 
 /** The PS Status header only (#2446): the actions live in the Summary. */
 export function ProductsWorkflowBar({
-  current, loading, error, holdsNothing,
+  current, loading, error,
 }: {
-  /** The version holds no Products (read from its detail). */
-  holdsNothing?: boolean;
   current: ProductSetSummary | null;
   loading: boolean;
   error: boolean;
 }) {
   const t = useTranslations('members');
-  const statusKey = psStatusKey(current, !!holdsNothing);
+  const statusKey = psStatusKey(current);
   return (
     <div
       data-ps-status-bar
