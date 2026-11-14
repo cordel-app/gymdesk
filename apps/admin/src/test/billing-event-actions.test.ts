@@ -112,7 +112,16 @@ describe('Billing Events payment actions (#640)', () => {
     expect(modal).toContain('async function accept()');
     expect(modal).toContain('`/payments/billing-events/${billingEventId}/refund`');
     expect(modal.match(/method: 'POST'/g)).toHaveLength(1);
-    expect(modal).toContain('refundRequestBody(kind, method, selected, adhoc)');
+    expect(modal).toContain('refundRequestBody(kind, selected, adhoc)');
+  });
+
+  // #2797: the refund goes back through the original payment's method.
+  it('shows Refund through as a read-only value and offers no payment method choice', () => {
+    const modal = readFileSync(join(PAGE, '..', 'RefundModal.tsx'), 'utf-8');
+    expect(modal).not.toContain('<select');
+    expect(modal).not.toContain('setMethod');
+    expect(modal).toContain('{opts.method.name}');
+    expect(modal).toContain('formValueStyle');
   });
 
   it('confirms cash, card and waive in a modal that sends nothing until Accept', () => {

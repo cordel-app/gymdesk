@@ -7,7 +7,7 @@ import {
 } from '../domain/billingEventStatus';
 import {
   LineState, RefundBalance, RefundMethod, RefundRequestInput, RefundState,
-  completedRefundCents, decideRefund, fromCents, refundBalance, refundMethodsFor,
+  completedRefundCents, decideRefund, fromCents, isManualRefundMethod, refundBalance, refundMethodFor,
   refundOutcomeFromProvider, refundState, toCents,
 } from '../domain/billingEventRefund';
 
@@ -32,7 +32,7 @@ export interface ActionFailure { status: number; error: string }
 async function loadOriginalPayment(exec: Exec, gymId: string, billingEventId: number) {
   const { rows } = await exec.query<any>(
     `SELECT id, amount, method, provider, provider_ref, member_id, payer_member_id,
-            user_membership_id, charge_type_id, currency
+            user_membership_id, charge_type_id, currency, payment_method_name
        FROM payment_requests
       WHERE billing_event_id = ? AND gym_id = ? AND transaction_type = 'payment'
         AND status = 'completed' AND method IN ('provider', 'cash', 'card_terminal') AND amount > 0
@@ -74,23 +74,37 @@ export interface RefundOptions {
   refunded_amount: string;
   refundable_amount: string;
   refund_state: RefundState;
-  methods: { code: RefundMethod; name: string }[];
+  /**
+   * #2797 — the original payment's method, which the refund goes back through.
+   * Read-only: there is nothing to choose. `manual` means no provider is
+   * called and the gym returns the money itself.
+   */
+  method: { code: RefundMethod; name: string; manual: boolean };
   lines: { id: number; kind: string; item_name: string; quantity: number; amount: string; refunded_amount: string; refundable_amount: string }[];
 }
 
 const METHOD_CATALOGUE_CODE: Record<RefundMethod, string> = { cash: 'cash', card_terminal: 'card', provider: 'monei' };
 
-/** The catalogue's English names for the offered methods (the same source the attempt snapshot copies). */
-async function methodNames(exec: Exec, methods: RefundMethod[]) {
-  const codes = methods.map((m) => METHOD_CATALOGUE_CODE[m]);
+const NO_ORIGINAL_METHOD: ActionFailure = {
+  status: 409,
+  error: 'The original payment method of this billing event cannot be determined (a provider payment with no provider reference), so it cannot be refunded.',
+};
+
+/**
+ * The name the original payment was recorded under: the attempt's own snapshot
+ * (#2451), and the catalogue's English name only for an attempt written before
+ * the snapshot existed.
+ */
+async function originalMethodName(exec: Exec, original: any, method: RefundMethod): Promise<string> {
+  if (original.payment_method_name) return String(original.payment_method_name);
+  const code = METHOD_CATALOGUE_CODE[method];
   const { rows } = await exec.query<any>(
-    `SELECT m.code, COALESCE((SELECT t.name FROM base_payment_method_translations t
-                               WHERE t.base_payment_method_id = m.id AND t.locale = 'en'), m.code) AS name
-       FROM base_payment_methods m WHERE m.deleted_at IS NULL AND m.code IN (${codes.map(() => '?').join(',')})`,
-    codes,
+    `SELECT COALESCE((SELECT t.name FROM base_payment_method_translations t
+                       WHERE t.base_payment_method_id = m.id AND t.locale = 'en'), m.code) AS name
+       FROM base_payment_methods m WHERE m.deleted_at IS NULL AND m.code = ?`,
+    [code],
   );
-  const byCode = new Map(rows.map((r: any) => [r.code, r.name]));
-  return methods.map((code) => ({ code, name: String(byCode.get(METHOD_CATALOGUE_CODE[code]) ?? METHOD_CATALOGUE_CODE[code]) }));
+  return String(rows[0]?.name ?? code);
 }
 
 /** GET …/:id/refund-options — what the Refund modal shows. 404 when the event does not exist; 409 when nothing was collected. */
@@ -102,7 +116,8 @@ export async function loadRefundOptions(gymId: string, billingEventId: number): 
   const refunds = await loadRefunds(db, original.id);
   const balance = refundBalance(toCents(original.amount), refunds);
   const lines = await loadLines(db, gymId, billingEventId);
-  const methods = refundMethodsFor({ method: original.method, providerRef: original.provider_ref });
+  const method = refundMethodFor({ method: original.method, providerRef: original.provider_ref });
+  if (!method) return { failure: NO_ORIGINAL_METHOD };
   return {
     result: {
       billing_event_id: billingEventId,
@@ -110,7 +125,7 @@ export async function loadRefundOptions(gymId: string, billingEventId: number): 
       refunded_amount: fromCents(balance.refundedCents),
       refundable_amount: fromCents(balance.refundableCents),
       refund_state: refundState(balance.collectedCents, completedRefundCents(refunds)),
-      methods: await methodNames(db, methods),
+      method: { code: method, name: await originalMethodName(db, original, method), manual: isManualRefundMethod(method) },
       lines: lines.map((l) => ({
         id: l.id, kind: l.kind, item_name: l.item_name, quantity: l.quantity,
         amount: fromCents(toCents(l.amount)),
@@ -240,6 +255,9 @@ const ATTEMPT_METHOD: Record<RefundMethod, string> = { cash: 'cash', card_termin
  * held, and so a crash or timeout leaves a **pending** refund that keeps its
  * amount reserved:
  *
+ * The refund goes back through the original payment's own method (#2797): the
+ * request chooses none, and one naming another is refused.
+ *
  *  1. under the event's row lock: judge the request against the balance (which
  *     already counts every completed and pending refund), insert the refund
  *     Payment Transaction (`completed` for a manual method, `pending` for the
@@ -270,8 +288,9 @@ export async function refundBillingEvent(
     const refunds = await loadRefunds(tx, original.id);
     const balance: RefundBalance = refundBalance(toCents(original.amount), refunds);
     const lines = await loadLines(tx, gymId, billingEventId);
-    const methods = refundMethodsFor({ method: original.method, providerRef: original.provider_ref });
-    const decision = decideRefund(input, balance, lines, methods);
+    const originalMethod = refundMethodFor({ method: original.method, providerRef: original.provider_ref });
+    if (!originalMethod) return { failure: NO_ORIGINAL_METHOD };
+    const decision = decideRefund(input, balance, lines, originalMethod);
     if (!decision.ok) {
       const status = balance.refundableCents <= 0 ? 409 : 400;
       return { failure: { status, error: decision.error } };

@@ -726,8 +726,9 @@ a `completed` transaction. There is no status column.
 | Gate | `requireModuleWrite('PAYMENTS')` | `requireRole('admin')` + flag `payments.billing_events.refund` + PAYMENTS write |
 | Offered when | derived status `pending` (`can_cancel`) | money collected (`isPaymentCollected()`, cancelled or not, #2533) with refundable balance (`can_refund`) |
 | Writes | `billing_events.cancelled_at`/`cancelled_by`; open attempts → `expired` | a new `payment_requests` row, `transaction_type 'refund'`, `refund_of_payment_request_id` → the collected attempt, `billing_event_id` NULL; `payment_refund_lines` for a line refund |
+| Method | — | the original payment's own (`refundMethodFor()`, #2797): never chosen, a request naming another is a 400 |
 | Provider | none | Cash / Card terminal: none. Monei: `refundPayment()` → `POST /v1/payments/{id}/refund` with the amount in cents, **after** the refund row is committed |
-| Refused | not pending, already cancelled (409), a submitted attempt with no outcome (409) | nothing collected / nothing left (409), invalid amount or lines, a method the payment cannot use (400) |
+| Refused | not pending, already cancelled (409), a submitted attempt with no outcome (409) | nothing collected / nothing left (409), a provider payment with no `provider_ref` (409), invalid amount or lines, a method other than the original payment's (400) |
 
 A refund's money rules: collected = the latest completed `payment` attempt with method
 `provider`/`cash`/`card_terminal`; refunded = completed **and pending** refunds (a pending
@@ -747,9 +748,29 @@ invoice is the existing manual `POST /payments/invoices/:id/rectify`, never auto
 >   Reversed by #2533 stage 2, below.
 > - **Cancelling a first payment leaves the membership `pending_payment`** — cancelling the
 >   charge is not cancelling the plan.
-> - **Card terminal is a manual refund method** beside Cash; Monei is offered only for a
->   provider payment with a `provider_ref`.
+> - ~~**Card terminal is a manual refund method** beside Cash; Monei is offered only for a
+>   provider payment with a `provider_ref`.~~ Reversed by #2797, below.
 > - **A pending Monei refund is not reconciled automatically** yet; it stays reserved.
+
+#### A refund goes back through the original payment method (#2797)
+
+`refundMethodFor()` (`domain/billingEventRefund.ts`) answers the one method a collected
+payment is refunded through: `provider` for a payment taken through the provider (MONEI's
+refund on that same payment, `provider_ref`), `cash` for a cash payment, `card_terminal`
+for one taken on an external terminal. The two manual ones call no provider: the row
+records that the gym returned the money itself. `GET …/refund-options` reports it as
+`method: { code, name, manual }` (the name is the attempt's own `payment_method_name`
+snapshot, #2451) and the Refund modal shows it read-only; the request body names no method.
+
+> **Decisions (#2797)** — change them here if they turn out wrong:
+> - **A request that names another method is a 400**, not silently overridden, so an old
+>   client cannot believe it refunded in cash what went back to a card.
+> - **A provider payment with no `provider_ref` cannot be refunded** (`409`, on the options
+>   read and on the refund). There is no transaction to refund, and handing it back through
+>   another method is what the ticket forbids. Before #2797 it was offered Cash / Card terminal.
+> - **One original payment per event.** The collected attempt is still the latest completed
+>   one (the charge guard allows a single settled attempt per event), so every refund of an
+>   event names the same `refund_of_payment_request_id` and there is no mix of methods to resolve.
 
 #### A cancelled Billing Event stays cancelled (#2533 stage 2)
 
