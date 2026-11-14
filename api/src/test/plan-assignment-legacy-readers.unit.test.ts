@@ -54,7 +54,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
   'api/me-billing-forecast.ts': 1,
-  'api/me-membership-plans.ts': 1,
   'api/me-past-plan-details.ts': 1,
   'api/me-product-set-lines.ts': 1,
   'api/me.ts': 6,
@@ -64,7 +63,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/membership-promotions.ts': 4,
   'api/new-member-eligibility.ts': 2,
   'api/one-active-plan.ts': 2,
-  'api/one-per-member.ts': 2,
   'api/payment-page.ts': 1,
   'api/payment-requests.ts': 1,
   'api/payments.ts': 4,
@@ -140,6 +138,16 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The one statement left in card-updates picks the assignment a card replacement is filed under.
     expect(LEGACY_STATEMENTS['api/card-updates.ts']).toBe(1);
     expect(readFileSync(join(API_SRC, 'api/card-updates.ts'), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
+  });
+
+  it('M6b-9: the One per Member plan check and the Members App plan-choice check read plan_snapshots', () => {
+    for (const file of ['api/one-per-member.ts', 'api/me-membership-plans.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      const source = readFileSync(join(API_SRC, file), 'utf8');
+      expect(source).toContain("isCurrentAssignmentSnapshotSql('pa')");
+      expect(source).not.toContain('assignmentPlanSnapshotId(');
+    }
+    expect(readFileSync(join(API_SRC, 'api/me-membership-plans.ts'), 'utf8')).toContain("assignmentCoversMemberSql('pa')");
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
