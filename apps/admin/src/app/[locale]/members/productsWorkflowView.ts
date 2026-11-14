@@ -8,13 +8,18 @@
 
 import type { ProductSetSummary } from './membershipConfiguration';
 
-/** The `members.ps_status_*` suffix of a ProductSet status, `null` for one the build does not know. */
+/**
+ * The `members.ps_status_*` suffix of a ProductSet status, `null` for no
+ * ProductSet or a status the build does not know.
+ *
+ * #2804 — the status is the ProductSet's own and nothing else: an Active set
+ * that holds no plan and no Products (everything was cancelled), or only a plan
+ * that cancels on its end date, is still Active. This reverses #2264, which
+ * read an empty Active set as None.
+ */
 const PS_STATUSES = ['draft', 'pending_payment', 'active', 'superseded'] as const;
-export function psStatusKey(current: ProductSetSummary | null, holdsNothing = false): string | null {
+export function psStatusKey(current: ProductSetSummary | null): string | null {
   const s = current?.status;
-  // #2264 — a cancelled plan leaves an Active version with no plan and no
-  // Products: nothing is assigned, so the status is None, not Active.
-  if (s === 'active' && !current?.plan_name && holdsNothing) return null;
   return s && (PS_STATUSES as readonly string[]).includes(s) ? s : null;
 }
 
