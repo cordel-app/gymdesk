@@ -194,8 +194,9 @@ describe('a Draft is not the member\'s Membership Plan', () => {
   });
 
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
+    // #2125 M6b-8: the count reads the assignment's current plan snapshot (alias pa).
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')");
+      .toContain("pa.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')");
   });
 });
 
