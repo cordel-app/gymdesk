@@ -503,6 +503,7 @@ export function MemberExpandedRow({
             current={configuration.current_product_set}
             loading={productSetDetail.loading}
             error={productSetDetail.error}
+            onDraftExpired={reloadConfiguration}
           />
           <Section label={t('members.section_membership_plan')} divider={false}>
             <span id="member-membership-plans-section" />
