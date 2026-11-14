@@ -952,7 +952,6 @@
     "next": "Següent",
     "status_pending": "Pendent",
     "col_actions": "Accions",
-    "action_details": "Detalls",
     "action_retry": "Reintentar pagament",
     "action_error": "No s'ha pogut completar l'acció.",
     "details_heading": "Detalls de l'Esdeveniment de Facturació",

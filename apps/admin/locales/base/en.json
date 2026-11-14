@@ -951,7 +951,6 @@
     "next": "Next",
     "status_pending": "Pending",
     "col_actions": "Actions",
-    "action_details": "Details",
     "action_retry": "Retry Payment",
     "action_error": "The action could not be completed.",
     "details_heading": "Billing Event Details",

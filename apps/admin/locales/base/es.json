@@ -951,7 +951,6 @@
     "next": "Siguiente",
     "status_pending": "Pendiente",
     "col_actions": "Acciones",
-    "action_details": "Detalles",
     "action_retry": "Reintentar pago",
     "action_error": "No se pudo completar la acción.",
     "details_heading": "Detalles del Evento de Facturación",
