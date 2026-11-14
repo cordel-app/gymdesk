@@ -19,7 +19,11 @@
 export const REFUND_KINDS = ['full', 'lines', 'adhoc'] as const;
 export type RefundKind = (typeof REFUND_KINDS)[number];
 
-/** How the money goes back. `cash` and `card_terminal` are recorded by hand; `provider` calls MONEI. */
+/**
+ * How the money goes back. `cash` and `card_terminal` are recorded by hand;
+ * `provider` calls MONEI. Since #2797 it is never chosen: a refund goes back
+ * through the method of the payment it returns (`refundMethodFor()`).
+ */
 export const REFUND_METHODS = ['cash', 'card_terminal', 'provider'] as const;
 export type RefundMethod = (typeof REFUND_METHODS)[number];
 
@@ -79,6 +83,7 @@ export interface RefundRequestInput {
   kind?: unknown;
   amount?: unknown;
   line_ids?: unknown;
+  /** Optional and never a choice (#2797): when sent it must be the original payment's method. */
   method?: unknown;
 }
 
@@ -101,18 +106,17 @@ export function decideRefund(
   input: RefundRequestInput,
   balance: RefundBalance,
   lines: readonly LineState[],
-  allowedMethods: readonly RefundMethod[],
+  originalMethod: RefundMethod,
 ): RefundDecision {
   const kind = String(input.kind ?? '') as RefundKind;
   if (!(REFUND_KINDS as readonly string[]).includes(kind)) {
     return { ok: false, error: "kind must be 'full', 'lines' or 'adhoc'" };
   }
-  const method = String(input.method ?? '') as RefundMethod;
-  if (!(REFUND_METHODS as readonly string[]).includes(method)) {
-    return { ok: false, error: "method must be 'cash', 'card_terminal' or 'provider'" };
-  }
-  if (!allowedMethods.includes(method)) {
-    return { ok: false, error: 'This payment cannot be refunded through the selected payment method.' };
+  // #2797: the method is the original payment's. A request need not name it;
+  // one that names another is refused rather than silently overridden.
+  const method = originalMethod;
+  if (input.method != null && input.method !== '' && input.method !== originalMethod) {
+    return { ok: false, error: 'A refund goes back through the original payment method; it cannot be changed.' };
   }
   if (balance.refundableCents <= 0) {
     return { ok: false, error: 'Nothing is left to refund on this billing event.' };
@@ -158,14 +162,22 @@ export function decideRefund(
 }
 
 /**
- * Which refund methods a collected payment can go back through. A manual
- * method is always possible (the gym hands the money back itself); the
- * provider only when the original payment went through it and carries the
- * provider's own reference.
+ * #2797 — the one method a collected payment is refunded through: its own.
+ * A cash or card-terminal payment is returned by hand and recorded; a payment
+ * taken through the provider is refunded by the provider on that same payment.
+ * `null` when it cannot be determined: a provider payment that carries no
+ * provider reference has no transaction to refund, and it is not handed back
+ * through another method instead.
  */
-export function refundMethodsFor(original: { method: string | null; providerRef: string | null }): RefundMethod[] {
-  const manual: RefundMethod[] = ['cash', 'card_terminal'];
-  return original.method === 'provider' && original.providerRef ? ['provider', ...manual] : manual;
+export function refundMethodFor(original: { method: string | null; providerRef: string | null }): RefundMethod | null {
+  if (original.method === 'provider') return original.providerRef ? 'provider' : null;
+  if (original.method === 'cash' || original.method === 'card_terminal') return original.method;
+  return null;
+}
+
+/** A manual refund calls no provider: the gym returns the money itself. */
+export function isManualRefundMethod(method: RefundMethod): boolean {
+  return method !== 'provider';
 }
 
 /** Classifies MONEI's answer to a refund call. Anything not refunded is not a completed refund. */

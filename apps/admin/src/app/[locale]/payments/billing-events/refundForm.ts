@@ -26,7 +26,8 @@ export interface RefundOptions {
   refunded_amount: string;
   refundable_amount: string;
   refund_state: 'none' | 'partial' | 'full';
-  methods: { code: RefundMethodCode; name: string }[];
+  /** #2797 — the original payment's method. Read-only: the refund goes back through it. */
+  method: { code: RefundMethodCode; name: string; manual: boolean };
   lines: RefundOptionLine[];
 }
 
@@ -63,14 +64,22 @@ export function refundAmount(kind: RefundKind, opts: RefundOptions, selected: Re
   return adhocAmountError(adhoc, opts) ? null : euros(cents(adhoc.trim().replace(',', '.')));
 }
 
-export function canAcceptRefund(kind: RefundKind, opts: RefundOptions, selected: ReadonlySet<number>, adhoc: string, method: string, busy: boolean): boolean {
-  if (busy || !opts.methods.some((m) => m.code === method)) return false;
+export function canAcceptRefund(kind: RefundKind, opts: RefundOptions, selected: ReadonlySet<number>, adhoc: string, busy: boolean): boolean {
+  if (busy) return false;
   return refundAmount(kind, opts, selected, adhoc) != null;
 }
 
-/** The body of `POST /payments/billing-events/:id/refund`. */
-export function refundRequestBody(kind: RefundKind, method: RefundMethodCode, selected: ReadonlySet<number>, adhoc: string): Record<string, unknown> {
-  if (kind === 'lines') return { kind, method, line_ids: [...selected] };
-  if (kind === 'adhoc') return { kind, method, amount: adhoc.trim().replace(',', '.') };
-  return { kind, method };
+/**
+ * The body of `POST /payments/billing-events/:id/refund`. It names no payment
+ * method (#2797): the server refunds through the original payment's own.
+ */
+export function refundRequestBody(kind: RefundKind, selected: ReadonlySet<number>, adhoc: string): Record<string, unknown> {
+  if (kind === 'lines') return { kind, line_ids: [...selected] };
+  if (kind === 'adhoc') return { kind, amount: adhoc.trim().replace(',', '.') };
+  return { kind };
+}
+
+/** Which help line the read-only *Refund through* field carries. */
+export function refundMethodHelpKey(method: RefundOptions['method']): 'refund_method_provider_help' | 'refund_method_manual_help' {
+  return method.manual ? 'refund_method_manual_help' : 'refund_method_provider_help';
 }

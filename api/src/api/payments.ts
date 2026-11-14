@@ -865,7 +865,8 @@ paymentsRouter.post('/billing-events/:id/cancel', requireModuleWrite('PAYMENTS')
 /**
  * GET /payments/billing-events/:id/refund-options — #2480. What the Refund
  * modal offers: the collected, refunded and refundable amounts, the event's
- * lines with what each may still return, and the refund methods. Admin only,
+ * lines with what each may still return, and the original payment's method the
+ * refund goes back through (`method`, read-only, #2797). Admin only,
  * behind the Refund feature flag.
  */
 paymentsRouter.get('/billing-events/:id/refund-options', requireRole('admin'), requireFeatureEnabled(REFUND_FEATURE_KEY), async (req, res, next) => {
@@ -883,7 +884,8 @@ paymentsRouter.get('/billing-events/:id/refund-options', requireRole('admin'), r
 
 /**
  * POST /payments/billing-events/:id/refund — #2480. Body:
- * `{ kind: 'full' | 'lines' | 'adhoc', method: 'cash' | 'card_terminal' | 'provider', amount?, line_ids? }`.
+ * `{ kind: 'full' | 'lines' | 'adhoc', amount?, line_ids? }`. The refund goes back
+ * through the original payment's method (#2797); a `method` that names another is a 400.
  * Writes a new refund Payment Transaction; never edits the original payment,
  * the ledger row, a receipt or invoice, or any contracted item. Admin only,
  * behind the Refund feature flag.
