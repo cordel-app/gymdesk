@@ -1223,6 +1223,7 @@ export default function MembershipPage() {
               </li>
             ))}
           </ul>
+          {renderCartAddButtons()}
           {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
         </div>
       </section>
@@ -1312,6 +1313,7 @@ export default function MembershipPage() {
               </li>
             ))}
           </ul>
+          {renderCartAddButtons()}
           {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
         </div>
       </section>
@@ -1816,24 +1818,38 @@ export default function MembershipPage() {
    * no-plan branches so the entry point is never missing.
    */
   function renderPlansHeader() {
+    // #2814 — while the cart is shown the two actions live inside it.
+    if (cartPhase(setView, appMember?.id ?? null) != null) return null;
+    const buttons = renderAddButtons(primaryButtonStyle);
+    return buttons && <div style={styles.addPlanRow}>{buttons}</div>;
+  }
+
+  /**
+   * #2814 — *Add plan* and *Add product*, the same two actions under the same
+   * conditions wherever they are drawn: inside the cart (secondary, under its
+   * items) while there is one, above the plans otherwise.
+   */
+  function renderAddButtons(style: React.CSSProperties) {
+    if (mode !== 'overview' || !canAdd || !((!pendingMembership && gymOffersPlans) || products !== null)) return null;
     return (
       <>
-        {mode === 'overview' && canAdd && ((!pendingMembership && gymOffersPlans) || products !== null) && (
-          <div style={styles.addPlanRow}>
-            {!pendingMembership && gymOffersPlans && (
-              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
-                {t('membership.add_plan')}
-              </button>
-            )}
-            {products !== null && (
-              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
-                {t('membership.add_product')}
-              </button>
-            )}
-          </div>
+        {!pendingMembership && gymOffersPlans && (
+          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
+            {t('membership.add_plan')}
+          </button>
+        )}
+        {products !== null && (
+          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
+            {t('membership.add_product')}
+          </button>
         )}
       </>
     );
+  }
+
+  function renderCartAddButtons() {
+    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn });
+    return buttons && <div style={styles.cartAddRow} data-cart-add>{buttons}</div>;
   }
 
   // #2426 — the server's overview of a plan, worded and formatted here; every
@@ -2443,6 +2459,7 @@ const styles: Record<string, React.CSSProperties> = {
   cartItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   cartItemName: { fontSize: 14, minWidth: 0, overflowWrap: 'anywhere' },
   cartItemBtn: { padding: '6px 12px', fontSize: 13, fontWeight: 600 },
+  cartAddRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8, marginTop: 12 },
   draftSecondaryBtn: { ...secondaryButtonStyle, padding: '8px 14px', fontSize: 13.5, fontWeight: 600 },
   draftError: { fontSize: 12.5, color: memberTheme.statusError },
   draftExpiry: { fontSize: 12.5, color: memberTheme.textSecondary },
