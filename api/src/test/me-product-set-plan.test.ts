@@ -115,6 +115,35 @@ describe('POST /me/product-sets/:id/plans', () => {
     expect(rows.map((r: any) => Number(r.product_id))).toEqual([insurance]);
   });
 
+  it("reports each plan line's Mandatory flag and the member a per-member line is for (#2805)", async () => {
+    const m = await member();
+    const draft = (await as(m.clerk, 'post', '/draft')).body;
+    const towel = await product(`Towel-${uniq()}`);
+    const insurance = await product(`Insurance-${uniq()}`);
+    const planId = await plan(30, { optional: towel, mandatory: insurance });
+    const add = await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: planId });
+    expect(add.status).toBe(200);
+
+    const benefitsOf = async () => {
+      const view = await as(m.clerk, 'get', `/${draft.id}`);
+      expect(view.status).toBe(200);
+      return view.body.plans[0].benefits as any[];
+    };
+    const before = await benefitsOf();
+    expect(before.find((b) => b.product_id === insurance)).toMatchObject({ mandatory: true });
+    expect(before.find((b) => b.product_id === towel)).toMatchObject({ mandatory: false });
+
+    // A line held per member (#2657 stage 3) names that member.
+    await db.query(
+      'UPDATE plan_periodical_snapshots SET assigned_member_id = ? WHERE plan_snapshot_id = ? AND product_id = ?',
+      [m.id, add.body.plan_snapshot_id, insurance]);
+    const after = await benefitsOf();
+    expect(after.find((b) => b.product_id === insurance))
+      .toMatchObject({ mandatory: true, assigned_member_id: m.id, member_name: 'M' });
+    expect(after.find((b) => b.product_id === towel))
+      .toMatchObject({ assigned_member_id: null, member_name: null });
+  });
+
   it('refuses a second plan on the Draft, a plan not offered to members, and a member who holds a plan', async () => {
     const m = await member();
     const draft = (await as(m.clerk, 'post', '/draft')).body;

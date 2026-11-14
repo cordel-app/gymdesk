@@ -105,6 +105,8 @@ export interface MemberProductSetPlan {
   discount_reason: string | null;
   beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
   benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean;
+    /** #2805 — the member a per-member line is for (#2657 stage 3); null for a Family line or one not split yet. */
+    assigned_member_id: number | null; member_name: string | null;
     /** #2798 — the Product's picture, as My Products reads a line's (the plan line snapshot holds none). */
     image_url: string | null; image_thumbnail_url: string | null }[];
 }
@@ -223,9 +225,11 @@ export async function loadMemberProductSetView(
     for (const category of PLAN_LINE_CATEGORIES) {
       const { rows: lRows } = await db.query<any>(
         `SELECT l.plan_snapshot_id, l.product_id, l.item_name, l.quantity, l.item_billing_frequency, l.unit_price, l.mandatory,
+                l.assigned_member_id, am.name AS member_name,
                 p.image_url, p.image_thumbnail_url
            FROM ${PLAN_LINE_TABLE[category]} l
            LEFT JOIN products p ON p.id = l.product_id AND p.gym_id = l.gym_id
+           LEFT JOIN members am ON am.id = l.assigned_member_id AND am.gym_id = l.gym_id
           WHERE l.gym_id = ? AND l.plan_snapshot_id IN (${marks}) ORDER BY l.item_name, l.id`,
         [gymId, ...snapshotIds]);
       for (const r of lRows) {
@@ -234,6 +238,8 @@ export async function loadMemberProductSetView(
           category, product_id: Number(r.product_id), name: r.item_name, quantity: Number(r.quantity) || 1,
           billing_frequency: r.item_billing_frequency ?? null, unit_price: Number(r.unit_price),
           mandatory: Number(r.mandatory) !== 0,
+          assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
+          member_name: r.member_name ?? null,
           image_url: r.image_url ?? null,
           image_thumbnail_url: r.image_thumbnail_url ?? r.image_url ?? null,
         });
