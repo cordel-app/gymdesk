@@ -53,7 +53,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
   'api/me-billing-forecast.ts': 1,
-  'api/me-past-plan-details.ts': 1,
   'api/me-product-set-lines.ts': 1,
   'api/me.ts': 6,
   'api/member-membership-configuration.ts': 2,
@@ -79,7 +78,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'domain/billingEventPayments.ts': 3,
   'domain/memberEnrollment.ts': 1,
   'domain/memberProfessionalServices.ts': 1,
-  'scripts/report-multi-active-memberships.ts': 3,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -155,6 +153,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The two statements left in payments.ts read the assignment of a Billing Event (`eventAssignmentSql()`).
     expect(LEGACY_STATEMENTS['api/payments.ts']).toBe(2);
     expect(readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
+  });
+
+  it('M6b-11: the past plans\' details read plan_snapshots and the #956 multi-plan report is retired', () => {
+    expect(LEGACY_STATEMENTS['api/me-past-plan-details.ts']).toBeUndefined();
+    // #2125 stage 3 allows several live plans per member, so the report of members holding more than one is gone.
+    expect(() => statSync(join(API_SRC, 'scripts/report-multi-active-memberships.ts'))).toThrow();
+    const pkg = readFileSync(join(API_SRC, '..', 'package.json'), 'utf8');
+    expect(pkg).not.toContain('memberships:multi-active');
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
