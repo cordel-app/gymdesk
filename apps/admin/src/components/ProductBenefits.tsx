@@ -230,7 +230,8 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
   { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
   // #2490 stage 3: a Membership Plan line's own Direct Discount (%), right after
-  // the Benefit it is taken off after. The Plans page only (`showDirectDiscount`).
+  // the Benefit it is taken off after. The Assigned Plan card only
+  // (`showDirectDiscount`); the Plans catalogue does not show it (#2808).
   { key: 'direct_discount_percent', labelKey: 'col_direct_discount_percent', width: 120, align: 'right' },
   // #959: Requirement comes after what the line *costs* and before the prices
   // that quote it — it is a property of the line, not a second treatment, and
