@@ -3,6 +3,9 @@
  * existed: an Active Product Set whose plan snapshot still reads the state it had before its
  * assignment was paused, resumed or cancelled, because the snapshot was shared and the sync left it.
  *
+ * M6b-6: and an owner's Active set while a plan of theirs that ended (cancelled with nothing left to
+ * run, expired, superseded) is not stated as ended on the snapshot that answers for it.
+ *
  * It decides nothing of its own: each listed set is re-synced (`syncPlanSnapshot()`), which is what
  * a new lifecycle change does. One transaction per set, so a failure leaves the others settled.
  */

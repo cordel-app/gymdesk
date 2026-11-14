@@ -201,8 +201,10 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
   );
   // #2746: and become the member's with it (a duplicate activation returned above, so this runs once).
   await activateSetPurchases(tx, gymId, id);
-  await syncPlanSnapshot(tx, gymId, id);
+  // M6b-6: the superseded set first, so its own snapshots state how their plans ended before the new
+  // Active set looks for an ended plan no snapshot states (`carryClosedAssignments()`).
   if (previous) await syncPlanSnapshot(tx, gymId, Number(previous.id));
+  await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'ok', productSet: { ...row, status: 'active' } };
 }
 

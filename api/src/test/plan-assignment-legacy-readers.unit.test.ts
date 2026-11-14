@@ -71,7 +71,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/payment-requests.ts': 1,
   'api/payments.ts': 4,
   'api/plan-assignment-drift.ts': 3,
-  'api/plan-assignment-lifecycle.ts': 2,
+  'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
   'api/product-set-bridge.ts': 2,
