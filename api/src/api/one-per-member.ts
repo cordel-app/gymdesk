@@ -8,7 +8,7 @@
 // lines, because a line the Draft already removed must not block adding it back.
 
 import type { Tx } from '../infra/db';
-import { assignmentPlanSnapshotId } from './assignment-config';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { PLAN_LINE_TABLE } from './plan-snapshot-lines';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 
@@ -44,13 +44,16 @@ export async function memberHoldsProductThroughPlan(
   const excluded = excludeUserMembershipIds.length > 0 ? excludeUserMembershipIds : [0];
   const excludedMarks = excluded.map(() => '?').join(',');
   const { rows } = await q.query<any>(
-    `SELECT um.id
-       FROM user_memberships um
-       JOIN plan_snapshots s ON s.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}
-       JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = s.id AND b.member_id = ?
-       JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = s.id AND l.product_id = ?
-      WHERE um.gym_id = ? AND um.status IN (${marks}) AND um.id NOT IN (${excludedMarks})
-        AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())
+    // #2125 M6b-9: an assignment is its current plan snapshot (`domain/planAssignments.ts`); the
+    // excluded assignments are still named by their legacy id, which every snapshot of one carries.
+    `SELECT pa.id
+       FROM plan_snapshots pa
+       JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = pa.id AND b.member_id = ?
+       JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = pa.id AND l.product_id = ?
+      WHERE pa.gym_id = ? AND pa.status IN (${marks})
+        AND COALESCE(pa.source_user_membership_id, 0) NOT IN (${excludedMarks})
+        AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
       LIMIT 1`,
     [memberId, productId, gymId, ...PLAN_HOLDING_STATUSES, ...excluded],
   );
@@ -120,13 +123,14 @@ export async function planOnePerMemberConflicts(
   q: Queryable, gymId: string, userMembershipId: number, replacedUserMembershipIds: readonly number[] = [],
 ): Promise<PlanOnePerMemberConflict[]> {
   const { rows } = await q.query<any>(
+    // #2125 M6b-9: the assignment's plan is its current snapshot (a Draft's own, before it commits).
     `SELECT DISTINCT b.member_id, p.id AS product_id, p.name AS product_name
-       FROM user_memberships um
-       JOIN plan_snapshots s ON s.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}
-       JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = s.id
-       JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = s.id
-       JOIN products p ON p.id = l.product_id AND p.gym_id = um.gym_id
-      WHERE um.id = ? AND um.gym_id = ? AND p.one_per_member = 1
+       FROM plan_snapshots pa
+       JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = pa.id
+       JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = pa.id
+       JOIN products p ON p.id = l.product_id AND p.gym_id = pa.gym_id
+      WHERE pa.source_user_membership_id = ? AND pa.gym_id = ? AND p.one_per_member = 1
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
       ORDER BY b.member_id, p.id`,
     [userMembershipId, gymId],
   );

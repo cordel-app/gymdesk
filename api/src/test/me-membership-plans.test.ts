@@ -36,7 +36,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+  TEST_AUTH_HEADER, proratedToNextFirst, activateTestAssignment, createTestDraftAssignment } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -263,10 +263,9 @@ describe('POST /me/membership-plans/:id/assign', () => {
   it('refuses a member who already holds a plan — the change is the gym\'s — and creates nothing', async () => {
     const member = await createMember();
     const livePlan = await createPlan({ price: null });
-    const { insertId: liveId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', '2026-01-01')`,
-      [gymId, member.id, livePlan],
-    );
+    // #2125 M6b-9: the check reads the assignment's plan snapshot, so the plan is assigned for real.
+    const liveId = await createTestDraftAssignment(gymId, member.id, livePlan, { startsAt: '2026-01-01' });
+    await activateTestAssignment(gymId, liveId);
     const planId = await createPlan({ price: 40 });
     const refused = await assign(member.userId, planId);
     expect(refused.status).toBe(409);
