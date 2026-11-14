@@ -521,6 +521,8 @@
     "set_products_heading": "Els meus productes",
     "set_products_empty": "No tens productes als teus productes actuals.",
     "plan_for": "Per a {names}",
+    "plan_period": "Període del pla: {start} – {end}",
+    "plan_period_open_ended": "Sense data de fi",
     "plan_entitlement_only": "Fins a la seva data de fi",
     "summary_heading": "Resum",
     "summary_contracted": "Productes contractats",

@@ -62,6 +62,7 @@ import {
   type MemberServiceBalanceItem,
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
+import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
 import {
@@ -244,7 +245,6 @@ interface PaymentRequest {
   created_at: string;
 }
 
-const day = (d: string | null) => (d ? d.slice(0, 10) : null);
 
 function formatInterval(interval: number, unit: string, t: (k: string) => string): string {
   const unitKey = `billing_unit.${unit}_${interval === 1 ? 'one' : 'other'}`;
@@ -836,7 +836,7 @@ export default function MembershipPage() {
    */
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
-    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean })[];
+    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
     const names = (mandatory: boolean) => benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name).join(', ') || null;
@@ -856,6 +856,11 @@ export default function MembershipPage() {
       included: names(true),
       optionalLabel: t('membership.plan_optional'),
       optional: names(false),
+      // #2798 — always the start date; the end date, or *Open-ended* when the plan has none.
+      period: t('membership.plan_period', {
+        start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',
+        end: plan.ends_at ? formatGymDateOnly(plan.ends_at, gymFmt) : t('membership.plan_period_open_ended'),
+      }),
       status: <StatusPill status={status} label={t(`membership.status.${status}` as any)} />,
       notice: payable ? (
         <div style={styles.planPendingPayment} data-plan-pending-payment>
@@ -875,22 +880,15 @@ export default function MembershipPage() {
       ) : null,
       details: (
         <>
-          <dl style={styles.dl}>
-            {plan.discount_reason && (
+          {/* #2798 — the dates are the collapsed header's Plan Period, not repeated here. */}
+          {plan.discount_reason && (
+            <dl style={styles.dl}>
               <div style={styles.row}>
                 <dt style={styles.dt}>{t('membership.price')}</dt>
                 <dd style={styles.dd}><span style={styles.discount}>{plan.discount_reason}</span></dd>
               </div>
-            )}
-            <div style={styles.row}>
-              <dt style={styles.dt}>{t('membership.member_since')}</dt>
-              <dd style={styles.dd}>{day(plan.starts_at ?? null) ?? '—'}</dd>
-            </div>
-            <div style={styles.row}>
-              <dt style={styles.dt}>{t('membership.ends')}</dt>
-              <dd style={styles.dd}>{day(plan.ends_at ?? null) ?? t('membership.ongoing')}</dd>
-            </div>
-          </dl>
+            </dl>
+          )}
           {benefits.length > 0 && (
             <div style={styles.nestedBenefits}>
               <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
@@ -903,6 +901,13 @@ export default function MembershipPage() {
                     <ul style={styles.benefitList}>
                       {rows.map((b) => (
                         <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                          {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
+                          {b.image_thumbnail_url && (
+                            <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
+                            </ImagePreviewButton>
+                          )}
                           <span>{b.name}</span>
                           <span style={styles.benefitMeta}>× {b.quantity}</span>
                           <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
@@ -2386,6 +2391,8 @@ const styles: Record<string, React.CSSProperties> = {
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
+  benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
+  benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
   eventItem: { ...sectionCardStyle, padding: '12px 14px', marginBottom: 6 },
   eventLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },

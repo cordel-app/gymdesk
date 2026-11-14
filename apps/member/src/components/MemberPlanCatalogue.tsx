@@ -53,6 +53,8 @@ export interface MemberPlanCardItem {
   overview?: PlanOverviewView | null;
   /** The card's one action row: *Choose this plan*. */
   action?: ReactNode;
+  /** #2798 — *Plan Period: start – end*, one compact line of the collapsed header (*My Plans*). */
+  period?: string | null;
   /** #2744 — a status pill beside the name (*My Plans*: the plan's own status). */
   status?: ReactNode;
   /**
@@ -130,6 +132,7 @@ export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
                 {item.frequency && <span style={styles.frequency}>/ {item.frequency}</span>}
               </span>
             </div>
+            {item.period && <span style={styles.line} data-plan-period>{item.period}</span>}
           </div>
           {item.notice && <div onClick={(e) => e.stopPropagation()}>{item.notice}</div>}
           {(item.included || item.optional || item.initial) && (
