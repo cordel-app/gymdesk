@@ -4,6 +4,7 @@ import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { payerMemberSql } from './payer-resolution';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import {
   CARD_UPDATE_SOURCE,
   cardRemovalBlock,
@@ -209,10 +210,11 @@ export async function loadCardRemovalBlock(
   gymId: string,
   memberId: number,
 ): Promise<RemovalBlockReason | null> {
-  const payer = payerMemberSql('um.member_id', 'um.gym_id');
+  // #2125 M6b-8: an assignment's status is its current plan snapshot's.
+  const payer = payerMemberSql('pa.member_id', 'pa.gym_id');
   const { rows } = await db.query<{ status: string }>(
-    `SELECT um.status FROM user_memberships um
-      WHERE um.gym_id = ? AND ${payer} = ?`,
+    `SELECT pa.status FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND ${isCurrentAssignmentSnapshotSql('pa')} AND ${payer} = ?`,
     [gymId, memberId],
   );
   // #1325: what is scheduled to be charged is the ProductSet's persisted

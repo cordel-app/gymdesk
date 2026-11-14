@@ -51,10 +51,8 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-lifecycle.ts': 2,
   'api/billing-events.ts': 1,
   'api/billing-simulation.ts': 1,
-  'api/card-updates.ts': 2,
+  'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
-  'api/financials-dashboard.ts': 1,
-  'api/home-dashboard.ts': 2,
   'api/me-billing-forecast.ts': 1,
   'api/me-membership-plans.ts': 1,
   'api/me-past-plan-details.ts': 1,
@@ -129,10 +127,19 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(source).toContain('isCurrentAssignmentSnapshotSql(');
       expect(source).toContain('assignmentCoversMemberSql(');
     }
-    // The two statements left in Home are the plan-name lists of its member panels.
     const home = readFileSync(join(API_SRC, 'api/home-dashboard.ts'), 'utf8');
     expect(home).toContain("isCurrentAssignmentSnapshotSql('pa')");
     expect(home).not.toContain('assignmentPlanSnapshotId(');
+  });
+
+  it('M6b-8: Home\'s plan names, the Financials plan count and the card-removal check read plan_snapshots', () => {
+    for (const file of ['api/home-dashboard.ts', 'api/financials-dashboard.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
+    }
+    // The one statement left in card-updates picks the assignment a card replacement is filed under.
+    expect(LEGACY_STATEMENTS['api/card-updates.ts']).toBe(1);
+    expect(readFileSync(join(API_SRC, 'api/card-updates.ts'), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
