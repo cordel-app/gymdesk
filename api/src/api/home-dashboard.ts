@@ -37,6 +37,18 @@ const SAMPLE_LIMIT = 5;
 const SERVICE_TASK_MEMBER_CAP = 200;
 
 /**
+ * The names of the plans a Member (`m`) owns that are running or paused, newest assignment first.
+ * #2125 M6b-8: an assignment is its current plan snapshot, and `assignment_id` (the id of its first
+ * snapshot) orders assignments by when they were created.
+ */
+const MEMBER_PLAN_NAMES_SQL = `(SELECT GROUP_CONCAT(mp.name ORDER BY pa.assignment_id DESC SEPARATOR ', ')
+          FROM plan_snapshots pa
+          JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+         WHERE pa.member_id = m.id AND pa.gym_id = m.gym_id
+           AND pa.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')
+           AND ${isCurrentAssignmentSnapshotSql('pa')})`;
+
+/**
  * #2171: the gym's exercise of the day for the welcome banner. Candidates are
  * the gym's own active exercises that have an effective image: their own
  * master, else their primary muscle's image (#2171 follow-up; never a goal
@@ -170,10 +182,7 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
   const { rows } = await db.query<any>(
     `SELECT m.id, m.name,
             ${memberPaymentStatusSql('m')} AS payment_status,
-            (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
-               JOIN membership_plans mp ON mp.id = um.membership_plan_id
-              WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                AND um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')) AS plan_name
+            ${MEMBER_PLAN_NAMES_SQL} AS plan_name
        FROM members m
       WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.id IN (${top.map(() => '?').join(',')})`,
     [gymId, ...top.map((g) => g.member_id)],
@@ -355,10 +364,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
 
       const { rows: latest } = await db.query<any>(
         `SELECT m.id, m.name, m.image_url, m.created_at,
-                (SELECT GROUP_CONCAT(mp.name ORDER BY um.created_at DESC, um.id DESC SEPARATOR ', ') FROM user_memberships um
-                   JOIN membership_plans mp ON mp.id = um.membership_plan_id
-                  WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-                    AND um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')) AS plan_name
+                ${MEMBER_PLAN_NAMES_SQL} AS plan_name
            FROM members m
           WHERE m.gym_id = ? AND m.deleted_at IS NULL
           ORDER BY m.created_at DESC, m.id DESC

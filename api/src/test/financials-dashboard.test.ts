@@ -12,6 +12,7 @@ import {
   createTestGym,
   createTestMembership,
   request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+import { syncPlanSnapshotsForAssignment } from '../api/plan-snapshot-sync';
 
 const PATH = '/financials/dashboard/membership-plans';
 
@@ -63,6 +64,9 @@ async function assignPlan(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gym, insertId, memberId],
   );
+  // #2125 M6b-8: the card counts plan snapshots, so the hand-written row is re-derived onto its
+  // snapshot as the real writers do.
+  await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, gym, insertId));
   return insertId;
 }
 
@@ -218,16 +222,15 @@ describe('GET /financials/dashboard/membership-plans — which plans are shown',
 });
 
 describe('GET /financials/dashboard/membership-plans — assignment counting', () => {
-  // The dashboard counts assignments, not members, so the same member holding
-  // two of them counts twice. They are one active and one paused here to show
-  // that the count is not filtered by status.
-  it('counts each assignment independently, including two for the same member', async () => {
+  // The dashboard counts assignments, one per row whatever its status. (One member holding the
+  // same plan twice is covered through the real routes in plan-assignment-dashboard-readers.test.ts:
+  // this fixture cannot put two plans in one member's Active Product Set.)
+  it('counts each assignment independently', async () => {
     const gym = await createTestGym('Counting Gym 1');
     await createTestMembership(gym, 'admin');
     const planId = await createPlan(gym, 'Standard');
-    const memberId = await createMember(gym);
-    await assignPlan(gym, memberId, planId, 'active');
-    await assignPlan(gym, memberId, planId, 'paused');
+    await assignPlan(gym, await createMember(gym), planId, 'active');
+    await assignPlan(gym, await createMember(gym), planId, 'paused');
     await assignPlan(gym, await createMember(gym), planId);
 
     const list = await cards(gym);
