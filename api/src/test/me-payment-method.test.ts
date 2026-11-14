@@ -10,6 +10,7 @@ import {
   createTestGym,
   createTestMembership,
   request, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery } from './helpers';
+import { syncPlanSnapshotsForAssignment } from '../api/plan-snapshot-sync';
 
 // A card replacement asks the provider for a zero-amount verification. The stub
 // takes no amount at all — `createCardVerificationRequest` has no such
@@ -90,10 +91,16 @@ beforeAll(async () => {
   membershipId = umId;
 });
 
+/** #2125 M6b-8: the card-removal check reads the plan snapshot, which follows the row as the real writers make it. */
+async function setMembershipStatus(status: 'active' | 'cancelled'): Promise<void> {
+  await db.query('UPDATE user_memberships SET status = ? WHERE id = ?', [status, membershipId]);
+  await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, gymId, membershipId));
+}
+
 beforeEach(async () => {
   createCardVerificationRequest.mockReset();
   createCardVerificationRequest.mockResolvedValue({ providerOrderId: 'monei-verif-1' });
-  await db.query(`UPDATE user_memberships SET status = 'active' WHERE id = ?`, [membershipId]);
+  await setMembershipStatus('active');
   // #1325 PR 3c: "scheduled to be charged" is a scheduled event of the member's set.
   await clearScheduledEvents(gymId, memberId);
   await seedScheduledEvent(gymId, memberId, membershipId, 'DATE_ADD(CURDATE(), INTERVAL 1 MONTH)');
@@ -165,7 +172,7 @@ describe('GET /me/payment-method', () => {
   it('allows removal once the membership is cancelled', async () => {
     await clearCards();
     await storeCard(gymId, memberId);
-    await db.query(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [membershipId]);
+    await setMembershipStatus('cancelled');
 
     const res = await request
       .get('/me/payment-method')
@@ -360,7 +367,7 @@ describe('DELETE /me/payment-method', () => {
     await clearCards();
     await storeCard(gymId, memberId);
     await storeCard(gymId, otherMemberId, 'tok_untouched', '1111');
-    await db.query(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [membershipId]);
+    await setMembershipStatus('cancelled');
 
     const res = await request
       .delete('/me/payment-method')
