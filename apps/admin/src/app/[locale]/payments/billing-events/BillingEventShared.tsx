@@ -143,9 +143,14 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
                     <NormalizedPaymentStatusBadge status={row.normalized_payment_status} t={t} />
                   </td>
                   <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
-                    {isExpandable && (
-                      <ContextMenu items={menuItems(row)} ariaLabel={t('billing_events_page.col_actions')} />
-                    )}
+                    {isExpandable && (() => {
+                      // #2836: a row with no applicable action gets no ⋮ at all
+                      // rather than one that opens an empty menu.
+                      const items = menuItems(row);
+                      return items.length > 0
+                        ? <ContextMenu items={items} ariaLabel={t('billing_events_page.col_actions')} />
+                        : null;
+                    })()}
                   </td>
                 </tr>
                 {isExpanded && row.id != null && (
@@ -300,9 +305,9 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
 
   function menuItems(row: R): ContextMenuItem[] {
     const id = row.id!;
-    const items: ContextMenuItem[] = [
-      { label: t('billing_events_page.action_details'), onClick: () => openDetails(id) },
-    ];
+    // #2836: no Details item — it only expanded the row, which the row's own
+    // chevron already does, so the menu holds the event's actions alone.
+    const items: ContextMenuItem[] = [];
     // §1: payment actions are hidden — not merely disabled — where the API's
     // flags say they don't apply. Closing a confirmation never alters the
     // outstanding obligation (#1459 §2); cancelling the *event* is its own
