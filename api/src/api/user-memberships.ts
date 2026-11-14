@@ -73,6 +73,7 @@ import {
 } from '../domain/assignmentStatus';
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { loadPlanAccessEntries } from './plan-center-access';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -581,6 +582,12 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const effectivePrice = await assignedPlanEffectivePrice(
     gymId, um.membership_plan_id, (snapshot as any)?.membership_fee_price ?? membershipFee,
   );
+  // #2802 — the access the plan grants each beneficiary (centers, On-line), for display
+  // beside the Membership Fee. It costs nothing and reaches no pricing path.
+  const planAccess = await loadPlanAccessEntries(
+    gymId, um.membership_plan_id != null ? Number(um.membership_plan_id) : null,
+    (members as any[]).map((m) => ({ member_id: Number(m.member_id), name: m.name ?? null })),
+  );
 
   // #2097 — the ProductSet version this assignment is (a Draft's own), which
   // the Save & Pay payment modal reviews and pays through `/product-sets/:id`.
@@ -596,6 +603,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
     // regular fee it is priced from and the one an edit writes.
     membership_fee: membershipFee,
+    plan_access: planAccess,
     members,
     billing_policy: billingPolicy,
     promotions,

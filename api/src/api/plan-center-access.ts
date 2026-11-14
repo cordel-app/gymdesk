@@ -5,6 +5,7 @@ import { soleActiveCenterId } from '../infra/centerContext';
 import {
   centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
 } from '../domain/planCenterAccess';
+import { describePlanAccess, type PlanAccessBeneficiary, type PlanAccessEntry } from '../domain/planAccessBenefit';
 
 /**
  * Booking-time center validation: if the member's active Membership Plan has
@@ -52,25 +53,70 @@ export async function loadMemberCenterAccessInputs(
       .map((r: { center_id: number }) => r.center_id),
   }));
 
-  // The Member's default center (the sole active center implied when they hold
-  // none), read only when a plan needs it — never an arbitrary center.
-  let defaultCenterId: number | null = null;
-  if (plans.some((p) => p.mode === 'member_default_center')) {
-    const { rows: def } = await tx.query(
-      `SELECT center_id FROM member_centers
-        WHERE gym_id = ? AND member_id = ? AND is_default = 1 AND deleted_at IS NULL LIMIT 1`,
-      [gymId, memberId],
-    );
-    if (def.length > 0) defaultCenterId = def[0].center_id;
-    else {
-      const { rows: any } = await tx.query(
-        'SELECT 1 FROM member_centers WHERE gym_id = ? AND member_id = ? AND deleted_at IS NULL LIMIT 1',
-        [gymId, memberId],
-      );
-      if (any.length === 0) defaultCenterId = await soleActiveCenterId(gymId);
-    }
-  }
+  // The Member's default center, read only when a plan needs it — never an arbitrary center.
+  const defaultCenterId = plans.some((p) => p.mode === 'member_default_center')
+    ? await memberDefaultCenterId(tx, gymId, memberId) : null;
   return { plans, defaultCenterId };
+}
+
+/**
+ * A Member's default center: their `is_default` row, else the gym's sole active center
+ * when they hold no center at all, else none.
+ */
+export async function memberDefaultCenterId(
+  tx: Queryable, gymId: string, memberId: string | number,
+): Promise<number | null> {
+  const { rows: def } = await tx.query(
+    `SELECT center_id FROM member_centers
+      WHERE gym_id = ? AND member_id = ? AND is_default = 1 AND deleted_at IS NULL LIMIT 1`,
+    [gymId, memberId],
+  );
+  if (def.length > 0) return def[0].center_id;
+  const { rows: any } = await tx.query(
+    'SELECT 1 FROM member_centers WHERE gym_id = ? AND member_id = ? AND deleted_at IS NULL LIMIT 1',
+    [gymId, memberId],
+  );
+  return any.length === 0 ? soleActiveCenterId(gymId) : null;
+}
+
+/**
+ * #2802 — the access one Membership Plan grants each of an assignment's beneficiaries, for
+ * the Assigned Plan card. Read from the plan's own access configuration (the booking gate's
+ * source); nothing is stored and no access is decided here.
+ */
+export async function loadPlanAccessEntries(
+  gymId: string,
+  membershipPlanId: number | null,
+  beneficiaries: { member_id: number; name: string | null }[],
+): Promise<PlanAccessEntry[]> {
+  if (membershipPlanId == null || beneficiaries.length === 0) return [];
+  const { rows: planRows } = await db.query(
+    'SELECT center_access_mode, online_access FROM membership_plans WHERE id = ? AND gym_id = ?',
+    [membershipPlanId, gymId],
+  );
+  if (planRows.length === 0) return [];
+  const mode = (isPlanCenterAccessMode(planRows[0].center_access_mode)
+    ? planRows[0].center_access_mode : 'specific_centers') as PlanCenterAccessMode;
+  const { rows: planCenters } = await db.query(
+    'SELECT center_id FROM membership_plan_centers WHERE gym_id = ? AND membership_plan_id = ?',
+    [gymId, membershipPlanId],
+  );
+  const plan: PlanCenterAccessInput = {
+    mode, online: Number(planRows[0].online_access) === 1,
+    centerIds: planCenters.map((r: { center_id: number }) => Number(r.center_id)),
+  };
+  const withDefaults: PlanAccessBeneficiary[] = [];
+  for (const b of beneficiaries) {
+    withDefaults.push({
+      member_id: Number(b.member_id), name: b.name ?? null,
+      defaultCenterId: mode === 'member_default_center' ? await memberDefaultCenterId(db, gymId, b.member_id) : null,
+    });
+  }
+  const { rows: centers } = await db.query(
+    "SELECT id, name FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active'", [gymId],
+  );
+  const names = new Map<number, string>(centers.map((c: { id: number; name: string }) => [Number(c.id), String(c.name)]));
+  return describePlanAccess(plan, names, withDefaults);
 }
 
 export interface MemberEffectiveCenterAccess {
