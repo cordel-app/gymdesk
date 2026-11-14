@@ -849,7 +849,7 @@ export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
   showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
-  showMember = false, renderItemPrefix, renderNestedRow,
+  showMember = false, showLineMandatory = false, renderItemPrefix, renderNestedRow,
 }: {
   t: Translate;
   emptyKey: string;
@@ -904,6 +904,12 @@ export function ProductBenefitView({
   showDirectDiscount?: boolean;
   /** #2657 stage 2: the Member column (the row's `member_name`, empty for a Shared Product). */
   showMember?: boolean;
+  /**
+   * #2805: an Assigned Plan's read-only rows tag a line whose own Mandatory flag
+   * (#1184) is set, as the section editor's locked rows already do; an Optional
+   * line carries no tag. Not `enforceMandatory`, which is the catalogue's flag.
+   */
+  showLineMandatory?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -926,6 +932,9 @@ export function ProductBenefitView({
             {row.product_name}{row.product_status !== 'active' && ` ${t('inactive_item_tag')}`}
             {enforceMandatory && isMandatoryBenefitRow(row) && (
               <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
+            )}
+            {showLineMandatory && row.mandatory !== false && (
+              <span style={mandatoryTagStyle} data-line-mandatory>{t('mandatory_item_tag')}</span>
             )}
           </>
         );

@@ -836,10 +836,10 @@ export default function MembershipPage() {
    */
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
-    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; image_url?: string | null; image_thumbnail_url?: string | null })[];
+    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
-    const names = (mandatory: boolean) => benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name).join(', ') || null;
+    const names = (mandatory: boolean) => [...new Set(benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name))].join(', ') || null;
     const pendingAmount = payable && pendingMembership?.membership_fee != null
       ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
     return {
@@ -900,7 +900,7 @@ export default function MembershipPage() {
                     <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
                       {rows.map((b) => (
-                        <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                        <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`} style={styles.benefitItem}>
                           {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
                           {b.image_thumbnail_url && (
                             <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
@@ -909,6 +909,14 @@ export default function MembershipPage() {
                             </ImagePreviewButton>
                           )}
                           <span>{b.name}</span>
+                          {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
+                          {b.mandatory !== false && (
+                            <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
+                          )}
+                          {/* #2805 — a line held per member (#2657 stage 3) says whose it is. */}
+                          {b.member_name && (
+                            <span style={styles.benefitMeta}>· {t('membership.product_assignee_line', { name: b.member_name })}</span>
+                          )}
                           <span style={styles.benefitMeta}>× {b.quantity}</span>
                           <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
                           {b.billing_frequency && (
@@ -2407,6 +2415,7 @@ const styles: Record<string, React.CSSProperties> = {
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
+  benefitMandatory: { ...statusPillStyle('neutral'), padding: '1px 8px', fontSize: 11 },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },

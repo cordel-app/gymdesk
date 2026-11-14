@@ -772,6 +772,7 @@ export function AssignedPlanConfiguration({
                 showPrices
                 showBreakdown
                 showMember
+                showLineMandatory
                 renderItemPrefix={(_row, idx) => {
                   const line = viewRows[idx].line;
                   return (
