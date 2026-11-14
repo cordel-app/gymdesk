@@ -75,10 +75,18 @@ describe('GET /me/product-sets/:id — My Plans and My Products from one version
     // #2744 — what the Add Plan catalogue's card draws: the plan's picture and cadence.
     expect(p).toMatchObject({ plan_image_url: null, plan_image_thumbnail_url: null, billing_interval: 1, billing_unit: 'month' });
 
+    // #2798 — an included Product with no picture reports none.
+    expect(p.benefits[0]).toMatchObject({ image_url: null, image_thumbnail_url: null });
+
     // A later catalogue edit moves nothing the version shows.
     await db.query("UPDATE membership_plan_periodical SET quantity = 9 WHERE membership_plan_id = ?", [planId]);
+    // #2798 — the included Product's picture is the Product's own (thumbnail, else the master).
+    await db.query("UPDATE products SET image_url = 'https://img.test/towel.webp', image_thumbnail_url = 'https://img.test/towel-thumbnail.webp' WHERE id = ?", [towel]);
     const again = await as(a.clerk, 'get', `/${draft.id}`);
     expect(again.body.plans[0].benefits[0].quantity).toBe(2);
+    expect(again.body.plans[0].benefits[0]).toMatchObject({
+      image_url: 'https://img.test/towel.webp', image_thumbnail_url: 'https://img.test/towel-thumbnail.webp',
+    });
   });
 
   it("lets a covered family member read the family's Active version, narrowed to what is theirs", async () => {
