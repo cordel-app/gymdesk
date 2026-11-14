@@ -8,11 +8,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { useToast } from '@/components/Toast';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
-import { readOnlyStyle } from '@/components/ui';
-import { InvoicesSection } from './InvoicesSection';
+import { ReceiptsInvoicesSection } from './InvoicesSection';
 
 export interface Transaction {
   id: number;
@@ -58,6 +56,7 @@ interface BillingEventDetails {
   source: string | null;
   notes: string | null;
   receipt_number: string | null;
+  receipt_issued_at?: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -130,20 +129,36 @@ export function StatusBadge({ status, label }: { status: string; label: string }
 const detailLabelStyle: React.CSSProperties = { color: '#6b7280', fontSize: 12 };
 const detailValueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 500 };
 
-function CollapsibleSection({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: React.ReactNode }) {
+export function CollapsibleSection({ title, defaultOpen, actions, open: controlledOpen, onOpenChange, children }: {
+  title: string;
+  defaultOpen: boolean;
+  /** #2806: a section's own actions, right-aligned in its header and shown whether it is open or not. */
+  actions?: React.ReactNode;
+  /** Controlled open state, for a section whose actions must be able to open it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
   // #2451: Transaction Details and Payment Transactions start collapsed, Billing Event Lines expanded.
-  const [open, setOpen] = useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? ownOpen;
+  const toggle = () => { setOwnOpen(!open); onOpenChange?.(!open); };
   return (
     <div style={{ marginBottom: 12 }}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, margin: '0 0 8px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
-      >
-        <span aria-hidden>{open ? '▾' : '▸'}</span>
-        {title}
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, margin: '0 0 8px' }}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={toggle}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+        >
+          <span aria-hidden>{open ? '▾' : '▸'}</span>
+          {title}
+        </button>
+        {actions && (
+          <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>{actions}</div>
+        )}
+      </div>
       {open && children}
     </div>
   );
@@ -182,12 +197,10 @@ export function ExpandedRow({
 }) {
   const billingEventId = billingEvent.id!;
   const gymFmt = useGymFormatSettings();
-  const { apiFetch, pdfFetch } = useApiClient();
-  const { toast } = useToast();
+  const { apiFetch } = useApiClient();
   const [details, setDetails] = useState<BillingEventDetails | null>(null);
   const [rows, setRows] = useState<Transaction[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [receiptBusy, setReceiptBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,30 +221,6 @@ export function ExpandedRow({
   }, [billingEventId]);
 
   useEffect(() => { load(); }, [load]);
-
-  /**
-   * #787: one button for both halves of the receipt. A `POST` issues the
-   * number on first use and returns the PDF; once the event carries a number
-   * there is nothing to allocate, so a `GET` fetches the same PDF without a
-   * write — which is what lets a read-only PAYMENTS role still open it.
-   */
-  async function openReceipt() {
-    if (!details) return;
-    const alreadyIssued = !!details.receipt_number;
-    setReceiptBusy(true);
-    try {
-      const blob = await pdfFetch(`/payments/${billingEventId}/receipt`, alreadyIssued ? 'GET' : 'POST');
-      window.open(URL.createObjectURL(blob), '_blank');
-      if (!alreadyIssued) {
-        await load();
-        onChanged();
-      }
-    } catch (err: any) {
-      toast(err.message ?? t('billing_events_page.action_error'));
-    } finally {
-      setReceiptBusy(false);
-    }
-  }
 
   if (loading) {
     return asCell ? (
@@ -296,25 +285,6 @@ export function ExpandedRow({
             {/* #675: same deep link every Details view offers — filtered to this event. */}
             <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
               <ViewAuditLogButton entityType="billing_event" entityId={details.id} size="small" />
-              {/* #787: issuing allocates a number, so it needs write access;
-                  downloading one already issued does not. */}
-              {details.can_issue_receipt && (
-                <button
-                  onClick={openReceipt}
-                  disabled={receiptBusy || (!details.receipt_number && !canWrite)}
-                  title={details.receipt_number ? undefined : readOnlyTitle}
-                  style={readOnlyStyle({
-                    padding: '4px 10px', fontSize: 12, cursor: 'pointer', borderRadius: 6,
-                    border: '1px solid #166534', background: '#fff', color: '#166534', fontWeight: 600,
-                  }, receiptBusy || (!details.receipt_number && !canWrite))}
-                >
-                  {receiptBusy
-                    ? t('billing_events_page.receipt_working')
-                    : details.receipt_number
-                    ? `${t('billing_events_page.receipt_download')} (${details.receipt_number})`
-                    : t('billing_events_page.receipt_issue')}
-                </button>
-              )}
             </div>
           </CollapsibleSection>
         )}
@@ -353,10 +323,18 @@ export function ExpandedRow({
           </CollapsibleSection>
         )}
 
-        {/* ── Invoices and their VERI*FACTU records (#2648 stage 5) ── */}
-        <CollapsibleSection title={t('billing_events_page.invoices_heading')} defaultOpen={false}>
-          <InvoicesSection billingEventId={billingEventId} gymFmt={gymFmt} />
-        </CollapsibleSection>
+        {/* ── Receipts & Invoices (#2806; the VERI*FACTU records are #2648 stage 5's) ── */}
+        <ReceiptsInvoicesSection
+          billingEventId={billingEventId}
+          gymFmt={gymFmt}
+          receipt={{ number: details?.receipt_number ?? null, issuedAt: details?.receipt_issued_at ?? null }}
+          canIssueReceipt={!!details?.can_issue_receipt}
+          amount={details?.amount ?? null}
+          memberName={details?.member_name ?? null}
+          canWrite={canWrite}
+          readOnlyTitle={readOnlyTitle}
+          onReceiptIssued={async () => { await load(); onChanged(); }}
+        />
 
         {/* ── Payment transactions ── */}
         <CollapsibleSection title={t('billing_events_page.transactions_heading')} defaultOpen={false}>
