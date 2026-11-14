@@ -494,6 +494,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         feeInclTax={detail.effective_price?.amount_incl_tax ?? null}
         feeTaxPercent={detail.effective_price?.applied_tax_rate ?? null}
         currentFee={detail.membership_fee}
+        planAccess={detail.plan_access ?? []}
         cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}
