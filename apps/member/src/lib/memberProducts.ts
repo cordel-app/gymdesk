@@ -501,7 +501,7 @@ export interface MemberSetPlan {
   membership_fee?: number | null;
   discount_reason?: string | null;
   beneficiaries?: { member_id: number; name: string | null; is_owner: boolean }[];
-  benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean; image_url?: string | null; image_thumbnail_url?: string | null }[];
+  benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
 }
 
 /** A row of `GET /me/product-sets`. */

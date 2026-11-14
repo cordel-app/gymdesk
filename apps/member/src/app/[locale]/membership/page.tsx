@@ -836,10 +836,10 @@ export default function MembershipPage() {
    */
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
-    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; image_url?: string | null; image_thumbnail_url?: string | null })[];
+    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
-    const names = (mandatory: boolean) => benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name).join(', ') || null;
+    const names = (mandatory: boolean) => [...new Set(benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name))].join(', ') || null;
     const pendingAmount = payable && pendingMembership?.membership_fee != null
       ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
     return {
@@ -900,7 +900,7 @@ export default function MembershipPage() {
                     <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
                       {rows.map((b) => (
-                        <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
+                        <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`} style={styles.benefitItem}>
                           {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
                           {b.image_thumbnail_url && (
                             <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
@@ -909,6 +909,14 @@ export default function MembershipPage() {
                             </ImagePreviewButton>
                           )}
                           <span>{b.name}</span>
+                          {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
+                          {b.mandatory !== false && (
+                            <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
+                          )}
+                          {/* #2805 — a line held per member (#2657 stage 3) says whose it is. */}
+                          {b.member_name && (
+                            <span style={styles.benefitMeta}>· {t('membership.product_assignee_line', { name: b.member_name })}</span>
+                          )}
                           <span style={styles.benefitMeta}>× {b.quantity}</span>
                           <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
                           {b.billing_frequency && (
@@ -1215,6 +1223,7 @@ export default function MembershipPage() {
               </li>
             ))}
           </ul>
+          {renderCartAddButtons()}
           {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
         </div>
       </section>
@@ -1304,6 +1313,7 @@ export default function MembershipPage() {
               </li>
             ))}
           </ul>
+          {renderCartAddButtons()}
           {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
         </div>
       </section>
@@ -1808,24 +1818,38 @@ export default function MembershipPage() {
    * no-plan branches so the entry point is never missing.
    */
   function renderPlansHeader() {
+    // #2814 — while the cart is shown the two actions live inside it.
+    if (cartPhase(setView, appMember?.id ?? null) != null) return null;
+    const buttons = renderAddButtons(primaryButtonStyle);
+    return buttons && <div style={styles.addPlanRow}>{buttons}</div>;
+  }
+
+  /**
+   * #2814 — *Add plan* and *Add product*, the same two actions under the same
+   * conditions wherever they are drawn: inside the cart (secondary, under its
+   * items) while there is one, above the plans otherwise.
+   */
+  function renderAddButtons(style: React.CSSProperties) {
+    if (mode !== 'overview' || !canAdd || !((!pendingMembership && gymOffersPlans) || products !== null)) return null;
     return (
       <>
-        {mode === 'overview' && canAdd && ((!pendingMembership && gymOffersPlans) || products !== null) && (
-          <div style={styles.addPlanRow}>
-            {!pendingMembership && gymOffersPlans && (
-              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
-                {t('membership.add_plan')}
-              </button>
-            )}
-            {products !== null && (
-              <button type="button" style={primaryButtonStyle} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
-                {t('membership.add_product')}
-              </button>
-            )}
-          </div>
+        {!pendingMembership && gymOffersPlans && (
+          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
+            {t('membership.add_plan')}
+          </button>
+        )}
+        {products !== null && (
+          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
+            {t('membership.add_product')}
+          </button>
         )}
       </>
     );
+  }
+
+  function renderCartAddButtons() {
+    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn });
+    return buttons && <div style={styles.cartAddRow} data-cart-add>{buttons}</div>;
   }
 
   // #2426 — the server's overview of a plan, worded and formatted here; every
@@ -2391,6 +2415,7 @@ const styles: Record<string, React.CSSProperties> = {
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
+  benefitMandatory: { ...statusPillStyle('neutral'), padding: '1px 8px', fontSize: 11 },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
@@ -2434,6 +2459,7 @@ const styles: Record<string, React.CSSProperties> = {
   cartItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   cartItemName: { fontSize: 14, minWidth: 0, overflowWrap: 'anywhere' },
   cartItemBtn: { padding: '6px 12px', fontSize: 13, fontWeight: 600 },
+  cartAddRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8, marginTop: 12 },
   draftSecondaryBtn: { ...secondaryButtonStyle, padding: '8px 14px', fontSize: 13.5, fontWeight: 600 },
   draftError: { fontSize: 12.5, color: memberTheme.statusError },
   draftExpiry: { fontSize: 12.5, color: memberTheme.textSecondary },
