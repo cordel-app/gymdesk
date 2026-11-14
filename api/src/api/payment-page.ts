@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { db } from '../infra/db';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { CARD_UPDATE_SOURCE, withPurposeParam, type PaymentPagePurpose } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 import { getPaymentProvider } from '../payments';
@@ -55,9 +56,11 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
          -- member and names no assignment (migration 228 made the column
          -- nullable). An INNER JOIN answered "token not found or expired" for
          -- every purchase, which is indistinguishable from a real expiry.
-         LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
+         -- #2125 M6b-10: the assignment's plan is its current plan snapshot's.
+         LEFT JOIN plan_snapshots pa
+           ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
          LEFT JOIN billing_policies bp
-           ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
+           ON bp.membership_plan_id = pa.membership_plan_id AND bp.gym_id = pa.gym_id
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
          WHERE pr.page_token = ?
            AND pr.page_token_expires > UTC_TIMESTAMP()

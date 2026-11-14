@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { syncPlanSnapshotsForAssignment } from './plan-snapshot-sync';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
@@ -147,7 +148,9 @@ billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, n
   let memberId: number | null = member_id ?? null;
   if (user_membership_id) {
     const { rows } = await db.query(
-      'SELECT id, member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
+      // #2125 M6b-10: the assignment's owner is its current plan snapshot's.
+      `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
+        WHERE ${assignmentOfLegacyIdSql('?')} AND pa.gym_id = ?`,
       [user_membership_id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });

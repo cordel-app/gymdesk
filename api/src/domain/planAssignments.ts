@@ -48,3 +48,14 @@ export const entitlingAssignmentSql = (alias = 'pa'): string =>
 export const assignmentCoversMemberSql = (alias = 'pa'): string =>
   `EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries pab
             WHERE pab.plan_snapshot_id = ${alias}.id AND pab.gym_id = ${alias}.gym_id AND pab.member_id = ?)`;
+
+/**
+ * #2125 M6b-10 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
+ * assignment a legacy `user_memberships` id names. Routes, payment requests and audit rows still
+ * name an assignment by that id, and every snapshot of one carries it
+ * (`source_user_membership_id`); one legacy id is exactly one `assignment_id` (M6b-1), so this
+ * matches at most one row. For a reader that needs what never changes over an assignment's life
+ * (its owner, its Membership Plan), so it holds whatever the assignment's status is.
+ */
+export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): string =>
+  `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
