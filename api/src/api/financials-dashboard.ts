@@ -11,6 +11,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 
 export const financialsDashboardRouter = Router();
 
@@ -37,15 +38,19 @@ export interface MembershipPlanCard {
 // and the member does not hold it — so counting it would overstate the card in
 // exactly the way a cancelled assignment would. The list is spelled out rather
 // than left as "not cancelled and not expired" for that reason.
+//
+// #2125 M6b-8: an assignment is its current plan snapshot (`domain/planAssignments.ts`), so each
+// assignment still counts once however many Product Sets link a snapshot of it.
 const ASSIGNED_JOIN = `
-  LEFT JOIN user_memberships um
-         ON um.membership_plan_id = p.id
-        AND um.gym_id = p.gym_id
-        AND um.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')
-        AND NOT (um.status = 'active' AND um.ends_at IS NOT NULL AND um.ends_at < CURDATE())
+  LEFT JOIN plan_snapshots pa
+         ON pa.membership_plan_id = p.id
+        AND pa.gym_id = p.gym_id
+        AND pa.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')
+        AND NOT (pa.status = 'active' AND pa.ends_at IS NOT NULL AND pa.ends_at < CURDATE())
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND EXISTS (
               SELECT 1 FROM members m
-               WHERE m.id = um.member_id AND m.deleted_at IS NULL
+               WHERE m.id = pa.member_id AND m.deleted_at IS NULL
             )
 `;
 
@@ -67,12 +72,12 @@ financialsDashboardRouter.get('/membership-plans', async (req, res) => {
     `SELECT p.id,
             p.name,
             p.lifecycle_status,
-            COUNT(um.id) AS assigned_members
+            COUNT(pa.id) AS assigned_members
        FROM membership_plans p
        ${ASSIGNED_JOIN}
       WHERE p.gym_id = ? AND p.deleted_at IS NULL
       GROUP BY p.id, p.name, p.lifecycle_status
-     HAVING p.lifecycle_status = 'active' OR COUNT(um.id) > 0
+     HAVING p.lifecycle_status = 'active' OR COUNT(pa.id) > 0
       ORDER BY p.name ASC`,
     [gymId],
   );
