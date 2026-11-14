@@ -49,7 +49,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-config.ts': 2,
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 2,
-  'api/billing-events.ts': 1,
   'api/billing-simulation.ts': 1,
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
@@ -63,9 +62,8 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/membership-promotions.ts': 4,
   'api/new-member-eligibility.ts': 2,
   'api/one-active-plan.ts': 2,
-  'api/payment-page.ts': 1,
   'api/payment-requests.ts': 1,
-  'api/payments.ts': 4,
+  'api/payments.ts': 2,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
@@ -81,7 +79,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'domain/billingEventPayments.ts': 3,
   'domain/memberEnrollment.ts': 1,
   'domain/memberProfessionalServices.ts': 1,
-  'infra/audit-registry.ts': 1,
   'scripts/report-multi-active-memberships.ts': 3,
 };
 
@@ -148,6 +145,16 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(source).not.toContain('assignmentPlanSnapshotId(');
     }
     expect(readFileSync(join(API_SRC, 'api/me-membership-plans.ts'), 'utf8')).toContain("assignmentCoversMemberSql('pa')");
+  });
+
+  it('M6b-10: the readers handed an assignment id for its owner or plan read plan_snapshots', () => {
+    for (const file of ['api/billing-events.ts', 'api/payment-page.ts', 'infra/audit-registry.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('assignmentOfLegacyIdSql(');
+    }
+    // The two statements left in payments.ts read the assignment of a Billing Event (`eventAssignmentSql()`).
+    expect(LEGACY_STATEMENTS['api/payments.ts']).toBe(2);
+    expect(readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {

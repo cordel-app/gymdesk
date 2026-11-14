@@ -1,4 +1,5 @@
 import { db } from './db';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 export const AUDIT_ACTIONS: string[] = [
   'create', 'update', 'delete', 'soft_delete', 'append',
@@ -117,10 +118,10 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
     resolve: async (id) => {
       const { rows } = await db.query<{ member_name: string; plan_name: string }>(
         `SELECT m.name AS member_name, mp.name AS plan_name
-         FROM user_memberships um
-         JOIN members m ON m.id = um.member_id
-         LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
-         WHERE um.id = ?`,
+         FROM plan_snapshots pa
+         JOIN members m ON m.id = pa.member_id
+         LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+         WHERE ${assignmentOfLegacyIdSql('?')}`,
         [id],
       );
       if (!rows[0]) return null;
