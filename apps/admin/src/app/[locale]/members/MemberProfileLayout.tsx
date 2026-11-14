@@ -144,13 +144,25 @@ export const statusChipRowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
 };
 
-/** Read-only Welcomed chip: the same pill as New Member, accent when welcomed. */
-export function WelcomedValue({ welcomed, label, announce }: { welcomed: boolean; label: string; announce: string }) {
+/**
+ * #2807 — the type a plain value takes on the calculated row: the Profile's own
+ * value text, without the input-sized box a stacked value occupies.
+ */
+export const profileInlineValueStyle: React.CSSProperties = {
+  fontSize: formValueStyle.fontSize,
+  lineHeight: formValueStyle.lineHeight,
+  color: formValueStyle.color,
+};
+
+/**
+ * Read-only Welcomed value. #2807: regular profile text (`Welcomed: Yes`), not
+ * a badge — the accent pill is New Member's alone.
+ */
+export function WelcomedValue({ label, value }: { label: string; value: string }) {
   return (
-    <span
-      style={{ ...(welcomed ? listNameBadgeAccentStyle : listNameBadgeStyle), marginLeft: 0 }}
-      role="img" aria-label={announce} data-testid="member-welcomed"
-    >{label}</span>
+    <span data-testid="member-welcomed" style={profileInlineValueStyle}>
+      <span style={profileInlineFieldLabelStyle}>{label}:</span> {value}
+    </span>
   );
 }
 

@@ -413,9 +413,8 @@ export function MemberExpandedRow({
                         announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
                       />
                       <WelcomedValue
-                        welcomed={!!member.welcomed_at}
-                        label={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
-                        announce={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
+                        label={t('members.label_welcomed')}
+                        value={member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}
                       />
                     </span>
                   )}
