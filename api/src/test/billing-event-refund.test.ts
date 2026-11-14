@@ -164,7 +164,9 @@ describe('Refund — Cash', () => {
     const opts = await get(`/payments/billing-events/${e.billingEventId}/refund-options`);
     expect(opts.status).toBe(200);
     expect(opts.body).toMatchObject({ collected_amount: '40.00', refundable_amount: '40.00', refund_state: 'none' });
-    expect(opts.body.methods.map((m: any) => m.code)).toEqual(['cash', 'card_terminal']); // no provider for a cash payment
+    // #2797: the original payment's method, read-only; there is no list to choose from.
+    expect(opts.body.method).toEqual({ code: 'cash', name: 'Cash', manual: true });
+    expect(opts.body.methods).toBeUndefined();
     expect(opts.body.lines.map((l: any) => l.refundable_amount)).toEqual(['30.00', '10.00']);
   });
 
@@ -195,7 +197,11 @@ describe('Refund — Cash', () => {
     }
     expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'cash', amount: '30' })).status).toBe(201);
     expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'cash', amount: '20' })).status).toBe(400);
-    const second = await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'card_terminal', amount: '5.50' });
+    // #2797: a cash payment is not refunded through another method...
+    expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'card_terminal', amount: '5.50' })).status).toBe(400);
+    // ...and a request that names none goes back in cash.
+    const second = await post(e.billingEventId, 'refund', { kind: 'adhoc', amount: '5.50' });
+    expect(second.body.method).toBe('cash');
     expect(second.body.balance).toMatchObject({ refunded_amount: '35.50', refundable_amount: '4.50', refund_state: 'partial' });
     const full = await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' });
     expect(full.body.amount).toBe('4.50');
@@ -240,7 +246,7 @@ describe('Refund — MONEI', () => {
     refundPayment.mockResolvedValue({ providerStatus: 'PARTIALLY_REFUNDED', providerRefundRef: 'pay_123', errorCode: null, errorMessage: null });
     const e = await paidMonei();
     const opts = await get(`/payments/billing-events/${e.billingEventId}/refund-options`);
-    expect(opts.body.methods.map((m: any) => m.code)).toEqual(['provider', 'cash', 'card_terminal']);
+    expect(opts.body.method).toEqual({ code: 'provider', name: 'Monei', manual: false });
     const res = await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'provider', amount: '12.34' });
     expect(res.status).toBe(201);
     expect(refundPayment).toHaveBeenCalledWith({ providerRef: 'pay_123', amount: 1234 });
@@ -272,6 +278,65 @@ describe('Refund — MONEI', () => {
     const e = await paidCash();
     expect((await post(e.billingEventId, 'refund', { kind: 'full', method: 'provider' })).status).toBe(400);
     expect(refundPayment).not.toHaveBeenCalled();
+  });
+});
+
+// #2797: a refund always goes back through the original payment's method.
+describe('Refund — original payment method', () => {
+  it('a provider payment is refunded through the provider when the request names no method', async () => {
+    refundPayment.mockResolvedValue({ providerStatus: 'REFUNDED', providerRefundRef: 'pay_123', errorCode: null, errorMessage: null });
+    const e = await paidMonei();
+    const res = await post(e.billingEventId, 'refund', { kind: 'full' });
+    expect(res.status).toBe(201);
+    expect(res.body.method).toBe('provider');
+    expect(refundPayment).toHaveBeenCalledWith({ providerRef: 'pay_123', amount: 4000 });
+    const [r] = await refundRows(e.billingEventId);
+    expect(r).toMatchObject({ method: 'provider', status: 'completed', payment_method_name: 'Monei' });
+  });
+
+  it('a provider payment cannot be handed back as a manual refund', async () => {
+    const e = await paidMonei();
+    for (const method of ['cash', 'card_terminal']) {
+      expect((await post(e.billingEventId, 'refund', { kind: 'full', method })).status).toBe(400);
+    }
+    expect(refundPayment).not.toHaveBeenCalled();
+    expect(await refundRows(e.billingEventId)).toHaveLength(0);
+    expect((await listRow(e.memberId, e.billingEventId)).refundable_amount).toBe('40.00');
+  });
+
+  it('a card-terminal payment is refunded as a manual card refund, with no provider call', async () => {
+    const e = await createEvent(gymId, [{ status: 'completed', method: 'card_terminal', amount: '40.00', name: 'Card' }]);
+    const opts = await get(`/payments/billing-events/${e.billingEventId}/refund-options`);
+    expect(opts.body.method).toEqual({ code: 'card_terminal', name: 'Card', manual: true });
+    expect((await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' })).status).toBe(400);
+    const res = await post(e.billingEventId, 'refund', { kind: 'adhoc', amount: '10' });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ method: 'card_terminal', status: 'completed' });
+    expect(refundPayment).not.toHaveBeenCalled();
+    const [r] = await refundRows(e.billingEventId);
+    expect(r).toMatchObject({ method: 'card_terminal', payment_method_name: 'Card' });
+  });
+
+  it('several partial refunds all stay on the original payment and its method', async () => {
+    refundPayment.mockResolvedValue({ providerStatus: 'PARTIALLY_REFUNDED', providerRefundRef: 'pay_123', errorCode: null, errorMessage: null });
+    const e = await paidMonei();
+    expect((await post(e.billingEventId, 'refund', { kind: 'lines', line_ids: [e.lineIds[1]] })).status).toBe(201);
+    expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', amount: '5' })).status).toBe(201);
+    expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', amount: '25.01' })).status).toBe(400); // above the 25.00 left
+    const rows = await refundRows(e.billingEventId);
+    expect(rows.map((r: any) => r.method)).toEqual(['provider', 'provider']);
+    const { rows: orig } = await db.query<any>("SELECT id FROM payment_requests WHERE billing_event_id = ? AND transaction_type = 'payment'", [e.billingEventId]);
+    expect(rows.every((r: any) => r.refund_of_payment_request_id === orig[0].id)).toBe(true);
+    expect(refundPayment).toHaveBeenCalledTimes(2);
+  });
+
+  it('a provider payment with no provider reference is not refunded through anything', async () => {
+    const e = await createEvent(gymId, [{ status: 'completed', method: 'provider', amount: '40.00', name: 'Monei' }]);
+    expect((await get(`/payments/billing-events/${e.billingEventId}/refund-options`)).status).toBe(409);
+    expect((await post(e.billingEventId, 'refund', { kind: 'full' })).status).toBe(409);
+    expect((await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' })).status).toBe(409);
+    expect(refundPayment).not.toHaveBeenCalled();
+    expect(await refundRows(e.billingEventId)).toHaveLength(0);
   });
 });
 

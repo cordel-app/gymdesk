@@ -2,7 +2,7 @@
 // cancelled status (`domain/billingEventStatus.ts`).
 import { describe, expect, it } from 'vitest';
 import {
-  decideRefund, refundBalance, refundMethodsFor, refundOutcomeFromProvider, refundState,
+  decideRefund, isManualRefundMethod, refundBalance, refundMethodFor, refundOutcomeFromProvider, refundState,
 } from '../domain/billingEventRefund';
 import { canCancelBillingEvent, deriveBillingEventStatus, isAwaitingAction, isPaymentCollected, paymentActionsFor } from '../domain/billingEventStatus';
 
@@ -25,16 +25,27 @@ describe('refund balance', () => {
 
 describe('decideRefund', () => {
   const balance = refundBalance(4000, [{ amount: '10.00', status: 'completed' }]);
-  const all = ['cash', 'card_terminal', 'provider'] as const;
+  const all = 'cash' as const; // the original payment's method
 
   it('full refunds what remains', () => {
     expect(decideRefund({ kind: 'full', method: 'cash' }, balance, lines, all)).toMatchObject({ ok: true, refund: { amountCents: 3000 } });
   });
 
-  it('refuses an unknown kind or method, or a method the payment cannot use', () => {
+  it('refuses an unknown kind', () => {
     expect(decideRefund({ kind: 'x', method: 'cash' }, balance, lines, all).ok).toBe(false);
-    expect(decideRefund({ kind: 'full', method: 'bizum' }, balance, lines, all).ok).toBe(false);
-    expect(decideRefund({ kind: 'full', method: 'provider' }, balance, lines, ['cash']).ok).toBe(false);
+  });
+
+  // #2797: the method is the original payment's, never a choice.
+  it('uses the original payment method when the request names none', () => {
+    expect(decideRefund({ kind: 'full' }, balance, lines, 'provider')).toMatchObject({ ok: true, refund: { method: 'provider' } });
+    expect(decideRefund({ kind: 'full', method: '' }, balance, lines, 'card_terminal')).toMatchObject({ ok: true, refund: { method: 'card_terminal' } });
+  });
+
+  it('refuses a request that names a method other than the original one', () => {
+    expect(decideRefund({ kind: 'full', method: 'cash' }, balance, lines, 'provider').ok).toBe(false);
+    expect(decideRefund({ kind: 'full', method: 'provider' }, balance, lines, 'cash').ok).toBe(false);
+    expect(decideRefund({ kind: 'full', method: 'card_terminal' }, balance, lines, 'cash').ok).toBe(false);
+    expect(decideRefund({ kind: 'full', method: 'bizum' }, balance, lines, 'cash').ok).toBe(false);
   });
 
   it('validates an ad-hoc amount', () => {
@@ -59,10 +70,16 @@ describe('decideRefund', () => {
 });
 
 describe('refund methods and provider outcome', () => {
-  it('offers the provider only for a provider payment with a reference', () => {
-    expect(refundMethodsFor({ method: 'provider', providerRef: 'p' })).toEqual(['provider', 'cash', 'card_terminal']);
-    expect(refundMethodsFor({ method: 'provider', providerRef: null })).toEqual(['cash', 'card_terminal']);
-    expect(refundMethodsFor({ method: 'cash', providerRef: null })).toEqual(['cash', 'card_terminal']);
+  it('refunds through the original payment method, and through none when it cannot be determined', () => {
+    expect(refundMethodFor({ method: 'provider', providerRef: 'p' })).toBe('provider');
+    expect(refundMethodFor({ method: 'cash', providerRef: null })).toBe('cash');
+    expect(refundMethodFor({ method: 'card_terminal', providerRef: null })).toBe('card_terminal');
+    // A provider payment with no reference has no transaction to refund, and is not handed back in cash instead.
+    expect(refundMethodFor({ method: 'provider', providerRef: null })).toBeNull();
+    expect(refundMethodFor({ method: 'waive', providerRef: null })).toBeNull();
+    expect(isManualRefundMethod('cash')).toBe(true);
+    expect(isManualRefundMethod('card_terminal')).toBe(true);
+    expect(isManualRefundMethod('provider')).toBe(false);
   });
 
   it('counts only REFUNDED / PARTIALLY_REFUNDED as completed', () => {
