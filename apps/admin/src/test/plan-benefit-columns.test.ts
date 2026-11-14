@@ -64,6 +64,16 @@ describe('#916: one shared column declaration', () => {
     expect(keys[keys.indexOf('action') + 1]).toBe('direct_discount_percent');
   });
 
+  it('is not asked for by the Membership Plan catalogue, only by the Assigned Plan card (#2808)', () => {
+    // Direct Discount is configured per assignment. The Plans page renders
+    // neither the read-only column nor the editor's input for it.
+    expect(plansSrc).not.toMatch(/showDirectDiscount/);
+    const assignedSrc = stripComments(readFileSync(
+      join(SRC, 'components', 'assignedPlan', 'AssignedPlanConfiguration.tsx'), 'utf-8',
+    ));
+    expect(assignedSrc).toMatch(/showDirectDiscount/);
+  });
+
   it('offers the tax / promotion / direct-discount breakdown only when asked (#2483)', () => {
     const base = { showFrequency: true, showAction: true, showPrices: true };
     expect(keysOf(productBenefitColumns(base))).not.toContain('tax');

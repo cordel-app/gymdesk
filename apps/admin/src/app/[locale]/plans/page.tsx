@@ -1541,7 +1541,9 @@ export default function PlansPage() {
                               enforceMandatory
                               benefitContext="plan"
                               showPlanMandatory
-                              showDirectDiscount
+                              /* #2808: no Direct Discount (%) here. It is
+                                 configured per assignment, on the Assigned
+                                 Plan card; a stored value is kept by the PUT. */
                             />
                             {sectionSaveActions({
                               onCancel: cancelBenefitEdit,
@@ -1564,7 +1566,6 @@ export default function PlansPage() {
                                never prices (#817). */
                             showPrices
                             showPlanMandatory
-                            showDirectDiscount
                           />
                         )}
                       </div>
