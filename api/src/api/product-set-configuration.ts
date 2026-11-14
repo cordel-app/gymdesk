@@ -712,8 +712,9 @@ export async function activateWithEvents(tx: Tx, input: {
   // projection just above, as `active_cancel_at_period_end`). Idempotent; nothing is billed from it.
   await linkCancellingPlans(tx, input.gymId, input.productSetId);
   // #2125 stage 2: the plan snapshots follow — this version is active, its predecessor history.
-  await syncPlanSnapshot(tx, input.gymId, input.productSetId);
+  // M6b-6: the predecessor first, for the reason `activate()` gives.
   if (previousId != null) await syncPlanSnapshot(tx, input.gymId, previousId);
+  await syncPlanSnapshot(tx, input.gymId, input.productSetId);
   return { ...moved, eventsCreated: created, eventsReplaced: replaced };
 }
 
