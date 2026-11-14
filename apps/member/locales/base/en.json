@@ -521,6 +521,8 @@
     "set_products_heading": "My Products",
     "set_products_empty": "You have no products in your current products.",
     "plan_for": "For {names}",
+    "plan_period": "Plan Period: {start} – {end}",
+    "plan_period_open_ended": "Open-ended",
     "plan_entitlement_only": "Until its end date",
     "summary_heading": "Summary",
     "summary_contracted": "Products contracted",

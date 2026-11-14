@@ -104,7 +104,9 @@ export interface MemberProductSetPlan {
   membership_fee: number | null;
   discount_reason: string | null;
   beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
-  benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean }[];
+  benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean;
+    /** #2798 — the Product's picture, as My Products reads a line's (the plan line snapshot holds none). */
+    image_url: string | null; image_thumbnail_url: string | null }[];
 }
 
 /**
@@ -220,8 +222,11 @@ export async function loadMemberProductSetView(
     }
     for (const category of PLAN_LINE_CATEGORIES) {
       const { rows: lRows } = await db.query<any>(
-        `SELECT plan_snapshot_id, product_id, item_name, quantity, item_billing_frequency, unit_price, mandatory
-           FROM ${PLAN_LINE_TABLE[category]} WHERE gym_id = ? AND plan_snapshot_id IN (${marks}) ORDER BY item_name, id`,
+        `SELECT l.plan_snapshot_id, l.product_id, l.item_name, l.quantity, l.item_billing_frequency, l.unit_price, l.mandatory,
+                p.image_url, p.image_thumbnail_url
+           FROM ${PLAN_LINE_TABLE[category]} l
+           LEFT JOIN products p ON p.id = l.product_id AND p.gym_id = l.gym_id
+          WHERE l.gym_id = ? AND l.plan_snapshot_id IN (${marks}) ORDER BY l.item_name, l.id`,
         [gymId, ...snapshotIds]);
       for (const r of lRows) {
         const list = benefits.get(Number(r.plan_snapshot_id)) ?? [];
@@ -229,6 +234,8 @@ export async function loadMemberProductSetView(
           category, product_id: Number(r.product_id), name: r.item_name, quantity: Number(r.quantity) || 1,
           billing_frequency: r.item_billing_frequency ?? null, unit_price: Number(r.unit_price),
           mandatory: Number(r.mandatory) !== 0,
+          image_url: r.image_url ?? null,
+          image_thumbnail_url: r.image_thumbnail_url ?? r.image_url ?? null,
         });
         benefits.set(Number(r.plan_snapshot_id), list);
       }
