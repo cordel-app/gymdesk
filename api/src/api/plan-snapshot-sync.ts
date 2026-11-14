@@ -25,7 +25,9 @@ const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
  *     moved on (paused, cancelling at its period end, cancelled, expired; the assignment's own stored
  *     value since M6b-1, migration 419), and `closed_at` follows that assignment. M6b-6: the snapshot
  *     of a superseded version whose assignment ended (cancelled, expired) keeps that status rather
- *     than taking `superseded`, so a closed plan reads as what it is on its last snapshot;
+ *     than taking `superseded`, so a closed plan reads as what it is on its last snapshot. M6b-7: that
+ *     snapshot also takes the assignment's end date (`ends_at`), for an assignment that is over
+ *     (cancelled, expired, superseded), instead of its Product Set's;
  *   - the version's primary snapshot (the lowest id) takes the version's own member, plan, dates
  *     and linked assignment;
  *   - the primary snapshot's beneficiaries are the owner plus whoever the chain covers, and its
@@ -50,7 +52,9 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
 async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
-  // Status and closed_at of every snapshot the version links and no other set does.
+  // Status and closed_at of every snapshot the version links and no other set does. M6b-7: and the
+  // day an assignment that is over ended, on the snapshot of its superseded set (the last snapshot
+  // of a plan that left the Active set), so the snapshot dates the plan as its assignment does.
   await tx.query(
     `UPDATE plan_snapshots s
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
@@ -60,7 +64,8 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
                                  AND um.status IN ('paused','active_cancel_at_period_end','cancelled','expired') THEN um.status
                             WHEN ps.status = 'superseded' AND um.status IN ('cancelled','expired') THEN um.status
                             ELSE ps.status END,
-            s.closed_at = um.closed_at
+            s.closed_at = um.closed_at,
+            s.ends_at = IF(ps.status = 'superseded' AND um.status IN ('cancelled','expired','superseded'), um.ends_at, s.ends_at)
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
     [productSetId, gymId]);
 
@@ -68,11 +73,14 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
   if (snapshotId == null) return;
   // A primary snapshot another set links is that set's contract too: nothing below may move it.
   if (await isPlanSnapshotShared(tx, productSetId, snapshotId)) return;
+  // The dates are the set's, except the end date of a closed assignment on a superseded set, which
+  // the statement above took from the assignment (M6b-7) and the set's own end date must not undo.
   await tx.query(
     `UPDATE plan_snapshots s
        JOIN product_sets ps ON ps.id = ? AND ps.gym_id = s.gym_id
         SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
-            s.starts_at = ps.starts_at, s.ends_at = ps.ends_at,
+            s.starts_at = ps.starts_at,
+            s.ends_at = IF(ps.status = 'superseded' AND s.closed_at IS NOT NULL, s.ends_at, ps.ends_at),
             s.source_user_membership_id = COALESCE(ps.user_membership_id, s.source_user_membership_id)
       WHERE s.id = ?`,
     [productSetId, snapshotId]);

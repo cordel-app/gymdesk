@@ -6,6 +6,9 @@
  * M6b-6: and an owner's Active set while a plan of theirs that ended (cancelled with nothing left to
  * run, expired, superseded) is not stated as ended on the snapshot that answers for it.
  *
+ * M6b-7: and a superseded Product Set whose own snapshot is the last one of an ended plan and lacks
+ * the plan's closed status, `closed_at` or end date (written in place by the sync, no copy).
+ *
  * It decides nothing of its own: each listed set is re-synced (`syncPlanSnapshot()`), which is what
  * a new lifecycle change does. One transaction per set, so a failure leaves the others settled.
  */

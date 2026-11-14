@@ -7,7 +7,8 @@
  *   npm run plan-assignments:settle -- --execute             settle every gym
  *   npm run plan-assignments:settle -- <gymId> [--execute]   one gym
  *
- * A dry run writes nothing and reports how many Active sets would be re-synced. With `--execute`
+ * A dry run writes nothing and reports how many Product Sets would be re-synced (M6b-7: the
+ * superseded sets whose own snapshot of an ended plan lacks its status or end date are listed too). With `--execute`
  * each is re-synced in its own transaction; a shared snapshot is copied for the Active set, never
  * written in place. Run `plan-assignments:validate` afterwards. Against a deployed database it runs
  * from the VPS as the compiled `node dist/scripts/settle-plan-assignments.js`.
@@ -23,8 +24,8 @@ if (require.main === module) {
   settlePlanAssignmentLifecycles({ gymId, execute })
     .then(async (report) => {
       console.log(execute
-        ? `Settled ${report.settled} of ${report.found} Active Product Set(s); ${report.remaining} remaining.`
-        : `Dry run: ${report.found} Active Product Set(s) hold a plan snapshot behind its assignment. Re-run with --execute.`);
+        ? `Settled ${report.settled} of ${report.found} Product Set(s); ${report.remaining} remaining.`
+        : `Dry run: ${report.found} Product Set(s) hold a plan snapshot behind its assignment. Re-run with --execute.`);
       await db.end();
       process.exit(report.remaining === 0 || !execute ? 0 : 1);
     })

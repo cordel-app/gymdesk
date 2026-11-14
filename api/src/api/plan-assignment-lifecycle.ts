@@ -217,6 +217,24 @@ async function moveInFlightLinks(
 }
 
 /**
+ * M6b-7: the **superseded** Product Sets whose own plan snapshot is the current snapshot of an
+ * assignment that is over and does not hold the assignment's closed status, `closed_at` or end date.
+ * It is the unshared half of M6b-6: the sync writes such a snapshot in place, so re-syncing the set
+ * is the whole repair. `superseded` is never compared as a status here (the set's own status already
+ * reads it); a shared snapshot is the Active set's to carry (`carryClosedAssignments()`).
+ */
+const UNSTATED_CLOSED_IN_PLACE_FROM = `
+  FROM product_set_plan_snapshots psj
+  JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.status = 'superseded'
+  JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ps.gym_id
+  ${ASSIGNMENT_OF_SNAPSHOT} AND um.status IN (${CLOSED_SQL})
+ WHERE psj.entitlement_only = 0
+   AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}
+   AND s.id = ${currentAssignmentSnapshotSql('s.assignment_id', 's.gym_id')}
+   AND (NOT (s.ends_at <=> um.ends_at) OR NOT (s.closed_at <=> um.closed_at)
+        OR (um.status <> 'superseded' AND NOT (s.status <=> um.status)))`;
+
+/**
  * The Active Product Sets holding a plan snapshot that does not carry its assignment's lifecycle: the
  * changes made before this stage, when the sync left a shared snapshot alone. Read-only; the repair is
  * `npm run plan-assignments:settle`, which re-runs the sync (and so the copy above) for each.
@@ -227,12 +245,15 @@ export async function findUnsettledActiveSets(
   const scope = gymId ? ' AND ps.gym_id = ?' : '';
   const params = gymId ? [gymId] : [];
   // M6b-6: and the Active sets whose owner holds an ended assignment no snapshot states as ended.
+  // M6b-7: and the superseded sets whose own snapshot of an ended assignment lacks its status or dates.
   const { rows } = await exec.query<{ gym_id: string; product_set_id: number }>(
     `SELECT ps.gym_id, ps.id AS product_set_id
        ${ACTIVE_LINKS_FROM}
       WHERE ${DIFFERS}${scope}
      UNION
      SELECT ps.gym_id, ps.id AS product_set_id ${UNSTATED_CLOSED_FROM}${scope}
-      ORDER BY product_set_id`, [...params, ...params]);
+     UNION
+     SELECT ps.gym_id, ps.id AS product_set_id ${UNSTATED_CLOSED_IN_PLACE_FROM}${scope}
+      ORDER BY product_set_id`, [...params, ...params, ...params]);
   return rows.map((r) => ({ gymId: String(r.gym_id), productSetId: Number(r.product_set_id) }));
 }
