@@ -22,9 +22,20 @@
  * This is the one place that copy is made. It runs at the head of `syncPlanSnapshot()` for an Active
  * set, so every path that already records a transition (`recordStatusChange()`), activates a set or
  * links a cancelling plan (`linkCancellingPlans()`) goes through it; nothing calls it per route.
+ *
+ * M6b-6 — a plan that **ended** states so on a snapshot too. An assignment closed at once (cancelled
+ * with nothing left to run, replaced, expired, or superseded by a changed plan) leaves the Active set,
+ * so nothing above reached it: its last snapshot kept reading `active` where older Product Sets share
+ * it. Oscar's cancellation workflow says where the closed state goes: the Product Set the change
+ * produced holds a copy of the snapshot (same `assignment_id`) carrying the new status.
+ * `carryClosedAssignments()` therefore links such a snapshot to the owner's Active set **for the record
+ * only** (`entitlement_only = 1`: never billed, projected, primary or cloned onto a successor), and the
+ * copy rule above then writes the closed status on that set's own copy. The snapshot a superseded set
+ * alone links is written in place by the sync (`plan-snapshot-sync.ts`), so no copy is made for it.
  */
 import type { Tx } from '../infra/db';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
+import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { planSnapshotSharedSql } from './plan-snapshot-lines';
@@ -33,8 +44,19 @@ import { planSnapshotSharedSql } from './plan-snapshot-lines';
 const MOVED_ON = ['paused', CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired'] as const;
 const MOVED_ON_SQL = MOVED_ON.map((s) => `'${s}'`).join(',');
 
-/** The status a snapshot of an Active set holds for its assignment `um`. */
-const WANTED_STATUS = `IF(um.status IN (${MOVED_ON_SQL}), um.status, 'active')`;
+/**
+ * The statuses of an assignment that is over. `superseded` (a changed plan took it over) is stated
+ * only on a link carried for the record: on a billable link it is the transient of a successor's
+ * activation, whose snapshot is about to name the new assignment.
+ */
+export const CLOSED_ASSIGNMENT_STATUSES = ['cancelled', 'expired', 'superseded'] as const;
+const CLOSED_SQL = CLOSED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(',');
+
+/** The assignment (`um`) the plan snapshot `s` is the contract of, while both records exist. */
+const ASSIGNMENT_OF_SNAPSHOT = 'JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id';
+
+/** The status a snapshot of an Active set, linked by `psj`, holds for its assignment `um`. */
+const WANTED_STATUS = `IF(um.status IN (${MOVED_ON_SQL}) OR (psj.entitlement_only = 1 AND um.status = 'superseded'), um.status, 'active')`;
 /** Whether the snapshot `s`, linked by `psj`, does not hold its assignment's lifecycle yet. */
 const DIFFERS = `(NOT (s.status <=> ${WANTED_STATUS}) OR NOT (s.closed_at <=> um.closed_at)
                   OR (psj.entitlement_only = 1 AND NOT (s.ends_at <=> um.ends_at)))`;
@@ -43,7 +65,7 @@ const ACTIVE_LINKS_FROM = `
   FROM product_set_plan_snapshots psj
   JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.status = 'active'
   JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ps.gym_id
-  JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id`;
+  ${ASSIGNMENT_OF_SNAPSHOT}`;
 
 /** What an in-flight (Draft or Pending Payment) set does with its link when the Active set's moves. */
 export type InFlightLinkMove = 'follow' | 'drop' | 'keep';
@@ -73,6 +95,7 @@ interface LinkRow {
  * here. Answers how many snapshots were copied. A set that is not Active is left alone.
  */
 export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSetId: number): Promise<number> {
+  await carryClosedAssignments(tx, gymId, productSetId);
   const read = () => tx.query<LinkRow>(
     `SELECT psj.id AS link_id, psj.entitlement_only, s.id AS snapshot_id, ps.owner_member_id,
             ${WANTED_STATUS} AS wanted_status, ${DIFFERS} AS differs,
@@ -111,12 +134,43 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
     }
     await tx.query(
       `UPDATE plan_snapshots s
-         JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
+         JOIN product_set_plan_snapshots psj ON psj.id = ?
+         ${ASSIGNMENT_OF_SNAPSHOT}
           SET s.status = ${WANTED_STATUS}, s.closed_at = um.closed_at,
-              s.ends_at = IF(?, um.ends_at, s.ends_at)
-        WHERE s.id = ? AND s.gym_id = ?`, [entitlementOnly ? 1 : 0, target, gymId]);
+              s.ends_at = IF(psj.entitlement_only = 1, um.ends_at, s.ends_at)
+        WHERE s.id = ? AND s.gym_id = ?`, [r.link_id, target, gymId]);
   }
   return copied;
+}
+
+/**
+ * The owner's assignments that are over and whose current snapshot (`currentAssignmentSnapshotSql()`)
+ * does not say so, for the **Active** Product Set `productSetId` (no row for any other set).
+ * `s` is the assignment's anchor, `cur` the snapshot that states it now.
+ */
+const UNSTATED_CLOSED_FROM = `
+  FROM product_sets ps
+  JOIN plan_snapshots s ON s.gym_id = ps.gym_id AND s.member_id = ps.owner_member_id AND s.assignment_id = s.id
+  ${ASSIGNMENT_OF_SNAPSHOT} AND um.status IN (${CLOSED_SQL})
+  JOIN plan_snapshots cur ON cur.gym_id = s.gym_id AND cur.id = ${currentAssignmentSnapshotSql('s.id', 's.gym_id')}
+                         AND cur.source_user_membership_id = um.id
+ WHERE ps.status = 'active' AND NOT (cur.status <=> um.status)`;
+
+/**
+ * M6b-6: links, for the record only, the current snapshot of each of the owner's ended assignments
+ * that does not hold the assignment's closed status, so the copy rule writes it on this set's own
+ * copy. Idempotent and convergent: once the status is stated the assignment is not listed again, a
+ * snapshot this set already links is left to the rule above, and a set that is not Active does nothing.
+ */
+async function carryClosedAssignments(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  const { rows } = await tx.query<{ snapshot_id: number }>(
+    `SELECT DISTINCT cur.id AS snapshot_id ${UNSTATED_CLOSED_FROM} AND ps.gym_id = ? AND ps.id = ?
+      ORDER BY cur.id`, [gymId, productSetId]);
+  for (const r of rows) {
+    await tx.query(
+      `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only)
+       VALUES (?, ?, 1)`, [productSetId, Number(r.snapshot_id)]);
+  }
 }
 
 /**
@@ -170,10 +224,15 @@ async function moveInFlightLinks(
 export async function findUnsettledActiveSets(
   exec: { query: Tx['query'] }, gymId?: string,
 ): Promise<Array<{ gymId: string; productSetId: number }>> {
+  const scope = gymId ? ' AND ps.gym_id = ?' : '';
+  const params = gymId ? [gymId] : [];
+  // M6b-6: and the Active sets whose owner holds an ended assignment no snapshot states as ended.
   const { rows } = await exec.query<{ gym_id: string; product_set_id: number }>(
-    `SELECT DISTINCT ps.gym_id, ps.id AS product_set_id
+    `SELECT ps.gym_id, ps.id AS product_set_id
        ${ACTIVE_LINKS_FROM}
-      WHERE ${DIFFERS}${gymId ? ' AND ps.gym_id = ?' : ''}
-      ORDER BY ps.id`, gymId ? [gymId] : []);
+      WHERE ${DIFFERS}${scope}
+     UNION
+     SELECT ps.gym_id, ps.id AS product_set_id ${UNSTATED_CLOSED_FROM}${scope}
+      ORDER BY product_set_id`, [...params, ...params]);
   return rows.map((r) => ({ gymId: String(r.gym_id), productSetId: Number(r.product_set_id) }));
 }
