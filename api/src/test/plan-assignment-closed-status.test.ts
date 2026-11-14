@@ -134,6 +134,10 @@ describe('a replaced plan', () => {
     const current = await currentOf(um);
     expect(current.status).toBe('superseded');
     expect(current.closedAt).not.toBeNull();
+    // M6b-7: and it ends the day the assignment did, whichever Product Set states it.
+    const replaced = await assignment(um);
+    expect(replaced.endsAt).not.toBeNull();
+    expect(current.endsAt).toBe(replaced.endsAt);
     const active = await activeSetOf(m);
     expect((await linksTo(current.id)).map((l) => l.setStatus)).toEqual(['superseded']);
     // The new plan is the Active set's own running plan, and nothing is left to settle.
@@ -179,7 +183,12 @@ describe('a plan cancelled with nothing left to run', () => {
     expect(all[0].status).toBe('cancelled');
     expect((await linksTo(original.id)).map((l) => l.setStatus)).toEqual(['superseded']);
     expect(await unsettled()).not.toContain(await activeSetOf(m));
-    expect((await driftOf(um)).filter((d: any) => String(d.fields ?? '').includes('status'))).toEqual([]);
+    // M6b-7: the snapshot carries the day the plan ended and when it was closed, so nothing drifts.
+    const closed = await assignment(um);
+    expect(closed.endsAt).not.toBeNull();
+    expect(all[0].endsAt).toBe(closed.endsAt);
+    expect(all[0].closedAt).toEqual(closed.closedAt);
+    expect(await driftOf(um)).toEqual([]);
   });
 });
 
@@ -211,6 +220,28 @@ describe('the repair of plans that ended before this stage', () => {
     const current = await currentOf(um);
     expect(current).toMatchObject({ status: 'cancelled', copiedFrom: original });
     expect(await linksTo(current.id)).toEqual([{ set: active, setStatus: 'active', entitlementOnly: true }]);
+  });
+
+  it('M6b-7: a plan whose superseded set alone links its snapshot gets its status and end date in place', async () => {
+    // As it was left before M6b-6/M6b-7: the snapshot reads its Product Set's status and end date.
+    const { um } = await runningPlan(false, lastWeek());
+    await cancel(um);
+    const [original] = await snapshotsOf(um);
+    const [link] = await linksTo(original.id);
+    await db.query("UPDATE plan_snapshots SET status = 'superseded', ends_at = NULL WHERE id = ?", [original.id]);
+    expect(await unsettled()).toContain(link.set);
+
+    const dry = await settlePlanAssignmentLifecycles({ gymId, execute: false });
+    expect(dry.settled).toBe(0);
+    expect((await currentOf(um)).endsAt).toBeNull();
+
+    const done = await settlePlanAssignmentLifecycles({ gymId, execute: true });
+    expect(done.remaining).toBe(0);
+    const closed = await assignment(um);
+    const current = await currentOf(um);
+    expect(current).toMatchObject({ id: original.id, status: 'cancelled', copiedFrom: null, endsAt: closed.endsAt });
+    expect(await linksTo(original.id)).toEqual([link]);
+    expect(await driftOf(um)).toEqual([]);
   });
 
   it('a plan a changed plan took over is stated as superseded', async () => {
