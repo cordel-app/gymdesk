@@ -15,6 +15,7 @@ import { secondaryBtnSmall } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { ProductSetSummary } from './membershipConfiguration';
 import { cancelRequestFor, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
+import { DraftExpiryIndicator } from './DraftExpiryIndicator';
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
@@ -33,13 +34,21 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
   return review;
 }
 
-/** The PS Status header only (#2446): the actions live in the Summary. */
+/**
+ * The PS Status header only (#2446): the actions live in the Summary.
+ *
+ * #2815 — a Draft's expiry countdown sits beside the chip. It is the one
+ * `DraftExpiryIndicator` (#2477), counting down from the server's
+ * `expires_in_seconds`; nothing here computes an expiry.
+ */
 export function ProductsWorkflowBar({
-  current, loading, error,
+  current, loading, error, onDraftExpired,
 }: {
   current: ProductSetSummary | null;
   loading: boolean;
   error: boolean;
+  /** The Draft's time ran out; the page re-reads the configuration. */
+  onDraftExpired?: () => void;
 }) {
   const t = useTranslations('members');
   const statusKey = psStatusKey(current);
@@ -57,6 +66,9 @@ export function ProductsWorkflowBar({
         <StatusBadge status={statusKey} label={t(`ps_status_${statusKey}` as any)} />
       ) : (
         <StatusBadge status="none" label={t('ps_status_none')} />
+      )}
+      {!loading && !error && current?.status === 'draft' && !current.expired && (
+        <DraftExpiryIndicator seconds={current.expires_in_seconds} onExpire={onDraftExpired} />
       )}
     </div>
   );
