@@ -70,6 +70,20 @@ describe('My Products page wiring', () => {
     expect(page).toContain("t('membership.add_product')");
   });
 
+  it('draws the two add actions inside the cart while there is one, never both there and above the plans (#2814)', () => {
+    // One pair of buttons, drawn by one function with one set of conditions.
+    expect(page.match(/t\('membership\.add_plan'\)/g)).toHaveLength(1);
+    expect(page.match(/t\('membership\.add_product'\)/g)).toHaveLength(1);
+    // Both carts (Draft and Pending Payment) carry them, under the items.
+    expect(page.match(/<\/ul>\s*\{renderCartAddButtons\(\)\}/g)).toHaveLength(2);
+    // Secondary inside the cart, left-aligned.
+    expect(page).toMatch(/renderAddButtons\(\{ \.\.\.cartSecondaryButtonStyle/);
+    expect(page).toMatch(/cartAddRow: \{[^}]*justifyContent: 'flex-start'/);
+    // The row above the plans steps aside while the cart is shown.
+    const header = page.slice(page.indexOf('function renderPlansHeader()'), page.indexOf('function renderAddButtons('));
+    expect(header).toContain('if (cartPhase(setView, appMember?.id ?? null) != null) return null;');
+  });
+
   it('draws no back link of its own: the header\'s "← My Products" is the only one (#2741)', () => {
     expect(page).not.toContain('back_to_products');
     expect(page).not.toContain('renderBackLink');
