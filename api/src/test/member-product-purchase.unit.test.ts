@@ -366,7 +366,9 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
     expect(page).toContain('PRODUCT_PURCHASE_SOURCE');
     // An INNER JOIN on the assignment answered "token not found" for every
     // purchase, which is indistinguishable from a real expiry.
-    expect(page).toContain('LEFT JOIN user_memberships um ON um.id = pr.user_membership_id');
+    // #2125 M6b-10: the assignment is its current plan snapshot; the join is still LEFT.
+    expect(page).toContain('LEFT JOIN plan_snapshots pa');
+    expect(page).not.toMatch(/(?<!LEFT )JOIN plan_snapshots pa/);
   });
 });
 
