@@ -43,6 +43,7 @@ import {
 import { thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { memberAllocations, splitLineAmount } from '@/lib/planUnitAssignees';
+import { planAccessLabel, type PlanAccessEntry } from '@/lib/planAccess';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle,
@@ -143,6 +144,8 @@ interface Props {
   feeInclTax?: number | null;
   feeTaxPercent?: number | null;
   currentFee?: number | null;
+  /** #2802 — the access the plan grants each beneficiary, drawn as €0 rows under the fee. */
+  planAccess?: PlanAccessEntry[];
   /**
    * Whether the card is in Edit mode (#797/#897). Outside it every section is
    * read-only and carries no `Edit` button at all — absent, not disabled.
@@ -257,7 +260,7 @@ function toAllocationRows(
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, cardEditing, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
@@ -316,6 +319,32 @@ export function AssignedPlanConfiguration({
     original_line_price_incl_tax: null,
     final_line_price_incl_tax: null,
   };
+  // #2802 — the access the plan grants (its centers, On-line), one row per beneficiary at
+  // quantity 1 and €0. The entries are the server's, from the plan's own access
+  // configuration; the rows are display only and no total reads them.
+  const accessRows: ProductBenefitRow[] = planAccess.flatMap((entry, i) => {
+    const label = planAccessLabel(entry);
+    if (!label) return [];
+    return [{
+      product_id: -(i + 1),
+      quantity: 1,
+      product_name: t(label.key as any, label.values as any),
+      product_type: 'plan_access',
+      product_billing_frequency: null,
+      product_status: 'active',
+      action: 'no_benefit',
+      value: null,
+      member_name: entry.member_name,
+      applied_tax_percent: null,
+      applied_promotions: [],
+      applied_promotion_benefits: [],
+      direct_discount_line_incl_tax: null,
+      original_price_incl_tax: 0,
+      final_price_incl_tax: 0,
+      original_line_price_incl_tax: null,
+      final_line_price_incl_tax: null,
+    } as ProductBenefitRow];
+  });
 
   // #2657 — a Promotion applies to the whole plan, so each application (standing
   // or spent) is drawn once, in its own row below Period Benefits, rather than
@@ -678,7 +707,7 @@ export function AssignedPlanConfiguration({
         <ProductBenefitView
           t={(key, values) => t(key as any, values as any)}
           emptyKey="no_oneoff_benefits"
-          rows={[feeRow]}
+          rows={[feeRow, ...accessRows]}
           showFrequency
           benefitContext="plan"
           showPrices

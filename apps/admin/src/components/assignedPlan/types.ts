@@ -1,3 +1,4 @@
+import type { PlanAccessEntry } from '@/lib/planAccess';
 import type { ProductBenefitAction } from '@/lib/productBenefitActions';
 import type { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
 import type {
@@ -296,6 +297,8 @@ export interface AssignedPlanDetail {
   base_price: string | number | null;
   /** The Membership Fee resolved for this assignment's current cycle (#635 stage 15). */
   membership_fee: number | null;
+  /** #2802: the access the plan grants each beneficiary (centers, On-line); display only. */
+  plan_access?: PlanAccessEntry[];
   /** #1240: the regular fee quoted VAT-inclusive (and net), as the Plan card does; `null` with no price or rate. */
   effective_price?: { amount_incl_tax: number; amount_excl_tax: number | null; tax_amount: number; applied_tax_rate: number | null } | null;
   discount_reason: string | null;
