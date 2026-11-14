@@ -29,14 +29,23 @@ describe('#2783 nested layout', () => {
     expect(DATA_TABLE).toMatch(/nested != null && \(\s*<tr data-nested-row>/);
   });
 
-  it('the Products table nests each purchase promotion under its row, and none when absent', () => {
-    expect(TABLE).toMatch(/renderNested=\{\(item\) => \(item\.promotion \?/);
-    expect(TABLE).toContain(') : null)}');
+  it('#2810 — the Products table draws a purchase promotion inside its Product cell, never as a row below it', () => {
+    expect(TABLE).not.toContain('renderNested=');
+    const productCol = TABLE.slice(TABLE.indexOf("key: 'product',"), TABLE.indexOf("key: 'assigned_to',"));
+    expect(productCol).toContain('{item.promotion && (');
+    expect(productCol).toContain('data-product-promotion');
   });
 
-  it('the Add Product form nests its Promotions under the product, gated on having any', () => {
-    expect(FORM).toContain('hasPromotionBlock(product) && (');
+  it('#2810 — the Add Product form draws its Promotions inside the Product cell, gated on having any', () => {
+    expect(FORM).toContain('hasPromotionBlock(product)');
     expect(FORM).toContain('data-product-promotions');
-    expect(FORM).toContain('listNestedBlockStyle');
+    // The Product cell carries the selector and, under it, its own Promotions.
+    const cell = FORM.slice(FORM.indexOf('    product: ('), FORM.indexOf('    // #2786'));
+    expect(cell.indexOf('<select')).toBeGreaterThan(-1);
+    expect(cell.indexOf('{productPromotionsCell(f)}')).toBeGreaterThan(cell.indexOf('</select>'));
+    // …and nothing below the row repeats them.
+    const details = FORM.slice(FORM.indexOf('export function AddProductDetails'));
+    expect(details).not.toContain('<PromotionPicker');
+    expect(details).not.toContain('data-product-promotions');
   });
 });

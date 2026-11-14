@@ -19,7 +19,6 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
-import { listNestedBlockStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { billingFrequencyLabel } from '@/lib/billingFrequency';
@@ -33,7 +32,8 @@ import {
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
 
 // #1656 — one compact row on wide screens; the flex-wrap makes it a clean stack on narrow ones.
-const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' };
+// #2810: top-aligned, since the Product field grows with the Promotions nested under it.
+const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' };
 const valueCellStyle: React.CSSProperties = { padding: '8px 0', fontSize: 14, whiteSpace: 'nowrap' };
 
 type Outcome =
@@ -196,11 +196,49 @@ export function useAddProductForm({
 
 type AddProductForm = ReturnType<typeof useAddProductForm>;
 
+/**
+ * #2810 — the Promotions a Product offers, drawn inside that Product's own cell, under its
+ * selector: each Product row carries only its own Promotions, and there is no block of
+ * Promotions below the row. Absent when the Product has none to offer (#2783).
+ */
+function productPromotionsCell(f: AddProductForm): React.ReactNode {
+  const { t, product, outcome } = f;
+  if (!product || outcome || !hasPromotionBlock(product)) return null;
+  return (
+    <div style={{ marginTop: 8 }} data-product-promotions>
+      <div style={formFieldLabelStyle}>{t('add_product_promotions')}</div>
+      <PromotionPicker
+        promotions={product.promotions.map((promo) => {
+          const d = promotionBenefitDescription(promo, (n) => money(n, product.currency));
+          return {
+            id: promo.promotion_id,
+            name: promo.promotion_name,
+            stackable: promo.stackable,
+            description: d ? t(d.key as any, d.values as any) : null,
+          };
+        })}
+        selectedIds={f.promotionIds}
+        onToggle={f.togglePromotion}
+        disabled={f.busy}
+        emptyText={t('add_product_no_promotions')}
+      />
+      {product.promotions.length === 0 && (product.unavailable_promotions ?? []).length > 0 && (
+        <p style={cardHintStyle} data-unavailable-promotions>
+          {t('add_product_promotions_new_members_only', {
+            names: (product.unavailable_promotions ?? []).map((u) => u.promotion_name).join(', '),
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The form's fields as the cells of the Products table's draft row (#2372 follow-up). */
 export function addProductDraftCells(f: AddProductForm, today: React.ReactNode): Record<string, React.ReactNode> {
   const { t, quote, product } = f;
   return {
     product: (
+      <div style={{ minWidth: 0 }} data-product-cell>
       <select
         id="add-product-select"
         aria-label={t('add_product_select')}
@@ -216,6 +254,8 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
           </option>
         ))}
       </select>
+      {productPromotionsCell(f)}
+      </div>
     ),
     // #2786 — the Assigned to column's own cell; absent when the selector does not apply.
     assigned_to: f.showAssignee && !f.outcome ? (
@@ -257,41 +297,12 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
   };
 }
 
-/** Promotions, hints, errors, confirmations and actions: everything that is not a cell. */
+/** Hints, errors, confirmations and actions: everything that is not a cell (#2810: the Promotions are the Product cell's). */
 export function AddProductDetails({ form: f }: { form: AddProductForm }) {
-  const { t, tFreq, quote, product, outcome, error, requiredProducts, requiredPending } = f;
+  const { t, tFreq, quote, outcome, error, requiredProducts, requiredPending } = f;
   return (
     <div style={{ padding: '12px 16px' }} data-add-product-form>
       {f.catalogue != null && f.catalogue.length === 0 && <p style={cardHintStyle}>{t('add_product_none_available')}</p>}
-      {product && !outcome && hasPromotionBlock(product) && (
-        // #2783 — the Promotions belong to the Product being added: indented under
-        // its row as a child, and absent when the Product has none to offer.
-        <div style={{ ...listNestedBlockStyle, marginLeft: 24 }} data-product-promotions>
-          <div style={formFieldLabelStyle}>{t('add_product_promotions')}</div>
-          <PromotionPicker
-            promotions={product.promotions.map((promo) => {
-              const d = promotionBenefitDescription(promo, (n) => money(n, product.currency));
-              return {
-                id: promo.promotion_id,
-                name: promo.promotion_name,
-                stackable: promo.stackable,
-                description: d ? t(d.key as any, d.values as any) : null,
-              };
-            })}
-            selectedIds={f.promotionIds}
-            onToggle={f.togglePromotion}
-            disabled={f.busy}
-            emptyText={t('add_product_no_promotions')}
-          />
-          {product.promotions.length === 0 && (product.unavailable_promotions ?? []).length > 0 && (
-            <p style={cardHintStyle} data-unavailable-promotions>
-              {t('add_product_promotions_new_members_only', {
-                names: (product.unavailable_promotions ?? []).map((u) => u.promotion_name).join(', '),
-              })}
-            </p>
-          )}
-        </div>
-      )}
       {quote && (
         <p style={cardHintStyle}>
           {quote.recurring ? t('add_product_simulation_recurring_hint') : t('add_product_simulation_one_time', { amount: money(quote.final_price, quote.currency) })}
