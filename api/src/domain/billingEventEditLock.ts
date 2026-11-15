@@ -14,6 +14,7 @@
  */
 
 import { AttemptMethod } from './paymentAttemptMethod';
+import { isNonObligationEvent } from './billingEventStatus';
 import { ProviderStatusClass, classifyProviderStatus, normaliseProviderStatus } from './providerPaymentStatus';
 
 export interface LatestAttempt {
@@ -26,6 +27,14 @@ export interface LatestAttempt {
 
 export interface LockEvent {
   id: number;
+  /**
+   * #2811: the event's own type and its administrative cancellation. A cancelled
+   * event (#2480) and an event that is not an obligation (`isNonObligationEvent()`:
+   * a one-off purchase, a card verification) are not debts the member owes on the
+   * Product Set, so they never lock it; both default to "an ordinary obligation".
+   */
+  eventType?: string;
+  cancelled?: boolean;
   /** `YYYY-MM-DD`. */
   billingDate: string | null;
   isScheduled: boolean;
@@ -56,7 +65,12 @@ function reasonFor(event: LockEvent): BlockReason | null {
   if (attempt.method === 'waive') return attempt.status === 'completed' ? null : 'in_flight';
   if (attempt.method === 'cash' || attempt.method === 'card_terminal') return attempt.status === 'completed' ? null : 'in_flight';
 
-  const cls: ProviderStatusClass = classifyProviderStatus(normaliseProviderStatus(attempt.providerStatus));
+  const providerStatus = normaliseProviderStatus(attempt.providerStatus);
+  // #2811: a provider attempt we recorded as completed but whose raw status was never
+  // stored is money received (the Payments tab reads it `paid`), not an unknown outcome.
+  // A raw status, when there is one, still decides.
+  if (providerStatus == null && attempt.status === 'completed') return null;
+  const cls: ProviderStatusClass = classifyProviderStatus(providerStatus);
   switch (cls) {
     case 'settled':
     case 'returned':
@@ -75,6 +89,7 @@ export function blockingEvents(events: readonly LockEvent[], today: string): Blo
   const out: BlockingEvent[] = [];
   for (const event of events) {
     if (!event.billingDate || event.billingDate >= today) continue;
+    if (event.cancelled || (event.eventType != null && isNonObligationEvent(event.eventType))) continue;
     const reason = reasonFor(event);
     if (reason) {
       out.push({

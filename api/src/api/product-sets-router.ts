@@ -28,7 +28,7 @@ import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
 import {
-  createProductSetCheckout, ensureInitialEvent, commitCharge, loadEditLock,
+  createProductSetCheckout, ensureInitialEvent, commitCharge, loadEditLock, loadEditLockForDraftEdit,
 } from './product-set-checkout';
 import { methodAvailability, payFlowFor } from '../domain/productSetPayment';
 import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
@@ -585,7 +585,7 @@ productSetsRouter.post('/draft', requireModuleWrite('PAYMENTS'), async (req, res
     const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, gymId]);
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
-    const blocking = await loadEditLock(gymId, memberId, todayUtc());
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
     const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
@@ -790,7 +790,7 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
     try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'Member not found' }); }
     // #2770: only the Family Owner starts a Draft to add Plans or Products to.
     if (await refuseUnlessMayAdd(res, ctx.gymId, memberId)) return;
-    const blocking = await loadEditLock(ctx.gymId, memberId, todayUtc());
+    const blocking = await loadEditLockForDraftEdit(ctx.gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
     const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
       gymId: ctx.gymId, memberId, actor: actorOf(req), today: todayUtc(),

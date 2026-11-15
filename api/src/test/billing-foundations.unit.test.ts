@@ -73,6 +73,19 @@ describe('ProductSet editing lock (#1325)', () => {
     expect(isEditLocked([ev({ billingDate: '2026-12-01', isScheduled: true })], today)).toBe(false);
     expect(isEditLocked([ev({ isScheduled: false })], today)).toBe(false);
   });
+
+  // #2811: the lock agrees with the Payments tab's unresolved list.
+  it('ignores a cancelled event, a non-obligation event and a completed attempt with no raw status', () => {
+    const failed = provider('FAILED', 'failed');
+    expect(isEditLocked([ev({ latestAttempt: failed, cancelled: true })], today)).toBe(false);
+    expect(isEditLocked([ev({ latestAttempt: failed, eventType: 'card_verification' })], today)).toBe(false);
+    expect(isEditLocked([ev({ latestAttempt: failed, eventType: 'product_purchase' })], today)).toBe(false);
+    expect(isEditLocked([ev({ latestAttempt: provider(null, 'completed') })], today)).toBe(false);
+    // An ordinary obligation that failed still locks.
+    expect(isEditLocked([ev({ latestAttempt: failed, eventType: 'failed_billing', cancelled: false })], today)).toBe(true);
+    // A raw status still decides over the internal one.
+    expect(isEditLocked([ev({ latestAttempt: provider('PENDING_PROCESSING', 'completed') })], today)).toBe(true);
+  });
 });
 
 describe('charge guard (#1325)', () => {
