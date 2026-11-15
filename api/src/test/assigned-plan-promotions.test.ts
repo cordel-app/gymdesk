@@ -237,6 +237,7 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     await grantProduct(gymId, promotionId, 'oneoff', oneoffItem, 1);
     await grantProduct(gymId, promotionId, 'periodical', periodicalItem, 2);
     await applyPromotion(gymId, umId, promotionId);
+    await confirmTestDraftPromotions(gymId, umId); // #2833: frozen once confirmed
 
     // Everything the catalogue could say afterwards is changed: prices,
     // names, and the Promotion's own grant rows.

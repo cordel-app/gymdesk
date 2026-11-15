@@ -61,6 +61,7 @@ import {
 const SELECT = `
   SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
+         p.free_months, p.paid_months, p.bonus_months,
          p.lifecycle_status AS promotion_lifecycle_status,
          p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at,
          p.image_url AS promotion_image_url,
