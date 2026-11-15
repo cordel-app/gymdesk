@@ -2003,7 +2003,11 @@
     "center_mode_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic.",
     "center_online": "En línia",
     "center_online_help": "Només serveis remots (entrenament personal en línia, coaching). No dona accés a cap centre físic.",
-    "section_billing_simulation_details": "Detalls de la simulació de facturació"
+    "section_billing_simulation_details": "Detalls de la simulació de facturació",
+    "label_fee_scope": "Àmbit de la quota de membresia",
+    "fee_scope_per_member": "Per membre",
+    "fee_scope_per_family": "Per família",
+    "fee_scope_help": "Per membre cobra la quota una vegada per cada beneficiari d'una assignació; Per família la cobra una vegada per assignació. S'aplica als plans assignats a partir d'ara."
   },
   "prices": {
     "title": "Preus",

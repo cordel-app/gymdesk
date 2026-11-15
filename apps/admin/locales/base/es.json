@@ -2003,7 +2003,11 @@
     "center_mode_online_help": "Solo servicios remotos (entrenamiento personal online, coaching). No da acceso a ningún centro físico.",
     "center_online": "En línea",
     "center_online_help": "Solo servicios remotos (entrenamiento personal online, coaching). No da acceso a ningún centro físico.",
-    "section_billing_simulation_details": "Detalles de la simulación de facturación"
+    "section_billing_simulation_details": "Detalles de la simulación de facturación",
+    "label_fee_scope": "Ámbito de la cuota de membresía",
+    "fee_scope_per_member": "Por miembro",
+    "fee_scope_per_family": "Por familia",
+    "fee_scope_help": "Por miembro cobra la cuota una vez por cada beneficiario de una asignación; Por familia la cobra una vez por asignación. Se aplica a los planes asignados a partir de ahora."
   },
   "prices": {
     "title": "Precios",

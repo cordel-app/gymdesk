@@ -177,6 +177,8 @@ export function computePlanBillingEventSimulation(
     // #892 — the durations count periods of the very cadence the fee is billed at.
     planDuration: withDurationCadence(input.duration, cadence),
     personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
+    // #2834 — a hypothetical assignment has one beneficiary, so one fee whatever the scope.
+    membershipFeeUnits: 1,
   };
 
   // #1130 stage 3 — the cycle the Membership Fee Simulation above this section

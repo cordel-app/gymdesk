@@ -174,6 +174,8 @@ export function computePromotionBillingEventSimulation(
     // / Bonus, which only ever waives a Membership Fee anyway.
     planDuration: NO_PLAN_DURATION,
     personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
+    // #2834 — a hypothetical assignment has one beneficiary, so one fee whatever the scope.
+    membershipFeeUnits: 1,
   };
 
   const simulation = computeBillingSimulation({
