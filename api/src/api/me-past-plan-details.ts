@@ -42,9 +42,13 @@ export async function attachPastPlanDetails(
   const snapshotBySet = new Map<number, number>();
   if (assignmentIds.length > 0) {
     const { rows } = await db.query<any>(
-      `SELECT um.id, ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AS plan_snapshot_id
-         FROM user_memberships um
-        WHERE um.gym_id = ? AND um.id IN (${marks(assignmentIds.length)})`,
+      // #2125 M6b-11: grouped off the snapshots themselves rather than `user_memberships`; an
+      // assignment no snapshot names had no snapshot to report before either.
+      `SELECT ps0.source_user_membership_id AS id,
+              ${assignmentPlanSnapshotId('ps0.source_user_membership_id', 'ps0.gym_id')} AS plan_snapshot_id
+         FROM plan_snapshots ps0
+        WHERE ps0.gym_id = ? AND ps0.source_user_membership_id IN (${marks(assignmentIds.length)})
+        GROUP BY ps0.source_user_membership_id, ps0.gym_id`,
       [gymId, ...assignmentIds],
     );
     for (const r of rows) if (r.plan_snapshot_id != null) snapshotByAssignment.set(Number(r.id), Number(r.plan_snapshot_id));
