@@ -2,6 +2,8 @@ import { parseLineDirectDiscountInput, toLineDirectDiscount } from '../domain/li
 import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { addCoverage } from './product-sets';
+import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { beneficiarySelectionError, parseBeneficiaryIds, requiredBeneficiaryCount } from '../domain/planBeneficiaries';
 import { refreshPlanPriceReference, repriceOnVersion } from './assignment-reprice';
 import { createDraftSetForAssignment } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
@@ -838,6 +840,22 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // Promotion targeting the Plan), and emitting the same creation billing event
 // as POST /user-memberships (P1.6 ledger).
 
+/**
+ * #2879: the live members of `ownerId`'s family, the owner included. A member with no
+ * family row (legacy data) is a family of one.
+ */
+async function ownerFamilyMemberIds(gymId: string, ownerId: number): Promise<number[]> {
+  const { rows } = await db.query<{ member_id: number }>(
+    `SELECT fm.member_id FROM family_members fm
+       JOIN family_members me ON me.family_id = fm.family_id AND me.gym_id = fm.gym_id
+       JOIN members m ON m.id = fm.member_id AND m.deleted_at IS NULL
+      WHERE me.member_id = ? AND me.gym_id = ?`,
+    [ownerId, gymId],
+  );
+  const ids = rows.map((r) => Number(r.member_id));
+  return ids.includes(ownerId) ? ids : [ownerId, ...ids];
+}
+
 membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   // #958 / #1182 — who assigned the plan, the plain-text snapshot written onto
@@ -860,27 +878,62 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   if (planRows.length === 0) return res.status(404).json({ error: 'Plan not found' });
   const plan = planRows[0];
 
-  if (!Array.isArray(member_ids) || member_ids.length === 0) {
-    return res.status(400).json({ error: 'member_ids must be a non-empty array' });
+  // #2879: staff choose the beneficiaries from the owner's family, and the owner (the
+  // payer) need not be one of them. `beneficiary_member_ids` names them; the legacy
+  // `member_ids` shape (which always includes the owner) is still read.
+  const parsedBeneficiaries = parseBeneficiaryIds(req.body?.beneficiary_member_ids);
+  if (parsedBeneficiaries === null) {
+    return res.status(400).json({ error: 'beneficiary_member_ids must be an array of member ids' });
+  }
+  let beneficiaryIds: number[];
+  const ownerId = Number(owner_member_id);
+  if (parsedBeneficiaries !== undefined) {
+    if (parsedBeneficiaries.length === 0) {
+      return res.status(400).json({ error: 'beneficiary_member_ids must be a non-empty array' });
+    }
+    if (!Number.isInteger(ownerId) || ownerId <= 0) {
+      return res.status(400).json({ error: 'owner_member_id is required' });
+    }
+    beneficiaryIds = parsedBeneficiaries;
+  } else {
+    if (!Array.isArray(member_ids) || member_ids.length === 0) {
+      return res.status(400).json({ error: 'member_ids must be a non-empty array' });
+    }
+    beneficiaryIds = [...new Set(member_ids.map((id: any) => Number(id)))];
+    if (!owner_member_id || !beneficiaryIds.includes(ownerId)) {
+      return res.status(400).json({ error: 'owner_member_id must be one of the selected member_ids' });
+    }
   }
   if (!starts_at) return res.status(400).json({ error: 'starts_at is required' });
-  const uniqueMemberIds = [...new Set(member_ids.map((id: any) => Number(id)))];
-  const ownerId = Number(owner_member_id);
-  if (!owner_member_id || !uniqueMemberIds.includes(ownerId)) {
-    return res.status(400).json({ error: 'owner_member_id must be one of the selected member_ids' });
-  }
-  if (plan.member_limit !== 'family' && uniqueMemberIds.length !== parseInt(plan.member_limit, 10)) {
-    return res.status(400).json({ error: `This plan requires exactly ${plan.member_limit} member(s).` });
+  const requiredCount = requiredBeneficiaryCount(plan.member_limit);
+  if (requiredCount != null && beneficiaryIds.length !== requiredCount) {
+    return res.status(400).json({ error: `This plan requires exactly ${plan.member_limit} member(s).`, code: 'beneficiary_count' });
   }
 
-  const placeholders = uniqueMemberIds.map(() => '?').join(',');
-  const { rows: memberRows } = await db.query(
-    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
-    [gymId, ...uniqueMemberIds],
+  const { rows: ownerRows } = await db.query(
+    'SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id = ?', [gymId, ownerId],
   );
-  if (memberRows.length !== uniqueMemberIds.length) {
+  if (ownerRows.length === 0) {
     return res.status(400).json({ error: 'One or more selected members were not found.' });
   }
+  const familyMemberIds = await ownerFamilyMemberIds(gymId, ownerId);
+  const selectionError = beneficiarySelectionError({ limit: plan.member_limit, familyMemberIds, beneficiaryIds });
+  if (selectionError) {
+    if (selectionError.code === 'beneficiary_not_in_family') {
+      // A member of another gym, a deleted one and one that does not exist are outside
+      // the family too; the legacy message is kept for them.
+      const placeholders = selectionError.member_ids.map(() => '?').join(',');
+      const { rows: found } = await db.query(
+        `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
+        [gymId, ...selectionError.member_ids],
+      );
+      if (found.length !== selectionError.member_ids.length) {
+        return res.status(400).json({ error: 'One or more selected members were not found.' });
+      }
+    }
+    return res.status(400).json(selectionError);
+  }
+  const ownerIsBeneficiary = beneficiaryIds.includes(ownerId);
 
   const eff = await effectivePrice(Number(req.params.id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
@@ -938,7 +991,11 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
       });
-      for (const memberId of uniqueMemberIds) {
+      if (!ownerIsBeneficiary) {
+        const planSnapshotId = await primaryPlanSnapshotId(tx, gymId, setId);
+        if (planSnapshotId != null) await setOwnerIsBeneficiary(tx, gymId, planSnapshotId, false);
+      }
+      for (const memberId of beneficiaryIds) {
         if (memberId === ownerId) continue;
         await addCoverage(tx, { gymId, productSetId: setId, memberId, isOwner: false });
       }

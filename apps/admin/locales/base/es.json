@@ -2039,7 +2039,13 @@
     "label_fee_scope": "Ámbito de la cuota de membresía",
     "fee_scope_per_member": "Por miembro",
     "fee_scope_per_family": "Por familia",
-    "fee_scope_help": "Por miembro cobra la cuota una vez por cada beneficiario de una asignación; Por familia la cobra una vez por asignación. Se aplica a los planes asignados a partir de ahora."
+    "fee_scope_help": "Por miembro cobra la cuota una vez por cada beneficiario de una asignación; Por familia la cobra una vez por asignación. Se aplica a los planes asignados a partir de ahora.",
+    "assign_member_label": "Miembro",
+    "assign_change_member": "Cambiar miembro",
+    "assign_beneficiaries_label": "Beneficiarios ({limit})",
+    "assign_beneficiaries_hint": "Elige a quién cubre el plan entre la familia del miembro. El titular de la familia paga y no tiene por qué ser beneficiario.",
+    "assign_family_loading": "Cargando familia…",
+    "assign_not_enough_family": "La familia no tiene suficientes miembros para asignar este plan: requiere {count}."
   },
   "prices": {
     "title": "Precios",
