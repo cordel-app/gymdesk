@@ -21,7 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyChildQuery, createTestDraftAssignment } from './helpers';
+  request, legacyChildQuery, createTestDraftAssignment, confirmTestDraftPromotions } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -329,6 +329,8 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     await applyPromotion(gymId, umId, keptId);
     await applyPromotion(gymId, umId, revokedId);
     expect(await finalPrice(gymId, umId)).toBe(85);
+    // #2833: the agreed price is the confirmed snapshot's.
+    await confirmTestDraftPromotions(gymId, umId);
 
     // The Promotion is repriced after being applied. Revoking the *other* one
     // recomputes the price, which used to pull in this new value.
@@ -351,6 +353,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
 
     await applyPromotion(gymId, umId, promotionId);
     expect(await finalPrice(gymId, umId)).toBe(100);
+    await confirmTestDraftPromotions(gymId, umId); // #2833
 
     await db.query('DELETE FROM promotion_membership_fee_benefits WHERE promotion_id = ?', [promotionId]);
     // Any later recompute — here, applying a second Promotion — must still

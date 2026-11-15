@@ -1,4 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
+import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
@@ -501,17 +502,71 @@ const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<ProductBenefitCategory, string> = {
 };
 
 /**
- * What each Promotion application granted, as it was when the Promotion was
- * applied (`snapshotPromotionGrants()` in `membership-promotions.ts`), keyed by
- * `user_membership_promotions.id`.
+ * Products granted by the given Promotions **as they stand now**, from the three
+ * #550 benefit tables, joined live to their catalogue row — the same columns and
+ * the same name fallback `snapshotPromotionGrants()` freezes, so a Draft priced
+ * from here and the snapshot its confirmation captures cannot disagree.
  *
- * An application with no rows at all is not in the map, which is the caller's
- * signal to read the Promotion's live benefits instead — editing or deleting a
- * Promotion must not move an assignment that has a snapshot (§16), but an
- * application that predates the snapshot flow still has to simulate something.
- * A snapshot row whose `unit_price` is NULL (its Product was already
- * gone when migration 174 backfilled) prices at 0 rather than reaching for a
- * live row that no longer exists.
+ * Read for two kinds of application only: one on a Draft that is not confirmed
+ * yet (#2833 — a Draft stores no grant snapshot), and one that predates the
+ * snapshot flow and has nothing else to read. `products` is not filtered on
+ * `deleted_at`, so a granted item still displays after it is retired.
+ */
+export async function loadLivePromotionGrants(
+  gymId: string, promotionIds: number[], exec: { query: Tx['query'] } = db,
+): Promise<Map<number, SimulationGrant[]>> {
+  const byPromotion = new Map<number, SimulationGrant[]>();
+  if (promotionIds.length === 0) return byPromotion;
+  const marks = promotionIds.map(() => '?').join(',');
+  const { rows } = await exec.query(
+    CATEGORIES.map((category) => `
+      SELECT '${category}' AS category, b.promotion_id, b.product_id, b.quantity,
+             COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS product_name,
+             gc.billing_frequency, gc.amount, b.\`action\`, b.\`value\`
+        FROM ${LIVE_PROMOTION_GRANT_TABLE[category]} b
+        JOIN products gc ON gc.id = b.product_id
+        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+       WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`).join(' UNION ALL '),
+    CATEGORIES.flatMap(() => [gymId, ...promotionIds]),
+  );
+  for (const row of rows as any[]) {
+    const list = byPromotion.get(Number(row.promotion_id)) ?? [];
+    list.push({
+      productId: row.product_id,
+      name: row.product_name ?? 'Product',
+      category: row.category as ProductBenefitCategory,
+      billingFrequency: toFrequency(row.billing_frequency),
+      unitPrice: row.amount != null ? Number(row.amount) : 0,
+      quantity: positiveQuantity(row.quantity),
+      // #896 stage 3 — the treatment the Promotion configures for this item.
+      benefit: toProductBenefit('promotion', row.action, row.value),
+    });
+    byPromotion.set(Number(row.promotion_id), list);
+  }
+  return byPromotion;
+}
+
+const LIVE_PROMOTION_GRANT_TABLE: Record<ProductBenefitCategory, string> = {
+  session: 'promotion_session',
+  oneoff: 'promotion_oneoff',
+  periodical: 'promotion_periodical',
+};
+
+/**
+ * What each Promotion application granted, keyed by `user_membership_promotions.id`.
+ *
+ * A **confirmed** application reads its own snapshot (`snapshotPromotionGrants()`
+ * in `membership-promotions.ts`, taken when its Draft was confirmed), so editing
+ * or deleting the Promotion afterwards moves nothing (§16). An application on a
+ * Draft that is not confirmed yet (`draftReferenceApplicationSql()`, #2833) has no
+ * snapshot and reads the Promotion as it stands now; it is always in the map,
+ * with an empty list when the Promotion grants nothing.
+ *
+ * A confirmed application with no rows at all is not in the map, which is the
+ * caller's signal to read the Promotion's live benefits instead (an application
+ * that predates the snapshot flow). A snapshot row whose `unit_price` is NULL
+ * (its Product was already gone when migration 174 backfilled) prices at 0
+ * rather than reaching for a live row that no longer exists.
  */
 export async function loadPromotionGrantSnapshots(
   gymId: string, applicationIds: number[],
@@ -522,6 +577,14 @@ export async function loadPromotionGrantSnapshots(
   if (applicationIds.length === 0) return byApplication;
 
   const marks = applicationIds.map(() => '?').join(',');
+  const { rows: apps } = await exec.query(
+    `SELECT ump.id, ump.promotion_id, ${draftReferenceApplicationSql('ump')} AS unconfirmed
+       FROM user_membership_promotions ump WHERE ump.gym_id = ? AND ump.id IN (${marks})`,
+    [gymId, ...applicationIds],
+  );
+  const unconfirmed = (apps as any[]).filter((a) => Number(a.unconfirmed) === 1);
+  const unconfirmedIds = new Set(unconfirmed.map((a) => Number(a.id)));
+
   const { rows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, user_membership_promotion_id, product_id,
@@ -532,6 +595,8 @@ export async function loadPromotionGrantSnapshots(
     CATEGORIES.flatMap(() => [gymId, ...applicationIds]),
   );
   for (const row of rows as any[]) {
+    // A working copy written before #2833 is never read: the Draft is priced live.
+    if (unconfirmedIds.has(Number(row.user_membership_promotion_id))) continue;
     const list = byApplication.get(row.user_membership_promotion_id) ?? [];
     list.push({
       // The snapshot keeps the item's identity even after it is deleted
@@ -550,6 +615,12 @@ export async function loadPromotionGrantSnapshots(
       benefit: toProductBenefit('promotion', row.action, row.value),
     });
     byApplication.set(row.user_membership_promotion_id, list);
+  }
+
+  const live = await loadLivePromotionGrants(
+    gymId, [...new Set(unconfirmed.map((a) => Number(a.promotion_id)))], exec);
+  for (const app of unconfirmed) {
+    byApplication.set(Number(app.id), live.get(Number(app.promotion_id)) ?? []);
   }
   return byApplication;
 }

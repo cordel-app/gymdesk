@@ -752,66 +752,56 @@ export async function applyPromotionToProductSet(
     const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
     await ownPrimaryPlanSnapshot(tx, gymId, productSetId);
   }
-  const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
+  // #2833: a Draft records the reference to the Promotion and nothing else — no snapshot and no
+  // grant snapshot rows. The Draft is priced and shown from the live Promotion, and the snapshot is
+  // taken by `confirmDraftPromotionSnapshots()` in the transaction that confirms the Draft.
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
        (gym_id, product_set_id, user_membership_id, recurrent_snapshot_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, ?, ?, ?, ?, 'applied', ?)`,
-    [gymId, productSetId, ownUm, lineId, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
+     VALUES (?, ?, ?, ?, ?, ?, 'applied', NULL)`,
+    [gymId, productSetId, ownUm, lineId, promotionId, actor],
   );
-  await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
   await syncPlanSnapshot(tx, gymId, productSetId);
   return { application_id: Number(insertId) };
 }
 
-/* ── #2624 stage 4 (§8): snapshots are captured when the Draft is confirmed ── */
+/* ── #2624 stage 4 (§8), #2833: snapshots are taken when the Draft is confirmed ── */
 
 /**
- * Re-takes, from the live Promotion, the snapshot and grant snapshot rows of
- * every application on this Draft that is not confirmed yet
- * (`snapshot_confirmed_at IS NULL`). While a Draft is configured those rows are
- * only the working copy the engine prices it from; this is what makes them the
- * Promotion as it stands at confirmation. A confirmed application (a copy of the
- * predecessor's, or one already captured) is never touched, and an application
- * whose Promotion no longer exists keeps the copy it has. Idempotent.
+ * Takes the snapshot and the grant snapshot rows of every application on this
+ * Draft that is not confirmed yet (`snapshot_confirmed_at IS NULL`), from the
+ * Promotion as it stands now, and stamps it confirmed — in the transaction that
+ * moves the Draft out of `draft` (Save & Pay, or the free commit), so a failed
+ * confirmation rolls the snapshots back with the status. Until then a Draft
+ * holds no snapshot at all (#2833) and is read from the live Promotion.
+ *
+ * Only an application still `applied` is snapshotted; a revoked one stays the
+ * reference it is. A confirmed application (a copy of the predecessor's, or one
+ * already captured) is never touched, so a retried confirmation finds nothing
+ * left and writes nothing. Any grant rows already present (a working copy
+ * written before #2833) are replaced, never duplicated. An application whose
+ * Promotion no longer exists is confirmed with no snapshot, which every reader
+ * already resolves live.
  */
-export async function refreshDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<number> {
+export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number; promotion_id: number }>(
     `SELECT ump.id, ump.promotion_id FROM user_membership_promotions ump
-       JOIN product_sets ps ON ps.id = ump.product_set_id AND ps.gym_id = ump.gym_id
-      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ps.status = 'draft'
+      WHERE ump.gym_id = ? AND ump.product_set_id = ?
         AND ump.status = 'applied' AND ump.snapshot_confirmed_at IS NULL
       ORDER BY ump.id FOR UPDATE`,
     [gymId, productSetId]);
-  let refreshed = 0;
   for (const app of rows) {
     const snapshot = await buildPromotionSnapshot(tx, gymId, Number(app.promotion_id));
-    if (!snapshot) continue;
-    await tx.query('UPDATE user_membership_promotions SET snapshot = ? WHERE id = ? AND gym_id = ?',
-      [JSON.stringify(snapshot), app.id, gymId]);
+    await tx.query(
+      `UPDATE user_membership_promotions SET snapshot = ?, snapshot_confirmed_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id = ? AND snapshot_confirmed_at IS NULL`,
+      [snapshot != null ? JSON.stringify(snapshot) : null, app.id, gymId]);
     for (const { target } of PROMOTION_GRANT_SNAPSHOTS) {
       await tx.query(`DELETE FROM ${target} WHERE gym_id = ? AND user_membership_promotion_id = ?`, [gymId, app.id]);
     }
     await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
-    refreshed += 1;
   }
-  if (refreshed > 0) await syncPlanSnapshot(tx, gymId, productSetId);
-  return refreshed;
-}
-
-/**
- * Confirms this Draft's Promotion snapshots, in the transaction that moves it
- * out of `draft` (Save & Pay, or the free commit): each unconfirmed application
- * is re-captured from the live Promotion and stamped, so from then on it is the
- * historical record and nothing re-captures it. A retried confirmation finds
- * nothing left to confirm and writes nothing.
- */
-export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<void> {
-  await refreshDraftPromotionSnapshots(tx, gymId, productSetId);
-  await tx.query(
-    `UPDATE user_membership_promotions SET snapshot_confirmed_at = UTC_TIMESTAMP()
-      WHERE gym_id = ? AND product_set_id = ? AND status = 'applied' AND snapshot_confirmed_at IS NULL`,
-    [gymId, productSetId]);
+  if (rows.length > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
