@@ -23,6 +23,7 @@ import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
 import { calendarEventMeta, calendarEventMetaLines, joinMetaParts } from '@/lib/calendarEventMeta';
+import { calendarEventServiceNames } from '@/lib/calendarEventServices';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
 import { filterControlStyle } from '@/components/FilterBar';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -605,7 +606,13 @@ export default function CalendarPage() {
               // defaults. `calendarEventMetaLines` is also what decides that a
               // missing trainer or space produces no line at all (§6).
               const meta = calendarEventMeta(e);
-              const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
+              // #2849 — an occurrence offering Professional Services is booked
+              // per service, so its box lists each service on its own line and
+              // shows no event capacity (neither the count nor the derived
+              // `Full`). Display only: no capacity or booking figure changes.
+              const serviceNames = calendarEventServiceNames(e);
+              const hasServices = serviceNames.length > 0;
+              const bookingCount: string | null = isSession && !hasServices ? `${e.booked_count}/${e.effective_capacity}` : null;
 
               // #977 — the badge carries the event's **execution** status, as
               // the API reports it (`execution_status`): `Scheduled` while it
@@ -621,7 +628,7 @@ export default function CalendarPage() {
               // over `scheduled` because it's the more actionable of the two —
               // and it can no longer hide `Not used`, since an empty slot is
               // never full.
-              const isFull = isSession && Number(e.booked_count) >= Number(e.effective_capacity) && executionStatus === 'scheduled';
+              const isFull = isSession && !hasServices && Number(e.booked_count) >= Number(e.effective_capacity) && executionStatus === 'scheduled';
               const badgeStatus: string = isFull ? 'full' : executionStatus;
               const statusLabel = badgeStatus ? statusBadgeLabel(t, badgeStatus) : null;
               // §9: the waitlist of this one occurrence, shown while it can
@@ -672,6 +679,11 @@ export default function CalendarPage() {
                       <span style={{ opacity: 0.85, flexShrink: 0 }}>{`· ${countsLine}`}</span>
                     )}
                   </div>
+                  {serviceNames.map((name, i) => (
+                    <div key={`ps-${i}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {name}
+                    </div>
+                  ))}
                   {metaLines.map((line, i) => (
                     <div key={i} style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {line}
