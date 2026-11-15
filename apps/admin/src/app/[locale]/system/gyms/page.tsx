@@ -14,6 +14,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { GymWebsiteIntegrationSection } from '@/components/gyms/GymWebsiteIntegrationSection';
+import { TaxProfileSection } from '@/app/[locale]/tax-compliance/TaxProfileSection';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
@@ -629,6 +630,13 @@ export default function SystemGymsPage() {
                 t={t}
               />
             )}
+
+            {/* #2648 stage 8: Cordel → Gyms → [Gym] → Fiscal Information, the
+                same Tax Profile editor Settings → Tax & Compliance renders,
+                run against this row's gym. These fields are what every
+                receipt and invoice prints as the issuer. */}
+            <SectionHeader title={t('section_fiscal')} />
+            <TaxProfileSection gymId={gym.id} canWrite />
 
             {/* #1052: Cordel → Gyms → [Gym] → Website Integration. The section
                 reads this row's gym, not the selected one, and is loaded when

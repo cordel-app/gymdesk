@@ -1259,6 +1259,7 @@
     "error_required": "Name is required.",
     "error_generic": "Something went wrong.",
     "error_load": "Failed to load gyms.",
+    "section_fiscal": "Fiscal Information",
     "section_storage": "Storage",
     "storage_initialized": "Initialized",
     "storage_not_initialized": "Not initialized",
