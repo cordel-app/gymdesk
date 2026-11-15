@@ -35,13 +35,18 @@ const TARGETS = [
 
 exports.up = async (knex) => {
   for (const { table, check } of TARGETS) {
+    const checkSql = `CONSTRAINT ${check} CHECK (membership_fee_scope IN ('per_member', 'per_family'))`;
     if (!(await hasColumn(knex, table))) {
+      // One ALTER (one table rebuild) for the column and its CHECK on a first run.
       await knex.raw(
-        `ALTER TABLE ${table} ADD COLUMN membership_fee_scope VARCHAR(20) NOT NULL DEFAULT 'per_family'`);
+        `ALTER TABLE ${table}
+           ADD COLUMN membership_fee_scope VARCHAR(20) NOT NULL DEFAULT 'per_family',
+           ADD ${checkSql}`);
+      continue;
     }
     if (!(await hasCheck(knex, table, check))) {
       await knex.raw(
-        `ALTER TABLE ${table} ADD CONSTRAINT ${check} CHECK (membership_fee_scope IN ('per_member', 'per_family'))`);
+        `ALTER TABLE ${table} ADD ${checkSql}`);
     }
   }
 };
