@@ -232,6 +232,26 @@ describe('Review your changes (#1537)', () => {
       expect.objectContaining({ billing_frequency: 'month', new: 10 }),
     ]));
 
+    // #2860 — Initial Payment: the charge line by line, its total the amount
+    // Save & Pay charges, the lines' VAT-inclusive amounts summing to it.
+    const ip = review.body.initial_payment;
+    expect(ip.total).toBe(review.body.amount_due);
+    expect(ip.lines.length).toBeGreaterThan(0);
+    const sum = ip.lines.reduce((n: number, l: any) => n + l.amount, 0);
+    expect(Math.round(sum * 100) / 100).toBe(review.body.amount_due);
+    expect(Math.round((ip.subtotal_excl_tax + ip.tax_total) * 100) / 100).toBe(review.body.amount_due);
+    // Contracted Products & Plans: the plan and the new recurring line, for the
+    // member, with no amount anywhere in it.
+    const contracted = review.body.contracted_items;
+    expect(contracted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'plan', period: 'recurring' }),
+      expect.objectContaining({
+        kind: 'product', name: 'Towel R', period: 'recurring', billing_frequency: 'month', quantity: 2,
+        members: [expect.objectContaining({ member_id: m })],
+      }),
+    ]));
+    expect(JSON.stringify(contracted)).not.toMatch(/price|amount|discount|tax/);
+
     const eventsBefore = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ? AND product_set_id = ?', [gymId, draftId]);
     expect(Number(eventsBefore.rows[0].n)).toBe(0); // reading it wrote nothing
 

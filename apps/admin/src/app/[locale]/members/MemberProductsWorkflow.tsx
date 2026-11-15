@@ -26,7 +26,11 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
     if (id == null) { setReview(null); return; }
     let cancelled = false;
     apiFetch<ReviewSummary>(`/product-sets/${id}/review`)
-      .then((r) => { if (!cancelled) setReview({ changes: r.changes ?? [], amount_due: r.amount_due ?? null }); })
+      .then((r) => { if (!cancelled) setReview({
+        changes: r.changes ?? [], amount_due: r.amount_due ?? null,
+        // #2860 — the Summary's two sections.
+        initial_payment: r.initial_payment, contracted_items: r.contracted_items,
+      }); })
       .catch(() => { if (!cancelled) setReview(null); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

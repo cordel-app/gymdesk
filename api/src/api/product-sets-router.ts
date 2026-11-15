@@ -41,6 +41,7 @@ import { getRequestLocale } from '../infra/locale';
 import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
 import { cartCounts } from '../domain/shoppingCart';
+import { contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
@@ -686,7 +687,30 @@ async function reviewHandler(req: any, res: any, next: any) {
       };
     });
 
+    // #2860 — the Summary's two sections: the commit charge broken down line by
+    // line (its total is `amount_due` itself), and what the Draft contracts, for
+    // whom and how often, with no amount. The contract is the version's own
+    // plans, recurring lines and cart purchases as the member's view reads them.
+    const contractView = await loadMemberProductSetView(gymId, {
+      id: Number(set.id), status: String(set.status),
+      previous_product_set_id: set.previous_product_set_id != null ? Number(set.previous_product_set_id) : null,
+    });
+    const contractPurchases = await loadSetPurchases(db, gymId, Number(set.id));
+    const memberIds = [...new Set([
+      ...contractView.lines.map((l) => l.assigned_member_id),
+      ...contractPurchases.map((p) => p.assigned_member_id ?? p.member_id),
+    ].filter((id): id is number => id != null))];
+    const memberNames = new Map<number, string | null>();
+    if (memberIds.length > 0) {
+      const { rows: mRows } = await db.query<any>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND id IN (${memberIds.map(() => '?').join(',')})`,
+        [gymId, ...memberIds]);
+      for (const r of mRows) memberNames.set(Number(r.id), r.name ?? null);
+    }
+
     res.json({
+      initial_payment: initialPaymentBreakdown(lines, amountDue),
+      contracted_items: contractedItems({ plans: contractView.plans, lines: contractView.lines, purchases: contractPurchases }, memberNames),
       payment_methods: paymentMethods,
       net_total: Math.round(netTotal * 100) / 100,
       tax_total: amountDue != null ? Math.round((amountDue - netTotal) * 100) / 100 : null,
