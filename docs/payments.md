@@ -575,6 +575,9 @@ beneficiary of that snapshot (`plan_snapshot_beneficiaries`, never fewer than on
 multiplies the Membership Fee line by that count (`membershipFeeUnits`) after
 `resolveMembershipFee()` has priced one fee, so every discount, Promotion and Billing & Duration
 rule applies to each fee alike; no other path multiplies it.
+Displays (stage 2) quote one fee each: the Assigned Plan card draws one fee row per fee owed
+(*Family* for `per_family`, one per beneficiary for `per_member`), and the Members App names the
+scope and the count beside one fee's price; neither multiplies anything.
 
 ### B4b. When obligations fall: the billing calendar (#2125 M5c)
 

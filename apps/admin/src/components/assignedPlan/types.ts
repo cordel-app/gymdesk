@@ -297,6 +297,8 @@ export interface AssignedPlanDetail {
   base_price: string | number | null;
   /** The Membership Fee resolved for this assignment's current cycle (#635 stage 15). */
   membership_fee: number | null;
+  /** #2834 — `per_member` | `per_family`, frozen on the assignment's plan snapshot. */
+  membership_fee_scope?: string | null;
   /** #2802: the access the plan grants each beneficiary (centers, On-line); display only. */
   plan_access?: PlanAccessEntry[];
   /** #1240: the regular fee quoted VAT-inclusive (and net), as the Plan card does; `null` with no price or rate. */

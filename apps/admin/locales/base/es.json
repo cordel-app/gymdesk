@@ -5245,7 +5245,8 @@
     "col_direct_discount_percent": "Descuento directo (%)",
     "mandatory_item_tag": "Obligatorio",
     "remove_optional_line": "Eliminar {product}",
-    "direct_discount_invalid": "El descuento directo (%) debe ser un número entre 0 y 100."
+    "direct_discount_invalid": "El descuento directo (%) debe ser un número entre 0 y 100.",
+    "fee_member_family": "Familia"
   },
   "taxes": {
     "title": "Impuestos",

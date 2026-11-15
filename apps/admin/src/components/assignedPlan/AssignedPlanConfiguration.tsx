@@ -44,6 +44,8 @@ import { thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { memberAllocations, splitLineAmount } from '@/lib/planUnitAssignees';
 import { planAccessLabel, type PlanAccessEntry } from '@/lib/planAccess';
+import { membershipFeeRowSlots, type FeeBeneficiary } from '@/lib/membershipFeeRows';
+import { membershipFeeScopeLabelKey } from '@/lib/membershipFeeScope';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   formControlStyle,
@@ -143,6 +145,12 @@ interface Props {
   currentFee?: number | null;
   /** #2802 — the access the plan grants each beneficiary, drawn as €0 rows under the fee. */
   planAccess?: PlanAccessEntry[];
+  /**
+   * #2834 stage 2 — the assignment's Membership Fee scope (its plan snapshot's) and its
+   * beneficiaries: one fee row for a `per_family` plan, one per beneficiary for `per_member`.
+   */
+  feeScope?: string | null;
+  beneficiaries?: FeeBeneficiary[];
   /**
    * Whether the card is in Edit mode (#797/#897). Outside it every section is
    * read-only and carries no `Edit` button at all — absent, not disabled.
@@ -257,13 +265,14 @@ function toAllocationRows(
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], cardEditing, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
   // the stored pair ("1 × Month").
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const tp = useTranslations('promotions');
+  const tPlans = useTranslations('plans');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -319,6 +328,13 @@ export function AssignedPlanConfiguration({
     original_line_price_incl_tax: null,
     final_line_price_incl_tax: null,
   };
+  // #2834 stage 2 (#2800's rule) — `per_family`: one fee row, Member column *Family*;
+  // `per_member`: one fee row per beneficiary, naming that beneficiary. Each row is one
+  // fee at the server's price; the engine is what multiplies the charge.
+  const feeRows: ProductBenefitRow[] = membershipFeeRowSlots(feeScope, beneficiaries).map((slot) => ({
+    ...feeRow,
+    member_name: slot.family ? t('fee_member_family') : slot.member_name,
+  }));
   // #2802 — the access the plan grants (its centers, On-line), one row per beneficiary at
   // quantity 1 and €0. The entries are the server's, from the plan's own access
   // configuration; the rows are display only and no total reads them.
@@ -638,6 +654,12 @@ export function AssignedPlanConfiguration({
                 label: t('label_membership_fee'),
                 value: fmtMoney(snapshot.membership_fee_price),
               },
+              // #2834 stage 2 — whether that fee is charged per member or per family.
+              {
+                key: 'membership_fee_scope',
+                label: tPlans('label_fee_scope'),
+                value: tPlans(membershipFeeScopeLabelKey(feeScope) as any),
+              },
             ])}
           />
           <BillingDurationExplanations
@@ -673,17 +695,20 @@ export function AssignedPlanConfiguration({
         <ProductBenefitView
           t={(key, values) => t(key as any, values as any)}
           emptyKey="no_oneoff_benefits"
-          rows={[feeRow, ...accessRows]}
+          rows={[...feeRows, ...accessRows]}
           showFrequency
           benefitContext="plan"
           showPrices
           showBreakdown
           showMember
           showDirectDiscount
-          renderDirectDiscountPercent={(row) => {
+          renderDirectDiscountPercent={(row, idx) => {
             if (editing !== 'fee_benefit') return undefined;
             // Only the fee row carries a discount; an access row stays a value.
             if (row.product_type !== 'membership_fee') return '—';
+            // #2834 stage 2: one benefit discounts every fee of a per-member plan, so
+            // the input sits on the first fee row and the others keep reading it.
+            if (idx > 0) return undefined;
             return discountInput(feeDiscount, setFeeDiscount, row.product_name);
           }}
           renderRowAction={() => null}

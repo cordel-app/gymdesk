@@ -9,6 +9,7 @@ import {
 import { createDraft } from '../api/product-sets';
 import { planScheduledEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { loadProductSetSimulationAssignments } from '../api/plan-snapshot-assignments';
+import { loadMemberProductSetView } from '../api/me-product-set-lines';
 
 let gymId: string;
 const actor = { name: 'Test', type: 'staff' };
@@ -159,5 +160,22 @@ describe('Membership Fee scope on a plan snapshot and in billing', () => {
     await db.query('UPDATE membership_plans SET membership_fee_scope = ? WHERE id = ?', ['per_member', planId]);
     const line = await firstFeeLine(setId);
     expect(Number(line.actual_charge)).toBe(50);
+  });
+});
+
+describe('Membership Fee scope on the Members App plan view (#2834 stage 2)', () => {
+  it.each([
+    ['per_member', 0, 1], ['per_member', 2, 3], ['per_family', 2, 1],
+  ] as const)('%s with %i extra beneficiaries reports the scope and %i fee(s); the fee is one fee', async (scope, extra, units) => {
+    const planId = await plan(40, scope);
+    const { setId } = await version(await member(), planId, 40, extra);
+    const view = await loadMemberProductSetView(gymId, { id: setId, status: 'draft', previous_product_set_id: null });
+    const p = view.plans[0];
+    expect(p.membership_fee_scope).toBe(scope);
+    expect(p.membership_fee_units).toBe(units);
+    expect(p.membership_fee).toBe(40);
+    // The count is the engine's: the fee line charges that many fees.
+    const line = await firstFeeLine(setId);
+    expect(Number(line.actual_charge)).toBe(40 * units);
   });
 });
