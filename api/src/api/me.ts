@@ -41,9 +41,9 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
 import { createSoloFamily } from './family-membership';
-import { cancelGroupPartners, membersShareCoverage } from './duo-booking';
-import { FAMILY_GROUP_MESSAGES, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
-import { loadServiceCapacityViews, loadServiceOccupancy } from './service-capacity';
+import { cancelGroupPartners, cancelPartnerBookings, membersShareCoverage } from './duo-booking';
+import { FAMILY_GROUP_MESSAGES, cancelsRemainingFamilyBookings, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
+import { loadServiceCapacityViews } from './service-capacity';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
@@ -1051,7 +1051,7 @@ meRouter.get('/activity-types', requireRole('member'), requireFeatureEnabled('ca
 
 /**
  * #2674: the chosen service when it takes a family participant selection on this
- * occurrence — `family_only`, minimum above one, offered by the occurrence — with
+ * occurrence — `family_only` (#2813: whatever its minimum), offered by the occurrence — with
  * its limits: the minimum is the service's, the maximum its effective capacity on
  * the occurrence (#2499, the figure `/me/schedule` reports). `null` otherwise.
  */
@@ -1062,17 +1062,17 @@ async function loadFamilyGroupService(gymId: string, sessionId: number, serviceI
   const views = (await loadServiceCapacityViews(db, gymId, [sessionId])).get(sessionId) ?? [];
   const view = views.find((v) => v.id === serviceId);
   if (!view) return null; // not offered here: the gate refuses it as before
-  return { min: Number(rows[0].min_participants), max: view.capacity };
+  return { min: Math.max(1, Number(rows[0].min_participants ?? 1)), max: view.capacity };
 }
 
 /**
- * #2674 §6: one group booking for the booker and the family members they named,
- * in the caller's transaction. The booker passes the gate and holds the one
- * reservation; the partners attend on that unit (no gate, no reservation of their
- * own) and the group is spent once, charged to the booker (#1984 stage 2b-2). A
- * group that does not fit as `booked` rolls back whole: no waiting list.
+ * #2813 §5: one individual booking per selected family member, in the caller's
+ * transaction — no group. Each member passes the booking gate, reserves their
+ * own unit (#2605) and counts toward the service's places (#1984 stage 2a); every
+ * row records the initiator as `booked_by_member_id`. The bookings are all-or-
+ * nothing: a member who would be refused or waitlisted rolls every one back.
  */
-async function bookFamilyGroup(tx: Tx, input: {
+async function bookFamilyMembers(tx: Tx, input: {
   gymId: string; memberId: number; sessionId: number; serviceId: number;
   partnerIds: number[]; min: number; max: number; actor: string | null;
 }) {
@@ -1086,38 +1086,22 @@ async function bookFamilyGroup(tx: Tx, input: {
       status: judged.code === 'participant_not_in_family' ? 403 : 400, code: judged.code,
     });
   }
-  const first = await bookMemberOnSession(gymId, memberId, sessionId, false, false, tx, false, actor, serviceId);
-  if (first.status !== 'booked') {
-    throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
-  }
-  const ids = [Number(first.id)];
-  for (const partnerId of partnerIds) {
-    const row = await bookMemberOnSession(gymId, partnerId, sessionId, false, false, tx, true, actor, undefined, false);
+  const ids: number[] = [];
+  let first: any = null;
+  for (const id of [memberId, ...partnerIds]) {
+    const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId);
     if (row.status !== 'booked') {
       throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
     }
+    if (first === null) first = row;
     ids.push(Number(row.id));
   }
-  const { rows: own } = await tx.query(
-    'SELECT professional_service_id FROM calendar_event_bookings WHERE id = ? AND gym_id = ?', [first.id, gymId]);
-  const resolvedService = own[0]?.professional_service_id == null ? serviceId : Number(own[0].professional_service_id);
-  const groupId = newBookingGroupId();
   const ph = ids.map(() => '?').join(', ');
   await tx.query(
-    `UPDATE calendar_event_bookings
-        SET booking_group_id = ?, booked_by_member_id = ?, professional_service_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE calendar_event_bookings SET booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND id IN (${ph})`,
-    [groupId, memberId, resolvedService, actor, gymId, ...ids]);
-  // The partners were inserted without a service, so the service's places are
-  // checked once for the whole group, under the occurrence lock the booker took.
-  const { rows: ev } = await tx.query(
-    `SELECT COALESCE(ce.capacity, at.max_capacity) AS cap FROM calendar_events ce
-       JOIN activity_types at ON at.id = ce.activity_type_id WHERE ce.id = ? AND ce.gym_id = ?`, [sessionId, gymId]);
-  const occ = await loadServiceOccupancy(tx, gymId, sessionId, resolvedService, Number(ev[0].cap));
-  if (occ.occupied > occ.capacity) {
-    throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
-  }
-  return { ...first, booking_group_id: groupId, participant_booking_ids: ids.slice(1) };
+    [memberId, actor, gymId, ...ids]);
+  return { ...first, participant_booking_ids: ids.slice(1) };
 }
 
 /**
@@ -1162,13 +1146,13 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
     const actor = resolveRequestActor(ctx);
-    // #2674: a `family_only` service with a minimum above one is a family group
-    // booking — the booker plus family members, bounded by the service.
+    // #2674/#2813: a `family_only` service books the initiator plus the family
+    // members they selected, one individual booking each, bounded by the service.
     const groupService = chosenService === null ? null : await loadFamilyGroupService(gymId, Number(class_session_id), chosenService);
     if (groupService) {
       const parsedGroup = parseParticipantIds(req.body.participant_member_ids, memberId, Number.MAX_SAFE_INTEGER);
       if (!parsedGroup.ok) return res.status(400).json({ error: parsedGroup.error });
-      const result = await db.transaction((tx) => bookFamilyGroup(tx, {
+      const result = await db.transaction((tx) => bookFamilyMembers(tx, {
         gymId, memberId, sessionId: Number(class_session_id), serviceId: chosenService!,
         partnerIds: parsedGroup.partnerIds, min: groupService.min, max: groupService.max, actor,
       }));
@@ -1261,6 +1245,32 @@ meRouter.get('/class-packages', requireRole('member'), requireFeatureEnabled('or
   } catch (err) { next(err); }
 });
 
+/**
+ * #2813 §6: after a member cancelled their booking of a `family_only` service,
+ * the family's other live bookings of the same occurrence and service (individual
+ * rows, no group) are cancelled when fewer than the service's minimum remain, and
+ * each of those members is told why. Below-minimum is
+ * `cancelsRemainingFamilyBookings()`'s decision.
+ */
+async function cancelFamilyBelowMinimum(
+  gymId: string, memberId: number,
+  booking: { class_session_id: number; professional_service_id: number; min_participants: number | null; title: string; starts_at: string },
+  actor: string | null,
+): Promise<{ promotedMemberIds: number[] }> {
+  const family = (await loadEligibleAssignees(db, gymId, memberId)).map((m) => m.member_id).filter((id) => id !== memberId);
+  if (family.length === 0) return { promotedMemberIds: [] };
+  const ph = family.map(() => '?').join(', ');
+  const { rows } = await db.query(
+    `SELECT id, member_id FROM calendar_event_bookings
+      WHERE gym_id = ? AND calendar_event_id = ? AND professional_service_id = ? AND status = 'booked'
+        AND booking_group_id IS NULL AND member_id IN (${ph})`,
+    [gymId, booking.class_session_id, booking.professional_service_id, ...family]);
+  if (!cancelsRemainingFamilyBookings(rows.length, booking.min_participants)) return { promotedMemberIds: [] };
+  return cancelPartnerBookings(gymId, rows as any[], actor, {
+    sessionId: Number(booking.class_session_id), title: booking.title, starts_at: booking.starts_at,
+  });
+}
+
 /** Cancel own booking. Rejected once the session has already started. */
 meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -1269,6 +1279,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       `SELECT ceb.id, ceb.status, ceb.booking_group_id, ceb.calendar_event_id AS class_session_id, ce.starts_at,
+              ceb.professional_service_id, ps.booking_type, ps.min_participants,
               at.name AS title,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
@@ -1276,6 +1287,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        JOIN activity_types at ON at.id = ce.activity_type_id
+       LEFT JOIN professional_services ps ON ps.id = ceb.professional_service_id
        WHERE ceb.id = ? AND ceb.gym_id = ? AND ceb.member_id = ?`,
       [req.params.id, gymId, memberId],
     );
@@ -1306,6 +1318,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
         sessionId: Number(rows[0].class_session_id), title: rows[0].title, starts_at: rows[0].starts_at,
       });
       promoted.push(...grp.promotedMemberIds);
+    } else if (rows[0].status === 'booked' && rows[0].booking_type === 'family_only') {
+      // #2813 §6: the family's individual bookings of this occurrence and service
+      // answer to its minimum together; below it, the rest are cancelled too.
+      const fam = await cancelFamilyBelowMinimum(gymId, memberId, rows[0], resolveRequestActor(ctx));
+      promoted.push(...fam.promotedMemberIds);
     }
     for (const pid of promoted) {
       sendNotification(gymId, pid, 'promoted_from_waitlist', 'session',
