@@ -2165,13 +2165,13 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
+      // #2125 M6b-15: the member's assignments come from `plan_snapshots` (each one's current snapshot).
       `SELECT p.id, p.name, p.description
-       FROM user_memberships um
+       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
        JOIN user_membership_promotions ump
          ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id
        JOIN promotions p ON p.id = ump.promotion_id
-       WHERE ump.gym_id = ? AND um.member_id = ?
-         AND ump.status = 'applied' AND um.status = 'active'
+       WHERE ump.status = 'applied' AND um.status = 'active'
        ORDER BY ump.applied_at DESC`,
       [gymId, memberId],
     );
@@ -2726,10 +2726,11 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       }
     }
     const params: any[] = [gymId, memberId];
+    // #2125 M6b-15: the member's assignments come from `plan_snapshots` (each one's current snapshot).
     let sql = `SELECT um.id, um.status, m.email AS member_email
-       FROM user_memberships um
+       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
        JOIN members m ON m.id = um.member_id
-       WHERE um.gym_id = ? AND um.member_id = ? AND um.status IN ('pending_payment', 'active')`;
+       WHERE um.status IN ('pending_payment', 'active')`;
     if (requestedId !== null) { sql += ' AND um.id = ?'; params.push(requestedId); }
     // #1108 stage 2: a row awaiting its first payment is the one Pay now is
     // for, ahead of a plan already active.

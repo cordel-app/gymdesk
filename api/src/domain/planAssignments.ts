@@ -55,7 +55,9 @@ export const assignmentCoversMemberSql = (alias = 'pa'): string =>
  * name an assignment by that id, and every snapshot of one carries it
  * (`source_user_membership_id`); one legacy id is exactly one `assignment_id` (M6b-1), so this
  * matches at most one row. For a reader that needs what never changes over an assignment's life
- * (its owner, its Membership Plan), so it holds whatever the assignment's status is.
+ * (its owner, its Membership Plan), so it holds whatever the assignment's status is. Since the
+ * settle run (M6b-13) the current snapshot of a closed assignment carries its closed status, so a
+ * reader may ask that status through it too (M6b-15: a staff-raised payment request).
  */
 export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): string =>
   `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
