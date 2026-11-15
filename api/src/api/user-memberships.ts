@@ -5,7 +5,8 @@ import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
-import { createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
+import { lockEditableDraft } from './editable-draft';
+import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -1564,6 +1565,11 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND um.status = 'draft' FOR UPDATE`,
         [gymId, active.owner_member_id]);
       if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
+      // #2858: a plain Draft the owner already holds (their recurring products, cloned from this
+      // same Active version) becomes the edit: linked below rather than refused as `in_flight`.
+      const plain = await lockEditableDraft(tx, gymId, active.owner_member_id);
+      const adopt = plain && plain.user_membership_id == null && plain.previous_product_set_id === active.id
+        ? plain.id : null;
       const dateOnly = (v: any) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
@@ -1575,11 +1581,15 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
-      await createDraftSetFromActive(tx, {
-        gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
-        membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
-        actor: { name: actorText },
-      });
+      if (adopt != null) {
+        await adoptDraftForEdit(tx, { gymId, userMembershipId: Number(insertId), draftSetId: adopt });
+      } else {
+        await createDraftSetFromActive(tx, {
+          gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
+          membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+          actor: { name: actorText },
+        });
+      }
       return { kind: 'created' as const, id: Number(insertId), reused: false };
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });

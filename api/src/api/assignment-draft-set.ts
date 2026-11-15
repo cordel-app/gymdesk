@@ -221,3 +221,22 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   await syncDraftAssignment(tx, input.gymId, setId);
   return setId;
 }
+
+/**
+ * #2858 — `⋮ → Edit` on a running plan while the owner already holds a plain Draft (the
+ * recurring-products Draft, a clone of the same Active version): that Draft **is** the edit, so it
+ * is linked to the new Draft assignment instead of a second version being created. Its products,
+ * quantities and Promotions stay exactly as they were, and its id does not change. The primary plan
+ * is owned and re-derived exactly as `createDraftSetFromActive()` does for a fresh clone.
+ */
+export async function adoptDraftForEdit(tx: Tx, input: {
+  gymId: string; userMembershipId: number; draftSetId: number;
+}): Promise<number> {
+  await tx.query(
+    `UPDATE product_sets SET user_membership_id = ?, last_activity_at = UTC_TIMESTAMP()
+      WHERE id = ? AND gym_id = ? AND status = 'draft' AND user_membership_id IS NULL`,
+    [input.userMembershipId, input.draftSetId, input.gymId]);
+  await ownPrimaryPlanSnapshot(tx, input.gymId, input.draftSetId);
+  await syncDraftAssignment(tx, input.gymId, input.draftSetId);
+  return input.draftSetId;
+}

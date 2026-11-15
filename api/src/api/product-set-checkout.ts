@@ -11,6 +11,7 @@ import { toMinorUnits } from '../payments/money';
 import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEventEditLock';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { editableDraftSql } from './editable-draft';
 import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
 import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
@@ -74,11 +75,15 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
  * the member already holds. So the lock is empty while the owner holds a live plain
  * Draft (the one `ensureRecurringDraft()` reuses: no linked assignment, not expired).
  */
-export async function loadEditLockForDraftEdit(gymId: string, ownerMemberId: number, today: string): Promise<BlockingEvent[]> {
+export async function loadEditLockForDraftEdit(
+  gymId: string, ownerMemberId: number, today: string, opts: { staff?: boolean } = {},
+): Promise<BlockingEvent[]> {
+  // #2858: for staff, the owner's `⋮ → Edit` Draft is one they keep editing too (`editableDraftSql()`).
   const { rows } = await db.query<any>(
-    `SELECT id FROM product_sets
-      WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' AND user_membership_id IS NULL
-        AND last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+    `SELECT ps.id FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ?
+        AND ${opts.staff ? editableDraftSql('ps') : `ps.status = 'draft' AND ps.user_membership_id IS NULL
+        AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`}
       LIMIT 1`,
     [gymId, ownerMemberId]);
   if (rows.length > 0) return [];

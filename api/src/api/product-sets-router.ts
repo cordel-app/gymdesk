@@ -581,11 +581,11 @@ productSetsRouter.post('/draft', requireModuleWrite('PAYMENTS'), async (req, res
     const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, gymId]);
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
-    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc());
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc(), { staff: true });
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
     const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
-      gymId, memberId, actor: actorOf(req), today: todayUtc(),
+      gymId, memberId, actor: actorOf(req), today: todayUtc(), staff: true,
     }));
     if (out.kind === 'in_flight') {
       return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
