@@ -48,6 +48,8 @@ export interface PurchasedProduct {
   /** The price before the Promotion, VAT included. */
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
+  /** Every Promotion applied, in the order they were applied (the API's `promotions`). */
+  promotions?: PurchasedProductPromotion[];
   /** #1640 — the Admin's direct discount percentage, if one was applied. */
   direct_discount_percent?: number | null;
   /** #1521 — the VAT percentage the purchase was charged under, if stored. */
@@ -60,6 +62,10 @@ export interface PurchasedProduct {
   source?: 'one_off' | 'recurring';
   /** #1882 — removed in the open Draft, still Active until Save & Pay. */
   pending_termination?: boolean;
+  /** #2856 — the line the member's open Draft carries for this row; `null` when no open Draft carries it. */
+  draft_line_id?: number | null;
+  /** #2856 — a recurring line's own quantity. */
+  quantity?: number;
   /** #2609 — the family member the Product is for (the purchaser when none was chosen). */
   assigned_member_id?: number | null;
   assigned_member_name?: string | null;
@@ -196,6 +202,7 @@ const PURCHASE_ERROR_CODES = [
   'duplicate_submission', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
   'nothing_to_pay', 'draft_expired',
   'assignee_not_in_family', 'assignee_not_allowed', 'assignee_invalid',
+  'promotion_requires_products',
 ] as const;
 
 /** The locale-key suffix for an answered error code; `null` falls back to the generic message. */
@@ -254,4 +261,15 @@ export function filterPurchasesByStatus<T extends { status: string }>(items: T[]
 /** #1882 — the status a row shows: a line the Draft removes reads `pending_termination`. */
 export function displayPurchaseStatus(item: { status: string; pending_termination?: boolean }): string {
   return item.status === 'active' && item.pending_termination ? 'pending_termination' : item.status;
+}
+
+/**
+ * #2856 — the Draft line a row's `⋮ → Edit` / `⋮ → Delete` act on: a recurring
+ * row the member's open Draft Product Set carries. Every other row (a committed
+ * line with no open Draft, a line the Draft removed, a one-time purchase) gets
+ * neither action, so a committed version is never edited from here.
+ */
+export function editableDraftLineId(item: Pick<PurchasedProduct, 'source' | 'draft_line_id' | 'pending_termination'>): number | null {
+  if (item.source !== 'recurring' || item.pending_termination) return null;
+  return item.draft_line_id ?? null;
 }

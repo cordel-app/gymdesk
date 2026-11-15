@@ -343,6 +343,8 @@ export interface MemberPurchasedProduct {
    * Draft carries it (an Active line with no Draft, a pending one, one the Draft removed).
    */
   draft_line_id?: number | null;
+  /** #2856 — a recurring line's own quantity (the line's, the Draft's when the Draft changed it). */
+  quantity?: number;
   /**
    * #2609 — the family member the Product is for: the stored assignee, else the
    * purchaser / Product Set owner (a row written before the column existed, or a
@@ -650,6 +652,7 @@ async function loadRecurringPurchases(
         source: 'recurring' as const,
         pending_termination: false,
         draft_line_id: Number(row.id),
+        quantity: Number(row.quantity) || 1,
         assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
         assigned_member_name: row.assigned_member_name ?? null,
       };
@@ -686,6 +689,7 @@ async function loadRecurringPurchases(
       pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
       draft_line_id: active.set_status === 'active' && draftByRef.has(Number(active.line_ref))
         ? Number(draftByRef.get(Number(active.line_ref)).id) : null,
+      quantity: Number(row.quantity) || 1,
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,
     };

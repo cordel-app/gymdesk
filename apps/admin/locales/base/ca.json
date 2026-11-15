@@ -868,7 +868,13 @@
     "booking_status_waitlisted": "En llista d'espera",
     "booking_status_cancelled": "Cancel·lat",
     "booking_status_unknown": "—",
-    "booking_event_cancelled": "Esdeveniment cancel·lat"
+    "booking_event_cancelled": "Esdeveniment cancel·lat",
+    "draft_line_save": "Desa els canvis",
+    "draft_line_quantity": "Quantitat",
+    "draft_line_delete": "Elimina",
+    "draft_line_delete_confirm": "Vols eliminar {product} de l'esborrany? Es treu d'aquest Product Set; no s'hi ha cobrat res.",
+    "draft_line_delete_error": "No s'ha pogut eliminar el producte de l'esborrany.",
+    "add_product_error_promotion_requires_products": "Aquesta promoció requereix altres productes. Afegeix-los primer i després aplica la promoció."
   },
   "member_payments": {
     "title": "Pagaments del membre",
