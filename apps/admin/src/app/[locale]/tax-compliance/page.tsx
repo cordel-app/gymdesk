@@ -8,37 +8,24 @@ import { canWriteModule } from '@/config/permissions';
 import { Tabs } from '@/components/Tabs';
 import { CardSection } from '@/components/CardSection';
 import {
-  formActionsRowStyle,
-  formControlStyle,
-  formErrorStyle,
   formFieldLabelStyle,
-  formValueStyle,
   innerCardStyle,
   cardMutedTextStyle,
-  secondaryBtnSmall,
 } from '@/components/formChrome';
-import { primaryBtnSmall } from '@/components/ui';
-import { formatGymDateOnly, formatGymDateTime } from '@/lib/gymFormat';
+import { formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import {
   KNOWN_COMPLIANCE_EVENT_TYPES,
   TAX_COMPLIANCE_TABS,
-  TAX_PROFILE_LAYOUT,
-  missingRequired,
-  taxIdTypeOptions,
-  toTaxProfileForm,
-  toTaxProfilePayload,
-  withCountry,
   type TaxComplianceTab,
   type TaxProfile,
-  type TaxProfileField,
-  type TaxProfileForm,
   type TaxProfileOptions,
   type TaxConfigurationOptions,
 } from './taxComplianceView';
 import { TaxConfigurationSection } from './TaxConfigurationSection';
 import { ElectronicInvoicingSection } from './ElectronicInvoicingSection';
 import { CredentialsSection } from './CredentialsSection';
+import { TaxProfileSection } from './TaxProfileSection';
 
 interface ComplianceEvent {
   id: number;
@@ -67,8 +54,6 @@ export default function TaxCompliancePage() {
   const [options, setOptions] = useState<TaxProfileOptions | null>(null);
   const [configOptions, setConfigOptions] = useState<TaxConfigurationOptions | null>(null);
   const [history, setHistory] = useState<ComplianceEvent[] | null>(null);
-  const [draft, setDraft] = useState<TaxProfileForm | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const countryName = useMemo(() => {
@@ -105,77 +90,8 @@ export default function TaxCompliancePage() {
     })();
   }, [apiFetch, activeGym?.id, tab]);
 
-  const taxIdTypeLabel = (type: string) => t(`tax_id_type_${type}`);
   const eventLabel = (type: string) =>
     (KNOWN_COMPLIANCE_EVENT_TYPES as readonly string[]).includes(type) ? t(`event_${type}`) : type;
-
-  async function save() {
-    if (!draft) return;
-    const missing = missingRequired(draft);
-    if (missing.length > 0) {
-      setError(t('error_required', { fields: missing.map((k) => t(`field_${k}`)).join(', ') }));
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const next = (await apiFetch('/system/tax-compliance/profile', {
-        method: 'PUT',
-        body: JSON.stringify(toTaxProfilePayload(draft)),
-      })) as TaxProfile;
-      setProfile(next);
-      setDraft(null);
-      setHistory(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function readValue(key: TaxProfileField): string {
-    const v = profile?.[key];
-    if (v == null || v === '') return '—';
-    if (key === 'country_code') return countryName(v);
-    if (key === 'tax_id_type') return taxIdTypeLabel(v);
-    if (key === 'tax_registration_date') return formatGymDateOnly(v, fmt);
-    return v;
-  }
-
-  function control(key: TaxProfileField) {
-    if (!draft) return null;
-    const set = (v: string) => setDraft({ ...draft, [key]: v });
-    if (key === 'country_code') {
-      return (
-        <select style={formControlStyle} value={draft.country_code} onChange={(e) => setDraft(withCountry(draft, e.target.value, options))}>
-          <option value="">—</option>
-          {(options?.countries ?? [])
-            .map((c) => ({ c, label: countryName(c) }))
-            .sort((a, b) => a.label.localeCompare(b.label, locale))
-            .map(({ c, label }) => <option key={c} value={c}>{label}</option>)}
-        </select>
-      );
-    }
-    if (key === 'tax_id_type') {
-      return (
-        <select style={formControlStyle} value={draft.tax_id_type} disabled={!draft.country_code} onChange={(e) => set(e.target.value)}>
-          <option value="">—</option>
-          {taxIdTypeOptions(options, draft.country_code).map((ty) => <option key={ty} value={ty}>{taxIdTypeLabel(ty)}</option>)}
-        </select>
-      );
-    }
-    return (
-      <input
-        style={formControlStyle}
-        type={key === 'tax_registration_date' ? 'date' : 'text'}
-        value={draft[key]}
-        onChange={(e) => set(e.target.value)}
-        aria-label={t(`field_${key}`)}
-      />
-    );
-  }
-
-  const editing = draft !== null;
 
   return (
     <div style={{ padding: 24, maxWidth: 860 }}>
@@ -186,33 +102,11 @@ export default function TaxCompliancePage() {
       {tab === 'profile' && (
         <div style={{ ...innerCardStyle, marginTop: 16 }}>
           <CardSection label={t('section_profile')} first>
-            {!profile ? (
-              <p style={cardMutedTextStyle}>{error ?? '…'}</p>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-                {TAX_PROFILE_LAYOUT.map(({ key, required, full }) => (
-                  <div key={key} style={full ? { gridColumn: '1 / -1' } : undefined}>
-                    <label style={formFieldLabelStyle}>
-                      {t(`field_${key}`)}{editing && required ? ' *' : ''}
-                    </label>
-                    {editing ? control(key) : <div style={formValueStyle}>{readValue(key)}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {error && profile && <p style={formErrorStyle}>{error}</p>}
-            {canWrite && profile && (
-              <div style={formActionsRowStyle}>
-                {editing ? (
-                  <>
-                    <button style={primaryBtnSmall()} disabled={saving} onClick={save}>{t('save')}</button>
-                    <button style={secondaryBtnSmall} disabled={saving} onClick={() => { setDraft(null); setError(null); }}>{t('cancel')}</button>
-                  </>
-                ) : (
-                  <button style={primaryBtnSmall()} onClick={() => { setDraft(toTaxProfileForm(profile)); setError(null); }}>{t('edit')}</button>
-                )}
-              </div>
-            )}
+            <TaxProfileSection
+              key={activeGym?.id}
+              canWrite={canWrite}
+              onChanged={(p) => { setProfile(p); setHistory(null); }}
+            />
           </CardSection>
         </div>
       )}
