@@ -36,6 +36,19 @@ export async function cancelGroupPartners(
       WHERE gym_id = ? AND booking_group_id = ? AND id <> ? AND status IN ('booked','waitlisted')`,
     [gymId, groupId, bookingId],
   );
+  return cancelPartnerBookings(gymId, rows as any[], actor, alert);
+}
+
+/**
+ * Cancels the given bookings on behalf of another member's cancellation (a Duo
+ * partner, #1984; a family below its service's minimum, #2813) and alerts each
+ * member with `booking_cancelled_by_partner`. Nothing is spent: the cancelled
+ * members did not act. Returns anyone promoted off the waiting list.
+ */
+export async function cancelPartnerBookings(
+  gymId: string, rows: { id: number; member_id: number }[], actor: string | null,
+  alert: { sessionId: number; title: string; starts_at: string },
+): Promise<{ promotedMemberIds: number[] }> {
   const promotedMemberIds: number[] = [];
   const notified: number[] = [];
   for (const r of rows) {

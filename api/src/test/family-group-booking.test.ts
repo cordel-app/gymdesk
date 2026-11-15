@@ -1,6 +1,7 @@
-// #2674 — a member books a `family_only` Professional Service whose minimum is
-// above one with the family members who attend: one group booking, every rule
-// enforced server-side, one unit spent for the group.
+// #2674 / #2813 — a member books a `family_only` Professional Service with the
+// family members who attend: one individual booking per member (no group), each
+// reserving its own unit, every rule enforced server-side; a cancellation that
+// leaves the family below the service's minimum cancels the rest.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -11,6 +12,7 @@ let centerId: number;
 let activityTypeId: number;
 let familyService: number;
 let openService: number;
+let familySoloService: number;
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}`;
 const headers = () => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId });
@@ -27,7 +29,10 @@ beforeAll(async () => {
   ({ insertId: openService } = await db.query(
     "INSERT INTO professional_services (gym_id, name, is_system, system_key, max_capacity, min_participants, booking_type) VALUES (?, ?, 0, NULL, 3, 2, 'open_group')",
     [gymId, `Open-${uniq()}`]));
-  for (const s of [familyService, openService]) {
+  ({ insertId: familySoloService } = await db.query(
+    "INSERT INTO professional_services (gym_id, name, is_system, system_key, max_capacity, min_participants, booking_type) VALUES (?, ?, 0, NULL, 3, 1, 'family_only')",
+    [gymId, `FamSolo-${uniq()}`]));
+  for (const s of [familyService, openService, familySoloService]) {
     await db.query("INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')", [gymId, s]);
     await db.query('INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)',
       [gymId, activityTypeId, s]);
@@ -113,30 +118,85 @@ describe('family group booking (#2674)', () => {
     expect(svc).toMatchObject({ booking_type: 'family_only', min_participants: 2, capacity: 3 });
   });
 
-  it('books the booker and the family members as one group and reserves one unit, the booker\'s', async () => {
+  it('books every selected family member individually, each with their own reservation (#2813 §5)', async () => {
     const clerk = `fg-${uniq()}`;
     const me = await member('Parent', clerk);
     const kid1 = await member('Kid One');
     const kid2 = await member('Kid Two');
     await family(me, [kid1, kid2]);
-    await grant(me, familyService, 1);
+    await grant(me, familyService, 3);
     const ev = await event();
 
     const res = await bookAs(clerk, { class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid1, kid2] });
     expect(res.status).toBe(201);
+    expect(res.body.participant_booking_ids).toHaveLength(2);
     const rows = await bookings(ev);
     expect(rows.map((r) => r.member_id).sort()).toEqual([me, kid1, kid2].sort());
-    expect(new Set(rows.map((r) => r.booking_group_id)).size).toBe(1);
-    expect(rows[0].booking_group_id).toBe(res.body.booking_group_id);
+    expect(rows.every((r) => r.booking_group_id === null)).toBe(true);
     expect(rows.every((r) => r.booked_by_member_id === me && r.professional_service_id === familyService)).toBe(true);
-    expect(await reservations(me)).toBe(1);
-    expect(await reservations(kid1)).toBe(0);
+    expect(await reservations(me) + await reservations(kid1) + await reservations(kid2)).toBe(3);
 
     // A repeated request books nothing more.
     const again = await bookAs(clerk, { class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid1, kid2] });
     expect(again.status).toBe(409);
     expect(await bookings(ev)).toHaveLength(3);
-    expect(await reservations(me)).toBe(1);
+  });
+
+  it('rolls every booking back when the family has fewer available units than attendees', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Short', clerk);
+    const kid = await member('Kid');
+    await family(me, [kid]);
+    await grant(me, familyService, 1);
+    const ev = await event();
+    const res = await bookAs(clerk, { class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid] });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(await bookings(ev)).toHaveLength(0);
+  });
+
+  it('takes a selection for a family_only service whose minimum is one (#2813 §1)', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Alone', clerk);
+    const kid = await member('Kiddo');
+    await family(me, [kid]);
+    await grant(me, familySoloService, 2);
+    const ev = await event();
+    const res = await bookAs(clerk, { class_session_id: ev, professional_service_id: familySoloService, participant_member_ids: [kid] });
+    expect(res.status).toBe(201);
+    expect((await bookings(ev)).map((r) => r.member_id).sort()).toEqual([me, kid].sort());
+  });
+
+  it('keeps the others while the family meets the minimum, then cancels the last one below it (#2813 §6)', async () => {
+    const clerk = `fg-${uniq()}`;
+    const kidClerk = `fg-${uniq()}`;
+    const me = await member('Mum', clerk);
+    const kid1 = await member('Ada', kidClerk);
+    const kid2 = await member('Ben');
+    await family(me, [kid1, kid2]);
+    await grant(me, familyService, 3);
+    const ev = await event();
+    const res = await bookAs(clerk, { class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid1, kid2] });
+    expect(res.status).toBe(201);
+    const idOf = async (m: number) => {
+      const { rows } = await db.query('SELECT id FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?', [ev, m]);
+      return Number((rows as any[])[0].id);
+    };
+
+    // Two of three remain: min 2 is met, nothing else moves.
+    asMember(kidClerk);
+    const first = await request.delete(`/me/bookings/${await idOf(kid1)}`).set(headers());
+    expect(first.status).toBe(204);
+    expect((await bookings(ev)).map((r) => r.member_id).sort()).toEqual([me, kid2].sort());
+
+    // One would remain: below min 2, so the last one is cancelled and told why.
+    asMember(clerk);
+    const second = await request.delete(`/me/bookings/${await idOf(me)}`).set(headers());
+    expect(second.status).toBe(204);
+    expect(await bookings(ev)).toHaveLength(0);
+    expect(await reservations(me) + await reservations(kid1) + await reservations(kid2)).toBe(0);
+    const { rows: alerts } = await db.query(
+      "SELECT member_id FROM member_notifications WHERE gym_id = ? AND type = 'booking_cancelled_by_partner' AND entity_id = ?", [gymId, ev]);
+    expect((alerts as any[]).map((a) => Number(a.member_id))).toEqual([kid2]);
   });
 
   it('refuses a selection below the minimum, above the maximum or outside the family, booking nothing', async () => {
@@ -166,7 +226,7 @@ describe('family group booking (#2674)', () => {
     expect(await reservations(me)).toBe(0);
   });
 
-  it('rolls the whole group back when the booker has no available unit', async () => {
+  it('rolls every booking back when the booker has no available unit', async () => {
     const clerk = `fg-${uniq()}`;
     const me = await member('Broke', clerk);
     const kid = await member('Kid');
