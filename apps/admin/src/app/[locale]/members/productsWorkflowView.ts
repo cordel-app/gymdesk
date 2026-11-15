@@ -31,35 +31,68 @@ export function pendingOneOffCount(purchases: Array<{ status: string }>): number
 /** The review answer reduced to what the mode needs. */
 export interface ReviewSummary {
   changes: unknown[];
-  /** #2446 — every item of the pending set: active, draft and cancelling. */
-  summary_items?: SummaryItemLike[];
-  /** #2446 stage 3 — the Summary's totals, the server's. */
-  financial_summary?: FinancialSummaryLike;
+  /** #2860 — the commit charge broken down line by line; its total is `amount_due`. */
+  initial_payment?: InitialPaymentLike;
+  /** #2860 — what the Draft contracts, for whom and how often; no amounts. */
+  contracted_items?: ContractedItemLike[];
   amount_due: number | null;
 }
 
-export interface FinancialSummaryLike {
-  recurring: Array<{ billing_frequency: string | null; existing: number; new: number; cancelling: number; resulting: number }>;
-  initial_discounts: number;
-  initial_payment: number | null;
-  amount_payable: number | null;
+/** #2860 — `initial_payment` of the review (`initialPaymentBreakdown()`), every figure the server's. */
+export interface InitialPaymentLike {
+  lines: Array<{
+    name: string | null; quantity: number; unit_price: number; discount: number;
+    promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
+    tax_rate_percent: number | null; tax_amount: number; amount: number;
+  }>;
+  subtotal_excl_tax: number;
+  discount_total: number;
+  taxes: Array<{ rate_percent: number | null; base: number; tax: number }>;
+  tax_total: number;
+  total: number | null;
 }
 
-export interface SummaryItemLike {
-  state: 'active' | 'draft' | 'cancelling';
-  type: 'plan' | 'product';
+export interface ContractedMemberLike { member_id: number; name: string | null }
+
+/** #2860 — one item of `contracted_items` (`contractedItems()`): it carries no amount by design. */
+export interface ContractedItemLike {
+  kind: 'plan' | 'product';
   name: string;
-  quantity: number | null;
+  period: 'one_off' | 'recurring';
   billing_frequency: string | null;
-  regular_price: number | null;
-  promotions: string[];
-  initial_amount?: number | null;
-  /** #2446 stage 3 — the per-period charge from the engine's forecast. */
-  final_price?: number | null;
-  /** #2446 stage 4 — a plan's Billing & Duration, in its own billing periods. */
-  duration?: {
-    free_periods: number; paid_periods: number; bonus_periods: number; prepaid_periods: number; repeats: boolean;
-  } | null;
+  cadence: { interval: number; unit: string } | null;
+  quantity: number | null;
+  members: ContractedMemberLike[];
+  included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMemberLike[] }>;
+}
+
+/** Recurring items (plans first, as the server lists them) apart from one-off ones. */
+export function splitContracted(items: ContractedItemLike[]): { recurring: ContractedItemLike[]; oneOff: ContractedItemLike[] } {
+  return {
+    recurring: items.filter((i) => i.period === 'recurring'),
+    oneOff: items.filter((i) => i.period === 'one_off'),
+  };
+}
+
+/** The members an item is for, joined; `null` when it names none (the whole family). */
+export function contractedMembersText(members: ContractedMemberLike[]): string | null {
+  const names = members.map((m) => m.name ?? `#${m.member_id}`);
+  return names.length > 0 ? names.join(', ') : null;
+}
+
+/**
+ * What a line's discount is: the Promotion's name, else its own treatment as a
+ * locale key (a percentage, or a waiver). `null` when nothing was taken off.
+ */
+export function discountText(l: InitialPaymentLike['lines'][number]):
+  { key: string; values?: Record<string, string | number>; text?: undefined } | { key?: undefined; text: string } | null {
+  if (l.discount <= 0) return null;
+  if (l.promotion_name) return { text: l.promotion_name };
+  if (l.treatment_action === 'waive') return { key: 'checkout_discount_waived' };
+  if (l.treatment_action === 'percentage_discount' && l.treatment_value != null) {
+    return { key: 'checkout_discount_percent', values: { percent: l.treatment_value } };
+  }
+  return { key: 'checkout_discount_direct' };
 }
 
 export interface WorkflowInput {

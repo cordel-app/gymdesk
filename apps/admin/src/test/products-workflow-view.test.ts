@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
+  billingMode, cancelRequestFor, contractedMembersText, discountText, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -75,5 +75,31 @@ describe('#2747 stage 2 — what Cancel does to the in-flight version', () => {
     expect(pendingCancelErrorKey('payment_settled')).toBe('ps_cancel_pending_error_settled');
     expect(pendingCancelErrorKey('payment_unresolved')).toBe('ps_cancel_pending_error_unresolved');
     expect(pendingCancelErrorKey('anything')).toBe('ps_cancel_pending_error');
+  });
+});
+
+describe('#2860 checkout summary', () => {
+  const item = (period: 'one_off' | 'recurring', name: string) => ({
+    kind: 'product' as const, name, period, billing_frequency: null, cadence: null, quantity: 1, members: [], included: [],
+  });
+
+  it('separates recurring items from one-off ones, keeping the server order', () => {
+    const { recurring, oneOff } = splitContracted([item('recurring', 'Plan'), item('one_off', 'Water'), item('recurring', 'Towel')]);
+    expect(recurring.map((i) => i.name)).toEqual(['Plan', 'Towel']);
+    expect(oneOff.map((i) => i.name)).toEqual(['Water']);
+  });
+
+  it('names the members, and none means the whole family', () => {
+    expect(contractedMembersText([{ member_id: 1, name: 'Ana' }, { member_id: 2, name: null }])).toBe('Ana, #2');
+    expect(contractedMembersText([])).toBeNull();
+  });
+
+  it('says what a discount is: the Promotion, else the line treatment, and nothing without one', () => {
+    const l = { name: 'x', quantity: 1, unit_price: 10, discount: 2, promotion_name: null, treatment_action: null, treatment_value: null, tax_rate_percent: null, tax_amount: 0, amount: 8 };
+    expect(discountText({ ...l, discount: 0 })).toBeNull();
+    expect(discountText({ ...l, promotion_name: 'Spring' })).toEqual({ text: 'Spring' });
+    expect(discountText({ ...l, treatment_action: 'percentage_discount', treatment_value: 20 })).toEqual({ key: 'checkout_discount_percent', values: { percent: 20 } });
+    expect(discountText({ ...l, treatment_action: 'waive' })).toEqual({ key: 'checkout_discount_waived' });
+    expect(discountText(l)).toEqual({ key: 'checkout_discount_direct' });
   });
 });

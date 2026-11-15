@@ -16,6 +16,8 @@ import { CrudModal } from '@/components/CrudModal';
 import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
+import { InitialPaymentSection } from './CheckoutSummarySections';
+import type { InitialPaymentLike } from './productsWorkflowView';
 import { changeMessage, confirmAction, splitChanges, type ChangeLike, type ReviewLike } from './recurringProductsView';
 
 interface Review extends ReviewLike {
@@ -34,6 +36,8 @@ interface Review extends ReviewLike {
   payment_methods?: Array<{ code: string; name: string; available: boolean; reason: string | null }>;
   net_total?: number;
   tax_total?: number | null;
+  /** #2860 — the commit charge broken down; its total is `amount_due`. */
+  initial_payment?: InitialPaymentLike;
 }
 
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
@@ -175,31 +179,9 @@ export function ReviewChangesModal({
             <p style={cardHintStyle}>{t('review_error_amount')}</p>
           ) : (
             <>
-              {review.immediate_lines.map((l, i) => (
-                <div key={i} style={{ fontSize: 14, marginBottom: 4 }}>
-                  <div>
-                    {l.item_name ?? '—'} × {l.quantity}: {money(l.amount, review.currency)}
-                  </div>
-                  <div style={{ ...cardHintStyle, margin: 0 }}>
-                    {l.regular_unit_price != null ? `${t('pay_original_price')}: ${money(l.regular_unit_price * l.quantity, review.currency)}` : ''}
-                    {l.promotion_name ? ` · ${t('pay_promotion')}: ${l.promotion_name}` : ''}
-                    {l.treatment_action && l.treatment_action !== 'no_benefit' && !l.promotion_name
-                      ? ` · ${t('pay_direct_discount')}: ${l.treatment_action === 'percentage_discount' && l.treatment_value != null ? `${l.treatment_value}%` : l.treatment_action === 'waive' ? '100%' : money(l.treatment_value ?? 0, review.currency)}`
-                      : ''}
-                    {l.tax_rate_percent != null && l.amount_excl_tax != null
-                      ? ` · ${t('pay_vat_line', { rate: l.tax_rate_percent, net: money(l.amount_excl_tax, review.currency), tax: money(l.amount - l.amount_excl_tax, review.currency) })}`
-                      : ''}
-                  </div>
-                </div>
-              ))}
-              {review.amount_due > 0 && review.tax_total != null && (
-                <div style={{ fontSize: 13 }}>
-                  {t('pay_net_total')}: {money(review.net_total ?? 0, review.currency)} · {t('pay_tax_total')}: {money(review.tax_total, review.currency)}
-                </div>
-              )}
-              <div style={{ fontWeight: 600, fontSize: 14, margin: '4px 0 12px' }}>
-                {review.amount_due > 0 ? `${t('pay_total_incl_vat')}: ${money(review.amount_due, review.currency)}` : t('review_nothing_due')}
-              </div>
+              {/* #2860 — the same Initial Payment the Summary shows, from the same read. */}
+              <InitialPaymentSection payment={review.initial_payment} />
+              <div style={{ marginBottom: 12 }} />
               {owes && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={cardSectionLabelStyle}>{t('pay_method')}</div>

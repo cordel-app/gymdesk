@@ -1,0 +1,194 @@
+// #2860 — the two sections of the Product Set Summary shown before Save & Pay.
+//
+// **Initial Payment** restates the commit charge (`commitCharge()`, the very
+// lines and amount Save & Pay asks for): this module prices nothing, it only
+// splits each line the engine produced into what the screen states (unit price,
+// discount, tax) and adds them up, so the total is the charge to the cent.
+//
+// **Contracted Products & Plans** is what the Draft contracts, for whom and how
+// often: names, a billing period and members only. It carries no amount on
+// purpose — the issue forbids prices, discounts and taxes there, and a shape
+// with no money field cannot leak one.
+
+/** One line of the commit charge, as `GET /product-sets/:id/review` reports it. */
+export interface ChargeLineLike {
+  item_name: string | null;
+  quantity: number;
+  /** The line's charge, VAT included. */
+  amount: number;
+  /** The unit price before any treatment or Promotion, VAT included; `null` when unknown. */
+  regular_unit_price: number | null;
+  promotion_name: string | null;
+  treatment_action: string | null;
+  treatment_value: number | null;
+  tax_rate_percent: number | null;
+  amount_excl_tax: number | null;
+}
+
+export interface InitialPaymentLine {
+  name: string | null;
+  quantity: number;
+  /** VAT included, before discounts. */
+  unit_price: number;
+  /** Regular price × quantity minus the charge; 0 when nothing was taken off. */
+  discount: number;
+  /** What the discount is: the Promotion's name, else the line's own treatment. */
+  promotion_name: string | null;
+  treatment_action: string | null;
+  treatment_value: number | null;
+  tax_rate_percent: number | null;
+  tax_amount: number;
+  /** The line's final amount, VAT included. */
+  amount: number;
+}
+
+export interface InitialPaymentTaxRow {
+  /** `null` groups the lines that carry no tax rate. */
+  rate_percent: number | null;
+  base: number;
+  tax: number;
+}
+
+export interface InitialPayment {
+  lines: InitialPaymentLine[];
+  subtotal_excl_tax: number;
+  discount_total: number;
+  taxes: InitialPaymentTaxRow[];
+  tax_total: number;
+  /** The amount Save & Pay charges (`amount_due`), never a re-added figure. */
+  total: number | null;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The Initial Payment breakdown of a commit charge. `total` is `amountDue`
+ * itself — the engine's lines already sum to it (`billingEventLines.ts`), so the
+ * screen's total and the charge cannot disagree.
+ */
+export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: number | null): InitialPayment {
+  const taxes = new Map<string, InitialPaymentTaxRow>();
+  const out: InitialPaymentLine[] = lines.map((l) => {
+    const quantity = Number(l.quantity) || 0;
+    const amount = round2(Number(l.amount));
+    const net = l.amount_excl_tax != null ? round2(Number(l.amount_excl_tax)) : amount;
+    const tax = round2(amount - net);
+    const unit = l.regular_unit_price != null
+      ? round2(Number(l.regular_unit_price))
+      : quantity > 0 ? round2(amount / quantity) : amount;
+    const discount = l.regular_unit_price != null ? Math.max(0, round2(unit * quantity - amount)) : 0;
+    const rate = l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null;
+    const key = rate == null ? '' : String(rate);
+    const row = taxes.get(key) ?? { rate_percent: rate, base: 0, tax: 0 };
+    row.base = round2(row.base + net);
+    row.tax = round2(row.tax + tax);
+    taxes.set(key, row);
+    return {
+      name: l.item_name, quantity, unit_price: unit, discount,
+      promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
+      tax_rate_percent: rate, tax_amount: tax, amount,
+    };
+  });
+  const taxRows = [...taxes.values()]
+    .filter((r) => r.rate_percent != null)
+    .sort((a, b) => (a.rate_percent ?? 0) - (b.rate_percent ?? 0));
+  return {
+    lines: out,
+    subtotal_excl_tax: round2(out.reduce((n, l) => n + (l.amount - l.tax_amount), 0)),
+    discount_total: round2(out.reduce((n, l) => n + l.discount, 0)),
+    taxes: taxRows,
+    tax_total: round2(out.reduce((n, l) => n + l.tax_amount, 0)),
+    total: amountDue,
+  };
+}
+
+// ── Contracted Products & Plans ─────────────────────────────────────────────
+
+export interface ContractedMember { member_id: number; name: string | null }
+
+export interface ContractedItem {
+  kind: 'plan' | 'product';
+  name: string;
+  /** `one_off` for a one-time Product, `recurring` for a plan or a recurring Product. */
+  period: 'one_off' | 'recurring';
+  /** A Product's own frequency; `null` for a plan (its period is `cadence`) or when unknown. */
+  billing_frequency: string | null;
+  /** A plan's billing cadence, the stored pair; `null` for a Product. */
+  cadence: { interval: number; unit: string } | null;
+  quantity: number | null;
+  /** Who it is for; empty when it is the whole family's (a Shared line of a plan). */
+  members: ContractedMember[];
+  /** A plan's included Products, in the plan's own frozen lines. */
+  included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMember[] }>;
+}
+
+export interface ContractPlanLike {
+  plan_name: string | null;
+  billing_interval: number | null;
+  billing_unit: string | null;
+  entitlement_only: boolean;
+  beneficiaries: Array<{ member_id: number; name: string | null }>;
+  benefits: Array<{ name: string; quantity: number; billing_frequency: string | null; assigned_member_id: number | null; member_name: string | null }>;
+}
+
+export interface ContractLineLike {
+  product_name: string;
+  quantity: number;
+  billing_frequency: string | null;
+  assigned_member_id: number | null;
+}
+
+export interface ContractPurchaseLike {
+  product_name: string;
+  units: number | null;
+  billing_frequency: string | null;
+  assigned_member_id: number | null;
+  member_id: number;
+}
+
+/** A recurring frequency; `once`, `per_session` and none are a one-time Product (#945). */
+const isRecurring = (f: string | null) => f != null && f !== 'once' && f !== 'per_session';
+
+/**
+ * What the Draft contracts: its plans (an entitlement-only link is a plan
+ * running to its end, not contracted), its recurring lines and its one-time
+ * Products, in that order. `names` resolves a member id to their name.
+ */
+export function contractedItems(
+  input: { plans: ContractPlanLike[]; lines: ContractLineLike[]; purchases: ContractPurchaseLike[] },
+  names: Map<number, string | null>,
+): ContractedItem[] {
+  const member = (id: number | null): ContractedMember[] =>
+    id == null ? [] : [{ member_id: id, name: names.get(id) ?? null }];
+  const out: ContractedItem[] = [];
+  for (const p of input.plans) {
+    if (p.entitlement_only) continue;
+    out.push({
+      kind: 'plan', name: p.plan_name ?? '', period: 'recurring',
+      billing_frequency: null,
+      cadence: p.billing_interval != null && p.billing_unit ? { interval: Number(p.billing_interval), unit: p.billing_unit } : null,
+      quantity: null,
+      members: p.beneficiaries.map((b) => ({ member_id: b.member_id, name: b.name })),
+      included: p.benefits.map((b) => ({
+        name: b.name, billing_frequency: b.billing_frequency, quantity: b.quantity,
+        members: b.assigned_member_id == null ? [] : [{ member_id: b.assigned_member_id, name: b.member_name }],
+      })),
+    });
+  }
+  for (const l of input.lines) {
+    out.push({
+      kind: 'product', name: l.product_name,
+      period: isRecurring(l.billing_frequency) ? 'recurring' : 'one_off',
+      billing_frequency: l.billing_frequency, cadence: null, quantity: l.quantity,
+      members: member(l.assigned_member_id), included: [],
+    });
+  }
+  for (const p of input.purchases) {
+    out.push({
+      kind: 'product', name: p.product_name, period: 'one_off',
+      billing_frequency: p.billing_frequency, cadence: null, quantity: null,
+      members: member(p.assigned_member_id ?? p.member_id), included: [],
+    });
+  }
+  return out;
+}
