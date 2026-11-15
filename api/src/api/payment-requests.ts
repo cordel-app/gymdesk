@@ -12,6 +12,7 @@ import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
 import { currentMembershipFee } from './membership-fee-pricing';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 export const paymentRequestsRouter = Router();
 
@@ -94,9 +95,10 @@ paymentRequestsRouter.post(
       }>(
         `SELECT um.member_id, um.membership_plan_id,
                 m.email AS member_email, m.name AS member_name
-         FROM user_memberships um
+         FROM plan_snapshots um
          JOIN members m ON m.id = um.member_id
-         WHERE um.id = ? AND um.gym_id = ? AND um.status NOT IN ('active_cancel_at_period_end', 'cancelled', 'superseded')`,
+         WHERE ${assignmentOfLegacyIdSql('?', 'um')} AND um.gym_id = ?
+           AND um.status NOT IN ('active_cancel_at_period_end', 'cancelled', 'superseded')`,
         [user_membership_id, gymId],
       );
       if (!umRows[0]) return res.status(404).json({ error: 'Membership not found' });

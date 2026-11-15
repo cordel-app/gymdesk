@@ -53,13 +53,12 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
   'api/me-product-set-lines.ts': 1,
-  'api/me.ts': 4,
+  'api/me.ts': 2,
   'api/member-membership-configuration.ts': 2,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
   'api/membership-promotions.ts': 4,
   'api/one-active-plan.ts': 2,
-  'api/payment-requests.ts': 1,
   'api/payments.ts': 2,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 1,
@@ -174,6 +173,13 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     for (const file of ['api/me.ts', 'api/me-billing-forecast.ts']) {
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um');
     }
+  });
+
+  it('M6b-15: the member\'s applied Promotions, Pay now and a staff payment request read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/payment-requests.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/payment-requests.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'um')");
+    const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
+    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
