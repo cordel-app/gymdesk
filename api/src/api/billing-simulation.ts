@@ -24,6 +24,7 @@ import {
   loadPromotionGrantSnapshots,
 } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
 
 /**
  * #629 (stage 1) — Billing Simulation.
@@ -73,6 +74,8 @@ interface AssignmentRow {
   id: number;
   membership_plan_id: number | null;
   status: string;
+  /** #2834 — fee units of the assignment's plan snapshot (scope × beneficiaries). */
+  membership_fee_units?: number | string | null;
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
@@ -182,6 +185,7 @@ export async function loadSimulationAssignments(
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
             ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
+            ${membershipFeeUnitsSql('cfg')} AS membership_fee_units,
             (${assignmentConfig('free_periods')} IS NOT NULL OR ${assignmentConfig('paid_periods')} IS NOT NULL OR ${assignmentConfig('pay_beforehand_periods')} IS NOT NULL
              OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
              OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
@@ -247,6 +251,8 @@ export async function loadSimulationAssignments(
       // #772 — read straight off the assignment: it has no catalogue
       // counterpart, so the snapshot's all-or-nothing fallback does not apply.
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+      // #2834 — the assignment's plan snapshot decides how many fees a cycle owes.
+      membershipFeeUnits: Number(row.membership_fee_units ?? 1),
     };
   }));
 }

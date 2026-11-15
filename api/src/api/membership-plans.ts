@@ -70,6 +70,7 @@ import {
   withProductBenefitPrices,
 } from './product-benefit-pricing';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { DEFAULT_MEMBERSHIP_FEE_SCOPE, parseMembershipFeeScopeInput, toMembershipFeeScope } from '../domain/membershipFeeScope';
 
 interface PlanRow {
   id: number;
@@ -83,6 +84,8 @@ interface PlanRow {
   member_limit: '1' | '2' | 'family';
   tax_rate_id: number | null;
   tax_behavior: 'inclusive' | 'exclusive';
+  /** #2834 — one Membership Fee per assignment (`per_family`) or per beneficiary (`per_member`). */
+  membership_fee_scope?: string;
   // #635 §7 — Billing & Duration, the same free/paid/bonus a Promotion carries.
   // Nullable: "never configured" stays distinguishable from an explicit 0.
   free_periods: number | null;
@@ -590,16 +593,21 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
   const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
   if (taxRateErr) return res.status(400).json({ error: taxRateErr });
   const resolvedTaxRateId = tax_rate_id != null ? Number(tax_rate_id) : await getSystemTaxRateId(gymId);
+  // #2834 — the Membership Fee scope; a new plan defaults to one fee per assignment.
+  const feeScope = parseMembershipFeeScopeInput(req.body);
+  if (feeScope.kind === 'error') return res.status(400).json({ error: feeScope.error });
 
   const callerActor = resolveRequestActor(getTenantContext(req));
   try {
     const row = await insertAndFetch(
       `INSERT INTO membership_plans
-       (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior,
+        membership_fee_scope, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
        lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', member_limit ?? '1',
-       resolvedTaxRateId, tax_behavior || 'inclusive', callerActor],
+       resolvedTaxRateId, tax_behavior || 'inclusive',
+       feeScope.kind === 'value' ? feeScope.value : DEFAULT_MEMBERSHIP_FEE_SCOPE, callerActor],
       'SELECT * FROM membership_plans WHERE id = ?',
       (id) => [id],
     );
@@ -983,9 +991,11 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
          (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior,
-          free_periods, paid_periods, bonus_periods, pay_beforehand_periods, created_by)
-         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          membership_fee_scope, free_periods, paid_periods, bonus_periods, pay_beforehand_periods, created_by)
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior,
+         // #2834 — the Membership Fee scope is part of the Plan's pricing.
+         toMembershipFeeScope(orig.membership_fee_scope),
          // #635: Billing & Duration is part of the plan's commercial config, so
          // a copy that dropped it would quietly differ from its original.
          orig.free_periods ?? null, orig.paid_periods ?? null, orig.bonus_periods ?? null,
@@ -1452,6 +1462,11 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
   }
   const taxRateErr = await validateTaxRateId(gymId, req.body.tax_rate_id);
   if (taxRateErr) return res.status(400).json({ error: taxRateErr });
+  // #2834 — the Membership Fee scope is set beside the price and VAT; not mentioned keeps it.
+  const feeScope = parseMembershipFeeScopeInput(req.body);
+  if (feeScope.kind === 'error') return res.status(400).json({ error: feeScope.error });
+  const previousFeeScope = toMembershipFeeScope(plan.membership_fee_scope);
+  const nextFeeScope = feeScope.kind === 'value' ? feeScope.value : previousFeeScope;
 
   // An explicit tax_rate_id wins; an explicit null/'' means "gym default" (the
   // system rate, mirroring POST /); omitting the key leaves the plan's rate as is.
@@ -1505,9 +1520,10 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
       // the plan's tax behavior is fixed — only the rate is selectable.
       await tx.query(
         `UPDATE membership_plans
-            SET tax_rate_id = ?, tax_behavior = 'inclusive', modified_at = UTC_TIMESTAMP(), modified_by = ?
+            SET tax_rate_id = ?, tax_behavior = 'inclusive', membership_fee_scope = ?,
+                modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id = ?`,
-        [nextTaxRateId, callerActor, plan.id, gymId],
+        [nextTaxRateId, nextFeeScope, callerActor, plan.id, gymId],
       );
       await recomputePriceStatuses(tx, plan.id, gymId);
     });
@@ -1517,8 +1533,8 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
       action: 'update',
       entityType: 'membership_plan',
       entityId: plan.id,
-      previous: { price: null, tax_rate_id: plan.tax_rate_id },
-      next: { price: value, tax_rate_id: nextTaxRateId },
+      previous: { price: null, tax_rate_id: plan.tax_rate_id, membership_fee_scope: previousFeeScope },
+      next: { price: value, tax_rate_id: nextTaxRateId, membership_fee_scope: nextFeeScope },
     });
     res.json(await enrichPlan(rows[0], gymId));
   } catch (err) {
