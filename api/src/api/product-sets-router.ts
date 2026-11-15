@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
 import { recordPaymentAttempt } from './payment-attempt';
 import { db, type Tx } from '../infra/db';
@@ -497,6 +498,8 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
   });
   if (out.kind === 'no_open_event') return res.status(409).json({ error: 'no_open_event' });
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
+  // #2648 stage 6: the paid event gets its simplified invoice (best-effort).
+  generatePaidRepresentations(gymId, out.billingEventId).catch(() => {});
   recordAudit(req, { action: 'record_payment', entityType: 'product_set', entityId: set.id, next: { status: 'active', method: 'cash' } });
   res.json({ product_set_id: Number(set.id), status: 'active', billing_event_id: out.billingEventId });
 });

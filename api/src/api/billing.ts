@@ -6,6 +6,7 @@ import { cancelAbandonedPurchases } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
+import { issueDueSimplifiedInvoices } from './billing-invoices';
 import { expireDrafts, expirePendingPayments } from './product-sets';
 import { reconcileAbandonedRequests } from './payment-settlement';
 
@@ -144,16 +145,26 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
     paused = s.paused;
     receiptsIssued = s.receiptsIssued;
     const scheduledEvents: Record<string, number> = { ...s };
+    // #2648 stage 6: after the charges, every scheduled obligation whose billing
+    // date has come gets its simplified invoice, paid or not. Never fails the run.
+    let invoices = { issued: 0, failed: 0 };
+    try {
+      invoices = await issueDueSimplifiedInvoices({ today, log: req.log });
+    } catch (err) {
+      req.log.error({ err: (err as Error).message }, 'billing/run: automatic invoicing failed');
+    }
 
     await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
 
     req.log.info(
-      { processed, succeeded, failed, waived, paused, receiptsIssued, scheduledEvents },
+      { processed, succeeded, failed, waived, paused, receiptsIssued, invoices, scheduledEvents },
       'billing/run: complete',
     );
     res.json({
       processed, succeeded, failed, waived, paused,
       receipts_issued: receiptsIssued,
+      invoices_issued: invoices.issued,
+      invoices_failed: invoices.failed,
       scheduled_events: scheduledEvents,
     });
   } catch (err) {

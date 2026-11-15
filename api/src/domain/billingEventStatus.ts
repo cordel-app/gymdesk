@@ -224,7 +224,7 @@ export function isNonObligationEvent(eventType: string): boolean {
  * `status_changed`, and any of the three above whose latest transaction says
  * the payment failed, expired or is still pending.
  */
-const RECEIPTABLE_EVENT_TYPES = ['payment_recorded', 'recurring_payment', 'failed_billing', 'product_purchase'] as const;
+export const RECEIPTABLE_EVENT_TYPES = ['payment_recorded', 'recurring_payment', 'failed_billing', 'product_purchase'] as const;
 
 export function isReceiptableEvent(
   eventType: string,

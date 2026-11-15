@@ -1,12 +1,12 @@
 // #2806 — the Receipts & Invoices section: which documents a Billing Event
-// lists, when each Generate button is offered, and that every label exists in
-// the three locales.
+// lists, when each ⋮ menu document action is offered (#2648 stage 6), and that
+// every label exists in the three locales.
 import { describe, it, expect } from 'vitest';
 import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
-  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, generateBlocks,
+  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks,
 } from '../app/[locale]/payments/billing-events/receiptsInvoicesView';
 import type { InvoiceRow } from '../app/[locale]/payments/billing-events/verifactuInvoiceView';
 
@@ -18,16 +18,16 @@ function invoice(over: Partial<InvoiceRow>): InvoiceRow {
   };
 }
 
-const base = { canWrite: true, canIssueReceipt: true, receiptNumber: null, amount: '50.00', invoices: [] as InvoiceRow[] };
+const base = { canWrite: true, canIssueReceipt: true, receiptNumber: null as string | null, amount: '50.00' as string | null, hasFullInvoice: false };
 
 describe('Receipts & Invoices section', () => {
   it('is named Receipts & Invoices', () => {
     expect((en as any).billing_events_page.invoices_heading).toBe('Receipts & Invoices');
   });
 
-  it('labels the three buttons, every type, status and block reason in every locale', () => {
+  it('labels the menu actions, every type, status and block reason in every locale', () => {
     const keys = [
-      'generate_receipt', 'generate_simple_invoice', 'generate_full_invoice', 'invoices_empty',
+      'generate_receipt', 'view_receipt', 'generate_full_invoice', 'invoices_empty',
       ...DOCUMENT_KINDS.map(documentTypeKey), documentStatusKey('issued')!, documentStatusKey('draft')!,
       'gen_blocked_exists', 'gen_blocked_not_paid', 'gen_blocked_no_amount', 'gen_blocked_read_only',
       'full_inv_name_required', 'full_inv_tax_id_required', 'full_inv_address_required',
@@ -36,7 +36,9 @@ describe('Receipts & Invoices section', () => {
     for (const locale of [en, es, ca] as any[]) {
       for (const k of keys) expect(locale.billing_events_page[k], k).toBeTruthy();
     }
-    expect((en as any).billing_events_page.generate_simple_invoice).toBe('Generate Simple Invoice');
+    expect((en as any).billing_events_page.generate_full_invoice).toBe('Generate Complete Invoice');
+    // The system issues the simplified invoice: there is no action for it any more.
+    for (const locale of [en, es, ca] as any[]) expect(locale.billing_events_page.generate_simple_invoice).toBeUndefined();
   });
 
   it('lists nothing when no document was generated', () => {
@@ -59,32 +61,25 @@ describe('Receipts & Invoices section', () => {
     expect(docs[1].invoice?.id).toBe(7);
   });
 
-  it('offers all three buttons for a paid event with no documents', () => {
-    expect(generateBlocks(base)).toEqual({ receipt: null, simplified: null, full: null });
+  it('offers both menu actions for a paid event with no documents', () => {
+    expect(menuDocumentBlocks(base)).toEqual({ receipt: null, full: null });
   });
 
-  it('does not offer a second generation of a document that exists', () => {
-    const blocks = generateBlocks({ ...base, receiptNumber: 'R-0001', invoices: [invoice({})] });
-    expect(blocks).toEqual({ receipt: 'gen_blocked_exists', simplified: 'gen_blocked_exists', full: null });
+  it('keeps the receipt action (to view it) once issued, and blocks a second complete invoice', () => {
+    expect(menuDocumentBlocks({ ...base, receiptNumber: 'R-0001', hasFullInvoice: true }))
+      .toEqual({ receipt: null, full: 'gen_blocked_exists' });
   });
 
-  it('a rectifying invoice does not count as the original of its type', () => {
-    const blocks = generateBlocks({ ...base, invoices: [invoice({ invoice_type: 'full', related_invoice_id: 3 })] });
-    expect(blocks.full).toBeNull();
+  it('disables the receipt until the payment is received, but still offers the complete invoice', () => {
+    expect(menuDocumentBlocks({ ...base, canIssueReceipt: false })).toEqual({ receipt: 'gen_blocked_not_paid', full: null });
   });
 
-  it('offers no receipt for an unpaid event, but still its invoices', () => {
-    expect(generateBlocks({ ...base, canIssueReceipt: false })).toEqual({
-      receipt: 'gen_blocked_not_paid', simplified: null, full: null,
-    });
-  });
-
-  it('offers no invoice for an event with no amount, and nothing to a read-only role', () => {
-    expect(generateBlocks({ ...base, amount: '0.00' }).simplified).toBe('gen_blocked_no_amount');
-    expect(generateBlocks({ ...base, amount: null }).full).toBe('gen_blocked_no_amount');
-    expect(generateBlocks({ ...base, canWrite: false })).toEqual({
-      receipt: 'gen_blocked_read_only', simplified: 'gen_blocked_read_only', full: 'gen_blocked_read_only',
-    });
+  it('offers no complete invoice with no amount, and no writes to a read-only role', () => {
+    expect(menuDocumentBlocks({ ...base, amount: '0.00' }).full).toBe('gen_blocked_no_amount');
+    expect(menuDocumentBlocks({ ...base, amount: null }).full).toBe('gen_blocked_no_amount');
+    expect(menuDocumentBlocks({ ...base, canWrite: false })).toEqual({ receipt: 'gen_blocked_read_only', full: 'gen_blocked_read_only' });
+    // Viewing a receipt already issued is not a write.
+    expect(menuDocumentBlocks({ ...base, canWrite: false, receiptNumber: 'R-0001' }).receipt).toBeNull();
   });
 
   it('requires the three customer fields of a full invoice', () => {
