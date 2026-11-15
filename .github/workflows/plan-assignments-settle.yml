@@ -1,0 +1,61 @@
+name: Settle plan assignments (#2125 M6b)
+
+# Operator step of the M6b migration, run on the corback runner so nobody has to log into the VPS:
+# the compiled `settle-plan-assignments` / `validate-plan-assignments` scripts run inside the running
+# `fitness-api` container, which already holds the database environment (no secret is read here).
+#
+# workflow_dispatch only: a pull request must never reach a self-hosted runner
+# (api/src/test/self-hosted-runner-guard.unit.test.ts). `dev` is the only environment; pro is not live.
+#
+# Dispatch with execute=false first (a dry run, writes nothing), then execute=true.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: Write the settlement (false = dry run only)
+        type: boolean
+        default: false
+      gym_id:
+        description: One gym id (empty = every gym)
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  settle:
+    name: Settle and validate
+    runs-on: [self-hosted, corback, dev]
+    environment: dev
+    permissions: {}
+    steps:
+      - name: Settle plan assignments, then validate
+        env:
+          EXECUTE: ${{ inputs.execute }}
+          GYM_ID: ${{ inputs.gym_id }}
+        run: |
+          set -euo pipefail
+          # Inputs arrive as environment variables, never spliced into this script.
+          if [ -n "$GYM_ID" ] && ! printf '%s' "$GYM_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "gym_id must be a gym UUID" >&2; exit 2
+          fi
+          GYM_ARG=()
+          if [ -n "$GYM_ID" ]; then GYM_ARG=("$GYM_ID"); fi
+
+          podman container exists fitness-api
+          run() { podman exec fitness-api node "dist/scripts/$1.js" "${@:2}"; }
+
+          echo "== dry run (writes nothing) =="
+          run settle-plan-assignments "${GYM_ARG[@]}"
+
+          if [ "$EXECUTE" = "true" ]; then
+            echo "== settle (--execute) =="
+            run settle-plan-assignments "${GYM_ARG[@]}" --execute
+            echo "== dry run again (must report 0) =="
+            run settle-plan-assignments "${GYM_ARG[@]}" | tee /tmp/settle-after.txt
+            grep -q "Dry run: 0 Product" /tmp/settle-after.txt \
+              || { echo "Still not zero after settling." >&2; exit 1; }
+          fi
+
+          echo "== validate (read-only drift check) =="
+          run validate-plan-assignments "${GYM_ARG[@]}"
