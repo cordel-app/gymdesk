@@ -88,6 +88,7 @@ export async function spendSessionForBooking(
        VALUES (?, ?, ${MEMBER_FAMILY_SQL}, ?, ?, ?, 'manual_adjustment', 0, 0, ?, ?)`,
       [gymId, memberId, memberId, gymId, bookingId, eventId, debtServiceId, reason, actor],
     );
+    await settleBookingReservation(tx, gymId, bookingId);
     return { spent: true };
   }
 
@@ -114,7 +115,21 @@ export async function spendSessionForBooking(
       [gymId, grant.reference_id, bookingId, `Session spent (${reason})`, actor],
     );
   }
+  await settleBookingReservation(tx, gymId, bookingId);
   return { spent: true };
+}
+
+/**
+ * #2851: the spend is the unit the booking's reservation held (#2605), so the
+ * reservation becomes `consumed` in the spend's own transaction rather than
+ * waiting for the event-start pass. Written here, not through
+ * `service-reservation.ts`, which imports this module.
+ */
+async function settleBookingReservation(tx: Tx, gymId: string, bookingId: number): Promise<void> {
+  await tx.query(
+    "UPDATE professional_service_reservations SET status = 'consumed', consumed_at = UTC_TIMESTAMP() WHERE gym_id = ? AND calendar_event_booking_id = ? AND status = 'reserved'",
+    [gymId, bookingId],
+  );
 }
 
 /**

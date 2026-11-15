@@ -341,7 +341,9 @@ export default function MemberCalendarPage() {
         method: 'POST',
         body: JSON.stringify({
           class_session_id: selected.id,
-          ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}),
+          // #2851: the family selection names its service, the one the picker was shown for.
+          ...(chosenServiceId != null ? { professional_service_id: chosenServiceId }
+            : groupService ? { professional_service_id: groupService.id } : {}),
           ...(groupService ? { participant_member_ids: participantIds, booker_attends: bookerAttends } : {}),
         }),
       });

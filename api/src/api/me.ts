@@ -1066,6 +1066,21 @@ async function loadFamilyGroupService(gymId: string, sessionId: number, serviceI
 }
 
 /**
+ * #2851: the occurrence's one `family_only` service, when it offers exactly one —
+ * the service the Members App shows the family selection for when the member
+ * has not picked one (`groupServiceOf()`'s fallback). `null` otherwise.
+ */
+async function soleFamilyGroupServiceId(gymId: string, sessionId: number): Promise<number | null> {
+  const views = (await loadServiceCapacityViews(db, gymId, [sessionId])).get(sessionId) ?? [];
+  if (views.length === 0) return null;
+  const ids = [...new Set(views.map((v) => Number(v.id)))];
+  const { rows } = await db.query(
+    `SELECT id, booking_type FROM professional_services WHERE id IN (${ids.map(() => '?').join(', ')}) AND deleted_at IS NULL`, ids);
+  const family = rows.filter((r: any) => isFamilyGroupService(r)).map((r: any) => Number(r.id));
+  return family.length === 1 ? family[0] : null;
+}
+
+/**
  * #2813 §5: one individual booking per selected family member, in the caller's
  * transaction — no group. Each member passes the booking gate, reserves their
  * own unit (#2605) and counts toward the service's places (#1984 stage 2a); every
@@ -1150,16 +1165,22 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
       return res.status(400).json({ error: 'professional_service_id must be a positive integer' });
     }
     const actor = resolveRequestActor(ctx);
+    // #2851: a family selection sent with no service picked names the occurrence's
+    // one `family_only` service, the one the screen showed the selection for — the
+    // selection must never fall through to the Duo path and book only two of them.
+    const sentSelection = req.body.participant_member_ids !== undefined || req.body.booker_attends !== undefined;
+    const groupServiceId = chosenService ?? (sentSelection && Number.isInteger(Number(class_session_id))
+      ? await soleFamilyGroupServiceId(gymId, Number(class_session_id)) : null);
     // #2674/#2813: a `family_only` service books the initiator plus the family
     // members they selected, one individual booking each, bounded by the service.
-    const groupService = chosenService === null ? null : await loadFamilyGroupService(gymId, Number(class_session_id), chosenService);
+    const groupService = groupServiceId === null ? null : await loadFamilyGroupService(gymId, Number(class_session_id), groupServiceId);
     if (groupService) {
       const parsedGroup = parseParticipantIds(req.body.participant_member_ids, memberId, Number.MAX_SAFE_INTEGER);
       if (!parsedGroup.ok) return res.status(400).json({ error: parsedGroup.error });
       const attends = parseBookerAttends(req.body.booker_attends);
       if (!attends.ok) return res.status(400).json({ error: attends.error });
       const result = await db.transaction((tx) => bookFamilyMembers(tx, {
-        gymId, memberId, sessionId: Number(class_session_id), serviceId: chosenService!,
+        gymId, memberId, sessionId: Number(class_session_id), serviceId: groupServiceId!,
         partnerIds: parsedGroup.partnerIds, min: groupService.min, max: groupService.max, actor,
         bookerAttends: attends.value,
       }));

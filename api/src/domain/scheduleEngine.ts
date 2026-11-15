@@ -317,6 +317,11 @@ export async function cancelOccurrencesByIds(ids: number[], actor: string | null
             modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id IN (${ids.map(() => '?').join(',')})`,
     [actor, actor, ...ids],
+  );  // #2851: a cancelled occurrence holds no Professional Service unit (#2605).
+  await db.query(
+    `UPDATE professional_service_reservations SET status = 'released', released_at = UTC_TIMESTAMP()
+     WHERE status = 'reserved' AND calendar_event_id IN (${ids.map(() => '?').join(',')})`,
+    ids,
   );
 }
 
@@ -573,6 +578,13 @@ export async function cancelFutureOccurrences(
          modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE schedule_rule_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL${preserveClause}`,
     [actor, actor, ruleId, ...preserveIds],
+  );  // #2851: a cancelled occurrence holds no Professional Service unit (#2605).
+  await db.query(
+    `UPDATE professional_service_reservations r
+       JOIN calendar_events ce ON ce.id = r.calendar_event_id
+        SET r.status = 'released', r.released_at = UTC_TIMESTAMP()
+      WHERE r.status = 'reserved' AND ce.schedule_rule_id = ? AND ce.status = 'cancelled'`,
+    [ruleId],
   );
 }
 
@@ -587,5 +599,13 @@ export async function cancelFutureOccurrencesByActivityType(
          ce.modified_at = UTC_TIMESTAMP(), ce.modified_by = ?
      WHERE r.activity_type_id = ? AND ce.starts_at > UTC_TIMESTAMP() AND ce.deleted_at IS NULL`,
     [actor, actor, activityTypeId],
+  );  // #2851: a cancelled occurrence holds no Professional Service unit (#2605).
+  await db.query(
+    `UPDATE professional_service_reservations psr
+       JOIN calendar_events ce ON ce.id = psr.calendar_event_id
+       JOIN activity_type_schedule_rules r ON r.id = ce.schedule_rule_id
+        SET psr.status = 'released', psr.released_at = UTC_TIMESTAMP()
+      WHERE psr.status = 'reserved' AND r.activity_type_id = ? AND ce.status = 'cancelled'`,
+    [activityTypeId],
   );
 }

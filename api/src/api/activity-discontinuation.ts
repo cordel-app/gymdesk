@@ -85,6 +85,12 @@ export async function discontinueFutureEvents(
        WHERE gym_id = ? AND id IN (${keepList})`,
       [actor, gymId, ...keepIds],
     );
+    // #2851: a cancelled occurrence holds no Professional Service unit (#2605).
+    await tx.query(
+      `UPDATE professional_service_reservations SET status = 'released', released_at = UTC_TIMESTAMP()
+       WHERE gym_id = ? AND status = 'reserved' AND calendar_event_id IN (${keepList})`,
+      [gymId, ...keepIds],
+    );
   }
   if (dropIds.length > 0) {
     const dropList = dropIds.map(() => '?').join(',');

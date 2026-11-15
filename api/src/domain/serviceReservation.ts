@@ -15,6 +15,25 @@ export interface ReservedTotal {
   member_id?: number | null;
 }
 
+/**
+ * #2851: a `reserved` row holds a unit only while its booking still does: the
+ * booking is `booked`, its occurrence is neither cancelled nor deleted, and no
+ * unreturned spend has already been written for it (a spend *is* the unit, so
+ * counting both would take it off the wallet twice). Every reader of the
+ * reservations asks this, so a row a cancel path forgot to release — an Activity
+ * discontinued, a schedule rule edited, a spend at attendance before the
+ * event-start pass ran — stops making the member's balance read "all booked".
+ */
+export function liveReservationSql(alias: string): string {
+  return `${alias}.status = 'reserved'
+    AND EXISTS (SELECT 1 FROM calendar_event_bookings lrb
+                  JOIN calendar_events lre ON lre.id = lrb.calendar_event_id
+                 WHERE lrb.id = ${alias}.calendar_event_booking_id AND lrb.status = 'booked'
+                   AND lre.status <> 'cancelled' AND lre.deleted_at IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM professional_service_consumptions lrc
+                     WHERE lrc.calendar_event_booking_id = ${alias}.calendar_event_booking_id AND lrc.returned_at IS NULL)`;
+}
+
 /** Grants with the reserved units taken off, for choosing what a new booking holds. */
 export function availableGrants(
   rows: ProfessionalServiceGrantRow[],
