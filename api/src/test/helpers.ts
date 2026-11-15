@@ -833,6 +833,26 @@ export async function activateTestAssignment(gymId: string, umId: number): Promi
 }
 
 /**
+ * #2833: a Promotion applied to a Draft is a reference only until the Draft is
+ * confirmed. Takes the snapshots of the Draft versions linked to this assignment
+ * exactly as Save & Pay / the free commit does, without moving any status, for a
+ * test that checks what a confirmed application keeps once the Promotion is edited.
+ */
+export async function confirmTestDraftPromotions(gymId: string, umId: number): Promise<void> {
+  const { confirmDraftPromotionSnapshots } = await import('../api/membership-promotions');
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT DISTINCT ps.id FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.status = 'draft'
+        AND (ps.user_membership_id = ?
+             OR ps.id IN (SELECT ump.product_set_id FROM user_membership_promotions ump
+                           WHERE ump.gym_id = ? AND ump.user_membership_id = ?))`,
+    [gymId, umId, gymId, umId]);
+  for (const r of rows) {
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, Number(r.id)));
+  }
+}
+
+/**
  * #1849 stage 2e: removes System Personal Goals a test created. A Base goal is
  * referenced `ON DELETE RESTRICT` by `gym_personal_goals` / `member_personal_goals`
  * (a gym created in parallel seeds an activation row for every Base goal), so those

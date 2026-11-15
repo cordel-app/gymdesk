@@ -20,9 +20,11 @@ import {
   ASSIGNMENT_AUTO_RENEW,
   ASSIGNMENT_CADENCE,
   loadPlanBenefitsForSimulation,
+  loadLivePromotionGrants,
   loadPromotionGrantSnapshots,
 } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
 
 /**
  * #629 (stage 1) — Billing Simulation.
@@ -72,6 +74,8 @@ interface AssignmentRow {
   id: number;
   membership_plan_id: number | null;
   status: string;
+  /** #2834 — fee units of the assignment's plan snapshot (scope × beneficiaries). */
+  membership_fee_units?: number | string | null;
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
@@ -141,61 +145,9 @@ function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
       );
 }
 
-/**
- * Products granted by the given Promotions, from the three #550 benefit
- * tables, joined live to their catalogue row for the name, price and billing
- * frequency.
- *
- * Since #635 stage 3 this is only the **fallback**: an application that has
- * rows in `user_membership_promotion_*_snapshot` is priced from those instead
- * (`loadPromotionGrantSnapshots`), so editing or deleting the Promotion leaves
- * it alone (§16). Applications that predate the snapshot flow have nothing to
- * read, and still simulate from the Promotion as it stands today.
- * `products` is deliberately not filtered on `deleted_at`, so a granted
- * item still displays after it is retired.
- */
-async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promise<Map<number, SimulationGrant[]>> {
-  const byPromotion = new Map<number, SimulationGrant[]>();
-  if (promotionIds.length === 0) return byPromotion;
-
-  const marks = promotionIds.map(() => '?').join(',');
-  const select = (table: string, category: ProductBenefitCategory) => `
-    SELECT '${category}' AS category, b.promotion_id, b.product_id, b.quantity,
-           b.\`action\`, b.\`value\`,
-           gc.name, gc.amount, gc.billing_frequency
-    FROM ${table} b
-    JOIN products gc ON gc.id = b.product_id
-    WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`;
-
-  const params = [gymId, ...promotionIds, gymId, ...promotionIds, gymId, ...promotionIds];
-  const { rows } = await db.query(
-    [
-      select('promotion_session', 'session'),
-      select('promotion_oneoff', 'oneoff'),
-      select('promotion_periodical', 'periodical'),
-    ].join(' UNION ALL '),
-    params,
-  );
-
-  for (const row of rows as any[]) {
-    const grant: SimulationGrant = {
-      productId: row.product_id,
-      name: row.name ?? 'Product',
-      category: row.category as ProductBenefitCategory,
-      billingFrequency: (row.billing_frequency ?? null) as ProductFrequency | null,
-      unitPrice: row.amount != null ? Number(row.amount) : 0,
-      quantity: Math.max(1, Number(row.quantity) || 1),
-      // #896 stage 3 — the treatment the Promotion configures for this item.
-      // Every row that predates migration 203 reads `waive`, which is the free
-      // coverage this fallback used to hard-code.
-      benefit: toProductBenefit('promotion', row.action, row.value),
-    };
-    const list = byPromotion.get(row.promotion_id) ?? [];
-    list.push(grant);
-    byPromotion.set(row.promotion_id, list);
-  }
-  return byPromotion;
-}
+// The live fallback (`loadLivePromotionGrants`) is shared with the snapshot
+// loader, so a Draft's unconfirmed application (#2833) and an application that
+// predates the snapshot flow read the Promotion through one query.
 
 /**
  * Which assignments a simulation is built from: every one of a Member's, or one
@@ -233,6 +185,7 @@ export async function loadSimulationAssignments(
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
             ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
+            ${membershipFeeUnitsSql('cfg')} AS membership_fee_units,
             (${assignmentConfig('free_periods')} IS NOT NULL OR ${assignmentConfig('paid_periods')} IS NOT NULL OR ${assignmentConfig('pay_beforehand_periods')} IS NOT NULL
              OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
              OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
@@ -254,7 +207,7 @@ export async function loadSimulationAssignments(
   // §16 — what the Promotion granted when it was applied. Only applications
   // with no snapshot at all fall back to the Promotion's live benefits.
   const grantsByApplication = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
-  const grantsByPromotion = await loadPromotionGrants(
+  const grantsByPromotion = await loadLivePromotionGrants(
     gymId,
     [...new Set(applications.filter((a) => !grantsByApplication.has(a.id)).map((a) => a.promotionId))],
   );
@@ -298,6 +251,8 @@ export async function loadSimulationAssignments(
       // #772 — read straight off the assignment: it has no catalogue
       // counterpart, so the snapshot's all-or-nothing fallback does not apply.
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+      // #2834 — the assignment's plan snapshot decides how many fees a cycle owes.
+      membershipFeeUnits: Number(row.membership_fee_units ?? 1),
     };
   }));
 }

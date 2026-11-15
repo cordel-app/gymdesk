@@ -1,4 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
+import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
 import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -13,6 +14,8 @@ import type { MembershipFeeBenefit } from '../domain/promotionApplication';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 import { fetchLiveBenefits, membershipFeeBenefitsFromSnapshot } from './membership-promotions';
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
+import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
+import { loadLivePromotionGrants } from './assigned-plan-snapshot';
 
 /**
  * #2125 stage 6 — the engine's input for a ProductSet version that holds **N** Membership
@@ -76,9 +79,11 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
 async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: number): Promise<SimulationPromotion[]> {
   const { rows } = await exec.query(
     `SELECT pps.id, pps.promotion_id, pps.applied_at, pps.revoked_at, pps.snapshot,
+            (ump.id IS NOT NULL AND ${draftReferenceApplicationSql('ump')}) AS unconfirmed,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
        FROM plan_promotion_snapshots pps
        LEFT JOIN promotions p ON p.id = pps.promotion_id
+       LEFT JOIN user_membership_promotions ump ON ump.id = pps.source_id AND ump.gym_id = pps.gym_id
       WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ${promotionHolderSql('?')} AND pps.status = 'applied'
       ORDER BY pps.id`,
     [gymId, planSnapshotId],
@@ -109,10 +114,19 @@ async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: num
       grants.set(Number(g.plan_promotion_snapshot_id), list);
     }
   }
+  // #2833: an application on a Draft that is not confirmed yet has no snapshot — neither its own
+  // nor the grant rows — and is priced from the Promotion as it stands now (any working copy written
+  // before that ticket is ignored), exactly as `loadPromotionGrantSnapshots()` reads it.
+  const unconfirmed = (rows as any[]).filter((r) => Number(r.unconfirmed) === 1);
+  if (unconfirmed.length > 0) {
+    const live = await loadLivePromotionGrants(
+      gymId, [...new Set(unconfirmed.map((r) => Number(r.promotion_id)))], exec);
+    for (const r of unconfirmed) grants.set(Number(r.id), live.get(Number(r.promotion_id)) ?? []);
+  }
 
   return Promise.all((rows as any[]).map(async (row): Promise<SimulationPromotion> => {
-    const snap = row.snapshot as { name?: string; free_months?: number | null; paid_months?: number | null;
-      bonus_months?: number | null } | null;
+    const snap = (Number(row.unconfirmed) === 1 ? null : row.snapshot) as { name?: string;
+      free_months?: number | null; paid_months?: number | null; bonus_months?: number | null } | null;
     const benefits = snap
       ? membershipFeeBenefitsFromSnapshot(snap as any)
       : (await fetchLiveBenefits(exec as any, row.promotion_id)).membership_fee_benefits;
@@ -149,7 +163,8 @@ export async function loadProductSetSimulationAssignments(
     `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
-            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date
+            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
+            ${membershipFeeUnitsSql('s')} AS membership_fee_units
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
@@ -183,6 +198,8 @@ export async function loadProductSetSimulationAssignments(
         cadence, row.auto_renew,
       ),
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+      // #2834 — the snapshot's own scope over its own beneficiaries.
+      membershipFeeUnits: Number(row.membership_fee_units ?? 1),
       // A plan whose start falls between two dates of its schedule (a plan added to a schedule
       // that was already running, or — since #2125 M5c — any plan starting off its cadence's
       // calendar grid) pays a prorated first stretch and then bills on the schedule's dates. An

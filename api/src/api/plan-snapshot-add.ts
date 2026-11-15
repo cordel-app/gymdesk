@@ -8,6 +8,7 @@ import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAlloc
 import { toPlanDurationRepeats } from '../domain/planDuration';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { promotionHolderSql } from './plan-snapshot-lines';
+import { toMembershipFeeScope } from '../domain/membershipFeeScope';
 
 /**
  * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan: a plan beyond the
@@ -42,7 +43,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
   if (!setRows[0]) throw new Error('ProductSet not found');
 
   const { rows: planRows } = await tx.query<any>(
-    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
+    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods, p.membership_fee_scope,
             bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
        FROM membership_plans p
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
@@ -76,13 +77,15 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
     `INSERT INTO plan_snapshots
        (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
         membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-        auto_renew, recurring_billing_interval, recurring_billing_unit, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        auto_renew, recurring_billing_interval, recurring_billing_unit, membership_fee_scope, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [gymId, input.memberId, membershipPlanId, setRows[0].status, input.startsAt, scheduleId,
       input.membershipFeePrice ?? null, plan.free_periods ?? null, plan.paid_periods ?? null,
       plan.bonus_periods ?? null, plan.pay_beforehand_periods ?? null,
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
-      plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null, input.actor ?? null]);
+      plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
+      // #2834 — the Plan's Membership Fee scope, frozen: a later edit of the Plan moves nothing.
+      toMembershipFeeScope(plan.membership_fee_scope), input.actor ?? null]);
 
   // M6b-1: a plan added to a Product Set is a new logical assignment, anchored on this snapshot.
   await stampAssignmentId(tx, gymId, Number(insertId));
@@ -133,7 +136,7 @@ export async function copyPlanSnapshotToVersion(
         schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
-        source_user_membership_id, created_by, owner_is_beneficiary,
+        source_user_membership_id, created_by, owner_is_beneficiary, membership_fee_scope,
         assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
         promotions_plan_snapshot_id)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
@@ -141,6 +144,7 @@ export async function copyPlanSnapshotToVersion(
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary,
+            s.membership_fee_scope,
             ${opts.keepAssignment === false
               ? 'NULL, NULL, 0, NULL, NULL, NULL'
               : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by'},

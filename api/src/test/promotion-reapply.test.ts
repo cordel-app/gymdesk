@@ -26,6 +26,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -113,6 +114,11 @@ const listPromotions = (gymId: string, umId: number) =>
  * What the assignment pays now. #635 stage 15 removed the stored price, so this
  * reads the resolved `membership_fee` the API reports instead of a column.
  */
+/** #2833: the Draft's confirmation is what takes the applications' snapshots. */
+async function confirmDraft(gymId: string, productSetId: number): Promise<void> {
+  await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, productSetId));
+}
+
 async function finalPrice(gymId: string, umId: number): Promise<number> {
   const res = await request.get(`/user-memberships/${umId}`)
     .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
@@ -121,8 +127,8 @@ async function finalPrice(gymId: string, umId: number): Promise<number> {
 
 /** Every application of one Promotion on one assignment, oldest first. */
 async function applicationRows(umId: number, promotionId: number) {
-  const { rows } = await legacyChildQuery<{ id: number; status: string; revoked_at: string | null; snapshot: any }>(
-    `SELECT id, status, revoked_at, snapshot FROM user_membership_promotions
+  const { rows } = await legacyChildQuery<{ id: number; status: string; revoked_at: string | null; snapshot: any; product_set_id: number }>(
+    `SELECT id, status, revoked_at, snapshot, product_set_id FROM user_membership_promotions
      WHERE user_membership_id = ? AND promotion_id = ? ORDER BY id ASC`,
     [umId, promotionId],
   );
@@ -257,7 +263,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     planId = await createPlan(gymId);
   });
 
-  it('snapshots the edited Promotion onto the new application and leaves the spent one alone', async () => {
+  it('snapshots the edited Promotion onto the standing application at confirmation (#2833)', async () => {
     const umId = await createAssignment(gymId, planId, 100);
     const promotionId = await createPromotion(gymId, `Edited-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
@@ -276,12 +282,16 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(201);
     expect(await finalPrice(gymId, umId)).toBeCloseTo(65, 2);
 
+    // #2833: on a Draft neither application holds a snapshot; the confirmation
+    // snapshots the standing one from the Promotion as it is then, and the spent
+    // one stays the reference it was.
+    const draftRows = await applicationRows(umId, promotionId);
+    expect(draftRows.map((r) => r.snapshot)).toEqual([null, null]);
+    await confirmDraft(gymId, Number(draftRows[1].product_set_id));
     const rows = await applicationRows(umId, promotionId);
-    const spent = rows[0].snapshot as any;
     const current = rows[1].snapshot as any;
-    expect(spent.membership_fee_benefits[0].value).toBeCloseTo(20, 2);
+    expect(rows[0].snapshot).toBeNull();
     expect(current.membership_fee_benefits[0].value).toBeCloseTo(35, 2);
-    expect(spent.description).toBe('Agreed description');
     expect(current.description).toBe('Repriced');
   });
 
@@ -324,20 +334,24 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
 
     await applyPromotion(gymId, umId, promotionId);
     await revokePromotion(gymId, umId, promotionId);
-    // The item is repriced in between: the new application freezes the new
-    // price, the spent one keeps the agreed one (§17).
+    // The item is repriced in between: the confirmation freezes the price it has then.
     await db.query('UPDATE products SET amount = 18 WHERE id = ?', [lockerId]);
     await applyPromotion(gymId, umId, promotionId);
 
     const rows = await applicationRows(umId, promotionId);
-    const { rows: snapshots } = await db.query<{ user_membership_promotion_id: number; unit_price: string }>(
+    const grantSnapshots = () => db.query<{ user_membership_promotion_id: number; unit_price: string }>(
       `SELECT user_membership_promotion_id, unit_price FROM user_membership_promotion_periodical_snapshot
        WHERE user_membership_promotion_id IN (?, ?) ORDER BY user_membership_promotion_id ASC`,
       [rows[0].id, rows[1].id],
     );
-    expect(snapshots).toHaveLength(2);
-    expect(parseFloat(snapshots[0].unit_price)).toBeCloseTo(10, 2);
-    expect(parseFloat(snapshots[1].unit_price)).toBeCloseTo(18, 2);
+    // #2833: a Draft writes no grant snapshot rows; the confirmation writes the
+    // standing application's, at the price the item has then.
+    expect((await grantSnapshots()).rows).toHaveLength(0);
+    await confirmDraft(gymId, Number(rows[1].product_set_id));
+    const { rows: snapshots } = await grantSnapshots();
+    expect(snapshots).toHaveLength(1);
+    expect(Number(snapshots[0].user_membership_promotion_id)).toBe(Number(rows[1].id));
+    expect(parseFloat(snapshots[0].unit_price)).toBeCloseTo(18, 2);
   });
 });
 

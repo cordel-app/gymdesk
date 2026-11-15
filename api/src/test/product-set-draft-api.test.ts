@@ -140,7 +140,7 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     expect((await auth(request.delete(`/product-sets/${id}/members/${second}`))).status).toBe(200);
   });
 
-  it('applies a Promotion with its own snapshot and removes it again', async () => {
+  it('applies a Promotion by reference (no snapshot while Draft, #2833) and removes it again', async () => {
     const planId = await plan(30);
     const { id } = await draft(planId);
     const promo = await db.query(
@@ -150,7 +150,7 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     const applied = await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId });
     expect(applied.status).toBe(200);
     const { rows } = await db.query<any>('SELECT snapshot FROM user_membership_promotions WHERE id = ?', [applied.body.application_id]);
-    expect(rows[0].snapshot).not.toBeNull();
+    expect(rows[0].snapshot).toBeNull();
     expect((await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId })).status).toBe(400); // already applied
     expect((await auth(request.delete(`/product-sets/${id}/promotions/${applied.body.application_id}`))).status).toBe(200);
   });

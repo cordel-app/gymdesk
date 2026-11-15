@@ -194,7 +194,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(res.body.checkout_url).toBeUndefined();
 
     // #1325 PR 3a: the member's plan is a ProductSet version, with the plan frozen
-    // beside it and the Promotion applied with its own snapshot.
+    // beside it and the Promotion applied (by reference until the Draft is confirmed).
     const { rows: ps } = await db.query<any>(
       'SELECT owner_member_id, created_by, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
     expect(ps[0].owner_member_id).toBe(member.id);
@@ -208,7 +208,8 @@ describe('POST /me/membership-plans/:id/assign', () => {
       "SELECT promotion_id, status, snapshot FROM user_membership_promotions WHERE product_set_id = ? AND status = 'applied'", [res.body.id],
     );
     expect(apps.map((a: any) => a.promotion_id)).toEqual([promoId]);
-    expect(apps[0].snapshot).not.toBeNull();
+    // #2833: the Draft holds a reference only; the snapshot is taken at Save & Pay.
+    expect(apps[0].snapshot).toBeNull();
     // No Billing Event, no Payment Request, no assignment.
     expect(await moneyRowsOf(res.body.id)).toEqual({ events: 0, requests: 0 });
     const { rows: um } = await db.query<any>('SELECT id FROM user_memberships WHERE member_id = ?', [member.id]);

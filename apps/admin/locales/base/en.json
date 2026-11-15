@@ -2019,7 +2019,11 @@
     "center_mode_online_help": "Remote services only (online personal training, coaching). Grants no physical center.",
     "center_online": "On-line",
     "center_online_help": "Remote services only (online personal training, coaching). Grants no physical center.",
-    "section_billing_simulation_details": "Billing Simulation Details"
+    "section_billing_simulation_details": "Billing Simulation Details",
+    "label_fee_scope": "Membership Fee scope",
+    "fee_scope_per_member": "Per member",
+    "fee_scope_per_family": "Per family",
+    "fee_scope_help": "Per member charges the fee once for each beneficiary of an assignment; Per family charges it once per assignment. Applies to plans assigned from now on."
   },
   "prices": {
     "title": "Prices",

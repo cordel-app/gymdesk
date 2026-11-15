@@ -569,6 +569,13 @@ Duration charged on the first of its periods (#946), an applied Promotion's Memb
 Benefit, the Personal Membership Fee Benefit — is therefore in the persisted amount, and a
 zero amount is a cycle the contract waives.
 
+**Membership Fee scope (#2834).** A plan snapshot's `membership_fee_scope` decides how many
+fees a cycle owes: `per_family` (the default) one per assignment, `per_member` one per
+beneficiary of that snapshot (`plan_snapshot_beneficiaries`, never fewer than one). The engine
+multiplies the Membership Fee line by that count (`membershipFeeUnits`) after
+`resolveMembershipFee()` has priced one fee, so every discount, Promotion and Billing & Duration
+rule applies to each fee alike; no other path multiplies it.
+
 ### B4b. When obligations fall: the billing calendar (#2125 M5c)
 
 Decided by Oscar on 2026-11-11 (Option B on #2125). A schedule is anchored on its

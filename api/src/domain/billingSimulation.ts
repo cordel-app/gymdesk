@@ -289,6 +289,12 @@ export interface SimulationAssignment {
    * way a recurring Product line does (#1867). `null`/absent: the plan sets the dates itself.
    */
   alignTo?: string | null;
+  /**
+   * #2834 — how many Membership Fees this assignment owes per cycle: its plan snapshot's scope
+   * over its beneficiaries (`membershipFeeUnits()`), 1 for a `per_family` plan. Required, so a
+   * loader cannot forget it; the fee line is multiplied by it here and nowhere else.
+   */
+  membershipFeeUnits: number;
 }
 
 /**
@@ -929,6 +935,12 @@ interface SingleCharge {
   line: SimulationLine;
 }
 
+/** #2834 — the assignment's fee units, never below one (a malformed value bills one fee). */
+function feeUnits(a: SimulationAssignment): number {
+  const n = Math.trunc(Number(a.membershipFeeUnits));
+  return Number.isFinite(n) && n > 1 ? n : 1;
+}
+
 function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   if (a.membershipFeePrice == null || a.recurringInterval == null || a.recurringUnit == null) return null;
   const regular = round2(a.membershipFeePrice);
@@ -978,17 +990,20 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
       // for, so the line reads "Regular price · €210.00" rather than a €210
       // charge against a €70 regular price.
       const periods = resolved.prepaidPeriods ?? 1;
+      // #2834 — a `per_member` plan owes one fee per beneficiary: the cycle's fee, priced once by
+      // `resolveMembershipFee()`, times the units. The one place the fee is multiplied.
+      const units = feeUnits(a);
       return {
         kind: 'membership_fee',
         label: a.planName ?? 'Membership Fee',
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
         product_id: null,
-        quantity: periods,
+        quantity: periods * units,
         unit_price: regular,
-        regular_price: round2(regular * periods),
+        regular_price: round2(regular * periods * units),
         benefits: resolved.benefits,
-        actual_charge: resolved.amount,
+        actual_charge: round2(resolved.amount * units),
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
         prepaid_periods: resolved.prepaidPeriods ?? null,
         proration: proration && date === a.startsAt

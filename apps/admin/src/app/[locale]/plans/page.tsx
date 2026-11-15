@@ -78,6 +78,9 @@ import {
   toPlanGeneralUpdatePayload,
 } from './planProfile';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import {
+  MEMBERSHIP_FEE_SCOPES, membershipFeeScopeLabelKey, toMembershipFeeScope,
+} from '@/lib/membershipFeeScope';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,6 +152,8 @@ interface Plan extends PlanGeneralRow {
   bonus_periods: number | null;
   pay_beforehand_periods: number | null;
   tax_rate_id: number | null;
+  /** #2834 — one Membership Fee per assignment (`per_family`) or per beneficiary (`per_member`). */
+  membership_fee_scope?: string | null;
   tax_behavior: 'inclusive' | 'exclusive';
   tax_rate_name: string | null;
   tax_rate_percent: string | null;
@@ -382,7 +387,7 @@ export default function PlansPage() {
   const [imageOf, setImageOf] = useState<Plan | null>(null);
 
   // Pricing sub-form (inline, per plan) — price is always VAT-inclusive (#547)
-  const [pricingForm, setPricingForm] = useState({ price: '', tax_rate_id: '' });
+  const [pricingForm, setPricingForm] = useState({ price: '', tax_rate_id: '', membership_fee_scope: 'per_family' });
   const [pricingForPlanId, setPricingForPlanId] = useState<number | null>(null);
   const [pricingSaving, setPricingSaving] = useState(false);
   const [applyPricingFor, setApplyPricingFor] = useState<Plan | null>(null);
@@ -516,7 +521,7 @@ export default function PlansPage() {
   // closes any one of them that is still open with a half-typed draft.
   function closeSectionForms() {
     setPricingForPlanId(null);
-    setPricingForm({ price: '', tax_rate_id: '' });
+    setPricingForm({ price: '', tax_rate_id: '', membership_fee_scope: 'per_family' });
     setCentersForPlanId(null);
     setDurationEditForPlanId(null);
     setBenefitEditFor(null);
@@ -622,12 +627,13 @@ export default function PlansPage() {
     setPricingForm({
       price: plan.current_price != null ? parseFloat(plan.current_price).toFixed(2) : '',
       tax_rate_id: plan.tax_rate_id != null ? String(plan.tax_rate_id) : '',
+      membership_fee_scope: toMembershipFeeScope(plan.membership_fee_scope),
     });
   }
 
   function closePricingForm() {
     setPricingForPlanId(null);
-    setPricingForm({ price: '', tax_rate_id: '' });
+    setPricingForm({ price: '', tax_rate_id: '', membership_fee_scope: 'per_family' });
   }
 
   async function handleSavePricing(planId: number) {
@@ -643,6 +649,7 @@ export default function PlansPage() {
         body: JSON.stringify({
           price,
           tax_rate_id: pricingForm.tax_rate_id !== '' ? parseInt(pricingForm.tax_rate_id, 10) : null,
+          membership_fee_scope: toMembershipFeeScope(pricingForm.membership_fee_scope),
         }),
       });
       closePricingForm();
@@ -1272,7 +1279,23 @@ export default function PlansPage() {
                               ))}
                             </select>
                           </div>
+                          {/* #2834 — beside the price and VAT: whether the fee is charged once per
+                              assignment or once per beneficiary. Frozen onto each new assignment. */}
+                          <div>
+                            <label htmlFor={`plan-${plan.id}-fee-scope`} style={inlineLabelStyle}>{t('plans.label_fee_scope')}</label>
+                            <select
+                              id={`plan-${plan.id}-fee-scope`}
+                              value={pricingForm.membership_fee_scope}
+                              onChange={(e) => setPricingForm({ ...pricingForm, membership_fee_scope: e.target.value })}
+                              style={inlineSelectStyle}
+                            >
+                              {MEMBERSHIP_FEE_SCOPES.map((scope) => (
+                                <option key={scope} value={scope}>{t(`plans.${membershipFeeScopeLabelKey(scope)}`)}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
+                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.fee_scope_help')}</p>
                         {(() => {
                           // Req. 6/7/11/12: the entered price is always the final VAT-inclusive
                           // customer price — the net is derived from it live, and picking another
@@ -1320,6 +1343,10 @@ export default function PlansPage() {
                             t('plans.tax_included_suffix'),
                             (excl, incl) => t('plans.price_preview', { excl, incl }),
                           )}
+                        />
+                        <DetailRow
+                          label={t('plans.label_fee_scope')}
+                          value={t(`plans.${membershipFeeScopeLabelKey(plan.membership_fee_scope)}`)}
                         />
                       </>
                     )}

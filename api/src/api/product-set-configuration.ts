@@ -27,6 +27,7 @@ import { loadPlanSnapshotInheritance, loadPlanSnapshotScheduleKeys, loadProductS
 import { productSetHistoryIds } from './product-set-history';
 import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { linkCancellingPlans } from './entitlement-plan-links';
+import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershipFeeScope';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -154,7 +155,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   if (!setRows[0]) throw new Error('ProductSet not found');
 
   const { rows: planRows } = await tx.query(
-    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
+    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods, p.membership_fee_scope,
             bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
        FROM membership_plans p
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
@@ -188,21 +189,25 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
     plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
     input.origin ?? null,
+    // #2834 — the Plan's Membership Fee scope, frozen onto the snapshot.
+    toMembershipFeeScope(plan.membership_fee_scope),
   ];
   let snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (snapshotId != null) {
     await tx.query(
       `UPDATE plan_snapshots SET schedule_id = ?, membership_fee_price = ?, free_periods = ?, paid_periods = ?,
               bonus_periods = ?, pay_beforehand_periods = ?, auto_renew = ?, recurring_billing_interval = ?,
-              recurring_billing_unit = ?, origin = ?, membership_plan_id = ?, modified_at = UTC_TIMESTAMP()
+              recurring_billing_unit = ?, origin = ?, membership_fee_scope = ?, membership_plan_id = ?,
+              modified_at = UTC_TIMESTAMP()
         WHERE id = ?`, [...values, membershipPlanId, snapshotId]);
   } else {
     const { insertId } = await tx.query(
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-          auto_renew, recurring_billing_interval, recurring_billing_unit, origin, source_user_membership_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
+          source_user_membership_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
         set.created_by ?? null]);
@@ -357,7 +362,8 @@ export async function loadProductSetSimulationAssignment(
             snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
             snap.pay_beforehand_periods, snap.auto_renew,
             snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
-            sch.cadence_interval, sch.cadence_unit, sch.anchor_date
+            sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
+            ${membershipFeeUnitsSql('snap')} AS membership_fee_units
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
@@ -455,6 +461,8 @@ export async function loadProductSetSimulationAssignment(
       cadence, row.auto_renew,
     ),
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+    // #2834 — one fee per beneficiary for a `per_member` snapshot, one otherwise.
+    membershipFeeUnits: Number(row.membership_fee_units ?? 1),
     // #2125 M5c — the same alignment `loadProductSetSimulationAssignments()` gives the plan, so a
     // forecast read through this loader shows the dates the persisted obligations fall on.
     ...(row.anchor_date != null && toDateOnly(row.anchor_date) < startsAt

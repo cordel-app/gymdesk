@@ -17,7 +17,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery, confirmTestDraftPromotions } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -457,6 +457,8 @@ describe('applying a Promotion snapshots what it grants', () => {
       .set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    // #2833: the snapshot is taken when the Draft is confirmed.
+    await confirmTestDraftPromotions(gymId, umId);
   });
 
   it('writes a snapshot row with the granted item price', async () => {
