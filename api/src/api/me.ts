@@ -4,7 +4,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
-import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { OWNED_ASSIGNMENT_ROWS_SQL, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -2259,10 +2259,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
                OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
                OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
               ) AS has_billing_snapshot
-       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-       WHERE um.gym_id = ? AND um.member_id = ?
+       WHERE TRUE
        ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
        ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
        LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
@@ -2297,9 +2297,9 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.membership_plan_id, p.name AS plan_name, um.status,
               ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
               um.starts_at, um.ends_at, um.closed_at
-         FROM user_memberships um
+         FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
          LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-        WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'draft'
+        WHERE um.status = 'draft'
         ORDER BY um.starts_at DESC, um.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],
