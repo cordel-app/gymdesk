@@ -18,7 +18,7 @@ import {
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
-import { serviceChoices, defaultChoice, selectionMissing, noAvailableBalance } from '@/lib/serviceSelection';
+import { serviceChoices, defaultChoice, selectionMissing, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
 import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
@@ -467,13 +467,21 @@ export default function MemberSchedulePage() {
                       {attemptedSession === s.id && selectionMissing(choicesFor(s), chosenFor(s)) && (
                         <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.select_service_validation')}</p>
                       )}
-                      {/* #2605 §3: every unit is already booked — say so and offer no Book. */}
-                      {noAvailableBalance(choicesFor(s)) && (
-                        <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.no_available_balance')}</p>
+                      {/* #2605 §3 / #2848: no unit to book — say so and offer Buy instead of Book. */}
+                      {bookingAction(choicesFor(s)) === 'buy' ? (
+                        <>
+                          <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>
+                            {t(zeroBalanceReason(choicesFor(s)) === 'all_booked' ? 'member_calendar.no_available_balance' : 'member_calendar.no_balance')}
+                          </p>
+                          <button style={styles.btnBook} onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(choicesFor(s)))}`)}>
+                            {t('member_schedule.buy')}
+                          </button>
+                        </>
+                      ) : (
+                        <button style={styles.btnBook} disabled={isBusy || groupInvalidFor(s)} onClick={() => bookSession(s.id)}>
+                          {isBusy ? '…' : t('member_schedule.book')}
+                        </button>
                       )}
-                      <button style={styles.btnBook} disabled={isBusy || noAvailableBalance(choicesFor(s)) || groupInvalidFor(s)} onClick={() => bookSession(s.id)}>
-                        {isBusy ? '…' : t('member_schedule.book')}
-                      </button>
                       </>
                     ) : (
                       <button style={styles.btnWait} disabled={isBusy} onClick={() => bookSession(s.id)}>

@@ -10,9 +10,9 @@ describe('#2587 inline Professional Service selection', () => {
       { professional_service_id: 2, remaining: 0 },
     ]);
     expect(c).toEqual([
-      { id: 1, name: 'PT Duo', balance: 4, disabled: false },
-      { id: 2, name: 'PT Individual', balance: 0, disabled: true },
-      { id: 3, name: 'Pilates', balance: 0, disabled: true },
+      { id: 1, name: 'PT Duo', balance: 4, booked: 0, disabled: false },
+      { id: 2, name: 'PT Individual', balance: 0, booked: 0, disabled: true },
+      { id: 3, name: 'Pilates', balance: 0, booked: 0, disabled: true },
     ]);
   });
 
@@ -57,8 +57,8 @@ describe('#2587 inline Professional Service selection', () => {
       { professional_service_id: 1, remaining: 4, available: 0, booked: 4 },
       { professional_service_id: 2, remaining: 3 },
     ]);
-    expect(c[0]).toEqual({ id: 1, name: 'PT Duo', balance: 0, disabled: true });
-    expect(c[1]).toEqual({ id: 2, name: 'PT Individual', balance: 3, disabled: false });
+    expect(c[0]).toEqual({ id: 1, name: 'PT Duo', balance: 0, booked: 4, disabled: true });
+    expect(c[1]).toEqual({ id: 2, name: 'PT Individual', balance: 3, booked: 0, disabled: false });
   });
 
   it('says every unit is booked only when the balances are known and none is left', () => {

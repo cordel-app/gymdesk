@@ -13,7 +13,7 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
-import { serviceChoices, defaultChoice, selectionMissing, bookedService, noAvailableBalance } from '@/lib/serviceSelection';
+import { serviceChoices, defaultChoice, selectionMissing, bookedService, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
 import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
@@ -700,7 +700,7 @@ export default function MemberCalendarPage() {
                 onChange={setParticipantIds}
               />
             )}
-            {unlockServiceIds.length > 0 && (
+            {unlockServiceIds.length > 0 && bookingAction(serviceChoiceList) !== 'buy' && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
                 style={{ ...actionBtn(), marginBottom: 12 }}
@@ -712,13 +712,21 @@ export default function MemberCalendarPage() {
             {selectionAttempted && selectionMissing(serviceChoiceList, chosenServiceId) && (
               <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('select_service_validation')}</p>
             )}
-            {/* #2605 §3: every unit is already booked — the explanation stands where the action was. */}
-            {noAvailableBalance(serviceChoiceList) && (
-              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('no_available_balance')}</p>
+            {/* #2605 §3 / #2848: no unit to book — the explanation stands where the action was. */}
+            {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'buy' && (
+              <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>
+                {t(zeroBalanceReason(serviceChoiceList) === 'all_booked' ? 'no_available_balance' : 'no_balance')}
+              </p>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading || noAvailableBalance(serviceChoiceList) || groupInvalid} style={actionBtn()}>
+              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'buy' && (
+                /* #2848 §2/§3: Buy replaces Book and opens the Add Product catalogue narrowed to these services. */
+                <button onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(serviceChoiceList))}`)} style={actionBtn()}>
+                  {t('action_buy')}
+                </button>
+              )}
+              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'book' && (
+                <button onClick={book} disabled={actionLoading || groupInvalid} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}

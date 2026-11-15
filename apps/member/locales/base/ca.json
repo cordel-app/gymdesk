@@ -257,7 +257,8 @@
     "booked_on_detail": "Reservat el {date}",
     "cancel_unavailable_title": "Cancel·lació no disponible.",
     "cancel_unavailable_service": "Les reserves de serveis professionals no es poden cancel·lar amb menys de 24 hores d'antelació a l'inici de l'esdeveniment.",
-    "cancel_unavailable_generic": "Les reserves no es poden cancel·lar amb menys de 24 hores d'antelació a l'inici de l'esdeveniment."
+    "cancel_unavailable_generic": "Les reserves no es poden cancel·lar amb menys de 24 hores d'antelació a l'inici de l'esdeveniment.",
+    "buy": "Comprar"
   },
   "member_calendar": {
     "filter_all": "Tots",
@@ -316,7 +317,9 @@
     "event_status_waitlist": "Llista d'espera",
     "event_status_waitlist_waiting": "Llista d'espera · {waiting} en espera",
     "event_status_waitlist_position": "Llista d'espera · Posició núm. {position}",
-    "event_status_waitlist_position_waiting": "Llista d'espera · Posició núm. {position} · {waiting} en espera"
+    "event_status_waitlist_position_waiting": "Llista d'espera · Posició núm. {position} · {waiting} en espera",
+    "action_buy": "Comprar",
+    "no_balance": "No et queden sessions d'aquest servei. Compra sessions per reservar aquest esdeveniment."
   },
   "notifications": {
     "title": "Alertes",
