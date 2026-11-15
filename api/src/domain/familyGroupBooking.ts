@@ -48,9 +48,22 @@ export const FAMILY_GROUP_MESSAGES: Record<FamilyGroupRefusal, string> = {
 };
 
 /**
- * Judges a family group selection. The count includes the booker (§4). Every
- * partner must be a member of the booker's family (§3); `familyMemberIds` is
- * that family, the booker included or not.
+ * #2850: whether the booker attends the family booking themselves. Absent keeps
+ * the pre-#2850 behaviour (they attend); only a boolean is accepted, never a
+ * coercion (the string `"false"` is truthy).
+ */
+export function parseBookerAttends(raw: unknown): { ok: true; value: boolean } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: true };
+  if (typeof raw !== 'boolean') return { ok: false, error: 'booker_attends must be a boolean' };
+  return { ok: true, value: raw };
+}
+
+/**
+ * Judges a family group selection. The count includes the booker when they
+ * attend (§4; #2850: a booker may book only for other family members, so
+ * `bookerAttends` false leaves them out of the count). Every partner must be a
+ * member of the booker's family (§3); `familyMemberIds` is that family, the
+ * booker included or not.
  */
 export function judgeFamilyParticipants(input: {
   bookerId: number;
@@ -58,12 +71,14 @@ export function judgeFamilyParticipants(input: {
   familyMemberIds: number[];
   min: number;
   max: number;
+  bookerAttends?: boolean;
 }): { ok: true } | { ok: false; code: FamilyGroupRefusal } {
   const family = new Set(input.familyMemberIds.map(Number));
   if (input.partnerIds.some((id) => id === input.bookerId || !family.has(id))) {
     return { ok: false, code: 'participant_not_in_family' };
   }
-  const count = 1 + input.partnerIds.length;
+  const count = (input.bookerAttends === false ? 0 : 1) + input.partnerIds.length;
+  if (count === 0) return { ok: false, code: 'participants_below_minimum' };
   if (count < input.min) return { ok: false, code: 'participants_below_minimum' };
   if (count > input.max) return { ok: false, code: 'participants_above_maximum' };
   return { ok: true };

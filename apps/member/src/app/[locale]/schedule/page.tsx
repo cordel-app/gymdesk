@@ -117,7 +117,7 @@ export default function MemberSchedulePage() {
   // A stored pick only stands for the service it was made for; otherwise the
   // initial selection (§2) applies, so changing the service seeds it again.
   const familyRead = useFamilyMembers();
-  const [participantPicks, setParticipantPicks] = useState<Record<number, { serviceId: number; ids: number[] }>>({});
+  const [participantPicks, setParticipantPicks] = useState<Record<number, { serviceId: number; ids: number[]; self?: boolean }>>({});
   function groupServiceFor(s: Session) {
     if (s.my_booking_id) return null;
     return groupServiceOf(s.professional_services, chosenFor(s));
@@ -129,11 +129,17 @@ export default function MemberSchedulePage() {
     if (pick && pick.serviceId === svc.id) return pick.ids;
     return initialParticipants(familyRead.member_id, familyRead.members, groupLimits(svc).max);
   }
+  /** #2850: whether the booker attends; on unless they switched themselves off for this service. */
+  function selfFor(s: Session): boolean {
+    const svc = groupServiceFor(s);
+    const pick = participantPicks[s.id];
+    return !(svc && pick && pick.serviceId === svc.id && pick.self === false);
+  }
   function groupInvalidFor(s: Session): boolean {
     const svc = groupServiceFor(s);
     if (!svc) return false;
     const { min, max } = groupLimits(svc);
-    return !familyRead || !participantsValid(participantsFor(s), min, max);
+    return !familyRead || !participantsValid(participantsFor(s), min, max, selfFor(s));
   }
 
   const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
@@ -214,7 +220,7 @@ export default function MemberSchedulePage() {
         method: 'POST', body: JSON.stringify({
           class_session_id: sessionId,
           ...(serviceId != null ? { professional_service_id: serviceId } : {}),
-          ...(groupService && session ? { participant_member_ids: participantsFor(session) } : {}),
+          ...(groupService && session ? { participant_member_ids: participantsFor(session), booker_attends: selfFor(session) } : {}),
         }),
       });
       setMessage(result.status === 'waitlisted'
@@ -432,9 +438,11 @@ export default function MemberSchedulePage() {
                         bookerId={familyRead.member_id}
                         family={familyRead.members}
                         partnerIds={participantsFor(s)}
+                        self={selfFor(s)}
                         min={min}
                         max={max}
-                        onChange={(ids) => setParticipantPicks((m) => ({ ...m, [s.id]: { serviceId: svc.id, ids } }))}
+                        onChange={(ids) => setParticipantPicks((m) => ({ ...m, [s.id]: { serviceId: svc.id, ids, self: selfFor(s) } }))}
+                        onSelfChange={(self) => setParticipantPicks((m) => ({ ...m, [s.id]: { serviceId: svc.id, ids: participantsFor(s), self } }))}
                       />
                     );
                   })()}
