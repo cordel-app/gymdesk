@@ -98,3 +98,53 @@ export function taxBreakdown(lines: LineInput[], total: number, fallbackRate: nu
   net = r2(net);
   return { net, tax: r2(total - net), total: r2(total) };
 }
+
+// ── #2648 stage 6: automatic simplified invoices ────────────────────────────
+// A simplified invoice is issued by the system, never by a staff button:
+//  - a scheduled obligation (a Billing Event generated from a schedule) on its
+//    billing date, paid or not — the nightly billing run;
+//  - any other event (a checkout's initial payment, a purchase, a manual
+//    append) when it is paid — the settle paths.
+// Issued once per event: an event that already holds an issued invoice of
+// either type (a rectifying one aside) gets nothing, so one transaction is
+// never invoiced twice. A payment received later only adds the paid
+// representation of the invoice already issued (#2567 stage 3).
+
+/**
+ * The event types a simplified invoice is issued for: those a payment can be
+ * received on (`RECEIPTABLE_EVENT_TYPES`, #787) plus `charge_created`, the type
+ * a scheduled obligation keeps until it is charged — it is invoiced on its
+ * billing date whether or not a charge was attempted.
+ */
+export function autoInvoiceEventTypes(receiptable: readonly string[]): string[] {
+  return [...receiptable, 'charge_created'];
+}
+
+/** How far back the nightly pass looks for a billing date it has not invoiced. */
+export const AUTO_INVOICE_CATCH_UP_DAYS = 7;
+/** At most this many invoices issued per nightly pass. */
+export const AUTO_INVOICE_BATCH_SIZE = 500;
+
+export interface AutoInvoiceInput {
+  eventType: string;
+  amount: number;
+  cancelled: boolean;
+  /** An issued invoice (simplified or full, not rectifying) already exists for the event. */
+  hasInvoice: boolean;
+  /** `autoInvoiceEventTypes()`. */
+  invoiceableTypes: readonly string[];
+}
+
+/** Whether the system issues the event's simplified invoice now. */
+export function shouldAutoIssueSimplified(i: AutoInvoiceInput): boolean {
+  if (i.hasInvoice || i.cancelled) return false;
+  if (!(i.amount > 0)) return false;
+  return i.invoiceableTypes.includes(i.eventType);
+}
+
+/** The earliest billing date the nightly pass still invoices (`YYYY-MM-DD`). */
+export function autoInvoiceFromDate(today: string, days = AUTO_INVOICE_CATCH_UP_DAYS): string {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}

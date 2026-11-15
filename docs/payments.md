@@ -653,9 +653,26 @@ Per due event, under the event's row lock, exactly one of these:
 | **Provider error** (threw / never answered) | attempted | unchanged | the attempt stays `pending` with **no** provider status: an unknown outcome, never a failure |
 
 Counters returned: `{ processed, succeeded, failed, waived, paused, receipts_issued,
-scheduled_events }`. The first four are also written to `billing_run_log`; `paused` and
-`receipts_issued` are reported only — a pause is explicable from its audit row, and a
-receipt that failed to auto-issue is not a failed run.
+invoices_issued, invoices_failed, scheduled_events }`. The first four are also written to
+`billing_run_log`; the rest are reported only — a pause is explicable from its audit row, and a
+receipt or invoice that failed to auto-issue is not a failed run.
+
+**Automatic simplified invoices (#2648 stage 6).** After the charges, the run issues the
+simplified invoice of every Billing Event generated from a schedule (`schedule_id IS NOT NULL`)
+whose billing date has come — within the last `AUTO_INVOICE_CATCH_UP_DAYS` (7) days, at most
+`AUTO_INVOICE_BATCH_SIZE` (500) per run — that is not cancelled, carries an amount and holds no
+issued invoice yet, **whether or not it was paid** (`issueDueSimplifiedInvoices()` in
+`api/src/api/billing-invoices.ts`, over `shouldAutoIssueSimplified()` in
+`domain/billingInvoice.ts`). An unpaid one gets its not-paid representation; when it is paid
+later, the existing invoice gains its paid representation and its `payment_status` moves to
+`paid`, keeping its number and issue date. Every other event (a checkout's initial payment, a
+purchase, a manual append) is issued its simplified invoice **when it is paid**, from the same
+hook (`generatePaidRepresentations()`: the webhook / read-back settle, staff Pay Cash / Pay
+Card, and both cash `record-payment` routes). An event that already holds an invoice of either
+type gets none, so a transaction is never invoiced twice. Nothing is issued without the private
+bucket. The VERI*FACTU Alta record is written with each invoice exactly as for a staff-issued one;
+an event whose issue is refused (e.g. an invalid issuer NIF) is logged, counted in
+`invoices_failed` and retried by the next run while it is inside the window.
 
 A settled charge also allocates a receipt number, **after** the charge transaction has
 committed and in one of its own, with any failure logged and swallowed (see

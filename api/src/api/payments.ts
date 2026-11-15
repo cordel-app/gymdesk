@@ -336,8 +336,13 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       cancelled_at: Date | null;
       attempt_count: number | string | null;
       payment_method_name: string | null;
+      receipt_number: string | null;
+      has_full_invoice: number | boolean;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
+              be.receipt_number,
+              EXISTS (SELECT 1 FROM invoices i WHERE i.billing_event_id = be.id AND i.gym_id = be.gym_id
+                        AND i.invoice_type = 'full' AND i.related_invoice_id IS NULL AND i.status = 'issued') AS has_full_invoice,
               ps_um.id AS user_membership_id,
               COALESCE(mp.name, mpp.name) AS plan_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
@@ -400,6 +405,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       refunded_amount: string | null;
       refundable_amount: string | null;
       refund_state: string | null;
+      /** #2648 stage 6: the ⋮ menu's Generate Receipt / Generate Complete Invoice. */
+      receipt_number: string | null;
+      can_issue_receipt: boolean;
+      has_full_invoice: boolean;
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -441,6 +450,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         refunded_amount: refund?.refunded_amount ?? null,
         refundable_amount: refund?.refundable_amount ?? null,
         refund_state: refund?.refund_state ?? null,
+        // #2648 stage 6: the same eligibility the Details read reports (#787).
+        receipt_number: r.receipt_number ?? null,
+        can_issue_receipt: isReceiptableEvent(r.event_type, r.latest_tx_status) && parseFloat(r.amount ?? '0') > 0,
+        has_full_invoice: Number(r.has_full_invoice) === 1,
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         ...(() => {

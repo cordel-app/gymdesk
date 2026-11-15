@@ -3,6 +3,8 @@ import {
   parseCustomerInput, stampText, formatFiscalNumber, parseFiscalSeq, taxBreakdown, representationToCreate, invoiceLanguage,
 } from '../domain/billingInvoice';
 import { generateInvoicePdf } from '../lib/invoice-pdf';
+import { autoInvoiceEventTypes, autoInvoiceFromDate, shouldAutoIssueSimplified } from '../domain/billingInvoice';
+import { RECEIPTABLE_EVENT_TYPES } from '../domain/billingEventStatus';
 
 describe('#2567 stage 3 invoice rules', () => {
   it('a full invoice needs all three customer fields', () => {
@@ -68,5 +70,29 @@ describe('#2567 stage 4 rectifying invoices', () => {
       rectifies: { number: 'F-2026-0001', reason: 'error' },
     });
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});
+
+// #2648 stage 6 — when the system issues a simplified invoice.
+
+describe('shouldAutoIssueSimplified', () => {
+  const types = autoInvoiceEventTypes(RECEIPTABLE_EVENT_TYPES);
+  const base = { eventType: 'charge_created', amount: 30, cancelled: false, hasInvoice: false, invoiceableTypes: types };
+  it('issues for an unpaid scheduled obligation and for any money-bearing event', () => {
+    for (const t of ['charge_created', 'payment_recorded', 'recurring_payment', 'failed_billing', 'product_purchase']) {
+      expect(shouldAutoIssueSimplified({ ...base, eventType: t })).toBe(true);
+    }
+  });
+  it('never twice, never for a cancelled event, a zero amount or a non-payment type', () => {
+    expect(shouldAutoIssueSimplified({ ...base, hasInvoice: true })).toBe(false);
+    expect(shouldAutoIssueSimplified({ ...base, cancelled: true })).toBe(false);
+    expect(shouldAutoIssueSimplified({ ...base, amount: 0 })).toBe(false);
+    for (const t of ['card_verification', 'waived_billing', 'adjustment', 'status_changed']) {
+      expect(shouldAutoIssueSimplified({ ...base, eventType: t })).toBe(false);
+    }
+  });
+  it('looks back a week for a missed run', () => {
+    expect(autoInvoiceFromDate('2026-11-15')).toBe('2026-11-08');
+    expect(autoInvoiceFromDate('2026-03-03')).toBe('2026-02-24');
   });
 });
