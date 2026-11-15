@@ -343,7 +343,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               be.receipt_number,
               EXISTS (SELECT 1 FROM invoices i WHERE i.billing_event_id = be.id AND i.gym_id = be.gym_id
                         AND i.invoice_type = 'full' AND i.related_invoice_id IS NULL AND i.status = 'issued') AS has_full_invoice,
-              ps_um.id AS user_membership_id,
+              ${eventAssignmentSql()} AS user_membership_id,
               COALESCE(mp.name, mpp.name) AS plan_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
@@ -352,7 +352,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               (SELECT pr.payment_method_name FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name,
-              ps_um.status AS membership_status,
+              ps_pa.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
@@ -362,8 +362,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN product_sets ps ON ps.id = be.product_set_id
-       LEFT JOIN user_memberships ps_um ON ps_um.id = ${eventAssignmentSql()}
-       LEFT JOIN membership_plans mp ON mp.id = ps_um.membership_plan_id
+       -- #2125 M6b-16: the assignment's plan and status are its current plan snapshot's.
+       LEFT JOIN plan_snapshots ps_pa
+         ON ps_pa.gym_id = be.gym_id AND ${assignmentOfLegacyIdSql(eventAssignmentSql(), 'ps_pa')}
+       LEFT JOIN membership_plans mp ON mp.id = ps_pa.membership_plan_id
        LEFT JOIN membership_plans mpp ON mpp.id = ps.membership_plan_id
        WHERE ${whereSql}
        ORDER BY be.created_at DESC, be.id DESC
@@ -624,7 +626,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
 
   try {
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.member_id, um.id AS user_membership_id, be.product_set_id, be.event_type, be.amount,
+      `SELECT be.id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.product_set_id, be.event_type, be.amount,
               be.notes, be.source, be.created_by, be.created_at,
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
@@ -636,7 +638,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
               ct.code AS charge_type_code,
               m.name AS member_name,
               mp.name AS plan_name,
-              um.status AS membership_status,
+              pa.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
@@ -649,8 +651,10 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
          FROM billing_events be
          LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
          LEFT JOIN members m ON m.id = be.member_id
-         LEFT JOIN user_memberships um ON um.id = ${eventAssignmentSql()}
-         LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+         -- #2125 M6b-16: the assignment's plan and status are its current plan snapshot's.
+         LEFT JOIN plan_snapshots pa
+           ON pa.gym_id = be.gym_id AND ${assignmentOfLegacyIdSql(eventAssignmentSql())}
+         LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
         WHERE be.id = ? AND be.gym_id = ?`,
       [billingEventId, gymId],
     );

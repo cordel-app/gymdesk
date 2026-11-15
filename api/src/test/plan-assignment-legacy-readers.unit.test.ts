@@ -53,13 +53,12 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
   'api/me-product-set-lines.ts': 1,
-  'api/me.ts': 2,
+  'api/me.ts': 1,
   'api/member-membership-configuration.ts': 2,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
   'api/membership-promotions.ts': 4,
   'api/one-active-plan.ts': 2,
-  'api/payments.ts': 2,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
@@ -72,7 +71,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/scheduled-event-execution.ts': 2,
   'api/user-membership-services.ts': 2,
   'api/user-memberships.ts': 29,
-  'domain/billingEventPayments.ts': 3,
+  'domain/billingEventPayments.ts': 2,
   'domain/memberProfessionalServices.ts': 1,
 };
 
@@ -146,8 +145,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(LEGACY_STATEMENTS[file]).toBeUndefined();
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('assignmentOfLegacyIdSql(');
     }
-    // The two statements left in payments.ts read the assignment of a Billing Event (`eventAssignmentSql()`).
-    expect(LEGACY_STATEMENTS['api/payments.ts']).toBe(2);
+    // M6b-16 moved the two statements left in payments.ts (the assignment of a Billing Event).
     expect(readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
   });
 
@@ -180,6 +178,19 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(readFileSync(join(API_SRC, 'api/payment-requests.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'um')");
     const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
     expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
+  });
+
+  it('M6b-16: the Billing Event readers and the member\'s payment history read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/payments.ts']).toBeUndefined();
+    const payments = readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8');
+    expect(payments).toContain("assignmentOfLegacyIdSql(eventAssignmentSql(), 'ps_pa')");
+    expect(payments).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
+    // The two statements left in billingEventPayments.ts are the dunning pause, a writer.
+    expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBe(2);
+    expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8')).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
+    // The one statement left in me.ts is `GET /me/membership`'s pending-payment plan read.
+    expect(LEGACY_STATEMENTS['api/me.ts']).toBe(1);
+    expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {

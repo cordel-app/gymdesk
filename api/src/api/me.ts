@@ -4,7 +4,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
-import { OWNED_ASSIGNMENT_ROWS_SQL, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { OWNED_ASSIGNMENT_ROWS_SQL, assignmentOfLegacyIdSql, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -2663,8 +2663,9 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
        FROM payment_requests pr
-       LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
-       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = pr.gym_id
+       -- #2125 M6b-16: the assignment's plan is its current plan snapshot's.
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = pa.membership_plan_id AND bp.gym_id = pr.gym_id
        WHERE pr.gym_id = ? AND pr.member_id = ? AND pr.source <> ?
          -- #2480: a refund is not a payment the member made.
          AND pr.transaction_type = 'payment'

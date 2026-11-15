@@ -2,6 +2,7 @@ import { resolvePayerFor } from '../api/payer-resolution';
 import { recordPaymentAttempt } from '../api/payment-attempt';
 import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
+import { assignmentOfLegacyIdSql } from './planAssignments';
 import { chargeGuard } from './chargeGuard';
 import { AttemptMethod, ManualPaymentMethod } from './paymentAttemptMethod';
 import crypto from 'crypto';
@@ -101,7 +102,7 @@ async function loadEventContext(
   exec: Pick<Tx, 'query'> = db,
 ): Promise<EventContext | null> {
   const { rows } = await exec.query<EventContext>(
-    `SELECT be.id, be.gym_id, be.member_id, um.id AS user_membership_id, be.event_type,
+    `SELECT be.id, be.gym_id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.event_type,
             be.product_set_id, be.is_scheduled, be.billing_date,
             be.amount, be.charge_type_id, (be.cancelled_at IS NOT NULL) AS cancelled,
             (SELECT pr.status FROM payment_requests pr
@@ -111,9 +112,11 @@ async function loadEventContext(
               WHERE pr.billing_event_id = be.id AND pr.status = 'completed') AS has_completed_tx,
             (SELECT MAX(pr.attempt) FROM payment_requests pr
               WHERE pr.billing_event_id = be.id) AS last_attempt,
-            um.status AS membership_status
+            pa.status AS membership_status
        FROM billing_events be
-       LEFT JOIN user_memberships um ON um.id = ${eventAssignmentSql()}
+       -- #2125 M6b-16: the assignment's status is its current plan snapshot's.
+       LEFT JOIN plan_snapshots pa
+         ON pa.gym_id = be.gym_id AND ${assignmentOfLegacyIdSql(eventAssignmentSql())}
       WHERE be.id = ? AND be.gym_id = ?`,
     [billingEventId, gymId],
   );
