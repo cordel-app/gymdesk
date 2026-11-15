@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { dayWindow, todayInZone, resolveTimeZone, completedWeekWindows } from '../domain/homeDashboard';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request, snapshotTestAssignment } from './helpers';
 
 let gymA: string;
 let gymB: string;
@@ -158,6 +158,7 @@ describe('attendance KPIs (#1754)', () => {
         [gym, m.insertId],
       );
       await ensureTestProductSet(gym, m.insertId, ums.insertId);
+      await snapshotTestAssignment(Number(ums.insertId));
       return m.insertId as number;
     };
     const attend = async (memberId: number, weekIdx: number, attendance: string, bookingStatus = 'booked') => {
