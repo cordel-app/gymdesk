@@ -48,7 +48,7 @@ import { startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurrin
 import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
-import { loadEditLock } from './product-set-checkout';
+import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
@@ -331,7 +331,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     const assignedMemberId = await resolveAssignedMember(db, gymId, memberId, productId, assignedMemberInput);
 
     const today = todayUtc();
-    const blocking = await loadEditLock(gymId, memberId, today);
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, today);
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
     // A refusal is a returned value, which `db.transaction` would commit: the
