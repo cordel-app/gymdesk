@@ -19,16 +19,20 @@ export interface ServiceChoice {
   name: string;
   /** Sessions available; `null` when the wallet could not be read. */
   balance: number | null;
+  /** #2848: units the member's future bookings hold on it; `null` when unknown. */
+  booked: number | null;
   /** A balance of zero cannot be selected. An unknown balance is left to the server. */
   disabled: boolean;
 }
 
 export function serviceChoices(accepted: AcceptedService[] | null | undefined, balances: ServiceBalance[] | null): ServiceChoice[] {
   if (!accepted || accepted.length === 0) return [];
-  const byId = new Map((balances ?? []).map((b) => [Number(b.professional_service_id), Number(b.available ?? b.remaining)]));
+  const byId = new Map((balances ?? []).map((b) => [Number(b.professional_service_id), b]));
   return accepted.map((s) => {
-    const balance = balances ? (byId.get(s.id) ?? 0) : null;
-    return { id: s.id, name: s.name, balance, disabled: balance !== null && balance <= 0 };
+    const row = byId.get(s.id);
+    const balance = balances ? (row ? Number(row.available ?? row.remaining) : 0) : null;
+    const booked = balances ? (row?.booked != null ? Number(row.booked) : 0) : null;
+    return { id: s.id, name: s.name, balance, booked, disabled: balance !== null && balance <= 0 };
   });
 }
 
@@ -45,6 +49,34 @@ export function defaultChoice(choices: ServiceChoice[]): number | null {
  */
 export function noAvailableBalance(choices: ServiceChoice[]): boolean {
   return choices.length > 0 && choices.every((c) => c.balance !== null && c.disabled);
+}
+
+/**
+ * #2848 §2: the action an available event offers. `buy` exactly when
+ * {@link noAvailableBalance} holds (every accepted service is known and none
+ * has a unit to book): the member is sent to the Add Product catalogue
+ * narrowed to these services instead of being offered a Book the server
+ * would refuse. Anything else — no service, an unknown wallet, one service
+ * with a unit left — keeps the existing Book.
+ */
+export type BookingAction = 'book' | 'buy';
+export function bookingAction(choices: ServiceChoice[]): BookingAction {
+  return noAvailableBalance(choices) ? 'buy' : 'book';
+}
+
+/** The services a Buy narrows the catalogue to: every service the event accepts. */
+export function buyServiceIds(choices: ServiceChoice[]): number[] {
+  return choices.map((c) => c.id);
+}
+
+/**
+ * #2848: which explanation stands beside Buy. `all_booked` when the member
+ * holds units but their bookings already reserve them (#2605's wording, which
+ * also says a cancellation frees one); `none_left` when there is nothing to
+ * reserve at all. The locale key is the page's.
+ */
+export function zeroBalanceReason(choices: ServiceChoice[]): 'all_booked' | 'none_left' {
+  return choices.some((c) => (c.booked ?? 0) > 0) ? 'all_booked' : 'none_left';
 }
 
 /** Whether a booking must wait for a selection: some service is selectable and none is chosen. */

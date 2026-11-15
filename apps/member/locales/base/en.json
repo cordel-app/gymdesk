@@ -257,7 +257,8 @@
     "booked_on_detail": "Booked on {date}",
     "cancel_unavailable_title": "Cancellation unavailable.",
     "cancel_unavailable_service": "Bookings for professional services cannot be cancelled less than 24 hours before the event starts.",
-    "cancel_unavailable_generic": "Bookings cannot be cancelled less than 24 hours before the event starts."
+    "cancel_unavailable_generic": "Bookings cannot be cancelled less than 24 hours before the event starts.",
+    "buy": "Buy"
   },
   "member_calendar": {
     "filter_all": "All",
@@ -316,7 +317,9 @@
     "event_status_waitlist": "Waitlist",
     "event_status_waitlist_waiting": "Waitlist · {waiting} waiting",
     "event_status_waitlist_position": "Waitlist · Position #{position}",
-    "event_status_waitlist_position_waiting": "Waitlist · Position #{position} · {waiting} waiting"
+    "event_status_waitlist_position_waiting": "Waitlist · Position #{position} · {waiting} waiting",
+    "action_buy": "Buy",
+    "no_balance": "You have no sessions left for this service. Buy sessions to book this event."
   },
   "notifications": {
     "title": "Alerts",
