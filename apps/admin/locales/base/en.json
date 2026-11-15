@@ -1096,6 +1096,7 @@
     "doc_type_full": "Complete invoice",
     "doc_status_issued": "Issued",
     "doc_status_draft": "Draft",
+    "doc_status_replaced": "Replaced by complete invoice",
     "gen_blocked_exists": "Already generated. Open it from the list below.",
     "gen_blocked_not_paid": "A receipt can only be generated once the payment has been received.",
     "gen_blocked_no_amount": "This billing event has no amount to invoice.",

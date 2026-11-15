@@ -28,7 +28,7 @@ describe('Receipts & Invoices section', () => {
   it('labels the menu actions, every type, status and block reason in every locale', () => {
     const keys = [
       'generate_receipt', 'view_receipt', 'generate_full_invoice', 'invoices_empty',
-      ...DOCUMENT_KINDS.map(documentTypeKey), documentStatusKey('issued')!, documentStatusKey('draft')!,
+      ...DOCUMENT_KINDS.map(documentTypeKey), documentStatusKey('issued')!, documentStatusKey('draft')!, documentStatusKey('replaced')!,
       'gen_blocked_exists', 'gen_blocked_not_paid', 'gen_blocked_no_amount', 'gen_blocked_read_only',
       'full_inv_name_required', 'full_inv_tax_id_required', 'full_inv_address_required',
       'col_doc_type', 'col_doc_status', 'doc_view',
@@ -59,6 +59,15 @@ describe('Receipts & Invoices section', () => {
     ]);
     expect(docs[0].invoice).toBeNull();
     expect(docs[1].invoice?.id).toBe(7);
+  });
+
+  it('reads a simplified invoice a complete one replaced as Replaced (#2648 stage 7)', () => {
+    const docs = billingDocuments({ number: null, issuedAt: null }, [
+      invoice({ id: 7, replaced_by_invoice_id: 8 }),
+      invoice({ id: 8, invoice_type: 'full', fiscal_number: 'F-2026-0001', replaces_invoice_id: 7 }),
+    ]);
+    expect(docs.map((d) => d.status)).toEqual(['replaced', 'issued']);
+    expect(documentStatusKey('replaced')).toBe('doc_status_replaced');
   });
 
   it('offers both menu actions for a paid event with no documents', () => {

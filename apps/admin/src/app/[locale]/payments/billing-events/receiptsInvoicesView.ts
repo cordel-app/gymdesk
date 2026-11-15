@@ -23,7 +23,7 @@ export interface BillingDocumentRow {
   rectifying: boolean;
   number: string | null;
   issuedAt: string | null;
-  /** The stored document status (`issued` | `draft`). */
+  /** The document status: the stored one (`issued` | `draft`), or `replaced` for a simplified invoice a complete one replaced (#2648 stage 7). */
   status: string;
   /** Only an invoice row carries its invoice (payment status, VERI*FACTU, PDF id). */
   invoice: InvoiceRow | null;
@@ -41,7 +41,8 @@ export function billingDocuments(receipt: ReceiptInfo, invoices: InvoiceRow[]): 
   for (const inv of invoices) {
     rows.push({
       key: `invoice-${inv.id}`, kind: inv.invoice_type, rectifying: inv.related_invoice_id != null,
-      number: inv.fiscal_number, issuedAt: inv.issued_at, status: inv.status, invoice: inv,
+      number: inv.fiscal_number, issuedAt: inv.issued_at,
+      status: inv.replaced_by_invoice_id != null ? 'replaced' : inv.status, invoice: inv,
     });
   }
   return rows;
@@ -54,7 +55,7 @@ export function documentTypeKey(kind: DocumentKind): string {
 
 /** The `billing_events_page` key a stored document status reads under, or null for an unknown one. */
 export function documentStatusKey(status: string): string | null {
-  return status === 'issued' || status === 'draft' ? `doc_status_${status}` : null;
+  return status === 'issued' || status === 'draft' || status === 'replaced' ? `doc_status_${status}` : null;
 }
 
 /** Why a ⋮ menu document action is disabled, as a `billing_events_page` key. */

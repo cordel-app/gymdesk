@@ -674,6 +674,17 @@ bucket. The VERI*FACTU Alta record is written with each invoice exactly as for a
 an event whose issue is refused (e.g. an invalid issuer NIF) is logged, counted in
 `invoices_failed` and retried by the next run while it is inside the window.
 
+**A complete invoice replaces the simplified one (#2648 stage 7).** A complete invoice
+requested for an event that already holds a standing simplified invoice (issued, not
+rectifying, not rectified, not already replaced, its VERI*FACTU record not cancelled —
+`replacementTarget()`) is issued with `invoices.replaces_invoice_id` naming it (migration 423,
+UNIQUE), and its Alta record is **F3** with `FacturasSustituidas`. The simplified invoice is
+never edited; the GET derives `replaced_by_invoice_id`, the replaced invoice gets no further
+representation, and it cannot be rectified or have its record cancelled — the complete invoice
+is the one that stands and is corrected. Decisions taken: the oldest standing simplified invoice
+is replaced; the link is stored with VeriFactu off too; a simplified invoice already rectified or
+cancelled no longer stands, so a complete invoice for that event is an ordinary F1.
+
 A settled charge also allocates a receipt number, **after** the charge transaction has
 committed and in one of its own, with any failure logged and swallowed (see
 [Receipts](#receipts)).
