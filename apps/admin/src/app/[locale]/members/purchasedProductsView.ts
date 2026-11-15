@@ -128,6 +128,11 @@ export interface PurchasableProductOption {
   tax_included: boolean;
   tax_rate_percent?: number | null;
   recurring: boolean;
+  /**
+   * #2854 — the Product's own stored thumbnail (`image_thumbnail_url`, else
+   * `image_url`, chosen server-side by `shapeMemberProduct()`); null when none.
+   */
+  image_url?: string | null;
   promotions: PurchasableProductPromotion[];
   /** #1655 — hidden only by the new-members-only rule; explanatory, never applicable. */
   unavailable_promotions?: { promotion_id: number; promotion_name: string; reason: 'new_members_only' }[];
