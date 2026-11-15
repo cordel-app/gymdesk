@@ -158,6 +158,21 @@ describe('who is offered what (#1521 decisions 1 and 3)', () => {
     expect(ids).toContain(weekly);
   });
 
+  it('#2854 — reports each Product’s thumbnail (else its master image, else null) for the selector', async () => {
+    const m = await member();
+    const both = await product({ name: 'Thumb Both' });
+    const masterOnly = await product({ name: 'Thumb Master' });
+    const none = await product({ name: 'Thumb None' });
+    await db.query('UPDATE products SET image_url = ?, image_thumbnail_url = ? WHERE id = ?',
+      ['https://img.test/both.webp', 'https://img.test/both-thumbnail.webp', both]);
+    await db.query('UPDATE products SET image_url = ? WHERE id = ?', ['https://img.test/master.webp', masterOnly]);
+    const res = await auth(request.get(`${base(m)}/catalogue`));
+    const byId = new Map(res.body.items.map((i: any) => [i.id, i]));
+    expect((byId.get(both) as any).image_url).toBe('https://img.test/both-thumbnail.webp');
+    expect((byId.get(masterOnly) as any).image_url).toBe('https://img.test/master.webp');
+    expect((byId.get(none) as any).image_url).toBeNull();
+  });
+
   it('is scoped to the caller’s gym', async () => {
     const other = await createTestGym('Staff Purchase Other Gym');
     const { insertId: foreign } = await db.query(
