@@ -4,7 +4,8 @@
 // Pure: no React, no `t()`. Which services take a selection, the initial
 // selection and the limits mirror `api/src/domain/familyGroupBooking.ts`; the
 // server re-judges every booking, so this only decides what the screen offers.
-// The selection holds partner ids: the booker is always in it and never listed.
+// The selection holds partner ids; whether the booker attends is a separate
+// flag (`self`, #2850): the booker may book only for other family members.
 
 export interface FamilyMember { member_id: number; name: string }
 
@@ -41,18 +42,28 @@ export function addableMembers(bookerId: number, family: FamilyMember[], partner
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function canAddParticipant(partnerIds: number[], max: number): boolean {
-  return 1 + partnerIds.length < max;
+/** #2850: how many attend — the selected partners, plus the booker when they attend. */
+export function attendeeCount(partnerIds: number[], self = true): number {
+  return (self ? 1 : 0) + partnerIds.length;
 }
 
-export function canRemoveParticipant(partnerIds: number[], min: number): boolean {
-  return 1 + partnerIds.length > min;
+export function canAddParticipant(partnerIds: number[], max: number, self = true): boolean {
+  return attendeeCount(partnerIds, self) < max;
 }
 
-/** §4: Book is enabled only while the count (booker included) is within the limits. */
-export function participantsValid(partnerIds: number[], min: number, max: number): boolean {
-  const n = 1 + partnerIds.length;
-  return n >= min && n <= max;
+export function canRemoveParticipant(partnerIds: number[], min: number, self = true): boolean {
+  return attendeeCount(partnerIds, self) > min;
+}
+
+/** §4: Book is enabled only while the count (booker included when attending) is within the limits. */
+export function participantsValid(partnerIds: number[], min: number, max: number, self = true): boolean {
+  const n = attendeeCount(partnerIds, self);
+  return n >= Math.max(1, min) && n <= max;
+}
+
+/** #2850: whether the booker's own toggle may move, by the same limits as anyone else's. */
+export function canToggleSelf(partnerIds: number[], self: boolean, min: number, max: number): boolean {
+  return self ? canRemoveParticipant(partnerIds, min, true) : canAddParticipant(partnerIds, max, false);
 }
 
 /**
@@ -74,8 +85,8 @@ export function groupServiceOf<T extends GroupService & { id: number }>(
 }
 
 /** Whether a family member's toggle may move: off needs room above `min`, on needs room below `max`. */
-export function canToggleParticipant(partnerIds: number[], id: number, min: number, max: number): boolean {
-  return partnerIds.includes(id) ? canRemoveParticipant(partnerIds, min) : canAddParticipant(partnerIds, max);
+export function canToggleParticipant(partnerIds: number[], id: number, min: number, max: number, self = true): boolean {
+  return partnerIds.includes(id) ? canRemoveParticipant(partnerIds, min, self) : canAddParticipant(partnerIds, max, self);
 }
 
 /**
@@ -83,10 +94,10 @@ export function canToggleParticipant(partnerIds: number[], id: number, min: numb
  * (alphabetical, as §2 seeds it); a move the limits refuse changes nothing.
  */
 export function toggleParticipant(
-  bookerId: number, family: FamilyMember[], partnerIds: number[], id: number, min: number, max: number,
+  bookerId: number, family: FamilyMember[], partnerIds: number[], id: number, min: number, max: number, self = true,
 ): number[] {
   if (id === bookerId || !family.some((m) => m.member_id === id)) return partnerIds;
-  if (!canToggleParticipant(partnerIds, id, min, max)) return partnerIds;
+  if (!canToggleParticipant(partnerIds, id, min, max, self)) return partnerIds;
   const next = partnerIds.includes(id) ? partnerIds.filter((p) => p !== id) : [...partnerIds, id];
   const order = addableMembers(bookerId, family, []).map((m) => m.member_id);
   return order.filter((m) => next.includes(m));

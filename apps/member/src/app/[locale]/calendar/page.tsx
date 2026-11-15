@@ -169,6 +169,8 @@ export default function MemberCalendarPage() {
   // #2674 — the family members a family group booking may name.
   const familyRead = useFamilyMembers();
   const [participantIds, setParticipantIds] = useState<number[]>([]);
+  // #2850 — whether the booker attends the family booking themselves.
+  const [bookerAttends, setBookerAttends] = useState(true);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -309,10 +311,11 @@ export default function MemberCalendarPage() {
   }, [selected, chosenServiceId]);
   const groupLimit = groupService ? groupLimits(groupService) : null;
   useEffect(() => {
+    setBookerAttends(true);
     if (!groupService || !familyRead) { setParticipantIds([]); return; }
     setParticipantIds(initialParticipants(familyRead.member_id, familyRead.members, groupLimits(groupService).max));
   }, [groupService, familyRead]);
-  const groupInvalid = !!groupLimit && (!familyRead || !participantsValid(participantIds, groupLimit.min, groupLimit.max));
+  const groupInvalid = !!groupLimit && (!familyRead || !participantsValid(participantIds, groupLimit.min, groupLimit.max, bookerAttends));
 
   function handleEventClick(info: any) {
     setActionMsg(null);
@@ -339,7 +342,7 @@ export default function MemberCalendarPage() {
         body: JSON.stringify({
           class_session_id: selected.id,
           ...(chosenServiceId != null ? { professional_service_id: chosenServiceId } : {}),
-          ...(groupService ? { participant_member_ids: participantIds } : {}),
+          ...(groupService ? { participant_member_ids: participantIds, booker_attends: bookerAttends } : {}),
         }),
       });
       refetch();
@@ -695,9 +698,11 @@ export default function MemberCalendarPage() {
                 bookerId={familyRead.member_id}
                 family={familyRead.members}
                 partnerIds={participantIds}
+                self={bookerAttends}
                 min={groupLimit.min}
                 max={groupLimit.max}
                 onChange={setParticipantIds}
+                onSelfChange={setBookerAttends}
               />
             )}
             {unlockServiceIds.length > 0 && bookingAction(serviceChoiceList) !== 'buy' && (

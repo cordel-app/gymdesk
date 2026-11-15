@@ -42,7 +42,7 @@ import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
 import { createSoloFamily } from './family-membership';
 import { cancelGroupPartners, cancelPartnerBookings, membersShareCoverage } from './duo-booking';
-import { FAMILY_GROUP_MESSAGES, cancelsRemainingFamilyBookings, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
+import { FAMILY_GROUP_MESSAGES, cancelsRemainingFamilyBookings, isFamilyGroupService, judgeFamilyParticipants, parseBookerAttends } from '../domain/familyGroupBooking';
 import { loadServiceCapacityViews } from './service-capacity';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
@@ -1071,15 +1071,19 @@ async function loadFamilyGroupService(gymId: string, sessionId: number, serviceI
  * own unit (#2605) and counts toward the service's places (#1984 stage 2a); every
  * row records the initiator as `booked_by_member_id`. The bookings are all-or-
  * nothing: a member who would be refused or waitlisted rolls every one back.
+ * #2850: with `bookerAttends` false the booker books only the selected family
+ * members (a parent booking for their children) and holds no booking of their
+ * own; they are still recorded as the initiator.
  */
 async function bookFamilyMembers(tx: Tx, input: {
   gymId: string; memberId: number; sessionId: number; serviceId: number;
-  partnerIds: number[]; min: number; max: number; actor: string | null;
+  partnerIds: number[]; min: number; max: number; actor: string | null; bookerAttends: boolean;
 }) {
-  const { gymId, memberId, sessionId, serviceId, partnerIds, actor } = input;
+  const { gymId, memberId, sessionId, serviceId, partnerIds, actor, bookerAttends } = input;
   const family = await loadEligibleAssignees(tx, gymId, memberId);
   const judged = judgeFamilyParticipants({
     bookerId: memberId, partnerIds, familyMemberIds: family.map((m) => m.member_id), min: input.min, max: input.max,
+    bookerAttends,
   });
   if (!judged.ok) {
     throw Object.assign(new Error(FAMILY_GROUP_MESSAGES[judged.code]), {
@@ -1088,7 +1092,7 @@ async function bookFamilyMembers(tx: Tx, input: {
   }
   const ids: number[] = [];
   let first: any = null;
-  for (const id of [memberId, ...partnerIds]) {
+  for (const id of bookerAttends ? [memberId, ...partnerIds] : partnerIds) {
     const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId);
     if (row.status !== 'booked') {
       throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
@@ -1101,7 +1105,7 @@ async function bookFamilyMembers(tx: Tx, input: {
     `UPDATE calendar_event_bookings SET booked_by_member_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND id IN (${ph})`,
     [memberId, actor, gymId, ...ids]);
-  return { ...first, participant_booking_ids: ids.slice(1) };
+  return { ...first, booker_attends: bookerAttends, participant_booking_ids: bookerAttends ? ids.slice(1) : ids };
 }
 
 /**
@@ -1152,9 +1156,12 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     if (groupService) {
       const parsedGroup = parseParticipantIds(req.body.participant_member_ids, memberId, Number.MAX_SAFE_INTEGER);
       if (!parsedGroup.ok) return res.status(400).json({ error: parsedGroup.error });
+      const attends = parseBookerAttends(req.body.booker_attends);
+      if (!attends.ok) return res.status(400).json({ error: attends.error });
       const result = await db.transaction((tx) => bookFamilyMembers(tx, {
         gymId, memberId, sessionId: Number(class_session_id), serviceId: chosenService!,
         partnerIds: parsedGroup.partnerIds, min: groupService.min, max: groupService.max, actor,
+        bookerAttends: attends.value,
       }));
       return res.status(201).json(result);
     }

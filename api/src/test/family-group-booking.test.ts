@@ -247,3 +247,80 @@ describe('family group booking (#2674)', () => {
     expect(await bookings(ev)).toHaveLength(1);
   });
 });
+
+describe('booker may book only for family members (#2850)', () => {
+  it('books the children alone when the booker does not attend', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Parent Out', clerk);
+    const kid1 = await member('Kid A');
+    const kid2 = await member('Kid B');
+    await family(me, [kid1, kid2]);
+    await grant(me, familyService, 3);
+    const ev = await event();
+
+    const res = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid1, kid2], booker_attends: false,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.booker_attends).toBe(false);
+    expect(res.body.participant_booking_ids).toHaveLength(2);
+    const rows = await bookings(ev);
+    expect(rows.map((r) => r.member_id).sort()).toEqual([kid1, kid2].sort());
+    expect(rows.every((r) => r.booked_by_member_id === me)).toBe(true);
+  });
+
+  it('still books the booker with the children by default and when they attend', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Parent In', clerk);
+    const kid = await member('Kid C');
+    await family(me, [kid]);
+    await grant(me, familyService, 2);
+    const ev = await event();
+    const res = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid], booker_attends: true,
+    });
+    expect(res.status).toBe(201);
+    expect((await bookings(ev)).map((r) => r.member_id).sort()).toEqual([me, kid].sort());
+  });
+
+  it('counts the minimum without the booker who does not attend, and refuses an empty booking', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Parent Min', clerk);
+    const kid = await member('Kid D');
+    await family(me, [kid]);
+    await grant(me, familyService, 2);
+    await grant(me, familySoloService, 2);
+    const ev = await event();
+
+    const below = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid], booker_attends: false,
+    });
+    expect(below.status).toBe(400);
+    expect(below.body.error).toMatch(/more participants/);
+
+    const empty = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familySoloService, participant_member_ids: [], booker_attends: false,
+    });
+    expect(empty.status).toBe(400);
+
+    const solo = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familySoloService, participant_member_ids: [kid], booker_attends: false,
+    });
+    expect(solo.status).toBe(201);
+    expect((await bookings(ev)).map((r) => r.member_id)).toEqual([kid]);
+  });
+
+  it('refuses a booker_attends that is not a boolean', async () => {
+    const clerk = `fg-${uniq()}`;
+    const me = await member('Parent Bad', clerk);
+    const kid = await member('Kid E');
+    await family(me, [kid]);
+    await grant(me, familyService, 2);
+    const ev = await event();
+    const res = await bookAs(clerk, {
+      class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid], booker_attends: 'false',
+    });
+    expect(res.status).toBe(400);
+    expect(await bookings(ev)).toHaveLength(0);
+  });
+});

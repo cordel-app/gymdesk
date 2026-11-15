@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ActivityMetaIcon } from './ActivityMetaIcon';
 import { memberTheme } from '@/lib/memberChrome';
 import {
-  addableMembers, canToggleParticipant, participantsValid, toggleParticipant, type FamilyMember,
+  addableMembers, attendeeCount, canToggleParticipant, canToggleSelf, participantsValid, toggleParticipant, type FamilyMember,
 } from '@/lib/familyParticipants';
 
 /**
@@ -13,23 +13,28 @@ import {
  * before Book. Calendar and My Bookings render this one component; the page
  * holds the selection (partner ids) and sends it as `participant_member_ids`.
  * Every family member is listed with a toggle (the owner's 2026-11-12 answer):
- * the booker first, on and locked; the others alphabetically, on as §2 seeds
- * them. Every rule is `lib/familyParticipants.ts`', and the server enforces
- * them again.
+ * the booker first (on by default and, since #2850, deselectable so a parent
+ * can book only for their children); the others alphabetically, on as §2
+ * seeds them. Every rule is `lib/familyParticipants.ts`', and the server
+ * enforces them again.
  */
-export function FamilyParticipantsPicker({ bookerId, family, partnerIds, min, max, onChange }: {
+export function FamilyParticipantsPicker({ bookerId, family, partnerIds, self, min, max, onChange, onSelfChange }: {
   bookerId: number;
   family: FamilyMember[];
   partnerIds: number[];
+  /** Whether the booker attends (#2850). */
+  self: boolean;
   min: number;
   max: number;
   onChange: (next: number[]) => void;
+  onSelfChange: (next: boolean) => void;
 }) {
   const t = useTranslations('family_participants');
   const nameOf = (id: number) => family.find((m) => m.member_id === id)?.name ?? `#${id}`;
   const others = addableMembers(bookerId, family, []);
-  const valid = participantsValid(partnerIds, min, max);
-  const count = 1 + partnerIds.length;
+  const valid = participantsValid(partnerIds, min, max, self);
+  const count = attendeeCount(partnerIds, self);
+  const selfMovable = canToggleSelf(partnerIds, self, min, max);
 
   return (
     <div style={styles.wrap} onClick={(e) => e.stopPropagation()}>
@@ -42,11 +47,17 @@ export function FamilyParticipantsPicker({ bookerId, family, partnerIds, min, ma
         <li style={styles.row}>
           <span style={styles.name}>{nameOf(bookerId)}</span>
           <span style={styles.chip}>{t('you')}</span>
-          <Toggle on disabled label={t('attends', { name: nameOf(bookerId) })} />
+          <Toggle
+            on={self}
+            disabled={!selfMovable}
+            label={t('attends', { name: nameOf(bookerId) })}
+            title={selfMovable ? undefined : self ? t('min_reached', { min }) : t('max_reached', { max })}
+            onToggle={() => onSelfChange(!self)}
+          />
         </li>
         {others.map((m) => {
           const on = partnerIds.includes(m.member_id);
-          const movable = canToggleParticipant(partnerIds, m.member_id, min, max);
+          const movable = canToggleParticipant(partnerIds, m.member_id, min, max, self);
           return (
             <li key={m.member_id} style={styles.row}>
               <span style={styles.name}>{m.name}</span>
@@ -55,7 +66,7 @@ export function FamilyParticipantsPicker({ bookerId, family, partnerIds, min, ma
                 disabled={!movable}
                 label={t('attends', { name: m.name })}
                 title={movable ? undefined : on ? t('min_reached', { min }) : t('max_reached', { max })}
-                onToggle={() => onChange(toggleParticipant(bookerId, family, partnerIds, m.member_id, min, max))}
+                onToggle={() => onChange(toggleParticipant(bookerId, family, partnerIds, m.member_id, min, max, self))}
               />
             </li>
           );
