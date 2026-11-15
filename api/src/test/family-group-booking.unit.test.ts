@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initialParticipants, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
+import { cancelsRemainingFamilyBookings, initialParticipants, isFamilyGroupService, judgeFamilyParticipants } from '../domain/familyGroupBooking';
 import * as client from '../../../apps/member/src/lib/familyParticipants';
 
 const family = [
@@ -7,11 +7,20 @@ const family = [
 ];
 
 describe('family group booking rules (#2674)', () => {
-  it('applies only to family_only services with a minimum above one', () => {
+  it('applies to every family_only service, whatever its minimum (#2813 §1)', () => {
     expect(isFamilyGroupService({ booking_type: 'family_only', min_participants: 2 })).toBe(true);
-    expect(isFamilyGroupService({ booking_type: 'family_only', min_participants: 1 })).toBe(false);
-    expect(isFamilyGroupService({ booking_type: 'family_only', min_participants: null })).toBe(false);
+    expect(isFamilyGroupService({ booking_type: 'family_only', min_participants: 1 })).toBe(true);
+    expect(isFamilyGroupService({ booking_type: 'family_only', min_participants: null })).toBe(true);
     expect(isFamilyGroupService({ booking_type: 'open_group', min_participants: 3 })).toBe(false);
+    expect(client.isFamilyGroupService({ booking_type: 'family_only', min_participants: 1, capacity: 3 })).toBe(true);
+  });
+
+  it('cancels the remaining family bookings only when some remain below the minimum (#2813 §6)', () => {
+    expect(cancelsRemainingFamilyBookings(2, 2)).toBe(false);
+    expect(cancelsRemainingFamilyBookings(1, 2)).toBe(true);
+    expect(cancelsRemainingFamilyBookings(0, 2)).toBe(false);
+    expect(cancelsRemainingFamilyBookings(1, 1)).toBe(false);
+    expect(cancelsRemainingFamilyBookings(1, null)).toBe(false);
   });
 
   it('seeds the other family members alphabetically up to the maximum, booker excluded', () => {

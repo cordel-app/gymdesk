@@ -1,8 +1,12 @@
 /**
- * #2674 — a family group booking: a member books a `family_only` Professional
- * Service whose minimum is more than one participant, naming the other members
- * of their Family who attend with them. It is one group booking (the existing
- * `booking_group_id` of #1984 stage 2b-1), booked and spent as one unit.
+ * #2674 / #2813 — a family booking: a member books a `family_only` Professional
+ * Service, naming the other members of their Family who attend with them. Since
+ * #2813 each selected member gets an individual booking of their own (no
+ * `booking_group_id`): each passes the booking gate and reserves its own unit,
+ * the initiator recorded as `booked_by_member_id` on every row. The family's
+ * bookings of one occurrence and service still answer to the service's minimum
+ * together: a cancellation that leaves fewer than the minimum cancels the rest
+ * (`cancelsRemainingFamilyBookings()`).
  *
  * Pure: which services take the participant selection, what a selection must
  * satisfy and the initial selection the Members App offers. The SQL half is the
@@ -18,9 +22,18 @@ export interface GroupServiceShape {
   min_participants: number | null | undefined;
 }
 
-/** Only a `family_only` service with a minimum above one takes a participant selection (#2674 §7). */
+/** Every `family_only` service takes a participant selection (#2813 §1; #2674 also required a minimum above one). */
 export function isFamilyGroupService(s: GroupServiceShape | null | undefined): boolean {
-  return !!s && s.booking_type === 'family_only' && Number(s.min_participants ?? 1) > 1;
+  return !!s && s.booking_type === 'family_only';
+}
+
+/**
+ * #2813 §6: after one family member cancels, whether the family's remaining
+ * bookings of that occurrence and service are cancelled too — some remain, but
+ * fewer than the service's minimum.
+ */
+export function cancelsRemainingFamilyBookings(remaining: number, minParticipants: number | null | undefined): boolean {
+  return remaining > 0 && remaining < Math.max(1, Number(minParticipants ?? 1));
 }
 
 export type FamilyGroupRefusal =

@@ -1,4 +1,5 @@
-// #2674 — the family members who attend a family group booking with the member.
+// #2674 / #2813 — the family members who attend with the member; each gets an
+// individual booking of their own.
 //
 // Pure: no React, no `t()`. Which services take a selection, the initial
 // selection and the limits mirror `api/src/domain/familyGroupBooking.ts`; the
@@ -14,9 +15,9 @@ export interface GroupService {
   capacity: number;
 }
 
-/** Only a `family_only` service with a minimum above one takes a selection (§7). */
+/** Every `family_only` service takes a selection (#2813 §1). */
 export function isFamilyGroupService(s: GroupService | null | undefined): boolean {
-  return !!s && s.booking_type === 'family_only' && Number(s.min_participants ?? 1) > 1;
+  return !!s && s.booking_type === 'family_only';
 }
 
 export function groupLimits(s: GroupService): { min: number; max: number } {
