@@ -32,7 +32,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyChildQuery } from './helpers';
+  request, legacyChildQuery, createTestFamily } from './helpers';
 import { ACTIVE_PLAN_EXISTS } from '../domain/oneActivePlan';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 import { legacyProductInsert } from './legacyProductFixture';
@@ -406,6 +406,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const b = await createMember(gymId, 'Family B');
     const solo = await createPlan(gymId, 'Solo');
     const family = await createPlan(gymId, 'Family', '2');
+    await createTestFamily(gymId, a, [b]);
     const aPlan = await assignLive(a, solo, '2026-01-01');
     const bPlan = await assignLive(b, solo, '2026-02-01');
 
@@ -657,6 +658,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const coMember = await createMember(gymId, 'Co-member');
     const family = await createPlan(gymId, 'Family', '2');
     const solo = await createPlan(gymId, 'Solo');
+    await createTestFamily(gymId, owner, [coMember]);
     const assigned = await post(`/membership-plans/${family}/assign`, {
       member_ids: [owner, coMember], owner_member_id: owner, starts_at: '2026-01-01',
     });
