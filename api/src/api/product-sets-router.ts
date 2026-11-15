@@ -22,6 +22,7 @@ import {
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
 import { diffConfigurations, summaryItems, recurringFinalPrices, itemFinalPrice, financialSummary, type RecurringFinalPrices } from '../domain/productSetDiff';
+import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
 import type { SimulationAssignment } from '../domain/billingSimulation';
 import {
@@ -619,11 +620,14 @@ async function reviewHandler(req: any, res: any, next: any) {
     }
     if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
 
-    const after = await loadProductSetSimulationAssignment(gymId, Number(set.id));
-    const before = set.previous_product_set_id != null
-      ? await loadProductSetSimulationAssignment(gymId, Number(set.previous_product_set_id))
-      : null;
-    if (!after) return res.status(404).json({ error: 'ProductSet not found' });
+    // One engine assignment per Membership Plan of each version (#2446 stage 4): a
+    // version holding several plans lists, prices and diffs every one of them.
+    const after = await loadProductSetSimulationAssignments(gymId, Number(set.id));
+    const previous = set.previous_product_set_id != null
+      ? await loadProductSetSimulationAssignments(gymId, Number(set.previous_product_set_id))
+      : [];
+    const before = previous.length > 0 ? previous : null;
+    if (after.length === 0) return res.status(404).json({ error: 'ProductSet not found' });
     const changes = diffConfigurations(before, after);
 
     let amountDue: number | null = null;
@@ -674,15 +678,16 @@ async function reviewHandler(req: any, res: any, next: any) {
         return sim.available ? recurringFinalPrices(sim.dates) : null;
       } catch { return null; }
     };
-    const afterPrices = forecastPrices(after);
-    const beforePrices = forecastPrices(before);
-    const summary = summaryItems(before, after).map((i) => {
+    // Each item is priced off the forecast of the assignment it belongs to.
+    const afterPrices = after.map(forecastPrices);
+    const beforePrices = (before ?? []).map(forecastPrices);
+    const summary = summaryItems(before, after).map(({ source, ...i }) => {
       const l = lines.find((x) => x.item_name === i.name);
       return {
         ...i,
         promotions: i.promotions.length > 0 ? i.promotions : l?.promotion_name ? [l.promotion_name] : [],
         initial_amount: i.state === 'draft' && l ? l.amount : null,
-        final_price: itemFinalPrice(i, i.state === 'cancelling' ? beforePrices : afterPrices),
+        final_price: itemFinalPrice(i, (i.state === 'cancelling' ? beforePrices : afterPrices)[source] ?? null),
       };
     });
 

@@ -85,6 +85,12 @@ export function ProductSetsInFlight({ productSets, canWrite, changes = [], items
                     i.quantity != null ? `× ${i.quantity}` : null,
                     i.billing_frequency ? i.billing_frequency.replace('_', ' ') : null,
                     i.regular_price != null ? `${t('summary_regular')}: ${i.regular_price.toFixed(2)} €` : null,
+                    i.duration
+                      ? t('summary_duration', {
+                        free: i.duration.free_periods, paid: i.duration.paid_periods,
+                        prepaid: i.duration.prepaid_periods, bonus: i.duration.bonus_periods,
+                      }) + ` (${t(i.duration.repeats ? 'summary_duration_repeats' : 'summary_duration_once')})`
+                      : null,
                     i.promotions.length > 0 ? i.promotions.join(', ') : null,
                     i.final_price != null ? `${t('summary_final')}: ${i.final_price.toFixed(2)} €` : null,
                     i.initial_amount != null ? `${t('summary_initial')}: ${i.initial_amount.toFixed(2)} €` : null,
