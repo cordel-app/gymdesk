@@ -67,6 +67,61 @@ describe('summaryItems (#2446)', () => {
   });
 });
 
+describe('several Membership Plans in one version (#2446 stage 4)', () => {
+  const dur = { freePeriods: 1, paidPeriods: 11, bonusPeriods: 0, prepaidPeriods: 2, cadence: { interval: 1, unit: 'month' }, repeats: true };
+  const plan = (planName: string, services: any[] = [], extra: any = {}) => asg(services, { planName, planDuration: dur, ...extra });
+
+  it('lists every plan of the Draft, a second plan added as draft', () => {
+    const before = [plan('Gold', [svc(1, 1)])];
+    const after = [plan('Gold', [svc(1, 1)]), plan('Yoga')];
+    const out = summaryItems(before, after).map((i) => `${i.type}:${i.name}:${i.state}:${i.source}`);
+    expect(out).toEqual(['plan:Gold:active:0', 'plan:Yoga:draft:1', 'product:P1:active:0']);
+  });
+
+  it('shows a removed plan as cancelling, priced from its own position in the Active version', () => {
+    const before = [plan('Gold'), plan('Yoga')];
+    const out = summaryItems(before, [plan('Gold')]).map((i) => `${i.name}:${i.state}:${i.source}`);
+    expect(out).toEqual(['Yoga:cancelling:1', 'Gold:active:0']);
+  });
+
+  it('keeps the same plan held twice apart', () => {
+    const out = summaryItems([plan('Gold')], [plan('Gold'), plan('Gold')]).map((i) => i.state);
+    expect(out).toEqual(['active', 'draft']);
+  });
+
+  it("reports each plan's Billing & Duration and none for a Product", () => {
+    const [p, l] = summaryItems(null, [plan('Gold', [svc(1, 1)])]);
+    expect(p.duration).toEqual({ free_periods: 1, paid_periods: 11, bonus_periods: 0, prepaid_periods: 2, repeats: true });
+    expect(l.duration).toBeNull();
+  });
+
+  it('diffs a plan added alone, so Save & Pay opens', () => {
+    expect(diffConfigurations([plan('Gold')], [plan('Gold'), plan('Yoga')])).toEqual([
+      { kind: 'plan_changed', from: null, to: 'Yoga' },
+    ]);
+    expect(diffConfigurations([plan('Gold'), plan('Yoga')], [plan('Gold')])).toEqual([
+      { kind: 'plan_changed', from: 'Yoga', to: null },
+    ]);
+  });
+
+  it("keys a further plan's Period benefits by that plan", () => {
+    const benefit = { category: 'periodical', productId: 9, name: 'Locker', quantity: 1, unitPrice: 5, billingFrequency: 'month' };
+    const before = [plan('Gold', [], { planBenefits: [benefit] })];
+    const after = [plan('Gold', [], { planBenefits: [benefit] }), plan('Yoga', [], { planBenefits: [benefit] })];
+    const changes = diffConfigurations(before, after);
+    expect(changes.map((c) => c.kind).sort()).toEqual(['added', 'plan_changed']);
+    expect(summaryItems(before, after).filter((i) => i.type === 'product').map((i) => `${i.state}:${i.source}`))
+      .toEqual(['active:0', 'draft:1']);
+  });
+
+  it('reads a single assignment exactly as an array of one', () => {
+    const b = plan('Gold', [svc(1, 1)]);
+    const a = plan('Silver', [svc(2, 1)]);
+    expect(diffConfigurations([b], [a])).toEqual(diffConfigurations(b, a));
+    expect(summaryItems([b], [a])).toEqual(summaryItems(b, a));
+  });
+});
+
 describe('Summary financial view (#2446 stage 3)', () => {
   const fee = (actual: number, extra: any = {}) => ({ kind: 'membership_fee' as const, label: 'Fee', actual_charge: actual, prepaid_periods: null, ...extra });
   const prod = (label: string, actual: number, extra: any = {}) => ({ kind: 'product' as const, label, actual_charge: actual, prepaid_periods: null, ...extra });

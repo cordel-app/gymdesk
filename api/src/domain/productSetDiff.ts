@@ -57,16 +57,63 @@ export function recurringLinesOf(a: Pick<SimulationAssignment, 'services' | 'pla
 
 const cents = (n: number | null) => (n == null ? null : Math.round(n * 100));
 
+// #2446 stage 4 — a version may hold several Membership Plans (#2125 stage 6), so
+// each side is either the version's one engine assignment or the list
+// `loadProductSetSimulationAssignments()` answers (one per plan, the first one
+// carrying the version's recurring lines). A single assignment reads exactly as
+// before.
+export type VersionSide = SimulationAssignment | SimulationAssignment[] | null;
+
+const assignmentsOf = (side: VersionSide): SimulationAssignment[] =>
+  side == null ? [] : Array.isArray(side) ? side : [side];
+
+interface KeyedPlan { key: string; plan: SimulationAssignment; source: number }
+
+/**
+ * The plans of a side, each identified across versions by its Membership Plan's
+ * name and its occurrence among plans of that name (the same plan may be held
+ * twice, #2125). The order is the version's link order, so the primary plan is first.
+ */
+function keyedPlans(side: VersionSide): KeyedPlan[] {
+  const seen = new Map<string, number>();
+  const out: KeyedPlan[] = [];
+  assignmentsOf(side).forEach((plan, source) => {
+    if (!plan.planName) return;
+    const n = (seen.get(plan.planName) ?? 0) + 1;
+    seen.set(plan.planName, n);
+    out.push({ key: `${plan.planName}#${n}`, plan, source });
+  });
+  return out;
+}
+
+interface SourcedLine { line: RecurringLine; source: number }
+
+/**
+ * Every recurring line of a side. The primary plan's Period benefits keep their
+ * pre-#2446-stage-4 key, so a single-plan version diffs exactly as it did; a
+ * further plan's are keyed by that plan, since two plans may include one Product.
+ */
+function sourcedLinesOf(side: VersionSide): SourcedLine[] {
+  const assignments = assignmentsOf(side);
+  const keys = new Map(keyedPlans(side).map((k) => [k.source, k.key]));
+  const out: SourcedLine[] = [];
+  assignments.forEach((a, source) => {
+    for (const line of recurringLinesOf(a)) {
+      const key = source > 0 && line.key.startsWith('benefit-') ? `benefit-${keys.get(source) ?? source}-${line.productId}` : line.key;
+      out.push({ line: { ...line, key }, source });
+    }
+  });
+  return out;
+}
+
 /**
  * `before` is the Active version (or `null` for a member with no recurring
  * configuration, where everything is an addition).
  */
-export function diffConfigurations(
-  before: SimulationAssignment | null, after: SimulationAssignment,
-): ConfigurationChange[] {
+export function diffConfigurations(before: VersionSide, after: VersionSide): ConfigurationChange[] {
   const out: ConfigurationChange[] = [];
-  const was = new Map(recurringLinesOf(before).map((l) => [l.key, l]));
-  const now = new Map(recurringLinesOf(after).map((l) => [l.key, l]));
+  const was = new Map(sourcedLinesOf(before).map((l) => [l.line.key, l.line]));
+  const now = new Map(sourcedLinesOf(after).map((l) => [l.line.key, l.line]));
 
   for (const [key, line] of now) {
     const prev = was.get(key);
@@ -76,17 +123,34 @@ export function diffConfigurations(
   }
   for (const [key, line] of was) if (!now.has(key)) out.push({ kind: 'removed', line });
 
-  // A first configuration has no version to compare against, but a Membership
-  // Plan it carries is still a change: without this a Draft holding only a new
-  // plan lists nothing, and the Products tab's Save & Pay never opens (#2097).
-  if (!before && after.planName) out.push({ kind: 'plan_changed', from: null, to: after.planName });
-  if (before) {
-    if ((before.planName ?? null) !== (after.planName ?? null)) out.push({ kind: 'plan_changed', from: before.planName ?? null, to: after.planName ?? null });
-    if (cents(before.membershipFeePrice) !== cents(after.membershipFeePrice)) out.push({ kind: 'fee_changed', from: before.membershipFeePrice, to: after.membershipFeePrice });
+  const bPlans = keyedPlans(before);
+  const aPlans = keyedPlans(after);
+  const b0 = assignmentsOf(before)[0] ?? null;
+  const a0 = assignmentsOf(after)[0] ?? null;
+  if (bPlans.length <= 1 && aPlans.length <= 1) {
+    // A first configuration has no version to compare against, but a Membership
+    // Plan it carries is still a change: without this a Draft holding only a new
+    // plan lists nothing, and the Products tab's Save & Pay never opens (#2097).
+    if (!b0 && a0?.planName) out.push({ kind: 'plan_changed', from: null, to: a0.planName });
+    if (b0 && a0) {
+      if ((b0.planName ?? null) !== (a0.planName ?? null)) out.push({ kind: 'plan_changed', from: b0.planName ?? null, to: a0.planName ?? null });
+      if (cents(b0.membershipFeePrice) !== cents(a0.membershipFeePrice)) out.push({ kind: 'fee_changed', from: b0.membershipFeePrice, to: a0.membershipFeePrice });
+    }
+  } else {
+    // Several plans: each plan added or removed is its own change (a second plan
+    // added alone must still open Save & Pay), and a kept plan reports its fee.
+    const bByKey = new Map(bPlans.map((p) => [p.key, p.plan]));
+    const aKeys = new Set(aPlans.map((p) => p.key));
+    for (const p of aPlans) {
+      const prev = bByKey.get(p.key);
+      if (!prev) { out.push({ kind: 'plan_changed', from: null, to: p.plan.planName }); continue; }
+      if (cents(prev.membershipFeePrice) !== cents(p.plan.membershipFeePrice)) out.push({ kind: 'fee_changed', from: prev.membershipFeePrice, to: p.plan.membershipFeePrice });
+    }
+    for (const p of bPlans) if (!aKeys.has(p.key)) out.push({ kind: 'plan_changed', from: p.plan.planName, to: null });
   }
 
-  const standing = (a: SimulationAssignment | null) =>
-    new Set((a?.promotions ?? []).filter((p) => p.revokedAt == null).map((p) => p.name ?? ''));
+  const standing = (side: VersionSide) =>
+    new Set(assignmentsOf(side).flatMap((a) => (a.promotions ?? []).filter((p) => p.revokedAt == null).map((p) => p.name ?? '')));
   const pBefore = standing(before);
   const pAfter = standing(after);
   for (const name of pAfter) if (!pBefore.has(name)) out.push({ kind: 'promotion_added', name });
@@ -99,6 +163,16 @@ export function diffConfigurations(
 // what it takes away (cancelling). Frozen figures only; nothing here prices.
 export type SummaryItemState = 'active' | 'draft' | 'cancelling';
 
+/** #2446 stage 4 — a plan's Billing & Duration, counted in its own billing periods (#892). */
+export interface SummaryPlanDuration {
+  free_periods: number;
+  paid_periods: number;
+  bonus_periods: number;
+  prepaid_periods: number;
+  /** Whether the cycle starts again when it ends (#1130). */
+  repeats: boolean;
+}
+
 export interface SummaryItem {
   state: SummaryItemState;
   type: 'plan' | 'product';
@@ -108,37 +182,59 @@ export interface SummaryItem {
   billing_frequency: string | null;
   regular_price: number | null;
   promotions: string[];
+  /** A plan's Billing & Duration conditions; `null` for a Product. */
+  duration: SummaryPlanDuration | null;
 }
 
-const planItem = (a: SimulationAssignment, state: SummaryItemState): SummaryItem | null =>
-  a.planName
-    ? {
-        state, type: 'plan', name: a.planName, quantity: null,
-        billing_frequency: a.recurringInterval != null && a.recurringUnit ? `${a.recurringInterval}_${a.recurringUnit}` : null,
-        regular_price: a.membershipFeePrice,
-        promotions: a.promotions.filter((p) => p.revokedAt == null).map((p) => p.name ?? ''),
-      }
-    : null;
+/**
+ * A Summary item and the position, in its own side's list of engine
+ * assignments, of the assignment whose forecast prices it (the Draft's for
+ * active and new items, the Active version's for cancelling ones). Internal:
+ * the route reads the final price with it and does not report it.
+ */
+export interface SourcedSummaryItem extends SummaryItem { source: number }
 
-const lineItem = (l: RecurringLine, state: SummaryItemState): SummaryItem => ({
-  state, type: 'product', name: l.name, quantity: l.quantity,
-  billing_frequency: l.billingFrequency, regular_price: l.unitPrice, promotions: [],
+const durationOf = (a: SimulationAssignment): SummaryPlanDuration | null => {
+  const d = a.planDuration;
+  if (!d) return null;
+  return {
+    free_periods: d.freePeriods, paid_periods: d.paidPeriods, bonus_periods: d.bonusPeriods,
+    prepaid_periods: d.prepaidPeriods, repeats: d.repeats,
+  };
+};
+
+const planItem = (a: SimulationAssignment, state: SummaryItemState, source: number): SourcedSummaryItem => ({
+  state, type: 'plan', name: a.planName ?? '', quantity: null,
+  billing_frequency: a.recurringInterval != null && a.recurringUnit ? `${a.recurringInterval}_${a.recurringUnit}` : null,
+  regular_price: a.membershipFeePrice,
+  promotions: a.promotions.filter((p) => p.revokedAt == null && !p.productTarget).map((p) => p.name ?? ''),
+  duration: durationOf(a),
+  source,
 });
 
-/** `before` is the Active version (`null` when there is none), `after` the Draft. */
-export function summaryItems(before: SimulationAssignment | null, after: SimulationAssignment): SummaryItem[] {
-  const out: SummaryItem[] = [];
-  const was = new Map(recurringLinesOf(before).map((l) => [l.key, l]));
-  const now = new Map(recurringLinesOf(after).map((l) => [l.key, l]));
+const lineItem = (l: RecurringLine, state: SummaryItemState, source: number): SourcedSummaryItem => ({
+  state, type: 'product', name: l.name, quantity: l.quantity,
+  billing_frequency: l.billingFrequency, regular_price: l.unitPrice, promotions: [], duration: null, source,
+});
 
-  const prevPlan = before?.planName ?? null;
-  const nextPlan = after.planName ?? null;
-  if (before && prevPlan && prevPlan !== nextPlan) { const p = planItem(before, 'cancelling'); if (p) out.push(p); }
-  const plan = planItem(after, before && prevPlan === nextPlan ? 'active' : 'draft');
-  if (plan) out.push(plan);
+/**
+ * Every item of the pending set: the plans first (those being cancelled, then
+ * the Draft's in link order), then the recurring lines. `before` is the Active
+ * version (`null` when there is none), `after` the Draft.
+ */
+export function summaryItems(before: VersionSide, after: VersionSide): SourcedSummaryItem[] {
+  const out: SourcedSummaryItem[] = [];
+  const bPlans = keyedPlans(before);
+  const aPlans = keyedPlans(after);
+  const aKeys = new Set(aPlans.map((p) => p.key));
+  const bKeys = new Set(bPlans.map((p) => p.key));
+  for (const p of bPlans) if (!aKeys.has(p.key)) out.push(planItem(p.plan, 'cancelling', p.source));
+  for (const p of aPlans) out.push(planItem(p.plan, bKeys.has(p.key) ? 'active' : 'draft', p.source));
 
-  for (const [key, l] of now) out.push(lineItem(l, was.has(key) ? 'active' : 'draft'));
-  for (const [key, l] of was) if (!now.has(key)) out.push(lineItem(l, 'cancelling'));
+  const was = new Map(sourcedLinesOf(before).map((l) => [l.line.key, l]));
+  const now = new Map(sourcedLinesOf(after).map((l) => [l.line.key, l]));
+  for (const [key, l] of now) out.push(lineItem(l.line, was.has(key) ? 'active' : 'draft', l.source));
+  for (const [key, l] of was) if (!now.has(key)) out.push(lineItem(l.line, 'cancelling', l.source));
   return out;
 }
 
