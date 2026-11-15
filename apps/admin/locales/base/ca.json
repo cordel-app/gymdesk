@@ -2039,7 +2039,13 @@
     "label_fee_scope": "Àmbit de la quota de membresia",
     "fee_scope_per_member": "Per membre",
     "fee_scope_per_family": "Per família",
-    "fee_scope_help": "Per membre cobra la quota una vegada per cada beneficiari d'una assignació; Per família la cobra una vegada per assignació. S'aplica als plans assignats a partir d'ara."
+    "fee_scope_help": "Per membre cobra la quota una vegada per cada beneficiari d'una assignació; Per família la cobra una vegada per assignació. S'aplica als plans assignats a partir d'ara.",
+    "assign_member_label": "Membre",
+    "assign_change_member": "Canvia el membre",
+    "assign_beneficiaries_label": "Beneficiaris ({limit})",
+    "assign_beneficiaries_hint": "Tria a qui cobreix el pla entre la família del membre. El titular de la família paga i no cal que sigui beneficiari.",
+    "assign_family_loading": "Carregant la família…",
+    "assign_not_enough_family": "La família no té prou membres per assignar aquest pla: en requereix {count}."
   },
   "prices": {
     "title": "Preus",

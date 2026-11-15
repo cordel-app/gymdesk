@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery, createTestFamily } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -1573,6 +1573,7 @@ describe('POST /membership-plans/:id/assign', () => {
     const planId = await createPlan(gymId, { name: 'Assign Couple Happy Plan', member_limit: '2' });
     const owner = await createMember(gymId);
     const partner = await createMember(gymId);
+    await createTestFamily(gymId, owner, [partner]);
 
     const res = await request
       .post(`/membership-plans/${planId}/assign`)

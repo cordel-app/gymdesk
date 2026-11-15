@@ -1067,3 +1067,20 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
     'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapId]);
   return Number(snapId);
 }
+
+/**
+ * #2879: puts `ownerId` and `otherIds` in one family (the first is its owner), so a plan
+ * can cover them together — `POST /membership-plans/:id/assign` takes beneficiaries
+ * from the owner's family only. Returns the family id.
+ */
+export async function createTestFamily(gymId: string, ownerId: number, otherIds: number[] = []): Promise<number> {
+  const { insertId } = await db.query('INSERT INTO families (gym_id, name) VALUES (?, ?)',
+    [gymId, `Test family ${Date.now()}-${Math.random().toString(36).slice(2, 7)}`]);
+  await db.query('INSERT INTO family_members (gym_id, family_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+    [gymId, insertId, ownerId]);
+  for (const id of otherIds) {
+    await db.query('INSERT INTO family_members (gym_id, family_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
+      [gymId, insertId, id]);
+  }
+  return insertId;
+}

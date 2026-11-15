@@ -2053,7 +2053,13 @@
     "label_fee_scope": "Membership Fee scope",
     "fee_scope_per_member": "Per member",
     "fee_scope_per_family": "Per family",
-    "fee_scope_help": "Per member charges the fee once for each beneficiary of an assignment; Per family charges it once per assignment. Applies to plans assigned from now on."
+    "fee_scope_help": "Per member charges the fee once for each beneficiary of an assignment; Per family charges it once per assignment. Applies to plans assigned from now on.",
+    "assign_member_label": "Member",
+    "assign_change_member": "Change member",
+    "assign_beneficiaries_label": "Beneficiaries ({limit})",
+    "assign_beneficiaries_hint": "Choose who the plan covers from the member's family. The family owner pays and does not have to be a beneficiary.",
+    "assign_family_loading": "Loading family…",
+    "assign_not_enough_family": "The family does not have enough members to assign this plan: it requires {count}."
   },
   "prices": {
     "title": "Prices",

@@ -20,6 +20,15 @@ import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 import { PromotionPicker, type PickerPromotion } from '@/components/PromotionPicker';
 import { revalidateSelection } from '@/lib/promotionSelection';
 import { assignablePromotionsPath, toPickerPromotion, type AssignablePromotion } from '@/lib/assignablePromotions';
+import {
+  beneficiarySelectionIssue,
+  canSelectBeneficiary,
+  defaultBeneficiaryIds,
+  familyOwnerId,
+  orderFamilyMembers,
+  toggleBeneficiary,
+  type FamilyMemberOption,
+} from '@/lib/planBeneficiaries';
 
 export interface AssignablePlan {
   id: number;
@@ -65,6 +74,13 @@ function todayISO() {
  * rule enforced by `PromotionPicker`; only the selection is sent as
  * `promotion_ids`, and the server re-validates it as a set.
  *
+ * #2879: the beneficiaries are chosen from the family of the member the plan is
+ * assigned for, one toggle per family member (`lib/planBeneficiaries.ts`). The
+ * family owner is the assignment's owner (the payer) and need not be a
+ * beneficiary; the selection opens with the owner and then the others
+ * alphabetically up to the plan's *Members per Membership*, and Save waits for
+ * exactly that many.
+ *
  * #956 stage 2: this is the one assignment path that assigns a *set* of
  * members, and the server answers all-or-nothing — so the 409 lists every plan
  * Continue cancels and the shared `ReplacePlanDialog` names them all before the
@@ -76,8 +92,13 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
 
   const [pickedPlanId, setPickedPlanId] = useState<number | null>(null);
   const plan: Plan | null = fixedPlan ?? planOptions?.find((p) => p.id === pickedPlanId) ?? null;
-  const [members, setMembers] = useState<MemberResult[]>(initialMember ? [initialMember] : []);
-  const [ownerId, setOwnerId] = useState<number | null>(initialMember?.id ?? null);
+  // #2879: the member the plan is for (preselected from a Member card), their family,
+  // and the beneficiaries chosen from it.
+  const [subject, setSubject] = useState<MemberResult | null>(initialMember ?? null);
+  const [family, setFamily] = useState<FamilyMemberOption[]>([]);
+  const [familyLoading, setFamilyLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const ownerId = familyOwnerId(family);
   const [startsAt, setStartsAt] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +109,34 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
   const [promotionsLoading, setPromotionsLoading] = useState(false);
   const [selectedPromotionIds, setSelectedPromotionIds] = useState<number[]>([]);
   const planId = plan?.id ?? null;
+  const memberLimit = plan?.member_limit ?? null;
+
+  // The family of the member the plan is for; a member with no family row is a
+  // family of one.
+  useEffect(() => {
+    if (!subject) { setFamily([]); return; }
+    let cancelled = false;
+    setFamilyLoading(true);
+    apiFetch<{ family: { members: FamilyMemberOption[] } | null }>(`/members/${subject.id}/family`)
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.family?.members?.length
+          ? res.family.members
+          : [{ member_id: subject.id, name: subject.name, email: subject.email, is_owner: true }];
+        setFamily(orderFamilyMembers(rows));
+      })
+      .catch(() => {
+        if (!cancelled) setFamily([{ member_id: subject.id, name: subject.name, email: subject.email, is_owner: true }]);
+      })
+      .finally(() => { if (!cancelled) setFamilyLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subject?.id]);
+
+  // The default selection, re-taken when the family or the plan's count changes.
+  useEffect(() => {
+    setSelectedIds(memberLimit ? defaultBeneficiaryIds(family, memberLimit) : []);
+  }, [family, memberLimit]);
 
   // The Promotions targeting the Plan, active today, each judged by the server
   // for the owner (Only New Members). Re-read when the Plan or the owner
@@ -115,31 +164,22 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
 
   const pickerPromotions: PickerPromotion[] = promotions.map((p) => toPickerPromotion(p, t as any));
 
-  const limitCount = !plan || plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
-  const overCapacity = limitCount != null && members.length > limitCount;
-  const atCapacity = limitCount != null && members.length >= limitCount;
+  const selectionIssue = plan && family.length > 0 ? beneficiarySelectionIssue(family, selectedIds, plan.member_limit) : null;
 
-  function addMember(m: MemberResult) {
-    if (members.some((x) => x.id === m.id)) return;
-    if (atCapacity) return;
-    setMembers((prev) => [...prev, m]);
-    if (ownerId === null) setOwnerId(m.id);
-  }
-
-  function removeMember(id: number) {
-    setMembers((prev) => prev.filter((m) => m.id !== id));
-    if (ownerId === id) setOwnerId(null);
+  function issueText(): string | null {
+    if (!selectionIssue) return null;
+    if (selectionIssue.key === 'not_enough_family_members') {
+      return t('plans.assign_not_enough_family', { count: selectionIssue.count });
+    }
+    if (selectionIssue.key === 'none_selected') return t('plans.assign_error_no_members');
+    return t('plans.assign_error_exact_count', { count: selectionIssue.count });
   }
 
   async function handleSubmit(confirmReplacement: ConflictChoice = false) {
     setError(null);
     if (!plan) { setError(t('members.assign_new_plan_error_no_plan')); return; }
-    if (members.length === 0) { setError(t('plans.assign_error_no_members')); return; }
-    if (limitCount != null && members.length !== limitCount) {
-      setError(t('plans.assign_error_exact_count', { count: limitCount }));
-      return;
-    }
-    if (ownerId === null) { setError(t('plans.assign_error_no_owner')); return; }
+    if (!subject || ownerId === null) { setError(t('plans.assign_error_no_members')); return; }
+    if (selectionIssue) { setError(issueText()); return; }
     if (!startsAt) { setError(t('plans.assign_error_no_start')); return; }
 
     setSaving(true);
@@ -147,7 +187,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
       const created = await apiFetch<{ id?: number }>(`/membership-plans/${plan.id}/assign`, {
         method: 'POST',
         body: JSON.stringify({
-          member_ids: members.map((m) => m.id),
+          beneficiary_member_ids: selectedIds,
           owner_member_id: ownerId,
           starts_at: startsAt,
           promotion_ids: selectedPromotionIds,
@@ -196,54 +236,64 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
         </>
       )}
 
-      {plan && (
-        <label style={formFieldLabelStyle}>
-          {t('plans.assign_capacity_label', { limit: plan.member_limit === 'family' ? t('plans.assign_family') : plan.member_limit })}
-        </label>
-      )}
-      {!atCapacity && (
-        <div style={{ margin: '6px 0 12px' }}>
-          <MemberSearchInput placeholder={t('plans.assign_search_placeholder')} onSelect={addMember} disabled={saving} />
+      <label style={formFieldLabelStyle}>{t('plans.assign_member_label')}</label>
+      {subject ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 12px', fontSize: 13 }}>
+          <span style={{ fontWeight: 600 }}>{subject.name}</span>
+          <span style={{ color: '#888' }}>{subject.email}</span>
+          {!initialMember && (
+            <button onClick={() => setSubject(null)} disabled={saving} aria-label={t('plans.assign_change_member')} style={rowRemoveBtnStyle}>✕</button>
+          )}
         </div>
-      )}
-
-      {overCapacity && (
-        <p style={{ margin: '0 0 10px', fontSize: 12, color: '#b45309', background: '#fffbeb', padding: '6px 10px', borderRadius: 6 }}>
-          ⚠ {t('plans.assign_over_capacity', { count: members.length, limit: limitCount ?? 0 })}
-        </p>
-      )}
-
-      {members.length === 0 ? (
-        <p style={{ ...cardHintStyle, marginBottom: 12 }}>{t('plans.assign_no_members_selected')}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-          {members.map((m) => (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.03)', borderRadius: 6 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, fontSize: 13, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name={`owner-${fixedPlan?.id ?? 'member'}`}
-                  checked={ownerId === m.id}
-                  onChange={() => setOwnerId(m.id)}
-                  disabled={saving}
-                />
-                <span style={{ fontWeight: 600 }}>{m.name}</span>
-                <span style={{ color: '#888' }}>{m.email}</span>
-                {ownerId === m.id && (
-                  <span style={{ fontSize: 10, fontWeight: 600, color: '#6c63ff', background: '#eeecff', padding: '1px 6px', borderRadius: 3 }}>
-                    {t('plans.assign_owner_badge')}
-                  </span>
-                )}
-              </label>
-              <button
-                onClick={() => removeMember(m.id)}
-                disabled={saving}
-                aria-label={m.name}
-                style={rowRemoveBtnStyle}
-              >✕</button>
-            </div>
-          ))}
+        <div style={{ margin: '6px 0 12px' }}>
+          <MemberSearchInput placeholder={t('plans.assign_search_placeholder')} onSelect={setSubject} disabled={saving} />
         </div>
+      )}
+
+      {plan && subject && (
+        <>
+          <label style={formFieldLabelStyle}>
+            {t('plans.assign_beneficiaries_label', { limit: plan.member_limit === 'family' ? t('plans.assign_family') : plan.member_limit })}
+          </label>
+          <p style={{ ...cardHintStyle, margin: '4px 0 8px' }}>{t('plans.assign_beneficiaries_hint')}</p>
+          {familyLoading ? (
+            <p style={{ ...cardHintStyle, marginBottom: 12 }}>{t('plans.assign_family_loading')}</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+              {family.map((m) => {
+                const checked = selectedIds.includes(m.member_id);
+                const blocked = !canSelectBeneficiary(selectedIds, m.member_id, plan.member_limit);
+                return (
+                  <label
+                    key={m.member_id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.03)', borderRadius: 6, fontSize: 13, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.6 : 1 }}
+                  >
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={checked}
+                      disabled={saving || blocked}
+                      onChange={() => setSelectedIds((prev) => toggleBeneficiary(prev, m.member_id, plan.member_limit))}
+                    />
+                    <span style={{ fontWeight: 600 }}>{m.name}</span>
+                    {m.email && <span style={{ color: '#888' }}>{m.email}</span>}
+                    {m.member_id === ownerId && (
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#6c63ff', background: '#eeecff', padding: '1px 6px', borderRadius: 3 }}>
+                        {t('plans.assign_owner_badge')}
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          {!familyLoading && selectionIssue && (
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#b45309', background: '#fffbeb', padding: '6px 10px', borderRadius: 6 }}>
+              ⚠ {issueText()}
+            </p>
+          )}
+        </>
       )}
 
       <label style={formFieldLabelStyle}>{t('plans.assign_starts_at_label')}</label>
@@ -281,7 +331,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
       {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 10px' }}>{error}</p>}
 
       <div style={inlineActionsRowStyle}>
-        <button onClick={() => handleSubmit()} disabled={saving} style={primaryBtnSmall()}>
+        <button onClick={() => handleSubmit()} disabled={saving || familyLoading || !subject || selectionIssue != null} style={primaryBtnSmall()}>
           {saving ? t('plans.saving') : t('plans.assign_submit')}
         </button>
         <button onClick={onCancel} disabled={saving} style={secondaryBtnSmall}>
