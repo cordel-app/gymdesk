@@ -8,6 +8,8 @@
  * beneficiaries`) without touching the Plan or any other assignment. Nullable: a row is backfilled
  * from its Plan below, and a reader that meets NULL falls back to the Plan's live value
  * (`COALESCE(s.member_limit, mp.member_limit)`), which is exactly what every reader did before.
+ * The backfill writes each Plan's *current* limit, not the one it had when the snapshot was taken;
+ * that is the value every reader already used, so nothing an existing assignment does changes.
  * Vocabulary: `api/src/domain/planBeneficiaries.ts`, mirrored by the CHECK. The table is small, so
  * the CHECK's ALGORITHM=COPY rebuild is acceptable (migration 422 did the same).
  *
