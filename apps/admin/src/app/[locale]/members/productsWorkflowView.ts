@@ -56,6 +56,10 @@ export interface SummaryItemLike {
   initial_amount?: number | null;
   /** #2446 stage 3 — the per-period charge from the engine's forecast. */
   final_price?: number | null;
+  /** #2446 stage 4 — a plan's Billing & Duration, in its own billing periods. */
+  duration?: {
+    free_periods: number; paid_periods: number; bonus_periods: number; prepaid_periods: number; repeats: boolean;
+  } | null;
 }
 
 export interface WorkflowInput {
