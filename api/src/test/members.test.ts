@@ -8,6 +8,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  snapshotTestAssignment,
 } from './helpers';
 
 afterAll(async () => {
@@ -43,11 +44,13 @@ async function createUserMembership(
   memberId: number,
   status: string,
 ): Promise<void> {
-  await db.query(
+  const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at)
      VALUES (?, ?, ?, CURDATE())`,
     [gymId, memberId, status],
   );
+  // #2125 M6b-13: the enrollment status and the New Member rule read the plan snapshot.
+  await snapshotTestAssignment(Number(insertId));
 }
 
 // ─── Auth and access guards ───────────────────────────────────────────────────
@@ -651,6 +654,7 @@ async function createUserMembershipForPayment(gymId: string, memberId: number): 
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', CURDATE())`,
     [gymId, memberId],
   );
+  await snapshotTestAssignment(Number(insertId));
   return insertId as number;
 }
 
@@ -1182,6 +1186,7 @@ describe('GET /members — is_new_member (#927)', () => {
       'UPDATE user_memberships SET created_at = CURDATE() - INTERVAL 36 MONTH WHERE id = ?',
       [insertId],
     );
+    await snapshotTestAssignment(Number(insertId));
   }
 
   it('is true for a Member who never had a Membership Plan', async () => {
@@ -1258,11 +1263,12 @@ describe('GET /members — is_new_member (#927)', () => {
     // gym_id — this is the regression test for that filter).
     const otherGym = await createTestGym('Members New Member Other Gym');
     const memberId = await createMember(gymId);
-    await db.query(
+    const { insertId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at)
        VALUES (?, ?, 'active', CURDATE())`,
       [otherGym, memberId],
     );
+    await snapshotTestAssignment(Number(insertId));
     const res = await list();
     expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(true);
   });

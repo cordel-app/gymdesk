@@ -59,3 +59,20 @@ export const assignmentCoversMemberSql = (alias = 'pa'): string =>
  */
 export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): string =>
   `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
+
+/**
+ * #2125 M6b-13 — the current snapshot of every assignment a Member **owns**, as rows shaped like
+ * the `user_memberships` row they replace, for the readers that need a closed plan's status and
+ * dates (the New Member rule, the enrollment status). Needs the settle run (M6b-6/7), which is
+ * what makes a closed assignment's current snapshot carry its closed status and dates.
+ *
+ * `created_at` is the assignment's, not the snapshot's: the anchor snapshot (`assignment_id`) is
+ * the assignment's first, while a lifecycle copy is written later and would date the assignment by
+ * its last change. Alias `pa` is the current snapshot and `anc` its anchor; the caller adds its own
+ * owner predicate on `pa.member_id`.
+ */
+export const OWNED_ASSIGNMENTS_FROM_SQL =
+  `plan_snapshots pa JOIN plan_snapshots anc ON anc.id = pa.assignment_id AND anc.gym_id = pa.gym_id`;
+
+/** Predicate over `OWNED_ASSIGNMENTS_FROM_SQL`: `pa` is the current snapshot of its assignment. */
+export const OWNED_ASSIGNMENT_IS_CURRENT_SQL = isCurrentAssignmentSnapshotSql('pa');

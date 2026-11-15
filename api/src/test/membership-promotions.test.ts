@@ -15,7 +15,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment } from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -500,6 +500,8 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
        VALUES (?, ?, ?, ?, ${startsAt}, ?, 100, UTC_TIMESTAMP() - INTERVAL ? MONTH)`,
       [gymId, memberId, membershipPlanId, status, endsAt, createdMonthsAgo],
     );
+    // #2125 M6b-13: the New Member rule reads the assignment's plan snapshot.
+    await snapshotTestAssignment(Number(insertId));
     return insertId;
   }
 
@@ -547,6 +549,9 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       "UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH WHERE member_id = ? AND status = 'expired'",
       [memberId],
     );
+    const { rows: lapsed } = await db.query<{ id: number }>(
+      "SELECT id FROM user_memberships WHERE member_id = ? AND status = 'expired'", [memberId]);
+    for (const r of lapsed) await snapshotTestAssignment(Number(r.id));
     const umId = await createDraft(memberId);
 
     const res = await apply(umId);
@@ -564,6 +569,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 18 MONTH WHERE id = ?',
       [lapsedId],
     );
+    await snapshotTestAssignment(Number(lapsedId));
     const umId = await createDraft(memberId);
 
     const res = await apply(umId);

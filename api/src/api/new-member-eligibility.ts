@@ -3,6 +3,7 @@ import {
   newMemberCutoff,
   qualifiesAsNewMember,
 } from '../domain/newMemberEligibility';
+import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL } from '../domain/planAssignments';
 
 /**
  * #634 §3 — the database side of the "Only applicable for new members" rule.
@@ -15,11 +16,24 @@ import {
  * POST /payments/apply-promotion) and #628's up-front
  * `validatePromotionSelection` — evaluates exactly the same thing.
  *
- * Only the assignments the Member *owns* (`user_memberships.member_id`) are
+ * Only the assignments the Member *owns* (`plan_snapshots.member_id`) are
  * considered. A Member merely covered by somebody else's family plan
  * (the coverage (`ASSIGNMENT_BENEFICIARIES`) with `is_owner = 0`) never booked a Membership
  * Plan of their own, which is what the answer in the issue thread measures.
  */
+
+/**
+ * #2125 M6b-13 — the Member's assignments are read from `plan_snapshots`: each assignment's
+ * current snapshot (`domain/planAssignments.ts`), with the assignment's own creation time. An
+ * assignment is still identified by its legacy `user_memberships` id, because the apply paths
+ * exclude the assignment being configured by that id; a snapshot that names no such row (a plan
+ * chosen in the Members App before its first activation) is left out, as it was when this read
+ * the legacy table.
+ */
+const ASSIGNMENT_COLUMNS =
+  'pa.source_user_membership_id AS id, pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at';
+const OWNED_ASSIGNMENT_FILTER =
+  `pa.source_user_membership_id IS NOT NULL AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}`;
 
 type Queryable = { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> };
 
@@ -35,9 +49,9 @@ export async function loadMemberAssignments(
   exec: Queryable, gymId: string, memberId: number,
 ): Promise<NewMemberAssignment[]> {
   const { rows } = await exec.query(
-    `SELECT id, status, starts_at, ends_at, closed_at, created_at
-     FROM user_memberships
-     WHERE gym_id = ? AND member_id = ?`,
+    `SELECT ${ASSIGNMENT_COLUMNS}
+     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+     WHERE pa.gym_id = ? AND pa.member_id = ? AND ${OWNED_ASSIGNMENT_FILTER}`,
     [gymId, memberId],
   );
   return rows as NewMemberAssignment[];
@@ -130,9 +144,9 @@ export async function newMemberStatusByMember(
   if (ids.length === 0) return flags;
 
   const { rows } = await exec.query(
-    `SELECT member_id, id, status, starts_at, ends_at, closed_at, created_at
-     FROM user_memberships
-     WHERE gym_id = ? AND member_id IN (${ids.map(() => '?').join(',')})`,
+    `SELECT pa.member_id, ${ASSIGNMENT_COLUMNS}
+     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+     WHERE pa.gym_id = ? AND pa.member_id IN (${ids.map(() => '?').join(',')}) AND ${OWNED_ASSIGNMENT_FILTER}`,
     [gymId, ...ids],
   );
 

@@ -1022,3 +1022,42 @@ export function proratedToNextFirst(monthly: number, today: Date = new Date()): 
   const days = Math.min(Math.round((next - start) / 86_400_000), 31);
   return Math.round(monthly * days / 31 * 100) / 100;
 }
+
+/**
+ * #2125 M6b-13: gives an assignment a fixture wrote by hand (`INSERT INTO user_memberships`, no
+ * Product Set) the plan snapshot the closed-status readers (the New Member rule, the enrollment
+ * status) read it from: one superseded Product Set linking one snapshot carrying the row's owner,
+ * plan, status, dates and creation time, anchored on itself. Call it after the last hand-written
+ * change to the row; a second call replaces the snapshot it wrote, so a fixture that edits the
+ * row again can call it again. A real route writes these through the sync.
+ */
+export async function snapshotTestAssignment(umId: number): Promise<number> {
+  const { rows } = await db.query<any>(
+    `SELECT gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, created_at
+       FROM user_memberships WHERE id = ?`, [umId]);
+  const um = rows[0];
+  if (!um) throw new Error(`snapshotTestAssignment: no assignment ${umId}`);
+  const { rows: existing } = await db.query<{ id: number }>(
+    'SELECT id FROM plan_snapshots WHERE source_user_membership_id = ? ORDER BY id LIMIT 1', [umId]);
+  if (existing[0]) {
+    await db.query(
+      `UPDATE plan_snapshots SET status = ?, starts_at = ?, ends_at = ?, closed_at = ?, created_at = ?
+        WHERE source_user_membership_id = ?`,
+      [um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at, umId]);
+    return Number(existing[0].id);
+  }
+  const { insertId: setId } = await db.query(
+    `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, membership_plan_id, user_membership_id)
+     VALUES (?, ?, 'superseded', ?, ?, ?)`,
+    [um.gym_id, um.member_id, um.starts_at, um.membership_plan_id, umId]);
+  const { insertId: snapId } = await db.query(
+    `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at,
+                                 source_user_membership_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [um.gym_id, um.member_id, um.membership_plan_id, um.status, um.starts_at, um.ends_at, um.closed_at, umId,
+     um.created_at]);
+  await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [snapId]);
+  await db.query(
+    'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapId]);
+  return Number(snapId);
+}

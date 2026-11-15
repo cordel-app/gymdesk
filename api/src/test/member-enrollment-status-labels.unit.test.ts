@@ -15,9 +15,11 @@ import { ASSIGNMENT_STATUSES } from '../domain/assignmentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 
 const REPO = join(__dirname, '..', '..', '..');
-const sql = latestEnrollmentStatusSql('m');
+const sql = latestEnrollmentStatusSql('m').replace(/\s+/g, ' ');
+/** The statuses the enrollment read excludes: its `pa.status NOT IN (…)` list. */
+const EXCLUDED = /pa\.status NOT IN \(([^)]*)\)/.exec(sql)?.[1] ?? '';
 /** The statuses the enrollment read can report: all but the ones it excludes. */
-const REPORTED = ASSIGNMENT_STATUSES.filter((s) => !sql.includes(`'${s}'`));
+const REPORTED = ASSIGNMENT_STATUSES.filter((s) => !EXCLUDED.includes(`'${s}'`));
 
 describe('#2803 Members table plan status labels', () => {
   it('the enrollment read excludes only Draft and Pending Payment', () => {
