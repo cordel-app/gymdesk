@@ -9,6 +9,10 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 import { cardHintStyle } from '@/components/formChrome';
 import { promotionBlock } from '@/lib/promotionSelection';
+import { MemberAvatar } from '@/components/MemberAvatar';
+
+/** #2852: the size of a Promotion's circular thumbnail in the picker. */
+export const PROMOTION_PICKER_THUMBNAIL_SIZE = 28;
 
 export interface PickerPromotion {
   id: number;
@@ -22,16 +26,26 @@ export interface PickerPromotion {
    * disabled, with the reason — never hidden.
    */
   unavailableReason?: string | null;
+  /**
+   * #2852: the Promotion's own stored thumbnail (`image_thumbnail_url`, else
+   * `image_url`), drawn in a circle beside the name when the caller asks for
+   * thumbnails. Absent or failing to load → the neutral initial placeholder.
+   */
+  imageUrl?: string | null;
+  /** Cache-buster for the image (the row's `modified_at`). */
+  imageStamp?: string | null;
 }
 
 export function PromotionPicker({
-  promotions, selectedIds, onToggle, disabled = false, emptyText,
+  promotions, selectedIds, onToggle, disabled = false, emptyText, showThumbnails = false,
 }: {
   promotions: PickerPromotion[];
   selectedIds: number[];
   onToggle: (id: number) => void;
   disabled?: boolean;
   emptyText: string;
+  /** #2852: draw each Promotion's circular thumbnail between the checkbox and the name. */
+  showThumbnails?: boolean;
 }) {
   const t = useTranslations('members');
   if (promotions.length === 0) return <p style={cardHintStyle}>{emptyText}</p>;
@@ -51,7 +65,7 @@ export function PromotionPicker({
             title={reason}
             data-promotion-id={p.id}
             style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 14,
+              display: 'flex', gap: 8, alignItems: showThumbnails ? 'center' : 'flex-start', fontSize: 14,
               opacity: off ? 0.5 : 1, cursor: off || disabled ? 'not-allowed' : 'pointer',
               fontWeight: checked ? 600 : 400,
             }}
@@ -62,6 +76,14 @@ export function PromotionPicker({
               disabled={disabled || off}
               onChange={() => onToggle(p.id)}
             />
+            {showThumbnails && (
+              <MemberAvatar
+                name={p.name}
+                imageUrl={p.imageUrl}
+                stamp={p.imageStamp}
+                size={PROMOTION_PICKER_THUMBNAIL_SIZE}
+              />
+            )}
             <span>
               {p.name}
               {p.description ? ` – ${p.description}` : ''}

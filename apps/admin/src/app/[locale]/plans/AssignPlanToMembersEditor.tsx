@@ -48,6 +48,10 @@ interface Props {
 interface AssignablePromotion {
   id: number;
   name: string;
+  /** #2852: the Promotion's stored images, for the picker's thumbnail. */
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  modified_at?: string | null;
   stackable: number | boolean;
   fee_benefit_action: string | null;
   fee_benefit_value: number | string | null;
@@ -142,6 +146,8 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
       name: p.name,
       stackable: !!p.stackable,
       description: d ? t(`members.${d.key}` as any, d.values as any) : null,
+      imageUrl: p.image_thumbnail_url ?? p.image_url ?? null,
+      imageStamp: p.modified_at ?? null,
       unavailableReason: p.member_eligible === false
         ? t(`members.promo_block_${p.ineligible_reason ?? 'new_members_only'}` as any)
         : null,
@@ -304,6 +310,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
                 ))}
                 disabled={saving}
                 emptyText={t('members.assign_new_plan_promotions_none')}
+                showThumbnails
               />
             )}
           </div>
