@@ -1096,6 +1096,7 @@
     "doc_type_full": "Factura completa",
     "doc_status_issued": "Emitido",
     "doc_status_draft": "Borrador",
+    "doc_status_replaced": "Sustituida por factura completa",
     "gen_blocked_exists": "Ya está generado. Ábrelo desde la lista de abajo.",
     "gen_blocked_not_paid": "El recibo solo se puede generar cuando se ha recibido el pago.",
     "gen_blocked_no_amount": "Este evento de facturación no tiene importe que facturar.",

@@ -69,6 +69,8 @@ export interface AltaSubmission {
   invoiceKind: VerifactuInvoiceKind;
   /** The original of a rectifying invoice (R1/R5). */
   rectified: { invoiceNumber: string; issueDate: string } | null;
+  /** #2648 stage 7: the simplified invoice an F3 replaces (FacturasSustituidas). */
+  replaced?: { invoiceNumber: string; issueDate: string } | null;
   description: string;
   /** F1/R1 only. */
   recipient: { name: string; nif: string } | null;
@@ -213,7 +215,10 @@ export function validateAltaSubmission(r: AltaSubmission): string[] {
   const isRectifying = r.invoiceKind === 'R1' || r.invoiceKind === 'R5';
   if (isRectifying && !r.rectified) errors.push('a rectifying invoice must name the invoice it rectifies');
   if (r.rectified && !DATE_RE.test(r.rectified.issueDate)) errors.push('FacturasRectificadas date must be dd-mm-yyyy');
-  const needsRecipient = r.invoiceKind === 'F1' || r.invoiceKind === 'R1';
+  if (r.invoiceKind === 'F3' && !r.replaced) errors.push('a replacement invoice (F3) must name the simplified invoice it replaces');
+  if (r.invoiceKind !== 'F3' && r.replaced) errors.push('only an F3 invoice carries FacturasSustituidas');
+  if (r.replaced && !DATE_RE.test(r.replaced.issueDate)) errors.push('FacturasSustituidas date must be dd-mm-yyyy');
+  const needsRecipient = r.invoiceKind === 'F1' || r.invoiceKind === 'F3' || r.invoiceKind === 'R1';
   if (needsRecipient) {
     if (!r.recipient) errors.push('a full invoice must identify its recipient (Destinatarios)');
     else {
@@ -294,6 +299,14 @@ function altaXml(r: AltaSubmission, s: VerifactuSoftware): string {
       el('IDEmisorFactura', r.issuerNif),
       el('NumSerieFactura', r.rectified.invoiceNumber),
       el('FechaExpedicionFactura', r.rectified.issueDate),
+    ])]));
+  }
+  if (r.replaced) {
+    // #2648 stage 7 — XSD order: FacturasSustituidas follows FacturasRectificadas.
+    parts.push(group('FacturasSustituidas', [group('IDFacturaSustituida', [
+      el('IDEmisorFactura', r.issuerNif),
+      el('NumSerieFactura', r.replaced.invoiceNumber),
+      el('FechaExpedicionFactura', r.replaced.issueDate),
     ])]));
   }
   parts.push(el('DescripcionOperacion', r.description));

@@ -16,6 +16,8 @@ export interface InvoicePdfData {
   currency: string;
   /** Set on a rectifying invoice: the original it corrects and why. It carries no PAID stamp. */
   rectifies?: { number: string; reason: string };
+  /** #2648 stage 7: set on a complete invoice issued in place of a simplified one. */
+  replaces?: { number: string };
   /**
    * #2648 stage 3: set when the invoice has a VERI*FACTU Alta record. The PDF
    * then prints the AEAT verification QR (encoding `url`) with `legend` above it.
@@ -48,9 +50,9 @@ function drawQr(page: PDFPage, url: string, x: number, top: number, size: number
 }
 
 const T: Record<InvoiceLanguage, Record<string, string>> = {
-  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', rectifying: 'RECTIFYING INVOICE', rectifies: 'Rectifies invoice', reason: 'Reason', concept: 'Concept', qty: 'Qty', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
-  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', reason: 'Motivo', concept: 'Concepto', qty: 'Cant.', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
-  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', reason: 'Motiu', concept: 'Concepte', qty: 'Quant.', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
+  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', rectifying: 'RECTIFYING INVOICE', rectifies: 'Rectifies invoice', replaces: 'Replaces simplified invoice', reason: 'Reason', concept: 'Concept', qty: 'Qty', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
+  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Sustituye a la factura simplificada', reason: 'Motivo', concept: 'Concepto', qty: 'Cant.', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
+  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Substitueix la factura simplificada', reason: 'Motiu', concept: 'Concepte', qty: 'Quant.', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
 };
 
 // pdf-lib's standard fonts are WinAnsi: drop anything they cannot encode.
@@ -113,6 +115,9 @@ export async function generateInvoicePdf(d: InvoicePdfData): Promise<Buffer> {
   if (d.rectifies) {
     text(`${t.rectifies}: ${d.rectifies.number}`, margin, y, 10, false, grey); y -= 14;
     text(`${t.reason}: ${d.rectifies.reason.replace(/\s+/g, ' ').slice(0, 80)}`, margin, y, 10, false, grey); y -= 14;
+  }
+  if (d.replaces) {
+    text(`${t.replaces}: ${d.replaces.number}`, margin, y, 10, false, grey); y -= 14;
   }
   y -= 6; line(y); y -= 20;
 

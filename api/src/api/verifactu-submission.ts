@@ -281,11 +281,15 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
   const { rows: inv } = await tx.query<any>(
     `SELECT i.billing_event_id, i.customer_name, i.customer_tax_id, i.related_invoice_id, be.amount,
             o.fiscal_number AS orig_number, o.issued_at AS orig_issued_at,
-            ovr.invoice_issue_date AS orig_record_date
+            ovr.invoice_issue_date AS orig_record_date,
+            s.fiscal_number AS replaced_number, s.issued_at AS replaced_issued_at,
+            svr.invoice_issue_date AS replaced_record_date
        FROM invoices i
        JOIN billing_events be ON be.id = i.billing_event_id AND be.gym_id = i.gym_id
        LEFT JOIN invoices o ON o.id = i.related_invoice_id AND o.gym_id = i.gym_id
        LEFT JOIN verifactu_records ovr ON ovr.invoice_id = o.id AND ovr.record_type = 'alta'
+       LEFT JOIN invoices s ON s.id = i.replaces_invoice_id AND s.gym_id = i.gym_id
+       LEFT JOIN verifactu_records svr ON svr.invoice_id = s.id AND svr.record_type = 'alta'
       WHERE i.id = ? AND i.gym_id = ?`, [r.invoice_id, gymId]);
   const i = inv[0];
   const { lines, totals, fallbackRate } = await loadInvoiceFigures(tx, gymId, i.billing_event_id, parseFloat(i.amount));
@@ -300,7 +304,7 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
 
   const previous = await loadPrevious(tx, gymId, r);
 
-  const needsRecipient = r.invoice_kind === 'F1' || r.invoice_kind === 'R1';
+  const needsRecipient = r.invoice_kind === 'F1' || r.invoice_kind === 'F3' || r.invoice_kind === 'R1';
   const description = [...new Set(lines.map((l) => (l.name ?? '').trim()).filter(Boolean))].join(', ').slice(0, 500);
   return {
     recordId: r.id,
@@ -314,6 +318,14 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
         invoiceNumber: i.orig_number,
         issueDate: i.orig_record_date
           ?? verifactuDate(dateInZone(new Date(i.orig_issued_at), ctx.timeZone)),
+      }
+      : null,
+    // #2648 stage 7: the simplified invoice an F3 replaces, named as its own Alta informed it.
+    replaced: r.invoice_kind === 'F3' && i.replaced_number
+      ? {
+        invoiceNumber: i.replaced_number,
+        issueDate: i.replaced_record_date
+          ?? verifactuDate(dateInZone(new Date(i.replaced_issued_at), ctx.timeZone)),
       }
       : null,
     description,
