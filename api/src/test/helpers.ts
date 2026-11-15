@@ -458,6 +458,12 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
     const row = created[0];
     if (row && (row.status === 'active' || row.status === 'paused') && row.membership_plan_id != null) {
       await ensureTestProductSet(row.gym_id, Number(row.member_id), result.insertId);
+      // #2125 M6b-17: the Billing Simulation reads the assignment's status and dates from its plan
+      // snapshot, so the snapshot the set carries states the row's, not the set's placeholder date.
+      await db.query(
+        `UPDATE plan_snapshots s JOIN user_memberships um ON um.id = s.source_user_membership_id
+            SET s.status = um.status, s.starts_at = um.starts_at, s.ends_at = um.ends_at
+          WHERE s.source_user_membership_id = ?`, [result.insertId]);
     }
     return result;
   }
