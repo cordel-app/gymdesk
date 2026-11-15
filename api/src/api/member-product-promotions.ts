@@ -338,6 +338,12 @@ export interface MemberPurchasedProduct {
   /** #1882 — removed in the member's open Draft; still Active until Save & Pay. */
   pending_termination?: boolean;
   /**
+   * #2856 — the id of the line the member's open Draft carries for this row, which `⋮ → Edit` and
+   * `⋮ → Delete` act on (`/members/:id/product-purchases/recurring/:lineId`); `null` when no open
+   * Draft carries it (an Active line with no Draft, a pending one, one the Draft removed).
+   */
+  draft_line_id?: number | null;
+  /**
    * #2609 — the family member the Product is for: the stored assignee, else the
    * purchaser / Product Set owner (a row written before the column existed, or a
    * shared Product, which the purchaser holds for the family).
@@ -643,6 +649,7 @@ async function loadRecurringPurchases(
         billing_event_id: null,
         source: 'recurring' as const,
         pending_termination: false,
+        draft_line_id: Number(row.id),
         assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
         assigned_member_name: row.assigned_member_name ?? null,
       };
@@ -677,6 +684,8 @@ async function loadRecurringPurchases(
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       source: 'recurring' as const,
       pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
+      draft_line_id: active.set_status === 'active' && draftByRef.has(Number(active.line_ref))
+        ? Number(draftByRef.get(Number(active.line_ref)).id) : null,
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,
     };
