@@ -698,7 +698,8 @@ export async function addCoveredMember(
   const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, opts.userMembershipId ?? null);
   if (snapshotId == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan covers no one' };
   const { rows: plan } = await tx.query<{ member_limit: string | null }>(
-    `SELECT mp.member_limit FROM plan_snapshots s JOIN membership_plans mp ON mp.id = s.membership_plan_id
+    `SELECT COALESCE(s.member_limit, mp.member_limit) AS member_limit
+       FROM plan_snapshots s JOIN membership_plans mp ON mp.id = s.membership_plan_id
       WHERE s.id = ? AND s.gym_id = ?`, [snapshotId, draft.gym_id]);
   // #2125 stage 22: the payer is a beneficiary only when the plan says so, so the limit counts the
   // beneficiaries the plan has, whoever they are.
@@ -751,6 +752,42 @@ export async function removeCoveredMember(
     'DELETE FROM plan_snapshot_beneficiaries WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ? AND is_owner = 0',
     [draft.gym_id, target, memberId]);
   if (rowCount === 0) return { kind: 'not_found' };
+  await touch(tx, draft);
+  return { ok: true };
+}
+
+/**
+ * #2879 stage 2 — a Draft assignment's *Members per Membership* and its beneficiaries, written
+ * together because a new limit is only meaningful with the selection that satisfies it. The
+ * caller (`PUT /user-memberships/:id/beneficiaries`) has judged the pair with
+ * `beneficiarySelectionError()` against the owner's family; this writes it on the plan snapshot
+ * the Draft owns (`ownPlanSnapshot()`, so a shared snapshot is never written). The payer stays
+ * the payer whether or not they are a beneficiary (#2125 stage 22).
+ */
+export async function setPlanBeneficiaries(
+  tx: Tx, draft: LockedDraft, userMembershipId: number,
+  input: { memberLimit: string; beneficiaryIds: readonly number[] },
+): Promise<{ ok: true } | DraftRefusal> {
+  const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, userMembershipId);
+  if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
+  const target = await ownPlanSnapshot(tx, draft.gym_id, draft.id, snapshotId);
+  const { rows } = await tx.query<{ member_id: number }>(
+    'SELECT member_id FROM plan_snapshots WHERE id = ? AND gym_id = ?', [target, draft.gym_id]);
+  const ownerId = Number(rows[0]?.member_id);
+  await tx.query('UPDATE plan_snapshots SET member_limit = ? WHERE id = ? AND gym_id = ?',
+    [input.memberLimit, target, draft.gym_id]);
+  await setOwnerIsBeneficiary(tx, draft.gym_id, target, input.beneficiaryIds.includes(ownerId));
+  const others = input.beneficiaryIds.filter((id) => id !== ownerId);
+  await tx.query(
+    `DELETE FROM plan_snapshot_beneficiaries
+      WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id <> ?
+        ${others.length > 0 ? `AND member_id NOT IN (${others.map(() => '?').join(',')})` : ''}`,
+    [draft.gym_id, target, ownerId, ...others]);
+  for (const memberId of others) {
+    await tx.query(
+      `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
+      [draft.gym_id, target, memberId]);
+  }
   await touch(tx, draft);
   return { ok: true };
 }
