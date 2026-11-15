@@ -94,12 +94,12 @@ export function DataTable<T>({
             return (
             <React.Fragment>
               <tr style={listRowDividerStyle} data-draft-row>
-                {expandable && <td style={td} />}
+                {expandable && <td style={draftTd} />}
                 {columns.map((col, i) => (
-                  <td key={i} className={listCellClass(col.mobile)} style={td}>
+                  <td key={i} className={listCellClass(col.mobile)} style={draftTd}>
                     {col.mobile === 'name'
                       ? <div className={LIST_NAME_VALUE_CLASS}>{cells[i]}</div>
-                      : cells[i]}
+                      : <div style={draftCellLineStyle}>{cells[i]}</div>}
                   </td>
                 ))}
               </tr>
@@ -177,5 +177,20 @@ export function DataTable<T>({
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', ...listSurfaceStyle };
 const th: React.CSSProperties = listHeaderCellStyle;
 const td: React.CSSProperties = listCellStyle;
+
+/**
+ * #2855 — a draft row is a form row: its cells sit at the top, so a taller
+ * cell (the Product dropdown with its Promotions underneath) does not centre
+ * every other column against its whole height.
+ */
+const draftTd: React.CSSProperties = { ...listCellStyle, verticalAlign: 'top' };
+
+/**
+ * #2855 — every other draft cell takes one control's height and centres its
+ * value inside it, so a plain value reads on the same line as the dropdown at
+ * the top of the identity cell (`formControlStyle`: 8px padding, 14px text,
+ * 1px border).
+ */
+const draftCellLineStyle: React.CSSProperties = { minHeight: 36, display: 'flex', alignItems: 'center' };
 const chevronStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gd-text-muted, #6b7280)', fontSize: 12, padding: 4, lineHeight: 1 };
 const expandedCell: React.CSSProperties = { padding: 0, ...listExpandedStyle };
