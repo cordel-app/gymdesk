@@ -13,7 +13,11 @@ const picker = read('components/PromotionPicker.tsx');
 const callers = [
   'app/[locale]/plans/AssignPlanToMembersEditor.tsx',
   'app/[locale]/members/AssignPlanInlineEditor.tsx',
+  // #2853: the Draft assigned plan's available-Promotions picker.
+  'components/assignedPlan/AssignedPlanPromotions.tsx',
 ];
+// #2853: the catalogue row → picker row mapping is shared by the plan pickers.
+const sharedMapping = read('lib/assignablePromotions.ts');
 
 describe('PromotionPicker thumbnails (#2852)', () => {
   it('draws the thumbnail through the shared circular MemberAvatar (placeholder included), opt-in', () => {
@@ -34,8 +38,9 @@ describe('PromotionPicker thumbnails (#2852)', () => {
   for (const file of callers) {
     it(`${file} passes the promotion's stored thumbnail and asks for thumbnails`, () => {
       const src = read(file);
-      expect(src).toMatch(/imageUrl: p\.image_thumbnail_url \?\? p\.image_url \?\? null/);
-      expect(src).toMatch(/imageStamp: p\.modified_at/);
+      const mapping = /toPickerPromotion\(/.test(src) ? sharedMapping : src;
+      expect(mapping).toMatch(/imageUrl: p\.image_thumbnail_url \?\? p\.image_url \?\? null/);
+      expect(mapping).toMatch(/imageStamp: p\.modified_at/);
       expect(src).toMatch(/<PromotionPicker[\s\S]*?showThumbnails[\s\S]*?\/>/);
     });
   }

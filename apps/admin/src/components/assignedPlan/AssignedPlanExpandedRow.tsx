@@ -500,6 +500,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}
+        promotionsSelectable={detail.promotions_selectable === true}
+        membershipPlanId={detail.membership_plan_id}
+        ownerMemberId={detail.member_id}
         onChanged={() => { loadDetail(); onChanged(); }}
       />
 

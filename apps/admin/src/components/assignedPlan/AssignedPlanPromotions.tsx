@@ -37,6 +37,11 @@ import {
   ProductBenefitView,
   benefitTreatmentLabel,
 } from '@/components/ProductBenefits';
+import { PromotionPicker } from '@/components/PromotionPicker';
+import {
+  assignablePromotionsPath, draftPromotionToggle, selectedDraftPromotionIds, toPickerPromotion,
+  type AssignablePromotion,
+} from '@/lib/assignablePromotions';
 import { promotionGrants, thumbnailSrc } from './promotionPlacement';
 import type { AppliedPromotion, AppliedPromotionGrant, AssignedPlanSnapshotBenefit } from './types';
 
@@ -471,3 +476,87 @@ const grantTitleSt: React.CSSProperties = { fontSize: 12, color: '#666', margin:
 const listSt: React.CSSProperties = { margin: '0 0 8px', paddingLeft: 18, fontSize: 13 };
 const dimSt = cardMutedTextStyle;
 const subLabelSt = cardSubLabelStyle;
+
+// ─── #2853: the Draft's available Promotions ──────────────────────────────────
+
+/**
+ * #2853 — while the assignment is a Draft whose plan takes Promotions
+ * (`promotions_selectable`, the apply path's own rule), staff choose its Plan
+ * Promotions here after the initial assignment, exactly as the Assign Plan form
+ * offers them: every Promotion targeting the plan, active today, read from the
+ * live `promotions` catalogue (never an application's snapshot), each judged for
+ * the owner (Only New Members, excluding this Draft) and drawn by the shared
+ * `PromotionPicker` with its thumbnail and stacking rule. Ticking one applies it
+ * (`POST /user-memberships/:id/promotions`) and clearing it revokes it (`DELETE`);
+ * the server re-validates every rule and records a reference only (#2833), so the
+ * snapshot is still taken at Save & Pay. The card re-reads after each change, so
+ * the fee, the product lines and both simulations are the engine's.
+ */
+export function DraftPromotionPicker({ assignedPlanId, membershipPlanId, ownerMemberId, applied, canWrite, onChanged }: {
+  assignedPlanId: number;
+  membershipPlanId: number;
+  ownerMemberId: number;
+  applied: AppliedPromotion[];
+  canWrite: boolean;
+  onChanged: () => void;
+}) {
+  const t = useTranslations('assigned_plans_page');
+  const tRoot = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { toast } = useToast();
+  const [offered, setOffered] = useState<AssignablePromotion[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    apiFetch<AssignablePromotion[]>(assignablePromotionsPath({
+      membershipPlanId,
+      today: new Date().toISOString().slice(0, 10),
+      ownerMemberId,
+      userMembershipId: assignedPlanId,
+    }))
+      .then((rows) => { if (!cancelled) setOffered(rows); })
+      .catch(() => { if (!cancelled) setOffered([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedPlanId, membershipPlanId, ownerMemberId]);
+
+  const selectedIds = selectedDraftPromotionIds(applied);
+
+  async function toggle(promotionId: number) {
+    setBusy(true);
+    try {
+      if (draftPromotionToggle(selectedIds, promotionId) === 'revoke') {
+        await apiFetch(`/user-memberships/${assignedPlanId}/promotions/${promotionId}`, { method: 'DELETE' });
+      } else {
+        await apiFetch(`/user-memberships/${assignedPlanId}/promotions`, {
+          method: 'POST',
+          body: JSON.stringify({ promotion_id: promotionId }),
+        });
+      }
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div data-draft-promotion-picker style={{ marginTop: 12 }}>
+      <p style={{ ...cardSubLabelStyle, margin: '0 0 8px' }}>{t('draft_available_promotions')}</p>
+      {offered === null ? (
+        <p style={cardMutedTextStyle}>{t('draft_available_promotions_loading')}</p>
+      ) : (
+        <PromotionPicker
+          promotions={offered.map((p) => toPickerPromotion(p, tRoot as any))}
+          selectedIds={selectedIds}
+          onToggle={(id) => { void toggle(id); }}
+          disabled={busy || !canWrite}
+          emptyText={t('draft_available_promotions_none')}
+          showThumbnails
+        />
+      )}
+    </div>
+  );
+}

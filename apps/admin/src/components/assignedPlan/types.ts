@@ -294,6 +294,8 @@ export interface AssignedPlanDetail {
   member_nif_nie_passport: string | null;
   membership_plan_id: number | null;
   plan_name: string | null;
+  /** #2853 — the Draft's plan takes Promotions now (the apply path's rule). */
+  promotions_selectable?: boolean;
   base_price: string | number | null;
   /** The Membership Fee resolved for this assignment's current cycle (#635 stage 15). */
   membership_fee: number | null;

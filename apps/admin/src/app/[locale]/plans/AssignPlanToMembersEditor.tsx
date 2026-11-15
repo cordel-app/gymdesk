@@ -18,7 +18,8 @@ import {
 import { primaryBtnSmall } from '@/components/ui';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 import { PromotionPicker, type PickerPromotion } from '@/components/PromotionPicker';
-import { promotionBenefitDescription, revalidateSelection } from '@/lib/promotionSelection';
+import { revalidateSelection } from '@/lib/promotionSelection';
+import { assignablePromotionsPath, toPickerPromotion, type AssignablePromotion } from '@/lib/assignablePromotions';
 
 export interface AssignablePlan {
   id: number;
@@ -42,23 +43,6 @@ interface Props {
   onCancel: () => void;
   /** `created` is the assignment the API returned (#1692) — used to open its card. */
   onAssigned: (created?: { id: number }) => void;
-}
-
-/** A Promotion targeting the Plan, as `GET /promotions?…&for_member_id=` reports it. */
-interface AssignablePromotion {
-  id: number;
-  name: string;
-  /** #2852: the Promotion's stored images, for the picker's thumbnail. */
-  image_url?: string | null;
-  image_thumbnail_url?: string | null;
-  modified_at?: string | null;
-  stackable: number | boolean;
-  fee_benefit_action: string | null;
-  fee_benefit_value: number | string | null;
-  fee_benefit_duration_months: number | null;
-  /** The owner may take it (#2809); absent when no owner is chosen yet. */
-  member_eligible?: boolean;
-  ineligible_reason?: string | null;
 }
 
 function todayISO() {
@@ -112,9 +96,8 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
     if (!planId) { setPromotions([]); setSelectedPromotionIds([]); return; }
     let cancelled = false;
     setPromotionsLoading(true);
-    const owner = ownerId != null ? `&for_member_id=${ownerId}` : '';
     apiFetch<AssignablePromotion[]>(
-      `/promotions?lifecycle_status=active&active_on=${todayISO()}&membership_plan_id=${planId}${owner}`,
+      assignablePromotionsPath({ membershipPlanId: planId, today: todayISO(), ownerMemberId: ownerId }),
     )
       .then((rows) => {
         if (cancelled) return;
@@ -130,29 +113,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId, ownerId]);
 
-  const pickerPromotions: PickerPromotion[] = promotions.map((p) => {
-    const d = p.fee_benefit_action
-      ? promotionBenefitDescription(
-          {
-            action: p.fee_benefit_action,
-            value: p.fee_benefit_value == null ? null : Number(p.fee_benefit_value),
-            duration_cycles: p.fee_benefit_duration_months ?? null,
-          },
-          (n) => `${n.toFixed(2)}€`,
-        )
-      : null;
-    return {
-      id: p.id,
-      name: p.name,
-      stackable: !!p.stackable,
-      description: d ? t(`members.${d.key}` as any, d.values as any) : null,
-      imageUrl: p.image_thumbnail_url ?? p.image_url ?? null,
-      imageStamp: p.modified_at ?? null,
-      unavailableReason: p.member_eligible === false
-        ? t(`members.promo_block_${p.ineligible_reason ?? 'new_members_only'}` as any)
-        : null,
-    };
-  });
+  const pickerPromotions: PickerPromotion[] = promotions.map((p) => toPickerPromotion(p, t as any));
 
   const limitCount = !plan || plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
