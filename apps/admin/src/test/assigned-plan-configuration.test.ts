@@ -100,9 +100,12 @@ describe('Assigned Plan: One-off / Session / Period Benefits (#635 §3–§5/§9
     }
   });
 
-  it('reuses the shared Promotion/Plan benefit editor rather than a second one', () => {
-    expect(src).toContain('ProductBenefitEditor');
+  it('edits each section in place on the shared grid, never a second form (#2835)', () => {
+    expect(src).not.toContain('ProductBenefitEditor');
     expect(src).toContain("from '@/components/ProductBenefits'");
+    expect(src).toContain('renderDirectDiscountPercent=');
+    expect(src).toContain('renderRowAction=');
+    expect(src).toContain('canRemoveLine(');
   });
 
   it('saves each section to its own assignment endpoint', () => {
@@ -143,20 +146,17 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
     expect(src).not.toContain('charge_benefit');
   });
 
-  it("offers the Personal Membership Fee Benefit's two options and nothing else (#772)", () => {
+  it("edits the Personal Membership Fee Benefit as the fee row's Direct Discount (%) (#772, #2835)", () => {
     expect(src).toContain('section_membership_fee_benefit');
-    expect(src).toMatch(
-      /const PERSONAL_FEE_BENEFIT_ACTIONS: readonly PersonalFeeBenefitAction\[\] = \['no_benefit', 'percentage_discount'\]/,
-    );
-    // The percentage field only exists for the option that has one.
-    expect(src).toContain("feeBenefitForm.action === 'percentage_discount' && (");
+    // No separate form: the fee row's own cell becomes the input.
+    expect(src).not.toContain('label_personal_fee_benefit');
+    expect(src).toContain('discountInput(feeDiscount, setFeeDiscount');
   });
 
   it('saves the Personal Membership Fee Benefit to its own endpoint (#772)', () => {
     expect(src).toContain('/user-memberships/${assignedPlanId}/fee-benefit');
-    // Replace-all: `no_benefit` sends no percentage rather than keeping the
-    // last one around.
-    expect(src).toContain("feeBenefitForm.action === 'percentage_discount' && feeBenefitForm.value !== ''");
+    // Replace-all through the one payload rule (`no_benefit` sends no percentage).
+    expect(src).toContain('feeDiscountPayload(feeDiscount)');
   });
 
   it('is rendered by the Assigned Plans expanded row, from the assignment snapshot', () => {

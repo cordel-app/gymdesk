@@ -27,7 +27,7 @@
 // while the card is in Edit mode (#897): `cardEditing` is the card's flag, and
 // leaving the mode closes whichever section editor was open.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel, planBillingFrequencyOf } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
@@ -50,22 +50,30 @@ import {
   formFieldLabelStyle,
   formHelpTextStyle,
   inlineActionsRowStyle,
+  rowRemoveBtnStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import {
   BenefitFrequencyColumn,
-  ProductBenefitEditor,
   ProductBenefitRow,
   ProductBenefitView,
-  ProductOption,
 } from '@/components/ProductBenefits';
-import { saveBenefitSection } from '@/lib/benefitEditing';
+import {
+  LineEntry,
+  canRemoveLine,
+  feeDiscountPayload,
+  feeDiscountValue,
+  isValidDiscountPercent,
+  pairLineEntries,
+  withEntryDiscount,
+  withoutEntry,
+} from './inlineLineEdit';
+import { clampBenefitValue, saveBenefitSection } from '@/lib/benefitEditing';
 import { billingDurationPayload, durationFormError } from '@/lib/durationEditing';
 import type {
   AppliedPromotion,
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
-  PersonalFeeBenefitAction,
 } from './types';
 
 // Mirrors SNAPSHOT_EDITABLE_STATUSES in api/src/api/user-memberships.ts (a Draft
@@ -82,17 +90,11 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 type BenefitSection = 'oneoff' | 'session' | 'periodical';
 
-// #772 — the Assigned Plan's own Membership Fee Benefit offers these two and
-// nothing else. Mirrors PERSONAL_FEE_BENEFIT_ACTIONS in
-// api/src/domain/personalFeeBenefit.ts, which is what the route validates.
-const PERSONAL_FEE_BENEFIT_ACTIONS: readonly PersonalFeeBenefitAction[] = ['no_benefit', 'percentage_discount'];
-
 const BENEFIT_SECTIONS: {
   section: BenefitSection;
   endpoint: string;
   titleKey: string;
   emptyKey: string;
-  addKey: string;
   snapshotKey: keyof Pick<AssignedPlanSnapshot, 'oneoff_benefits' | 'session_benefits' | 'periodical_benefits'>;
   /**
    * #924 stage 1: true for all three sections, as on the Membership Plan card
@@ -114,15 +116,10 @@ const BENEFIT_SECTIONS: {
    */
   viewFrequencyColumn: BenefitFrequencyColumn;
 }[] = [
-  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'benefits_oneoff', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', snapshotKey: 'oneoff_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
-  { section: 'session', endpoint: 'session-benefits', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', snapshotKey: 'session_benefits', showFrequency: true, viewFrequencyColumn: 'benefit' },
-  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', snapshotKey: 'periodical_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
+  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'benefits_oneoff', emptyKey: 'no_oneoff_benefits', snapshotKey: 'oneoff_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
+  { section: 'session', endpoint: 'session-benefits', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', snapshotKey: 'session_benefits', showFrequency: true, viewFrequencyColumn: 'benefit' },
+  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', snapshotKey: 'periodical_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
 ];
-
-interface FeeBenefitForm {
-  action: PersonalFeeBenefitAction;
-  value: string;
-}
 
 interface DurationForm {
   free_periods: string;
@@ -269,7 +266,6 @@ export function AssignedPlanConfiguration({
   const tp = useTranslations('promotions');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
-  const itemsLoadedRef = useRef(false);
 
   // #2483 — which applied Promotions grant each Product, and which touch the
   // Membership Fee. Names only: every amount stays the server's.
@@ -308,6 +304,10 @@ export function AssignedPlanConfiguration({
     product_status: 'active',
     action: snapshot.personal_fee_benefit.action,
     value: snapshot.personal_fee_benefit.value,
+    // #2835: the fee's Direct Discount (%) is that same benefit's percentage,
+    // the one figure staff edit on the fee in place.
+    direct_discount_percent: feeDiscountValue(snapshot.personal_fee_benefit) || null,
+    mandatory: true,
     applied_tax_percent: feeTaxPercent,
     applied_promotions: feePromotions.map((p) => p.promotion_name),
     applied_promotion_benefits: feePromotions.flatMap((p) => p.membership_fee_benefits
@@ -356,11 +356,11 @@ export function AssignedPlanConfiguration({
 
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
-  const [feeBenefitForm, setFeeBenefitForm] = useState<FeeBenefitForm | null>(null);
-  const [benefitDraft, setBenefitDraft] = useState<ProductBenefitRow[]>([]);
-  // #2624 stage 2: the lines already agreed when the section editor opened.
-  const [lockedIds, setLockedIds] = useState<ReadonlySet<number>>(new Set());
-  const [items, setItems] = useState<ProductOption[]>([]);
+  // #2835: the fee's Direct Discount (%) as typed in its own cell.
+  const [feeDiscount, setFeeDiscount] = useState('');
+  // #2835: the open section's rows, each the drawn row beside the row its
+  // replace-all `PUT` sends (`inlineLineEdit.ts`).
+  const [lineEntries, setLineEntries] = useState<LineEntry<AssignedPlanSnapshotBenefit>[]>([]);
   const [saving, setSaving] = useState(false);
 
   const editable = cardEditing && canWrite && EDITABLE_STATUSES.includes(planStatus);
@@ -377,25 +377,6 @@ export function AssignedPlanConfiguration({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardEditing]);
 
-  // The catalogue is only needed to *add* a line, so it is fetched the first
-  // time a benefit section is opened rather than with every expanded card.
-  async function loadItems() {
-    if (itemsLoadedRef.current) return;
-    itemsLoadedRef.current = true;
-    try {
-      // benefit_category is computed server-side (#550) — the same
-      // classification the API validates a new line against.
-      setItems(await apiFetch<ProductOption[]>('/products'));
-    } catch {
-      itemsLoadedRef.current = false;
-      toast(t('services_items_error'));
-    }
-  }
-
-  function categoryItems(section: BenefitSection): ProductOption[] {
-    return items.filter((i) => i.benefit_category === section && i.status === 'active');
-  }
-
   function openDurationEdit() {
     setDurationForm({
       free_periods: numField(snapshot.free_periods),
@@ -409,35 +390,33 @@ export function AssignedPlanConfiguration({
   }
 
   function openFeeBenefitEdit() {
-    setFeeBenefitForm({
-      action: snapshot.personal_fee_benefit.action,
-      value: snapshot.personal_fee_benefit.value != null ? String(snapshot.personal_fee_benefit.value) : '',
-    });
+    setFeeDiscount(feeDiscountValue(snapshot.personal_fee_benefit));
     setEditing('fee_benefit');
   }
 
   function openBenefitEdit(section: BenefitSection, rows: AssignedPlanSnapshotBenefit[]) {
-    // #2657 stage 3: an Individual Product is edited one member's line at a time. A line the
-    // server still holds unsplit opens as its members' rows (the units each holds), and saving
-    // them is what stores one line per member.
-    setBenefitDraft(rows.flatMap((b) => {
+    // #2835: the section keeps its grid; each drawn row is paired with the row
+    // its `PUT` sends. #2657 stage 3: an Individual Product is edited one
+    // member's line at a time — a line the server still holds unsplit opens as
+    // its members' rows (the units each holds), exactly the rows the grid
+    // already draws, and saving them is what stores one line per member.
+    const views = rows.flatMap((b) => toAllocationRows(b, promotionNamesByProduct, promotionBenefitsByProduct));
+    const drafts = rows.flatMap((b) => {
       const row = toDraftRow(b);
       if (b.assigned_member_id != null) return [row];
       const allocations = memberAllocations(b);
       if (allocations.every((a) => a.member_id == null)) return [row];
       return allocations.map((a) => ({ ...row, assigned_member_id: a.member_id, member_name: a.member_name, quantity: a.quantity }));
-    }));
-    setLockedIds(new Set(rows.map((r) => r.product_id)));
+    });
+    setLineEntries(pairLineEntries(views, drafts));
     setEditing(section);
-    loadItems();
   }
 
   function cancelEdit() {
     setEditing(null);
     setDurationForm(null);
-    setFeeBenefitForm(null);
-    setBenefitDraft([]);
-    setLockedIds(new Set());
+    setFeeDiscount('');
+    setLineEntries([]);
   }
 
   async function saveDuration() {
@@ -465,20 +444,19 @@ export function AssignedPlanConfiguration({
   }
 
   async function saveFeeBenefit() {
-    if (!feeBenefitForm) return;
+    // #2835: the fee's Direct Discount (%) is its Personal Membership Fee
+    // Benefit (#772). Replace-all: empty or 0 is `no_benefit`, which the server
+    // stores with no percentage rather than remembering the last one.
+    const payload = feeDiscountPayload(feeDiscount);
+    if (!payload) {
+      toast(t('direct_discount_invalid'));
+      return;
+    }
     setSaving(true);
     try {
-      // Replace-all: the assignment holds one such benefit or none, so the
-      // whole configuration is sent. `no_benefit` sends no percentage — the
-      // server stores NULL for it rather than remembering the last one.
       await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
         method: 'PUT',
-        body: JSON.stringify({
-          action: feeBenefitForm.action,
-          value: feeBenefitForm.action === 'percentage_discount' && feeBenefitForm.value !== ''
-            ? Number(feeBenefitForm.value)
-            : null,
-        }),
+        body: JSON.stringify(payload),
       });
       cancelEdit();
       onChanged();
@@ -490,6 +468,10 @@ export function AssignedPlanConfiguration({
   }
 
   async function saveBenefits(endpoint: string) {
+    if (lineEntries.some((e) => !isValidDiscountPercent(e.draft.direct_discount_percent))) {
+      toast(t('direct_discount_invalid'));
+      return;
+    }
     setSaving(true);
     try {
       // #2093 stage 2: the Plans card's engine — every line is validated before
@@ -501,7 +483,7 @@ export function AssignedPlanConfiguration({
             body: JSON.stringify({ items }),
           });
         },
-      }, benefitDraft);
+      }, lineEntries.map((e) => e.draft));
       if (!result.ok) {
         toast(t('benefit_value_required', { item: result.row.product_name }));
         return;
@@ -541,6 +523,22 @@ export function AssignedPlanConfiguration({
         onClick={onClick}
         disabled={editing !== null}
         title={editTitle}
+      />
+    );
+  }
+
+  // #2835 — the one inline control a line offers: its Direct Discount (%).
+  // The value is clamped to the percentage's own range as it is typed, as the
+  // shared editor did; the server still validates it (`benefitConfigError()`).
+  function discountInput(value: string, onChange: (v: string) => void, product: string) {
+    return (
+      <input
+        type="number" min="0" max="100" step="0.01"
+        value={value}
+        onChange={(e) => onChange(clampBenefitValue('percentage_discount', e.target.value) as string)}
+        disabled={saving}
+        aria-label={`${t('col_direct_discount_percent')} — ${product}`}
+        style={{ ...inputSt, width: 80, padding: '4px 6px', textAlign: 'right' }}
       />
     );
   }
@@ -664,46 +662,14 @@ export function AssignedPlanConfiguration({
         label={t('section_membership_fee_benefit')}
         action={editing === 'fee_benefit' ? null : editButton(openFeeBenefitEdit)}
       >
-      {editing === 'fee_benefit' && feeBenefitForm ? (
-        <div style={{ margin: '6px 0 14px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
-            <div>
-              <label style={labelSt}>{t('label_personal_fee_benefit')}</label>
-              <select
-                value={feeBenefitForm.action}
-                onChange={(e) => setFeeBenefitForm({
-                  ...feeBenefitForm,
-                  action: e.target.value as PersonalFeeBenefitAction,
-                })}
-                style={inputSt}
-              >
-                {PERSONAL_FEE_BENEFIT_ACTIONS.map((a) => (
-                  <option key={a} value={a}>{t(`personal_fee_benefit_${a}` as any)}</option>
-                ))}
-              </select>
-            </div>
-            {feeBenefitForm.action === 'percentage_discount' && (
-              <div>
-                <label style={labelSt}>{t('label_personal_fee_benefit_percentage')}</label>
-                <input
-                  type="number" min="0" max="100" step="0.01"
-                  value={feeBenefitForm.value}
-                  onChange={(e) => setFeeBenefitForm({ ...feeBenefitForm, value: e.target.value })}
-                  style={inputSt}
-                />
-              </div>
-            )}
-          </div>
-          <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
-          {sectionActions(saveFeeBenefit)}
-        </div>
-      ) : (
-        /* #2626 — the Membership Fee is a product row of the same shared grid
-           the three Product sections render, so the breakdown #2483 drew as a
-           list of label/value rows reads in the same columns: the fee, the tax,
-           the Promotions touching it, the Personal Membership Fee Benefit in
-           the Benefit column and the price the engine resolves for the current
-           cycle. Every figure is the server's; nothing is priced here. */
+      {/* #2835: the same grid in both modes; Edit turns the fee's Direct
+          Discount (%) cell into an input and nothing else. */}
+      {/* #2626 — the Membership Fee is a product row of the same shared grid
+          the three Product sections render, so the breakdown #2483 drew as a
+          list of label/value rows reads in the same columns: the fee, the tax,
+          the Promotions touching it, the Personal Membership Fee Benefit in
+          the Benefit column and the price the engine resolves for the current
+          cycle. Every figure is the server's; nothing is priced here. */}
         <ProductBenefitView
           t={(key, values) => t(key as any, values as any)}
           emptyKey="no_oneoff_benefits"
@@ -713,55 +679,45 @@ export function AssignedPlanConfiguration({
           showPrices
           showBreakdown
           showMember
+          showDirectDiscount
+          renderDirectDiscountPercent={(row) => {
+            if (editing !== 'fee_benefit') return undefined;
+            // Only the fee row carries a discount; an access row stays a value.
+            if (row.product_type !== 'membership_fee') return '—';
+            return discountInput(feeDiscount, setFeeDiscount, row.product_name);
+          }}
+          renderRowAction={() => null}
         />
+      {editing === 'fee_benefit' && (
+        <>
+          <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
+          {sectionActions(saveFeeBenefit)}
+        </>
       )}
       </CardSection>
 
       {/* §3–§5/§9 — the three Product-keyed sections, in the order the
           Plans page lists them so both surfaces read the same way. */}
       {BENEFIT_SECTIONS.map(({
-        section, endpoint, titleKey, emptyKey, addKey, snapshotKey, showFrequency, viewFrequencyColumn,
+        section, endpoint, titleKey, emptyKey, snapshotKey, showFrequency, viewFrequencyColumn,
       }) => {
         const rows = snapshot[snapshotKey] ?? [];
+        const sectionEditing = editing === section;
         // #2657 stage 2 — one row per member for an Individual Product, one for a Shared one.
-        const viewRows = rows.flatMap((r) => toAllocationRows(r, promotionNamesByProduct, promotionBenefitsByProduct));
+        // #2835: while the section is edited, the draft's rows (a removed line gone,
+        // a typed discount on its cell); otherwise the snapshot's.
+        const viewRows = sectionEditing
+          ? lineEntries.map((e) => ({ line: e.line, row: e.view }))
+          : rows.flatMap((r) => toAllocationRows(r, promotionNamesByProduct, promotionBenefitsByProduct));
         return (
           <CardSection
             key={section}
             label={t(titleKey as any)}
             action={editing === section ? null : editButton(() => openBenefitEdit(section, rows))}
           >
-            {editing === section ? (
-              <div style={{ margin: '6px 0 4px' }}>
-                <ProductBenefitEditor
-                  t={(key, values) => t(key as any, values as any)}
-                  addKey={addKey}
-                  draft={benefitDraft}
-                  setDraft={setBenefitDraft}
-                  categoryItems={categoryItems(section)}
-                  showFrequency={showFrequency}
-                  frequencyColumn={viewFrequencyColumn}
-                  benefitContext="plan"
-                  showDirectDiscount
-                  lockedProductIds={lockedIds}
-                />
-                <p style={hintSt}>{t('assigned_line_edit_hint')}</p>
-                <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-                {sectionActions(() => saveBenefits(endpoint))}
-              </div>
-            ) : (
-              /* #924 stage 1 — the one shared grid every Product section
-                 of every card renders from (#916/#919): Product,
-                 Quantity, Frequency, Benefit, Base Price, Final Price, in
-                 that order and at the same horizontal positions as the
-                 Membership Plan it came from. The hand-rolled table this
-                 replaced had its own columns and its own widths, which is the
-                 separate visual system §1 forbids.
-
-                 `benefitContext="plan"` is the Plan's option set, which is
-                 where these lines came from — it renders the agreed treatment
-                 as a column here and stays absent from the editor, whose
-                 endpoint takes quantity alone (#896 stage 4). */
+            {/* #2835: one grid in both modes. Edit keeps every row, column and
+                price where it was; only the Direct Discount (%) cell becomes an
+                input and an Optional line gains a ✕ (#2624 stage 2's rule). */}
               <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
@@ -773,6 +729,28 @@ export function AssignedPlanConfiguration({
                 showBreakdown
                 showMember
                 showLineMandatory
+                showDirectDiscount
+                renderDirectDiscountPercent={(row, idx) => (sectionEditing
+                  ? discountInput(
+                    String(row.direct_discount_percent ?? ''),
+                    (v) => setLineEntries((prev) => withEntryDiscount(prev, idx, v)),
+                    row.product_name,
+                  )
+                  : undefined)}
+                renderRowAction={(row, idx) => (sectionEditing && canRemoveLine(lineEntries[idx]?.draft ?? row)
+                  ? (
+                    <button
+                      type="button"
+                      onClick={() => setLineEntries((prev) => withoutEntry(prev, idx))}
+                      disabled={saving}
+                      style={rowRemoveBtnStyle}
+                      aria-label={t('remove_optional_line', { product: row.product_name })}
+                      title={t('remove_optional_line', { product: row.product_name })}
+                    >
+                      ✕
+                    </button>
+                  )
+                  : null)}
                 renderItemPrefix={(_row, idx) => {
                   const line = viewRows[idx].line;
                   return (
@@ -784,6 +762,12 @@ export function AssignedPlanConfiguration({
                   );
                 }}
               />
+            {sectionEditing && (
+              <>
+                <p style={hintSt}>{t('assigned_line_edit_hint')}</p>
+                <p style={hintSt}>{t('snapshot_edit_hint')}</p>
+                {sectionActions(() => saveBenefits(endpoint))}
+              </>
             )}
           </CardSection>
         );

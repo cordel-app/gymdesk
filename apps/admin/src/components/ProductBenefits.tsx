@@ -206,7 +206,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
 export type ProductBenefitColumnKey =
   'item' | 'member' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price'
   | 'tax' | 'promotion' | 'promotion_benefit' | 'direct_discount' | 'final_price'
-  | 'mandatory' | 'direct_discount_percent';
+  | 'mandatory' | 'direct_discount_percent' | 'row_action';
 
 export interface ProductBenefitColumn {
   key: ProductBenefitColumnKey;
@@ -844,16 +844,33 @@ function BenefitPriceCell({
   );
 }
 
+// #2835 — not in `PRODUCT_BENEFIT_COLUMNS`: only a caller that edits rows in
+// place asks for it (`renderRowAction`), and it has no heading.
+const ROW_ACTION_COLUMN: ProductBenefitColumn = { key: 'row_action', labelKey: '', width: 40, align: 'right' };
+
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, showBreakdown = false, frequencyColumn = 'item', quantityColumn = 'quantity',
   showRequirement = false, showPlanMandatory = false, showDirectDiscount = false,
   showMember = false, showLineMandatory = false, renderItemPrefix, renderNestedRow,
+  renderDirectDiscountPercent, renderRowAction,
 }: {
   t: Translate;
   emptyKey: string;
   rows: ProductBenefitRow[];
+  /**
+   * #2835 — the Direct Discount (%) cell's content in place of the stored
+   * value (an inline input while the section is edited). `undefined` keeps the
+   * read-only value, so the grid itself never changes shape.
+   */
+  renderDirectDiscountPercent?: (row: ProductBenefitRow, index: number) => React.ReactNode | undefined;
+  /**
+   * #2835 — a trailing, header-less cell per row (the ✕ of an Optional line
+   * while the section is edited). Passing it reserves the column in both modes,
+   * so entering Edit adds no column; returning `null` draws an empty cell.
+   */
+  renderRowAction?: (row: ProductBenefitRow, index: number) => React.ReactNode;
   /**
    * #2478 — drawn immediately left of a row's Product name (the circular
    * thumbnail). Whatever it returns owns its own click; `null` draws nothing
@@ -922,6 +939,7 @@ export function ProductBenefitView({
     showFrequency, showAction: benefitContext != null, showPrices, showBreakdown, showRequirement,
     showPlanMandatory, showDirectDiscount, quantityColumn, showMember,
   });
+  if (renderRowAction) columns.push(ROW_ACTION_COLUMN);
 
   const cell = (col: ProductBenefitColumn, row: ProductBenefitRow, index: number): React.ReactNode => {
     switch (col.key) {
@@ -974,7 +992,11 @@ export function ProductBenefitView({
         // #959: the stored value, normalized — a line written before the column
         // existed reads `Mandatory`, which is what it means, never an empty cell.
         return t(promotionItemRequirementLabelKey(row.requirement));
+      case 'row_action':
+        return renderRowAction ? renderRowAction(row, index) : null;
       case 'direct_discount_percent': {
+        const custom = renderDirectDiscountPercent?.(row, index);
+        if (custom !== undefined) return custom;
         // #2490 stage 3: the stored percentage, or `—` for none.
         const pct = Number(row.direct_discount_percent);
         return row.direct_discount_percent != null && row.direct_discount_percent !== '' && pct > 0
@@ -1023,7 +1045,7 @@ export function ProductBenefitView({
         <thead>
           <tr>
             {columns.map((col) => (
-              <th key={col.key} style={{ ...thSt, textAlign: col.align }}>{t(col.labelKey)}</th>
+              <th key={col.key} style={{ ...thSt, textAlign: col.align }}>{col.labelKey ? t(col.labelKey) : null}</th>
             ))}
           </tr>
         </thead>

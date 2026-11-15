@@ -310,10 +310,11 @@ describe('who names a context', () => {
     expect(plansSrc.match(/benefitContext="plan"/g) ?? []).toHaveLength(2);
   });
 
-  it('the Assigned Plan snapshot editor does too (#2093 stage 2)', () => {
-    // Its section `PUT` persists the pair, so the editor offers the dropdown.
-    const editor = (assignedPlanSrc.match(/<ProductBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
-    expect(editor).toContain('benefitContext="plan"');
+  it('the Assigned Plan snapshot sections edit in place and offer no treatment control (#2835)', () => {
+    // An agreed line's treatment is read-only; only its Direct Discount (%)
+    // and an Optional line's removal are edited, on the read-only grid itself.
+    expect(assignedPlanSrc).not.toContain('<ProductBenefitEditor');
+    expect(assignedPlanSrc).toContain('renderDirectDiscountPercent=');
   });
 
   it("the Assigned Plan's read-only sections do, to *show* what was agreed (#924)", () => {

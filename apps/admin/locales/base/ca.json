@@ -5267,7 +5267,8 @@
     "assigned_line_edit_hint": "Les línies acordades són de només lectura: només se'n pot canviar el Descompte directe (%), i només una línia Opcional es pot eliminar.",
     "col_direct_discount_percent": "Descompte directe (%)",
     "mandatory_item_tag": "Obligatori",
-    "remove_optional_line": "Elimina {product}"
+    "remove_optional_line": "Elimina {product}",
+    "direct_discount_invalid": "El descompte directe (%) ha de ser un número entre 0 i 100."
   },
   "taxes": {
     "title": "Impostos",

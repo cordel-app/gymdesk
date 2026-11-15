@@ -95,9 +95,10 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
     // The section `PUT` now takes the (action, value) pair and the Session
     // Frequency (`writeBenefitSection`), so the editor offers the same controls
     // as the Plans card and saves through the same validate-then-send engine.
-    const editor = (configSrc.match(/<ProductBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
-    expect(editor).toContain('benefitContext="plan"');
-    expect(editor).toContain('frequencyColumn={viewFrequencyColumn}');
+    // #2835: the section is edited in place on the read-only grid, and the
+    // draft still goes through the same validate-then-send engine.
+    expect(configSrc).not.toContain('<ProductBenefitEditor');
+    expect(configSrc).toContain('frequencyColumn={viewFrequencyColumn}');
     expect(configSrc).toContain('saveBenefitSection(');
   });
 
