@@ -15,8 +15,11 @@
 //    `promotions` nor `tax_rates` (#635 §16, §13 of #1118). A value the system
 //    never stored — a purchase with no tax rate or no payment request — is
 //    `null` and reads `—`; nothing is recalculated or inferred.
-//  - **A purchase is never edited.** It is money that moved: the menu carries no
-//    edit action. `+ Add Product` opens the inline form (`AddProductPurchase`),
+//  - **A committed purchase is never edited.** It is money that moved: its menu
+//    carries no edit action. The one exception is a line of the member's open
+//    **Draft** Product Set (#2856), which has charged nothing: its `⋮` offers
+//    Edit (the same add form, on that line, through `PUT …/recurring/:lineId`)
+//    and Delete (`useDraftLineDelete()`), and neither reaches a committed version. `+ Add Product` opens the inline form (`AddProductPurchase`),
 //    which creates a *new* purchase — a pending one-time purchase, or a Draft
 //    ProductSet that only Save & Pay activates — and nothing here rewrites one
 //    that exists.
@@ -49,7 +52,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductDetails, addProductDraftCells, useAddProductForm } from './AddProductPurchase';
+import { AddProductDetails, EditDraftLineForm, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
   filterPurchasesByStatus,
@@ -63,6 +67,7 @@ import {
   type PurchasedProduct,
   type PurchasedProductPromotion,
   displayPurchaseStatus,
+  editableDraftLineId,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -112,6 +117,37 @@ export function MemberPurchasedProducts({
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // #2856 — a line of the open Draft Product Set: `⋮ → Edit` opens the add form on it, `⋮ → Delete` removes it.
+  const [editing, setEditing] = useState<{ rowId: number; edit: DraftLineEdit } | null>(null);
+  const [deleting, setDeleting] = useState<PurchasedProduct | null>(null);
+  const lineDelete = useDraftLineDelete(memberId, onChanged, {
+    expired: t('add_product_error_draft_expired'), failed: t('draft_line_delete_error'),
+  });
+  const deleteBusy = lineDelete.busy;
+  const deleteError = lineDelete.error;
+  useEffect(() => { if (committedKey) setEditing(null); }, [committedKey]);
+
+  function startEdit(item: PurchasedProduct, lineId: number) {
+    setEditing({
+      rowId: item.id,
+      edit: {
+        lineId,
+        productId: item.product_id,
+        quantity: item.quantity ?? 1,
+        promotionIds: (item.promotions ?? []).map((p) => p.promotion_id),
+        directDiscountPercent: item.direct_discount_percent ?? null,
+      },
+    });
+    setExpandedIds((prev) => new Set(prev).add(item.id));
+  }
+
+  async function deleteLine(item: PurchasedProduct) {
+    const lineId = editableDraftLineId(item);
+    if (lineId == null) return;
+    if (await lineDelete.remove(lineId) && editing?.rowId === item.id) setEditing(null);
+    setDeleting(null);
+  }
+
 
   function toggleExpand(item: PurchasedProduct) {
     setExpandedIds((prev) => {
@@ -253,6 +289,7 @@ export function MemberPurchasedProducts({
       render: (item) => {
         const billingPath = billingEventPath(locale, item);
         const isOneTimeDraft = item.status === 'draft' && item.source !== 'recurring';
+        const draftLineId = editableDraftLineId(item);
         return (
           <ContextMenu
             ariaLabel={t('purchase_actions_for', { product: item.product_name })}
@@ -268,6 +305,21 @@ export function MemberPurchasedProducts({
                   label: t('purchase_action_discard_draft'),
                   onClick: () => setDiscarding(item),
                   disabled: !canWrite || draftBusy,
+                  danger: true,
+                  title: canWrite ? undefined : t('products_add_read_only'),
+                },
+              ] : []),
+              ...(draftLineId != null ? [
+                {
+                  label: t('edit'),
+                  onClick: () => startEdit(item, draftLineId),
+                  disabled: !canWrite || deleteBusy,
+                  title: canWrite ? undefined : t('products_add_read_only'),
+                },
+                {
+                  label: t('draft_line_delete'),
+                  onClick: () => { lineDelete.clearError(); setDeleting(item); },
+                  disabled: !canWrite || deleteBusy,
                   danger: true,
                   title: canWrite ? undefined : t('products_add_read_only'),
                 },
@@ -299,6 +351,7 @@ export function MemberPurchasedProducts({
     <div>
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
+      {deleteError && <p role="alert" style={formErrorStyle}>{deleteError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
         <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
           <StatusFilter
@@ -335,7 +388,18 @@ export function MemberPurchasedProducts({
             };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}
-          renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
+          renderExpanded={(item) => (editing?.rowId === item.id ? (
+            <div data-draft-line-edit>
+              <EditDraftLineForm
+                memberId={memberId}
+                isAdmin={isAdmin}
+                canPay={canPay}
+                edit={editing.edit}
+                onClose={() => setEditing(null)}
+                onChanged={onChanged}
+              />
+            </div>
+          ) : <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />)}
       />
       {/* #1640: the action sits below the list, at the bottom of the section. */}
       <div style={{ marginTop: 8 }}>
@@ -358,6 +422,16 @@ export function MemberPurchasedProducts({
         busy={draftBusy}
         onConfirm={() => { if (discarding) void discardDraft(discarding); }}
         onCancel={() => setDiscarding(null)}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        message={deleting ? t('draft_line_delete_confirm', { product: deleting.product_name }) : ''}
+        confirmLabel={t('draft_line_delete')}
+        cancelLabel={t('add_product_cancel')}
+        busy={deleteBusy}
+        onConfirm={() => { if (deleting) void deleteLine(deleting); }}
+        onCancel={() => { if (!deleteBusy) setDeleting(null); }}
       />
 
       <ConfirmDialog

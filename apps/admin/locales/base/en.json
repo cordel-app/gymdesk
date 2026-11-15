@@ -867,7 +867,13 @@
     "booking_status_waitlisted": "Waitlisted",
     "booking_status_cancelled": "Cancelled",
     "booking_status_unknown": "—",
-    "booking_event_cancelled": "Event cancelled"
+    "booking_event_cancelled": "Event cancelled",
+    "draft_line_save": "Save changes",
+    "draft_line_quantity": "Quantity",
+    "draft_line_delete": "Delete",
+    "draft_line_delete_confirm": "Delete {product} from the draft? It is removed from this Product Set; nothing has been charged for it.",
+    "draft_line_delete_error": "The product could not be deleted from the draft.",
+    "add_product_error_promotion_requires_products": "This promotion requires other products. Add them first, then apply the promotion."
   },
   "member_payments": {
     "title": "Member Payments",
