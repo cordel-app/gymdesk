@@ -1254,6 +1254,7 @@
     "error_required": "El nom és obligatori.",
     "error_generic": "Alguna cosa ha fallat.",
     "error_load": "Error en carregar els gimnasos.",
+    "section_fiscal": "Informació fiscal",
     "section_storage": "Emmagatzematge",
     "storage_initialized": "Inicialitzat",
     "storage_not_initialized": "No inicialitzat",

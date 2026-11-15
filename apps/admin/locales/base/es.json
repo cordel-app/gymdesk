@@ -1253,6 +1253,7 @@
     "error_required": "El nombre es obligatorio.",
     "error_generic": "Algo salió mal.",
     "error_load": "Error al cargar los gimnasios.",
+    "section_fiscal": "Información fiscal",
     "section_storage": "Almacenamiento",
     "storage_initialized": "Inicializado",
     "storage_not_initialized": "No inicializado",
