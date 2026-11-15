@@ -219,7 +219,9 @@ export default function MemberSchedulePage() {
       const result: any = await apiFetch('/me/bookings', {
         method: 'POST', body: JSON.stringify({
           class_session_id: sessionId,
-          ...(serviceId != null ? { professional_service_id: serviceId } : {}),
+          // #2851: the family selection names its service, the one the picker was shown for.
+          ...(serviceId != null ? { professional_service_id: serviceId }
+            : groupService ? { professional_service_id: groupService.id } : {}),
           ...(groupService && session ? { participant_member_ids: participantsFor(session), booker_attends: selfFor(session) } : {}),
         }),
       });

@@ -4,7 +4,7 @@ import { loadRequiredServices } from './activity-eligibility';
 import { loadMemberProfessionalServiceGrants, resolveMemberProfessionalServices, walletLedgerParams, walletLedgerScope } from '../domain/memberProfessionalServices';
 import { familyWalletOf, inList, lockWallet, MEMBER_FAMILY_SQL } from './family-wallet';
 import { chooseSpendGrant } from '../domain/serviceConsumption';
-import { availableGrants, serviceBalanceViews, ServiceBalanceView } from '../domain/serviceReservation';
+import { availableGrants, liveReservationSql, serviceBalanceViews, ServiceBalanceView } from '../domain/serviceReservation';
 
 /**
  * #2605 stage 1: the SQL half of the Professional Service reservation.
@@ -19,7 +19,7 @@ export async function loadReservedTotals(tx: Tx, gymId: string, memberId: number
     `SELECT r.source_kind, r.source_reference_id,
             IF(r.source_kind = 'manual_adjustment', NULL, r.member_id) AS member_id, COUNT(*) AS reserved
        FROM professional_service_reservations r
-      WHERE r.gym_id = ? AND r.status = 'reserved' AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
+      WHERE r.gym_id = ? AND ${liveReservationSql('r')} AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
       GROUP BY r.source_kind, r.source_reference_id, IF(r.source_kind = 'manual_adjustment', NULL, r.member_id)`,
     [gymId, ...walletLedgerParams(wallet.familyId, wallet.memberIds)],
   );
@@ -35,7 +35,7 @@ export async function loadBookedByService(q: Pick<Tx, 'query'>, gymId: string, m
   const { rows } = await q.query(
     `SELECT r.professional_service_id, COUNT(*) AS booked
        FROM professional_service_reservations r
-      WHERE r.gym_id = ? AND r.status = 'reserved' AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
+      WHERE r.gym_id = ? AND ${liveReservationSql('r')} AND ${walletLedgerScope('r', wallet.familyId, inList(wallet.memberIds))}
       GROUP BY r.professional_service_id`,
     [gymId, ...walletLedgerParams(wallet.familyId, wallet.memberIds)],
   );
