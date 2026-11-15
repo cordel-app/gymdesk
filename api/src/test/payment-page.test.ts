@@ -218,10 +218,57 @@ describe('GET /payment-page/token/:token', () => {
       expect(res.status).toBe(200);
       expect(res.body.logoUrl).toContain(`/themes/${themeId}/logo`);
       expect(res.body.logoContainsGymName).toBe(true);
+      // #2881: with no symbol, the tab icon is the logo, as in the Admin and Members apps.
+      expect(res.body.iconUrl).toBe(res.body.logoUrl);
       expect(res.body.themeColors).toBeNull();
     } finally {
       await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
       await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
+  });
+
+  it('uses the theme logo symbol as the tab icon, like the Admin and Members apps (#2881)', async () => {
+    await db.query(
+      `INSERT INTO themes (id, gym_id, name, status, logo_mime, logo_bytes, logo_symbol_object_key, tokens, created_at)
+       VALUES (UUID(), NULL, 'Payment Symbol Theme', 'active', 'image/png', UNHEX('89504e47'),
+               'cordel/themes/x/logo/logo_symbol.webp', '{}', UTC_TIMESTAMP())`,
+    );
+    const { rows: themeRows } = await db.query<{ id: string }>(
+      "SELECT id FROM themes WHERE gym_id IS NULL AND name = 'Payment Symbol Theme' LIMIT 1",
+    );
+    const themeId = themeRows[0].id;
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymId]);
+
+    try {
+      const pageToken = crypto.randomUUID();
+      await insertPendingRequest({
+        gymId, userMembershipId, memberId, chargeTypeId,
+        pageToken, providerRef: 'pay_monei_symbol',
+      });
+
+      const res = await request.get(`/payment-page/token/${pageToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.logoUrl).toContain(`/themes/${themeId}/logo`);
+      expect(res.body.iconUrl).toMatch(new RegExp(`^/themes/${themeId}/logo-symbol`));
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+      await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
+  });
+
+  it('GET /themes/:id/logo-symbol answers 404 for a theme with no symbol (#2881)', async () => {
+    await db.query(
+      `INSERT INTO themes (id, gym_id, name, status, tokens, created_at)
+       VALUES (UUID(), NULL, 'Payment No Symbol Theme', 'active', '{}', UTC_TIMESTAMP())`,
+    );
+    const { rows } = await db.query<{ id: string }>(
+      "SELECT id FROM themes WHERE gym_id IS NULL AND name = 'Payment No Symbol Theme' LIMIT 1",
+    );
+    try {
+      const res = await request.get(`/themes/${rows[0].id}/logo-symbol`);
+      expect(res.status).toBe(404);
+    } finally {
+      await db.query('DELETE FROM themes WHERE id = ?', [rows[0].id]);
     }
   });
 

@@ -48,6 +48,8 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
                 t.id AS theme_id, t.logo_mime AS theme_logo_mime,
                 t.logo_updated_at AS theme_logo_updated_at,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
+                t.logo_symbol_object_key AS theme_logo_symbol_object_key,
+                t.modified_at AS theme_modified_at,
                 t.tokens AS theme_tokens
          FROM payment_requests pr
          JOIN gyms g ON g.id = pr.gym_id
@@ -97,6 +99,15 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       ? `/themes/${row.theme_id}/logo${row.theme_logo_updated_at ? `?v=${encodeURIComponent(row.theme_logo_updated_at)}` : ''}`
       : null;
 
+    // #2881: the tab icon is the one the Admin and Members apps show — the
+    // theme's logo symbol (#2157) when it has one, else its logo (`faviconHref()`
+    // in both apps). Served same-origin through the proxied `/themes/` path,
+    // because the page's CSP is `img-src 'self'` and the symbol lives in R2.
+    const symbolAt = row.theme_modified_at ? new Date(row.theme_modified_at).getTime() : NaN;
+    const iconUrl = row.theme_id && row.theme_logo_symbol_object_key
+      ? `/themes/${row.theme_id}/logo-symbol${Number.isNaN(symbolAt) ? '' : `?v=${symbolAt}`}`
+      : logoUrl;
+
     // #489 stage 4: only the color tokens the checkout page actually renders
     // with — not the full tokens blob (typography/advanced aren't used here).
     const parsedTokens = row.theme_tokens
@@ -144,6 +155,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       itemName: row.product_name ?? null,
       billingInterval,
       logoUrl,
+      iconUrl,
       logoContainsGymName: !!row.theme_logo_contains_gym_name,
       themeColors,
       // The page redirects here itself when the provider needs no 3DS hop, so
