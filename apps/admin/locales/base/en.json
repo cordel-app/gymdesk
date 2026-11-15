@@ -454,6 +454,8 @@
     "add_product_not_stackable": "cannot be combined",
     "promo_block_blocked_by_non_stackable": "Unavailable: a non-stackable promotion is selected.",
     "promo_block_non_stackable_with_selection": "Unavailable: this promotion cannot be combined with the current selection.",
+    "promo_block_new_members_only": "Unavailable: this promotion is only for new members.",
+    "assign_promotions_hint": "Choose the promotions to apply. None is applied unless you select it; the Membership Fee Simulation of the new plan reflects the selection.",
     "promo_desc_waive": "Free",
     "promo_desc_waive_periods": "Free – {periods, plural, one {# period} other {# periods}}",
     "promo_desc_percent": "{value}% discount",

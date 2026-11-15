@@ -10,9 +10,9 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
-import { ASSIGNMENT_CREATION_STATUS, effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
+import { ASSIGNMENT_CREATION_STATUS, effectivePrice, parsePromotionIds, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
-import { applyPromotionToMembership } from './membership-promotions';
+import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
 import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import { computePriceFields, validateTaxRateId } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
@@ -826,8 +826,9 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // Instantiates the Plan into a new Membership for one or more existing
 // Members, snapshotting the Plan's current charge benefits onto the
 // Membership (so later Plan edits never retroactively change it), applying
-// any Promotions currently targeting the Plan, and emitting the same
-// creation billing event as POST /user-memberships (P1.6 ledger).
+// the Promotions the caller selected (#2809: `promotion_ids`, never every
+// Promotion targeting the Plan), and emitting the same creation billing event
+// as POST /user-memberships (P1.6 ledger).
 
 membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
@@ -835,6 +836,12 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   // every row this route inserts. The third and last of the creation paths.
   const actorText = resolveRequestActor(getTenantContext(req));
   const { member_ids, owner_member_id, starts_at } = req.body;
+  // #2809: the Promotions staff chose for this assignment. Omitted or empty
+  // means none — the route no longer applies every Promotion targeting the Plan.
+  const promotionIds = parsePromotionIds(req.body?.promotion_ids);
+  if (promotionIds === null) {
+    return res.status(400).json({ error: 'promotion_ids must be an array of promotion ids' });
+  }
 
   const { rows: planRows } = await db.query(
     // `name` is only wording — it is what #956's replacement warning calls the
@@ -869,6 +876,13 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
 
   const eff = await effectivePrice(Number(req.params.id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
+
+  // #2809: the selection is validated as a set before anything is created —
+  // targeting, window, Only New Members (for the owner, against the pending
+  // assignment) and stacking — by the rule #628's Assign New Plan uses, so an
+  // invalid selection never leaves a half-configured Draft behind.
+  const promoError = await validatePromotionSelection(gymId, Number(req.params.id), [...new Set(promotionIds)], ownerId);
+  if (promoError) return res.status(promoError.status).json({ error: promoError.error });
 
   // #1184 stage 3: optional benefits declined for this assignment, validated by
   // the one rule every assignment path shares.
@@ -925,21 +939,12 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     });
     const insertId = outcome.insertId;
 
-    // Auto-apply any Promotion currently targeting this Plan (#376 item 7/8) — best
-    // effort per promotion: a non-stackable conflict must not fail the assignment.
-    const { rows: promoRows } = await db.query(
-      `SELECT p.id FROM promotions p
-       JOIN promotion_membership_plans pmp ON pmp.promotion_id = p.id
-       WHERE pmp.membership_plan_id = ? AND p.gym_id = ? AND p.lifecycle_status = 'active'
-         AND p.starts_at <= UTC_TIMESTAMP() AND p.ends_at >= UTC_TIMESTAMP()`,
-      [req.params.id, gymId],
-    );
-    for (const promo of promoRows) {
-      try {
-        await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promo.id, actorText);
-      } catch {
-        // Not stackable with one already applied, or otherwise inapplicable — skip it.
-      }
+    // #2809: only the Promotions staff selected are applied, after the Draft
+    // commits (each apply runs its own transaction). The selection was
+    // validated above, so a failure here means a Promotion changed in between —
+    // surfaced rather than assigning the plan without what was asked for.
+    for (const promotionId of [...new Set(promotionIds)]) {
+      await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promotionId, actorText);
     }
 
     const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [insertId]);
@@ -948,8 +953,9 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0],
     });
     recordDeclinedBenefitsAudit(req, insertId, declinedResult.declined);
-    res.status(201).json({ ...rows[0], members: coveredMembers });
+    res.status(201).json({ ...rows[0], members: coveredMembers, applied_promotion_ids: [...new Set(promotionIds)] });
   } catch (err: any) {
+    if (err?.status) return res.status(err.status).json({ error: err.message });
     // #956 (migration 213): a Member holds at most one live Membership Plan.
     // Since #1108 stage 1 this route inserts a Draft, whose `active_member_key`
     // is NULL, so the restored UNIQUE index cannot fire here at all — the

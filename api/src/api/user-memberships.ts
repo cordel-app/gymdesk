@@ -1356,7 +1356,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
 // #628: `promotion_ids` is optional — omitted or empty means "assign the plan
 // with no promotions". Returns null when the payload isn't a list of positive
 // integer ids, so the route can answer 400 instead of silently dropping it.
-function parsePromotionIds(raw: unknown): number[] | null {
+export function parsePromotionIds(raw: unknown): number[] | null {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return null;
   const ids: number[] = [];
