@@ -21,7 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyChildQuery } from './helpers';
+  request, legacyChildQuery, confirmTestDraftPromotions } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -375,6 +375,8 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
       .set('x-gym-id', gymId)
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
+    // #2833: a Draft's application is a reference until the Draft is confirmed.
+    await confirmTestDraftPromotions(gymId, assign.body.id);
 
     const snapshot = await legacyChildQuery(
       `SELECT s.action, s.value

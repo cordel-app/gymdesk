@@ -23,7 +23,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment } from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment, confirmTestDraftPromotions } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -240,6 +240,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     });
     await grant(promotionId, 'periodical', locker, { action: 'waive' });
     await applyPromotion(umId, promotionId);
+    await confirmTestDraftPromotions(gymId, umId); // #2833: frozen once confirmed
 
     // Everything the catalogue and the Promotion could say afterwards changes.
     await db.query('UPDATE products SET amount = 999 WHERE id = ?', [locker]);
@@ -263,6 +264,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     });
     await grant(promotionId, 'periodical', locker, { action: 'percentage_discount', value: 50 });
     await applyPromotion(umId, promotionId);
+    await confirmTestDraftPromotions(gymId, umId); // #2833: frozen once confirmed
     // `product_id` is ON DELETE SET NULL on the snapshot: the identity goes,
     // the agreement stays, and the frozen amount is the honest gross.
     await db.query('DELETE FROM promotion_periodical WHERE product_id = ?', [locker]);
