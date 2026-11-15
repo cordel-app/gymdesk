@@ -11,6 +11,7 @@ import {
   clearPromotionImage, migratePromotionImageOnRename, PROMOTION_IMAGE_COLUMNS, storePromotionImage,
 } from './promotion-image-storage';
 import { insertAndFetch } from '../infra/db-helpers';
+import { isNewMemberForNewAssignment } from './new-member-eligibility';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
 import { PROMOTION_LIFECYCLE_STATUSES } from '../domain/promotionLifecycle';
@@ -56,6 +57,16 @@ promotionsRouter.get('/', async (req, res, next) => {
     ? null : Number(req.query.membership_plan_id);
   if (membershipPlanId !== null && (!Number.isInteger(membershipPlanId) || membershipPlanId <= 0)) {
     return res.status(400).json({ error: 'membership_plan_id must be a membership plan id' });
+  }
+  // #2809: the Member a new assignment is being configured for. Each row then
+  // reports whether that Member may take it (`member_eligible`) and, when not,
+  // why (`ineligible_reason`), with Only New Members decided by the very rule
+  // `validatePromotionSelection()` enforces on the assignment, so the picker
+  // cannot offer what the assign route refuses. It narrows nothing.
+  const forMemberId = req.query.for_member_id == null || req.query.for_member_id === ''
+    ? null : Number(req.query.for_member_id);
+  if (forMemberId !== null && (!Number.isInteger(forMemberId) || forMemberId <= 0)) {
+    return res.status(400).json({ error: 'for_member_id must be a member id' });
   }
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS
     ? req.query.sort : 'starts_at';
@@ -108,7 +119,21 @@ promotionsRouter.get('/', async (req, res, next) => {
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir}`,
       params,
     );
-    res.json(rows);
+    if (forMemberId === null) return res.json(rows);
+
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [forMemberId, gymId],
+    );
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+    // Evaluated once, and only when some row asks for it.
+    const isNew = rows.some((r: any) => !!r.only_applicable_for_new_members)
+      ? await isNewMemberForNewAssignment(db, gymId, forMemberId)
+      : true;
+    res.json(rows.map((r: any) => {
+      const eligible = !r.only_applicable_for_new_members || isNew;
+      return { ...r, member_eligible: eligible, ineligible_reason: eligible ? null : 'new_members_only' };
+    }));
   } catch (err) { next(err); }
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { activePlanConflict, conflictChoiceBody, type ActivePlanConflict, type ConflictChoice } from '@/lib/activePlanConflict';
@@ -17,6 +17,8 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
+import { PromotionPicker, type PickerPromotion } from '@/components/PromotionPicker';
+import { promotionBenefitDescription, revalidateSelection } from '@/lib/promotionSelection';
 
 export interface AssignablePlan {
   id: number;
@@ -42,6 +44,19 @@ interface Props {
   onAssigned: (created?: { id: number }) => void;
 }
 
+/** A Promotion targeting the Plan, as `GET /promotions?…&for_member_id=` reports it. */
+interface AssignablePromotion {
+  id: number;
+  name: string;
+  stackable: number | boolean;
+  fee_benefit_action: string | null;
+  fee_benefit_value: number | string | null;
+  fee_benefit_duration_months: number | null;
+  /** The owner may take it (#2809); absent when no owner is chosen yet. */
+  member_eligible?: boolean;
+  ineligible_reason?: string | null;
+}
+
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -55,6 +70,12 @@ function todayISO() {
  * No Benefits checklist: what a plan carries is the plan's own configuration
  * and is not asked for at assignment, so the request names no
  * `declined_benefits` and every benefit follows the plan.
+ *
+ * #2809: Promotions are chosen here and never applied automatically. The
+ * section lists the active Promotions targeting the Plan, each judged by the
+ * server for the owner (`GET /promotions?for_member_id=`), with the stacking
+ * rule enforced by `PromotionPicker`; only the selection is sent as
+ * `promotion_ids`, and the server re-validates it as a set.
  *
  * #956 stage 2: this is the one assignment path that assigns a *set* of
  * members, and the server answers all-or-nothing — so the 409 lists every plan
@@ -73,6 +94,59 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
+  // #2809: the Promotions offered for this assignment, and the ones staff chose.
+  // Nothing is applied unless it is selected.
+  const [promotions, setPromotions] = useState<AssignablePromotion[]>([]);
+  const [promotionsLoading, setPromotionsLoading] = useState(false);
+  const [selectedPromotionIds, setSelectedPromotionIds] = useState<number[]>([]);
+  const planId = plan?.id ?? null;
+
+  // The Promotions targeting the Plan, active today, each judged by the server
+  // for the owner (Only New Members). Re-read when the Plan or the owner
+  // changes, and the selection is re-validated against what is still offered.
+  useEffect(() => {
+    if (!planId) { setPromotions([]); setSelectedPromotionIds([]); return; }
+    let cancelled = false;
+    setPromotionsLoading(true);
+    const owner = ownerId != null ? `&for_member_id=${ownerId}` : '';
+    apiFetch<AssignablePromotion[]>(
+      `/promotions?lifecycle_status=active&active_on=${todayISO()}&membership_plan_id=${planId}${owner}`,
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        setPromotions(rows);
+        const offered = rows
+          .filter((p) => p.member_eligible !== false)
+          .map((p) => ({ id: p.id, stackable: !!p.stackable }));
+        setSelectedPromotionIds((prev) => revalidateSelection(prev, offered));
+      })
+      .catch(() => { if (!cancelled) { setPromotions([]); setSelectedPromotionIds([]); } })
+      .finally(() => { if (!cancelled) setPromotionsLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId, ownerId]);
+
+  const pickerPromotions: PickerPromotion[] = promotions.map((p) => {
+    const d = p.fee_benefit_action
+      ? promotionBenefitDescription(
+          {
+            action: p.fee_benefit_action,
+            value: p.fee_benefit_value == null ? null : Number(p.fee_benefit_value),
+            duration_cycles: p.fee_benefit_duration_months ?? null,
+          },
+          (n) => `${n.toFixed(2)}€`,
+        )
+      : null;
+    return {
+      id: p.id,
+      name: p.name,
+      stackable: !!p.stackable,
+      description: d ? t(`members.${d.key}` as any, d.values as any) : null,
+      unavailableReason: p.member_eligible === false
+        ? t(`members.promo_block_${p.ineligible_reason ?? 'new_members_only'}` as any)
+        : null,
+    };
+  });
 
   const limitCount = !plan || plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
@@ -109,6 +183,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
           member_ids: members.map((m) => m.id),
           owner_member_id: ownerId,
           starts_at: startsAt,
+          promotion_ids: selectedPromotionIds,
           ...conflictChoiceBody(confirmReplacement),
         }),
       });
@@ -212,6 +287,28 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
         disabled={saving}
         style={{ ...formControlStyle, margin: '6px 0 12px' }}
       />
+
+      {plan && (
+        <>
+          <label style={formFieldLabelStyle}>{t('members.assign_new_plan_section_promotions')}</label>
+          <p style={{ ...cardHintStyle, margin: '4px 0 8px' }}>{t('members.assign_promotions_hint')}</p>
+          <div style={{ marginBottom: 12 }}>
+            {promotionsLoading ? (
+              <p style={cardHintStyle}>{t('members.assign_new_plan_promotions_loading')}</p>
+            ) : (
+              <PromotionPicker
+                promotions={pickerPromotions}
+                selectedIds={selectedPromotionIds}
+                onToggle={(id) => setSelectedPromotionIds((prev) => (
+                  prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                ))}
+                disabled={saving}
+                emptyText={t('members.assign_new_plan_promotions_none')}
+              />
+            )}
+          </div>
+        </>
+      )}
 
       {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 10px' }}>{error}</p>}
 
