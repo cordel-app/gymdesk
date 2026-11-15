@@ -27,6 +27,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { allocateItemSchedules } from './product-set-configuration';
 import { applyPromotionToProductSet } from './membership-promotions';
 import { discountedUnitPrice } from '../domain/productPurchasePricing';
+import { editableDraftSql } from './editable-draft';
 
 const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
@@ -60,9 +61,13 @@ export type EnsureDraftOutcome =
  * Pending Payment version stay what they were and answer `in_flight`, so a
  * member never has two versions in flight and an uncertain payment never gets
  * a second Draft. The Active version is cloned, never touched.
+ *
+ * #2858: for staff (`staff: true`) the owner's `⋮ → Edit` Draft of a running plan is reused too
+ * (`editableDraftSql()`), so adding or changing a Product while a plan edit is open edits that same
+ * Draft instead of answering `in_flight`. The Members App keeps reusing its plain Draft only.
  */
 export async function ensureRecurringDraft(tx: Tx, input: {
-  gymId: string; memberId: number; actor: Actor; today: string;
+  gymId: string; memberId: number; actor: Actor; today: string; staff?: boolean;
 }): Promise<EnsureDraftOutcome> {
   const { rows: activeRows } = await tx.query<any>(
     `SELECT id, membership_plan_id, starts_at, ends_at FROM product_sets
@@ -80,9 +85,10 @@ export async function ensureRecurringDraft(tx: Tx, input: {
   if (created.kind === 'in_flight') {
     if (created.status === 'draft') {
       const { rows } = await tx.query<any>(
-        'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
+        `SELECT ps.user_membership_id, ${editableDraftSql('ps')} AS editable
+           FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
-      if (rows[0] && rows[0].user_membership_id == null) {
+      if (rows[0] && (rows[0].user_membership_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
         await tx.query(
           'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
           [created.productSetId, input.gymId]);
@@ -111,6 +117,8 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   today: string;
   /** #2609: the family member the line is for (resolved by the caller; `addService()` judges it again). */
   assignedMemberId?: number | null;
+  /** #2858: a staff add also reuses the owner's `⋮ → Edit` Draft (`ensureRecurringDraft()`). */
+  staff?: boolean;
 }): Promise<RecurringDraftOutcome> {
   const ensured = await ensureRecurringDraft(tx, input);
   if (ensured.kind === 'in_flight') return ensured;

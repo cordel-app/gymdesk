@@ -332,7 +332,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     const assignedMemberId = await resolveAssignedMember(db, gymId, memberId, productId, assignedMemberInput);
 
     const today = todayUtc();
-    const blocking = await loadEditLockForDraftEdit(gymId, memberId, today);
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, today, { staff: true });
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
     // A refusal is a returned value, which `db.transaction` would commit: the
@@ -345,7 +345,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
         const r = await startRecurringPurchaseDraft(tx, {
           gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
           confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
-          actor: { name: actorName }, today, assignedMemberId,
+          actor: { name: actorName }, today, assignedMemberId, staff: true,
         });
         if (r.kind !== 'ok') throw new DraftRefusal(r);
         return r;
@@ -458,7 +458,7 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
       }
     }
 
-    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc());
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc(), { staff: true });
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
     const actorName = resolveRequestActor(tenantCtx) ?? member.name;
