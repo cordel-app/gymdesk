@@ -1103,6 +1103,7 @@
     "doc_type_full": "Factura completa",
     "doc_status_issued": "Emès",
     "doc_status_draft": "Esborrany",
+    "doc_status_replaced": "Substituïda per factura completa",
     "gen_blocked_exists": "Ja està generat. Obre'l des de la llista de sota.",
     "gen_blocked_not_paid": "El rebut només es pot generar quan s'ha rebut el pagament.",
     "gen_blocked_no_amount": "Aquest esdeveniment de facturació no té import per facturar.",

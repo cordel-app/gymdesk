@@ -615,6 +615,8 @@ export async function cleanupTestGyms() {
   // the gym; `owner_member_id` is RESTRICT, so the sets go before `members`.
   // #2567 stage 4: `related_invoice_id` is RESTRICT, so rectifying invoices go before the ones they correct.
   await db.query(`DELETE FROM invoices WHERE gym_id IN (${marks}) AND related_invoice_id IS NOT NULL`, ids);
+  // #2648 stage 7: `replaces_invoice_id` is RESTRICT too, so a replacing invoice goes before the simplified one.
+  await db.query(`DELETE FROM invoices WHERE gym_id IN (${marks}) AND replaces_invoice_id IS NOT NULL`, ids);
   await db.query(`DELETE FROM product_sets WHERE gym_id IN (${marks})`, ids);
   await db.query(
     `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);

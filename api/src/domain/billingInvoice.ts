@@ -148,3 +148,39 @@ export function autoInvoiceFromDate(today: string, days = AUTO_INVOICE_CATCH_UP_
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
 }
+
+// ── #2648 stage 7: a complete invoice in place of a simplified one ──────────
+// A complete invoice requested for a transaction that already has an issued
+// simplified invoice is issued as its replacement (VERI*FACTU F3, naming the
+// simplified one), so the one transaction is never recorded twice. The
+// simplified invoice is never edited; that it was replaced is derived from the
+// replacement's `replaces_invoice_id`.
+
+export interface EventInvoiceState {
+  id: number;
+  invoiceType: 'simplified' | 'full';
+  status: string;
+  /** Set on a rectifying invoice. */
+  relatedInvoiceId: number | null;
+  /** Set on a complete invoice issued in place of a simplified one. */
+  replacesInvoiceId: number | null;
+  /** The invoice's VERI*FACTU record was cancelled (Registro de Anulación). */
+  hasAnulacion: boolean;
+}
+
+/**
+ * The simplified invoice of an event a new complete invoice replaces, or null
+ * when the complete invoice is an ordinary one (F1). Only an issued simplified
+ * invoice that still stands may be replaced: not a rectifying one, not one a
+ * rectifying invoice cancelled, not one already replaced and not one whose
+ * VERI*FACTU record was cancelled (each of those leaves no standing simplified
+ * invoice to replace). The oldest one when, exceptionally, there are several.
+ */
+export function replacementTarget(invoices: EventInvoiceState[]): number | null {
+  const rectified = new Set(invoices.map((i) => i.relatedInvoiceId).filter((id): id is number => id != null));
+  const replaced = new Set(invoices.map((i) => i.replacesInvoiceId).filter((id): id is number => id != null));
+  const candidates = invoices.filter((i) => i.invoiceType === 'simplified' && i.status === 'issued'
+    && i.relatedInvoiceId == null && !rectified.has(i.id) && !replaced.has(i.id) && !i.hasAnulacion);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((m, i) => (i.id < m ? i.id : m), candidates[0].id);
+}

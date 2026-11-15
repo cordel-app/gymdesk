@@ -14,7 +14,7 @@ import {
 } from '../domain/billingDocumentKeys';
 import {
   AUTO_INVOICE_BATCH_SIZE, autoInvoiceEventTypes, autoInvoiceFromDate, shouldAutoIssueSimplified,
-  formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
+  formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, replacementTarget, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
 import { anulacionRefusal } from '../domain/verifactuRecords';
@@ -60,6 +60,13 @@ async function renderRepresentation(
   const gym = gymRows[0];
   const { lines, totals } = await loadInvoiceFigures(db, ev.gym_id, ev.id, ev.amount);
   const type = inv.invoice_type as InvoiceType;
+  // #2648 stage 7: a complete invoice issued in place of a simplified one names it.
+  let replaces: { number: string } | undefined;
+  if (inv.replaces_invoice_id) {
+    const { rows: r } = await db.query<any>(
+      'SELECT fiscal_number FROM invoices WHERE id = ? AND gym_id = ?', [inv.replaces_invoice_id, ev.gym_id]);
+    if (r[0]) replaces = { number: r[0].fiscal_number };
+  }
   const pdf = await generateInvoicePdf({
     type, state, lang: invoiceLanguage(ev.locale),
     number: inv.fiscal_number, issuedAt: new Date(inv.issued_at),
@@ -69,7 +76,7 @@ async function renderRepresentation(
       : { name: ev.memberName ?? '', taxId: null, address: null },
     lines: rectifies ? negateLines(lines) : lines,
     totals: rectifies ? negateTotals(totals) : totals,
-    currency: 'EUR', rectifies,
+    currency: 'EUR', rectifies, replaces,
     // #2648 stage 3: the QR and legend come from the invoice's own Alta record.
     verifactu: await loadInvoiceVerifactuQr(db, ev.gym_id, inv.id),
   });
@@ -92,6 +99,7 @@ async function renderRepresentation(
 async function issueInvoice(
   tx: Tx, gymId: string, ev: EventCtx, type: InvoiceType,
   customer: { name: string; taxId: string; address: string } | null, actor: string | null,
+  replacesInvoiceId: number | null = null,
 ): Promise<number> {
   await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
   const year = new Date().getUTCFullYear();
@@ -104,11 +112,11 @@ async function issueInvoice(
   const seq = rows.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
   const { insertId } = await tx.query(
     `INSERT INTO invoices (gym_id, billing_event_id, invoice_type, status, fiscal_number, fiscal_year,
-        customer_name, customer_tax_id, customer_address, issued_at, payment_status, created_by)
-     VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+        customer_name, customer_tax_id, customer_address, issued_at, payment_status, replaces_invoice_id, created_by)
+     VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, ?)`,
     [gymId, ev.id, type, formatFiscalNumber(type, year, seq), year,
       customer?.name ?? null, customer?.taxId ?? null, customer?.address ?? null,
-      ev.paid ? 'paid' : 'not_paid', actor],
+      ev.paid ? 'paid' : 'not_paid', replacesInvoiceId, actor],
   );
   // #2648 stage 2: the VERI*FACTU Alta record commits with the invoice (gym row locked above).
   await recordVerifactuAlta(tx, gymId, insertId as number, actor);
@@ -191,7 +199,11 @@ export async function generatePaidRepresentations(gymId: string, eventId: number
   if (!ev || !ev.paid) return 0;
   await issueAutomaticSimplifiedInvoice(gymId, eventId);
   const { rows } = await db.query<any>(
-    `SELECT * FROM invoices WHERE gym_id = ? AND billing_event_id = ? AND status = 'issued' AND related_invoice_id IS NULL`,
+    // A simplified invoice replaced by a complete one (#2648 stage 7) gets no new
+    // representation: the complete invoice is the one that stands.
+    `SELECT * FROM invoices i WHERE i.gym_id = ? AND i.billing_event_id = ? AND i.status = 'issued'
+        AND i.related_invoice_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM invoices f WHERE f.gym_id = i.gym_id AND f.replaces_invoice_id = i.id)`,
     [gymId, eventId]);
   let made = 0;
   for (const inv of rows) {
@@ -225,6 +237,7 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
     if (!ev) return res.status(404).json({ error: 'Billing event not found' });
     const { rows } = await db.query<any>(
       `SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status, related_invoice_id, rectification_reason,
+              replaces_invoice_id,
               simplified_not_paid_pdf_key IS NOT NULL AS has_simplified_not_paid,
               simplified_paid_pdf_key IS NOT NULL AS has_simplified_paid,
               full_not_paid_pdf_key IS NOT NULL AS has_full_not_paid,
@@ -238,6 +251,9 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
     const integrationEnabled = (await enabledVerifactuIntegration(db, gymId)) != null;
     const isAdmin = getTenantContext(req).role === 'admin';
     const rectified = new Set(rows.filter((r: any) => r.related_invoice_id).map((r: any) => r.related_invoice_id));
+    // #2648 stage 7: which invoice replaced each simplified one, derived (never stored on it).
+    const replacedBy = new Map<number, number>(
+      rows.filter((r: any) => r.replaces_invoice_id).map((r: any) => [r.replaces_invoice_id as number, r.id as number]));
     res.json({
       paid: ev.paid,
       invoices: rows.map((r: any) => {
@@ -247,8 +263,12 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
           alta: vf?.alta ? { submissionStatus: vf.alta.submission_status } : null,
           hasAnulacion: !!vf?.anulacion,
           isRectified: rectified.has(r.id),
+          isReplaced: replacedBy.has(r.id),
         });
-        return { ...r, verifactu: vf, can_cancel_verifactu: isAdmin && refusal == null };
+        return {
+          ...r, replaced_by_invoice_id: replacedBy.get(r.id) ?? null,
+          verifactu: vf, can_cancel_verifactu: isAdmin && refusal == null,
+        };
       }),
     });
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
@@ -285,7 +305,20 @@ billingInvoicesRouter.post('/billing-events/:id/invoices', requireModuleWrite('P
             AND related_invoice_id IS NULL AND status = 'issued'`, [gymId, eventId, type]);
       if (rows[0]) return rows[0].id as number;
       created = true;
-      return issueInvoice(tx, gymId, ev, type, customer, actor);
+      // #2648 stage 7: a complete invoice for a transaction that already has a
+      // standing simplified invoice replaces it (F3) rather than invoicing it twice.
+      let replacesId: number | null = null;
+      if (type === 'full') {
+        const { rows: existing } = await tx.query<any>(
+          `SELECT i.id, i.invoice_type, i.status, i.related_invoice_id, i.replaces_invoice_id,
+                  EXISTS (SELECT 1 FROM verifactu_records v WHERE v.invoice_id = i.id AND v.record_type = 'anulacion') AS has_anulacion
+             FROM invoices i WHERE i.gym_id = ? AND i.billing_event_id = ? FOR UPDATE`, [gymId, eventId]);
+        replacesId = replacementTarget(existing.map((r: any) => ({
+          id: r.id, invoiceType: r.invoice_type, status: r.status, relatedInvoiceId: r.related_invoice_id,
+          replacesInvoiceId: r.replaces_invoice_id, hasAnulacion: !!r.has_anulacion,
+        })));
+      }
+      return issueInvoice(tx, gymId, ev, type, customer, actor, replacesId);
     });
 
     const { rows: invRows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [invoiceId, gymId]);
@@ -296,9 +329,11 @@ billingInvoicesRouter.post('/billing-events/:id/invoices', requireModuleWrite('P
     }
     if (created) {
       recordAudit(req, { action: 'issue_invoice', entityType: 'billing_event', entityId: eventId,
-        next: { invoice_id: invoiceId, invoice_type: type, fiscal_number: inv.fiscal_number } });
+        next: { invoice_id: invoiceId, invoice_type: type, fiscal_number: inv.fiscal_number,
+          replaces_invoice_id: inv.replaces_invoice_id ?? null } });
     }
-    const { rows: out } = await db.query<any>('SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status FROM invoices WHERE id = ?', [invoiceId]);
+    const { rows: out } = await db.query<any>(
+      'SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status, replaces_invoice_id FROM invoices WHERE id = ?', [invoiceId]);
     res.status(created ? 201 : 200).json(out[0]);
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
@@ -349,6 +384,13 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
       const { rows: existing } = await tx.query<any>(
         'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
       if (existing[0]) { outcome = { status: 409, error: 'Invoice already rectified' }; return; }
+      // #2648 stage 7: a replaced simplified invoice is corrected through the complete invoice that replaced it.
+      const { rows: replacing } = await tx.query<any>(
+        'SELECT id FROM invoices WHERE gym_id = ? AND replaces_invoice_id = ?', [gymId, id]);
+      if (replacing[0]) {
+        outcome = { status: 409, error: 'This simplified invoice was replaced by a complete invoice; rectify the complete invoice instead' };
+        return;
+      }
       await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
       const year = new Date().getUTCFullYear();
       const { rows: nums } = await tx.query<any>(
