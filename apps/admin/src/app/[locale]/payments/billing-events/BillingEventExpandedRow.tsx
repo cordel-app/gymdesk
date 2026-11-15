@@ -328,12 +328,6 @@ export function ExpandedRow({
           billingEventId={billingEventId}
           gymFmt={gymFmt}
           receipt={{ number: details?.receipt_number ?? null, issuedAt: details?.receipt_issued_at ?? null }}
-          canIssueReceipt={!!details?.can_issue_receipt}
-          amount={details?.amount ?? null}
-          memberName={details?.member_name ?? null}
-          canWrite={canWrite}
-          readOnlyTitle={readOnlyTitle}
-          onReceiptIssued={async () => { await load(); onChanged(); }}
         />
 
         {/* ── Payment transactions ── */}

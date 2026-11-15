@@ -1084,7 +1084,7 @@
     "vf_cancel_back": "Tornar",
     "vf_cancel_done": "Registre d'anul·lació creat. S'enviarà a l'AEAT en breu.",
     "generate_receipt": "Generar rebut",
-    "generate_simple_invoice": "Generar factura simplificada",
+    "view_receipt": "Veure rebut",
     "generate_full_invoice": "Generar factura completa",
     "doc_generating": "Generant…",
     "doc_generated": "Document generat.",

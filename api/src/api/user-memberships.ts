@@ -1,4 +1,5 @@
 import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { generatePaidRepresentations } from './billing-invoices';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
@@ -1269,6 +1270,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
     );
     if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
+    let paidEventId: number | null = null;
     const outcome = await db.transaction(async (tx) => {
       // #1325 PR 3b: the pending version's initial event is what the cash
       // settles — a `cash` attempt on it, no second ledger row — and the commit
@@ -1291,6 +1293,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
         await recordPaymentAttempt(tx, cashAttemptId);
+        paidEventId = open.eventId;
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
@@ -1303,13 +1306,14 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         if (setId == null) {
           throw Object.assign(new Error('This membership has no ProductSet to record the payment against'), { status: 400 });
         }
-        await tx.query(
+        const { insertId: cashEventId } = await tx.query(
           `INSERT INTO billing_events
              (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, created_by, notes)
            VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
           [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), resolveRequestActor(getTenantContext(req)),
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
+        paidEventId = Number(cashEventId);
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
       }
       return committed;
@@ -1337,6 +1341,8 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       const row = await loadAssignmentRow(gymId, req.params.id);
       return res.status(409).json(activePlanConflictBody(outcome.conflicts, row?.plan_name ?? null));
     }
+    // #2648 stage 6: the paid event gets its simplified invoice (best-effort).
+    if (paidEventId != null) generatePaidRepresentations(gymId, paidEventId).catch(() => {});
     const row = await loadAssignmentRow(gymId, req.params.id);
     recordAudit(req, {
       action: 'record_payment', entityType: 'user_membership', entityId: req.params.id,

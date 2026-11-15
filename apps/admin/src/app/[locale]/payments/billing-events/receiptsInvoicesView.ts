@@ -1,7 +1,7 @@
 // #2806 — the Receipts & Invoices section of a Billing Event. Pure: no React,
 // no `t()`. It decides only presentation: which rows the section lists (the
 // receipt first, then the invoices in issue order) and whether each of the
-// three Generate buttons is offered. Whether a document may be issued is the
+// two ⋮ menu document actions is offered (#2648 stage 6). Whether a document may be issued is the
 // API's (`can_issue_receipt`, the invoice route's own checks); a button that is
 // enabled here can still be refused there.
 
@@ -57,40 +57,39 @@ export function documentStatusKey(status: string): string | null {
   return status === 'issued' || status === 'draft' ? `doc_status_${status}` : null;
 }
 
-/** Why a Generate button is disabled, as a `billing_events_page` key. */
+/** Why a ⋮ menu document action is disabled, as a `billing_events_page` key. */
 export type GenerateBlock = 'gen_blocked_exists' | 'gen_blocked_not_paid' | 'gen_blocked_no_amount' | 'gen_blocked_read_only';
 
-export interface GenerateInput {
+/** The two document actions of a Billing Event's ⋮ menu (#2648 stage 6). */
+export type MenuDocumentAction = 'receipt' | 'full';
+
+export interface MenuDocumentInput {
   canWrite: boolean;
   /** The API's `can_issue_receipt`: the event records money actually received. */
   canIssueReceipt: boolean;
+  /** Already issued: the receipt action then re-opens it. */
   receiptNumber: string | null;
   amount: string | null;
-  /** null while the invoices are still loading. */
-  invoices: InvoiceRow[] | null;
+  /** The API's `has_full_invoice`. */
+  hasFullInvoice: boolean;
 }
 
 /**
- * Whether each Generate button is offered. A document that already exists is
- * never generated twice from here (the API is idempotent too): it is listed
- * below with its View action instead.
+ * #2648 stage 6 — whether each ⋮ menu document action is offered. There is no
+ * simplified-invoice action: the system issues it (on the billing date of a
+ * scheduled obligation, or when any other event is paid). A receipt waits for
+ * the payment; a complete invoice is offered paid or not, once per event.
  */
-export function generateBlocks(input: GenerateInput): Record<DocumentKind, GenerateBlock | null> {
-  const hasInvoice = (type: 'simplified' | 'full') =>
-    (input.invoices ?? []).some((i) => i.invoice_type === type && i.related_invoice_id == null && i.status === 'issued');
+export function menuDocumentBlocks(input: MenuDocumentInput): Record<MenuDocumentAction, GenerateBlock | null> {
   const amount = parseFloat(input.amount ?? '');
-  const noAmount = !(amount > 0);
-  const invoiceBlock = (type: 'simplified' | 'full'): GenerateBlock | null => {
-    if (hasInvoice(type)) return 'gen_blocked_exists';
-    if (noAmount) return 'gen_blocked_no_amount';
-    if (!input.canWrite) return 'gen_blocked_read_only';
-    return null;
-  };
   let receipt: GenerateBlock | null = null;
-  if (input.receiptNumber) receipt = 'gen_blocked_exists';
-  else if (!input.canIssueReceipt) receipt = 'gen_blocked_not_paid';
-  else if (!input.canWrite) receipt = 'gen_blocked_read_only';
-  return { receipt, simplified: invoiceBlock('simplified'), full: invoiceBlock('full') };
+  if (!input.canIssueReceipt) receipt = 'gen_blocked_not_paid';
+  else if (!input.receiptNumber && !input.canWrite) receipt = 'gen_blocked_read_only';
+  let full: GenerateBlock | null = null;
+  if (input.hasFullInvoice) full = 'gen_blocked_exists';
+  else if (!(amount > 0)) full = 'gen_blocked_no_amount';
+  else if (!input.canWrite) full = 'gen_blocked_read_only';
+  return { receipt, full };
 }
 
 export interface FullInvoiceForm {

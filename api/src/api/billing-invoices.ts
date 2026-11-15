@@ -8,11 +8,12 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireModuleAccess, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
-import { deriveBillingEventStatus } from '../domain/billingEventStatus';
+import { deriveBillingEventStatus, RECEIPTABLE_EVENT_TYPES } from '../domain/billingEventStatus';
 import {
   buildInvoiceKey, invoiceKeyColumn, INVOICE_TYPES, type InvoiceType, type InvoicePaymentState,
 } from '../domain/billingDocumentKeys';
 import {
+  AUTO_INVOICE_BATCH_SIZE, autoInvoiceEventTypes, autoInvoiceFromDate, shouldAutoIssueSimplified,
   formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
@@ -25,13 +26,16 @@ import {
   isPrivateStorageConfigured, putPrivateDocument, getPrivateDocument,
 } from '../infra/private-storage';
 
+const AUTO_INVOICE_TYPES = autoInvoiceEventTypes(RECEIPTABLE_EVENT_TYPES);
+
 interface EventCtx {
   id: number; gym_id: string; amount: number; paid: boolean; memberName: string | null; locale: string | null;
+  eventType: string; cancelled: boolean;
 }
 
 async function loadEvent(gymId: string, eventId: number): Promise<EventCtx | null> {
   const { rows } = await db.query<any>(
-    `SELECT be.id, be.gym_id, be.amount, be.event_type, m.name AS member_name, m.preferred_locale,
+    `SELECT be.id, be.gym_id, be.amount, be.event_type, be.cancelled_at, m.name AS member_name, m.preferred_locale,
             (SELECT pr.status FROM payment_requests pr WHERE pr.billing_event_id = be.id
               ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be LEFT JOIN members m ON m.id = be.member_id
@@ -44,6 +48,7 @@ async function loadEvent(gymId: string, eventId: number): Promise<EventCtx | nul
     id: r.id, gym_id: r.gym_id, amount: parseFloat(r.amount),
     paid: deriveBillingEventStatus(r.event_type, r.latest_tx_status) === 'paid',
     memberName: r.member_name, locale: r.preferred_locale,
+    eventType: r.event_type, cancelled: r.cancelled_at != null,
   };
 }
 
@@ -111,7 +116,72 @@ async function issueInvoice(
 }
 
 /**
- * When an event becomes paid, every issued invoice of it that has no paid
+ * #2648 stage 6 — issues the event's simplified invoice when the system owes
+ * one (`shouldAutoIssueSimplified()`), with the representation matching the
+ * event's payment state. Idempotent: the event row is locked and an existing
+ * invoice of either type means nothing is issued. Answers whether one was
+ * issued. Needs the private bucket, as the manual issue route does.
+ */
+export async function issueAutomaticSimplifiedInvoice(gymId: string, eventId: number): Promise<boolean> {
+  if (!isPrivateStorageConfigured()) return false;
+  const ev = await loadEvent(gymId, eventId);
+  if (!ev) return false;
+  const invoiceId = await db.transaction(async (tx) => {
+    await tx.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ? FOR UPDATE', [eventId, gymId]);
+    const { rows } = await tx.query<any>(
+      `SELECT id FROM invoices WHERE gym_id = ? AND billing_event_id = ?
+          AND related_invoice_id IS NULL AND status = 'issued' LIMIT 1`, [gymId, eventId]);
+    if (!shouldAutoIssueSimplified({
+      eventType: ev.eventType, amount: ev.amount, cancelled: ev.cancelled,
+      hasInvoice: rows.length > 0, invoiceableTypes: AUTO_INVOICE_TYPES,
+    })) return null;
+    return issueInvoice(tx, gymId, ev, 'simplified', null, 'System');
+  });
+  if (invoiceId == null) return false;
+  const { rows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [invoiceId, gymId]);
+  await renderRepresentation(rows[0], ev, representationToCreate(ev.paid));
+  return true;
+}
+
+/**
+ * #2648 stage 6 — the nightly pass: every Billing Event generated from a
+ * schedule whose billing date has come (within `AUTO_INVOICE_CATCH_UP_DAYS`)
+ * and that holds no invoice gets its simplified invoice, paid or not. One
+ * event's failure (e.g. a VERI*FACTU refusal) is logged and skipped; it never
+ * fails the run.
+ */
+export async function issueDueSimplifiedInvoices(opts: {
+  today: string; log: { warn: (o: object, m: string) => void };
+}): Promise<{ issued: number; failed: number }> {
+  if (!isPrivateStorageConfigured()) return { issued: 0, failed: 0 };
+  const marks = AUTO_INVOICE_TYPES.map(() => '?').join(', ');
+  const { rows } = await db.query<{ id: number; gym_id: string }>(
+    `SELECT be.id, be.gym_id FROM billing_events be
+      WHERE be.schedule_id IS NOT NULL
+        AND be.billing_date <= ? AND be.billing_date >= ?
+        AND be.cancelled_at IS NULL AND be.amount > 0
+        AND be.event_type IN (${marks})
+        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.billing_event_id = be.id
+                          AND i.related_invoice_id IS NULL AND i.status = 'issued')
+      ORDER BY be.billing_date ASC, be.id ASC
+      LIMIT ${AUTO_INVOICE_BATCH_SIZE}`,
+    [opts.today, autoInvoiceFromDate(opts.today), ...AUTO_INVOICE_TYPES],
+  );
+  let issued = 0; let failed = 0;
+  for (const r of rows) {
+    try {
+      if (await issueAutomaticSimplifiedInvoice(r.gym_id, r.id)) issued++;
+    } catch (err) {
+      failed++;
+      opts.log.warn({ billingEventId: r.id, err: String((err as any)?.message ?? err) }, 'billing/run: automatic invoice failed');
+    }
+  }
+  return { issued, failed };
+}
+
+/**
+ * When an event becomes paid, its simplified invoice is issued if it has none
+ * (#2648 stage 6), and every issued invoice of it that has no paid
  * representation yet gets one (same number, same data). Idempotent; failures
  * are the caller's to log — the payment is already recorded.
  */
@@ -119,6 +189,7 @@ export async function generatePaidRepresentations(gymId: string, eventId: number
   if (!isPrivateStorageConfigured()) return 0;
   const ev = await loadEvent(gymId, eventId);
   if (!ev || !ev.paid) return 0;
+  await issueAutomaticSimplifiedInvoice(gymId, eventId);
   const { rows } = await db.query<any>(
     `SELECT * FROM invoices WHERE gym_id = ? AND billing_event_id = ? AND status = 'issued' AND related_invoice_id IS NULL`,
     [gymId, eventId]);
