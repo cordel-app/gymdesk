@@ -52,9 +52,8 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/billing-simulation.ts': 1,
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
-  'api/me-billing-forecast.ts': 1,
   'api/me-product-set-lines.ts': 1,
-  'api/me.ts': 6,
+  'api/me.ts': 4,
   'api/member-membership-configuration.ts': 2,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
@@ -167,6 +166,13 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       const source = readFileSync(join(API_SRC, file), 'utf8');
       expect(source).toContain('OWNED_ASSIGNMENTS_FROM_SQL');
       expect(source).toContain('OWNED_ASSIGNMENT_IS_CURRENT_SQL');
+    }
+  });
+
+  it('M6b-14: the member\'s own plan history and the Payments forecast read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/me-billing-forecast.ts']).toBeUndefined();
+    for (const file of ['api/me.ts', 'api/me-billing-forecast.ts']) {
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um');
     }
   });
 

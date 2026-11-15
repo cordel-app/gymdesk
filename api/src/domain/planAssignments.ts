@@ -76,3 +76,19 @@ export const OWNED_ASSIGNMENTS_FROM_SQL =
 
 /** Predicate over `OWNED_ASSIGNMENTS_FROM_SQL`: `pa` is the current snapshot of its assignment. */
 export const OWNED_ASSIGNMENT_IS_CURRENT_SQL = isCurrentAssignmentSnapshotSql('pa');
+
+/**
+ * #2125 M6b-14 — one Member's owned assignments as a derived table shaped like the
+ * `user_memberships` rows it replaces (`id` is the legacy id the routes still name, `created_at`
+ * the assignment's, from its anchor), for the member's own plan reads: `GET /me/membership`'s
+ * current plan, other live plans, Drafts and Past list, and the Payments forecast, which must pick
+ * the same assignment through `MEMBER_CURRENT_ASSIGNMENT_ORDER`. Each assignment's current
+ * snapshot; a snapshot that names no legacy row is left out, as it was when these read the table.
+ * Binds two `?`: the gym id, then the member id. Use it as `FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um`.
+ */
+export const OWNED_ASSIGNMENT_ROWS_SQL = `(
+  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+         pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at
+    FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+   WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.source_user_membership_id IS NOT NULL
+     AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;

@@ -37,6 +37,7 @@ import { db } from '../infra/db';
 import type { AssignmentBillingEventSimulationResult } from '../domain/assignmentBillingEventSimulation';
 import { emptyBillingEventSimulation } from '../domain/billingEventSimulation';
 import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
+import { OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 
 /**
  * Which of a Member's `user_memberships` rows is *the* one their own pages are
@@ -53,6 +54,9 @@ import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
  * assignment at all falls through to their most recent historical one, which is
  * what lets My Membership keep showing a cancelled plan rather than an empty
  * page. Ties go to the latest `starts_at`.
+ *
+ * #2125 M6b-14: both callers run it over `OWNED_ASSIGNMENT_ROWS_SQL` (the member's assignments
+ * read from `plan_snapshots`, aliased `um`), so they still order the same rows.
  */
 export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
   ORDER BY
@@ -138,8 +142,8 @@ export async function memberBillingEventForecast(
 ): Promise<AssignmentBillingEventSimulationResult> {
   const { rows } = await db.query<{ id: number; status: string }>(
     `SELECT um.id, um.status
-       FROM user_memberships um
-      WHERE um.gym_id = ? AND um.member_id = ?
+       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
+      WHERE TRUE
       ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
       ${MEMBER_CURRENT_ASSIGNMENT_ORDER}`,
     [gymId, memberId],

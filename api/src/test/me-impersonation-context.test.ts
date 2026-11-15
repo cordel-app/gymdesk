@@ -9,6 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   request,
+  snapshotTestAssignment,
 } from './helpers';
 
 const mockGetUser = vi.hoisted(() =>
@@ -97,10 +98,12 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
       [gymId, centerId, memberId, sessionId],
     );
 
-    await db.query(
+    const { insertId: umId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', CURDATE())`,
       [gymId, memberId],
     );
+    // #2125 M6b-14: GET /me/membership reads the assignment from its plan snapshot.
+    await snapshotTestAssignment(umId);
   });
 
   beforeEach(() => {
