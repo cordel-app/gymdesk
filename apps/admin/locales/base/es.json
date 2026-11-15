@@ -867,7 +867,13 @@
     "booking_status_waitlisted": "En lista de espera",
     "booking_status_cancelled": "Cancelado",
     "booking_status_unknown": "—",
-    "booking_event_cancelled": "Evento cancelado"
+    "booking_event_cancelled": "Evento cancelado",
+    "draft_line_save": "Guardar cambios",
+    "draft_line_quantity": "Cantidad",
+    "draft_line_delete": "Eliminar",
+    "draft_line_delete_confirm": "¿Eliminar {product} del borrador? Se quita de este Product Set; no se ha cobrado nada por él.",
+    "draft_line_delete_error": "No se ha podido eliminar el producto del borrador.",
+    "add_product_error_promotion_requires_products": "Esta promoción requiere otros productos. Añádelos primero y después aplica la promoción."
   },
   "member_payments": {
     "title": "Pagos del miembro",
