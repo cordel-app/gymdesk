@@ -5272,7 +5272,8 @@
     "col_direct_discount_percent": "Descompte directe (%)",
     "mandatory_item_tag": "Obligatori",
     "remove_optional_line": "Elimina {product}",
-    "direct_discount_invalid": "El descompte directe (%) ha de ser un número entre 0 i 100."
+    "direct_discount_invalid": "El descompte directe (%) ha de ser un número entre 0 i 100.",
+    "fee_member_family": "Família"
   },
   "taxes": {
     "title": "Impostos",

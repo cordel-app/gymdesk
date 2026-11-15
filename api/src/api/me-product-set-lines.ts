@@ -6,6 +6,7 @@ import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from 
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
+import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } from '../domain/membershipFeeScope';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -102,6 +103,12 @@ export interface MemberProductSetPlan {
   starts_at: string | null;
   ends_at: string | null;
   membership_fee: number | null;
+  /**
+   * #2834 stage 2 — the snapshot's Membership Fee scope and how many fees it owes per cycle
+   * (`membershipFeeUnits()`, the engine's own count). `membership_fee` stays the price of one.
+   */
+  membership_fee_scope: MembershipFeeScope;
+  membership_fee_units: number;
   discount_reason: string | null;
   beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
   benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean;
@@ -198,7 +205,7 @@ export async function loadMemberProductSetView(
             COALESCE(s.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit,
             ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS inherited, j.entitlement_only,
             s.starts_at AS snapshot_starts_at, s.ends_at AS snapshot_ends_at,
-            s.membership_fee_price, s.discount_reason,
+            s.membership_fee_price, s.membership_fee_scope, s.discount_reason,
             um.id AS user_membership_id, um.starts_at AS um_starts_at, um.ends_at AS um_ends_at,
             CASE WHEN um.id IS NULL THEN NULL ELSE ${LIFECYCLE_STATUS_SQL} END AS lifecycle_status
        FROM product_set_plan_snapshots j
@@ -274,6 +281,10 @@ export async function loadMemberProductSetView(
         starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
         ends_at: dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
         membership_fee: fee == null ? null : round2(fee),
+        membership_fee_scope: toMembershipFeeScope(r.membership_fee_scope),
+        membership_fee_units: membershipFeeUnits(
+          toMembershipFeeScope(r.membership_fee_scope), (beneficiaries.get(Number(r.plan_snapshot_id)) ?? []).length,
+        ),
         discount_reason: r.discount_reason ?? null,
         beneficiaries: beneficiaries.get(Number(r.plan_snapshot_id)) ?? [],
         benefits: benefits.get(Number(r.plan_snapshot_id)) ?? [],

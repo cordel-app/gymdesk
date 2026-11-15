@@ -137,6 +137,7 @@ import {
   reviewFrequencyKey,
   setCommitAction,
   setCommitErrorKey,
+  planFeeScopeNote,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -839,6 +840,7 @@ export default function MembershipPage() {
     const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
+    const feeScopeNote = planFeeScopeNote(plan);
     const names = (mandatory: boolean) => [...new Set(benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name))].join(', ') || null;
     const pendingAmount = payable && pendingMembership?.membership_fee != null
       ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
@@ -847,9 +849,13 @@ export default function MembershipPage() {
       name: plan.plan_name ?? '—',
       description: [plan.plan_description, forLine, plan.entitlement_only ? t('membership.plan_entitlement_only') : null].filter(Boolean).join(' · ') || null,
       price: plan.membership_fee != null ? formatPaymentAmount(plan.membership_fee, 'EUR', gymFmt) : null,
-      frequency: frequencyKey
-        ? t(frequencyKey as any)
-        : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
+      frequency: [
+        frequencyKey
+          ? t(frequencyKey as any)
+          : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
+        // #2834 stage 2 — per member (× how many) or per family; the price is one fee.
+        feeScopeNote ? t(`membership.${feeScopeNote.key}` as any, feeScopeNote.values) : null,
+      ].filter(Boolean).join(' · ') || null,
       imageUrl: plan.plan_image_thumbnail_url ?? null,
       imageFullUrl: plan.plan_image_url ?? null,
       includedLabel: t('membership.plan_included'),

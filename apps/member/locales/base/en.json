@@ -587,7 +587,9 @@
     "past_plan_type_service": "Service",
     "past_plan_type_sessions": "Sessions",
     "past_plan_type_merchandise": "Merchandise",
-    "past_plan_type_other": "Other"
+    "past_plan_type_other": "Other",
+    "plan_fee_per_member": "{count, plural, one {Per member} other {Per member × #}}",
+    "plan_fee_per_family": "Per family"
   },
   "payments": {
     "title": "Payments",

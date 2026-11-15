@@ -499,6 +499,9 @@ export interface MemberSetPlan {
   starts_at?: string | null;
   ends_at?: string | null;
   membership_fee?: number | null;
+  /** #2834 stage 2 — the snapshot's scope and how many fees it owes per cycle (the engine's count). */
+  membership_fee_scope?: 'per_member' | 'per_family';
+  membership_fee_units?: number;
   discount_reason?: string | null;
   beneficiaries?: { member_id: number; name: string | null; is_owner: boolean }[];
   benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
@@ -772,4 +775,21 @@ export function setCommitErrorKey(code: string | null | undefined): string {
     case 'amount_unavailable': return 'membership.summary_error_amount';
     default: return 'membership.summary_error_generic';
   }
+}
+
+/**
+ * #2834 stage 2 — the note that says how a held plan's Membership Fee is charged, beside its
+ * price: once per member (with how many fees that is) or once for the family. `price` stays
+ * the price of one fee, the server's; the count is the server's `membership_fee_units`, the
+ * billing engine's own. Answers a locale key (`membership` namespace) and its values; `null`
+ * for a response written before the field.
+ */
+export function planFeeScopeNote(
+  plan: Pick<MemberSetPlan, 'membership_fee_scope' | 'membership_fee_units'>,
+): { key: 'plan_fee_per_member' | 'plan_fee_per_family'; values: { count: number } } | null {
+  if (plan.membership_fee_scope === 'per_member') {
+    return { key: 'plan_fee_per_member', values: { count: Math.max(1, Number(plan.membership_fee_units ?? 1)) } };
+  }
+  if (plan.membership_fee_scope === 'per_family') return { key: 'plan_fee_per_family', values: { count: 1 } };
+  return null;
 }
