@@ -179,7 +179,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     // Active member would otherwise overwrite their status on the Members list
     // and drop them out of the Nutrition Dashboard's active count.
     expect(latestEnrollmentStatusSql('m').replace(/\s+/g, ' '))
-      .toContain("um.status NOT IN ('draft', 'pending_payment')");
+      .toContain("pa.status NOT IN ('draft', 'pending_payment')");
   });
 
   it('is excluded from the two member-facing reads, by the constant beside the ordering', () => {

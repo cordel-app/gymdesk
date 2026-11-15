@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 import { legacyProductInsert } from './legacyProductFixture';
 
@@ -235,9 +235,10 @@ describe('the price: stacked Promotions then the Admin’s direct discount (deci
     expect(fresh.body.items.find((i: any) => i.id === p).promotions).toHaveLength(1);
     // …a member with a live plan is not.
     const planId = await plan(30);
-    await db.query(
+    const { insertId: liveId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', ?)`, [gymId, m, planId, day(-10)]);
+    await snapshotTestAssignment(Number(liveId));
     const later = await auth(request.get(`${base(m)}/catalogue`));
     const hidden = later.body.items.find((i: any) => i.id === p);
     expect(hidden.promotions).toHaveLength(0);

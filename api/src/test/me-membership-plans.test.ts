@@ -36,7 +36,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  TEST_AUTH_HEADER, proratedToNextFirst, activateTestAssignment, createTestDraftAssignment } from './helpers';
+  TEST_AUTH_HEADER, proratedToNextFirst, activateTestAssignment, createTestDraftAssignment, snapshotTestAssignment } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -165,10 +165,11 @@ describe('GET /me/membership-plans', () => {
   it('hides a new-members-only Promotion from a member who holds a live plan', async () => {
     const member = await createMember();
     const livePlan = await createPlan({ price: null });
-    await db.query(
+    const { insertId: liveId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', CURDATE())`,
       [gymId, member.id, livePlan],
     );
+    await snapshotTestAssignment(Number(liveId));
     const planId = await createPlan({ price: 40 });
     const everyone = await createPromotion(planId, { newMembersOnly: false });
     await createPromotion(planId, { newMembersOnly: true });

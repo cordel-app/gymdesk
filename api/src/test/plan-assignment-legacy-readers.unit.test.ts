@@ -59,7 +59,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
   'api/membership-promotions.ts': 4,
-  'api/new-member-eligibility.ts': 2,
   'api/one-active-plan.ts': 2,
   'api/payment-requests.ts': 1,
   'api/payments.ts': 2,
@@ -76,7 +75,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/user-membership-services.ts': 2,
   'api/user-memberships.ts': 29,
   'domain/billingEventPayments.ts': 3,
-  'domain/memberEnrollment.ts': 1,
   'domain/memberProfessionalServices.ts': 1,
 };
 
@@ -161,6 +159,15 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(() => statSync(join(API_SRC, 'scripts/report-multi-active-memberships.ts'))).toThrow();
     const pkg = readFileSync(join(API_SRC, '..', 'package.json'), 'utf8');
     expect(pkg).not.toContain('memberships:multi-active');
+  });
+
+  it('M6b-13: the New Member rule and the enrollment status read plan_snapshots', () => {
+    for (const file of ['api/new-member-eligibility.ts', 'domain/memberEnrollment.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      const source = readFileSync(join(API_SRC, file), 'utf8');
+      expect(source).toContain('OWNED_ASSIGNMENTS_FROM_SQL');
+      expect(source).toContain('OWNED_ASSIGNMENT_IS_CURRENT_SQL');
+    }
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {

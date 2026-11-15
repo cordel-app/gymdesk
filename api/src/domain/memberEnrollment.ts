@@ -1,3 +1,5 @@
+import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL } from './planAssignments';
+
 /**
  * #809: "the member's enrollment status" — the status of their most recent
  * `user_memberships` row — has two SQL readers now, so it is spelled once here.
@@ -19,11 +21,16 @@
  * the Members list and dropped them out of the Nutrition Dashboard's active
  * count. A member whose only assignment is a Draft reads as having none, which
  * is exactly what they have.
+ *
+ * #2125 M6b-13: read from `plan_snapshots` — each assignment's current snapshot
+ * (`domain/planAssignments.ts`), ordered by when the assignment was created (its
+ * anchor snapshot) and then by its id, as the legacy row was by `created_at, id`.
  */
 export function latestEnrollmentStatusSql(alias: string): string {
-  return `(SELECT um.status
-             FROM user_memberships um
-            WHERE um.member_id = ${alias}.id AND um.gym_id = ${alias}.gym_id
-              AND um.status NOT IN ('draft', 'pending_payment')
-            ORDER BY um.created_at DESC, um.id DESC LIMIT 1)`;
+  return `(SELECT pa.status
+             FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+            WHERE pa.member_id = ${alias}.id AND pa.gym_id = ${alias}.gym_id
+              AND pa.status NOT IN ('draft', 'pending_payment')
+              AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}
+            ORDER BY anc.created_at DESC, pa.assignment_id DESC LIMIT 1)`;
 }
