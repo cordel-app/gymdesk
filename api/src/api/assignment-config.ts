@@ -61,14 +61,35 @@ export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
      WHERE s9.source_user_membership_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
      ORDER BY p9.id DESC, s9.id DESC LIMIT 1)`;
 
-/** Joins the assignment's plan snapshot as `cfg`. */
+/**
+ * #2125 M6b-12 — SQL for the id of the plan snapshot an assignment's **configuration and pricing**
+ * are read from: its current snapshot (`currentAssignmentSnapshotSql()`, the owner's Active set's
+ * first, else the latest set's), never a copy an uncommitted Draft or Pending Payment set owns.
+ * While a Draft links a copy of a running plan, the fee, Billing & Duration and cadence the member,
+ * the Admin and the nightly run see stay the Active set's (Oscar, 2026-11-15). A Draft is still read
+ * where it is the subject: its editor, forecast and review address its own set, and `⋮ → Edit` on a
+ * running plan opens a Draft assignment of its own, whose current snapshot is the Draft's.
+ *
+ * One legacy id is exactly one `assignment_id` (M6b-1). The fallback to `assignmentPlanSnapshotId()`
+ * covers a snapshot not yet stamped inside the transaction that wrote it; `plan-assignments:validate`
+ * reports one left unstamped. Writers keep owning the snapshot through `assignmentPlanSnapshotId()`.
+ */
+export const assignmentConfigSnapshotId = (idExpr: string, gymExpr: string) =>
+  `COALESCE(${currentAssignmentSnapshotSql(
+    `(SELECT cla.assignment_id FROM plan_snapshots cla
+       WHERE cla.source_user_membership_id = ${idExpr} AND cla.gym_id = ${gymExpr}
+         AND cla.assignment_id IS NOT NULL ORDER BY cla.id LIMIT 1)`, gymExpr)},
+    ${assignmentPlanSnapshotId(idExpr, gymExpr)})`;
+
+/** Joins the assignment's plan snapshot (its current one, M6b-12) as `cfg`. */
 export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
-  LEFT JOIN plan_snapshots cfg ON cfg.id = ${assignmentPlanSnapshotId(`${um}.id`, `${um}.gym_id`)}`;
+  LEFT JOIN plan_snapshots cfg ON cfg.id = ${assignmentConfigSnapshotId(`${um}.id`, `${um}.gym_id`)}`;
 
 /** The version's value when the assignment has one, its own cached value otherwise. */
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
 
 import { db } from '../infra/db';
+import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
 
 const OVERLAID: AssignmentConfigColumn[] = [
   'membership_fee_price', 'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at',

@@ -1,6 +1,6 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentConfigSnapshotId } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
@@ -220,10 +220,11 @@ function selectSnapshotSection(table: string): string {
                  gc.image_thumbnail_url AS product_image_thumbnail_url,
                  gc.description AS product_description,
                  gc.sharing_type AS product_sharing_type
-          FROM ${table} b
+          FROM (SELECT ? AS um_id, ? AS gym_id) prm
+          JOIN ${table} b ON b.gym_id = prm.gym_id
+           AND b.plan_snapshot_id = ${assignmentConfigSnapshotId('prm.um_id', 'prm.gym_id')}
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
-          WHERE b.plan_snapshot_id = ${assignmentPlanSnapshotId('?')} AND b.gym_id = ?
           ORDER BY b.item_name ASC, b.id ASC`;
 }
 
@@ -425,7 +426,7 @@ export async function loadPlanBenefitsForSimulation(
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM user_memberships um
       JOIN ${PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]} b
-        ON b.plan_snapshot_id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AND b.gym_id = um.gym_id
+        ON b.plan_snapshot_id = ${assignmentConfigSnapshotId('um.id', 'um.gym_id')} AND b.gym_id = um.gym_id
       WHERE um.gym_id = ? AND um.id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
   );
