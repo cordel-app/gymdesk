@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { PromotionPicker } from '@/components/PromotionPicker';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
   hasPromotionBlock, parseDiscountInput, purchaseErrorKey, showsAssigneeSelector,
@@ -35,6 +36,9 @@ const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixe
 // #2810: top-aligned, since the Product field grows with the Promotions nested under it.
 const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' };
 const valueCellStyle: React.CSSProperties = { padding: '8px 0', fontSize: 14, whiteSpace: 'nowrap' };
+
+/** #2854: the selected Product's circular thumbnail, left of the Product selector. */
+export const PRODUCT_SELECT_THUMBNAIL_SIZE = 40;
 
 type Outcome =
   | { kind: 'one_time_draft' }
@@ -270,12 +274,15 @@ function productPromotionsCell(f: AddProductForm): React.ReactNode {
             name: promo.promotion_name,
             stackable: promo.stackable,
             description: d ? t(d.key as any, d.values as any) : null,
+            // #2854: a Promotion offered here is about this Product, so it shows this Product's thumbnail.
+            imageUrl: product.image_url ?? null,
           };
         })}
         selectedIds={f.promotionIds}
         onToggle={f.togglePromotion}
         disabled={f.busy}
         emptyText={t('add_product_no_promotions')}
+        showThumbnails
       />
       {product.promotions.length === 0 && (product.unavailable_promotions ?? []).length > 0 && (
         <p style={cardHintStyle} data-unavailable-promotions>
@@ -294,10 +301,23 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
   return {
     product: (
       <div style={{ minWidth: 0 }} data-product-cell>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      {/* #2854: the selected Product's thumbnail (initial placeholder with none);
+          keyed on the Product so a new selection never shows the previous image. */}
+      {product && (
+        <span data-product-thumbnail>
+          <MemberAvatar
+            key={product.id}
+            name={product.name}
+            imageUrl={product.image_url ?? null}
+            size={PRODUCT_SELECT_THUMBNAIL_SIZE}
+          />
+        </span>
+      )}
       <select
         id="add-product-select"
         aria-label={t('add_product_select')}
-        style={{ ...formControlStyle, maxWidth: '100%' }}
+        style={{ ...formControlStyle, maxWidth: '100%', minWidth: 0, flex: '1 1 auto' }}
         value={f.productId ?? ''}
         disabled={!!f.outcome || f.catalogue == null || f.edit != null}
         onChange={(e) => f.pickProduct(e.target.value === '' ? null : Number(e.target.value))}
@@ -309,6 +329,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
           </option>
         ))}
       </select>
+      </div>
       {productPromotionsCell(f)}
       </div>
     ),
