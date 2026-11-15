@@ -11,7 +11,7 @@ import {
   clearPromotionImage, migratePromotionImageOnRename, PROMOTION_IMAGE_COLUMNS, storePromotionImage,
 } from './promotion-image-storage';
 import { insertAndFetch } from '../infra/db-helpers';
-import { isNewMemberForNewAssignment } from './new-member-eligibility';
+import { isNewMember, isNewMemberForNewAssignment } from './new-member-eligibility';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
 import { PROMOTION_LIFECYCLE_STATUSES } from '../domain/promotionLifecycle';
@@ -67,6 +67,18 @@ promotionsRouter.get('/', async (req, res, next) => {
     ? null : Number(req.query.for_member_id);
   if (forMemberId !== null && (!Number.isInteger(forMemberId) || forMemberId <= 0)) {
     return res.status(400).json({ error: 'for_member_id must be a member id' });
+  }
+  // #2853: the assignment being configured, when it already exists (a Draft's
+  // available-Promotions picker). Only New Members is then judged excluding that
+  // assignment — `isNewMember()`, exactly what the apply path runs on it — rather
+  // than as a brand-new one.
+  const forAssignmentId = req.query.for_user_membership_id == null || req.query.for_user_membership_id === ''
+    ? null : Number(req.query.for_user_membership_id);
+  if (forAssignmentId !== null && (!Number.isInteger(forAssignmentId) || forAssignmentId <= 0)) {
+    return res.status(400).json({ error: 'for_user_membership_id must be a membership id' });
+  }
+  if (forAssignmentId !== null && forMemberId === null) {
+    return res.status(400).json({ error: 'for_user_membership_id requires for_member_id' });
   }
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS
     ? req.query.sort : 'starts_at';
@@ -128,7 +140,9 @@ promotionsRouter.get('/', async (req, res, next) => {
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
     // Evaluated once, and only when some row asks for it.
     const isNew = rows.some((r: any) => !!r.only_applicable_for_new_members)
-      ? await isNewMemberForNewAssignment(db, gymId, forMemberId)
+      ? (forAssignmentId !== null
+        ? await isNewMember(db, gymId, forMemberId, forAssignmentId)
+        : await isNewMemberForNewAssignment(db, gymId, forMemberId))
       : true;
     res.json(rows.map((r: any) => {
       const eligible = !r.only_applicable_for_new_members || isNew;

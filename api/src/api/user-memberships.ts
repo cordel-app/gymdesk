@@ -24,6 +24,7 @@ import { resolveRequestActor } from '../domain/auditActor';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
+  assignmentPromotionEditability,
   fetchLiveBenefits,
   membershipFeeBenefitsFromSnapshot,
   validatePromotionSelection,
@@ -596,6 +597,9 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const { rows: versionRows } = await db.query<{ id: number }>(
     `SELECT ${assignmentVersionId('?')} AS id`, [um.id],
   );
+  // #2853 — whether the Draft's Plan Promotions may be selected now (the apply
+  // path's own rule), which opens the card's available-Promotions picker.
+  const { planTakesPromotions } = await assignmentPromotionEditability(gymId, um.id);
 
   res.json({
     ...um,
@@ -609,6 +613,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     members,
     billing_policy: billingPolicy,
     promotions,
+    promotions_selectable: planTakesPromotions,
     additional_services: additionalServices,
     billing_events: billingEvents,
     assignment_relationship: relationship,

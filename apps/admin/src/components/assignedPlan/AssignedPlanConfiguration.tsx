@@ -37,7 +37,7 @@ import { BillingDurationExplanations } from '@/components/BillingDurationExplana
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import {
-  CircularThumbnail, PlanPromotionRow, ProductDetailModal, PromotionDetailModal,
+  CircularThumbnail, DraftPromotionPicker, PlanPromotionRow, ProductDetailModal, PromotionDetailModal,
   useAppliedPromotionToggle,
 } from './AssignedPlanPromotions';
 import { thumbnailSrc } from './promotionPlacement';
@@ -158,6 +158,14 @@ interface Props {
   cardEditing: boolean;
   canWrite: boolean;
   readOnlyTitle?: string;
+  /**
+   * #2853 — the Draft's plan takes Promotions now (`promotions_selectable`, the
+   * apply path's rule), with the plan and the owner the catalogue is read for:
+   * in Edit mode the Plan Promotions section then offers every available one.
+   */
+  promotionsSelectable?: boolean;
+  membershipPlanId?: number | null;
+  ownerMemberId?: number | null;
   /** Re-reads the expanded card (and with it the Billing Events section). */
   onChanged: () => void;
 }
@@ -265,7 +273,8 @@ function toAllocationRows(
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], cardEditing, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], cardEditing, canWrite, readOnlyTitle,
+  promotionsSelectable = false, membershipPlanId = null, ownerMemberId = null, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
@@ -367,6 +376,9 @@ export function AssignedPlanConfiguration({
   // under every Product line it grants (#2478). One toggle per card.
   const promotionToggle = useAppliedPromotionToggle(assignedPlanId, onChanged);
   const toggleGate = { cardEditing, canWrite, readOnlyTitle };
+  // #2853: a Draft's Plan Promotions are chosen from the live catalogue, in Edit mode.
+  const draftPicker = cardEditing && planStatus === 'draft' && promotionsSelectable
+    && membershipPlanId != null && ownerMemberId != null;
   const [productDetail, setProductDetail] = useState<AssignedPlanSnapshotBenefit | null>(null);
   const [promotionDetail, setPromotionDetail] = useState<AppliedPromotion | null>(null);
 
@@ -808,10 +820,22 @@ export function AssignedPlanConfiguration({
           <PlanPromotionRow
             key={p.id}
             promotion={p}
-            checkbox={promotionToggle.checkbox(p, toggleGate)}
+            // #2853: on a Draft whose Promotions are chosen below, the picker
+            // holds the selection, so the row carries no second checkbox.
+            checkbox={draftPicker ? null : promotionToggle.checkbox(p, toggleGate)}
             onOpen={() => setPromotionDetail(p)}
           />
         ))}
+        {draftPicker && membershipPlanId != null && ownerMemberId != null && (
+          <DraftPromotionPicker
+            assignedPlanId={assignedPlanId}
+            membershipPlanId={membershipPlanId}
+            ownerMemberId={ownerMemberId}
+            applied={promotions}
+            canWrite={canWrite}
+            onChanged={onChanged}
+          />
+        )}
       </CardSection>
 
       {promotionToggle.dialogs}

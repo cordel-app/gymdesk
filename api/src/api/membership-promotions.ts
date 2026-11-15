@@ -1013,15 +1013,18 @@ function liveDraftPromotionStatus(row: any, now: Date): 'active' | 'inactive' | 
   return 'active';
 }
 
-export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
-  const { rows } = await db.query(
-    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
-    [umId, gymId],
-  );
-  const merged = await Promise.all(rows.map(withSnapshot));
-  // #1863 — the apply path refuses a plan that is not a Draft's own (an Active
-  // plan is applied to through a clone, which inherits it), so a spent
-  // application is offered for re-applying only where the apply would succeed.
+/**
+ * #1863 / #2853 — whether the assignment's version is a Draft, and whether a
+ * Plan Promotion may be applied to it now: the apply path
+ * (`applyPromotionToProductSet()`) refuses a version that is not a Draft and a
+ * plan the Draft inherited from the previous Active version. Asked by
+ * `fetchAppliedPromotions()` (a spent application's `can_reapply`) and by
+ * `GET /user-memberships/:id` (`promotions_selectable`, which opens the Draft's
+ * available-Promotions picker), so the card offers exactly what the route takes.
+ */
+export async function assignmentPromotionEditability(
+  gymId: string, umId: string | number,
+): Promise<{ draftVersion: boolean; planTakesPromotions: boolean }> {
   const { rows: versionRows } = await db.query<any>(
     `SELECT ps.status, ${planSnapshotInheritedSql('snap', 'ps.id')} AS is_inherited
        FROM product_sets ps
@@ -1030,10 +1033,19 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );
-  const planTakesPromotions = versionRows.length > 0
-    && versionRows[0].status === 'draft'
-    && Number(versionRows[0].is_inherited ?? 0) === 0;
   const draftVersion = versionRows.length > 0 && versionRows[0].status === 'draft';
+  const planTakesPromotions = draftVersion
+    && !versionRows.some((r: any) => Number(r.is_inherited ?? 0) === 1);
+  return { draftVersion, planTakesPromotions };
+}
+
+export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
+  const { rows } = await db.query(
+    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
+    [umId, gymId],
+  );
+  const merged = await Promise.all(rows.map(withSnapshot));
+  const { draftVersion, planTakesPromotions } = await assignmentPromotionEditability(gymId, umId);
   const grants = await loadAppliedPromotionGrants(
     gymId, merged.map((r: any) => ({ id: r.id, promotion_id: r.promotion_id })),
   );
