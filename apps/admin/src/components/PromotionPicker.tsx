@@ -16,6 +16,12 @@ export interface PickerPromotion {
   stackable: boolean;
   /** Already resolved text of the benefit, or null to show the name alone. */
   description: string | null;
+  /**
+   * #2809: already resolved reason the server gave for this Member not being
+   * eligible (e.g. Only New Members). An unavailable promotion is shown,
+   * disabled, with the reason — never hidden.
+   */
+  unavailableReason?: string | null;
 }
 
 export function PromotionPicker({
@@ -34,8 +40,11 @@ export function PromotionPicker({
       {promotions.map((p) => {
         const checked = selectedIds.includes(p.id);
         const block = promotionBlock(p, promotions, selectedIds);
-        const off = block !== null;
-        const reason = block ? t(`promo_block_${block}` as any) : undefined;
+        const ineligible = !checked && !!p.unavailableReason;
+        const off = block !== null || ineligible;
+        const reason = ineligible
+          ? p.unavailableReason ?? undefined
+          : block ? t(`promo_block_${block}` as any) : undefined;
         return (
           <label
             key={p.id}
