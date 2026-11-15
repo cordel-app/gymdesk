@@ -10,6 +10,7 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEventEditLock';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
+import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
 import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
@@ -36,7 +37,7 @@ import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } f
  */
 export async function loadEditLock(gymId: string, ownerMemberId: number, today: string): Promise<BlockingEvent[]> {
   const { rows } = await db.query<any>(
-    `SELECT be.id, be.billing_date, be.is_scheduled,
+    `SELECT be.id, be.billing_date, be.is_scheduled, be.event_type, be.cancelled_at,
             (SELECT pr.method FROM payment_requests pr WHERE pr.billing_event_id = be.id
               ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS method,
             (SELECT pr.provider_status FROM payment_requests pr WHERE pr.billing_event_id = be.id
@@ -56,11 +57,32 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
     id: Number(r.id),
     billingDate: r.billing_date instanceof Date ? r.billing_date.toISOString().slice(0, 10) : String(r.billing_date ?? '').slice(0, 10) || null,
     isScheduled: Number(r.is_scheduled) === 1,
+    eventType: String(r.event_type),
+    cancelled: r.cancelled_at != null,
     latestAttempt: Number(r.attempts) > 0
       ? { method: (r.method ?? 'provider') as AttemptMethod, providerStatus: normaliseProviderStatus(r.provider_status), status: String(r.attempt_status) }
       : null,
   }));
   return blockingEvents(events, today);
+}
+
+/**
+ * #2811 — the lock asked by a route that opens the member's Draft for editing
+ * (`POST /product-sets/draft`, its Members App twin, a recurring Product added by
+ * staff). A Draft that already exists is always editable: the lock guards opening a
+ * **new** one and committing one (Save & Pay, activation), never an edit of a Draft
+ * the member already holds. So the lock is empty while the owner holds a live plain
+ * Draft (the one `ensureRecurringDraft()` reuses: no linked assignment, not expired).
+ */
+export async function loadEditLockForDraftEdit(gymId: string, ownerMemberId: number, today: string): Promise<BlockingEvent[]> {
+  const { rows } = await db.query<any>(
+    `SELECT id FROM product_sets
+      WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' AND user_membership_id IS NULL
+        AND last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+      LIMIT 1`,
+    [gymId, ownerMemberId]);
+  if (rows.length > 0) return [];
+  return loadEditLock(gymId, ownerMemberId, today);
 }
 
 async function carriesInheritedNativePlans(gymId: string, productSetId: number, exec: Exec): Promise<boolean> {
