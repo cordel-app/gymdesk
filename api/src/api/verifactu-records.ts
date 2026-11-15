@@ -56,7 +56,7 @@ export async function recordVerifactuAlta(
 
   const { rows: invRows } = await tx.query<any>(
     `SELECT i.id, i.fiscal_number, i.invoice_type, i.issued_at, i.customer_tax_id, i.related_invoice_id,
-            i.billing_event_id, be.amount, o.invoice_type AS rectified_type
+            i.replaces_invoice_id, i.billing_event_id, be.amount, o.invoice_type AS rectified_type
        FROM invoices i
        JOIN billing_events be ON be.id = i.billing_event_id AND be.gym_id = i.gym_id
        LEFT JOIN invoices o ON o.id = i.related_invoice_id AND o.gym_id = i.gym_id
@@ -76,6 +76,7 @@ export async function recordVerifactuAlta(
       issuedAt: new Date(inv.issued_at), customerTaxId: inv.customer_tax_id,
     },
     rectifies,
+    replacesSimplified: inv.replaces_invoice_id != null,
     totals: rectifies ? negateTotals(totals) : totals,
     timeZone: gymRows[0].time_zone || 'Europe/Madrid',
     previous: prev,
@@ -135,6 +136,7 @@ const REFUSAL_MESSAGES: Record<AnulacionRefusal, string> = {
   verifactu_already_cancelled: 'This invoice\'s VeriFactu record is already cancelled',
   verifactu_alta_rejected: 'AEAT rejected this invoice\'s record, so there is nothing to cancel',
   verifactu_invoice_rectified: 'This invoice was rectified; its rectifying invoice is the correction',
+  verifactu_invoice_replaced: 'This simplified invoice was replaced by a complete invoice, whose record names it',
 };
 
 /**
@@ -150,7 +152,8 @@ export async function recordVerifactuAnulacion(
   await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
   const { rows: invRows } = await tx.query<any>(
     `SELECT i.id, i.fiscal_number,
-            EXISTS (SELECT 1 FROM invoices r WHERE r.gym_id = i.gym_id AND r.related_invoice_id = i.id) AS rectified
+            EXISTS (SELECT 1 FROM invoices r WHERE r.gym_id = i.gym_id AND r.related_invoice_id = i.id) AS rectified,
+            EXISTS (SELECT 1 FROM invoices f WHERE f.gym_id = i.gym_id AND f.replaces_invoice_id = i.id) AS replaced
        FROM invoices i WHERE i.id = ? AND i.gym_id = ? AND i.status = 'issued'`, [invoiceId, gymId]);
   if (!invRows[0]) refuse(404, 'invoice_not_found', 'Invoice not found');
 
@@ -164,6 +167,7 @@ export async function recordVerifactuAnulacion(
     alta: alta ? { submissionStatus: alta.submission_status } : null,
     hasAnulacion: recs.some((r: any) => r.record_type === 'anulacion'),
     isRectified: !!invRows[0].rectified,
+    isReplaced: !!invRows[0].replaced,
   });
   if (refusal) refuse(409, refusal, REFUSAL_MESSAGES[refusal]);
 

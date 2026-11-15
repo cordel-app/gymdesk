@@ -17,20 +17,25 @@ export const VERIFACTU_RECORD_TYPES = ['alta', 'anulacion'] as const;
 export type VerifactuRecordType = (typeof VERIFACTU_RECORD_TYPES)[number];
 
 /** AEAT's TipoFactura values this product can issue. */
-export type VerifactuInvoiceKind = 'F1' | 'F2' | 'R1' | 'R5';
+export type VerifactuInvoiceKind = 'F1' | 'F2' | 'F3' | 'R1' | 'R5';
 
 /**
  * Which TipoFactura an invoice is. A full invoice is F1 and a simplified one
  * F2; a rectifying invoice (an `invoices` row with `related_invoice_id`)
  * cancels its original in full — a resolution of the operation, art. 80.Dos
  * LIVA — so it is R1, or R5 when the invoice it rectifies is simplified.
+ * #2648 stage 7: a full invoice issued in place of a simplified one
+ * (`invoices.replaces_invoice_id`) is F3, "factura emitida en sustitución de
+ * facturas simplificadas facturadas y declaradas".
  */
 export function verifactuInvoiceKind(
   invoiceType: InvoiceType,
   rectifies: { invoiceType: InvoiceType } | null,
+  replacesSimplified = false,
 ): VerifactuInvoiceKind {
   if (rectifies) return rectifies.invoiceType === 'simplified' ? 'R5' : 'R1';
-  return invoiceType === 'simplified' ? 'F2' : 'F1';
+  if (invoiceType === 'simplified') return 'F2';
+  return replacesSimplified ? 'F3' : 'F1';
 }
 
 /**

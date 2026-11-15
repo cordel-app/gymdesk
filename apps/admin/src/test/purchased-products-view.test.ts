@@ -74,3 +74,14 @@ describe('assigned family member (#2609)', () => {
     expect(purchaseErrorKey('assignee_invalid')).toBe('assignee_invalid');
   });
 });
+
+describe('editableDraftLineId (#2856)', () => {
+  it('offers Edit/Delete only on a recurring row the open Draft carries', async () => {
+    const { editableDraftLineId } = await import('@/app/[locale]/members/purchasedProductsView');
+    expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12, pending_termination: false })).toBe(12);
+    // A committed line with no open Draft, a line the Draft removed, a one-time purchase: nothing.
+    expect(editableDraftLineId({ source: 'recurring', draft_line_id: null, pending_termination: false })).toBeNull();
+    expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12, pending_termination: true })).toBeNull();
+    expect(editableDraftLineId({ source: 'one_off', draft_line_id: 12 })).toBeNull();
+  });
+});

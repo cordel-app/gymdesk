@@ -37,6 +37,8 @@ export interface AltaRecordInput {
   };
   /** The invoice this one rectifies, when it is a rectifying invoice. */
   rectifies: { invoiceType: InvoiceType } | null;
+  /** #2648 stage 7: a full invoice issued in place of a simplified one (F3). */
+  replacesSimplified?: boolean;
   /** The figures the PDF prints (already negated for a rectifying invoice). */
   totals: { tax: number; total: number };
   /** The gym's time zone: the issue date and the generation timestamp are local. */
@@ -69,7 +71,7 @@ export function buildAltaRecord(i: AltaRecordInput): AltaRecord {
     issuerNif: i.issuerNif,
     invoiceNumber: i.invoice.fiscalNumber,
     issueDate: verifactuDate(dateInZone(i.invoice.issuedAt, i.timeZone)),
-    invoiceKind: verifactuInvoiceKind(i.invoice.invoiceType, i.rectifies),
+    invoiceKind: verifactuInvoiceKind(i.invoice.invoiceType, i.rectifies, i.replacesSimplified ?? false),
     taxTotal: verifactuAmount(i.totals.tax),
     total: verifactuAmount(i.totals.total),
     previousHash: i.previous?.hash ?? null,
@@ -146,7 +148,7 @@ export function buildAnulacionRecord(i: AnulacionRecordInput): AnulacionRecord {
 /** Why an Anulación may not be generated for an invoice; null when it may. */
 export type AnulacionRefusal =
   | 'verifactu_disabled' | 'verifactu_no_alta' | 'verifactu_already_cancelled'
-  | 'verifactu_alta_rejected' | 'verifactu_invoice_rectified';
+  | 'verifactu_alta_rejected' | 'verifactu_invoice_rectified' | 'verifactu_invoice_replaced';
 
 /**
  * The one rule deciding whether an invoice's VERI*FACTU record may be
@@ -158,19 +160,25 @@ export type AnulacionRefusal =
  *  - an Alta AEAT rejected was never registered, so there is nothing to cancel;
  *  - an invoice already rectified is corrected by its rectifying invoice, and
  *    cancelling its record too would leave AEAT with a rectification of a
- *    cancelled record: the two workflows stay separate.
+ *    cancelled record: the two workflows stay separate;
+ *  - a simplified invoice replaced by a complete one (#2648 stage 7) is named
+ *    by the replacement's F3 record, so cancelling it would leave AEAT with a
+ *    replacement of a cancelled record.
  */
 export function anulacionRefusal(s: {
   integrationEnabled: boolean;
   alta: { submissionStatus: string } | null;
   hasAnulacion: boolean;
   isRectified: boolean;
+  /** The invoice was replaced by a complete invoice (absent: not replaced). */
+  isReplaced?: boolean;
 }): AnulacionRefusal | null {
   if (!s.integrationEnabled) return 'verifactu_disabled';
   if (!s.alta) return 'verifactu_no_alta';
   if (s.hasAnulacion) return 'verifactu_already_cancelled';
   if (s.alta.submissionStatus === 'rejected') return 'verifactu_alta_rejected';
   if (s.isRectified) return 'verifactu_invoice_rectified';
+  if (s.isReplaced) return 'verifactu_invoice_replaced';
   return null;
 }
 

@@ -40,9 +40,25 @@ type Outcome =
   | { kind: 'one_time_draft' }
   | { kind: 'draft_updated' };
 
+/**
+ * #2856 — the form opened from a Draft line's `⋮ → Edit`: the Product is fixed,
+ * and its quantity, direct discount and Promotions start as the line holds them.
+ * Saving sends them to `PUT …/product-purchases/recurring/:lineId`, which
+ * changes that line of the same Draft and nothing else.
+ */
+export interface DraftLineEdit {
+  lineId: number;
+  productId: number;
+  quantity: number;
+  promotionIds: number[];
+  directDiscountPercent: number | null;
+}
+
 export function useAddProductForm({
-  memberId, isAdmin, recurringOnly = false, embedded = false, enabled = true, onClose, onChanged,
+  memberId, isAdmin, recurringOnly = false, embedded = false, enabled = true, onClose, onChanged, edit = null,
 }: {
+  /** #2856 — edit this Draft line instead of adding a Product. */
+  edit?: DraftLineEdit | null;
   memberId: number;
   isAdmin: boolean;
   /** Without Payments write access a recurring Product cannot be committed, so it is not offered. */
@@ -69,6 +85,7 @@ export function useAddProductForm({
   const [productId, setProductId] = useState<number | null>(null);
   const [promotionIds, setPromotionIds] = useState<number[]>([]);
   const [discount, setDiscount] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const [quote, setQuote] = useState<PurchaseQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,8 +108,16 @@ export function useAddProductForm({
     if (!enabled) {
       // A closed form starts fresh the next time it opens.
       setProductId(null); setPromotionIds([]); setDiscount(''); setQuote(null); setError(null); setOutcome(null);
-      setAssignedMemberId(memberId);
+      setAssignedMemberId(memberId); setQuantity('1');
       return;
+    }
+    if (edit) {
+      setProductId(edit.productId);
+      setPromotionIds(edit.promotionIds);
+      setDiscount(edit.directDiscountPercent != null ? String(edit.directDiscountPercent) : '');
+      setQuantity(String(edit.quantity));
+      // The selection the line already holds needs no fresh confirmation of its required Products.
+      setConfirmedKey(edit.promotionIds.slice().sort((a, b) => a - b).join(','));
     }
     let cancelled = false;
     apiFetch<{ items: PurchasableProductOption[] }>(`${base}/catalogue`)
@@ -103,7 +128,7 @@ export function useAddProductForm({
       .catch(() => { if (!cancelled) setAssignees([]); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberId, enabled]);
+  }, [memberId, enabled, edit?.lineId]);
 
   // The server's quote, re-asked on every change while nothing is created yet.
   useEffect(() => {
@@ -144,7 +169,35 @@ export function useAddProductForm({
 
   const showAssignee = showsAssigneeSelector(assignees, product);
 
+  const quantityValue = Number(quantity);
+  const quantityValid = Number.isInteger(quantityValue) && quantityValue >= 1 && quantityValue <= 999;
+
+  async function saveEdit() {
+    if (!edit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`${base}/recurring/${edit.lineId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          quantity: quantityValue,
+          promotion_ids: promotionIds,
+          // The direct discount is the Admin's alone; anyone else leaves it as stored.
+          ...(isAdmin ? { direct_discount_percent: discountValue } : {}),
+        }),
+      });
+      // The edited line is listed with its new figures; the form closes.
+      onChanged();
+      onClose();
+    } catch (err: any) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function create(confirmBillingFrequency = false) {
+    if (edit) return saveEdit();
     if (productId == null || !product) return;
     setFrequencyPrompt(null);
     setBusy(true);
@@ -184,8 +237,10 @@ export function useAddProductForm({
     }
   }
 
-  const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue);
+  const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue)
+    && (!edit || quantityValid);
   return {
+    edit, quantity, setQuantity, quantityValid,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
     catalogue, productId, product, promotionIds, discount, setDiscount, quote, error, busy, outcome,
     requiredProducts, requiredPending, selectionKey, setConfirmedKey, cancelRequired, togglePromotion,
@@ -244,7 +299,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
         aria-label={t('add_product_select')}
         style={{ ...formControlStyle, maxWidth: '100%' }}
         value={f.productId ?? ''}
-        disabled={!!f.outcome || f.catalogue == null}
+        disabled={!!f.outcome || f.catalogue == null || f.edit != null}
         onChange={(e) => f.pickProduct(e.target.value === '' ? null : Number(e.target.value))}
       >
         <option value="">{t('add_product_select_placeholder')}</option>
@@ -258,7 +313,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
       </div>
     ),
     // #2786 — the Assigned to column's own cell; absent when the selector does not apply.
-    assigned_to: f.showAssignee && !f.outcome ? (
+    assigned_to: f.showAssignee && !f.outcome && !f.edit ? (
       <select
         id="add-product-assignee"
         aria-label={t('add_product_assigned_to')}
@@ -342,7 +397,7 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
       <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         {!outcome && (
           <button type="button" style={{ ...primaryBtnSmall(), opacity: f.canCreate ? 1 : 0.5 }} disabled={!f.canCreate} onClick={() => f.create()}>
-            {t('add_product_save_draft')}
+            {f.edit ? t('draft_line_save') : t('add_product_save_draft')}
           </button>
         )}
         <button type="button" style={secondaryBtnSmall} disabled={f.busy} onClick={f.onClose}>
@@ -367,7 +422,23 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
-        {form.showAssignee && !form.outcome && (
+        {form.edit && (
+          <div style={{ flex: '0 0 96px' }}>
+            <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>
+            <input
+              id="edit-product-quantity"
+              type="number"
+              min={1}
+              max={999}
+              style={{ ...formControlStyle, width: 80 }}
+              value={form.quantity}
+              disabled={form.busy}
+              onChange={(e) => form.setQuantity(e.target.value)}
+              data-edit-product-quantity
+            />
+          </div>
+        )}
+        {form.showAssignee && !form.outcome && !form.edit && (
           <div style={{ flex: '1 1 180px', minWidth: 0 }}>
             <label style={formFieldLabelStyle} htmlFor="add-product-assignee">{t('add_product_assigned_to')}</label>
             {cells.assigned_to}
@@ -395,4 +466,13 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
       <AddProductDetails form={form} />
     </div>
   );
+}
+
+/**
+ * #2856 — the form a Draft line's `⋮ → Edit` opens in that row's expanded area:
+ * the add form itself, on that line (Product fixed, quantity, discount and
+ * Promotions editable), so editing has no second form or rule of its own.
+ */
+export function EditDraftLineForm(props: Omit<Parameters<typeof useAddProductForm>[0], 'recurringOnly' | 'edit'> & { edit: DraftLineEdit }) {
+  return <AddProductPurchase {...props} recurringOnly />;
 }

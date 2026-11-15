@@ -44,7 +44,8 @@ import {
   vatPortion,
 } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
-import { startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
+import { editRecurringPurchaseLine, startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
+import { isRefusal, lockDraft, removeService } from './product-set-draft';
 import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -384,6 +385,136 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     next(err);
   }
 }
+
+/**
+ * #2856 — `⋮ → Edit` / `⋮ → Delete` on a recurring line of the member's open
+ * Draft Product Set. Edit changes the line's quantity, direct discount and
+ * Promotions (`editRecurringPurchaseLine()`); every Promotion is re-checked
+ * against the same offers and the same pricing rule the add path uses, so an
+ * edit can choose nothing an add could not. Delete is the Draft's own outright
+ * removal (`removeService()`): a Draft has charged nothing, so the line's
+ * snapshot is hard-deleted (a line the Active version also links is only
+ * unlinked from the Draft). Neither ever writes a committed version.
+ */
+function draftEditRefusal(res: any, out: any) {
+  if (out.kind === 'no_draft' || out.kind === 'not_found') return res.status(404).json({ error: 'Draft line not found' });
+  if (out.kind === 'expired') return res.status(410).json({ error: 'draft_expired' });
+  if (out.kind === 'not_a_draft') return res.status(409).json({ error: 'not_a_draft' });
+  if (out.kind === 'conflict') return res.status(409).json({ error: out.error, message: out.message });
+  if (out.kind === 'invalid') return res.status(400).json({ error: out.message });
+  return res.status(409).json({ error: out.kind });
+}
+
+memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const lineId = parseInt(String(req.params.lineId), 10);
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(lineId) || lineId <= 0) return res.status(404).json({ error: 'Draft line not found' });
+    const body = req.body ?? {};
+    const hasDiscount = Object.prototype.hasOwnProperty.call(body, 'direct_discount_percent');
+    const discount = hasDiscount ? directDiscountFrom(req, res) : { percent: undefined as number | null | undefined };
+    if (!discount) return;
+    const hasPromotions = Object.prototype.hasOwnProperty.call(body, 'promotion_ids');
+    const promotionIds = hasPromotions ? promotionIdsFrom(req, res) : undefined;
+    if (promotionIds === null) return;
+    const quantity = body.quantity == null || body.quantity === '' ? undefined : Number(body.quantity);
+
+    const { rows: lineRows } = await db.query<any>(
+      `SELECT s.product_id FROM product_sets ps
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND s.source_id = ?`,
+      [gymId, memberId, lineId]);
+    if (!lineRows[0]) return res.status(404).json({ error: 'Draft line not found' });
+    const productId = Number(lineRows[0].product_id);
+
+    if (promotionIds && promotionIds.length > 0) {
+      if (new Set(promotionIds).size !== promotionIds.length) {
+        return res.status(400).json({ error: 'duplicate_promotion', message: 'A promotion can only be applied once' });
+      }
+      const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
+      if (missing.length > 0) return res.status(409).json({ error: 'promotion_requires_products', products: missing });
+      const catalogue = await staffCatalogue(gymId, memberId);
+      const item = catalogue.find((i) => i.id === productId);
+      const chosen = promotionIds.map((id) => item?.promotions.find((o) => o.promotion_id === id) ?? null);
+      if (!item || chosen.some((o) => o === null)) {
+        return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
+      }
+      const priced = priceProductPurchase({
+        listPrice: item.price_incl_tax,
+        promotions: chosen.map((o) => ({
+          promotion_id: o!.promotion_id, promotion_name: o!.promotion_name, action: o!.action,
+          value: o!.value, duration_cycles: o!.duration_cycles, stackable: o!.stackable,
+        })),
+        directDiscountPercent: discount.percent ?? null,
+      });
+      if (!priced.ok) {
+        const { status, ...rest } = pricingRefusalResponse(priced.refusal);
+        return res.status(status).json(rest);
+      }
+    }
+
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc());
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+
+    const actorName = resolveRequestActor(tenantCtx) ?? member.name;
+    class Refused extends Error { constructor(public out: any) { super('draft refused'); } }
+    let out: any;
+    try {
+      out = await db.transaction(async (tx) => {
+        const r = await editRecurringPurchaseLine(tx, {
+          gymId, memberId, lineId, quantity, promotionIds, directDiscountPercent: discount.percent,
+          actor: { name: actorName },
+        });
+        if (r.kind !== 'ok') throw new Refused(r);
+        return r;
+      });
+    } catch (e: any) {
+      if (e instanceof Refused) return draftEditRefusal(res, e.out);
+      throw e;
+    }
+    recordAudit(req, {
+      action: 'update', entityType: 'product_set', entityId: out.productSetId,
+      next: { edit_recurring_line: out.lineId, quantity, promotion_ids: promotionIds, direct_discount_percent: discount.percent },
+    });
+    res.json({ product_set_id: out.productSetId, line_id: out.lineId });
+  } catch (err) { next(err); }
+});
+
+memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  const lineId = parseInt(String(req.params.lineId), 10);
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(lineId) || lineId <= 0) return res.status(404).json({ error: 'Draft line not found' });
+    class Refused extends Error { constructor(public out: any) { super('draft refused'); } }
+    let draftId: number;
+    try {
+      draftId = await db.transaction(async (tx) => {
+        const { rows } = await tx.query<any>(
+          `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+            ORDER BY id DESC LIMIT 1`, [gymId, memberId]);
+        if (!rows[0]) throw new Refused({ kind: 'no_draft' });
+        const locked = await lockDraft(tx, gymId, Number(rows[0].id));
+        if (isRefusal(locked)) throw new Refused(locked);
+        const r = await removeService(tx, locked, lineId);
+        if ('kind' in r) throw new Refused(r);
+        return locked.id;
+      });
+    } catch (e: any) {
+      if (e instanceof Refused) return draftEditRefusal(res, e.out);
+      throw e;
+    }
+    recordAudit(req, { action: 'update', entityType: 'product_set', entityId: draftId, next: { remove_recurring_line: lineId } });
+    res.json({ product_set_id: draftId, deleted: true });
+  } catch (err) { next(err); }
+});
 
 /**
  * #1657 stage 2 — pay a saved draft: it is re-resolved and re-priced through the

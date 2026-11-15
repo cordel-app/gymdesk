@@ -19,7 +19,7 @@
 // the payment webhook, which is the one place a version is activated.
 
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-import { updateRecurringLine } from './recurring-line-writer';
+import { ownRecurringLine, updateRecurringLine, type RecurringLinePatch } from './recurring-line-writer';
 import type { Tx } from '../infra/db';
 import { addService, lockDraft, isRefusal, type DraftRefusal } from './product-set-draft';
 import { createDraft, type Actor } from './product-sets';
@@ -182,4 +182,96 @@ async function applyPromotions(
     }
   }
   return null;
+}
+
+/**
+ * #2856 — edits one recurring line of the member's open Draft from the Products
+ * list's `⋮ → Edit`: its quantity, its direct discount and the Product
+ * Promotions it carries. Only a Draft is edited — a committed version never is
+ * (#1325 stage 4) — and a line the Active version also links is copied for the
+ * Draft first (`ownRecurringLine()`), so the Active version is untouched.
+ *
+ * The Promotion selection is **replace-all, keeping what stays**: an
+ * application whose Promotion is still selected is left exactly as it is (so a
+ * Promotion the line was already agreed with keeps its confirmed snapshot), a
+ * deselected one is deleted outright (a Draft has charged nothing), and a newly
+ * selected one goes through `applyPromotionToProductSet()`, which records the
+ * reference only — the snapshot is taken by `confirmDraftPromotionSnapshots()`
+ * at Save & Pay (#2833). The caller has already validated the selection against
+ * the offers and priced the stack.
+ */
+export async function editRecurringPurchaseLine(tx: Tx, input: {
+  gymId: string;
+  memberId: number;
+  lineId: number;
+  quantity?: number;
+  promotionIds?: readonly number[];
+  /** `undefined` keeps the stored discount; `null` clears it. */
+  directDiscountPercent?: number | null;
+  actor: Actor;
+}): Promise<{ kind: 'ok'; productSetId: number; lineId: number; productId: number } | { kind: 'no_draft' } | DraftRefusal> {
+  const { rows: drafts } = await tx.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+      ORDER BY id DESC LIMIT 1`,
+    [input.gymId, input.memberId]);
+  if (!drafts[0]) return { kind: 'no_draft' };
+  const locked = await lockDraft(tx, input.gymId, Number(drafts[0].id));
+  if (isRefusal(locked)) return locked;
+  const draftId = locked.id;
+
+  const { rows: lines } = await tx.query<any>(
+    `SELECT s.product_id, s.unit_price, s.list_price FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL`,
+    [input.lineId, input.gymId, draftId]);
+  if (!lines[0]) return { kind: 'not_found' };
+  const productId = Number(lines[0].product_id);
+
+  if (input.quantity !== undefined && (!Number.isInteger(input.quantity) || input.quantity <= 0 || input.quantity > 999)) {
+    return { kind: 'invalid', message: 'quantity must be a positive integer' };
+  }
+
+  // A line another Product Set links is copied for the Draft before it is written.
+  const lineId = (await ownRecurringLine(tx, input.gymId, draftId, input.lineId)) ?? input.lineId;
+
+  const patch: RecurringLinePatch = {};
+  if (input.quantity !== undefined) patch.quantity = input.quantity;
+  if (input.directDiscountPercent !== undefined) {
+    const list = lines[0].list_price != null ? Number(lines[0].list_price) : Number(lines[0].unit_price);
+    if (input.directDiscountPercent == null) {
+      patch.unit_price = list.toFixed(2);
+      patch.list_unit_price = null;
+      patch.direct_discount_percent = null;
+    } else {
+      patch.list_unit_price = list.toFixed(2);
+      patch.direct_discount_percent = input.directDiscountPercent.toFixed(2);
+      patch.unit_price = discountedUnitPrice(list, input.directDiscountPercent).toFixed(2);
+    }
+  }
+  await updateRecurringLine(tx, input.gymId, lineId, patch);
+
+  if (input.promotionIds !== undefined) {
+    const wanted = new Set(input.promotionIds.map(Number));
+    const { rows: apps } = await tx.query<any>(
+      `SELECT id, promotion_id, status FROM user_membership_promotions
+        WHERE gym_id = ? AND product_set_id = ? AND recurrent_snapshot_id = ?`,
+      [input.gymId, draftId, lineId]);
+    const keep = new Set<number>();
+    for (const app of apps) {
+      if (app.status === 'applied' && wanted.has(Number(app.promotion_id)) && !keep.has(Number(app.promotion_id))) {
+        keep.add(Number(app.promotion_id));
+        continue;
+      }
+      // A Draft has charged nothing: a deselected application is deleted, its grant snapshots by the FK.
+      await tx.query('DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ?', [app.id, input.gymId]);
+    }
+    const added = input.promotionIds.map(Number).filter((id) => !keep.has(id));
+    const refused = await applyPromotions(tx, { gymId: input.gymId, promotionIds: added, actor: input.actor }, draftId, lineId);
+    if (refused) return refused;
+  }
+
+  if (input.quantity !== undefined) await allocateItemSchedules(tx, input.gymId, draftId);
+  await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [draftId, input.gymId]);
+  await syncProductSnapshotsOfVersion(tx, input.gymId, draftId);
+  return { kind: 'ok', productSetId: draftId, lineId, productId };
 }
