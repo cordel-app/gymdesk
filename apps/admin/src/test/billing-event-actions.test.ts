@@ -26,7 +26,6 @@ const pageSrc = stripComments(readFileSync(PAGE, 'utf-8') + readFileSync(join(PA
 
 const REQUIRED_KEYS = [
   'col_actions',
-  'action_details',
   'action_retry',
   'action_pay_cash',
   'action_pay_card',
@@ -82,11 +81,16 @@ const REQUIRED_KEYS = [
 describe('Billing Events payment actions (#640)', () => {
   it('renders a context menu per row', () => {
     expect(pageSrc).toMatch(/import \{ ContextMenu[^}]*\} from '@\/components\/ContextMenu'/);
-    expect(pageSrc).toContain('<ContextMenu items={menuItems(row)}');
+    expect(pageSrc).toContain('const items = menuItems(row);');
+    expect(pageSrc).toContain('<ContextMenu items={items}');
   });
 
-  it('offers Details unconditionally and each payment action only on the API flag', () => {
-    expect(pageSrc).toContain("label: t('billing_events_page.action_details')");
+  it('offers no Details item (#2836) and each payment action only on the API flag', () => {
+    // Details only expanded the row, which its chevron already does.
+    expect(pageSrc).not.toContain('action_details');
+    expect(pageSrc).toContain('const items: ContextMenuItem[] = [];');
+    // A row with no applicable action renders no ⋮ rather than an empty menu.
+    expect(pageSrc).toContain('return items.length > 0');
     for (const flag of ['can_pay_cash', 'can_pay_card', 'can_retry', 'can_waive']) {
       expect(pageSrc).toContain(`if (row.${flag}) {`);
     }
