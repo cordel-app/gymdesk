@@ -9,6 +9,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -315,7 +316,13 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
       .send({ promotion_id: promoId });
     expect(applyRes.status).toBe(201);
 
-    // Confirm a snapshot was actually persisted at apply time.
+    // #2833: a Draft stores no snapshot; confirming the Draft takes it.
+    const { rows: draftRows } = await legacyChildQuery(
+      'SELECT snapshot, product_set_id FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ?',
+      [umId, promoId],
+    );
+    expect(draftRows[0].snapshot).toBeNull();
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, Number(draftRows[0].product_set_id)));
     const { rows: snapRows } = await legacyChildQuery(
       'SELECT snapshot FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ?',
       [umId, promoId],

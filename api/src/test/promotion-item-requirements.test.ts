@@ -21,6 +21,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -320,6 +321,12 @@ describe('Promotion item Requirement (#959)', () => {
     // #635 §16: the application prices and reports from its own snapshot, so the
     // flag has to be *in* the snapshot — otherwise the screen that will offer the
     // member the choice would read a Promotion that may have been edited since.
+    // #2833: the snapshot is taken when the Draft is confirmed.
+    const { rows: setRows } = await db.query<any>(
+      `SELECT ump.product_set_id FROM user_membership_promotions ump
+         JOIN product_sets ps ON ps.id = ump.product_set_id
+        WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promotion]);
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, Number(setRows[0].product_set_id)));
     const { rows } = await legacyChildQuery(
       `SELECT s.product_id, s.requirement
          FROM user_membership_promotion_periodical_snapshot s

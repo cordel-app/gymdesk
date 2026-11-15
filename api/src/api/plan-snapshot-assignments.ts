@@ -1,4 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
+import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
 import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -14,6 +15,7 @@ import type { ProductBenefitCategory } from '../domain/productClassification';
 import { fetchLiveBenefits, membershipFeeBenefitsFromSnapshot } from './membership-promotions';
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
 import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
+import { loadLivePromotionGrants } from './assigned-plan-snapshot';
 
 /**
  * #2125 stage 6 — the engine's input for a ProductSet version that holds **N** Membership
@@ -77,9 +79,11 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
 async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: number): Promise<SimulationPromotion[]> {
   const { rows } = await exec.query(
     `SELECT pps.id, pps.promotion_id, pps.applied_at, pps.revoked_at, pps.snapshot,
+            (ump.id IS NOT NULL AND ${draftReferenceApplicationSql('ump')}) AS unconfirmed,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
        FROM plan_promotion_snapshots pps
        LEFT JOIN promotions p ON p.id = pps.promotion_id
+       LEFT JOIN user_membership_promotions ump ON ump.id = pps.source_id AND ump.gym_id = pps.gym_id
       WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ${promotionHolderSql('?')} AND pps.status = 'applied'
       ORDER BY pps.id`,
     [gymId, planSnapshotId],
@@ -110,10 +114,19 @@ async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: num
       grants.set(Number(g.plan_promotion_snapshot_id), list);
     }
   }
+  // #2833: an application on a Draft that is not confirmed yet has no snapshot — neither its own
+  // nor the grant rows — and is priced from the Promotion as it stands now (any working copy written
+  // before that ticket is ignored), exactly as `loadPromotionGrantSnapshots()` reads it.
+  const unconfirmed = (rows as any[]).filter((r) => Number(r.unconfirmed) === 1);
+  if (unconfirmed.length > 0) {
+    const live = await loadLivePromotionGrants(
+      gymId, [...new Set(unconfirmed.map((r) => Number(r.promotion_id)))], exec);
+    for (const r of unconfirmed) grants.set(Number(r.id), live.get(Number(r.promotion_id)) ?? []);
+  }
 
   return Promise.all((rows as any[]).map(async (row): Promise<SimulationPromotion> => {
-    const snap = row.snapshot as { name?: string; free_months?: number | null; paid_months?: number | null;
-      bonus_months?: number | null } | null;
+    const snap = (Number(row.unconfirmed) === 1 ? null : row.snapshot) as { name?: string;
+      free_months?: number | null; paid_months?: number | null; bonus_months?: number | null } | null;
     const benefits = snap
       ? membershipFeeBenefitsFromSnapshot(snap as any)
       : (await fetchLiveBenefits(exec as any, row.promotion_id)).membership_fee_benefits;

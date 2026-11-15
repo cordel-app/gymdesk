@@ -451,8 +451,10 @@ export async function loadRecurringLinePromotions(
   if (lines.length === 0) return out;
   const ids = lines.map((l) => l.id);
   const { rows: allRows } = await db.query<any>(
-    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.product_set_id, ump.applied_at, ump.snapshot
+    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.product_set_id, ump.applied_at, ump.snapshot,
+            pr.name AS promotion_name
        FROM user_membership_promotions ump
+       LEFT JOIN promotions pr ON pr.id = ump.promotion_id
       WHERE ump.gym_id = ? AND ump.status = 'applied'
         AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
       ORDER BY ump.id ASC`,
@@ -463,16 +465,17 @@ export async function loadRecurringLinePromotions(
     Number(r.product_set_id) === lineById.get(Number(r.recurrent_snapshot_id))?.productSetId);
   if (rows.length === 0) return out;
   const appIds = rows.map((r: any) => Number(r.id));
-  const marks = appIds.map(() => '?').join(',');
+  // #2833: a Draft's unconfirmed application holds no grant snapshot and is read from the live
+  // Promotion — the one loader decides which, so this card and the billing engine agree.
+  const { loadPromotionGrantSnapshots } = await import('./assigned-plan-snapshot');
+  const byApplication = await loadPromotionGrantSnapshots(gymId, appIds);
   const grants = new Map<string, { action: unknown; value: unknown; quantity: unknown; category: ProductBenefitCategory }>();
-  for (const category of ['session', 'oneoff', 'periodical'] as const) {
-    const { rows: g } = await db.query<any>(
-      `SELECT user_membership_promotion_id AS app_id, product_id, \`action\`, \`value\`, quantity
-         FROM user_membership_promotion_${category}_snapshot
-        WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`,
-      [gymId, ...appIds],
-    );
-    for (const r of g as any[]) grants.set(`${r.app_id}:${r.product_id}`, { ...r, category });
+  for (const [appId, list] of byApplication) {
+    for (const g of list) {
+      grants.set(`${appId}:${g.productId}`, {
+        action: g.benefit.action, value: g.benefit.value, quantity: g.quantity, category: g.category,
+      });
+    }
   }
   const running = new Map<number, number>();
   for (const row of rows as any[]) {
@@ -488,7 +491,8 @@ export async function loadRecurringLinePromotions(
     running.set(lineId, after);
     const entry = out.get(lineId) ?? { promotions: [], final: null };
     entry.promotions.push(shapeAppliedPromotion({
-      id: row.id, promotion_id: row.promotion_id, promotion_name: snap?.name ?? `Promotion #${row.promotion_id}`,
+      id: row.id, promotion_id: row.promotion_id,
+      promotion_name: snap?.name ?? row.promotion_name ?? `Promotion #${row.promotion_id}`,
       benefit_action: benefit.action, benefit_value: benefit.value,
       duration_cycles: promotionDurationCycles(grant.category, grant.quantity),
       regular_amount: Math.round(before * line.quantity * 100) / 100,

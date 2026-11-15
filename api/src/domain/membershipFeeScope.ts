@@ -9,7 +9,7 @@
  * The billing engine multiplies the Membership Fee line by `membershipFeeUnits()` and nowhere else
  * does: a second multiplication in a pricing or display path is the defect #2800 describes.
  *
- * A new scope goes in three places: this list, the two CHECKs of migration 421
+ * A new scope goes in three places: this list, the two CHECKs of migration 422
  * (`chk_membership_plans_fee_scope`, `chk_plan_snapshots_fee_scope`) and the admin's mirror
  * (`apps/admin/src/lib/membershipFeeScope.ts`).
  */

@@ -2,6 +2,10 @@
 // is confirmed (Save & Pay, or the free commit), from the Promotion as it stands
 // then; after confirmation the snapshot is the historical record and an edit of
 // the Promotion moves nothing.
+//
+// #2833 — while the plan is a Draft the application is only a reference: no
+// snapshot and no grant snapshot rows are written, and the Draft is read from
+// the live Promotion.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -68,6 +72,32 @@ async function application(umId: number, promoId: number) {
   const row = rows[0];
   const snap = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
   return { snap, confirmed: row.snapshot_confirmed_at != null };
+}
+
+async function createProduct(amount: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO products
+       (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system, tax_behavior)
+     VALUES (?, ?, 'service', ?, 'EUR', 'once', 'active', 'available', 0, 'inclusive')`,
+    [gymId, `PSC Product ${uniq()}`, amount]);
+  return Number(insertId);
+}
+
+async function grantRows(umId: number, promoId: number) {
+  const { rows } = await db.query<any>(
+    `SELECT g.product_id, g.\`action\`, g.\`value\`
+       FROM user_membership_promotion_oneoff_snapshot g
+       JOIN user_membership_promotions ump ON ump.id = g.user_membership_promotion_id
+       JOIN product_sets ps ON ps.id = ump.product_set_id
+      WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promoId]);
+  const { rows: planRows } = await db.query<any>(
+    `SELECT t.\`value\`, pps.snapshot
+       FROM plan_promotion_snapshots pps
+       JOIN user_membership_promotions ump ON ump.id = pps.source_id
+       JOIN product_sets ps ON ps.id = ump.product_set_id
+       LEFT JOIN plan_promotion_oneoff_product_snapshots t ON t.plan_promotion_snapshot_id = pps.id
+      WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promoId]);
+  return { own: rows, plan: planRows };
 }
 
 async function assignDraft(memberId: number, planId: number): Promise<number> {
@@ -138,5 +168,67 @@ describe('Promotion snapshots are captured at confirmation (#2624 §8)', () => {
     expect(res.status).toBe(200);
     const shown = res.body.find((p: any) => Number(p.promotion_id) === promoId);
     expect(shown.promotion_name).toBe('PSC Free Edited Before Commit');
+  });
+});
+
+describe('A Draft stores no Promotion snapshot until it is confirmed (#2833)', () => {
+  it('applies by reference, reads live while Draft, and snapshots once at Save & Pay', async () => {
+    const planId = await createPlan(100);
+    const promoId = await createPromo(planId, 10);
+    const towel = await createProduct(30);
+    await db.query(
+      `INSERT INTO membership_plan_oneoff (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, 1)`,
+      [gymId, planId, towel]);
+    await db.query(
+      `INSERT INTO promotion_oneoff (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`)
+       VALUES (?, ?, ?, 1, 'percentage_discount', 50)`, [gymId, promoId, towel]);
+    const umId = await assignDraft(await createMember(), planId);
+    expect((await api('post', `/user-memberships/${umId}/promotions`).send({ promotion_id: promoId })).status).toBe(201);
+
+    // While Draft: a reference only — no snapshot, no grant snapshot rows, in either model.
+    const draft = await application(umId, promoId);
+    expect(draft.confirmed).toBe(false);
+    expect(draft.snap).toBeNull();
+    const draftRows = await grantRows(umId, promoId);
+    expect(draftRows.own).toHaveLength(0);
+    expect(draftRows.plan.every((r: any) => r.value == null && r.snapshot == null)).toBe(true);
+
+    // Re-applying is refused as a duplicate and creates nothing.
+    expect((await api('post', `/user-memberships/${umId}/promotions`).send({ promotion_id: promoId })).status).toBe(409);
+
+    // The Draft reads the Promotion as it stands now.
+    await editPromo(promoId, 'PSC Live Draft Name', 20);
+    await db.query('UPDATE promotion_oneoff SET `value` = 40 WHERE promotion_id = ?', [promoId]);
+    const shown = (await api('get', `/user-memberships/${umId}/promotions`)).body
+      .find((p: any) => Number(p.promotion_id) === promoId);
+    expect(shown.promotion_name).toBe('PSC Live Draft Name');
+    expect(Number(shown.membership_fee_benefits[0].value)).toBe(20);
+    expect(Number(shown.oneoff_grants[0].value)).toBe(40);
+    const detail = await api('get', `/user-memberships/${umId}`);
+    expect(detail.status).toBe(200);
+    const towelLine = detail.body.snapshot.oneoff_benefits.find((l: any) => l.product_id === towel);
+    expect(towelLine.final_price_incl_tax).toBe(18);
+
+    // Save & Pay takes the snapshot from the Promotion as it stands then.
+    expect((await api('post', `/user-memberships/${umId}/save-and-pay`).send({})).status).toBe(200);
+    const confirmed = await application(umId, promoId);
+    expect(confirmed.confirmed).toBe(true);
+    expect(confirmed.snap.name).toBe('PSC Live Draft Name');
+    const confirmedRows = await grantRows(umId, promoId);
+    expect(confirmedRows.own).toHaveLength(1);
+    expect(Number(confirmedRows.own[0].value)).toBe(40);
+    expect(confirmedRows.plan.map((r: any) => Number(r.value))).toEqual([40]);
+
+    // After confirmation the Promotion's edits move nothing, and a retry duplicates nothing.
+    await db.query('UPDATE promotion_oneoff SET `value` = 90 WHERE promotion_id = ?', [promoId]);
+    await editPromo(promoId, 'PSC Edited After Confirm', 60);
+    expect((await api('post', `/user-memberships/${umId}/save-and-pay`).send({})).status).toBeGreaterThanOrEqual(400);
+    const after = await grantRows(umId, promoId);
+    expect(after.own).toHaveLength(1);
+    expect(Number(after.own[0].value)).toBe(40);
+    const shownAfter = (await api('get', `/user-memberships/${umId}/promotions`)).body
+      .find((p: any) => Number(p.promotion_id) === promoId);
+    expect(shownAfter.promotion_name).toBe('PSC Live Draft Name');
+    expect(Number(shownAfter.oneoff_grants[0].value)).toBe(40);
   });
 });

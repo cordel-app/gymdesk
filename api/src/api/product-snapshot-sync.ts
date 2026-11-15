@@ -66,7 +66,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
         status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
         modified_at, modified_by)
      SELECT ump.gym_id, par.member_id, par.id, ump.id, ump.promotion_id,
-            JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), ump.status, ump.snapshot, ump.applied_at,
+            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), pr.name), ump.status, ump.snapshot, ump.applied_at,
             ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
             ump.modified_by
        FROM user_membership_promotions ump
@@ -74,7 +74,8 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
        JOIN product_periodical_snapshots par ON par.source_id = ump.recurrent_snapshot_id AND par.gym_id = ump.gym_id
       WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL
      ON DUPLICATE KEY UPDATE
-       member_id = VALUES(member_id), status = VALUES(status), snapshot = VALUES(snapshot),
+       member_id = VALUES(member_id), promotion_name = VALUES(promotion_name), status = VALUES(status),
+       snapshot = VALUES(snapshot),
        consumed_at = VALUES(consumed_at), revoked_at = VALUES(revoked_at),
        modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
     [gymId, productSetId]);
