@@ -643,6 +643,42 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, '')).sort()).toEqual(['One A', 'One C']);
   });
 
+  it("the replace target is read from the Draft's plan snapshot, not the legacy row (#2125 M6b-35)", async () => {
+    const memberId = await createMember(gymId, 'Replace Target Snapshot');
+    const [a, b, c] = [await createPlan(gymId, 'Tgt A'), await createPlan(gymId, 'Tgt B'), await createPlan(gymId, 'Tgt C')];
+    for (const planId of [a, b, c]) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, 20, '2020-01-01', 'active')`, [gymId, planId]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    const umA = await assignLive(memberId, a, '2026-01-01');
+    const umB = await assignDraft(memberId, b, '2026-02-01');
+    expect((await commit(umB, { on_conflict: 'add' })).status).toBe(200);
+
+    const created = await post(`/user-memberships/${umB}/assign-new-plan`, { membership_plan_id: c, starts_at: '2026-04-01' });
+    expect(created.status).toBe(201);
+    // assign-new-plan writes the target on the Draft's own snapshot, as the anchor of B.
+    const { rows: anchorB } = await db.query<any>(
+      'SELECT MIN(id) AS id FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, umB]);
+    const { rows: draftSnap } = await db.query<any>(
+      'SELECT replaces_assignment_id AS r FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?',
+      [gymId, created.body.id]);
+    expect(draftSnap.map((r: any) => Number(r.r))).toEqual([Number(anchorB[0].id)]);
+
+    // The legacy column no longer decides: with it cleared, the commit still names B alone.
+    await db.query('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id]);
+    const asked = await commit(created.body.id);
+    expect(asked.status).toBe(409);
+    expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);
+    expect((await commit(created.body.id, { on_conflict: 'replace' })).status).toBe(200);
+    const { rows: statuses } = await db.query<any>(
+      'SELECT id, status FROM user_memberships WHERE id IN (?, ?)', [umA, umB]);
+    const byId = Object.fromEntries(statuses.map((r: any) => [r.id, r.status]));
+    expect(byId[umA]).toBe('active');
+    expect(byId[umB]).toBe('superseded');
+  });
+
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {
     const memberId = await createMember(gymId, 'Replace Alias');
     const first = await createPlan(gymId, 'Rep First');

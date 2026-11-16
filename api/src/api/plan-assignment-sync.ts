@@ -16,6 +16,7 @@
  */
 import type { Tx } from '../infra/db';
 import { planSnapshotSharedSql } from './plan-snapshot-lines';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 type Exec = { query: Tx['query'] };
 
@@ -177,4 +178,65 @@ export async function deleteUnlinkedPlanSnapshots(exec: Exec, gymId: string, pla
       [gymId, ...ids]);
     await exec.query(`DELETE FROM plan_snapshots WHERE gym_id = ? AND id IN (${idMarks})`, [gymId, ...ids]);
   }
+}
+
+/**
+ * #2125 M6b-35 — the replacement an assignment carries, read from its **current** plan snapshot
+ * (`assignmentOfLegacyIdSql()`): whether its activation replaces (`replace_on_activation`, written
+ * by Save & Pay) and which assignment it was raised to replace (`replaces_assignment_id`, written by
+ * `assign-new-plan`), reported as that assignment's legacy id because the live conflicts it is
+ * matched against (`replacementTargets()`) are still named by it. The commit and Save & Pay read it
+ * after locking the legacy row, so the snapshot they read is the one their own transaction wrote.
+ * An assignment no snapshot states replaces nothing.
+ */
+export async function assignmentReplacementOf(
+  exec: Exec, gymId: string, userMembershipId: number,
+): Promise<{ replaceOnActivation: boolean; replacesUserMembershipId: number | null }> {
+  const { rows } = await exec.query<{ replace_on_activation: number | null; replaces: number | null }>(
+    `SELECT pa.replace_on_activation,
+            (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+              WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces
+       FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}
+      LIMIT 1`, [gymId, userMembershipId]);
+  const r = rows[0];
+  return {
+    replaceOnActivation: Number(r?.replace_on_activation ?? 0) === 1,
+    replacesUserMembershipId: r?.replaces == null ? null : Number(r.replaces),
+  };
+}
+
+/**
+ * #2125 M6b-35 — writes an assignment's replacement on its own plan snapshots (those no other
+ * Product Set links, the rule every write of the sync keeps): `replaces_assignment_id` as the anchor
+ * of the replaced assignment, `replace_on_activation` as given. A field left `undefined` is not
+ * written. `user_memberships` still carries both columns (dual-written until the table goes); this
+ * is the writer the reader above depends on, so it does not wait for a later sync.
+ */
+export async function writeAssignmentReplacement(
+  exec: Exec, gymId: string, userMembershipId: number,
+  change: { replaceOnActivation?: boolean; replacesUserMembershipId?: number | null },
+): Promise<void> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (change.replaceOnActivation !== undefined) {
+    sets.push('s.replace_on_activation = ?');
+    params.push(change.replaceOnActivation ? 1 : 0);
+  }
+  if (change.replacesUserMembershipId !== undefined) {
+    const replaced = change.replacesUserMembershipId;
+    const anchor = replaced == null ? null
+      : (await anchorsOf(exec, gymId, [Number(replaced)])).get(Number(replaced)) ?? null;
+    sets.push('s.replaces_assignment_id = ?');
+    params.push(anchor);
+  }
+  if (sets.length === 0) return;
+  await exec.query(
+    `UPDATE plan_snapshots s SET ${sets.join(', ')}
+      WHERE s.gym_id = ? AND s.source_user_membership_id = ?
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j1
+                         JOIN product_set_plan_snapshots j2
+                           ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id
+                        WHERE j1.plan_snapshot_id = s.id)`,
+    [...params, gymId, userMembershipId]);
 }
