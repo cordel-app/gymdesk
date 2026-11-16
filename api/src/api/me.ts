@@ -2312,10 +2312,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.starts_at, mp.name AS plan_name,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit
-         FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+         FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
          LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
          LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-        WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'pending_payment'
+        WHERE um.status = 'pending_payment'
         ORDER BY um.id DESC LIMIT 1`,
       [gymId, memberId],
     );
