@@ -19,8 +19,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, getAssignmentConfig
-} from './helpers';
+  request, legacyAssignmentQuery, getAssignmentConfig, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -177,6 +176,7 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
   it('refuses to edit a terminal assignment', async () => {
     const closed = await assignPlan(gymId);
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [closed.umId]);
+    await snapshotTestAssignment(closed.umId); // #2125 M6b-27: the bridge reads the plan snapshot
     const res = await putFeeBenefit(gymId, closed.umId, { action: 'percentage_discount', value: 10 });
     expect(res.status).toBe(400);
     const { rows } = await (async () => ({ rows: [await getAssignmentConfig(closed.umId)] }))();

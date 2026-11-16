@@ -20,6 +20,7 @@ import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -404,8 +405,11 @@ export async function reconfigureProjected(
   const set = await editableSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
   // A closed assignment is not a live projection whatever its set says: the
-  // legacy route refuses the edit with the reason it always gave.
-  const { rows: umRows } = await tx.query<any>('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [input.userMembershipId, input.gymId]);
+  // legacy route refuses the edit with the reason it always gave. #2125 M6b-27: the status is the
+  // assignment's current plan snapshot's, never the `user_memberships` row's.
+  const { rows: umRows } = await tx.query<any>(
+    `SELECT pa.status FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+    [input.gymId, input.userMembershipId]);
   if (!umRows[0] || (isCancelledAssignmentStatus(umRows[0].status) || ['expired', 'superseded'].includes(umRows[0].status))) return { kind: 'not_projected' };
 
   const blocking = await loadEditLock(input.gymId, set.owner_member_id, todayUtc());
@@ -439,12 +443,14 @@ export async function reconfigureProjected(
 /**
  * #1196 / #2481: the day a cancelled plan keeps its entitlement through (inclusive) — the end of the last paid
  * period, or yesterday when nothing was paid. The one computation behind both the cancellation and the
- * confirmation dialog's preview, so the date shown is the date applied.
+ * confirmation dialog's preview, so the date shown is the date applied. #2125 M6b-27: the assignment's
+ * start date is its current plan snapshot's.
  */
 export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
   const { rows: info } = await tx.query<any>(
-    `SELECT um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
-       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+    `SELECT pa.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+       FROM product_sets ps
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')}
       WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
   const paidThrough = await loadPaidThrough(tx, gymId, set.id);
   return cancellationEndDate({
