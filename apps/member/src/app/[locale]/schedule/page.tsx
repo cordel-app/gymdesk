@@ -79,6 +79,9 @@ interface PastBooking {
 
 interface FilterOption { id: number; name: string }
 
+/** #2953: the `center_id` the API reads as "every center this member may use". */
+const ALL_CENTERS = 'all';
+
 export default function MemberSchedulePage() {
   const t = useTranslations();
   const locale = useLocale();
@@ -167,7 +170,9 @@ export default function MemberSchedulePage() {
     try {
       const params = new URLSearchParams({ to: toStr });
       if (filterAtId) params.set('activity_type_id', filterAtId);
-      if (filterCenterId) params.set('center_id', filterCenterId);
+      // #2953: "All centers" is named explicitly, so the API spans every center the
+      // member's plans give access to rather than the app's active center.
+      params.set('center_id', filterCenterId || ALL_CENTERS);
       if (filterTrainerId) params.set('trainer_membership_id', filterTrainerId);
       const sessionData = await apiFetch<Session[]>(`/me/schedule?${params.toString()}`);
       setSessions(sessionData);
@@ -179,7 +184,7 @@ export default function MemberSchedulePage() {
     setPastLoading(true);
     setPastError(null);
     try {
-      const result = await apiFetch<{ items: PastBooking[] }>('/me/activity-history?limit=20');
+      const result = await apiFetch<{ items: PastBooking[] }>(`/me/activity-history?limit=20&center_id=${ALL_CENTERS}`);
       setPastBookings(result.items);
     } catch (err: any) { setPastError(err.message ?? t('common.error')); }
     finally { setPastLoading(false); }
