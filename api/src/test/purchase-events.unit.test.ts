@@ -32,7 +32,7 @@ describe('one-off purchase and card verification events (#1325 PR 2)', () => {
 
   it('the purchase writes its event with the request and the webhook settles it', () => {
     const me = src('api', 'me-products.ts');
-    expect(me).toContain("'product_purchase', ?, ?, 'provider'");
+    expect(me).toContain("'product_purchase', ?, ?, ?, 'provider'");
     expect(me).toContain('UPDATE payment_requests SET billing_event_id = ?');
     expect(me).not.toContain('billing_event_id = ?, modified_at');
   });
