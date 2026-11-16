@@ -65,10 +65,8 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/product-sets-router.ts': 2,
   'api/product-sets.ts': 3,
   'api/scheduled-event-execution.ts': 2,
-  'api/user-membership-services.ts': 2,
   'api/user-memberships.ts': 29,
   'domain/billingEventPayments.ts': 2,
-  'domain/memberProfessionalServices.ts': 1,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -200,6 +198,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
     expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(5);
     expect(readFileSync(join(API_SRC, 'api/billing-simulation.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
+  });
+
+  it('M6b-19: the wallet\'s Additional Services leg and an assignment\'s services read plan_snapshots', () => {
+    for (const file of ['domain/memberProfessionalServices.ts', 'api/user-membership-services.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
+    }
+    expect(readFileSync(join(API_SRC, 'api/user-membership-services.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
