@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, contractedMembersText, discountText, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
+  billingMode, cancelRequestFor, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -95,11 +95,17 @@ describe('#2860 checkout summary', () => {
   });
 
   it('says what a discount is: the Promotion, else the line treatment, and nothing without one', () => {
-    const l = { name: 'x', quantity: 1, unit_price: 10, discount: 2, promotion_name: null, treatment_action: null, treatment_value: null, tax_rate_percent: null, tax_amount: 0, amount: 8 };
+    const l = { name: 'x', quantity: 1, unit_price: 10, line_total: 10, discount: 2, promotion_name: null, treatment_action: null, treatment_value: null, tax_rate_percent: null, tax_amount: 0, amount: 8 };
     expect(discountText({ ...l, discount: 0 })).toBeNull();
     expect(discountText({ ...l, promotion_name: 'Spring' })).toEqual({ text: 'Spring' });
     expect(discountText({ ...l, treatment_action: 'percentage_discount', treatment_value: 20 })).toEqual({ key: 'checkout_discount_percent', values: { percent: 20 } });
     expect(discountText({ ...l, treatment_action: 'waive' })).toEqual({ key: 'checkout_discount_waived' });
     expect(discountText(l)).toEqual({ key: 'checkout_discount_direct' });
+  });
+
+  it('#2890: marks a line a benefit takes to €0.00, and only that one', () => {
+    expect(lineReducedToZero({ discount: 500, amount: 0 })).toBe(true);
+    expect(lineReducedToZero({ discount: 3, amount: 27 })).toBe(false);
+    expect(lineReducedToZero({ discount: 0, amount: 0 })).toBe(false);
   });
 });
