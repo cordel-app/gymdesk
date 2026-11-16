@@ -267,6 +267,35 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     ]);
   });
 
+  it('#2887: a cancelled cart that only carried the previous set\'s plan is no past plan of its own', async () => {
+    const clerk = `ps-cancel-carried-${uniq()}`;
+    await createTestMembership(gymId, 'member', clerk);
+    const memberId = await member(clerk);
+    // The plan the member chose and cancelled: a past plan.
+    const chosen = await pending(memberId, { assignment: false });
+    lookups.set(chosen.request.provider_ref, 'PENDING');
+    expect((await asMember(clerk, `/${chosen.id}/cancel`)).status).toBe(200);
+    // A later cart whose plan is the previous set's own snapshot, linked rather than
+    // added (#2125 M4b-3): cancelling it cancels no plan.
+    const cart = await pending(memberId, { assignment: false });
+    await db.query('UPDATE product_sets SET previous_product_set_id = ? WHERE id = ?', [chosen.id, cart.id]);
+    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ?', [cart.id]);
+    await db.query(
+      `INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
+       SELECT ?, plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?`, [cart.id, chosen.id]);
+    lookups.set(cart.request.provider_ref, 'PENDING');
+    expect((await asMember(clerk, `/${cart.id}/cancel`)).status).toBe(200);
+
+    const config = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(config.status).toBe(200);
+    expect(config.body.cancelled_product_sets.map((r: any) => r.id)).toEqual([chosen.id]);
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
+    const me = await request.get('/me/membership').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(me.status).toBe(200);
+    expect(me.body.past_memberships.map((r: any) => r.product_set_id)).toEqual([chosen.id]);
+  });
+
   it('#2747 stage 2: a cancelled set linked to an assignment is listed through that assignment, not twice', async () => {
     const p = await pending();
     lookups.set(p.request.provider_ref, 'PENDING');

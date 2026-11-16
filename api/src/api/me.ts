@@ -1,3 +1,4 @@
+import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
 import { memberMayAddPlansAndProducts, memberMayViewPayments, refuseUnlessMayAdd, refuseUnlessMayViewPayments } from './family-add-rights';
 import { resolvePayerFor } from './payer-resolution';
@@ -2281,8 +2282,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT ps.id, ps.membership_plan_id, mp.name AS plan_name, ps.starts_at, ps.cancelled_at
          FROM product_sets ps
          LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
-          AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${CANCELLED_PLAN_SET_SQL}
         ORDER BY ps.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],

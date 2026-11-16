@@ -61,7 +61,7 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { canEditLivePlan, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
+import { canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
 
 
@@ -136,7 +136,10 @@ export function MemberMembershipPlans({
   const live = plans.filter((p) => p.is_live);
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
-  const history = plans.filter((p) => !p.is_live && !p.is_current);
+  // #2887: the Past list and its count come from one decision.
+  const past = pastPlans(plans, cancelledSets);
+  const history = past.history;
+  const pastCancelledSets = past.cancelledSets;
   // #2742: a plan the member chose in the Members App and has not paid yet has no
   // assignment row until the payment activates it; it is listed in Active from its
   // ProductSet version, labelled by that version's own `pending_payment` status.
@@ -282,7 +285,7 @@ export function MemberMembershipPlans({
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
           live one does. Absent rather than empty, as the card group was. */}
-      {(history.length > 0 || cancelledSets.length > 0) && (
+      {past.count > 0 && (
         <div style={{ marginTop: 16 }}>
           <button
             type="button"
@@ -294,12 +297,12 @@ export function MemberMembershipPlans({
             }}
           >
             <span>{t('membership_plans_history')}</span>
-            <span>({history.length + cancelledSets.length})</span>
+            <span>({past.count})</span>
             <span aria-hidden="true" style={{ marginLeft: 'auto' }}>{pastOpen ? '▾' : '▸'}</span>
           </button>
-          {pastOpen && cancelledSets.length > 0 && (
+          {pastOpen && pastCancelledSets.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <PendingPaymentPlans sets={cancelledSets} spaced={history.length > 0} status="cancelled" />
+              <PendingPaymentPlans sets={pastCancelledSets} spaced={history.length > 0} status="cancelled" />
             </div>
           )}
           {pastOpen && history.length > 0 && (
