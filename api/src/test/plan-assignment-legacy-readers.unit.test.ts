@@ -51,7 +51,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/entitlement-plan-links.ts': 1,
   'api/member-membership-configuration.ts': 2,
   'api/membership-plans.ts': 2,
-  'api/membership-promotions.ts': 2,
+  'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 1,
@@ -63,7 +63,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/product-sets-router.ts': 2,
   'api/product-sets.ts': 3,
   'api/scheduled-event-execution.ts': 2,
-  'api/user-memberships.ts': 19,
+  'api/user-memberships.ts': 18,
   'domain/billingEventPayments.ts': 2,
 };
 
