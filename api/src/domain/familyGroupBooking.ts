@@ -2,7 +2,7 @@
  * #2674 / #2813 — a family booking: a member books a `family_only` Professional
  * Service, naming the other members of their Family who attend with them. Since
  * #2813 each selected member gets an individual booking of their own (no
- * `booking_group_id`): each passes the booking gate and reserves its own unit,
+ * `booking_group_id`): each passes the booking gate (since #2902 the family booking reserves and spends one unit),
  * the initiator recorded as `booked_by_member_id` on every row. Since #2901 a
  * member who cancels their own booking cancels the family's other bookings of
  * that occurrence and service too (`DELETE /me/bookings/:id`).

@@ -37,9 +37,10 @@ export async function spendSessionForBooking(
 
   const { rows: bRows } = await tx.query(
     `SELECT ceb.member_id, ceb.calendar_event_id, ce.activity_type_id, ceb.professional_service_id AS chosen_service_id, ceb.negative_balance_ok,
-            ceb.booking_group_id, ceb.booked_by_member_id
+            ceb.booking_group_id, ceb.booked_by_member_id, ps.booking_type
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+       LEFT JOIN professional_services ps ON ps.id = ceb.professional_service_id
       WHERE ceb.id = ? AND ceb.gym_id = ?`,
     [bookingId, gymId],
   );
@@ -48,7 +49,12 @@ export async function spendSessionForBooking(
   // #1984 stage 2b-2: a Duo booking spends one session per group, charged to the
   // member who made the booking, whichever participant's row triggers the spend.
   const groupId: string | null = bRows[0].booking_group_id ?? null;
-  const memberId = groupId && bRows[0].booked_by_member_id != null
+  // #2902: a Family Only booking (#2813: one individual row per attending family
+  // member, no group, the initiator in `booked_by_member_id`) spends one unit for
+  // the occurrence too — charged to the initiator, whichever row triggers it.
+  const familyBooking = !groupId && bRows[0].booking_type === 'family_only' && bRows[0].booked_by_member_id != null
+    && bRows[0].chosen_service_id != null;
+  const memberId = (groupId || familyBooking) && bRows[0].booked_by_member_id != null
     ? Number(bRows[0].booked_by_member_id)
     : bRows[0].member_id;
   if (groupId) {
@@ -66,6 +72,18 @@ export async function spendSessionForBooking(
 
   // #2670 stage 2: one wallet per family, so two family members' spends are serialised.
   await lockWallet(tx, gymId, await familyWalletOf(tx, gymId, memberId), memberId);
+  // Checked under the wallet lock, so two rows of one family booking spent at once
+  // (a bulk attendance roll, the event-start pass) cannot both spend.
+  if (familyBooking) {
+    const { rows: familySpent } = await tx.query(
+      `SELECT psc.id FROM professional_service_consumptions psc
+         JOIN calendar_event_bookings f ON f.id = psc.calendar_event_booking_id
+        WHERE f.gym_id = ? AND f.calendar_event_id = ? AND f.professional_service_id = ?
+          AND f.booked_by_member_id = ? AND f.booking_group_id IS NULL AND psc.returned_at IS NULL FOR UPDATE`,
+      [gymId, eventId, Number(bRows[0].chosen_service_id), memberId],
+    );
+    if (familySpent.length > 0) return { spent: false, skipped: 'already_spent' };
+  }
   const grants = await loadMemberProfessionalServiceGrants(gymId, memberId);
   // #1985: the service the member chose at booking goes first; if its balance
   // has since run out the default order applies rather than losing the spend.
@@ -89,6 +107,7 @@ export async function spendSessionForBooking(
       [gymId, memberId, memberId, gymId, bookingId, eventId, debtServiceId, reason, actor],
     );
     await settleBookingReservation(tx, gymId, bookingId);
+    if (familyBooking) await settleFamilyReservations(tx, gymId, eventId, Number(bRows[0].chosen_service_id), memberId);
     return { spent: true };
   }
 
@@ -116,6 +135,7 @@ export async function spendSessionForBooking(
     );
   }
   await settleBookingReservation(tx, gymId, bookingId);
+  if (familyBooking) await settleFamilyReservations(tx, gymId, eventId, Number(bRows[0].chosen_service_id), memberId);
   return { spent: true };
 }
 
@@ -129,6 +149,22 @@ async function settleBookingReservation(tx: Tx, gymId: string, bookingId: number
   await tx.query(
     "UPDATE professional_service_reservations SET status = 'consumed', consumed_at = UTC_TIMESTAMP() WHERE gym_id = ? AND calendar_event_booking_id = ? AND status = 'reserved'",
     [gymId, bookingId],
+  );
+}
+
+/**
+ * #2902: a Family Only booking holds one reservation, on whichever of its rows
+ * booked first; the unit it held is spent once, from whichever row triggers the
+ * spend, so the family's reservation is consumed with it.
+ */
+async function settleFamilyReservations(tx: Tx, gymId: string, eventId: number, serviceId: number, bookedBy: number): Promise<void> {
+  await tx.query(
+    `UPDATE professional_service_reservations r
+       JOIN calendar_event_bookings f ON f.id = r.calendar_event_booking_id
+        SET r.status = 'consumed', r.consumed_at = UTC_TIMESTAMP()
+      WHERE r.gym_id = ? AND r.status = 'reserved' AND f.calendar_event_id = ? AND f.professional_service_id = ?
+        AND f.booked_by_member_id = ? AND f.booking_group_id IS NULL`,
+    [gymId, eventId, serviceId, bookedBy],
   );
 }
 

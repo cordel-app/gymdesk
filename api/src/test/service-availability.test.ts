@@ -147,7 +147,8 @@ describe('session availability (#2851)', () => {
       [ev]);
     expect((rows as any[]).map((r) => r.member_id).sort()).toEqual([parent, kid1, kid2].sort());
     expect((rows as any[]).every((r) => r.booked_by_member_id === parent && r.professional_service_id === familyService)).toBe(true);
-    expect(await mine(clerk, familyService)).toMatchObject({ remaining: 3, booked: 3, available: 0 });
+    // #2902: the family booking reserves one unit, however many members attend.
+    expect(await mine(clerk, familyService)).toMatchObject({ remaining: 3, booked: 1, available: 2 });
 
     // A repeat registers nobody twice.
     const again = await bookAs(clerk, { class_session_id: ev, participant_member_ids: [kid1, kid2], booker_attends: true });
