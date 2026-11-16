@@ -9,6 +9,7 @@ import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -1553,6 +1554,9 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
       });
+      // #2125 M6b-35: the replace target is written on the Draft's own plan snapshot, which is what
+      // the commit reads (`assignmentReplacementOf()`); the legacy column above is the dual-write.
+      await writeAssignmentReplacement(tx, gymId, Number(insertId), { replacesUserMembershipId: Number(req.params.id) });
       return { kind: 'created' as const, insertId };
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
