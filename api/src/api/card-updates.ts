@@ -4,7 +4,7 @@ import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { payerMemberSql } from './payer-resolution';
-import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { isCurrentAssignmentSnapshotSql, OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import {
   CARD_UPDATE_SOURCE,
   cardRemovalBlock,
@@ -66,8 +66,7 @@ export async function resolveCardUpdateMembership(
 ): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
     `SELECT um.id
-       FROM user_memberships um
-      WHERE um.gym_id = ? AND um.member_id = ?
+       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
       ORDER BY (um.status = 'active') DESC, um.starts_at DESC, um.id DESC
       LIMIT 1`,
     [gymId, memberId],
