@@ -11,6 +11,7 @@ import { isFeatureEnabled, requireFeatureEnabled } from '../infra/featureFlags';
 import {
   cancelBillingEvent, loadRefundOptions, loadRefundSummaries, refundBillingEvent,
 } from './billing-event-refunds';
+import { loadRefundReceiptsForEvents, refundReceiptPdf } from './refund-receipts';
 import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -429,6 +430,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       receipt_number: string | null;
       can_issue_receipt: boolean;
       has_full_invoice: boolean;
+      /** #2935: the event's Refund Receipts, one per completed refund, oldest first. */
+      refund_receipts: { id: number; receipt_number: string }[];
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -440,6 +443,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       gymId, realRows.map((r) => Number(r.user_membership_id)).filter((n) => Number.isInteger(n) && n > 0));
     const mayRefund = await callerMayRefund(req);
     const refundsByEvent = await loadRefundSummaries(gymId, realRows.map((r) => Number(r.id)));
+    const refundReceiptsByEvent = await loadRefundReceiptsForEvents(db, gymId, realRows.map((r) => Number(r.id)));
     const past: BillingEventRow[] = realRows.map((r) => {
       const scheduledEvent = Number(r.is_scheduled) === 1;
       const cancelled = r.cancelled_at != null;
@@ -474,6 +478,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         receipt_number: r.receipt_number ?? null,
         can_issue_receipt: isReceiptableEvent(r.event_type, r.latest_tx_status) && parseFloat(r.amount ?? '0') > 0,
         has_full_invoice: Number(r.has_full_invoice) === 1,
+        refund_receipts: (refundReceiptsByEvent.get(Number(r.id)) ?? [])
+          .map((rr) => ({ id: rr.id, receipt_number: rr.receipt_number })),
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         ...(() => {
@@ -645,6 +651,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
               pr.attempt, pr.provider_status, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
               pr.transaction_type, pr.refund_of_payment_request_id, pr.provider_refund_ref,
               pr.created_by, pr.modified_at, pr.modified_by,
+              rr.id AS refund_receipt_id, rr.receipt_number AS refund_receipt_number,
               m.name AS member_name,
               mp.name AS plan_name,
               pm.card_brand, pm.card_last4
@@ -653,6 +660,8 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
        LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
        LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
        LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
+       -- #2935: the Refund Receipt a completed refund transaction was documented by.
+       LEFT JOIN refund_receipts rr ON rr.payment_request_id = pr.id
        WHERE pr.gym_id = ?
          AND (pr.billing_event_id = ?
               -- #2480: a refund reaches its event through the attempt it returns money from.
@@ -1065,6 +1074,24 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="recibo-${receiptNumber}.pdf"`);
     res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /payments/refund-receipts/:id — #2935: a Refund Receipt's PDF. It is
+// issued by the refund writer when the refund completes; this route only reads
+// (and, the first time, renders and stores) it — it never issues one.
+paymentsRouter.get('/refund-receipts/:id', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = parseInt(String(req.params.id), 10);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const doc = await refundReceiptPdf(gymId, id);
+    if (!doc) return res.status(404).json({ error: 'Refund receipt not found' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="devolucion-${doc.receiptNumber}.pdf"`);
+    res.send(doc.pdf);
   } catch (err) {
     next(err);
   }

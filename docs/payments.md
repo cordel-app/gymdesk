@@ -801,6 +801,37 @@ invoice is the existing manual `POST /payments/invoices/:id/rectify`, never auto
 >   provider payment with a `provider_ref`.~~ Reversed by #2797, below.
 > - **A pending Monei refund is not reconciled automatically** yet; it stays reserved.
 
+#### Refund Receipts (#2935, migration 426)
+
+Every refund transaction that **completes** is documented by a Refund Receipt
+(`refund_receipts`, one row per refund `payment_requests` row, `UNIQUE (payment_request_id)`):
+a manual refund (cash, card terminal) gets it inside the transaction that records the refund;
+a Monei refund gets it right after the provider answers `REFUNDED`/`PARTIALLY_REFUNDED`, in a
+transaction of its own whose failure is logged and never undoes the refund (#787's reasoning).
+A pending or failed refund gets none, and each partial refund gets its own. The number is its
+own gapless per-gym, per-year series, `R-YYYY-NNNN` (`refund_receipt_sequences`, never
+`receipt_sequences`), allocated only by `issueRefundReceipt()` (`api/src/api/refund-receipts.ts`)
+under the refund row's lock. The original receipt number, its PDF and every invoice are not
+touched, and no invoice is issued: a fiscal correction stays the manual rectifying invoice.
+
+The PDF ("JUSTIFICANTE DE DEVOLUCIÓN / REFUND RECEIPT", `lib/refund-receipt-pdf.ts`) prints the
+gym's legal name, NIF and fiscal address; the payer's name and tax id (the event's issued full
+invoice's customer data, else the member's NIF/NIE); the refund's date and time, amount,
+currency, method, reference (`provider_refund_ref`, else the transaction id) and refunded
+lines; and the original receipt number, payment date, amount and Billing Event. It is rendered
+once into the private bucket (`refund_receipts.pdf_key`, `buildRefundReceiptKey()`) and served
+by `GET /payments/refund-receipts/:id`, which never issues one. The Billing Events list reports
+`refund_receipts` per event (the ⋮ menu's *View Refund Receipt* entries) and each refund
+transaction its `refund_receipt_number`.
+
+> **Decisions (#2935)** — change them here if they turn out wrong:
+> - **No backfill**: refunds completed before migration 426 have no Refund Receipt.
+> - **The refund reason is the refunded lines**: a refund records no free-text reason, so a
+>   Selected Line Items refund prints its lines and any other prints none.
+> - **No logo**: the receipt and invoice PDFs draw none today; the Refund Receipt follows them.
+> - **The customer is the payer** (`payer_member_id`, else the member), the one the money
+>   went back to.
+
 #### A refund goes back through the original payment method (#2797)
 
 `refundMethodFor()` (`domain/billingEventRefund.ts`) answers the one method a collected

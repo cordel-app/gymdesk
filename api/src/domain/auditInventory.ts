@@ -121,6 +121,8 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "receipt_documents": ["ledger", "stored receipt PDFs (#2567), created_by only"],
   "professional_service_reservations": ["ledger", "one reservation per booking (#2605), status moves reserved to released or consumed; created_by only"],
   "receipt_sequences": ["technical", "gapless counter per gym and year"],
+  "refund_receipt_sequences": ["technical", "gapless Refund Receipt counter per gym and year (#2935)"],
+  "refund_receipts": ["ledger", "one Refund Receipt per completed refund transaction (#2935), created_by only"],
   "recurring_booking_run_log": ["ledger", "system run log"],
   "resources": ["legacy", "legacy table, no reader or writer"],
   "result_types": ["lookup", "global lookup, no runtime writer"],

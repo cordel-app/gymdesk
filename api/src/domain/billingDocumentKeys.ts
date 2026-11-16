@@ -9,6 +9,7 @@ export type InvoicePaymentState = 'not-paid' | 'paid';
 
 export const INVOICES_FOLDER = 'invoices';
 export const RECEIPTS_FOLDER = 'receipts';
+export const REFUND_RECEIPTS_FOLDER = 'refund_receipts';
 
 /** `gyms/<gym_id>-<name>/invoices/<invoice_id>-<type>-<state>.pdf` */
 export function buildInvoiceKey(
@@ -22,6 +23,11 @@ export function buildInvoiceKey(
 /** `gyms/<gym_id>-<name>/receipts/<receipt_id>.pdf` */
 export function buildReceiptKey(gymId: string, gymName: string, receiptId: number | string): string {
   return `${buildGymFolderPrefix(gymId, gymName)}/${RECEIPTS_FOLDER}/${receiptId}.pdf`;
+}
+
+/** #2935: `gyms/<gym_id>-<name>/refund_receipts/<refund_receipt_id>.pdf` */
+export function buildRefundReceiptKey(gymId: string, gymName: string, refundReceiptId: number | string): string {
+  return `${buildGymFolderPrefix(gymId, gymName)}/${REFUND_RECEIPTS_FOLDER}/${refundReceiptId}.pdf`;
 }
 
 /** The invoices column that holds a given representation's key. */

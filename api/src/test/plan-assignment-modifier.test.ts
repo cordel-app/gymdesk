@@ -1,4 +1,4 @@
-// #2125 M6b-30 (migration 426): the assignment's last modification (`modified_at` / `modified_by`) is
+// #2125 M6b-30 (migration 427): the assignment's last modification (`modified_at` / `modified_by`) is
 // dual-written onto its plan snapshot beside `user_memberships`, on the rule the other
 // assignment-level facts follow (an unshared snapshot; a copy carries its source's), and the
 // migration's backfill converges on the legacy row.
@@ -9,7 +9,7 @@ import {
 } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../infra/migrations/426_plan_snapshot_assignment_modifier.js');
+const migration = require('../infra/migrations/427_plan_snapshot_assignment_modifier.js');
 
 let gymId: string;
 let seq = 0;
