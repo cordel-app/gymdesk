@@ -63,7 +63,7 @@ describe('GET /me/product-sets/:id — My Plans and My Products from one version
 
     const res = await as(a.clerk, 'get', `/${draft.id}`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.plans).toHaveLength(1);
     const p = res.body.plans[0];
     expect(p).toMatchObject({
@@ -136,6 +136,6 @@ describe('GET /me/product-sets/:id — My Plans and My Products from one version
     const a = await member('Owner C');
     const draft = (await as(a.clerk, 'post', '/draft')).body;
     const list = await as(a.clerk, 'get', '');
-    expect(list.body).toEqual([expect.objectContaining({ id: draft.id, status: 'draft', own: true })]);
+    expect(list.body).toEqual([expect.objectContaining({ id: draft.id, status: 'in_cart', own: true })]);
   });
 });

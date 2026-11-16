@@ -16,7 +16,9 @@
  * so its expression is widened to both values while the rows move and narrowed afterwards; the unique
  * index on it holds throughout, since a row is never in both. Each step is safe to re-run. The CHECK
  * and the column change rebuild both tables under ALGORITHM=COPY; merge outside the nightly runs and
- * the 15-minute booking-reminder pass. `down` reverses it exactly.
+ * the 15-minute booking-reminder pass. The API that reads and writes `in_cart` must ship in the same
+ * deploy: until it starts, the previous build's `draft` writes fail the CHECK and its `draft` reads
+ * find no cart (migration 433 had the same window). `down` reverses it exactly.
  */
 
 const SET_STATUSES = ['pending_payment', 'active', 'superseded', 'cancelled'];

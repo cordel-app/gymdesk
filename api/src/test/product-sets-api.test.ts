@@ -78,7 +78,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
 
     const created = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: planId, starts_at: TODAY });
     expect(created.status).toBe(201);
-    expect(created.body.status).toBe('draft');
+    expect(created.body.status).toBe('in_cart');
     const id = created.body.id;
 
     // A second in-flight version is refused.
@@ -185,7 +185,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     expect(del.status).toBe(404);
     const still = await auth(request.get(`/product-sets/${c.body.id}`));
     expect(still.status).toBe(200);
-    expect(still.body.status).toBe('draft');
+    expect(still.body.status).toBe('in_cart');
   });
 
   it('is tenant scoped', async () => {

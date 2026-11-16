@@ -78,7 +78,7 @@ describe('Draft initial payment and simulation (#2899)', () => {
     const { owner, kid, runningName } = await familyWithRunningPlan();
     const added = await plan(70, 2);
     const set = await setOf(await assign(added, owner, [owner, kid]));
-    expect(set.status).toBe('draft');
+    expect(set.status).toBe('in_cart');
     expect(set.previous_product_set_id).not.toBeNull();
 
     const review = await staff('get', `/product-sets/${set.id}/review`);

@@ -44,7 +44,7 @@ describe('a Draft assignment is created set-first', () => {
       .send({ member_id: m, membership_plan_id: await plan('P'), starts_at: '2026-06-01' });
     expect(res.status).toBe(201);
     const set = await draftSetOf(res.body.id);
-    expect(set).toMatchObject({ status: 'draft', owner_member_id: m });
+    expect(set).toMatchObject({ status: 'in_cart', owner_member_id: m });
   });
 
   it('assigning again while a Draft is open replaces it: one Draft, the latest plan (#1707)', async () => {
