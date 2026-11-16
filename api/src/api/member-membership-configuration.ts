@@ -9,6 +9,7 @@ import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligib
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -163,17 +164,18 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // being configured (or awaiting payment) if there is one, otherwise the Active
   // one, with every Superseded version as history. A pure read: nothing here
   // creates a Billing Event. `ends_at` is the plan's end date of the assignment
-  // the version projects (null while open-ended or never projected).
+  // the version projects (null while open-ended or never projected). #2125 M6b-28: read off the
+  // assignment's current plan snapshot, never the `user_memberships` row.
   const { rows: setRows } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             CASE WHEN ps.status = 'draft'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
-            mp.name AS plan_name, mp.lifecycle_status AS plan_status, um.ends_at AS ends_at
+            mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')}
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
       ORDER BY ps.id DESC`,
     [gymId, memberId],
