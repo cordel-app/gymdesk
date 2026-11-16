@@ -28,6 +28,7 @@ import {
 import {
   billingDocuments, documentStatusKey, documentTypeKey, type BillingDocumentRow, type ReceiptInfo,
 } from './receiptsInvoicesView';
+import { useBillingEventDocumentsChanged } from './documentsChanged';
 
 const cell: React.CSSProperties = { padding: '6px 10px', verticalAlign: 'top' };
 
@@ -86,6 +87,10 @@ export function ReceiptsInvoicesSection({
   }, [billingEventId]);
 
   useEffect(() => { load(); }, [load]);
+  // #2885: a receipt or complete invoice issued from the ⋮ menu appears here at
+  // once — the table is re-read and opened so the new row is in view; a failed
+  // issue sends no signal.
+  useBillingEventDocumentsChanged(billingEventId, () => { setOpen(true); load(); });
 
   const documents = billingDocuments(receipt, invoices ?? []);
 

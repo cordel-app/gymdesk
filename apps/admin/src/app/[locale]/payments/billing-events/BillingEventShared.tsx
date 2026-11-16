@@ -20,6 +20,7 @@ import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
 import { menuDocumentBlocks, type FullInvoiceForm } from './receiptsInvoicesView';
+import { notifyBillingEventDocumentsChanged } from './documentsChanged';
 
 type T = ReturnType<typeof useTranslations>;
 
@@ -237,6 +238,7 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       window.open(URL.createObjectURL(blob), '_blank');
       if (!row.receipt_number) toast(t('billing_events_page.doc_generated'), 'success');
       openDetails(id);
+      if (!row.receipt_number) notifyBillingEventDocumentsChanged(id);
       onChanged();
     } catch (err: any) {
       toast(err?.message ?? t('billing_events_page.action_error'));
@@ -257,6 +259,7 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       toast(t('billing_events_page.doc_generated'), 'success');
       setInvoicing(null);
       openDetails(id);
+      notifyBillingEventDocumentsChanged(id);
       onChanged();
     } catch (err: any) {
       setInvoiceError(err?.message ?? t('billing_events_page.action_error'));

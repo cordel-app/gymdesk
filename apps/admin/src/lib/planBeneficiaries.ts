@@ -91,3 +91,19 @@ export function beneficiarySelectionIssue(
   if (required != null && selected.length !== required) return { key: 'exact_count', count: required };
   return null;
 }
+
+/** #2879 stage 2: the Members per Membership a Draft may be changed to (the API's set). */
+export const PLAN_MEMBER_LIMITS: readonly PlanMemberLimit[] = ['1', '2', 'family'];
+
+/**
+ * #2879 stage 2: whether a Draft's beneficiary editor holds changes not yet saved — a
+ * different limit, or a different set of beneficiaries (order does not matter).
+ */
+export function beneficiaryDraftChanged(
+  saved: { memberLimit: string; ids: readonly number[] },
+  draft: { memberLimit: string; ids: readonly number[] },
+): boolean {
+  if (saved.memberLimit !== draft.memberLimit) return true;
+  const a = new Set(saved.ids);
+  return a.size !== new Set(draft.ids).size || draft.ids.some((id) => !a.has(id));
+}

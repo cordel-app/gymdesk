@@ -1,3 +1,4 @@
+import { ownerFamilyMemberIds } from './owner-family';
 import { parseLineDirectDiscountInput, toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
@@ -840,21 +841,7 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // Promotion targeting the Plan), and emitting the same creation billing event
 // as POST /user-memberships (P1.6 ledger).
 
-/**
- * #2879: the live members of `ownerId`'s family, the owner included. A member with no
- * family row (legacy data) is a family of one.
- */
-async function ownerFamilyMemberIds(gymId: string, ownerId: number): Promise<number[]> {
-  const { rows } = await db.query<{ member_id: number }>(
-    `SELECT fm.member_id FROM family_members fm
-       JOIN family_members me ON me.family_id = fm.family_id AND me.gym_id = fm.gym_id
-       JOIN members m ON m.id = fm.member_id AND m.deleted_at IS NULL
-      WHERE me.member_id = ? AND me.gym_id = ?`,
-    [ownerId, gymId],
-  );
-  const ids = rows.map((r) => Number(r.member_id));
-  return ids.includes(ownerId) ? ids : [ownerId, ...ids];
-}
+// #2879: the beneficiaries are judged against the owner's family (`ownerFamilyMemberIds()`).
 
 membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
@@ -916,7 +903,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   if (ownerRows.length === 0) {
     return res.status(400).json({ error: 'One or more selected members were not found.' });
   }
-  const familyMemberIds = await ownerFamilyMemberIds(gymId, ownerId);
+  const familyMemberIds = await ownerFamilyMemberIds(db, gymId, ownerId);
   const selectionError = beneficiarySelectionError({ limit: plan.member_limit, familyMemberIds, beneficiaryIds });
   if (selectionError) {
     if (selectionError.code === 'beneficiary_not_in_family') {
