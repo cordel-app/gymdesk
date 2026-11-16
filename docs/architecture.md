@@ -409,6 +409,8 @@ Three routes on `paymentsRouter`, all under the existing PAYMENTS gates:
 
 **Refund Receipts (#2935, migration 426).** `refund_receipts` (one per completed refund transaction, `R-YYYY-NNNN` from its own `refund_receipt_sequences`, PDF key in the private bucket) is written only by `issueRefundReceipt()` (`api/src/api/refund-receipts.ts`), called by the refund writer when a refund completes; `GET /payments/refund-receipts/:id` serves the PDF. See `docs/payments.md`.
 
+**Member payment documents (#2936).** `GET /me/billing-events` reports `documents` per event (`memberPaymentDocuments()`, `api/src/domain/memberPaymentDocuments.ts`, loaded by `api/src/api/member-payment-documents.ts`); `GET /me/receipts/:billingEventId`, `GET /me/invoices/:id/pdf` and `GET /me/refund-receipts/:id/pdf` serve them, each refusing a document that is not offered for one of the caller's own events (404) and a family member who is not the owner (403). Reads only: no route issues or re-renders an invoice.
+
 Invariants both actions share (`domain/billingEventPayments.ts`): the event must be `failed`, must hang off a membership (`payment_requests.user_membership_id` is NOT NULL) and must have a positive amount; an event that already has a **completed** transaction returns 409, which is also what stops one charge advancing the schedule twice. A settled charge advances `next_billing_date`/`last_billed_at` exactly as the nightly run does, and only while the membership is still waiting on that charge (`next_billing_date <= today`). `audit_logs` carries the manual intervention — actions `retry_payment` and `manual_payment` with previous/new status and the per-attempt results.
 
 ### Failed payments awaiting action (#779)
