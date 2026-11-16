@@ -77,9 +77,10 @@ describe('Products: Mandatory badge in the card header (#894)', () => {
   });
 
   it('leaves the edit form as the place the flag is configured', () => {
-    expect(page).toContain('checked={editForm.mandatory}');
-    expect(page).toContain('checked={inlineNew.mandatory}');
-    expect(page).toContain('mandatory: editForm.mandatory');
+    // #2948: one control for both forms, one payload builder for both saves.
+    expect(page).toContain('checked={form.mandatory}');
+    expect(page).toMatch(/renderFormControl\(\s*field,\s*inlineNew,/);
+    expect(page).toContain('toProductPayload(editForm, SESSION_TYPE)');
   });
 
   it('leaves the Status and Enrollment badges in their own columns', () => {

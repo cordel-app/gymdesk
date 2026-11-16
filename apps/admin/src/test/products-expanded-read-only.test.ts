@@ -229,7 +229,8 @@ describe('the layout owns the structure and neither half restates it (#974 §1)'
   it('is rendered by the one expanded body, in both modes', () => {
     expect(pageSrc).toContain('{(isExpanded || isEditing) && (');
     expect(pageSrc).toContain('<ProductLayout');
-    expect((pageSrc.match(/<ProductLayout/g) ?? []).length).toBe(1);
+    // #2948: the create card renders the same layout, always in edit mode.
+    expect((pageSrc.match(/<ProductLayout/g) ?? []).length).toBe(2);
     expect(pageSrc).toContain('editing={isEditing}');
   });
 
@@ -287,7 +288,7 @@ describe('the layout owns the structure and neither half restates it (#974 §1)'
 
   it('gives the card one body padding, so nothing shifts as Edit opens', () => {
     expect(pageSrc).toContain('export const productExpandedBodyStyle');
-    expect((pageSrc.match(/style=\{expandedBodyStyle\}/g) ?? []).length).toBe(1);
+    expect((pageSrc.match(/style=\{expandedBodyStyle\}/g) ?? []).length).toBe(2);
     expect(pageSrc).not.toContain("padding: '0 20px 16px'");
   });
 });
@@ -301,13 +302,14 @@ describe('expanded means read-only (#974 §2)', () => {
 
   it('puts every control behind the editing flag', () => {
     // Each `<input>`, `<select>` and `<textarea>` of the card lives in
-    // `renderEditControl`, which the layout calls only while editing.
-    const start = pageSrc.indexOf('function renderEditControl(');
-    const end = pageSrc.indexOf('const menuItems: ContextMenuItem[]', start);
+    // `renderFormControl`, which the layout calls only while editing (#2948:
+    // shared with the create card).
+    const start = pageSrc.indexOf('function renderFormControl(');
+    const end = pageSrc.indexOf('const listText', start);
     expect(start).toBeGreaterThan(-1);
     const editControls = pageSrc.slice(start, end);
     const readStart = pageSrc.indexOf('function renderReadOnlyValue(');
-    const readOnly = pageSrc.slice(readStart, start);
+    const readOnly = pageSrc.slice(readStart, pageSrc.indexOf('const menuItems: ContextMenuItem[]', readStart));
     for (const control of ['<input', '<select', '<textarea', 'onChange']) {
       expect(editControls, control).toContain(control);
       expect(readOnly, control).not.toContain(control);
@@ -378,12 +380,14 @@ describe('the card\'s buttons follow the Theme (#974 §4/§5)', () => {
 
 describe('nothing about the item itself changed (#974 §6)', () => {
   it('submits the same PUT payload as before', () => {
+    // #2948: the payload is built once, beside the form, for POST and PUT.
+    expect(pageSrc).toContain('body: JSON.stringify(toProductPayload(editForm, SESSION_TYPE))');
     for (const line of [
-      "name: editForm.name.trim() || undefined,",
-      "mandatory: editForm.mandatory,",
+      "name: form.name.trim() || undefined,",
+      "mandatory: form.mandatory,",
       "professional_service_ids:",
     ]) {
-      expect(pageSrc, line).toContain(line);
+      expect(profileSrc, line).toContain(line);
     }
   });
 
