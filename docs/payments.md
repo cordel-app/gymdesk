@@ -1072,6 +1072,12 @@ clock.
 no status column: an event's status is its latest linked transaction's, falling back to the
 event type (`deriveBillingEventStatus()`, `api/src/domain/billingEventStatus.ts`).
 
+- `name VARCHAR(255) NULL` (migration 427, #2940) — the event's generated name, written once by
+  its writer through `api/src/api/billing-event-name.ts` over `domain/billingEventName.ts`
+  (`Initial Engagement`, `<Gym> - <Month>`, `<Gym> - <Month> (dd/mm/yyyy)`, `<Gym> - <Item>`,
+  `<Gym> - Compra dd/mm/yyyy`). Display only: nothing prices, settles or invoices from it, and
+  an event written before it (or by a writer that names nothing: adjustments, manual appends,
+  card verifications) holds NULL and is shown as before.
 - `event_type` ∈ `charge_created | payment_recorded | status_changed | adjustment |
   recurring_payment | failed_billing | waived_billing | product_purchase | card_verification`
   — `billing_events_event_type_check`, current definition in **migration 247**.
