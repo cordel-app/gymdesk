@@ -1,5 +1,6 @@
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { assignedMemberSql } from '../domain/productAssignee';
+import { IN_CART_PURCHASE_STATUS, purchaseCartExpiresAt } from '../domain/memberProductPurchase';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
@@ -296,6 +297,11 @@ export interface MemberPurchasedProduct {
   cancelled_on?: string | null;
   validity_state?: string | null;
   created_at: string | null;
+  /**
+   * #2962 — when a standalone one-time Product in the cart (a `draft` no Product Set carries)
+   * expires, as an ISO instant; `null` for every other purchase. The Admin counts down to it.
+   */
+  cart_expires_at?: string | null;
   /** The plain-text actor snapshot (#1182): the member, or `Staff (impersonating …)`. */
   created_by: string | null;
   /** #1883 — where it came from; null reads as Unknown. */
@@ -380,6 +386,7 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
+            mp.in_product_set,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
@@ -412,6 +419,8 @@ export async function loadMemberPurchases(
       cancelled_on: row.cancelled_on ?? null,
       validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
+      cart_expires_at: row.status === IN_CART_PURCHASE_STATUS && !Number(row.in_product_set) && row.created_at
+        ? purchaseCartExpiresAt(new Date(row.created_at)).toISOString() : null,
       created_by: row.created_by ?? null,
       origin: toItemOrigin(row.origin),
       // With no Promotion the two figures are the same number: the purchase was

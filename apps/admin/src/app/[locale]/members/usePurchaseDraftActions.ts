@@ -7,8 +7,11 @@
 
 import { useState } from 'react';
 import { useApiClient } from '@/lib/apiClient';
+import { isPurchaseExpiredError } from './purchasedProductsView';
 
-export function usePurchaseDraftActions(memberId: number, onChanged: () => void, fallbackError: string) {
+export function usePurchaseDraftActions(
+  memberId: number, onChanged: () => void, fallbackError: string, expiredError: string = fallbackError,
+) {
   const { apiFetch } = useApiClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +25,13 @@ export function usePurchaseDraftActions(memberId: number, onChanged: () => void,
       onChanged();
       return true;
     } catch (err: any) {
+      // #2962: the purchase spent more than two hours in the cart and the server deleted it;
+      // the list is reloaded so the row disappears, and the reason is said in words.
+      if (isPurchaseExpiredError(err)) {
+        onChanged();
+        setError(expiredError);
+        return false;
+      }
       setError(err?.body?.message ?? fallbackError);
       return false;
     } finally {

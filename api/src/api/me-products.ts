@@ -60,6 +60,7 @@ import {
   type PurchaseBlock,
   PENDING_PURCHASE_STATUS,
   IN_CART_PURCHASE_STATUS,
+  PURCHASE_CART_TTL_MINUTES,
   PRODUCT_PURCHASE_SOURCE,
   describeProductPurchase,
   productPurchaseBlock,
@@ -394,6 +395,8 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
   const pending = await hasPendingPurchase(input.gymId, input.memberId, input.productId);
   // #1657: staff hold at most one draft per Product; a payment started *from*
   // that draft is the one place it is expected.
+  // #2962: a standalone cart purchase past its two hours is gone before it can block a new one.
+  if (input.staff) await expireStandalonePurchaseDrafts({ gymId: input.gymId, memberId: input.memberId });
   if (input.staff && (await hasDraftPurchase(input.gymId, input.memberId, input.productId, ignoreDraftId))) {
     throw new PurchaseRefused('draft_exists');
   }
@@ -525,6 +528,49 @@ export async function deletePurchaseDraft(
     await deletePurchase(tx, gymId, purchaseId, { memberId, status: IN_CART_PURCHASE_STATUS });
     return true;
   });
+}
+
+/** #2962 — one standalone cart purchase the expiry deleted. */
+export interface ExpiredPurchaseDraft { id: number; gymId: string; memberId: number }
+
+/**
+ * #2962 — deletes every standalone one-time Product in the cart (a `draft` purchase no Product Set
+ * carries) older than `PURCHASE_CART_TTL_MINUTES`, exactly as **Cancel** deletes one: it was never
+ * paid for, so nothing is charged and no payment, Billing Event or completed purchase is touched.
+ * A purchase in a member's cart Product Set follows the set's own expiry (#1325) and is left alone.
+ *
+ * Run for one member before any read or write of their cart (so an expired purchase is never shown,
+ * counted as held or paid) and for the whole deployment by `POST /billing/cleanup`. Each purchase is
+ * deleted in a transaction of its own and re-checked under its lock, so one that was paid for in
+ * between survives. The age is compared in SQL against `UTC_TIMESTAMP()`, as the Product Set's is.
+ */
+export async function expireStandalonePurchaseDrafts(
+  scope: { gymId: string; memberId: number } | null = null,
+): Promise<ExpiredPurchaseDraft[]> {
+  const age = `status = ? AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`;
+  const predicate = scope ? `gym_id = ? AND member_id = ? AND ${age}` : age;
+  const params = scope ? [scope.gymId, scope.memberId, IN_CART_PURCHASE_STATUS] : [IN_CART_PURCHASE_STATUS];
+  const { rows } = await db.query<{ id: number; gym_id: string; member_id: number }>(
+    `SELECT mp.id, mp.gym_id, mp.member_id FROM ${purchaseSnapshotsSql(predicate, { notInProductSet: true })} mp`,
+    purchaseSnapshotParams(params),
+  );
+  const expired: ExpiredPurchaseDraft[] = [];
+  for (const r of rows) {
+    const gymId = r.gym_id;
+    const memberId = Number(r.member_id);
+    const id = Number(r.id);
+    const deleted = await db.transaction(async (tx) => {
+      if (!(await lockPurchase(tx, gymId, memberId, id))) return false;
+      const { rows: fresh } = await tx.query<{ id: number }>(
+        `SELECT mp.id FROM ${purchaseSnapshotsSql(`gym_id = ? AND member_id = ? AND source_id = ? AND ${age}`, { notInProductSet: true })} mp`,
+        purchaseSnapshotParams([gymId, memberId, id, IN_CART_PURCHASE_STATUS]),
+      );
+      if (!fresh[0]) return false;
+      return deletePurchase(tx, gymId, id, { memberId, status: IN_CART_PURCHASE_STATUS });
+    }).catch((err) => { console.error(`expireStandalonePurchaseDrafts: purchase ${id} failed`, err); return false; });
+    if (deleted) expired.push({ id, gymId, memberId });
+  }
+  return expired;
 }
 
 /** One draft of this Product for this member, other than `ignoreId`. */
