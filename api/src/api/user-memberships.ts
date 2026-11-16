@@ -922,9 +922,10 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   // flip here would activate a second live plan for the member with no
   // confirmation and no cancellation of the first.
   if (status === 'active') {
+    // #2125 M6b-24: the assignment's status from its current plan snapshot.
     const { rows: pre } = await db.query<{ status: string }>(
-      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
-      [req.params.id, gymId],
+      `SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+      [gymId, req.params.id],
     );
     if (pre[0]?.status === 'draft') {
       return res.status(400).json({
@@ -945,9 +946,10 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   // are part of what Save & Pay committed, so none of them move until it is
   // paid or discarded.
   if ('starts_at' in req.body || 'ends_at' in req.body || 'discount_reason' in req.body || 'discount_expires_at' in req.body) {
+    // #2125 M6b-24: the assignment's status from its current plan snapshot.
     const { rows: pre } = await db.query<{ status: string }>(
-      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
-      [req.params.id, gymId],
+      `SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+      [gymId, req.params.id],
     );
     if (pre[0]?.status === PENDING_PAYMENT_STATUS) {
       return res.status(400).json({ error: 'A membership pending payment is locked; cancel it to change its configuration.' });
@@ -1035,7 +1037,8 @@ userMembershipsRouter.get('/:id/cancellation-preview', requireModuleWrite('PAYME
   const { gymId } = getTenantContext(req);
   try {
     const out = await db.transaction(async (tx) => {
-      const { rows } = await tx.query('SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      // #2125 M6b-24: the assignment found through its current plan snapshot.
+      const { rows } = await tx.query(`SELECT um.id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, req.params.id]);
       if (rows.length === 0) return null;
       const { projectedSetFor, cancellationEndFor } = await import('./product-set-bridge');
       const set = await projectedSetFor(tx, gymId, Number(req.params.id));
@@ -1446,9 +1449,10 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   // selection is validated. The new assignment doesn't exist yet at this point
   // — nothing is excluded from the Member's history, and the row being
   // superseded is exactly what makes a still-current member not new.
+  // #2125 M6b-24: the owner from the assignment's current plan snapshot.
   const { rows: supersededRows } = await db.query(
-    'SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
-    [req.params.id, gymId],
+    `SELECT um.member_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (supersededRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
 
@@ -1704,9 +1708,10 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   })) return;
   const confirm = req.body?.confirm === true;
 
+  // #2125 M6b-24: the assignment's status and plan from its current plan snapshot.
   const { rows: currentRows } = await db.query<any>(
-    `SELECT id, status, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ?`,
-    [req.params.id, gymId],
+    `SELECT um.id, um.status, um.membership_plan_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (currentRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   // #1325 PR 3c: what is still scheduled is the ProductSet's, read off its ledger.
@@ -1799,10 +1804,11 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
  * capture a snapshot; the row is re-read and locked inside the transaction.
  */
 async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[]) {
+  // #2125 M6b-24: read from the assignment's current plan snapshot.
   const { rows } = await db.query(
-    `SELECT id, membership_plan_id, status, starts_at
-     FROM user_memberships WHERE id = ? AND gym_id = ?`,
-    [id, gymId],
+    `SELECT um.id, um.membership_plan_id, um.status, um.starts_at
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, id],
   );
   return rows[0] ?? null;
 }
