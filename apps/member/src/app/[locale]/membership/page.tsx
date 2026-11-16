@@ -841,7 +841,7 @@ export default function MembershipPage() {
    */
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
-    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
+    const benefits = (plan.benefits ?? []) as (Benefit & { final_price?: number | null; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
     const feeScopeNote = planFeeScopeNote(plan);
@@ -900,40 +900,49 @@ export default function MembershipPage() {
             </dl>
           )}
           {benefits.length > 0 && (
-            <div style={styles.nestedBenefits}>
-              <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
+            // #2892 — one plain list per group: no framed card per item and no
+            // section box, smaller detail text, the Product's picture beside it
+            // when it has one and the line's final price right-aligned with its currency.
+            <div style={styles.planLines} data-plan-lines>
               {ITEM_GROUPS.map((group) => {
                 const rows = benefits.filter((b) => itemGroupOf(b) === group);
                 if (rows.length === 0) return null;
                 return (
-                  <div key={group} style={styles.benefitGroup}>
-                    <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
+                  <div key={group} style={styles.planLineGroup}>
+                    <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
-                      {rows.map((b) => (
-                        <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`} style={styles.benefitItem}>
-                          {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
-                          {b.image_thumbnail_url && (
-                            <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
-                            </ImagePreviewButton>
-                          )}
-                          <span>{b.name}</span>
-                          {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
-                          {b.mandatory !== false && (
-                            <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
-                          )}
-                          {/* #2805 — a line held per member (#2657 stage 3) says whose it is. */}
-                          {b.member_name && (
-                            <span style={styles.benefitMeta}>· {t('membership.product_assignee_line', { name: b.member_name })}</span>
-                          )}
-                          <span style={styles.benefitMeta}>× {b.quantity}</span>
-                          <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
-                          {b.billing_frequency && (
-                            <span style={styles.benefitMeta}>· {t(`membership.frequency.${b.billing_frequency}` as any)}</span>
-                          )}
-                        </li>
-                      ))}
+                      {rows.map((b, index) => {
+                        const meta = [
+                          b.member_name ? t('membership.product_assignee_line', { name: b.member_name }) : null,
+                          `× ${b.quantity}`,
+                          b.billing_frequency ? t(`membership.frequency.${b.billing_frequency}` as any) : null,
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`}
+                            style={index === 0 ? styles.planLine : { ...styles.planLine, ...rowDividerStyle }}>
+                            {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
+                            {b.image_thumbnail_url && (
+                              <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
+                              </ImagePreviewButton>
+                            )}
+                            <span style={styles.planLineText}>
+                              <span style={styles.planLineName}>
+                                {b.name}
+                                {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
+                                {b.mandatory !== false && (
+                                  <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
+                                )}
+                              </span>
+                              <span style={styles.planLineMeta}>{meta}</span>
+                            </span>
+                            <span style={styles.planLinePrice} data-plan-line-price>
+                              {b.final_price != null ? formatPaymentAmount(b.final_price, 'EUR', gymFmt) : '—'}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 );
@@ -2422,13 +2431,19 @@ const styles: Record<string, React.CSSProperties> = {
   h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
   // #1776: the plan's benefits sit inside its card, indented and on a tinted
   // inner surface, so they read as the plan's own rather than a sibling.
-  nestedBenefits: { marginTop: 16 },
-  nestedBenefitsHeading: { fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: memberTheme.textSecondary },
-  benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
   benefitMandatory: { ...statusPillStyle('neutral'), padding: '1px 8px', fontSize: 11 },
+  // #2892 — My Plans' expanded lines: hairlines between rows, no card per item.
+  planLines: { marginTop: 12 },
+  planLineGroup: { marginBottom: 10 },
+  planLineGroupLabel: { margin: '0 0 4px', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: memberTheme.textMuted },
+  planLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' },
+  planLineText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  planLineName: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, color: memberTheme.text, overflowWrap: 'anywhere' },
+  planLineMeta: { fontSize: 12, color: memberTheme.textMuted },
+  planLinePrice: { flexShrink: 0, marginLeft: 'auto', textAlign: 'right', fontSize: 13, fontWeight: 600, color: memberTheme.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
