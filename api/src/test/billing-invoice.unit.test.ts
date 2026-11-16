@@ -36,7 +36,7 @@ describe('#2567 stage 3 invoice rules', () => {
         type: 'full', state, lang: 'ca', number: 'F-2026-0001', issuedAt: new Date(),
         gym: { name: 'G', legalName: null, cif: 'X', fiscalAddress: null, fiscalPhone: null },
         customer: { name: 'Acme', taxId: 'B1', address: 'Carrer 1' },
-        lines: [{ name: 'Fee', quantity: 1, amount: 10, amountExclTax: null, taxRate: null }],
+        lines: [{ name: 'Fee', quantity: 1, amount: 10, amountExclTax: null, taxRate: null, rate: 21, net: 8.26, tax: 1.74 }],
         totals: { net: 8.26, tax: 1.74, total: 10 }, currency: 'EUR',
       });
       expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
@@ -65,7 +65,7 @@ describe('#2567 stage 4 rectifying invoices', () => {
       type: 'full', state: 'not-paid', lang: 'es', number: 'R-2026-0001', issuedAt: new Date(),
       gym: { name: 'G', legalName: null, cif: null, fiscalAddress: null, fiscalPhone: null },
       customer: { name: 'A', taxId: 'B1', address: 'St' },
-      lines: negateLines([{ name: 'x', quantity: 1, amount: 121, amountExclTax: null, taxRate: 21 }]),
+      lines: negateLines([{ name: 'x', quantity: 1, amount: 121, amountExclTax: null, taxRate: 21, rate: 21, net: 100, tax: 21 }]),
       totals: negateTotals({ net: 100, tax: 21, total: 121 }), currency: 'EUR',
       rectifies: { number: 'F-2026-0001', reason: 'error' },
     });

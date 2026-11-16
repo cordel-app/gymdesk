@@ -48,7 +48,7 @@ import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
-import { generateReceiptPdf } from '../lib/receipt-pdf';
+import { receiptPdf } from './receipt-documents';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { localizedDescriptionSql } from '../domain/nutritionDescriptionTranslations';
@@ -3355,32 +3355,16 @@ meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureE
     const ev = evRows[0];
     if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
-    const pdfBuffer = await generateReceiptPdf({
+    // #2884: the member's receipt is the stored receipt document (#2567 stage 2),
+    // with every line at its own rate, never a second rendering.
+    const pdfBuffer = await receiptPdf({
+      gymId,
+      eventId: ev.id,
       receiptNumber: ev.receipt_number,
       issuedAt: new Date(ev.receipt_issued_at),
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+      memberName: ev.member_name,
+      chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');

@@ -12,6 +12,7 @@
 // gapless and idempotent, and that neither the staff route nor the member one
 // leaks across gyms.
 
+import { inflateSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -388,5 +389,52 @@ describe('GET /me/receipts/:billingEventId (#787)', () => {
     );
 
     expect((await meReceipt(gymId, eventId)).status).toBe(404);
+  });
+});
+
+// ── #2884: every line states its own tax rate and tax ─────────────────────────
+
+describe('receipt lines carry their own tax (#2884)', () => {
+  let gymId: string;
+  let ctx: { gymId: string; memberId: number; umId: number };
+
+  /** The text a PDF draws, from its inflated content streams. */
+  function drawnText(pdf: Buffer): string {
+    const raw = pdf.toString('latin1');
+    const out: string[] = [];
+    const re = /stream\r?\n/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(raw))) {
+      const start = m.index + m[0].length;
+      const end = raw.indexOf('endstream', start);
+      try { out.push(inflateSync(pdf.subarray(start, end)).toString('latin1')); } catch { /* not flate */ }
+    }
+    return out.join('\n').replace(/<([0-9A-F]+)>/g, (_, h) => Buffer.from(h, 'hex').toString('latin1'));
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Receipt Line Tax Gym');
+    await createTestMembership(gymId, 'admin');
+    const memberId = await createMember(gymId);
+    ctx = { gymId, memberId, umId: await createAssignment(gymId, memberId) };
+  });
+
+  it('prints a 21% line and a 0% line each with its own tax, and totals that are their sums', async () => {
+    const eventId = await createEvent(ctx, 'payment_recorded', { amount: '75.50', txStatus: 'completed' });
+    for (const [name, amount, net, rate] of [['Membership fee', '60.50', '50.00', '21.00'], ['Insurance', '15.00', '15.00', '0.00']]) {
+      await db.query(
+        `INSERT INTO billing_event_lines (gym_id, billing_event_id, kind, item_name, quantity, amount, amount_excl_tax, tax_rate_percent)
+         VALUES (?, ?, 'product', ?, 1, ?, ?, ?)`, [gymId, eventId, name, amount, net, rate]);
+    }
+    expect((await postReceipt(gymId, eventId)).status).toBe(200);
+
+    const res = await getReceipt(gymId, eventId)
+      .buffer(true)
+      .parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    expect(res.status).toBe(200);
+    const text = drawnText(res.body as Buffer);
+    for (const s of ['Membership fee', 'Insurance', '21%', '0%', '10.50 EUR', '0.00 EUR', '65.00 EUR', '75.50 EUR']) {
+      expect(text).toContain(s);
+    }
   });
 });
