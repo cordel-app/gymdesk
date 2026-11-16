@@ -215,7 +215,11 @@ export function BillingEventStatusBadge({ row, t }: { row: Pick<BillingEventHead
 /** The latest attempt's normalized payment status; `—` when the event has none. */
 export function NormalizedPaymentStatusBadge({ status, t }: { status: string | null | undefined; t: T }) {
   if (!status) return <>—</>;
-  const tone = status === 'completed' ? 'paid' : status === 'pending' ? 'pending' : 'failed';
+  // #2480 follow-up: a refund is money returned, not a failed payment.
+  const tone = status === 'completed' ? 'paid'
+    : status === 'pending' ? 'pending'
+    : status === 'refunded' || status === 'partially_refunded' ? 'recorded'
+    : 'failed';
   return <StatusBadge status={tone} label={t(`billing_events_page.normalized_${status}` as any)} />;
 }
 
