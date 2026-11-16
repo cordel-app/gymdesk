@@ -701,6 +701,9 @@ export interface MemberSetReviewLine {
   treatment_value: number | null;
   tax_rate_percent: number | null;
   amount_excl_tax: number | null;
+  /** #2883 — the Pre-paid periods a Membership Fee line collects up front, and their cadence. */
+  prepaid_periods?: number | null;
+  prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
 /** `GET /me/product-sets/:id/review`, as the Summary reads it. */

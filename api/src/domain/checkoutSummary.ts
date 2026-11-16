@@ -27,6 +27,9 @@ export interface ChargeLineLike {
   treatment_value: number | null;
   tax_rate_percent: number | null;
   amount_excl_tax: number | null;
+  /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; absent elsewhere. */
+  prepaid_periods?: number | null;
+  prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
 export interface InitialPaymentLine {
@@ -46,6 +49,13 @@ export interface InitialPaymentLine {
   tax_amount: number;
   /** The line's final amount, VAT included. */
   amount: number;
+  /**
+   * #2883 — on the Membership Fee line that collects a Pre-paid Duration up front: how many billing
+   * periods its amount covers and their cadence, kept apart from `quantity` (the number of fees).
+   * `null` on every other line.
+   */
+  prepaid_periods: number | null;
+  prepaid_cadence: { interval: number; unit: string } | null;
 }
 
 export interface InitialPaymentTaxRow {
@@ -108,6 +118,8 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       name: l.item_name, quantity, unit_price: unit, line_total: lineTotal, discount,
       promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
       tax_rate_percent: rate, tax_amount: tax, amount,
+      prepaid_periods: l.prepaid_periods != null && l.prepaid_periods > 0 ? Number(l.prepaid_periods) : null,
+      prepaid_cadence: l.prepaid_periods != null && l.prepaid_periods > 0 ? l.prepaid_cadence ?? null : null,
     };
   });
   const taxRows = [...taxes.values()]

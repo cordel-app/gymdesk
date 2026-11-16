@@ -239,7 +239,11 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
     // carries no benefit and says how many periods it covers.
     expect(feeBenefits(body, 1)).toEqual([]);
     const prepaid = feeLines(body)[1];
-    expect(prepaid).toMatchObject({ quantity: 2, regular_price: 200, actual_charge: 200, prepaid_periods: 2 });
+    // #2883 — one fee covering two periods: the quantity is the fee count, the periods are their own field.
+    expect(prepaid).toMatchObject({
+      quantity: 1, unit_price: 200, regular_price: 200, actual_charge: 200, prepaid_periods: 2,
+      prepaid_cadence: { interval: 1, unit: 'month' },
+    });
     expect(feeBenefits(body, 0)[0]).toMatchObject({ period_status: 'free_plan' });
     expect(feeBenefits(body, 2)).toEqual([]);
   });

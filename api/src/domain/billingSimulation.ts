@@ -446,6 +446,12 @@ export interface SimulationLine {
    */
   prepaid_periods: number | null;
   /**
+   * #2883 — the billing cadence `prepaid_periods` is counted in (the assignment's own pair), so a
+   * surface can say "2 months pre-payment" or "2 × 4 weeks pre-payment" rather than a bare count.
+   * Set exactly when `prepaid_periods` is; absent or `null` everywhere else.
+   */
+  prepaid_cadence?: { interval: number; unit: string } | null;
+  /**
    * #1867 stage 4 — set on the first, partial charge of a recurring Product that
    * joined an existing schedule mid-period: the days charged out of the period's
    * (`domain/proration.ts`). `actual_charge` is already the prorated amount.
@@ -993,19 +999,24 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
       // #2834 — a `per_member` plan owes one fee per beneficiary: the cycle's fee, priced once by
       // `resolveMembershipFee()`, times the units. The one place the fee is multiplied.
       const units = feeUnits(a);
+      const prepaid = resolved.prepaidPeriods != null && resolved.prepaidPeriods > 0;
       return {
         kind: 'membership_fee',
         label: a.planName ?? 'Membership Fee',
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
         product_id: null,
-        quantity: periods * units,
-        unit_price: regular,
+        // #2883 — the quantity is the number of fees (one per family, or one per beneficiary of a
+        // `per_member` plan), never the Pre-paid periods: those are `prepaid_periods`, so a family
+        // fee covering two months reads as one fee of €140 for two months, not as two of €70.
+        quantity: units,
+        unit_price: round2(regular * periods),
         regular_price: round2(regular * periods * units),
         benefits: resolved.benefits,
         actual_charge: round2(resolved.amount * units),
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
         prepaid_periods: resolved.prepaidPeriods ?? null,
+        prepaid_cadence: prepaid ? { interval: a.recurringInterval as number, unit: a.recurringUnit as string } : null,
         proration: proration && date === a.startsAt
           ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
       };

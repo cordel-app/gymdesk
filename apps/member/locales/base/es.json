@@ -622,7 +622,12 @@
       "scheduled": "Programado",
       "recorded": "Registrado",
       "cancelled": "Cancelado"
-    }
+    },
+    "prepaid_payment_month": "Prepago de {count, plural, one {# mes} other {# meses}}",
+    "prepaid_payment_week": "Prepago de {count, plural, one {# semana} other {# semanas}}",
+    "prepaid_payment_year": "Prepago de {count, plural, one {# año} other {# años}}",
+    "prepaid_payment_four_weeks": "Prepago de {count} × 4 semanas",
+    "prepaid_payment_periods": "Prepago de {count, plural, one {# periodo} other {# periodos}}"
   },
   "payment_banner": {
     "pending_heading": "Tienes un pago pendiente",

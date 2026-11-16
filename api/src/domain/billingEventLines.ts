@@ -29,6 +29,13 @@ export interface BillingEventLineRow {
   tax_behavior: string | null;
   amount_excl_tax: number | null;
   amount: number;
+  /**
+   * #2883 — the Pre-paid periods a Membership Fee line collects up front, and the cadence they are
+   * counted in, so a breakdown read before the charge is written (the Initial Payment) can say
+   * "2 months pre-payment". Carried, never persisted: `billing_event_lines` has no such column.
+   */
+  prepaid_periods?: number | null;
+  prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
 export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -70,6 +77,8 @@ export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}):
     tax_behavior: ctx.taxBehavior ?? null,
     amount_excl_tax: ctx.amountExclTax ?? null,
     amount: roundCents(ctx.proration ? ctx.proration.amount : line.actual_charge),
+    prepaid_periods: line.prepaid_periods ?? null,
+    prepaid_cadence: line.prepaid_cadence ?? null,
   };
 }
 

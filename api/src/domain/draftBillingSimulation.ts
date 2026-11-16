@@ -59,7 +59,7 @@ export function toBillingEventLine(line: SimulationLine): BillingEventLine {
   return {
     kind: line.kind, label: line.label, product_id: line.product_id, mandatory: false,
     quantity: line.quantity, unit_price: line.unit_price, regular_price: line.regular_price,
-    actual_charge: line.actual_charge, prepaid_periods: line.prepaid_periods, proration: line.proration ?? null, benefits: line.benefits,
+    actual_charge: line.actual_charge, prepaid_periods: line.prepaid_periods, prepaid_cadence: line.prepaid_cadence ?? null, proration: line.proration ?? null, benefits: line.benefits,
   };
 }
 
@@ -68,7 +68,7 @@ export function oneOffLine(o: PendingOneOff): BillingEventLine {
   return {
     kind: 'product', label: o.name, product_id: o.product_id, mandatory: false, quantity: 1,
     unit_price: regular, regular_price: regular, actual_charge: cents(o.amount),
-    prepaid_periods: null, benefits: [],
+    prepaid_periods: null, prepaid_cadence: null, benefits: [],
   };
 }
 

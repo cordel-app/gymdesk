@@ -622,7 +622,12 @@
       "scheduled": "Programat",
       "recorded": "Registrat",
       "cancelled": "Cancel·lat"
-    }
+    },
+    "prepaid_payment_month": "Prepagament de {count, plural, one {# mes} other {# mesos}}",
+    "prepaid_payment_week": "Prepagament de {count, plural, one {# setmana} other {# setmanes}}",
+    "prepaid_payment_year": "Prepagament de {count, plural, one {# any} other {# anys}}",
+    "prepaid_payment_four_weeks": "Prepagament de {count} × 4 setmanes",
+    "prepaid_payment_periods": "Prepagament de {count, plural, one {# període} other {# períodes}}"
   },
   "payment_banner": {
     "pending_heading": "Tens un pagament pendent",

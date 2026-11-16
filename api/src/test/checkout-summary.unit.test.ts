@@ -52,6 +52,19 @@ describe('initialPaymentBreakdown', () => {
     expect(out.subtotal_excl_tax).toBe(20);
   });
 
+  // #2883 — the Membership Fee line that collects a Pre-paid Duration carries the periods it covers
+  // and their cadence beside its quantity (the number of fees), from the same resolved line.
+  it('carries a prepaid fee line\'s periods and cadence, and nothing on any other line', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Family', quantity: 1, amount: 140, prepaid_periods: 2, prepaid_cadence: { interval: 1, unit: 'month' } }),
+      line({ item_name: 'Towel', quantity: 2, amount: 10 }),
+    ], 150);
+    expect(out.lines[0]).toEqual(expect.objectContaining({
+      quantity: 1, amount: 140, prepaid_periods: 2, prepaid_cadence: { interval: 1, unit: 'month' },
+    }));
+    expect(out.lines[1]).toEqual(expect.objectContaining({ prepaid_periods: null, prepaid_cadence: null }));
+  });
+
   it('reports the charge it was handed, null included, never a re-added figure', () => {
     expect(initialPaymentBreakdown([], null).total).toBeNull();
     expect(initialPaymentBreakdown([], 0).total).toBe(0);

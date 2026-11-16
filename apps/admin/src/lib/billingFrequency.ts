@@ -204,3 +204,41 @@ export function billingFrequencyDurationLabel(
   const key = billingFrequencyDurationKey(value);
   return key ? tFreq(key, { count }) : null;
 }
+
+// ─── A Pre-paid Duration collected up front ──────────────────────────────────
+//
+// #2883 — the Membership Fee charge that collects a Plan's Pre-paid Duration covers several billing
+// periods in one amount. The breakdown says how many and of what, in the plan's own cadence:
+// `2 months pre-payment`, `2 × 4 weeks pre-payment`. It is a sentence about the stored cadence pair,
+// so it lives in the module that owns how a frequency reads, under its own `prepaid_*` keys in the
+// same namespace. A cadence no frequency matches (a legacy `2 month` plan) reads in periods.
+
+/** The labelled frequency a stored cadence pair is, if any (a Plan's two choices plus week and year). */
+export function cadencePeriodFrequency(interval: unknown, unit: unknown): LabelledBillingFrequency | null {
+  const n = Number(interval);
+  if (n === 1 && unit === 'month') return 'month';
+  if (n === 4 && unit === 'week') return 'four_weeks';
+  if (n === 1 && unit === 'week') return 'week';
+  if (n === 1 && unit === 'year') return 'year';
+  return null;
+}
+
+/** The key inside `BILLING_FREQUENCY_NAMESPACE` for a pre-payment of periods of this cadence. */
+export function prepaidPaymentKey(cadence: { interval: unknown; unit: unknown } | null | undefined): string {
+  const freq = cadence ? cadencePeriodFrequency(cadence.interval, cadence.unit) : null;
+  return freq ? `prepaid_${freq}` : 'prepaid_periods';
+}
+
+/**
+ * `2 months pre-payment` — what a Membership Fee charge covering `count` Pre-paid periods says, or
+ * `null` when the charge is not a pre-payment (no count, or a count that is not a positive whole
+ * number). The count and the cadence are the server's, from the same resolved line as the amount.
+ */
+export function prepaidPaymentLabel(
+  count: number | null | undefined,
+  cadence: { interval: unknown; unit: unknown } | null | undefined,
+  tFreq: (key: string, values?: Record<string, number>) => string,
+): string | null {
+  if (count == null || !Number.isInteger(count) || count <= 0) return null;
+  return tFreq(prepaidPaymentKey(cadence), { count });
+}

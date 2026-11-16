@@ -644,6 +644,8 @@ async function reviewHandler(req: any, res: any, next: any) {
           treatment_value: l.treatment_value != null ? Number(l.treatment_value) : null,
           tax_rate_percent: l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null,
           amount_excl_tax: l.amount_excl_tax != null ? Number(l.amount_excl_tax) : null,
+          prepaid_periods: l.prepaid_periods ?? null,
+          prepaid_cadence: l.prepaid_cadence ?? null,
         }));
         if (!Number.isFinite(amountDue) || amountDue < 0) { amountDue = null; error = 'amount_unavailable'; }
       }
