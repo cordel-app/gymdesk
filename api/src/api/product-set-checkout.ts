@@ -127,6 +127,16 @@ export async function initialCharge(
   let first = planned.filter((e) => e.date === startsAt);
 
   if (opts.previousProductSetId != null) {
+    // #2899: the fee of a plan this version *adds* (one the previous version does not carry) is
+    // owed now, as it is for a first version; only an inherited plan's fee was already paid.
+    // `newPlansOnly` is the one answer to "which plans are new" (`planSnapshotInheritedSql()`).
+    const added = (await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: true }))
+      .filter((e) => e.date === startsAt);
+    const addedFees = new Map<string, SimulationLine[]>();
+    for (const e of added) {
+      const fees = e.lines.filter((l) => l.kind === 'membership_fee');
+      if (fees.length > 0) addedFees.set(`${e.scheduleKey ?? '~'}|${e.date}`, fees);
+    }
     const previous = await planScheduledEvents(gymId, opts.previousProductSetId, startsAt, 1, exec);
     const carried = new Map<number, number>();
     for (const e of previous.filter((p) => p.date === startsAt)) {
@@ -152,7 +162,18 @@ export async function initialCharge(
           }];
         }),
       }))
+      .map((e) => {
+        const key = `${e.scheduleKey ?? '~'}|${e.date}`;
+        const fees = addedFees.get(key);
+        addedFees.delete(key);
+        return fees ? { ...e, lines: [...fees, ...e.lines] } : e;
+      })
       .filter((e) => e.lines.length > 0);
+    // An added plan's fee on a schedule the rest of the version has nothing on that day.
+    for (const e of added) {
+      const fees = addedFees.get(`${e.scheduleKey ?? '~'}|${e.date}`);
+      if (fees) first.push({ ...e, lines: fees });
+    }
   }
   // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
   const purchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
