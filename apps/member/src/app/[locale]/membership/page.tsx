@@ -41,7 +41,12 @@ import {
   type MemberProductCardItem,
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
-import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
+import { SERVICE_FILTER_PARAM, productsPathForServices, serviceFilterFromParam, serviceFilterSelectValue, type ServiceOption } from '@/lib/serviceRequired';
+
+/** #2905 — `GET /me/products`, narrowed to the services named (none: the whole catalogue). */
+function productsQuery(ids: number[]): string {
+  return '/me/products' + (ids.length ? `?${SERVICE_FILTER_PARAM}=${ids.join(',')}` : '');
+}
 import {
   type CartItem,
   type MemberCartView,
@@ -292,6 +297,14 @@ export default function MembershipPage() {
   // #1189 stage 4 — set when a refused booking sent the member here: only the
   // Products that grant sessions of those Professional Services are listed.
   const [serviceFilter, setServiceFilter] = useState<number[]>([]);
+  // #2905 — the Professional Services the catalogue may be narrowed by (the
+  // server's list, read from the unfiltered catalogue), and the in-flight
+  // re-read when the member picks one.
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
+  const [filteringProducts, setFilteringProducts] = useState(false);
+  // The notice "products that unlock the class you tried to book" is about a
+  // filter a refused booking set (#1189 stage 4), not one the member chose.
+  const [filterFromBooking, setFilterFromBooking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -386,6 +399,7 @@ export default function MembershipPage() {
     // need a Suspense boundary around this whole page.
     const filter = serviceFilterFromParam(new URLSearchParams(window.location.search).get(SERVICE_FILTER_PARAM));
     setServiceFilter(filter);
+    setFilterFromBooking(filter.length > 0);
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes, assigneeRes] = await Promise.all([
@@ -396,7 +410,7 @@ export default function MembershipPage() {
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
           apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
-          apiFetch<{ items: MemberProduct[] }>('/me/products' + (filter.length ? `?${SERVICE_FILTER_PARAM}=${filter.join(',')}` : '')).catch(() => null),
+          apiFetch<{ items: MemberProduct[]; professional_services?: ServiceOption[] }>(productsQuery(filter)).catch(() => null),
           // Read with the page, not on opening the catalogue: a gym with no plans
           // to offer must not show a control that opens onto "no plans". A failed
           // read leaves `null`, which keeps the control (and the read on open).
@@ -420,6 +434,7 @@ export default function MembershipPage() {
         setPaymentRequests(prs);
         setForecast(projection);
         setProducts(catalogue?.items ?? null);
+        setServiceOptions(catalogue?.professional_services ?? []);
         setPlanCatalogue(plansRes?.plans ?? null);
         setServiceBalances(serviceRes?.items ?? null);
         setOwnPurchases(ownRes?.items ?? []);
@@ -1042,11 +1057,55 @@ export default function MembershipPage() {
    * One function because two branches of this page render it — a member with a
    * plan and one without — and two copies would drift.
    */
+  /**
+   * #2905 — narrows the catalogue to one Professional Service, or clears it.
+   * The server filters (`?professional_service_ids=`, the same read a refused
+   * booking links to), and the address bar follows so a reload keeps it.
+   */
+  async function applyServiceFilter(ids: number[]) {
+    setServiceFilter(ids);
+    setFilterFromBooking(false);
+    window.history.replaceState(null, '', `/${locale}${productsPathForServices(ids)}`);
+    setFilteringProducts(true);
+    try {
+      const res = await apiFetch<{ items: MemberProduct[] }>(productsQuery(ids));
+      setProducts(res.items);
+    } catch {
+      // Keep the list on screen; the select still says what was asked for.
+    } finally {
+      setFilteringProducts(false);
+    }
+  }
+
+  function renderServiceFilter() {
+    if (mode !== 'add_product' || serviceOptions.length === 0) return null;
+    return (
+      <label style={styles.assigneeField}>
+        <span style={styles.assigneeLabel}>{t('membership.products_service_filter_label')}</span>
+        <select
+          style={inputStyle}
+          value={serviceFilterSelectValue(serviceFilter)}
+          disabled={filteringProducts}
+          onChange={(e) => applyServiceFilter(e.target.value ? [Number(e.target.value)] : [])}
+        >
+          <option value="">{t('membership.products_service_filter_all')}</option>
+          {serviceFilter.length > 1 && (
+            <option value="multiple" disabled>{t('membership.products_service_filter_several')}</option>
+          )}
+          {serviceOptions.map((s) => (
+            <option key={s.id} value={String(s.id)}>{s.name}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
   function renderProducts() {
     if (products === null) return null;
     return (
       <>
-      {serviceFilter.length > 0 && (
+      {renderServiceFilter()}
+      {filterFromBooking && serviceFilter.length > 0 && (
         <p style={{ fontSize: 13, margin: '0 0 8px' }}>
           {t('membership.products_filtered_notice')}{' '}
           <a

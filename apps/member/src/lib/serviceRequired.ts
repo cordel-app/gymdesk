@@ -45,6 +45,17 @@ export function serviceFilterFromParam(raw: string | null | undefined): number[]
   return ids;
 }
 
+/**
+ * #2905 — the value of the Add Product catalogue's Professional Service select
+ * for the filter in force: `''` (all products) with none, the one id as a
+ * string, and `'multiple'` when a refused booking named several services (the
+ * select then shows that state rather than pretending to one of them).
+ */
+export function serviceFilterSelectValue(ids: number[]): string {
+  if (ids.length === 0) return '';
+  return ids.length === 1 ? String(ids[0]) : 'multiple';
+}
+
 // #1985 — a booking the member may make with more than one of their services
 // is refused with `400 { code: 'professional_service_selection_required' }`
 // naming the services they hold a balance on; the surface asks which to spend
