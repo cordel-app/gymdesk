@@ -39,6 +39,7 @@ import { violatesOnePerMember } from './one-per-member';
 import { resolveAssignedMember } from './product-assignee';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
+import { attachTranslations as attachServiceTranslations } from './professional-service-translations';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { withPurposeParam } from '../domain/storedCards';
@@ -194,6 +195,40 @@ export async function memberProductCatalogue(
       applied_promotion: live && applied.get(live.id) ? withMedia(applied.get(live.id)!) : null,
     };
   });
+}
+
+/**
+ * #2905 — the Professional Services the Add Product catalogue may be narrowed
+ * by: every service active for the gym (the rule `validateProfessionalServiceIds()`
+ * applies to a new link) that at least one Product the member may be shown is
+ * linked to. A service no visible Product grants is left out, since choosing it
+ * could only answer an empty list. Read from the **unfiltered** catalogue, so the
+ * options do not shrink while a filter is applied. Names are in the request's
+ * locale, falling back to the base text (#2110).
+ */
+export async function memberProductServiceFilters(
+  gymId: string,
+  locale: string,
+): Promise<Array<{ id: number; name: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT DISTINCT ps.id, ps.name, ps.description
+       FROM professional_services ps
+       JOIN product_professional_services pps ON pps.professional_service_id = ps.id
+       JOIN products p ON p.id = pps.product_id
+       LEFT JOIN gym_professional_services gps
+         ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+      WHERE p.gym_id = ? AND ${memberProductCatalogueSql('p')}
+        AND (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL
+        AND COALESCE(gps.status, 'active') = 'active'`,
+    [gymId, gymId, ...memberProductCatalogueParams(), gymId],
+  );
+  const localized = await attachServiceTranslations(
+    rows.map((r: any) => ({ id: Number(r.id), name: String(r.name), description: r.description ?? null })),
+    locale,
+  );
+  return localized
+    .map((s) => ({ id: s.id, name: s.display_name }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
 }
 
 /** #2424 — a Promotion's description and pictures (thumbnail first, master for the preview). */

@@ -74,6 +74,7 @@ import { AssigneeRefused, loadEligibleAssignees } from './product-assignee';
 import {
   PurchaseRefused,
   memberProductCatalogue,
+  memberProductServiceFilters,
   startProductPurchase,
   PromotionRefused,
   PricingRefused,
@@ -3113,13 +3114,19 @@ meRouter.get(
       if (!filter.ok) return res.status(400).json({ error: filter.error });
       // #2254: names and descriptions in the member's language (base text as fallback).
       const items = await memberProductCatalogue(gymId, memberId, filter.ids);
-      const localized = await attachProductTranslations('product', items as any[], getRequestLocale(req));
+      const locale = getRequestLocale(req);
+      const [localized, professionalServices] = await Promise.all([
+        attachProductTranslations('product', items as any[], locale),
+        // #2905: the options of the catalogue's Professional Service filter.
+        memberProductServiceFilters(gymId, locale),
+      ]);
       res.json({
         items: items.map((item, i) => ({
           ...item,
           name: localized[i].display_name,
           description: localized[i].display_description,
         })),
+        professional_services: professionalServices,
       });
     } catch (err) {
       next(err);
