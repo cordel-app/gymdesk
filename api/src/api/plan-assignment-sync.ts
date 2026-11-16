@@ -80,6 +80,33 @@ export async function syncPromotionAssignmentIds(exec: Exec, gymId: string, user
 }
 
 /**
+ * #2125 M6b-34 — keeps `payment_requests.plan_assignment_id` (migration 431) in step with
+ * `user_membership_id`, the source of truth until M6b-4, by the rule `syncPromotionAssignmentIds()`
+ * uses: a request of a legacy assignment takes that assignment's anchor, none where no snapshot names
+ * it. A new request is stamped with the attempt (`recordPaymentAttempt()`); this re-sync, from
+ * `syncPlanAssignment()`, covers an anchor that moved since. Nothing reads the column yet;
+ * `plan-assignments:validate` reports drift (`payment_request_assignment_mismatch`).
+ */
+export async function syncPaymentRequestAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
+  const ids = [...new Set(userMembershipIds)];
+  if (ids.length === 0) return;
+  const anchors = await anchorsOf(exec, gymId, ids);
+  for (const umId of ids) {
+    const anchor = anchors.get(umId) ?? null;
+    await exec.query(
+      `UPDATE payment_requests SET plan_assignment_id = ?
+        WHERE gym_id = ? AND user_membership_id = ? AND NOT (plan_assignment_id <=> ?)`,
+      [anchor, gymId, umId, anchor]);
+  }
+}
+
+/** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
+export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
+  if (userMembershipId == null) return null;
+  return (await anchorsOf(exec, gymId, [Number(userMembershipId)])).get(Number(userMembershipId)) ?? null;
+}
+
+/**
  * Keeps the identity and the assignment-level facts of a Product Set's plan snapshots in step with
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
@@ -101,7 +128,9 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
   if (rows.length === 0) return;
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
-  await syncPromotionAssignmentIds(tx, gymId, rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number));
+  const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
+  await syncPromotionAssignmentIds(tx, gymId, umIds);
+  await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
   const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;

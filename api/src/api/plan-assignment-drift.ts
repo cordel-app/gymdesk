@@ -141,5 +141,18 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE NOT (ump.assignment_id <=> a.anchor_id)${scope('ump')}
       ORDER BY ump.id`);
 
+  // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
+  await add('payment_request_assignment_mismatch',
+    'A payment request whose plan_assignment_id is not the anchor of its user_membership_id.',
+    `SELECT pr.id AS payment_request_id, pr.gym_id, pr.user_membership_id, pr.plan_assignment_id,
+            a.anchor_id AS expected_plan_assignment_id
+       FROM payment_requests pr
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
+                   GROUP BY gym_id, source_user_membership_id) a
+              ON a.gym_id = pr.gym_id AND a.um_id = pr.user_membership_id
+      WHERE NOT (pr.plan_assignment_id <=> a.anchor_id)${scope('pr')}
+      ORDER BY pr.id`);
+
   return { clean: checks.every((c) => c.count === 0), checks };
 }
