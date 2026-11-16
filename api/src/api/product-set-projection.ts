@@ -1,5 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { syncPromotionAssignmentIds } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -122,7 +123,7 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
   // that version's history, keyed by it, and stop being the assignment's.
   await tx.query(
     `UPDATE user_membership_promotions
-        SET user_membership_id = NULL
+        SET user_membership_id = NULL, assignment_id = NULL
       WHERE gym_id = ? AND user_membership_id = ? AND product_set_id <> ?`,
     [gymId, umId, productSetId]);
   await tx.query(
@@ -131,6 +132,8 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
         SET user_membership_id = ?
       WHERE ump.gym_id = ? AND ump.product_set_id = ?`,
     [umId, gymId, productSetId]);
+  // #2125 M6b-33: the re-keyed column follows in the same transaction.
+  await syncPromotionAssignmentIds(tx, gymId, [umId]);
 }
 
 /**
