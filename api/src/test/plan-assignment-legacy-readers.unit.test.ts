@@ -48,11 +48,10 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 2,
   'api/entitlement-plan-links.ts': 1,
-  'api/member-membership-configuration.ts': 1,
   'api/membership-plans.ts': 1,
   'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
-  'api/plan-assignment-drift.ts': 3,
+  'api/plan-assignment-drift.ts': 4,
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
@@ -257,9 +256,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(7);
-    expect(LEGACY_STATEMENTS['api/member-membership-configuration.ts']).toBe(1);
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
       .toContain("assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')");
+  });
+
+  it('M6b-31: the Member card\'s plan history reads plan_snapshots, creator and modifier included', () => {
+    expect(LEGACY_STATEMENTS['api/member-membership-configuration.ts']).toBeUndefined();
+    const config = readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8');
+    expect(config).toContain('FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um');
   });
 });

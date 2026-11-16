@@ -9,7 +9,7 @@ import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligib
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
-import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -83,7 +83,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
 
   // Every assignment, newest first — the Member page has shown the full plan
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
-  // ones the Services section and the simulation act on.
+  // ones the Services section and the simulation act on. #2125 M6b-31: each assignment is read
+  // off its current plan snapshot (`ASSIGNMENT_HISTORY_ROWS_SQL`), its creator off its anchor
+  // snapshot and its last modifier off the latest snapshot that recorded one.
   const { rows: rawPlans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at,
@@ -94,11 +96,11 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live,
             (um.status IN ('active_cancel_at_period_end', 'cancelled') AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
-     FROM user_memberships um
+     FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
      ORDER BY um.starts_at DESC, um.id DESC`,
-    [...LIVE_STATUSES, gymId, memberId, memberId],
+    [...LIVE_STATUSES, gymId, gymId, memberId, memberId],
   );
 
   // #1325: the next billing date of a plan a ProductSet bills is its ledger's.
