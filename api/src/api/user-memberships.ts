@@ -1619,11 +1619,14 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
         source: sourceForRole(role), actorUserId: userId,
       });
       if (adopt != null) {
-        await adoptDraftForEdit(tx, { gymId, userMembershipId: Number(insertId), draftSetId: adopt });
+        await adoptDraftForEdit(tx, {
+          gymId, userMembershipId: Number(insertId), draftSetId: adopt,
+          activeSetId: active.id, editedUserMembershipId: Number(um.id),
+        });
       } else {
         await createDraftSetFromActive(tx, {
           gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
-          membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+          editedUserMembershipId: Number(um.id), membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
           actor: { name: actorText },
         });
       }
