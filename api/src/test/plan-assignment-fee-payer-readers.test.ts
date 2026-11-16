@@ -64,7 +64,7 @@ describe('the Promotion apply answers the fee of the assignment\'s plan snapshot
 describe('record-payment records the payment for the assignment snapshot\'s owner', () => {
   it('names the snapshot\'s member even when the legacy row names another', async () => {
     const owner = await member();
-    const um = await createTestDraftAssignment(gymId, owner, await plan(30));
+    const um = await createTestDraftAssignment(gymId, owner, await plan(30), { config: { membership_fee_price: 30 } });
     expect((await auth(request.post(`/user-memberships/${um}/save-and-pay`)).send({})).status).toBeLessThan(300);
 
     // The legacy row disagrees with the snapshot; the payment follows the snapshot.
