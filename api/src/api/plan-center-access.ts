@@ -3,7 +3,7 @@ import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/pla
 import { registerBookingAccessHook } from './bookings';
 import { soleActiveCenterId } from '../infra/centerContext';
 import {
-  centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
+  allCentersScope, centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
 } from '../domain/planCenterAccess';
 import { describePlanAccess, type PlanAccessBeneficiary, type PlanAccessEntry } from '../domain/planAccessBenefit';
 
@@ -117,6 +117,27 @@ export async function loadPlanAccessEntries(
   );
   const names = new Map<number, string>(centers.map((c: { id: number; name: string }) => [Number(c.id), String(c.name)]));
   return describePlanAccess(plan, names, withDefaults);
+}
+
+/**
+ * #2953: the SQL condition behind the Members App's "All centers" filter on the
+ * calendar-event alias `alias` — the Member's accessible centers (`allCentersScope()`)
+ * plus any event tied to no center (#478). `null` when nothing is restricted.
+ */
+export async function allCentersScopeSql(
+  tx: Queryable,
+  gymId: string,
+  memberId: string | number,
+  alias = 'ce',
+): Promise<{ sql: string; params: number[] } | null> {
+  const { plans, defaultCenterId } = await loadMemberCenterAccessInputs(tx, gymId, memberId);
+  const ids = allCentersScope(plans, defaultCenterId);
+  if (ids == null) return null;
+  if (ids.length === 0) return { sql: `${alias}.center_id IS NULL`, params: [] };
+  return {
+    sql: `(${alias}.center_id IS NULL OR ${alias}.center_id IN (${ids.map(() => '?').join(',')}))`,
+    params: ids,
+  };
 }
 
 export interface MemberEffectiveCenterAccess {

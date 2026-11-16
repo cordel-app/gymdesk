@@ -111,6 +111,10 @@ import {
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
+import { allCentersScopeSql } from './plan-center-access';
+
+/** #2953: the `center_id` value the Members App sends for its "All centers" option. */
+const ALL_CENTERS_FILTER = 'all';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -800,7 +804,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     // own authorization scoping below, so a member can't request a center
     // they aren't assigned to by passing this query param.
     const filterCenterId = req.query.center_id as string | undefined;
-    if (filterCenterId) {
+    if (filterCenterId === ALL_CENTERS_FILTER) {
+      // #2953: "All centers" spans every center the member's plans let them use
+      // (plus events tied to no center), never just the app's active center.
+      const scope = await allCentersScopeSql(db, gymId, memberId);
+      if (scope) { where.push(scope.sql); params.push(...scope.params); }
+    } else if (filterCenterId) {
       const requested = Number(filterCenterId);
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(requested);
@@ -2990,7 +2999,11 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const { centerId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?', 'ce.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
-    if (centerId != null) {
+    if (req.query.center_id === ALL_CENTERS_FILTER) {
+      // #2953: My Bookings' Past tab applies the same "All centers" scope as Upcoming.
+      const scope = await allCentersScopeSql(db, gymId, memberId);
+      if (scope) { where.push(scope.sql); params.push(...scope.params); }
+    } else if (centerId != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
