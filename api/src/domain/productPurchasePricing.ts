@@ -77,7 +77,7 @@ export function pricingRefusalResponse(
     case 'promotions_not_stackable':
       return { status: 409, error: refusal, message: 'These promotions cannot be combined' };
     case 'duplicate_promotion':
-      return { status: 400, error: refusal, message: 'A promotion can only be applied once' };
+      return { status: 400, error: refusal, message: 'This promotion is already applied to this product.' };
     case 'promotion_not_lowering_price':
       return { status: 409, error: 'promotion_not_applicable', message: 'This promotion no longer lowers the price' };
     case 'no_price':

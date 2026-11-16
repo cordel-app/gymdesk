@@ -637,6 +637,15 @@ export async function assignmentBeingEdited(tx: Tx, productSetId: number): Promi
   return rows[0]?.um != null ? Number(rows[0].um) : null;
 }
 
+/**
+ * #2893 — the refusal of a Promotion already applied, worded for its target: a
+ * Membership Plan or a Product. No message says a Promotion is applied to a
+ * ProductSet, which is only the container of the two.
+ */
+export function duplicatePromotionMessage(target: 'plan' | 'product'): string {
+  return `This promotion is already applied to this ${target}.`;
+}
+
 export async function applyPromotionToProductSet(
   tx: Tx,
   gymId: string,
@@ -735,7 +744,9 @@ export async function applyPromotionToProductSet(
     lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
   );
   if (existing.some((r: any) => Number(r.promotion_id) === promotionId)) {
-    throw Object.assign(new Error('This promotion is already applied to this ProductSet'), { status: 409 });
+    // #2893: a Promotion is applied to a Membership Plan or to a Product, never to the ProductSet
+    // that holds them, so the refusal names the target it was applied to.
+    throw Object.assign(new Error(duplicatePromotionMessage(opts.productTarget ? 'product' : 'plan')), { status: 409 });
   }
   if (!promo.stackable && existing.length > 0) {
     throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
