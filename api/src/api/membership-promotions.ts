@@ -776,8 +776,8 @@ export async function applyPromotionToProductSet(
  * confirmation rolls the snapshots back with the status. Until then a Draft
  * holds no snapshot at all (#2833) and is read from the live Promotion.
  *
- * Only an application still `applied` is snapshotted; a revoked one stays the
- * reference it is. A confirmed application (a copy of the predecessor's, or one
+ * Only an application still `applied` is snapshotted; a revoked reference is
+ * deleted (#2880 — a removed selection is not history). A confirmed application (a copy of the predecessor's, or one
  * already captured) is never touched, so a retried confirmation finds nothing
  * left and writes nothing. Any grant rows already present (a working copy
  * written before #2833) are replaced, never duplicated. An application whose
@@ -785,6 +785,13 @@ export async function applyPromotionToProductSet(
  * already resolves live.
  */
 export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  // #2880: a Promotion removed from the Draft before confirmation is not history of this
+  // assignment — a reference that was revoked (written before removal became a deletion) is
+  // discarded here rather than confirmed as an inactive application.
+  const { rowCount: discarded } = await tx.query(
+    `DELETE FROM user_membership_promotions
+      WHERE gym_id = ? AND product_set_id = ? AND status = 'revoked' AND snapshot_confirmed_at IS NULL`,
+    [gymId, productSetId]);
   const { rows } = await tx.query<{ id: number; promotion_id: number }>(
     `SELECT ump.id, ump.promotion_id FROM user_membership_promotions ump
       WHERE ump.gym_id = ? AND ump.product_set_id = ?
@@ -802,7 +809,7 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
     }
     await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
   }
-  if (rows.length > 0) await syncPlanSnapshot(tx, gymId, productSetId);
+  if (rows.length > 0 || discarded > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
