@@ -30,6 +30,7 @@ import {
   PurchaseRefused,
   grossPrice,
   deletePurchaseDraft,
+  expireStandalonePurchaseDrafts,
   saveProductPurchaseDraft,
   startProductPurchase,
 } from './me-products';
@@ -530,6 +531,11 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
+    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
+    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId });
+    if (expired.some((e) => e.id === purchaseId)) {
+      return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
+    }
     const { rows } = await db.query<any>(
       // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
       `SELECT id, product_id, direct_discount_percent, assigned_member_id FROM (

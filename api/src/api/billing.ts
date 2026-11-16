@@ -2,7 +2,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
-import { cancelAbandonedPurchases } from './me-products';
+import { cancelAbandonedPurchases, expireStandalonePurchaseDrafts } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
@@ -260,6 +260,8 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // status and age in the database, so a set that was committed in between
     // survives. Reported beside the totals, never folded into `expired`.
     const draftsExpired = await expireDrafts();
+    // #2962: a standalone one-time Product left in the cart for more than two hours.
+    const purchaseDraftsExpired = (await expireStandalonePurchaseDrafts()).length;
     // #1991 stage 4: a Pending Payment whose link expired returns to Draft.
     const pendingReturned = await expirePendingPayments();
     // #2480 follow-up: a provider refund left pending is settled from the provider's own record.
@@ -278,6 +280,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       reconciled,
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
+      purchase_drafts_expired: purchaseDraftsExpired,
       pending_returned_to_draft: pendingReturned,
       refunds_completed: refunds.completed,
       refunds_failed: refunds.failed,

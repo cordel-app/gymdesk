@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cartCountdown,
+  isPurchaseExpiredError,
   billingEventPath,
   filterPurchasesByStatus,
   formatAppliedTax,
@@ -83,5 +85,26 @@ describe('editableDraftLineId (#2856)', () => {
     expect(editableDraftLineId({ source: 'recurring', draft_line_id: null, pending_termination: false })).toBeNull();
     expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12, pending_termination: true })).toBeNull();
     expect(editableDraftLineId({ source: 'one_off', draft_line_id: 12 })).toBeNull();
+  });
+});
+
+describe('#2962 — cartCountdown', () => {
+  const at = '2026-11-16T12:00:00.000Z';
+  const now = Date.parse(at);
+  it('formats the time left as H:MM:SS', () => {
+    expect(cartCountdown(at, now - (2 * 3600 - 1) * 1000)).toEqual({ remainingMs: (2 * 3600 - 1) * 1000, expired: false, label: '1:59:59' });
+    expect(cartCountdown(at, now - 61_000)?.label).toBe('0:01:01');
+  });
+  it('is expired at and after the instant, never negative', () => {
+    expect(cartCountdown(at, now)).toEqual({ remainingMs: 0, expired: true, label: '0:00:00' });
+    expect(cartCountdown(at, now + 5000)?.expired).toBe(true);
+  });
+  it('is null with no or an unreadable instant', () => {
+    expect(cartCountdown(null, now)).toBeNull();
+    expect(cartCountdown('not a date', now)).toBeNull();
+  });
+  it('recognises the server refusal to pay an expired purchase', () => {
+    expect(isPurchaseExpiredError({ status: 410, body: { error: 'purchase_expired' } })).toBe(true);
+    expect(isPurchaseExpiredError({ status: 410, body: { error: 'draft_expired' } })).toBe(false);
   });
 });
