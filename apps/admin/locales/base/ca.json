@@ -519,7 +519,7 @@
     "required_products_question": "Aquests productes s'afegiran a aquest membre i la promoció seleccionada s'aplicarà a tots ells. Vols continuar?",
     "required_products_confirm": "Confirma",
     "add_product_error_direct_discount_not_allowed": "Només un administrador pot aplicar un descompte directe.",
-    "add_product_error_duplicate_promotion": "Una promoció només es pot aplicar un cop.",
+    "add_product_error_duplicate_promotion": "Aquesta promoció ja està aplicada a aquest producte.",
     "add_product_error_nothing_to_pay": "Avui no hi ha res a pagar.",
     "add_product_error_draft_expired": "L'esborrany ha caducat. Comença de nou.",
     "section_pt_slots": "Franges d’Entrenament Personal",

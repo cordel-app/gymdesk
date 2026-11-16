@@ -518,7 +518,7 @@
     "required_products_question": "These products will be added to this Member and the selected promotion will be applied to all of them. Do you want to continue?",
     "required_products_confirm": "Confirm",
     "add_product_error_direct_discount_not_allowed": "Only an Admin can apply a direct discount.",
-    "add_product_error_duplicate_promotion": "A promotion can only be applied once.",
+    "add_product_error_duplicate_promotion": "This promotion is already applied to this product.",
     "add_product_error_nothing_to_pay": "Nothing is owed today.",
     "add_product_error_draft_expired": "The draft expired. Start again.",
     "section_pt_slots": "Personal Training Class Slots",
