@@ -19,6 +19,8 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { initialEventNameFor } from './billing-event-name';
+import { loadInitialChargeTaxRates } from './initial-charge-taxes';
+import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -179,7 +181,14 @@ export async function initialCharge(
   // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
   const purchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
   if (first.length === 0 && purchases.length === 0) return null;
-  const lines = [...first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l))), ...purchases.map((p) => p.line)];
+  // #2947: every line states the rate it is charged at and its net, after its discounts.
+  const engineLines = first.flatMap((e) => e.lines);
+  const taxRates = await loadInitialChargeTaxRates(exec, gymId, productSetId,
+    engineLines.map((l) => l.product_id).filter((id): id is number => id != null));
+  const lines = [
+    ...engineLines.map((l) => withLineTax(lineFromSimulation(l), initialLineTaxRate(l, taxRates))),
+    ...purchases.map((p) => withLineTax(p.line, initialLineTaxRate({ ...p.line, frozen_rate: p.line.tax_rate_percent }, taxRates))),
+  ];
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
   return {
     amount: linesTotal(lines), lines,
