@@ -96,6 +96,36 @@ export const OWNED_ASSIGNMENT_ROWS_SQL = `(
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
+ * #2125 M6b-31 — the assignment's last modification, read off its snapshots. M6b-30 dual-writes
+ * `modified_at` / `modified_by` onto a snapshot no other Product Set links (a copy carries its
+ * source's), so the assignment's latest modifier is on whichever of its snapshots was written last,
+ * not necessarily on the current one. One correlated subquery per column, over the snapshot
+ * `alias`'s assignment: the latest non-null `modified_at`, ties to the latest snapshot.
+ */
+export const assignmentModifierSql = (column: 'modified_at' | 'modified_by', alias = 'pa'): string =>
+  `(SELECT amod.${column} FROM plan_snapshots amod
+     WHERE amod.assignment_id = ${alias}.assignment_id AND amod.gym_id = ${alias}.gym_id
+     ORDER BY amod.modified_at IS NULL, amod.modified_at DESC, amod.id DESC LIMIT 1)`;
+
+/**
+ * #2125 M6b-31 — every assignment of one gym as its current snapshot, with what the Member card's
+ * plan history reports beside the lifecycle: the assignment's creation (its anchor snapshot's
+ * `created_at` / `created_by`, the anchor being the assignment's first snapshot, M6b-13's rule),
+ * its last modification (`assignmentModifierSql()`) and the soft-delete pair of the current
+ * snapshot. Shaped like the `user_memberships` row it replaces (`id` is the legacy id).
+ * Binds one `?`: the gym id. Use it as `FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um`.
+ */
+export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
+  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+         pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at, anc.created_by,
+         ${assignmentModifierSql('modified_at')} AS modified_at,
+         ${assignmentModifierSql('modified_by')} AS modified_by,
+         pa.deleted_at, pa.deleted_by
+    FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+   WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
+     AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
+
+/**
  * #2125 M6b-17 — every assignment of one gym as a derived table shaped like the `user_memberships`
  * rows it replaces, each read from its current snapshot (`OWNED_ASSIGNMENT_ROWS_SQL` without the
  * owner bound), for a reader that scopes the assignments itself: the Billing Simulation's loader

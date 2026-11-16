@@ -19,6 +19,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  snapshotTestAssignment,
 } from './helpers';
 
 afterAll(async () => {
@@ -165,6 +166,8 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
        VALUES (?, ?, ?, 'active', '2026-03-01')`,
       [gymId, memberId, planId],
     );
+    // #2125 M6b-31: the plan history reads the assignment's plan snapshot, which names no actor either.
+    await snapshotTestAssignment(insertId);
 
     const res = await request
       .get(`/user-memberships/member/${memberId}/configuration`)
