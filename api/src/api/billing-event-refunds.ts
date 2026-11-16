@@ -1,5 +1,6 @@
 import { db, type Tx } from '../infra/db';
 import { recordPaymentAttempt } from './payment-attempt';
+import { issueRefundReceipt } from './refund-receipts';
 import { getPaymentProvider } from '../payments';
 import { canCancelPending } from '../domain/productSet';
 import {
@@ -323,6 +324,9 @@ export async function refundBillingEvent(
         [gymId, insertId, l.id, fromCents(l.cents), actor],
       );
     }
+    // #2935: a manual refund completes here, so its Refund Receipt is issued
+    // in the same transaction (a failure rolls the refund back with it).
+    if (!viaProvider) await issueRefundReceipt(tx, gymId, Number(insertId), actor);
     await tx.query(
       'UPDATE billing_events SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
       [actor, billingEventId, gymId],
@@ -373,6 +377,17 @@ export async function refundBillingEvent(
       return { failure: { status: 502, error: `The payment provider did not refund the payment${answer.errorMessage ? `: ${answer.errorMessage}` : '.'}` } };
     }
     status = outcome;
+    if (outcome === 'completed') {
+      // #2935: the provider confirmed the money went back. The refund itself is
+      // already recorded and the money moved, so a failure here must not undo
+      // or hide it: the failure is logged, as the nightly run does for a
+      // receipt it cannot auto-issue (#787).
+      try {
+        await db.transaction((tx) => issueRefundReceipt(tx, gymId, refundId, actor));
+      } catch (err) {
+        console.error(`Refund receipt for refund #${refundId} could not be issued:`, err);
+      }
+    }
   }
 
   const refunds = await loadRefunds(db, original.id);

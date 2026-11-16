@@ -19,7 +19,7 @@ import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
-import { menuDocumentBlocks, type FullInvoiceForm } from './receiptsInvoicesView';
+import { menuDocumentBlocks, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
 import { notifyBillingEventDocumentsChanged } from './documentsChanged';
 
 type T = ReturnType<typeof useTranslations>;
@@ -53,6 +53,8 @@ export interface BillingEventHeaderRow {
   receipt_number?: string | null;
   can_issue_receipt?: boolean;
   has_full_invoice?: boolean;
+  /** #2935: one per completed refund, issued by the system. */
+  refund_receipts?: { id: number; receipt_number: string }[];
 }
 
 /** The fields a row of the shared Billing Events table reads. */
@@ -247,6 +249,16 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     }
   }
 
+  /** #2935: opens an existing Refund Receipt's PDF (never issues one). */
+  async function viewRefundReceipt(refundReceiptId: number) {
+    try {
+      const blob = await pdfFetch(`/payments/refund-receipts/${refundReceiptId}`, 'GET');
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (err: any) {
+      toast(err?.message ?? t('billing_events_page.action_error'));
+    }
+  }
+
   async function submitCompleteInvoice(form: FullInvoiceForm) {
     if (!invoicing || invoiceBusy) return;
     const id = invoicing.id!;
@@ -401,6 +413,12 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
         disabled: blocks.receipt != null || receiptBusyId === id,
         title: blockTitle(blocks.receipt),
       });
+      for (const rr of refundReceiptMenuEntries(row.refund_receipts)) {
+        items.push({
+          label: t(`billing_events_page.${rr.labelKey}`, { number: rr.number }),
+          onClick: () => viewRefundReceipt(rr.id),
+        });
+      }
       items.push({
         label: t('billing_events_page.generate_full_invoice'),
         onClick: () => { setInvoiceError(null); setInvoicing(row); },
