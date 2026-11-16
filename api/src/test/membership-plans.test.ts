@@ -1956,6 +1956,9 @@ describe('Membership Plan Pricing (#547)', () => {
       "UPDATE user_memberships SET base_price = 100, membership_fee_price = 80, discount_reason = 'Loyalty' WHERE id = ?",
       [membershipId],
     );
+    // #2125 M6b-29: the reprice reads its candidates from the plan snapshot, so it states the row's status
+    // again after the fixture re-synced the configuration holder.
+    await snapshotTestAssignment(membershipId);
 
     await savePricing(planId, { price: 130, tax_rate_id: taxRate21 });
     const res = await request

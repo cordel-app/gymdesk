@@ -1618,12 +1618,16 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
     // #1325 PR 3e-2: each assignment is repriced on the version its configuration
     // is (see `assignment-reprice.ts`), one transaction per row so a locked or
     // refused one leaves only itself as it was.
+    // #2125 M6b-29: the candidates are read from each assignment's current plan snapshot
+    // (`GYM_ASSIGNMENT_ROWS_SQL`, binding the gym id first); `um.id` is still the legacy id the
+    // per-row reprice names.
     const actorText = resolveRequestActor(getTenantContext(req));
     const { rows: candidates } = await db.query(
       `SELECT um.id, um.starts_at, ${assignmentConfig('discount_reason')} AS discount_reason
-         FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
-        WHERE um.membership_plan_id = ? AND um.gym_id = ? AND um.status IN (${statusMarks})`,
-      [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+         FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
+        WHERE um.membership_plan_id = ? AND um.gym_id = ? AND um.status IN (${statusMarks})
+        ORDER BY um.id`,
+      [gymId, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
     );
     let updated = 0;
     let keptDiscounted = 0;

@@ -101,3 +101,31 @@ describe('the member limit cannot go below a running assignment\'s beneficiaries
     expect((await auth(request.put(`/membership-plans/${planId}`)).send({ member_limit: '1' })).status).toBe(400);
   });
 });
+
+// #2125 M6b-29: "Apply new price to assigned plans" picks its candidates from each assignment's
+// current plan snapshot, so an assignment the snapshot states is over is not repriced even while
+// its legacy row still reads `active`.
+describe('the Plan reprice picks its candidates from plan_snapshots', () => {
+  const applyPrice = async (planId: number, price: number) => {
+    must(await auth(request.put(`/membership-plans/${planId}/pricing`)).send({ price }), 'pricing');
+    return must(await auth(request.post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)), 'apply');
+  };
+
+  it('reprices a running assignment', async () => {
+    const planId = await plan();
+    await running(planId);
+    const res = await applyPrice(planId, 45);
+    expect(res.body.updated).toBe(1);
+  });
+
+  it('skips an assignment its current snapshot states is over', async () => {
+    const planId = await plan();
+    const um = await running(planId);
+    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, um]);
+    const { rows: legacy } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [um]);
+    expect(legacy[0].status).toBe('active');
+    const res = await applyPrice(planId, 46);
+    expect(res.body.updated).toBe(0);
+    expect(res.body.kept_discounted).toBe(0);
+  });
+});
