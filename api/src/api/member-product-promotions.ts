@@ -629,7 +629,7 @@ async function loadRecurringPurchases(
       return {
         id: -Number(row.id),
         product_id: Number(row.product_id),
-        status: 'draft' as const,
+        status: 'in_cart' as const, // #2949 stage 1: a line of the open Draft reads In Cart, like a one-time purchase
         product_name: row.item_name,
         product_type: row.item_type,
         billing_frequency: row.item_billing_frequency ?? null,

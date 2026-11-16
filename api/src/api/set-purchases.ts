@@ -2,7 +2,7 @@
  * #2746 stage 1 — one-time Products in a member's shopping cart.
  *
  * The cart is the member's Draft Product Set (#2496). A recurring Product is a line of it; a
- * one-time Product (a Sessions package included) stays what #1657 made it — a `draft` purchase
+ * one-time Product (a Sessions package included) stays what #1657 made it — an `in_cart` purchase
  * (`member_products_oneoff_snapshot` + its Product snapshot) — and is **linked** to the Draft
  * through the `product_set_{oneoff,session}_snapshots` junction (migration 366; since #2126 stage 6b,
  * migration 417, the snapshot names no set of its own). From then on it moves with the set,
@@ -10,11 +10,11 @@
  * moves:
  *
  *   initial charge   `initialCharge()` adds one line per linked purchase, at its frozen amount
- *   Save & Pay       `submitForPayment()`      draft           → pending_payment
+ *   Save & Pay       `submitForPayment()`      in_cart         → pending_payment
  *   initial event    `ensureInitialEvent()`    the purchase snapshots join the event's junction,
  *                                             so each purchase reaches its payment as any purchase does
- *   activation       `activate()`              draft | pending → active (purchased_at, valid_until)
- *   back to Draft    `returnPendingToDraft()`  pending_payment → draft
+ *   activation       `activate()`              in_cart | pending → active (purchased_at, valid_until)
+ *   back to Draft    `returnPendingToDraft()`  pending_payment → in_cart
  *   discard          `deleteProductSetAndOwnPlanSnapshots()` deletes them with the set
  *
  * A linked purchase is never paid on its own: the cleanup that cancels an abandoned purchase skips
@@ -25,6 +25,7 @@ import { DateTime } from 'luxon';
 import type { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { computeValidUntil } from '../domain/productValidity';
+import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { deletePurchase, updatePurchase } from './purchase-writer';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
@@ -106,17 +107,31 @@ export async function linkPurchaseToSet(tx: Conn, gymId: string, purchaseId: num
   }
 }
 
-/** Removes a draft purchase from the Draft (a hard delete: a draft has charged nothing). */
+/** Removes an in-cart purchase from the Draft (a hard delete: it has charged nothing). */
 export async function removeSetPurchase(tx: Conn, gymId: string, productSetId: number, purchaseId: number): Promise<boolean> {
   const p = (await loadSetPurchases(tx, gymId, productSetId)).find((x) => x.id === purchaseId);
-  if (!p || p.status !== 'draft') return false;
-  return deletePurchase(tx, gymId, purchaseId, { memberId: p.member_id, status: 'draft' });
+  if (!p || p.status !== IN_CART_PURCHASE_STATUS) return false;
+  return deletePurchase(tx, gymId, purchaseId, { memberId: p.member_id, status: IN_CART_PURCHASE_STATUS });
 }
 
 const ER_DUP_ENTRY = 1062;
 
-/** Moves every linked purchase still `from` to `to` (Save & Pay, back to Draft). */
-export async function moveSetPurchases(tx: Conn, gymId: string, productSetId: number, from: string, to: string): Promise<void> {
+/**
+ * The status a cart purchase holds while its Product Set holds `setStatus` (#2949 stage 1: a Draft
+ * set's purchases are `in_cart`; a set awaiting payment and its purchases are both `pending_payment`).
+ */
+export function purchaseStatusForSet(setStatus: 'draft' | 'pending_payment' | 'cancelled'): string {
+  if (setStatus === 'draft') return IN_CART_PURCHASE_STATUS;
+  return setStatus === 'pending_payment' ? PENDING_PURCHASE_STATUS : 'cancelled';
+}
+
+/** Moves every linked purchase from the status of set status `fromSet` to that of `toSet` (Save & Pay, back to Draft). */
+export async function moveSetPurchases(
+  tx: Conn, gymId: string, productSetId: number,
+  fromSet: 'draft' | 'pending_payment', toSet: 'draft' | 'pending_payment' | 'cancelled',
+): Promise<void> {
+  const from = purchaseStatusForSet(fromSet);
+  const to = purchaseStatusForSet(toSet);
   for (const p of await loadSetPurchases(tx, gymId, productSetId)) {
     if (p.status !== from) continue;
     try {
@@ -132,7 +147,7 @@ export async function moveSetPurchases(tx: Conn, gymId: string, productSetId: nu
 /** The purchases become the member's when their set does (the webhook's activation, or a free commit). */
 export async function activateSetPurchases(tx: Conn, gymId: string, productSetId: number): Promise<void> {
   const purchases = (await loadSetPurchases(tx, gymId, productSetId))
-    .filter((p) => p.status === 'draft' || p.status === 'pending_payment');
+    .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS);
   if (purchases.length === 0) return;
   const { rows } = await tx.query<{ time_zone: string | null }>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
   // #1693: the purchase day is the gym's calendar day of the confirmation.
@@ -145,7 +160,8 @@ export async function activateSetPurchases(tx: Conn, gymId: string, productSetId
 }
 
 /** Deletes the purchases a Product Set being deleted (a Draft or an unpaid checkout) still holds. */
-export async function deleteSetPurchases(tx: Conn, gymId: string, productSetId: number, status: 'draft' | 'pending_payment'): Promise<void> {
+export async function deleteSetPurchases(tx: Conn, gymId: string, productSetId: number, setStatus: 'draft' | 'pending_payment'): Promise<void> {
+  const status = purchaseStatusForSet(setStatus);
   for (const p of await loadSetPurchases(tx, gymId, productSetId)) {
     if (p.status !== status) continue;
     await deletePurchase(tx, gymId, p.id, { memberId: p.member_id, status });
@@ -182,5 +198,5 @@ export function purchaseChargeLine(p: SetPurchase): { simulation: SimulationLine
 /** The purchases an initial charge owes: the linked ones not yet paid. */
 export async function chargeableSetPurchases(exec: Conn, gymId: string, productSetId: number): Promise<SetPurchase[]> {
   return (await loadSetPurchases(exec, gymId, productSetId))
-    .filter((p) => p.status === 'draft' || p.status === 'pending_payment');
+    .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS);
 }

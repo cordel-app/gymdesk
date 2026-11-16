@@ -598,8 +598,8 @@ describe('#2479 — the Products list shows every line of the Draft being edited
     expect(lockers[0]).toMatchObject({ status: 'active', amount: 10, list_price: 20, pending_termination: false });
     expect(lockers[0].promotions.map((p: any) => p.promotion_id)).toEqual([lockerPromo]);
 
-    // The line only the Draft carries is a Draft row with its own Promotion.
-    expect(towels[0]).toMatchObject({ status: 'draft', amount: 8, list_price: 10 });
+    // The line only the Draft carries is an In Cart row with its own Promotion.
+    expect(towels[0]).toMatchObject({ status: 'in_cart', amount: 8, list_price: 10 });
     expect(towels[0].promotions.map((p: any) => p.promotion_id)).toEqual([towelPromo]);
   });
 

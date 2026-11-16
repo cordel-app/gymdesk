@@ -155,7 +155,7 @@ describe('editing a Draft line (#2856)', () => {
     const draftId = add.body.product_set_id as number;
     const [l] = await openLines(draftId);
     const row = (await listed(m)).find((i) => i.product_id === towel);
-    expect(row).toMatchObject({ status: 'draft', source: 'recurring', draft_line_id: l.id });
+    expect(row).toMatchObject({ status: 'in_cart', source: 'recurring', draft_line_id: l.id });
 
     const edit = await auth(request.put(line(m, l.id))).send({ quantity: 2, promotion_ids: [b], direct_discount_percent: 10 });
     expect(edit.status).toBe(200);
