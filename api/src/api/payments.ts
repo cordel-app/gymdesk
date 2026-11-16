@@ -344,7 +344,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
 
     const { rows: realRows } = await db.query<{
       id: number; member_id: number; member_name: string | null;
-      user_membership_id: number | null; plan_name: string | null;
+      user_membership_id: number | null; plan_name: string | null; event_name: string | null;
       created_at: Date; amount: string | null; event_type: string;
       currency: string | null;
       membership_status: string | null;
@@ -364,6 +364,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
                         AND i.invoice_type = 'full' AND i.related_invoice_id IS NULL AND i.status = 'issued') AS has_full_invoice,
               ${eventAssignmentSql()} AS user_membership_id,
               COALESCE(mp.name, mpp.name) AS plan_name,
+              be.name AS event_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
@@ -402,6 +403,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       id: number | null; type: 'real' | 'virtual';
       member_id: number; member_name: string | null;
       user_membership_id: number | null; plan_name: string | null;
+      /** #2940: the event's generated name; null for an event written before it (shown as before). */
+      name: string | null;
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
@@ -456,6 +459,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         member_name: r.member_name,
         user_membership_id: r.user_membership_id,
         plan_name: r.plan_name,
+        name: r.event_name ?? null,
         billing_date: r.event_billing_date != null
           ? toDateOnly(r.event_billing_date) as string
           : new Date(r.created_at).toISOString().slice(0, 10),
@@ -691,7 +695,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
 
   try {
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.product_set_id, be.event_type, be.amount,
+      `SELECT be.id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.product_set_id, be.event_type, be.name, be.amount,
               be.notes, be.source, be.created_by, be.created_at,
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
@@ -756,6 +760,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       member_name: ev.member_name,
       user_membership_id: ev.user_membership_id,
       plan_name: ev.plan_name,
+      name: ev.name ?? null,
       amount: ev.amount,
       currency: 'EUR',
       status,

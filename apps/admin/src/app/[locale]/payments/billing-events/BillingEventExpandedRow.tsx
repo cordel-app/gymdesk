@@ -49,6 +49,8 @@ interface BillingEventDetails {
   member_name: string | null;
   user_membership_id: number | null;
   plan_name: string | null;
+  /** #2940: the event's generated name; null for an event written before it. */
+  name?: string | null;
   amount: string | null;
   currency: string | null;
   status: string;
@@ -251,6 +253,7 @@ export function ExpandedRow({
             }}>
               <DetailField label={t('billing_events_page.det_id')}>{details.id}</DetailField>
               <DetailField label={t('billing_events_page.det_member')}>{details.member_name ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_event_name')}>{details.name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_plan')}>{details.plan_name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_amount')}>
                 {fmtAmount(details.amount)} {details.currency ?? ''}

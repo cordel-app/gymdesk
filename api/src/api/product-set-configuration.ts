@@ -29,6 +29,7 @@ import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './re
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershipFeeScope';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
+import { recurringEventNameFor } from './billing-event-name';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -639,12 +640,14 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
       if (paidUp.length > 0) continue;
     }
 
+    // #2940: a recurring obligation is named for its billing period.
+    const name = await recurringEventNameFor(tx, gymId, scheduleId, event.date);
     const { insertId } = await tx.query(
       `INSERT INTO billing_events
-         (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,
+         (gym_id, member_id, event_type, name, source, amount, product_set_id, schedule_id,
           period_start, period_end, billing_date, is_scheduled, created_by)
-       VALUES (?, ?, 'charge_created', 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [gymId, setRows[0].owner_member_id, amount, productSetId, scheduleId,
+       VALUES (?, ?, 'charge_created', ?, 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
         event.date, event.periodEnd, event.date, actor],
     );
     for (const l of lines) {

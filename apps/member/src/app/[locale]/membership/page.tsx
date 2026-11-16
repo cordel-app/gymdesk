@@ -2180,8 +2180,11 @@ export default function MembershipPage() {
       ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
         + ` → ${t(`membership.status.${event.new_status}` as any)}`
       : null;
-    const title = t(`membership.event.${event.event_type}` as any)
-      + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : '');
+    // #2940: the event's own name when it has one; an event written before names
+    // existed keeps the label it had.
+    const title = event.name
+      ?? (t(`membership.event.${event.event_type}` as any)
+        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
     const lines: BillingEventCardLine[] = (event.lines ?? []).map((line) => ({
       key: String(line.id),
       heading: t(`payments.${lineKindKey(line)}` as any),
