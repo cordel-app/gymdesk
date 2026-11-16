@@ -434,7 +434,7 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
 
     if (promotionIds && promotionIds.length > 0) {
       if (new Set(promotionIds).size !== promotionIds.length) {
-        return res.status(400).json({ error: 'duplicate_promotion', message: 'A promotion can only be applied once' });
+        return res.status(400).json({ error: 'duplicate_promotion', message: 'This promotion is already applied to this product.' });
       }
       const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
       if (missing.length > 0) return res.status(409).json({ error: 'promotion_requires_products', products: missing });

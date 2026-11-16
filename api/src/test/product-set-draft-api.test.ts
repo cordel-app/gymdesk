@@ -151,7 +151,11 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     expect(applied.status).toBe(200);
     const { rows } = await db.query<any>('SELECT snapshot FROM user_membership_promotions WHERE id = ?', [applied.body.application_id]);
     expect(rows[0].snapshot).toBeNull();
-    expect((await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId })).status).toBe(400); // already applied
+    const again = await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId });
+    expect(again.status).toBe(400); // already applied
+    // #2893: the refusal names the plan the Promotion is applied to, never the ProductSet.
+    expect(JSON.stringify(again.body)).toContain('This promotion is already applied to this plan.');
+    expect(JSON.stringify(again.body)).not.toContain('ProductSet');
     expect((await auth(request.delete(`/product-sets/${id}/promotions/${applied.body.application_id}`))).status).toBe(200);
   });
 

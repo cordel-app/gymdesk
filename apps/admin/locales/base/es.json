@@ -518,7 +518,7 @@
     "required_products_question": "Estos productos se añadirán a este miembro y la promoción seleccionada se aplicará a todos ellos. ¿Quieres continuar?",
     "required_products_confirm": "Confirmar",
     "add_product_error_direct_discount_not_allowed": "Solo un administrador puede aplicar un descuento directo.",
-    "add_product_error_duplicate_promotion": "Una promoción solo se puede aplicar una vez.",
+    "add_product_error_duplicate_promotion": "Esta promoción ya está aplicada a este producto.",
     "add_product_error_nothing_to_pay": "Hoy no hay nada que pagar.",
     "add_product_error_draft_expired": "El borrador ha caducado. Empieza de nuevo.",
     "section_pt_slots": "Franjas de Entrenamiento Personal",
