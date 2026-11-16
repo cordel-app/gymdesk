@@ -49,7 +49,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-lifecycle.ts': 2,
   'api/entitlement-plan-links.ts': 1,
   'api/member-membership-configuration.ts': 1,
-  'api/membership-plans.ts': 2,
+  'api/membership-plans.ts': 1,
   'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
   'api/plan-assignment-drift.ts': 3,
@@ -230,11 +230,16 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(promotions.split('SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
   });
   it('M6b-22: the Membership Plan router\'s assignment counts read plan_snapshots', () => {
-    // The two statements left in membership-plans.ts are the bulk assign's INSERT and the reprice's candidates.
-    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBe(2);
+    // Since M6b-29 the one statement left in membership-plans.ts is the bulk assign's INSERT.
+    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBe(1);
     const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
-    expect(plans.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(3);
+    expect(plans.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
     expect(plans).toContain("isCurrentAssignmentSnapshotSql('pa')");
+  });
+
+  it('M6b-29: the Plan reprice\'s candidate assignments read plan_snapshots', () => {
+    const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
+    expect(plans).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}');
   });
 
   it('M6b-26: an assignment\'s version-level lines are chosen by its plan snapshot\'s status', () => {
