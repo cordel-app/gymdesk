@@ -27,7 +27,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { allocateItemSchedules } from './product-set-configuration';
 import { applyPromotionToProductSet } from './membership-promotions';
 import { discountedUnitPrice } from '../domain/productPurchasePricing';
-import { editableDraftSql } from './editable-draft';
+import { staffProductDraftSql } from './editable-draft';
 
 const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
@@ -65,6 +65,9 @@ export type EnsureDraftOutcome =
  * #2858: for staff (`staff: true`) the owner's `⋮ → Edit` Draft of a running plan is reused too
  * (`editableDraftSql()`), so adding or changing a Product while a plan edit is open edits that same
  * Draft instead of answering `in_flight`. The Members App keeps reusing its plain Draft only.
+ *
+ * #2891: and so is a new-plan assignment Draft (`staffProductDraftSql()`): a recurring Product staff
+ * add while a new Membership Plan is being assigned lands in that same Draft, beside the plan.
  */
 export async function ensureRecurringDraft(tx: Tx, input: {
   gymId: string; memberId: number; actor: Actor; today: string; staff?: boolean;
@@ -85,7 +88,7 @@ export async function ensureRecurringDraft(tx: Tx, input: {
   if (created.kind === 'in_flight') {
     if (created.status === 'draft') {
       const { rows } = await tx.query<any>(
-        `SELECT ps.user_membership_id, ${editableDraftSql('ps')} AS editable
+        `SELECT ps.user_membership_id, ${staffProductDraftSql('ps')} AS editable
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
       if (rows[0] && (rows[0].user_membership_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
