@@ -139,6 +139,7 @@ describe('gate: audited tables', () => {
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'user_membership_id link written by the projection' },
     { file: 'api/product-set-projection.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: re-keys a successor version\'s applications to the assignment it projects (#1995); the application itself is not edited' },
     { file: 'api/assignment-draft-set.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: the Draft assignment ⋮ → Edit opens owns the clone\'s copies of the edited assignment\'s plan applications (#2946); the application itself is not edited' },
+    { file: 'api/plan-assignment-sync.ts', table: 'user_membership_promotions', why: '#2125 M6b-33: assignment_id kept in step with user_membership_id (the re-key, dual-written); the application itself is not edited' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
     { file: 'api/product-set-draft.ts', table: 'product_sets', why: 'membership_plan_id of a Draft set or cleared with the plan the member adds to or takes off it (#2496 stage 4); product_sets keeps only created_by and the edit is audited against the product_set' },

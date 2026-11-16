@@ -58,6 +58,28 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
 }
 
 /**
+ * #2125 M6b-33 — keeps `user_membership_promotions.assignment_id` (migration 430) in step with
+ * `user_membership_id`, the source of truth until M6b-4: an application of a legacy assignment takes
+ * that assignment's anchor (the lowest snapshot id naming it, the rule `stampAssignmentIds()` gives
+ * the snapshots), and none where no snapshot names it. Asked per assignment, never as a scan. The
+ * writer that clears an application's `user_membership_id` (`attachApplications()`) clears this column
+ * in the same statement. Nothing reads it yet; `plan-assignments:validate` reports drift
+ * (`promotion_assignment_mismatch`).
+ */
+export async function syncPromotionAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
+  const ids = [...new Set(userMembershipIds)];
+  if (ids.length === 0) return;
+  const anchors = await anchorsOf(exec, gymId, ids);
+  for (const umId of ids) {
+    const anchor = anchors.get(umId) ?? null;
+    await exec.query(
+      `UPDATE user_membership_promotions SET assignment_id = ?
+        WHERE gym_id = ? AND user_membership_id = ? AND NOT (assignment_id <=> ?)`,
+      [anchor, gymId, umId, anchor]);
+  }
+}
+
+/**
  * Keeps the identity and the assignment-level facts of a Product Set's plan snapshots in step with
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
@@ -70,8 +92,8 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
  * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number; replaces: number | null; shared: number }>(
-    `SELECT s.id, um.replaces_user_membership_id AS replaces,
+  const { rows } = await tx.query<{ id: number; um_id: number | null; replaces: number | null; shared: number }>(
+    `SELECT s.id, s.source_user_membership_id AS um_id, um.replaces_user_membership_id AS replaces,
             ${planSnapshotSharedSql('s.id', 'psj.product_set_id')} AS shared
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
@@ -79,6 +101,7 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
   if (rows.length === 0) return;
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
+  await syncPromotionAssignmentIds(tx, gymId, rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number));
   const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
