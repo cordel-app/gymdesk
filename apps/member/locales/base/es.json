@@ -991,9 +991,9 @@
     "booked": "Reservado",
     "balance": "{n, plural, one {# sesión disponible} other {# sesiones disponibles}}",
     "title": "Servicios profesionales",
-    "capacity": "{n, plural, one {# plaza} other {# plazas}}",
     "image_alt": "Imagen de {name}",
-    "no_image": "Sin imagen"
+    "no_image": "Sin imagen",
+    "occupancy": "{occupied}/{capacity} · {remaining, plural, one {# plaza libre} other {# plazas libres}}"
   },
   "family_participants": {
     "title": "Participantes",

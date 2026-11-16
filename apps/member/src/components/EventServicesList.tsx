@@ -11,7 +11,8 @@ import type { ServiceChoice } from '@/lib/serviceSelection';
  * #2500 — the Professional Services an event accepts, each with its own
  * circular thumbnail and its own capacity. My Bookings and the Calendar sheet
  * render this one component. The list and every capacity are the API's
- * (`professional_services` on `/me/schedule` and `/me/bookings`): nothing here
+ * (`professional_services` on `/me/schedule` and `/me/bookings`), each with the
+ * places booked and left for that service (#2903): nothing here
  * sums or substitutes the event's total. Renders nothing for an empty list.
  */
 export interface EventService {
@@ -21,6 +22,9 @@ export interface EventService {
   image_url: string | null;
   image_thumbnail_url: string | null;
   capacity: number;
+  /** #2903: places booked for this service on this occurrence, and the places left. */
+  occupied?: number;
+  remaining?: number;
   /** #2674: a `family_only` service with a minimum above one takes a participant selection. */
   booking_type?: string | null;
   min_participants?: number | null;
@@ -104,7 +108,7 @@ export function EventServicesList({ services, bookedId = null, choose = null, co
             {choice ? (
               <span style={{ ...styles.capacity, ...(choice.disabled ? styles.balanceZero : null) }}>{choice.balance == null ? '' : t('balance', { n: choice.balance })}</span>
             ) : (
-              <span style={styles.capacity}>{t('capacity', { n: s.capacity })}</span>
+              <span style={styles.capacity}>{t('occupancy', { occupied: s.occupied ?? 0, capacity: s.capacity, remaining: s.remaining ?? Math.max(0, s.capacity - (s.occupied ?? 0)) })}</span>
             )}
           </>
         );

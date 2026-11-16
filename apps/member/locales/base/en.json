@@ -991,9 +991,9 @@
     "booked": "Booked",
     "balance": "{n, plural, one {# session available} other {# sessions available}}",
     "title": "Professional Services",
-    "capacity": "{n, plural, one {# place} other {# places}}",
     "image_alt": "Image of {name}",
-    "no_image": "No image"
+    "no_image": "No image",
+    "occupancy": "{occupied}/{capacity} · {remaining, plural, one {# place left} other {# places left}}"
   },
   "family_participants": {
     "title": "Participants",

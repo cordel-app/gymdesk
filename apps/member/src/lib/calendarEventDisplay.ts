@@ -278,3 +278,44 @@ export function memberStatusChip(session: {
   if (session.my_attendance_status === 'absent') return { key: 'my_attendance_absent', tone: 'error' };
   return { key: 'event_status_booked', tone: 'info' };
 }
+
+// ── #2903: what the event box says about places ─────────────────────────────
+//
+// An occurrence that accepts Professional Services has one capacity per
+// service (#2499: the service's own maximum, capped by the event), and the
+// places booked and left are counted per service from the bookings that name
+// it. The Activity's standard capacity (`effective_capacity`) is the answer
+// only for an occurrence that accepts no service: it is never shown as a
+// substitute for a service's own, and the services are never summed into one.
+
+export interface MemberEventOccupancyService {
+  name: string;
+  capacity: number;
+  occupied?: number | null;
+}
+
+export interface MemberEventOccupancySource {
+  booked_count: number;
+  effective_capacity: number;
+  professional_services?: readonly MemberEventOccupancyService[] | null;
+}
+
+/** One `booked/capacity` reading; `name` is set only when the event has more than one to tell apart. */
+export interface MemberEventOccupancy {
+  name: string | null;
+  booked: number;
+  capacity: number;
+}
+
+export function memberEventOccupancy(session: MemberEventOccupancySource): MemberEventOccupancy[] {
+  const services = session.professional_services ?? [];
+  if (services.length === 0) {
+    return [{ name: null, booked: Number(session.booked_count) || 0, capacity: Number(session.effective_capacity) || 0 }];
+  }
+  const named = services.length > 1;
+  return services.map((s) => ({
+    name: named ? s.name : null,
+    booked: Number(s.occupied ?? 0) || 0,
+    capacity: Number(s.capacity) || 0,
+  }));
+}

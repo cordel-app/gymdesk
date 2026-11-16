@@ -991,9 +991,9 @@
     "booked": "Reservat",
     "balance": "{n, plural, one {# sessió disponible} other {# sessions disponibles}}",
     "title": "Serveis professionals",
-    "capacity": "{n, plural, one {# plaça} other {# places}}",
     "image_alt": "Imatge de {name}",
-    "no_image": "Sense imatge"
+    "no_image": "Sense imatge",
+    "occupancy": "{occupied}/{capacity} · {remaining, plural, one {# plaça lliure} other {# places lliures}}"
   },
   "family_participants": {
     "title": "Participants",

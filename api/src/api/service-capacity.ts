@@ -109,6 +109,9 @@ export interface MemberEventService {
   image_thumbnail_url: string | null;
   /** The effective capacity for this occurrence (#1984), never the event's total. */
   capacity: number;
+  /** #2903: the `booked` rows that name this service on this occurrence, and the places left. */
+  occupied: number;
+  remaining: number;
   /** #2674: `family_only` with `min_participants > 1` takes a family participant selection. */
   booking_type: string;
   min_participants: number | null;
@@ -151,6 +154,8 @@ export async function loadMemberEventServices(
           image_url: r.image_url || null,
           image_thumbnail_url: r.image_thumbnail_url || null,
           capacity: v.capacity,
+          occupied: v.occupied,
+          remaining: v.remaining,
           booking_type: r.booking_type ?? 'open_group',
           min_participants: r.min_participants == null ? null : Number(r.min_participants),
         };
