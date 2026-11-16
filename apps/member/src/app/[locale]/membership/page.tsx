@@ -62,6 +62,7 @@ import {
   type MemberServiceBalanceItem,
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
+import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -1100,8 +1101,8 @@ export default function MembershipPage() {
       const freqKey = reviewFrequencyKey(i.billing_frequency);
       const price = i.final_price ?? i.regular_price;
       return (
-        <li key={k} style={styles.benefitItem}>
-          <span style={i.state === 'cancelling' ? { textDecoration: 'line-through' } : undefined}>{i.name}</span>
+        <li key={k} style={styles.summaryItem}>
+          <span style={i.state === 'cancelling' ? { ...styles.summaryText, textDecoration: 'line-through' } : styles.summaryText}>{i.name}</span>
           {i.quantity != null && i.quantity > 1 && <span style={styles.benefitMeta}>× {i.quantity}</span>}
           {price != null && <span style={styles.benefitMeta}>· {money(price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
           {i.promotions.filter(Boolean).length > 0 && <span style={styles.benefitMeta}>· {i.promotions.filter(Boolean).join(', ')}</span>}
@@ -1109,23 +1110,32 @@ export default function MembershipPage() {
       );
     };
     const reviewError = review.error ? setCommitErrorKey(review.error) : null;
+    // #2894 — the Summary sits near the top of the page (right under the cart)
+    // as a collapsible card, closed by default with the total beside its title.
+    // Opening it is presentation only: the review was read with the version, so
+    // the draft and its selections are untouched. Its body is one linear list
+    // with small labels rather than a card per line. The error and the commit
+    // button stay outside the card, so a closed Summary never hides either.
     return (
-      <section style={styles.section} data-set-summary>
-        <h2 style={styles.h2}>{t('membership.summary_heading')}</h2>
-        <div style={styles.card}>
-          <h3 style={styles.h3}>{t('membership.summary_contracted')}</h3>
+      <div data-set-summary>
+        <MemberCollapsibleCard
+          title={t('membership.summary_heading')}
+          summary={t('membership.summary_total_short', { amount: money(review.amount_due) })}
+          bodyStyle={styles.summaryBody}
+        >
+          <p style={styles.summaryLabel}>{t('membership.summary_contracted')}</p>
           {contracted.length === 0
-            ? <p style={styles.hint}>{t('membership.summary_none')}</p>
-            : <ul style={styles.benefitList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
+            ? <p style={styles.summaryHint}>{t('membership.summary_none')}</p>
+            : <ul style={styles.summaryList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
           {cancelled.length > 0 && (<>
-            <h3 style={styles.h3}>{t('membership.summary_cancelled')}</h3>
-            <ul style={styles.benefitList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
+            <p style={styles.summaryLabel}>{t('membership.summary_cancelled')}</p>
+            <ul style={styles.summaryList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
           </>)}
-          <h3 style={styles.h3}>{t('membership.summary_initial_payment')}</h3>
+          <p style={styles.summaryLabel}>{t('membership.summary_initial_payment')}</p>
           {review.immediate_lines.length === 0
-            ? <p style={styles.hint}>{t('membership.summary_nothing_due')}</p>
+            ? <p style={styles.summaryHint}>{t('membership.summary_nothing_due')}</p>
             : (
-              <ul style={styles.eventList}>
+              <ul style={styles.summaryList}>
                 {review.immediate_lines.map((l, n) => {
                   const discount = reviewLineDiscount(l);
                   const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
@@ -1138,34 +1148,34 @@ export default function MembershipPage() {
                     l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,
                   ].filter(Boolean).join(' · ');
                   return (
-                    <li key={`l-${n}`} style={styles.eventItem}>
+                    <li key={`l-${n}`} style={styles.summaryLine}>
                       <div style={styles.eventLine}>
-                        <span style={styles.eventLabel}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
-                        <span style={styles.eventAmount}>{money(l.amount)}</span>
+                        <span style={styles.summaryText}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
+                        <span style={styles.summaryAmount}>{money(l.amount)}</span>
                       </div>
-                      {sub && <div style={styles.eventSub}>{sub}</div>}
+                      {sub && <div style={styles.summarySub}>{sub}</div>}
                     </li>
                   );
                 })}
               </ul>
             )}
-          <div style={styles.eventLine}>
-            <span style={{ ...styles.eventLabel, fontWeight: 700 }}>{t('membership.summary_total')}</span>
-            <span style={{ ...styles.eventAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
+          <div style={styles.summaryTotal}>
+            <span style={{ ...styles.summaryText, fontWeight: 700 }}>{t('membership.summary_total')}</span>
+            <span style={{ ...styles.summaryAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
           </div>
-          {(reviewError || commitError) && (
-            <p role="alert" style={{ ...styles.draftError, margin: '10px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
-          )}
-          {/* #2746 stage 2 — the cart card above carries the one Pay; the
-              button stays here only for a Draft that changes something without
-              adding an item (it only cancels one). */}
-          {action && !hasCart(setView) && (
-            <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 14 }} disabled={commitBusy} onClick={commitSet}>
-              {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
-            </button>
-          )}
-        </div>
-      </section>
+        </MemberCollapsibleCard>
+        {(reviewError || commitError) && (
+          <p role="alert" style={{ ...styles.draftError, margin: '8px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
+        )}
+        {/* #2746 stage 2 — the cart card above carries the one Pay; the
+            button stays here only for a Draft that changes something without
+            adding an item (it only cancels one). */}
+        {action && !hasCart(setView) && (
+          <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 10 }} disabled={commitBusy} onClick={commitSet}>
+            {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -2318,9 +2328,9 @@ export default function MembershipPage() {
     return (
       <main style={styles.container}>
         {renderCart()}
+        {renderSetSummary()}
         {renderProducts()}
         {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
-        {renderSetSummary()}
         {renderDialogs()}
       </main>
     );
@@ -2334,11 +2344,11 @@ export default function MembershipPage() {
         {renderTabs()}
         {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
         {renderCart()}
+        {renderSetSummary()}
         {renderPlansHeader()}
         {renderMyPlans()}
         {renderMyProducts()}
         {renderOwnPurchases()}
-        {renderSetSummary()}
         </>)}
         {renderDialogs()}
       </main>
@@ -2351,6 +2361,8 @@ export default function MembershipPage() {
       {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
       {/* #2746 stage 2 — the cart, at the top of My Products. */}
       {renderCart()}
+      {/* #2894 — the Summary, collapsible, before My Plans and My Products. */}
+      {renderSetSummary()}
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -2373,7 +2385,6 @@ export default function MembershipPage() {
           follows them rather than splitting the membership from its own
           pending payment. */}
       {renderOwnPurchases()}
-      {renderSetSummary()}
 
       {packages.length > 0 && (
         <section style={styles.section}>
@@ -2447,6 +2458,17 @@ const styles: Record<string, React.CSSProperties> = {
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
+  // #2894 — the Summary's compact, linear body: small labels, hairline rows, no nested cards.
+  summaryBody: { padding: '0 16px 14px', fontSize: 13 },
+  summaryLabel: { margin: '10px 0 4px', fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: memberTheme.textMuted },
+  summaryHint: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
+  summaryList: { listStyle: 'none', padding: 0, margin: 0 },
+  summaryItem: { ...rowDividerStyle, padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
+  summaryLine: { ...rowDividerStyle, padding: '5px 0' },
+  summaryText: { fontSize: 13, color: memberTheme.text },
+  summaryAmount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text },
+  summarySub: { fontSize: 11.5, color: memberTheme.textMuted, marginTop: 2 },
+  summaryTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingTop: 8 },
   eventItem: { ...sectionCardStyle, padding: '12px 14px', marginBottom: 6 },
   eventLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   eventLabel: { fontSize: 14, fontWeight: 500, color: memberTheme.text },
