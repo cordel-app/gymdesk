@@ -37,6 +37,8 @@ export type MemberCartView = MemberSetView & {
   cart?: { plans: number; products: number };
   /** #2746 stage 3: a version awaiting payment — its initial event's amount (the owner's read only). */
   pending_amount?: number | null;
+  /** #2895: a Draft staff created by assigning a plan, still being set up (the server's `awaitsStaffSetup()`). */
+  awaiting_staff_setup?: boolean;
 };
 
 /** One removable item of the cart, with what its own Cancel calls. */
@@ -57,8 +59,18 @@ function isCartVersion(view: MemberCartView | null): view is MemberCartView {
   return !!view && (view.status === 'draft' || view.status === 'pending_payment');
 }
 
-/** Which state the cart is in: being filled, or awaiting its one payment. */
-export type CartPhase = 'draft' | 'pending_payment';
+/**
+ * Which state the cart is in: being filled, awaiting its one payment, or
+ * (#2895) a Draft staff are still setting up, which the member sees but can
+ * neither pay, cancel nor add to until staff choose **Members App** as its
+ * payment method (that is Save & Pay, so it then reads `pending_payment`).
+ */
+export type CartPhase = 'draft' | 'pending_payment' | 'awaiting_staff';
+
+/** #2895: whether the Draft is the gym's, still being set up — the server's flag, never derived here. */
+export function awaitsStaffSetup(view: MemberCartView | null): boolean {
+  return !!view && view.status === 'draft' && view.awaiting_staff_setup === true;
+}
 
 /**
  * #2746 stage 3 — the cart's phase for the member looking at it, or `null`
@@ -68,6 +80,7 @@ export type CartPhase = 'draft' | 'pending_payment';
  */
 export function cartPhase(view: MemberCartView | null, viewerMemberId: number | null): CartPhase | null {
   if (!hasCart(view)) return null;
+  if (awaitsStaffSetup(view)) return 'awaiting_staff';
   if (view!.status === 'draft') return 'draft';
   if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;
   return 'pending_payment';
@@ -78,7 +91,7 @@ export function cartPhase(view: MemberCartView | null, viewerMemberId: number | 
  * Draft. Once payment has started the purchase is one operation (§6).
  */
 export function cartItemsRemovable(view: MemberCartView | null): boolean {
-  return isDraft(view);
+  return isDraft(view) && !awaitsStaffSetup(view);
 }
 
 /**
@@ -152,10 +165,11 @@ export function hasCart(view: MemberCartView | null): boolean {
  * the amount is never decided here.
  */
 export function cartCommitAction(view: MemberCartView | null, review: MemberSetReview | null): SetCommitAction | null {
+  if (awaitsStaffSetup(view)) return null;
   const summary = setCommitAction(review);
   if (summary) return summary;
   if (!review || review.status !== 'draft' || review.error || review.amount_due == null) return null;
-  if (!hasCart(view)) return null;
+  if (!hasCart(view) || awaitsStaffSetup(view)) return null;
   return review.payment_required ? 'save_and_pay' : 'activate';
 }
 
@@ -179,6 +193,7 @@ export function cartErrorKey(message: string | null | undefined): string {
     case 'draft_exists': return 'membership.cart_error_already_in_cart';
     case 'one_per_member': return 'membership.cart_error_one_per_member';
     case 'family_owner_only': return 'membership.family_owner_only';
+    case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     case 'in_flight':
     case 'edit_locked':
     case 'duplicate_submission':

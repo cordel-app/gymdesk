@@ -17,3 +17,18 @@ export function cartCounts(view: {
     products: view.lines.filter((l) => l.change === 'added').length + view.purchases.length,
   };
 }
+
+/**
+ * #2895 — a Draft staff created by assigning a Membership Plan (a Draft linked to an assignment,
+ * `product_sets.user_membership_id`: `createDraftSetForAssignment()` / `⋮ → Edit`). The member's
+ * own Draft never links one (#2743, #2496), so this is the one test of "is this Draft the gym's,
+ * still being set up". The member may read it but not pay, discard or change it: it reaches the
+ * member only once staff choose **Members App** as its payment method, which is Save & Pay
+ * (`pending_payment`), and that is no longer a Draft. Pure.
+ */
+export function awaitsStaffSetup(set: { status: string; user_membership_id?: unknown }): boolean {
+  return set.status === 'draft' && set.user_membership_id != null;
+}
+
+/** The refusal a member's write on such a Draft answers, and the code an add answers while one exists. */
+export const AWAITING_STAFF_SETUP = 'awaiting_staff_setup';
