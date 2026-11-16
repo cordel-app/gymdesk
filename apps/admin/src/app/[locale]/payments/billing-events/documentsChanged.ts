@@ -8,7 +8,7 @@
 // failed issue announces nothing, so no row appears.
 import { useEffect, useRef } from 'react';
 
-export const BILLING_EVENT_DOCUMENTS_CHANGED = 'gymdesk:billing-event-documents-changed';
+export const BILLING_EVENT_DOCUMENTS_CHANGED = 'billing-event-documents-changed';
 
 /** Announce that a receipt or invoice was issued for `billingEventId`. */
 export function notifyBillingEventDocumentsChanged(billingEventId: number, target: EventTarget | null = typeof window === 'undefined' ? null : window): void {
