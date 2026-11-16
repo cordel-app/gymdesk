@@ -8,6 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -160,10 +161,11 @@ async function viewContext(
   if (raw === undefined) return { status: 'none' };
   const memberId = Number(raw);
   if (!Number.isInteger(memberId) || memberId <= 0) return { status: 'invalid' };
+  // #2125 M6b-23: the assignment's owner from its current plan snapshot.
   const { rows } = await db.query(
-    `SELECT um.member_id FROM user_memberships um
-     WHERE um.id = ? AND um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}`,
-    [userMembershipId, gymId, memberId, memberId],
+    `SELECT um.member_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
+     WHERE um.id = ? AND ${MEMBER_MEMBERSHIP_SQL}`,
+    [gymId, userMembershipId, memberId, memberId],
   );
   if (rows.length === 0) return { status: 'invalid' };
   return { status: 'ok', relationship: assignmentRelationship(memberId, rows[0].member_id) };
@@ -655,8 +657,9 @@ userMembershipsRouter.get('/:id/example-timeline', async (req, res, next) => {
 userMembershipsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
+    // #2125 M6b-23: the assignment's current plan snapshot.
     const { rows } = await db.query(
-      'SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId],
+      `SELECT um.id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
     res.json(await assignedPlanBillingForecast(gymId, Number(req.params.id)));
@@ -677,8 +680,8 @@ userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
   const { rows } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status, ${assignmentConfig('base_price')} AS base_price,
             um.starts_at, um.ends_at, cfg.recurring_billing_interval, cfg.recurring_billing_unit
-     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ? AND um.gym_id = ?`,
-    [req.params.id, gymId],
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   res.json(await computeBillingEventsView(gymId, rows[0]));
@@ -2085,10 +2088,10 @@ async function findMembershipWithPlanLimit(id: string | string[], gymId: string)
     `SELECT um.id, um.membership_plan_id,
             COALESCE((SELECT s.member_limit FROM plan_snapshots s
                        WHERE s.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}), p.member_limit) AS member_limit
-       FROM user_memberships um
+       FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-      WHERE um.id = ? AND um.gym_id = ?`,
-    [id, gymId],
+      WHERE um.id = ?`,
+    [gymId, id],
   );
   return rows[0] ?? null;
 }
