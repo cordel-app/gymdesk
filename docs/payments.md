@@ -1072,7 +1072,7 @@ clock.
 no status column: an event's status is its latest linked transaction's, falling back to the
 event type (`deriveBillingEventStatus()`, `api/src/domain/billingEventStatus.ts`).
 
-- `name VARCHAR(255) NULL` (migration 427, #2940) — the event's generated name, written once by
+- `name VARCHAR(255) NULL` (migration 428, #2940) — the event's generated name, written once by
   its writer through `api/src/api/billing-event-name.ts` over `domain/billingEventName.ts`
   (`Initial Engagement`, `<Gym> - <Month>`, `<Gym> - <Month> (dd/mm/yyyy)`, `<Gym> - <Item>`,
   `<Gym> - Compra dd/mm/yyyy`). Display only: nothing prices, settles or invoices from it, and

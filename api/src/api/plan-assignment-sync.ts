@@ -63,7 +63,8 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
  * snapshots re-derives these too.
  *
  * Identity is stamped on every snapshot the set links. The facts (`purchased_at`,
- * `replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by`) are copied only onto a
+ * `replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by` and, since M6b-30,
+ * `modified_at`/`modified_by`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
  * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
  * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
@@ -88,7 +89,9 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
               s.replace_on_activation = um.replace_on_activation,
               s.replaces_assignment_id = ?,
               s.deleted_at = um.deleted_at,
-              s.deleted_by = um.deleted_by
+              s.deleted_by = um.deleted_by,
+              s.modified_at = um.modified_at,
+              s.modified_by = um.modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
       [r.replaces != null ? (replaced.get(Number(r.replaces)) ?? null) : null, r.id, gymId]);
   }
