@@ -40,6 +40,7 @@ import {
   ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS,
 } from './types';
 import type { AssignedPlanDetail } from './types';
+import { DraftBeneficiariesEditor } from './DraftBeneficiariesEditor';
 import { ReviewChangesModal } from '@/app/[locale]/members/ReviewChangesModal';
 
 // #786: an assignment is `active` from creation, so there is no pre-activation
@@ -159,6 +160,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // #2097: Save & Pay opens the payment modal (review, method, Pay) instead of
   // committing inline; nothing is committed or charged until Pay inside it.
   const [payModalOpen, setPayModalOpen] = useState(false);
+  // #2879 stage 2: unsaved beneficiary changes hold the Draft's Save & Pay until they are saved.
+  const [beneficiariesPending, setBeneficiariesPending] = useState(false);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
   const { canWrite: canWritePayments, isAdmin, readOnlyTitle } = useModuleAccess('PAYMENTS');
@@ -428,6 +431,16 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             </span>
           ))}
         </div>
+        {/* #2879 stage 2 — a Draft's Members per Membership and beneficiaries, in Edit mode only. */}
+        {editing && detail.status === 'draft' && (
+          <DraftBeneficiariesEditor
+            assignedPlanId={detail.id}
+            canWrite={canWritePayments}
+            readOnlyTitle={readOnlyTitle}
+            onSaved={() => { loadDetail(); onChanged(); }}
+            onBlockingChange={setBeneficiariesPending}
+          />
+        )}
       </CardSection>
 
       <CardSection label={t('section_pricing')}>
@@ -644,10 +657,12 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         <div style={inlineActionsRowStyle}>
           <button type="button" style={secondaryBtnSmall} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
             onClick={() => setDiscardOpen(true)}>{t('action_draft_cancel')}</button>
-          {!embedded && <button type="button" style={secondaryBtnSmall} disabled={actionBusy} onClick={() => saveDraft()}>
+          {!embedded && <button type="button" style={secondaryBtnSmall} disabled={actionBusy || beneficiariesPending}
+            title={beneficiariesPending ? t('beneficiaries_unsaved') : undefined} onClick={() => saveDraft()}>
             {t('action_draft_save')}
           </button>}
-          {!embedded && <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
+          {!embedded && <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments || beneficiariesPending}
+            title={beneficiariesPending ? t('beneficiaries_unsaved') : readOnlyTitle}
             onClick={() => startSaveAndPay()}>{t('action_save_and_pay')}</button>}
         </div>
       )}

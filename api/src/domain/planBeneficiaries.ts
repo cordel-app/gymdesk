@@ -68,3 +68,23 @@ export function parseBeneficiaryIds(value: unknown): number[] | null | undefined
   }
   return ids;
 }
+
+/** #2879 stage 2: the accepted *Members per Membership* values, mirrored by `chk_plan_snapshots_member_limit`. */
+export const PLAN_MEMBER_LIMITS: readonly PlanMemberLimit[] = ['1', '2', 'family'];
+
+/** A stored limit read back: anything outside the set reads as `'1'` (the column's own default on the Plan). */
+export function toPlanMemberLimit(value: unknown): PlanMemberLimit {
+  const s = value == null ? '' : String(value);
+  return (PLAN_MEMBER_LIMITS as readonly string[]).includes(s) ? (s as PlanMemberLimit) : '1';
+}
+
+/**
+ * #2879 stage 2: a request's `member_limit` — `undefined` when absent (keep the stored value),
+ * `null` when it is not one of the accepted values (a 400, never a coercion), else the value.
+ * A number is accepted for 1 and 2, since that is what a client naturally sends.
+ */
+export function parseMemberLimitInput(value: unknown): PlanMemberLimit | null | undefined {
+  if (value === undefined) return undefined;
+  const s = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  return (PLAN_MEMBER_LIMITS as readonly string[]).includes(s) ? (s as PlanMemberLimit) : null;
+}
