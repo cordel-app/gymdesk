@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { syncPromotionAssignmentIds } from './plan-assignment-sync';
+import { syncPromotionAssignmentIds, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -182,7 +182,7 @@ export async function projectActiveProductSet(
   // A plan-less version has no assignment; a previous one is closed.
   if (set.membership_plan_id == null) {
     if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
-    await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [productSetId]);
+    await tx.query('UPDATE product_sets SET user_membership_id = NULL, plan_assignment_id = NULL WHERE id = ?', [productSetId]);
     return null;
   }
 
@@ -208,7 +208,7 @@ export async function projectActiveProductSet(
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
     await attachApplications(tx, gymId, productSetId, umId);
-    if (continuedUmId != null) await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
+    if (continuedUmId != null) await tx.query(`UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
     return umId;
   }
 
@@ -247,7 +247,7 @@ export async function projectActiveProductSet(
   // ids, the grant snapshots) belong to the assignment it projects.
   await attachApplications(tx, gymId, productSetId, umId);
 
-  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
+  await tx.query(`UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
   return umId;
 }
 

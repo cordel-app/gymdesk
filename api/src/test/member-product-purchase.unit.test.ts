@@ -254,8 +254,8 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
 describe('the vocabulary matches its CHECKs (migration 228)', () => {
   it('the statuses, the actor types and the source are the migration’s', () => {
     expect(migration.STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES].filter((s) => s !== 'in_cart'));
-    // #2949 stage 1: the snapshot tables' CHECK (migration 432) holds every purchase status, `in_cart` included.
-    const current = require('../infra/migrations/432_purchase_status_in_cart.js').PURCHASE_STATUSES;
+    // #2949 stage 1: the snapshot tables' CHECK (migration 433) holds every purchase status, `in_cart` included.
+    const current = require('../infra/migrations/433_purchase_status_in_cart.js').PURCHASE_STATUSES;
     expect([...MEMBER_PRODUCT_STATUSES].every((s) => current.includes(s))).toBe(true);
     expect(current).not.toContain('draft');
     expect(migration.ACTOR_TYPES).toEqual([...PURCHASE_ACTOR_TYPES]);
