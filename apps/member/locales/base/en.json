@@ -622,7 +622,12 @@
       "scheduled": "Scheduled",
       "recorded": "Recorded",
       "cancelled": "Cancelled"
-    }
+    },
+    "prepaid_payment_month": "{count, plural, one {# month} other {# months}} pre-payment",
+    "prepaid_payment_week": "{count, plural, one {# week} other {# weeks}} pre-payment",
+    "prepaid_payment_year": "{count, plural, one {# year} other {# years}} pre-payment",
+    "prepaid_payment_four_weeks": "{count} × 4 weeks pre-payment",
+    "prepaid_payment_periods": "{count, plural, one {# period} other {# periods}} pre-payment"
   },
   "payment_banner": {
     "pending_heading": "You have a pending payment",

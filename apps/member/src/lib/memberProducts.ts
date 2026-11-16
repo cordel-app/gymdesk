@@ -694,12 +694,16 @@ export interface MemberSetReviewLine {
   item_name: string | null;
   quantity: number;
   amount: number;
+  /** The regular price of the whole line (unit × quantity), VAT included — #2890, despite the name. */
   regular_unit_price: number | null;
   promotion_name: string | null;
   treatment_action: string | null;
   treatment_value: number | null;
   tax_rate_percent: number | null;
   amount_excl_tax: number | null;
+  /** #2883 — the Pre-paid periods a Membership Fee line collects up front, and their cadence. */
+  prepaid_periods?: number | null;
+  prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
 /** `GET /me/product-sets/:id/review`, as the Summary reads it. */
@@ -740,10 +744,14 @@ export function setCommitAction(review: MemberSetReview | null): SetCommitAction
   return review.payment_required ? 'save_and_pay' : 'activate';
 }
 
-/** The discount a charge line carries off its regular price (promotion or benefit), or `null` for none. */
+/**
+ * The discount a charge line carries off its regular price (promotion or benefit), or `null` for none.
+ * #2890: `regular_unit_price` is the engine's regular price of the **whole line**
+ * (`unit × quantity`) despite its name, so it is compared with the charge as it stands.
+ */
 export function reviewLineDiscount(line: MemberSetReviewLine): number | null {
   if (line.regular_unit_price == null) return null;
-  const off = Math.round((line.regular_unit_price * line.quantity - line.amount) * 100) / 100;
+  const off = Math.round((line.regular_unit_price - line.amount) * 100) / 100;
   return off > 0 ? off : null;
 }
 

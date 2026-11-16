@@ -155,6 +155,7 @@ import {
   nextPaymentDate,
   pastBillingEventGroups,
   showsRegularPrice,
+  prepaidPaymentKey,
 } from '@/lib/memberPayments';
 
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
@@ -759,9 +760,12 @@ export default function MembershipPage() {
         // #946 — the one line that collects a Pre-paid Duration up front says how
         // many periods its amount covers, because the periods after it charge
         // nothing and an unexplained multiple of the fee reads as an error.
-        line.prepaid_periods != null
-          ? t('payments.prepaid_periods', { count: line.prepaid_periods })
-          : null,
+        // #2883 — in the plan's own cadence ("2 months pre-payment"); the quantity above is the
+        // number of fees, never these periods.
+        (() => {
+          const key = prepaidPaymentKey(line.prepaid_periods, line.prepaid_cadence);
+          return key ? t(`payments.${key}` as any, { count: line.prepaid_periods as number }) : null;
+        })(),
       ].filter(Boolean).join(' · ');
       return {
         key: `${line.kind}-${line.product_id ?? 'fee'}-${index}`,
@@ -1115,8 +1119,11 @@ export default function MembershipPage() {
               <ul style={styles.eventList}>
                 {review.immediate_lines.map((l, n) => {
                   const discount = reviewLineDiscount(l);
+                  const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
                   const sub = [
-                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price * l.quantity) }) : null,
+                    // #2883 — a Membership Fee collecting a Pre-paid Duration says how many periods it covers.
+                    prepaidKey ? t(`payments.${prepaidKey}` as any, { count: l.prepaid_periods as number }) : null,
+                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
                     l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
                     discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
                     l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,

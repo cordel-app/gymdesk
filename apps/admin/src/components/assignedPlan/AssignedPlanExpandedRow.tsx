@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -585,11 +585,17 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                   row,
                   t('timeline_no_charge'),
                   t('tax_included_suffix'),
-                  // #946 — the first Pre-paid period collects the whole Pre-paid
-                  // Duration, so the cell says how many periods its amount covers.
-                  row.prepaidPeriods != null
-                    ? t('timeline_prepaid_periods', { count: row.prepaidPeriods })
-                    : null,
+                  // #946 / #2883 — the first Pre-paid period collects the whole Pre-paid
+                  // Duration, so the cell says how many periods its amount covers, in
+                  // the assignment's own cadence.
+                  prepaidPaymentLabel(
+                    row.prepaidPeriods,
+                    detail.billing_policy ? {
+                      interval: detail.billing_policy.recurring_billing_interval,
+                      unit: detail.billing_policy.recurring_billing_unit,
+                    } : null,
+                    tFreq as any,
+                  ),
                 ),
                 tone: exampleTimelineRowTone(row),
               }))}

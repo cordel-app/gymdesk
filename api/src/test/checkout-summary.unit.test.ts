@@ -11,11 +11,13 @@ describe('initialPaymentBreakdown', () => {
   it('splits each charged line into unit price, discount and tax, and totals by rate', () => {
     const out = initialPaymentBreakdown([
       line({ item_name: 'Monthly fee', amount: 48.4, regular_unit_price: 60.5, promotion_name: 'Spring', tax_rate_percent: 21, amount_excl_tax: 40 }),
-      line({ item_name: 'Towel', quantity: 2, amount: 10, regular_unit_price: 5, tax_rate_percent: 21, amount_excl_tax: 8.26 }),
+      line({ item_name: 'Towel', quantity: 2, amount: 10, regular_unit_price: 10, tax_rate_percent: 21, amount_excl_tax: 8.26 }),
       line({ item_name: 'Book', amount: 11.04, regular_unit_price: 11.04, tax_rate_percent: 4, amount_excl_tax: 10.62 }),
     ], 69.44);
     expect(out.lines[0]).toEqual(expect.objectContaining({ unit_price: 60.5, discount: 12.1, promotion_name: 'Spring', tax_amount: 8.4, amount: 48.4 }));
-    expect(out.lines[1]).toEqual(expect.objectContaining({ unit_price: 5, discount: 0, tax_amount: 1.74 }));
+    expect(out.lines[1]).toEqual(expect.objectContaining({ unit_price: 5, line_total: 10, discount: 0, tax_amount: 1.74 }));
+    expect(out.total_before_discounts).toBe(81.54);
+    expect(Math.round((out.total_before_discounts - out.discount_total) * 100) / 100).toBe(out.total);
     expect(out.discount_total).toBe(12.1);
     expect(out.taxes).toEqual([
       { rate_percent: 4, base: 10.62, tax: 0.42 },
@@ -27,11 +29,40 @@ describe('initialPaymentBreakdown', () => {
     expect(Math.round((out.subtotal_excl_tax + out.tax_total) * 100) / 100).toBe(out.total);
   });
 
+  // #2890 — the stored regular price is the whole line's (the engine's
+  // `regular_price = unit × quantity`): a 10-unit €50 line waived read as a
+  // €500 unit price and a −€5,000 discount.
+  it('reads the regular price as the line total: unit price is per unit and the discount is the line total minus the charge', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'PT session', quantity: 10, amount: 0, regular_unit_price: 500, treatment_action: 'waive' }),
+      line({ item_name: 'Locker', quantity: 3, amount: 27, regular_unit_price: 30, treatment_action: 'percentage_discount', treatment_value: 10 }),
+    ], 27);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ quantity: 10, unit_price: 50, line_total: 500, discount: 500, amount: 0 }));
+    expect(out.lines[1]).toEqual(expect.objectContaining({ quantity: 3, unit_price: 10, line_total: 30, discount: 3, amount: 27 }));
+    expect(out.total_before_discounts).toBe(530);
+    expect(out.discount_total).toBe(503);
+    expect(Math.round((out.total_before_discounts - out.discount_total) * 100) / 100).toBe(out.total);
+    for (const l of out.lines) expect(Math.round((l.line_total - l.discount) * 100) / 100).toBe(l.amount);
+  });
+
   it('a line with no rate carries no tax and no tax row; a line with no regular price no discount', () => {
     const out = initialPaymentBreakdown([line({ quantity: 4, amount: 20 })], 20);
-    expect(out.lines[0]).toEqual(expect.objectContaining({ unit_price: 5, discount: 0, tax_amount: 0, tax_rate_percent: null }));
+    expect(out.lines[0]).toEqual(expect.objectContaining({ unit_price: 5, line_total: 20, discount: 0, tax_amount: 0, tax_rate_percent: null }));
     expect(out.taxes).toEqual([]);
     expect(out.subtotal_excl_tax).toBe(20);
+  });
+
+  // #2883 — the Membership Fee line that collects a Pre-paid Duration carries the periods it covers
+  // and their cadence beside its quantity (the number of fees), from the same resolved line.
+  it('carries a prepaid fee line\'s periods and cadence, and nothing on any other line', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Family', quantity: 1, amount: 140, prepaid_periods: 2, prepaid_cadence: { interval: 1, unit: 'month' } }),
+      line({ item_name: 'Towel', quantity: 2, amount: 10 }),
+    ], 150);
+    expect(out.lines[0]).toEqual(expect.objectContaining({
+      quantity: 1, amount: 140, prepaid_periods: 2, prepaid_cadence: { interval: 1, unit: 'month' },
+    }));
+    expect(out.lines[1]).toEqual(expect.objectContaining({ prepaid_periods: null, prepaid_cadence: null }));
   });
 
   it('reports the charge it was handed, null included, never a re-added figure', () => {

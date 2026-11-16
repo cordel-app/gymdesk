@@ -56,6 +56,8 @@ export interface ForecastLine {
   actual_charge: number;
   /** #946 — the Pre-paid periods this one charge covers; `null` on every other line. */
   prepaid_periods: number | null;
+  /** #2883 — the cadence those periods are counted in; `null` (or absent) on every other line. */
+  prepaid_cadence?: { interval: number; unit: string } | null;
   benefits: ForecastBenefit[];
 }
 
@@ -244,4 +246,24 @@ export function lineTreatmentName(line: ForecastLine): string | null {
  */
 export function showsRegularPrice(line: ForecastLine): boolean {
   return round2(line.regular_price) !== round2(line.actual_charge);
+}
+
+/**
+ * #2883 — the `payments.*` key that says how many billing periods a Membership Fee charge collected
+ * up front covers, in the plan's own cadence (`2 months pre-payment`, `2 × 4 weeks pre-payment`), or
+ * `null` when the charge is not a pre-payment. The admin's `prepaidPaymentKey()` says the same
+ * thing; the two apps share no frontend module. The page resolves it with `{ count }`.
+ */
+export function prepaidPaymentKey(
+  count: number | null | undefined,
+  cadence: { interval: unknown; unit: unknown } | null | undefined,
+): string | null {
+  if (count == null || !Number.isInteger(count) || count <= 0) return null;
+  const n = Number(cadence?.interval);
+  const unit = cadence?.unit;
+  if (n === 1 && unit === 'month') return 'prepaid_payment_month';
+  if (n === 4 && unit === 'week') return 'prepaid_payment_four_weeks';
+  if (n === 1 && unit === 'week') return 'prepaid_payment_week';
+  if (n === 1 && unit === 'year') return 'prepaid_payment_year';
+  return 'prepaid_payment_periods';
 }
