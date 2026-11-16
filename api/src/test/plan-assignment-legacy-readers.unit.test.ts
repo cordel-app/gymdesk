@@ -56,7 +56,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
-  'api/product-set-bridge.ts': 2,
   'api/product-set-cancellation.ts': 2,
   'api/product-set-projection.ts': 8,
   'api/product-sets-router.ts': 2,
@@ -242,5 +241,12 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8'))
       .toContain("assignmentOfLegacyIdSql('p9.user_membership_id', 'u9')");
+  });
+
+  it('M6b-27: the bridge\'s closed-assignment check and the cancellation start date read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/product-set-bridge.ts']).toBeUndefined();
+    const bridge = readFileSync(join(API_SRC, 'api/product-set-bridge.ts'), 'utf8');
+    expect(bridge).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+    expect(bridge).toContain("assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')");
   });
 });
