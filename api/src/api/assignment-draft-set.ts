@@ -1,4 +1,5 @@
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
+import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
@@ -80,7 +81,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   }
   const setId = created.productSet.id;
   await tx.query(
-    'UPDATE product_sets SET ends_at = ?, user_membership_id = ? WHERE id = ? AND gym_id = ?',
+    `UPDATE product_sets SET ends_at = ?, user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
     [input.endsAt, input.userMembershipId, setId, input.gymId],
   );
   await snapshotProductSetFromPlan(tx, {
@@ -242,7 +243,7 @@ export async function createDraftSetFromActive(tx: Tx, input: {
     );
   }
   const setId = created.productSet.id;
-  await tx.query('UPDATE product_sets SET ends_at = ?, user_membership_id = ? WHERE id = ? AND gym_id = ?',
+  await tx.query(`UPDATE product_sets SET ends_at = ?, user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
     [input.endsAt, input.userMembershipId, setId, input.gymId]);
   await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
   await attachEditedPlanPromotions(tx, input.gymId, {
@@ -271,7 +272,7 @@ export async function adoptDraftForEdit(tx: Tx, input: {
   activeSetId: number; editedUserMembershipId: number;
 }): Promise<number> {
   await tx.query(
-    `UPDATE product_sets SET user_membership_id = ?, last_activity_at = UTC_TIMESTAMP()
+    `UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL}, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND gym_id = ? AND status = 'draft' AND user_membership_id IS NULL`,
     [input.userMembershipId, input.draftSetId, input.gymId]);
   await attachEditedPlanPromotions(tx, input.gymId, {
