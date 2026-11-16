@@ -162,6 +162,9 @@ import {
   pastBillingEventGroups,
   showsRegularPrice,
   prepaidPaymentKey,
+  paymentDocumentLabelKey,
+  paymentDocumentPath,
+  type MemberPaymentDocument,
 } from '@/lib/memberPayments';
 
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
@@ -308,7 +311,7 @@ export default function MembershipPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [downloadingReceipt, setDownloadingReceipt] = useState<number | null>(null);
+  const [downloadingDocument, setDownloadingDocument] = useState<string | null>(null);
 
   // #1121 stage 2 — the Product the member is confirming, and that one
   // dialog's own submit state. `null` means no dialog.
@@ -706,19 +709,21 @@ export default function MembershipPage() {
     }
   }
 
-  async function downloadReceipt(eventId: number) {
-    setDownloadingReceipt(eventId);
+  // #2936 — a stored document of one of the member's payments, opened in a new tab.
+  async function downloadDocument(doc: MemberPaymentDocument) {
+    const key = `${doc.kind}:${doc.id}`;
+    setDownloadingDocument(key);
     try {
       const token = await getToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`/api/proxy/me/receipts/${eventId}`, { headers });
+      const res = await fetch(`/api/proxy${paymentDocumentPath(doc)}`, { headers });
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
     } finally {
-      setDownloadingReceipt(null);
+      setDownloadingDocument(null);
     }
   }
 
@@ -2189,22 +2194,25 @@ export default function MembershipPage() {
             <span style={statusPillStyle(statusTone(event.status))}>
               {t(`payments.status.${event.status}` as any)}
             </span>
-            {/* #787 — the receipt number is the gate: the server allocates one
-                only for a payment that was received. */}
             {event.payment_method_name && (
               <span style={{ fontSize: 12, opacity: 0.75 }}>{event.payment_method_name}</span>
             )}
-            {event.receipt_number && (
-              <button
-                onClick={() => downloadReceipt(event.id)}
-                disabled={downloadingReceipt === event.id}
-                style={styles.receiptBtn}
-              >
-                {downloadingReceipt === event.id
-                  ? '…'
-                  : `${t('membership.download_receipt')} (${event.receipt_number})`}
-              </button>
-            )}
+            {/* #2936 — one action per stored document; a kind with none is absent. */}
+            {(event.documents ?? []).map((doc) => {
+              const key = `${doc.kind}:${doc.id}`;
+              return (
+                <button
+                  key={key}
+                  onClick={() => downloadDocument(doc)}
+                  disabled={downloadingDocument === key}
+                  style={styles.receiptBtn}
+                >
+                  {downloadingDocument === key
+                    ? '…'
+                    : `${t(paymentDocumentLabelKey(doc.kind) as any)} (${doc.number})`}
+                </button>
+              );
+            })}
           </>
         ),
       };

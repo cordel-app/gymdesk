@@ -474,6 +474,10 @@
     "promotion_duration_cycles": "{count, plural, one {# ciclo de facturación} other {# ciclos de facturación}}",
     "promotion_unavailable_error": "Esta promoción ya no está disponible para este producto. Comprueba el precio de nuevo.",
     "download_receipt": "Descargar recibo",
+    "document_receipt": "Recibo",
+    "document_simplified_invoice": "Factura simplificada",
+    "document_full_invoice": "Factura",
+    "document_refund_receipt": "Recibo de reembolso",
     "status": {
       "active": "Activa",
       "paused": "Pausada",
