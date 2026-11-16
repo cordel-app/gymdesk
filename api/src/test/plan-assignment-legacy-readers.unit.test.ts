@@ -49,9 +49,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-config.ts': 2,
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 2,
-  'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
-  'api/me-product-set-lines.ts': 1,
   'api/member-membership-configuration.ts': 2,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
@@ -123,9 +121,16 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(LEGACY_STATEMENTS[file]).toBeUndefined();
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
     }
-    // The one statement left in card-updates picks the assignment a card replacement is filed under.
-    expect(LEGACY_STATEMENTS['api/card-updates.ts']).toBe(1);
+    // Since M6b-18 card-updates names no legacy statement at all (the assignment a card replacement is filed under moved too).
+    expect(LEGACY_STATEMENTS['api/card-updates.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/card-updates.ts'), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
+  });
+
+  it('M6b-18: the card replacement\'s assignment and the Members App Product Set view read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/card-updates.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/card-updates.ts'), 'utf8')).toContain('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um');
+    expect(LEGACY_STATEMENTS['api/me-product-set-lines.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/me-product-set-lines.ts'), 'utf8')).toContain('LEFT JOIN ${GYM_ASSIGNMENT_ROWS_SQL} um');
   });
 
   it('M6b-9: the One per Member plan check and the Members App plan-choice check read plan_snapshots', () => {

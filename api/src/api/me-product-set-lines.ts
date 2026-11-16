@@ -4,6 +4,7 @@ import { loadRecurringLinePromotions } from './member-product-promotions';
 import { assignedMemberSql } from '../domain/productAssignee';
 import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
 import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } from '../domain/membershipFeeScope';
@@ -211,10 +212,10 @@ export async function loadMemberProductSetView(
        FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = ?
        JOIN product_sets ps ON ps.id = j.product_set_id
-       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
+       LEFT JOIN ${GYM_ASSIGNMENT_ROWS_SQL} um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id)
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = s.membership_plan_id AND bp.gym_id = s.gym_id
-      WHERE j.product_set_id = ? ORDER BY j.entitlement_only, j.id`, [gymId, Number(set.id)]);
+      WHERE j.product_set_id = ? ORDER BY j.entitlement_only, j.id`, [gymId, gymId, Number(set.id)]);
   const snapshotIds = planRows.map((r) => Number(r.plan_snapshot_id));
   const beneficiaries = new Map<number, MemberProductSetPlan['beneficiaries']>();
   const benefits = new Map<number, MemberProductSetPlan['benefits']>();
