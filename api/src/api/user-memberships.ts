@@ -65,7 +65,9 @@ import {
   PERSONAL_FEE_BENEFIT_ACTIONS,
   PersonalFeeBenefitAction,
   isPersonalFeeBenefitAction,
+  toPersonalFeeBenefit,
 } from '../domain/personalFeeBenefit';
+import { feeUnitBenefit } from '../domain/feeMemberDiscounts';
 import {
   LiveAssignment,
   activePlanConflictBody,
@@ -582,6 +584,24 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   // one question.
   const feeRow = await loadFeeAssignment(gymId, Number(um.id));
   const membershipFee = feeRow ? (await priceMembershipFeeOn(feeRow, currentCycleDate(feeRow))).amount : null;
+  // #2945 — a beneficiary whose fee carries its own Direct Discount: that fee for the current
+  // cycle, priced by the same resolver with that discount in place of the shared benefit. Keyed
+  // by member id; a member following the shared benefit is absent and reads `membership_fee`.
+  const membershipFeeByMember: Record<string, number> = {};
+  if (feeRow && (um as any).membership_fee_scope === 'per_member') {
+    for (const m of members as any[]) {
+      if (m.fee_direct_discount_percent == null) continue;
+      const own = feeUnitBenefit(
+        toPersonalFeeBenefit(feeRow.personal_fee_benefit_action, feeRow.personal_fee_benefit_value),
+        Number(m.fee_direct_discount_percent),
+      );
+      const priced = await priceMembershipFeeOn(
+        { ...feeRow, personal_fee_benefit_action: own.action, personal_fee_benefit_value: own.value },
+        currentCycleDate(feeRow),
+      );
+      membershipFeeByMember[String(m.member_id)] = priced.amount;
+    }
+  }
   const exampleTimeline = feeRow ? await assignedPlanFeeTimeline(gymId, feeRow) : null;
   // #924 stage 4 (§8) — the Billing Event Forecast: every line this assignment
   // still has ahead of it, grouped by the date it falls on. Read through the
@@ -619,6 +639,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
     // regular fee it is priced from and the one an edit writes.
     membership_fee: membershipFee,
+    membership_fee_by_member: membershipFeeByMember,
     plan_access: planAccess,
     members,
     billing_policy: billingPolicy,
@@ -2110,7 +2131,7 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
 // additional Members are capped by the plan's member_limit ('1' | '2' | 'family').
 
 export const MEMBERS_SELECT = `
-  SELECT umm.member_id, umm.is_owner, m.name, m.email
+  SELECT umm.member_id, umm.is_owner, m.name, m.email, umm.fee_direct_discount_percent
   FROM ${ASSIGNMENT_BENEFICIARIES} umm
   JOIN members m ON m.id = umm.member_id
   WHERE umm.user_membership_id = ? AND umm.gym_id = ?

@@ -5,7 +5,9 @@
 //
 // In the API suite for #1009's reason: CI runs `npm test` in `api/` only.
 import { describe, expect, it } from 'vitest';
-import { membershipFeeRowSlots } from '../../../apps/admin/src/lib/membershipFeeRows';
+import {
+  feeMemberDiscountsPayload, feeRowDiscountText, feeRowFinalPrice, membershipFeeRowSlots,
+} from '../../../apps/admin/src/lib/membershipFeeRows';
 import { planFeeScopeNote } from '../../../apps/member/src/lib/memberProducts';
 import { membershipFeeUnits } from '../domain/membershipFeeScope';
 
@@ -14,7 +16,7 @@ const people = (n: number) => Array.from({ length: n }, (_, i) => ({ member_id: 
 describe('Admin — Membership Fee rows by scope', () => {
   it.each([1, 2, 3])('per_family with %i beneficiaries is one Family row', (n) => {
     expect(membershipFeeRowSlots('per_family', people(n)))
-      .toEqual([{ member_id: null, member_name: null, family: true }]);
+      .toEqual([{ member_id: null, member_name: null, family: true, own_discount: null }]);
   });
 
   it.each([1, 2, 3])('per_member with %i beneficiaries is one row each, naming them', (n) => {
@@ -32,7 +34,7 @@ describe('Admin — Membership Fee rows by scope', () => {
   });
 
   it('a per_member plan covering nobody still owes one fee: one row with no member', () => {
-    expect(membershipFeeRowSlots('per_member', [])).toEqual([{ member_id: null, member_name: null, family: false }]);
+    expect(membershipFeeRowSlots('per_member', [])).toEqual([{ member_id: null, member_name: null, family: false, own_discount: null }]);
   });
 
   it('an unknown or absent scope reads as the default, per_family', () => {
@@ -52,5 +54,32 @@ describe('Members App — the scope note beside a held plan', () => {
   });
   it('a response without the field says nothing', () => {
     expect(planFeeScopeNote({})).toBeNull();
+  });
+});
+
+// #2945 — each per-member fee row reads, prices and saves its own Direct Discount.
+describe('Admin — per-member fee row discounts (#2945)', () => {
+  const ben = [
+    { member_id: 1, name: 'Xavier', fee_direct_discount_percent: '50.00' },
+    { member_id: 2, name: 'Test1', fee_direct_discount_percent: null },
+  ];
+  const slots = membershipFeeRowSlots('per_member', ben);
+
+  it('a row reads its own discount, else the shared one', () => {
+    expect(slots.map((s) => s.own_discount)).toEqual([50, null]);
+    expect(slots.map((s) => feeRowDiscountText(s, '10'))).toEqual(['50', '10']);
+    expect(feeRowDiscountText({ ...slots[0], own_discount: 0 }, '10')).toBe('');
+  });
+
+  it('a row with its own discount reads its own server price', () => {
+    expect(feeRowFinalPrice(slots[0], 40, { 1: 25 })).toBe(25);
+    expect(feeRowFinalPrice(slots[1], 40, { 1: 25 })).toBe(40);
+  });
+
+  it('Save sends only the rows that changed, each with its own value', () => {
+    expect(feeMemberDiscountsPayload(slots, ['50', '10'], ['25', '10'])).toEqual([{ member_id: 1, percent: 25 }]);
+    expect(feeMemberDiscountsPayload(slots, ['50', '10'], ['50', ''])).toEqual([{ member_id: 2, percent: 0 }]);
+    expect(feeMemberDiscountsPayload(slots, ['50', '10'], ['50', '10'])).toEqual([]);
+    expect(feeMemberDiscountsPayload(membershipFeeRowSlots('per_family', ben), [''], ['5'])).toBeNull();
   });
 });

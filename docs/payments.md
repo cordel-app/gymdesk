@@ -590,6 +590,18 @@ Displays (stage 2) quote one fee each: the Assigned Plan card draws one fee row 
 (*Family* for `per_family`, one per beneficiary for `per_member`), and the Members App names the
 scope and the count beside one fee's price; neither multiplies anything.
 
+**A Direct Discount per Membership Fee line (#2945, migration 429).** On a `per_member` snapshot
+each beneficiary row may carry its own `fee_direct_discount_percent`: NULL (every row before the
+ticket) follows the assignment's Personal Membership Fee Benefit (#772), a percentage replaces it
+for that one fee, and `0` is no discount. `domain/feeMemberDiscounts.ts` is the rule; the engine's
+Membership Fee line then prices each fee unit with its own benefit (`unitAmounts`) and charges
+their sum, so a governing Promotion and the plan's durations apply to every fee as before and only
+the last, personal step differs. With no own discount the line is the pre-#2945 arithmetic to the
+cent. The value is written by `PUT /user-memberships/:id/fee-benefit` with `member_discounts`
+(a Draft directly, a running plan through a new version like every other edit) and is copied with
+the beneficiary row when a snapshot is copied. A `per_family` plan has one fee and keeps the
+shared benefit alone.
+
 ### B4b. When obligations fall: the billing calendar (#2125 M5c)
 
 Decided by Oscar on 2026-11-11 (Option B on #2125). A schedule is anchored on its

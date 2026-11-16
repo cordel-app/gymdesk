@@ -161,8 +161,9 @@ export async function copyPlanSnapshotToVersion(
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }
   await tx.query(
-    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
-     SELECT gym_id, ?, member_id, is_owner FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
+    // #2945: a beneficiary's own fee discount travels with its row.
+    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner, fee_direct_discount_percent)
+     SELECT gym_id, ?, member_id, is_owner, fee_direct_discount_percent FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
     [insertId, fromSnapshotId]);
   for (const t of PLAN_TABLES) {
     const extra = t.extra ? `, ${t.extra}` : '';
