@@ -8,6 +8,7 @@ import { ProductBenefit, parseProductBenefitInput } from '../domain/productBenef
 import { SessionBenefitFrequency, parseSessionBenefitFrequencyInput } from '../domain/sessionBenefitFrequency';
 import { parsePlanBenefitMandatoryInput } from '../domain/planBenefitMandatory';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
+import { parseFeeMemberDiscountsInput } from '../domain/feeMemberDiscounts';
 import { isAcceptedPlanCadence, describeAcceptedPlanCadences } from '../domain/planBillingFrequency';
 import { touchDraft } from './product-sets';
 import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
@@ -462,23 +463,60 @@ export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): P
 
 export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Membership Fee' };
-  const action = body?.action;
-  if (!isPersonalFeeBenefitAction(action)) {
+  // #2945 — each beneficiary's own fee discount; absent keeps every stored one. A request that
+  // names only `member_discounts` leaves the shared benefit (#772) as it is.
+  const memberDiscounts = parseFeeMemberDiscountsInput(body);
+  if (memberDiscounts.kind === 'error') return { kind: 'invalid', message: memberDiscounts.error };
+  const sharedNamed = body?.action !== undefined;
+  if (!sharedNamed && memberDiscounts.kind === 'absent') {
     return { kind: 'invalid', message: `action must be one of: ${PERSONAL_FEE_BENEFIT_ACTIONS.join(', ')}` };
   }
+  const action = body?.action;
   let value: number | null = null;
-  if (action === 'percentage_discount') {
-    if (body?.value == null || body.value === '') return { kind: 'invalid', message: 'value is required for a percentage discount' };
-    const raw = Number(body.value);
-    if (!Number.isFinite(raw) || raw < 0 || raw > 100) return { kind: 'invalid', message: 'value must be a percentage between 0 and 100' };
-    value = Math.round(raw * 100) / 100;
+  if (sharedNamed) {
+    if (!isPersonalFeeBenefitAction(action)) {
+      return { kind: 'invalid', message: `action must be one of: ${PERSONAL_FEE_BENEFIT_ACTIONS.join(', ')}` };
+    }
+    if (action === 'percentage_discount') {
+      if (body?.value == null || body.value === '') return { kind: 'invalid', message: 'value is required for a percentage discount' };
+      const raw = Number(body.value);
+      if (!Number.isFinite(raw) || raw < 0 || raw > 100) return { kind: 'invalid', message: 'value must be a percentage between 0 and 100' };
+      value = Math.round(raw * 100) / 100;
+    }
   }
   const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
   if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
-  await tx.query(
-    `UPDATE plan_snapshots SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
-      WHERE id = ? AND gym_id = ?`,
-    [action, value, target, draft.gym_id]);
+  if (memberDiscounts.kind === 'value' && memberDiscounts.value.length > 0) {
+    const { rows: scope } = await tx.query<{ membership_fee_scope: string | null }>(
+      'SELECT membership_fee_scope FROM plan_snapshots WHERE id = ? AND gym_id = ?', [target, draft.gym_id]);
+    if (scope[0]?.membership_fee_scope !== 'per_member') {
+      return { kind: 'invalid', message: 'Only a plan charged per member has a Membership Fee per member' };
+    }
+    const ids = memberDiscounts.value.map((d) => d.memberId);
+    const { rows: ben } = await tx.query<{ member_id: number }>(
+      `SELECT member_id FROM plan_snapshot_beneficiaries
+        WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id IN (${ids.map(() => '?').join(',')})`,
+      [draft.gym_id, target, ...ids]);
+    const known = new Set(ben.map((b) => Number(b.member_id)));
+    const unknown = ids.filter((id) => !known.has(id));
+    if (unknown.length > 0) {
+      return { kind: 'invalid', message: `member_discounts names members who are not beneficiaries of this plan: ${unknown.join(', ')}` };
+    }
+  }
+  if (sharedNamed) {
+    await tx.query(
+      `UPDATE plan_snapshots SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
+        WHERE id = ? AND gym_id = ?`,
+      [action, value, target, draft.gym_id]);
+  }
+  if (memberDiscounts.kind === 'value') {
+    for (const d of memberDiscounts.value) {
+      await tx.query(
+        `UPDATE plan_snapshot_beneficiaries SET fee_direct_discount_percent = ?
+          WHERE gym_id = ? AND plan_snapshot_id = ? AND member_id = ?`,
+        [d.percent, draft.gym_id, target, d.memberId]);
+    }
+  }
   await touch(tx, draft);
   return { ok: true };
 }

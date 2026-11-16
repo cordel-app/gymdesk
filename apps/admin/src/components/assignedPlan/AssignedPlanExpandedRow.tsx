@@ -510,6 +510,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         planAccess={detail.plan_access ?? []}
         feeScope={detail.membership_fee_scope ?? null}
         beneficiaries={detail.members ?? []}
+        currentFeeByMember={detail.membership_fee_by_member ?? null}
         cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}

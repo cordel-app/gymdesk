@@ -15,6 +15,7 @@ import type { ProductBenefitCategory } from '../domain/productClassification';
 import { fetchLiveBenefits, membershipFeeBenefitsFromSnapshot } from './membership-promotions';
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
 import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
+import { feeMemberDiscountsSql, parseFeeMemberDiscounts } from '../domain/feeMemberDiscounts';
 import { loadLivePromotionGrants } from './assigned-plan-snapshot';
 
 /**
@@ -164,7 +165,8 @@ export async function loadProductSetSimulationAssignments(
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
             mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
-            ${membershipFeeUnitsSql('s')} AS membership_fee_units
+            ${membershipFeeUnitsSql('s')} AS membership_fee_units,
+            ${feeMemberDiscountsSql('s')} AS fee_member_discounts
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
@@ -200,6 +202,7 @@ export async function loadProductSetSimulationAssignments(
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
       // #2834 — the snapshot's own scope over its own beneficiaries.
       membershipFeeUnits: Number(row.membership_fee_units ?? 1),
+      membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
       // A plan whose start falls between two dates of its schedule (a plan added to a schedule
       // that was already running, or — since #2125 M5c — any plan starting off its cadence's
       // calendar grid) pays a prorated first stretch and then bills on the schedule's dates. An

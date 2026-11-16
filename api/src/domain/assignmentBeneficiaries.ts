@@ -19,7 +19,8 @@ const SNAPSHOT_ASSIGNMENT = `COALESCE(s.source_user_membership_id,
 
 export const ASSIGNMENT_BENEFICIARIES = `(
   SELECT DISTINCT x.user_membership_id AS user_membership_id,
-         b.gym_id AS gym_id, b.member_id AS member_id, b.is_owner AS is_owner, b.created_at AS created_at
+         b.gym_id AS gym_id, b.member_id AS member_id, b.is_owner AS is_owner, b.created_at AS created_at,
+         b.fee_direct_discount_percent AS fee_direct_discount_percent
     FROM (SELECT a.id, a.gym_id, a.user_membership_id,
                  ROW_NUMBER() OVER (PARTITION BY a.gym_id, a.user_membership_id ORDER BY a.id DESC) AS rn
             FROM (SELECT s.id, s.gym_id, ${SNAPSHOT_ASSIGNMENT} AS user_membership_id
