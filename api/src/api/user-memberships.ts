@@ -8,7 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -1301,9 +1301,11 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
-           VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
+           VALUES (?, ?, (SELECT pa.member_id FROM plan_snapshots pa
+                          WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}), ?, 'EUR', ?, ?, 'completed', 'monei',
                    'manual', ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-          [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
+          // #2125 M6b-25: the payer column is the assignment's owner, read from its current plan snapshot.
+          [gymId, req.params.id, gymId, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
         await recordPaymentAttempt(tx, cashAttemptId);

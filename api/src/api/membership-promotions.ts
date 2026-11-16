@@ -414,12 +414,13 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
              OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
              OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
             ) AS has_billing_snapshot
-     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-     WHERE um.id = ? AND um.gym_id = ?`,
-    [userMembershipId, gymId],
+     WHERE um.id = ?`,
+    // #2125 M6b-25: the assignment is its current plan snapshot (gym id first, then the legacy id).
+    [gymId, userMembershipId],
   );
   if (umRows.length === 0) return null;
   const um = umRows[0];
