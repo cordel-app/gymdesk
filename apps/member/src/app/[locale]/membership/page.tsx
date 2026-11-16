@@ -1116,7 +1116,7 @@ export default function MembershipPage() {
                 {review.immediate_lines.map((l, n) => {
                   const discount = reviewLineDiscount(l);
                   const sub = [
-                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price * l.quantity) }) : null,
+                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
                     l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
                     discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
                     l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,

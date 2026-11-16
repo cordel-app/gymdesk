@@ -240,6 +240,14 @@ describe('Review your changes (#1537)', () => {
     const sum = ip.lines.reduce((n: number, l: any) => n + l.amount, 0);
     expect(Math.round(sum * 100) / 100).toBe(review.body.amount_due);
     expect(Math.round((ip.subtotal_excl_tax + ip.tax_total) * 100) / 100).toBe(review.body.amount_due);
+    // #2890 — each line reconciles: unit price × quantity is the line total, and
+    // the line total minus its discount is its amount; the totals likewise.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    for (const l of ip.lines) {
+      expect(Math.abs(r2(l.unit_price * l.quantity) - l.line_total)).toBeLessThanOrEqual(0.01 * l.quantity);
+      expect(r2(l.line_total - l.discount)).toBe(l.amount);
+    }
+    expect(r2(ip.total_before_discounts - ip.discount_total)).toBe(review.body.amount_due);
     // Contracted Products & Plans: the plan and the new recurring line, for the
     // member, with no amount anywhere in it.
     const contracted = review.body.contracted_items;

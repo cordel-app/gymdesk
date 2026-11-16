@@ -151,7 +151,7 @@ describe('Summary financial view (#2446 stage 3)', () => {
       { state: 'cancelling', billing_frequency: 'month', final_price: 7 },
       { state: 'draft', billing_frequency: 'year', final_price: null },
     ], [
-      { quantity: 2, amount: 16, regular_unit_price: 10 },
+      { quantity: 2, amount: 16, regular_unit_price: 20 },
       { quantity: 1, amount: 30, regular_unit_price: null },
     ], 46);
     expect(out.recurring).toEqual([

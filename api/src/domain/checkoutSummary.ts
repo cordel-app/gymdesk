@@ -16,7 +16,11 @@ export interface ChargeLineLike {
   quantity: number;
   /** The line's charge, VAT included. */
   amount: number;
-  /** The unit price before any treatment or Promotion, VAT included; `null` when unknown. */
+  /**
+   * The line's regular price before any treatment or Promotion, VAT included —
+   * the engine's `regular_price`, which is `unit × quantity` for the **whole
+   * line** despite the stored column's name (#2890); `null` when unknown.
+   */
   regular_unit_price: number | null;
   promotion_name: string | null;
   treatment_action: string | null;
@@ -28,9 +32,11 @@ export interface ChargeLineLike {
 export interface InitialPaymentLine {
   name: string | null;
   quantity: number;
-  /** VAT included, before discounts. */
+  /** The price of one unit, VAT included, before discounts. */
   unit_price: number;
-  /** Regular price × quantity minus the charge; 0 when nothing was taken off. */
+  /** #2890 — the line before discounts (unit price × quantity), VAT included. */
+  line_total: number;
+  /** The line total minus the charge; 0 when nothing was taken off. */
   discount: number;
   /** What the discount is: the Promotion's name, else the line's own treatment. */
   promotion_name: string | null;
@@ -51,6 +57,8 @@ export interface InitialPaymentTaxRow {
 
 export interface InitialPayment {
   lines: InitialPaymentLine[];
+  /** #2890 — the lines' totals before discounts, VAT included; minus `discount_total` it is the charge. */
+  total_before_discounts: number;
   subtotal_excl_tax: number;
   discount_total: number;
   taxes: InitialPaymentTaxRow[];
@@ -60,6 +68,21 @@ export interface InitialPayment {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * #2890 — a charge line's unit price and its total before discounts. The
+ * persisted `regular_unit_price` is the engine's regular price of the whole
+ * line (`regular_price = unit × quantity`, `billingSimulation.ts`), so the unit
+ * price is that divided by the quantity — never the stored figure, which read a
+ * 10-unit €50 line as a €500 unit price and a −€5,000 discount. With no regular
+ * price the charge itself is the line total and nothing was taken off.
+ */
+export function regularLinePrices(regularLinePrice: number | null, quantity: number, amount: number):
+  { unit: number; lineTotal: number } {
+  const lineTotal = regularLinePrice != null ? round2(Number(regularLinePrice)) : round2(amount);
+  const unit = quantity > 0 ? round2(lineTotal / quantity) : lineTotal;
+  return { unit, lineTotal };
+}
 
 /**
  * The Initial Payment breakdown of a commit charge. `total` is `amountDue`
@@ -73,10 +96,8 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     const amount = round2(Number(l.amount));
     const net = l.amount_excl_tax != null ? round2(Number(l.amount_excl_tax)) : amount;
     const tax = round2(amount - net);
-    const unit = l.regular_unit_price != null
-      ? round2(Number(l.regular_unit_price))
-      : quantity > 0 ? round2(amount / quantity) : amount;
-    const discount = l.regular_unit_price != null ? Math.max(0, round2(unit * quantity - amount)) : 0;
+    const { unit, lineTotal } = regularLinePrices(l.regular_unit_price, quantity, amount);
+    const discount = Math.max(0, round2(lineTotal - amount));
     const rate = l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null;
     const key = rate == null ? '' : String(rate);
     const row = taxes.get(key) ?? { rate_percent: rate, base: 0, tax: 0 };
@@ -84,7 +105,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     row.tax = round2(row.tax + tax);
     taxes.set(key, row);
     return {
-      name: l.item_name, quantity, unit_price: unit, discount,
+      name: l.item_name, quantity, unit_price: unit, line_total: lineTotal, discount,
       promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
       tax_rate_percent: rate, tax_amount: tax, amount,
     };
@@ -94,6 +115,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     .sort((a, b) => (a.rate_percent ?? 0) - (b.rate_percent ?? 0));
   return {
     lines: out,
+    total_before_discounts: round2(out.reduce((n, l) => n + l.line_total, 0)),
     subtotal_excl_tax: round2(out.reduce((n, l) => n + (l.amount - l.tax_amount), 0)),
     discount_total: round2(out.reduce((n, l) => n + l.discount, 0)),
     taxes: taxRows,

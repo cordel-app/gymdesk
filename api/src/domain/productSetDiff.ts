@@ -337,8 +337,10 @@ export function financialSummary(
     existing: round2(g.existing), new: round2(g.new), cancelling: round2(g.cancelling),
     resulting: round2(g.existing + g.new),
   }));
+  // #2890: `regular_unit_price` is the line's regular total (the engine's
+  // `regular_price`), so it is compared with the charge as it stands.
   const discounts = initialLines.reduce((n, l) =>
-    l.regular_unit_price == null ? n : n + Math.max(0, l.regular_unit_price * l.quantity - l.amount), 0);
+    l.regular_unit_price == null ? n : n + Math.max(0, l.regular_unit_price - l.amount), 0);
   return {
     recurring,
     initial_discounts: round2(discounts),
