@@ -44,7 +44,6 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  'api/assigned-plan-snapshot.ts': 2,
   'api/assignment-commit.ts': 4,
   'api/assignment-config.ts': 1,
   'api/assignment-draft-set.ts': 3,
@@ -52,7 +51,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/entitlement-plan-links.ts': 1,
   'api/member-membership-configuration.ts': 2,
   'api/membership-plans.ts': 6,
-  'api/membership-promotions.ts': 4,
+  'api/membership-promotions.ts': 2,
   'api/one-active-plan.ts': 2,
   'api/plan-assignment-drift.ts': 3,
   'api/plan-assignment-lifecycle.ts': 1,
@@ -222,5 +221,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(statements('// FROM user_memberships (history)')).toBe(0);
     expect(statements("'SELECT 1 FROM class_type_user_memberships'")).toBe(0);
     expect(statements("'SELECT 1 FROM user_memberships_archive'")).toBe(0);
+  });
+
+  it('M6b-21: the Assigned Plan snapshot reads and the Promotion routes\' status gates read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/assigned-plan-snapshot.ts']).toBeUndefined();
+    const snapshot = readFileSync(join(API_SRC, 'api/assigned-plan-snapshot.ts'), 'utf8');
+    expect(snapshot.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
+    // The two statements left in membership-promotions.ts read inside a writing transaction or lock the row.
+    const promotions = readFileSync(join(API_SRC, 'api/membership-promotions.ts'), 'utf8');
+    expect(promotions.split('SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
   });
 });
