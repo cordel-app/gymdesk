@@ -100,6 +100,21 @@ export interface MemberBillingEvent {
   status: MemberBillingEventStatus;
   /** #2936 — the latest stored document of each kind; absent kinds are not listed. */
   documents?: MemberPaymentDocument[];
+  /** #2937 — the event's own priced lines (`billing_event_lines`), as stored. */
+  lines?: MemberBillingEventLine[];
+}
+
+/** #2937 — one priced line of a past Billing Event, exactly as the ledger stored it. */
+export interface MemberBillingEventLine {
+  id: number;
+  kind: 'membership_fee' | 'product' | 'service' | 'adjustment' | string;
+  item_name: string;
+  quantity: number;
+  /** The unit's regular price, when one was recorded (DECIMAL as a string). */
+  regular_unit_price: string | null;
+  promotion_name: string | null;
+  /** What the line charged (DECIMAL as a string). */
+  amount: string;
 }
 
 /** #2936 — one downloadable document of a payment, as `GET /me/billing-events` reports it. */
@@ -122,14 +137,6 @@ export function paymentDocumentPath(doc: MemberPaymentDocument): string {
 /** The locale key naming a document kind. */
 export function paymentDocumentLabelKey(kind: MemberPaymentDocumentKind): string {
   return `membership.document_${kind}`;
-}
-
-/** Past Billing Events, grouped the way the forecast groups its own: by date. */
-export interface PastBillingEventGroup {
-  date: string;
-  events: MemberBillingEvent[];
-  /** The sum of the events that carry an amount — a `status_changed` row carries none. */
-  total: number;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -169,30 +176,50 @@ export function billingEventAmount(event: MemberBillingEvent): number | null {
 }
 
 /**
- * The ledger as one card per date, newest first — §4's structure, and the same
- * grouping the forecast beside it uses, which is the whole point of the section
- * reading "the same Billing Event card structure".
- *
- * The rows arrive newest first (`ORDER BY be.created_at DESC`) and the grouping
- * preserves that order rather than re-sorting: the server decides what "most
- * recent" means, including the `id DESC` tie-break for two events written in the
- * same second.
+ * #2937 — the day a past Billing Event was issued, as the `YYYY-MM-DD` its
+ * `created_at` names. Each event is its own row now (it was grouped by this
+ * date until #2937), so the header says when *this* event was issued.
  */
-export function pastBillingEventGroups(events: MemberBillingEvent[]): PastBillingEventGroup[] {
-  const groups: PastBillingEventGroup[] = [];
-  const byDate = new Map<string, PastBillingEventGroup>();
-  for (const event of events) {
-    const date = event.created_at.slice(0, 10);
-    let group = byDate.get(date);
-    if (!group) {
-      group = { date, events: [], total: 0 };
-      byDate.set(date, group);
-      groups.push(group);
-    }
-    group.events.push(event);
-    group.total = round2(group.total + (billingEventAmount(event) ?? 0));
-  }
-  return groups;
+export function billingEventIssuedDate(event: MemberBillingEvent): string {
+  return event.created_at.slice(0, 10);
+}
+
+/** A stored DECIMAL as a number, `null` when it is not one. */
+function decimal(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** What a stored line charged, `null` when the stored value is unreadable. */
+export function billingEventLineAmount(line: MemberBillingEventLine): number | null {
+  return decimal(line.amount);
+}
+
+/**
+ * The regular price of a stored line (unit × quantity), but only where it
+ * differs from what the line charged — the forecast's `showsRegularPrice()`
+ * rule for a stored line. Both figures are the ledger's; nothing is re-priced.
+ */
+export function billingEventLineRegularAmount(line: MemberBillingEventLine): number | null {
+  const unit = decimal(line.regular_unit_price);
+  const charged = decimal(line.amount);
+  if (unit == null || charged == null) return null;
+  const regular = round2(unit * (Number(line.quantity) || 0));
+  return regular === round2(charged) ? null : regular;
+}
+
+/**
+ * Whether a past event's row has anything to show when expanded: its lines,
+ * its payment method, its documents or its notes. A row with none of them
+ * carries no chevron, since opening it would show nothing.
+ */
+export function billingEventHasDetails(event: MemberBillingEvent): boolean {
+  return (event.lines?.length ?? 0) > 0
+    || Boolean(event.payment_method_name)
+    || (event.documents?.length ?? 0) > 0
+    || Boolean(event.notes)
+    || (event.event_type === 'status_changed' && Boolean(event.new_status));
 }
 
 /**
@@ -229,7 +256,7 @@ export function formatPaymentDate(value: string, gym: GymFormatSettings = DEFAUL
  * (`label`: the Plan's own name, or the Product's), so this is the only part of
  * an item's heading the Members App words itself.
  */
-export function lineKindKey(line: ForecastLine): string {
+export function lineKindKey(line: { kind: string }): string {
   return line.kind === 'membership_fee' ? 'line_kind_membership_fee' : 'line_kind_product';
 }
 

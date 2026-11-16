@@ -21,7 +21,10 @@ import {
   lineTreatmentKey,
   lineTreatmentName,
   nextPaymentDate,
-  pastBillingEventGroups,
+  billingEventHasDetails,
+  billingEventIssuedDate,
+  billingEventLineAmount,
+  billingEventLineRegularAmount,
   showsRegularPrice,
 } from '../../../apps/member/src/lib/memberPayments';
 import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
@@ -104,49 +107,38 @@ describe('the Forecast subcard lists everything after the next payment', () => {
   });
 });
 
-describe('Past Billing Events are grouped by date', () => {
-  it('groups the events of one day into one card and totals them', () => {
-    const groups = pastBillingEventGroups([
-      event({ id: 1, created_at: '2026-09-15T08:00:00.000Z', amount: '100.00' }),
-      event({ id: 2, created_at: '2026-09-15T08:00:05.000Z', amount: '50.00' }),
-      event({ id: 3, created_at: '2026-08-15T08:00:00.000Z', amount: '100.00' }),
-    ]);
-    expect(groups).toHaveLength(2);
-    expect(groups[0]).toMatchObject({ date: '2026-09-15', total: 150 });
-    expect(groups[0].events.map((e) => e.id)).toEqual([1, 2]);
-    expect(groups[1]).toMatchObject({ date: '2026-08-15', total: 100 });
+describe('#2937 — each Past Billing Event is its own row', () => {
+  const stored = (over: Partial<NonNullable<MemberBillingEvent['lines']>[number]> = {}) => ({
+    id: 1, kind: 'membership_fee', item_name: 'Premium', quantity: 1,
+    regular_unit_price: '70.00', promotion_name: null, amount: '70.00', ...over,
   });
 
-  it('keeps the server’s order rather than re-sorting', () => {
-    const groups = pastBillingEventGroups([
-      event({ id: 1, created_at: '2026-07-15T08:00:00.000Z' }),
-      event({ id: 2, created_at: '2026-09-15T08:00:00.000Z' }),
-    ]);
-    expect(groups.map((g) => g.date)).toEqual(['2026-07-15', '2026-09-15']);
+  it('is headed by the day the event was issued', () => {
+    expect(billingEventIssuedDate(event({ created_at: '2026-09-15T08:00:05.000Z' }))).toBe('2026-09-15');
   });
 
-  // A `status_changed` row records no money, so it belongs to the card without
-  // contributing to its total.
-  it('ignores an event that carries no amount in the total', () => {
-    const groups = pastBillingEventGroups([
-      event({ id: 1, amount: '70.00' }),
-      event({ id: 2, amount: null, event_type: 'status_changed', status: 'recorded' }),
-    ]);
-    expect(groups[0].total).toBe(70);
-    expect(groups[0].events).toHaveLength(2);
+  it('reads a stored line’s amount, and a malformed one as no amount', () => {
+    expect(billingEventLineAmount(stored({ amount: '12.50' }))).toBe(12.5);
+    expect(billingEventLineAmount(stored({ amount: 'n/a' }))).toBeNull();
   });
 
-  it('adds amounts without floating-point drift', () => {
-    const groups = pastBillingEventGroups([
-      event({ id: 1, amount: '0.10' }),
-      event({ id: 2, amount: '0.20' }),
-    ]);
-    expect(groups[0].total).toBe(0.3);
+  it('shows the regular price only where it differs from what was charged', () => {
+    expect(billingEventLineRegularAmount(stored())).toBeNull();
+    expect(billingEventLineRegularAmount(stored({ quantity: 2, regular_unit_price: '10.00', amount: '15.00' }))).toBe(20);
+    expect(billingEventLineRegularAmount(stored({ regular_unit_price: null }))).toBeNull();
+    expect(billingEventLineRegularAmount(stored({ regular_unit_price: '0.10', quantity: 3, amount: '0.30' }))).toBeNull();
   });
 
-  it('reads a malformed amount as no amount rather than NaN', () => {
+  it('is expandable only when it has something to show', () => {
+    expect(billingEventHasDetails(event({}))).toBe(false);
+    expect(billingEventHasDetails(event({ lines: [stored()] }))).toBe(true);
+    expect(billingEventHasDetails(event({ payment_method_name: 'Card' }))).toBe(true);
+    expect(billingEventHasDetails(event({ documents: [{ kind: 'receipt', id: 1, number: 'R-1' }] }))).toBe(true);
+    expect(billingEventHasDetails(event({ notes: 'Manual' }))).toBe(true);
+  });
+
+  it('reads a malformed event amount as no amount rather than NaN', () => {
     expect(billingEventAmount(event({ amount: 'n/a' }))).toBeNull();
-    expect(pastBillingEventGroups([event({ amount: 'n/a' })])[0].total).toBe(0);
   });
 });
 

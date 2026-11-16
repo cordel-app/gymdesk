@@ -136,6 +136,23 @@ describe('GET /me/billing-events documents (#2936)', () => {
   });
 });
 
+describe('GET /me/billing-events lines (#2937)', () => {
+  it('returns each event\'s own stored lines, as stored', async () => {
+    const items = json(await as(ALICE)('/me/billing-events')).items;
+    const row = items.find((i: any) => i.id === documented);
+    expect(row.lines).toHaveLength(1);
+    expect(row.lines[0]).toMatchObject({ kind: 'product', item_name: 'Membership fee', quantity: 1, amount: '40.00' });
+    // Lines belong to their own event only.
+    expect(items.find((i: any) => i.id === bare).lines).toHaveLength(1);
+    expect(row.lines[0].id).not.toBe(items.find((i: any) => i.id === bare).lines[0].id);
+  });
+
+  it("never returns another member's lines", async () => {
+    const items = json(await as(BOB)('/me/billing-events')).items;
+    expect(items.some((i: any) => i.id === documented || i.id === bare)).toBe(false);
+  });
+});
+
 describe('member document downloads (#2936)', () => {
   it('serves the member their own invoice and refund receipt from storage', async () => {
     const inv = await as(ALICE)(`/me/invoices/${full}/pdf`);

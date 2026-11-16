@@ -35,6 +35,7 @@ import {
   type BillingEventCardLine,
   PaymentsSection,
   PaymentsSubcard,
+  PastBillingEventRow,
 } from '@/components/MemberPaymentsCard';
 import {
   MemberProductsSection,
@@ -159,7 +160,10 @@ import {
   lineTreatmentKey,
   lineTreatmentName,
   nextPaymentDate,
-  pastBillingEventGroups,
+  billingEventHasDetails,
+  billingEventIssuedDate,
+  billingEventLineAmount,
+  billingEventLineRegularAmount,
   showsRegularPrice,
   prepaidPaymentKey,
   paymentDocumentLabelKey,
@@ -754,7 +758,6 @@ export default function MembershipPage() {
 
   const nextGroup = nextPaymentDate(forecast);
   const laterGroups = forecastDatesAfterNext(forecast);
-  const pastGroups = pastBillingEventGroups(events);
 
   const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, gymFmt);
 
@@ -1519,18 +1522,11 @@ export default function MembershipPage() {
         </PaymentsSubcard>
 
         <PaymentsSubcard title={t('payments.past_heading')}>
-          {pastGroups.length === 0 ? (
+          {events.length === 0 ? (
             <p style={styles.hint}>{t('payments.past_empty')}</p>
           ) : (
-            pastGroups.map((group) => (
-              <BillingEventCard
-                key={group.date}
-                date={formatPaymentDate(group.date, gymFmt)}
-                total={money(group.total)}
-                totalLabel={t('payments.total')}
-                lines={pastCardLines(group.events)}
-              />
-            ))
+            // #2937 — one compact, independently collapsible row per event.
+            events.map((event) => renderPastBillingEvent(event))
           )}
         </PaymentsSubcard>
 
@@ -2174,32 +2170,51 @@ export default function MembershipPage() {
     );
   }
 
-  function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
-    return group.map((event) => {
-      const transition = event.event_type === 'status_changed' && event.new_status
-        ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
-          + ` → ${t(`membership.status.${event.new_status}` as any)}`
-        : null;
-      return {
-        key: String(event.id),
-        // #2940: the event's own name when it has one (stored by the API, shown identically in
-        // the Admin); an event written before names existed keeps the label it had.
-        name: event.name
-          ?? (t(`membership.event.${event.event_type}` as any)
-            + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : '')),
-        meta: [transition, event.notes].filter(Boolean).join(' · ') || null,
-        amount: money(billingEventAmount(event)),
-        trailing: (
+  /**
+   * #2937 — one past Billing Event: title, issued date, status and amount in the
+   * header; its own stored lines and the payment details (method, notes,
+   * documents) once expanded. Every figure is the ledger's.
+   */
+  function renderPastBillingEvent(event: BillingEvent) {
+    const transition = event.event_type === 'status_changed' && event.new_status
+      ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
+        + ` → ${t(`membership.status.${event.new_status}` as any)}`
+      : null;
+    // #2940: the event's own name when it has one; an event written before names
+    // existed keeps the label it had.
+    const title = event.name
+      ?? (t(`membership.event.${event.event_type}` as any)
+        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
+    const lines: BillingEventCardLine[] = (event.lines ?? []).map((line) => ({
+      key: String(line.id),
+      heading: t(`payments.${lineKindKey(line)}` as any),
+      name: line.item_name,
+      meta: [
+        line.quantity > 1 ? t('payments.quantity', { count: line.quantity }) : null,
+        line.promotion_name,
+      ].filter(Boolean).join(' · ') || null,
+      amount: money(billingEventLineAmount(line)),
+      regularAmount: money(billingEventLineRegularAmount(line)),
+    }));
+    const notes = [transition, event.notes].filter(Boolean).join(' · ') || null;
+    return (
+      <PastBillingEventRow
+        key={event.id}
+        title={title}
+        date={formatPaymentDate(billingEventIssuedDate(event), gymFmt)}
+        // The status is the event's own, derived once by the API (#640).
+        status={(
+          <span style={statusPillStyle(statusTone(event.status))}>
+            {t(`payments.status.${event.status}` as any)}
+          </span>
+        )}
+        amount={money(billingEventAmount(event))}
+        lines={lines}
+        expandable={billingEventHasDetails(event)}
+        details={(
           <>
-            {/* The status is the event's own, derived once by the API (#640) —
-                a date carrying a settled charge and a rejected one must not be
-                summarised into a single verdict. */}
-            <span style={statusPillStyle(statusTone(event.status))}>
-              {t(`payments.status.${event.status}` as any)}
-            </span>
-            {event.payment_method_name && (
-              <span style={{ fontSize: 12, opacity: 0.75 }}>{event.payment_method_name}</span>
-            )}
+            {event.payment_method_name && <span>{event.payment_method_name}</span>}
+            {notes && <span>{notes}</span>}
             {/* #2936 — one action per stored document; a kind with none is absent. */}
             {(event.documents ?? []).map((doc) => {
               const key = `${doc.kind}:${doc.id}`;
@@ -2217,9 +2232,9 @@ export default function MembershipPage() {
               );
             })}
           </>
-        ),
-      };
-    });
+        )}
+      />
+    );
   }
 
   /**

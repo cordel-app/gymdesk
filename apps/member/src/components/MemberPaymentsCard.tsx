@@ -141,6 +141,80 @@ export function BillingEventCard({
   );
 }
 
+/**
+ * #2937 — one **past** Billing Event: a compact header (at most two lines:
+ * title and amount, then the issued date and the status) that expands into the
+ * event's own lines and its payment details.
+ *
+ * It is one container and nothing is nested in it: the lines are rows of that
+ * container separated by hairlines, never cards of their own, and nothing here
+ * wears the Section Card border (whose themed edge is what drew a coloured bar
+ * beside every line). Each row keeps its own open state, so opening one never
+ * moves another, and opening fetches nothing (#955). The header is one button
+ * whose state is `aria-expanded`; a row with nothing to show has no button.
+ */
+export function PastBillingEventRow({
+  title, date, status, amount, lines, details, expandable = true,
+}: {
+  title: string;
+  date: string;
+  /** The status pill, rendered by the page from the server's status. */
+  status: ReactNode;
+  amount: string | null;
+  lines: BillingEventCardLine[];
+  /** Payment method, notes and document actions, under the lines. */
+  details?: ReactNode;
+  expandable?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const header = (
+    <>
+      <span style={styles.pastRow1}>
+        <span style={styles.pastTitle}>{title}</span>
+        <span style={styles.pastAmount}>{amount ?? '—'}</span>
+      </span>
+      <span style={styles.pastRow2}>
+        <span style={styles.pastDate}>{date}</span>
+        {status}
+        {expandable && <span style={styles.pastCaret} aria-hidden="true">{open ? '▾' : '▸'}</span>}
+      </span>
+    </>
+  );
+  return (
+    <div style={styles.pastEvent}>
+      {expandable ? (
+        <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.pastHeader}>
+          {header}
+        </button>
+      ) : (
+        <div style={styles.pastHeader}>{header}</div>
+      )}
+      {expandable && open && (
+        <div style={styles.pastBody}>
+          {lines.length > 0 && (
+            <ul style={styles.pastLineList}>
+              {lines.map((line, index) => (
+                <li key={line.key} style={index === 0 ? styles.pastLine : { ...styles.pastLine, ...rowDividerStyle }}>
+                  <div style={styles.lineMain}>
+                    {line.heading && <span style={styles.lineHeading}>{line.heading}</span>}
+                    <span style={styles.lineName}>{line.name}</span>
+                    {line.meta && <span style={styles.lineMeta}>{line.meta}</span>}
+                  </div>
+                  <div style={styles.lineAmounts}>
+                    {line.regularAmount && <span style={styles.lineRegular}>{line.regularAmount}</span>}
+                    <span style={styles.lineAmount}>{line.amount ?? '—'}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {details && <div style={lines.length > 0 ? { ...styles.pastDetails, ...rowDividerStyle } : styles.pastDetails}>{details}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const styles: Record<string, CSSProperties> = {
   toggleRight: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
@@ -184,5 +258,29 @@ const styles: Record<string, CSSProperties> = {
   lineAmounts: { display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   lineRegular: { fontSize: 12, color: memberTheme.textMuted, textDecoration: 'line-through' },
   lineAmount: { fontSize: 13.5, fontWeight: 600, color: memberTheme.text },
+  // #2937 — a past event's row. One hairline-bordered container in the
+  // separator colour, never `sectionCardStyle` (whose themed edges repeated a
+  // coloured bar on every nested card).
+  pastEvent: { border: `1px solid ${memberTheme.separator}`, borderRadius: 10, background: memberTheme.surface, overflow: 'hidden' },
+  pastHeader: {
+    display: 'flex', flexDirection: 'column', gap: 3, width: '100%', padding: '9px 12px',
+    background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit',
+  },
+  pastRow1: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, minWidth: 0 },
+  pastTitle: {
+    fontSize: 13.5, fontWeight: 600, color: memberTheme.text, minWidth: 0,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  pastAmount: { fontSize: 14, fontWeight: 700, color: memberTheme.text, whiteSpace: 'nowrap' },
+  pastRow2: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 12 },
+  pastDate: { fontSize: 12, color: memberTheme.textMuted, whiteSpace: 'nowrap' },
+  pastCaret: { marginLeft: 'auto', fontSize: 12, color: memberTheme.textMuted },
+  pastBody: { ...rowDividerStyle, padding: '4px 12px 10px' },
+  pastLineList: { listStyle: 'none', margin: 0, padding: 0 },
+  pastLine: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+    gap: 10, flexWrap: 'wrap', padding: '7px 0',
+  },
+  pastDetails: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
   eventFooter: { ...rowDividerStyle, marginTop: 10, paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
 };
