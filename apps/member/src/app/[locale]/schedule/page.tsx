@@ -478,12 +478,12 @@ export default function MemberSchedulePage() {
                         <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>{t('member_calendar.select_service_validation')}</p>
                       )}
                       {/* #2605 §3 / #2848: no unit to book — say so and offer Buy instead of Book. */}
-                      {bookingAction(choicesFor(s)) === 'buy' ? (
+                      {bookingAction(choicesFor(s), chosenFor(s)) === 'buy' ? (
                         <>
                           <p role="alert" style={{ ...styles.errorHint, margin: '0 0 6px', flex: '1 0 100%' }}>
-                            {t(zeroBalanceReason(choicesFor(s)) === 'all_booked' ? 'member_calendar.no_available_balance' : 'member_calendar.no_balance')}
+                            {t(zeroBalanceReason(choicesFor(s), chosenFor(s)) === 'all_booked' ? 'member_calendar.no_available_balance' : 'member_calendar.no_balance')}
                           </p>
-                          <button style={styles.btnBook} onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(choicesFor(s)))}`)}>
+                          <button style={styles.btnBook} onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(choicesFor(s), chosenFor(s)))}`)}>
                             {t('member_schedule.buy')}
                           </button>
                         </>

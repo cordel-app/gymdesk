@@ -11,6 +11,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { ReceiptsInvoicesSection } from './InvoicesSection';
+import { useBillingEventDocumentsChanged } from './documentsChanged';
 
 export interface Transaction {
   id: number;
@@ -202,8 +203,9 @@ export function ExpandedRow({
   const [rows, setRows] = useState<Transaction[] | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /** `quiet`: re-read in place (#2885), without unmounting the sections behind a loading line. */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const [d, tx] = await Promise.all([
         apiFetch<BillingEventDetails>(`/payments/billing-events/${billingEventId}`),
@@ -212,15 +214,19 @@ export function ExpandedRow({
       setDetails(d);
       setRows(tx.items);
     } catch {
-      setDetails(null);
-      setRows([]);
+      if (!quiet) {
+        setDetails(null);
+        setRows([]);
+      }
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingEventId]);
 
   useEffect(() => { load(); }, [load]);
+  // #2885: a receipt issued from the ⋮ menu shows its number here without a reload.
+  useBillingEventDocumentsChanged(billingEventId, () => { load(true); });
 
   if (loading) {
     return asCell ? (
