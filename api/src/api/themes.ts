@@ -867,6 +867,32 @@ themesPublicRouter.get('/:id/logo', async (req, res) => {
   res.send(rows[0].logo_bytes);
 });
 
+// #2881: the logo symbol, public and same-origin for the Payment app's tab
+// icon (its CSP is `img-src 'self'`, so the R2 URL itself would be blocked).
+// The bytes are read and returned, never redirected, for `GET /:id/logo`'s reason.
+themesPublicRouter.get('/:id/logo-symbol', async (req, res) => {
+  const { rows } = await db.query(
+    'SELECT logo_symbol_object_key FROM themes WHERE id = ? AND deleted_at IS NULL',
+    [req.params.id],
+  );
+  const objectKey: string | null = rows[0]?.logo_symbol_object_key ?? null;
+  if (!objectKey) return res.status(404).json({ error: 'Logo symbol not found' });
+  if (!isStorageConfigured()) return res.status(503).json({ error: 'Cloudflare storage is not configured for this deployment' });
+  try {
+    const object = await getStorageObject(objectKey);
+    res.set('Content-Type', object.contentType ?? 'image/webp');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.send(object.body);
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'getStorageObject', key: objectKey });
+    logger.error({ err, details, themeId: req.params.id }, 'Cloudflare R2 theme logo symbol read failed');
+    const notFound = details.httpStatusCode === 404 || details.name === 'NoSuchKey';
+    return res.status(notFound ? 404 : 502).json({ error: notFound ? 'Logo symbol not found' : 'Failed to read logo symbol' });
+  }
+});
+
 // ─── Logo symbol (#2157) ─────────────────────────────────────────────────────
 
 function baseLogoSymbolScope(req: express.Request, res: express.Response): LogoSymbolScope {
