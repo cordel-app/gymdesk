@@ -8,6 +8,8 @@ import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
 import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } from '../domain/membershipFeeScope';
+import { productBenefitPrices } from './product-benefit-pricing';
+import { toProductBenefit } from '../domain/productBenefitActions';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -116,7 +118,13 @@ export interface MemberProductSetPlan {
     /** #2805 — the member a per-member line is for (#2657 stage 3); null for a Family line or one not split yet. */
     assigned_member_id: number | null; member_name: string | null;
     /** #2798 — the Product's picture, as My Products reads a line's (the plan line snapshot holds none). */
-    image_url: string | null; image_thumbnail_url: string | null }[];
+    image_url: string | null; image_thumbnail_url: string | null;
+    /**
+     * #2892 — the line's final price, VAT included: its frozen `unit_price` × quantity
+     * after its own treatment and Direct Discount, priced by `productBenefitPrices()`
+     * exactly as the Assigned Plan card's grid does; `null` when it cannot be priced.
+     */
+    final_price: number | null }[];
 }
 
 /**
@@ -233,10 +241,13 @@ export async function loadMemberProductSetView(
     for (const category of PLAN_LINE_CATEGORIES) {
       const { rows: lRows } = await db.query<any>(
         `SELECT l.plan_snapshot_id, l.product_id, l.item_name, l.quantity, l.item_billing_frequency, l.unit_price, l.mandatory,
+                l.action, l.value, l.direct_discount_percent,
                 l.assigned_member_id, am.name AS member_name,
-                p.image_url, p.image_thumbnail_url
+                p.image_url, p.image_thumbnail_url,
+                p.tax_behavior AS product_tax_behavior, tr.rate_percent AS product_tax_rate_percent
            FROM ${PLAN_LINE_TABLE[category]} l
            LEFT JOIN products p ON p.id = l.product_id AND p.gym_id = l.gym_id
+           LEFT JOIN tax_rates tr ON tr.id = p.tax_rate_id
            LEFT JOIN members am ON am.id = l.assigned_member_id AND am.gym_id = l.gym_id
           WHERE l.gym_id = ? AND l.plan_snapshot_id IN (${marks}) ORDER BY l.item_name, l.id`,
         [gymId, ...snapshotIds]);
@@ -250,6 +261,7 @@ export async function loadMemberProductSetView(
           member_name: r.member_name ?? null,
           image_url: r.image_url ?? null,
           image_thumbnail_url: r.image_thumbnail_url ?? r.image_url ?? null,
+          final_price: planLineFinalPrice(r),
         });
         benefits.set(Number(r.plan_snapshot_id), list);
       }
@@ -312,4 +324,25 @@ export async function loadMemberProductSetView(
         billing_frequency: r.item_billing_frequency ?? null,
       })),
   };
+}
+
+/**
+ * #2892 — a plan line's final price for My Plans, VAT included: the frozen
+ * `unit_price` (never the catalogue's current amount) through the one benefit
+ * pricing module, with the Product's tax treatment read live because the line
+ * snapshot froze none (the Assigned Plan card's own rule, `assigned-plan-snapshot.ts`).
+ */
+function planLineFinalPrice(r: any): number | null {
+  if (r.unit_price == null) return null;
+  const benefit = toProductBenefit('plan', r.action, r.value);
+  return productBenefitPrices('plan', {
+    product_id: r.product_id,
+    quantity: r.quantity,
+    action: benefit.action,
+    value: benefit.value,
+    direct_discount_percent: r.direct_discount_percent,
+    product_amount: r.unit_price,
+    product_tax_behavior: r.product_tax_behavior,
+    product_tax_rate_percent: r.product_tax_rate_percent,
+  }).final_line_price_incl_tax;
 }

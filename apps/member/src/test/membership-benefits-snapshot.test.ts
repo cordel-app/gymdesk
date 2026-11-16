@@ -45,13 +45,15 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
     expect(page).toContain('membership.item_group.${group}');
   });
 
-  it('shows the frozen unit price and the frozen billing frequency', () => {
-    expect(page).toContain('b.unit_price.toFixed(2)');
+  it('shows the line\'s final price with its currency, right-aligned, and the frozen billing frequency (#2892)', () => {
+    expect(page).toContain('formatPaymentAmount(b.final_price, \'EUR\', gymFmt)');
+    expect(page).toContain('data-plan-line-price');
+    expect(page).not.toContain('b.unit_price.toFixed(2)');
     expect(page).toContain('membership.frequency.${b.billing_frequency}');
   });
 
   it('keys a line per assignment benefit, not per index', () => {
-    expect(page).toContain('key={`${b.category}-${b.product_id}`}');
+    expect(page).toContain('key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? \'\'}`}');
   });
 
   it('has no recurrence label left over from the retired vocabulary', () => {

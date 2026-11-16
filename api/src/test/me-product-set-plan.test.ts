@@ -144,6 +144,31 @@ describe('POST /me/product-sets/:id/plans', () => {
       .toMatchObject({ assigned_member_id: null, member_name: null });
   });
 
+  it("reports each plan line's final price: frozen unit price x quantity after its treatment and Direct Discount (#2892)", async () => {
+    const m = await member();
+    const draft = (await as(m.clerk, 'post', '/draft')).body;
+    const towel = await product(`Towel-${uniq()}`);
+    const insurance = await product(`Insurance-${uniq()}`);
+    const planId = await plan(30, { optional: towel, mandatory: insurance });
+    const add = await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: planId });
+    expect(add.status).toBe(200);
+    // The towel: 2 units at the frozen 10.00 with a 25% Direct Discount; the insurance waived.
+    await db.query(
+      `UPDATE plan_periodical_snapshots SET quantity = 2, direct_discount_percent = 25
+        WHERE plan_snapshot_id = ? AND product_id = ?`, [add.body.plan_snapshot_id, towel]);
+    await db.query(
+      `UPDATE plan_periodical_snapshots SET \`action\` = 'waive', \`value\` = NULL
+        WHERE plan_snapshot_id = ? AND product_id = ?`, [add.body.plan_snapshot_id, insurance]);
+    // The catalogue price moving afterwards changes nothing: the line's own price is frozen.
+    await db.query('UPDATE products SET amount = 99.00 WHERE id = ?', [towel]);
+
+    const view = await as(m.clerk, 'get', `/${draft.id}`);
+    expect(view.status).toBe(200);
+    const benefits = view.body.plans[0].benefits as any[];
+    expect(benefits.find((b) => b.product_id === towel).final_price).toBeCloseTo(15, 2);
+    expect(benefits.find((b) => b.product_id === insurance).final_price).toBe(0);
+  });
+
   it('refuses a second plan on the Draft, a plan not offered to members, and a member who holds a plan', async () => {
     const m = await member();
     const draft = (await as(m.clerk, 'post', '/draft')).body;
