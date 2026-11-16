@@ -14,7 +14,8 @@
  * FK to `plan_snapshots (id)` ON DELETE SET NULL, like `plan_snapshots.replaces_assignment_id`: an
  * anchor is only deleted once no snapshot of its assignment survives (`deleteUnlinkedPlanSnapshots()`),
  * and an application must never be the reason that delete fails. Not in a CHECK (MySQL error 3823).
- * ADD COLUMN + ADD KEY + ADD FOREIGN KEY is an in-place change; user_membership_promotions is small.
+ * Adding the FK rebuilds the table under ALGORITHM=COPY (foreign_key_checks on); user_membership_promotions
+ * is small.
  *
  * Backfill (repeatable: converges on the same values, so `up` may be re-run and
  * `backfillPromotionAssignmentIds` is what a later data repair calls). Only valid while
