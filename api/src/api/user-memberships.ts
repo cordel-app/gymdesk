@@ -8,7 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -237,10 +237,13 @@ export const LIST_SELECT = `
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
          ${LIFECYCLE_STATUS_SQL} AS lifecycle_status
-  FROM user_memberships um
+  FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
+// #2125 M6b-32: the rows are each assignment's current plan snapshot (`ASSIGNMENT_HISTORY_ROWS_SQL`,
+// the Member card's plan history's own source), so `LIST_SELECT` binds one `?` first: the gym id.
+// Every caller still scopes `um.gym_id` / `um.id` itself after it.
 // Note: the commercial columns on `um.*` are the cache; `withAssignmentConfig()` overlays the
 // version's own values (#1325 PR 3e-2), and `withDerivedBilling()` the four billing values.
 // Note: the four billing values (`next_billing_date`, `last_billed_at`, `failed_attempts`,
@@ -255,8 +258,8 @@ export const LIST_SELECT = `
  */
 async function loadAssignmentRow(gymId: string, id: string | string[] | number, scoped = true) {
   const { rows } = scoped
-    ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [id, gymId])
-    : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [id]);
+    ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [gymId, id, gymId])
+    : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [gymId, id]);
   if (rows.length === 0) return null;
   const [row] = await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rows[0]]));
   return { ...row, membership_fee: await currentMembershipFee(gymId, Number(row.id)) };
@@ -289,7 +292,7 @@ userMembershipsRouter.get('/', async (req, res) => {
   }));
   if (!q) return;
 
-  const params: any[] = [gymId];
+  const params: any[] = [gymId, gymId];
   let inner = `${LIST_SELECT} WHERE um.gym_id = ?`;
   if (q.status) { inner += ' AND um.status = ?'; params.push(q.status); }
   // #1191: a Member's Assigned Plans are the Memberships they own OR are covered
@@ -546,7 +549,7 @@ async function assignedPlanEffectivePrice(gymId: string, planId: number | null, 
 
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+  const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [gymId, req.params.id, gymId]);
   if (rawRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = (await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rawRows[0]])))[0];
 
