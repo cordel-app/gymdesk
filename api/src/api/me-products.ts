@@ -59,7 +59,7 @@ import {
   type ProductPurchaseFields,
   type PurchaseBlock,
   PENDING_PURCHASE_STATUS,
-  DRAFT_PURCHASE_STATUS,
+  IN_CART_PURCHASE_STATUS,
   PRODUCT_PURCHASE_SOURCE,
   describeProductPurchase,
   productPurchaseBlock,
@@ -487,7 +487,7 @@ export async function writeDraftPurchase(
 ): Promise<number> {
   const { row, snapshot, price, actorName, assignedMemberId } = resolved;
   const id = await insertPurchase(tx, {
-    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
+    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: IN_CART_PURCHASE_STATUS,
     productName: snapshot.product_name, productType: snapshot.product_type,
     billingFrequency: snapshot.billing_frequency, units: snapshot.units,
     amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
@@ -519,10 +519,10 @@ export async function deletePurchaseDraft(
     if (!(await lockPurchase(tx, gymId, memberId, purchaseId))) return false;
     const { rows } = await tx.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
-      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, DRAFT_PURCHASE_STATUS],
+      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, IN_CART_PURCHASE_STATUS],
     );
     if (!rows[0]) return false;
-    await deletePurchase(tx, gymId, purchaseId, { memberId, status: DRAFT_PURCHASE_STATUS });
+    await deletePurchase(tx, gymId, purchaseId, { memberId, status: IN_CART_PURCHASE_STATUS });
     return true;
   });
 }
@@ -539,7 +539,7 @@ async function hasDraftPurchase(
     `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
       WHERE mp.product_id = ? AND mp.status = ?
       LIMIT 2`,
-    [...memberPurchaseSnapshotParams(gymId, memberId), productId, DRAFT_PURCHASE_STATUS],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId, IN_CART_PURCHASE_STATUS],
   );
   return rows.some((r) => Number(r.id) !== ignoreId);
 }
@@ -611,7 +611,7 @@ export async function startProductPurchase(
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
-        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: DRAFT_PURCHASE_STATUS });
+        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
       }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to

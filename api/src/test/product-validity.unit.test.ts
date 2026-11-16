@@ -37,6 +37,6 @@ describe('cancellation vs expiry (#1693)', () => {
     expect(purchaseValidityState({ status: 'cancelled', valid_until: null, cancelled_on: null }, '2026-10-04')).toBe('failed');
   });
   it('a saved draft (#1657 stage 2) is a draft, not a failed payment', () => {
-    expect(purchaseValidityState({ status: 'draft', valid_until: null, cancelled_on: null }, '2026-10-04')).toBe('draft');
+    expect(purchaseValidityState({ status: 'in_cart', valid_until: null, cancelled_on: null }, '2026-10-04')).toBe('in_cart');
   });
 });

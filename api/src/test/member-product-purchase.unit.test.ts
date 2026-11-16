@@ -253,8 +253,11 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
 
 describe('the vocabulary matches its CHECKs (migration 228)', () => {
   it('the statuses, the actor types and the source are the migration’s', () => {
-    expect(migration.STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES].filter((s) => s !== 'draft'));
-    expect(require('../infra/migrations/295_member_product_purchase_draft_status.js').STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES]);
+    expect(migration.STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES].filter((s) => s !== 'in_cart'));
+    // #2949 stage 1: the snapshot tables' CHECK (migration 432) holds every purchase status, `in_cart` included.
+    const current = require('../infra/migrations/432_purchase_status_in_cart.js').PURCHASE_STATUSES;
+    expect([...MEMBER_PRODUCT_STATUSES].every((s) => current.includes(s))).toBe(true);
+    expect(current).not.toContain('draft');
     expect(migration.ACTOR_TYPES).toEqual([...PURCHASE_ACTOR_TYPES]);
     expect(migration.PURCHASE_SOURCE).toBe(PRODUCT_PURCHASE_SOURCE);
     // The Members App mirrors the value (the two apps share no module), so a
