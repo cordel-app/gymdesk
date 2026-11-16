@@ -26,6 +26,7 @@ import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -1153,7 +1154,7 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
 
   // #1325 PR 3e-4a: the application is the version's, written above. A plan
   // whose version takes no edit (closed, or awaiting payment) answers here.
-  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  const { rows: gate } = await db.query(`SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, umId]);
   if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
   return res.status(409).json({ error: `Promotions cannot be applied to a membership with status '${gate[0].status}'` });
 });
@@ -1167,7 +1168,7 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
     mutate: revokePromotionMutator(promotionId, resolveRequestActor(getTenantContext(req))),
     respond: async () => ({ ok: true }),
   })) return;
-  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  const { rows: gate } = await db.query(`SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, umId]);
   if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
   return res.status(409).json({ error: `Promotions cannot be revoked on a membership with status '${gate[0].status}'` });
 });
