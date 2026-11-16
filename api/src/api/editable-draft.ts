@@ -27,6 +27,19 @@ export const editableDraftSql = (ps: string): string =>
        WHERE ej_.product_set_id = ${ps}.id AND ej_.entitlement_only = 0
          AND NOT ${planSnapshotInheritedSql('es_', `${ps}.id`)})))`;
 
+/**
+ * #2891 — the Draft a staff member's Product change goes into: **any** live Draft of the owner,
+ * a new-plan assignment Draft included. The open Draft is the member's shopping cart until
+ * Save & Pay, so adding, editing or removing a recurring Product from Members → Products edits it
+ * instead of answering `in_flight`. Wider than `editableDraftSql()` on purpose: that one still
+ * decides what `⋮ → Edit` on a running plan may adopt. A Pending Payment version is never a Draft
+ * and an expired Draft is not live, so both keep their lifecycle and one in-flight version per
+ * owner stays the rule.
+ */
+export const staffProductDraftSql = (ps: string): string =>
+  `(${ps}.status = 'draft'
+    AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE)`;
+
 /** The owner's live Draft staff may keep editing, locked; `null` when there is none. */
 export async function lockEditableDraft(
   tx: Pick<Tx, 'query'>, gymId: string, ownerMemberId: number,

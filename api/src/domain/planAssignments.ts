@@ -94,3 +94,17 @@ export const OWNED_ASSIGNMENT_ROWS_SQL = `(
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
    WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.source_user_membership_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
+
+/**
+ * #2125 M6b-17 — every assignment of one gym as a derived table shaped like the `user_memberships`
+ * rows it replaces, each read from its current snapshot (`OWNED_ASSIGNMENT_ROWS_SQL` without the
+ * owner bound), for a reader that scopes the assignments itself: the Billing Simulation's loader
+ * (by owner or by legacy id). `id` is the legacy id the routes still name; a snapshot that names no
+ * legacy row is left out. Binds one `?`: the gym id. Use it as `FROM ${GYM_ASSIGNMENT_ROWS_SQL} um`.
+ */
+export const GYM_ASSIGNMENT_ROWS_SQL = `(
+  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+         pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at
+    FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+   WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
+     AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;

@@ -11,7 +11,7 @@ import { toMinorUnits } from '../payments/money';
 import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEventEditLock';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
-import { editableDraftSql } from './editable-draft';
+import { staffProductDraftSql } from './editable-draft';
 import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
 import { planScheduledEvents } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
@@ -78,11 +78,11 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
 export async function loadEditLockForDraftEdit(
   gymId: string, ownerMemberId: number, today: string, opts: { staff?: boolean } = {},
 ): Promise<BlockingEvent[]> {
-  // #2858: for staff, the owner's `⋮ → Edit` Draft is one they keep editing too (`editableDraftSql()`).
+  // #2858/#2891: for staff, any live Draft of the owner is one they keep editing (`staffProductDraftSql()`).
   const { rows } = await db.query<any>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-        AND ${opts.staff ? editableDraftSql('ps') : `ps.status = 'draft' AND ps.user_membership_id IS NULL
+        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'draft' AND ps.user_membership_id IS NULL
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`}
       LIMIT 1`,
     [gymId, ownerMemberId]);

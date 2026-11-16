@@ -28,6 +28,7 @@ import { productSetHistoryIds } from './product-set-history';
 import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershipFeeScope';
+import { toPlanMemberLimit } from '../domain/planBeneficiaries';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -156,7 +157,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
 
   const { rows: planRows } = await tx.query(
     `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods, p.membership_fee_scope,
-            bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
+            p.member_limit, bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
        FROM membership_plans p
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
       WHERE p.id = ? AND p.gym_id = ?`,
@@ -191,13 +192,15 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     input.origin ?? null,
     // #2834 — the Plan's Membership Fee scope, frozen onto the snapshot.
     toMembershipFeeScope(plan.membership_fee_scope),
+    // #2879 stage 2 — the Plan's Members per Membership, frozen: staff may change it on a Draft.
+    toPlanMemberLimit(plan.member_limit),
   ];
   let snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (snapshotId != null) {
     await tx.query(
       `UPDATE plan_snapshots SET schedule_id = ?, membership_fee_price = ?, free_periods = ?, paid_periods = ?,
               bonus_periods = ?, pay_beforehand_periods = ?, auto_renew = ?, recurring_billing_interval = ?,
-              recurring_billing_unit = ?, origin = ?, membership_fee_scope = ?, membership_plan_id = ?,
+              recurring_billing_unit = ?, origin = ?, membership_fee_scope = ?, member_limit = ?, membership_plan_id = ?,
               modified_at = UTC_TIMESTAMP()
         WHERE id = ?`, [...values, membershipPlanId, snapshotId]);
   } else {
@@ -206,8 +209,8 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
-          source_user_membership_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          member_limit, source_user_membership_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
         set.created_by ?? null]);

@@ -77,10 +77,12 @@ describe('reusing the owner\'s Draft (#2858)', () => {
     expect(await setsOf(memberId)).toHaveLength(2);
   });
 
-  it('a Draft that assigns a new plan is not reused: the one-in-flight rule still answers', async () => {
+  it('a Draft that assigns a new plan is reused by the products editor (#2891)', async () => {
     const { memberId } = await memberWithPlan(false);
+    const draftId = Number((await setsOf(memberId))[0].id);
     const res = await post('/product-sets/draft', { member_id: memberId });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('in_flight');
+    expect(res.status).toBe(200);
+    expect(Number(res.body.id)).toBe(draftId);
+    expect(await setsOf(memberId)).toHaveLength(1);
   });
 });

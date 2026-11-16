@@ -147,6 +147,8 @@ describe('GET /me/billing-event-forecast', () => {
     const fee = res.body.dates[0].lines.find((l: any) => l.kind === 'membership_fee');
     expect(fee).toMatchObject({ actual_charge: 70, regular_price: 70, product_id: null });
 
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -163,6 +165,8 @@ describe('GET /me/billing-event-forecast', () => {
     expect(staff.status).toBe(200);
     expect(mine.body).toEqual(staff.body);
 
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -186,6 +190,8 @@ describe('GET /me/billing-event-forecast', () => {
     expect(today.total).toBe(90);
     expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'product']);
 
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -201,11 +207,13 @@ describe('GET /me/billing-event-forecast', () => {
   it('answers available: false when the only plan is cancelled', async () => {
     const umId = await assignPlan(gymId, memberId, await createPlan(gymId, 70));
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [umId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
 
     const res = await asMember();
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(false);
 
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
     await db.query('DELETE FROM user_memberships WHERE id = ?', [umId]);
   });
 
@@ -260,6 +268,7 @@ describe('GET /me/billing-events', () => {
     expect(byId[changedId].status).toBe('recorded');
 
     await db.query('DELETE FROM billing_events WHERE id IN (?, ?)', [paidId, changedId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
     await db.query('DELETE FROM user_memberships WHERE id = ?', [umId]);
   });
 });

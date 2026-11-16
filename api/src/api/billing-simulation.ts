@@ -16,6 +16,7 @@ import { toProductBenefit } from '../domain/productBenefitActions';
 import { PlanDuration, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { loadServicesForSimulation } from './user-membership-services';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import {
   ASSIGNMENT_AUTO_RENEW,
   ASSIGNMENT_CADENCE,
@@ -190,11 +191,11 @@ export async function loadSimulationAssignments(
              OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
              OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
             ) AS has_billing_snapshot
-     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND ${scoped.sql}
+     WHERE ${scoped.sql}
        AND um.status IN (${SIMULATED_STATUSES.map(() => '?').join(',')})
      ORDER BY um.starts_at ASC, um.id ASC`,
     [gymId, scoped.param, ...SIMULATED_STATUSES],

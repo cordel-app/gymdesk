@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  beneficiaryDraftChanged,
   beneficiarySelectionIssue,
   canSelectBeneficiary,
   defaultBeneficiaryIds,
@@ -52,5 +53,22 @@ describe('#2879 plan beneficiaries', () => {
     const solo = [family[2]];
     expect(defaultBeneficiaryIds(solo, '2')).toEqual([9]);
     expect(beneficiarySelectionIssue(solo, [9], '2')).toEqual({ key: 'not_enough_family_members', count: 2 });
+  });
+});
+
+// #2879 stage 2: a Draft's editor holds changes until they are saved.
+describe('beneficiaryDraftChanged', () => {
+  const saved = { memberLimit: '2', ids: [1, 2] };
+  it('is unchanged for the same limit and set in another order', () => {
+    expect(beneficiaryDraftChanged(saved, { memberLimit: '2', ids: [2, 1] })).toBe(false);
+  });
+  it('is changed by a new limit or a different set', () => {
+    expect(beneficiaryDraftChanged(saved, { memberLimit: '1', ids: [1, 2] })).toBe(true);
+    expect(beneficiaryDraftChanged(saved, { memberLimit: '2', ids: [1, 3] })).toBe(true);
+    expect(beneficiaryDraftChanged(saved, { memberLimit: '2', ids: [1] })).toBe(true);
+  });
+  it('judges a lowered limit against the new count', () => {
+    expect(beneficiarySelectionIssue(family, [1, 2], '1')).toEqual({ key: 'exact_count', count: 1 });
+    expect(beneficiarySelectionIssue(family, [2], '1')).toBeNull();
   });
 });

@@ -10,7 +10,9 @@ import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActiv
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
-import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
+import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
+import { beneficiarySelectionError, parseBeneficiaryIds, parseMemberLimitInput, toPlanMemberLimit } from '../domain/planBeneficiaries';
+import { ownerFamilyMemberIds } from './owner-family';
 import { Router } from 'express';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computePriceFields } from './products';
@@ -1998,6 +2000,71 @@ userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS
   } catch (err) { next(err); }
 });
 
+// ─── Beneficiaries of a Draft (#2879 stage 2) ─────────────────────────────────
+// While the assignment is a Draft, staff may change its Members per Membership and choose
+// its beneficiaries from the owner's family; the pair is judged together by the rule the
+// assignment itself was created with (`beneficiarySelectionError()`), so a Draft never
+// stores a selection that does not match its count. Neither the Plan nor any other
+// assignment moves; after the Draft is confirmed the selection is read-only.
+
+async function loadAssignmentBeneficiaryState(gymId: string, userMembershipId: number) {
+  const { rows } = await db.query<any>(
+    `SELECT s.id, s.member_id, COALESCE(s.member_limit, mp.member_limit) AS member_limit
+       FROM plan_snapshots s JOIN membership_plans mp ON mp.id = s.membership_plan_id
+      WHERE s.id = ${assignmentPlanSnapshotId('?', '?')} AND s.gym_id = ?`,
+    [userMembershipId, gymId, gymId]);
+  if (!rows[0]) return null;
+  const { rows: ben } = await db.query<{ member_id: number }>(
+    'SELECT member_id FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ? AND gym_id = ? ORDER BY member_id',
+    [rows[0].id, gymId]);
+  return {
+    owner_member_id: Number(rows[0].member_id),
+    member_limit: toPlanMemberLimit(rows[0].member_limit),
+    beneficiary_member_ids: ben.map((b) => Number(b.member_id)),
+  };
+}
+
+userMembershipsRouter.get('/:id/beneficiaries', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+    if (!um) return res.status(404).json({ error: 'Membership not found' });
+    const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
+    if (!state) return res.status(404).json({ error: 'Membership not found' });
+    res.json({ editable: um.status === 'draft', ...state });
+  } catch (err) { next(err); }
+});
+
+userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+    if (!um) return res.status(404).json({ error: 'Membership not found' });
+    if (um.status !== 'draft') {
+      return res.status(409).json({ error: 'not_a_draft', message: 'The beneficiaries are chosen only before the plan is confirmed' });
+    }
+    const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
+    if (!state) return res.status(404).json({ error: 'Membership not found' });
+    const parsedLimit = parseMemberLimitInput(req.body?.member_limit);
+    if (parsedLimit === null) return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
+    const memberLimit = parsedLimit ?? state.member_limit;
+    const parsedIds = parseBeneficiaryIds(req.body?.beneficiary_member_ids);
+    if (parsedIds === null || parsedIds === undefined) {
+      return res.status(400).json({ error: 'beneficiary_member_ids must be an array of member ids' });
+    }
+    const familyMemberIds = await ownerFamilyMemberIds(db, gymId, state.owner_member_id);
+    const selectionError = beneficiarySelectionError({ limit: memberLimit, familyMemberIds, beneficiaryIds: parsedIds });
+    if (selectionError) return res.status(400).json(selectionError);
+    if (await redirectEditToProductSet(req, res, {
+      userMembershipId: Number(um.id), action: 'update',
+      detail: { beneficiaries: { member_limit: memberLimit, beneficiary_member_ids: parsedIds } },
+      mutate: (tx, d) => psSetPlanBeneficiaries(tx, d, Number(um.id), { memberLimit, beneficiaryIds: parsedIds }),
+      respond: async () => ({ editable: true, ...(await loadAssignmentBeneficiaryState(gymId, Number(um.id))) }),
+    })) return;
+    return res.status(409).json({ error: 'not_a_draft', message: 'The beneficiaries are chosen only before the plan is confirmed' });
+  } catch (err) { next(err); }
+});
+
 // ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
 // A Membership's covered Members receive the plan's benefits/entitlements
 // alongside its owner. The owner (inserted on POST /) can never be removed;
@@ -2013,9 +2080,14 @@ export const MEMBERS_SELECT = `
 
 async function findMembershipWithPlanLimit(id: string | string[], gymId: string) {
   const { rows } = await db.query(
-    `SELECT um.id, um.membership_plan_id, p.member_limit FROM user_memberships um
-     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-     WHERE um.id = ? AND um.gym_id = ?`,
+    // #2879 stage 2: the assignment's own Members per Membership (its plan snapshot's), the
+    // Plan's for a snapshot that carries none.
+    `SELECT um.id, um.membership_plan_id,
+            COALESCE((SELECT s.member_limit FROM plan_snapshots s
+                       WHERE s.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}), p.member_limit) AS member_limit
+       FROM user_memberships um
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+      WHERE um.id = ? AND um.gym_id = ?`,
     [id, gymId],
   );
   return rows[0] ?? null;
