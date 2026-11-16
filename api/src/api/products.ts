@@ -372,7 +372,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
-    mandatory, sharing_type, one_per_member,
+    mandatory, sharing_type, one_time_purchase, one_per_member,
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -381,6 +381,10 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   // value ('week') is refused here as flatly as an unknown one.
   const freqErr = productFrequencyWriteError(billing_frequency, null);
   if (freqErr) return res.status(400).json({ error: freqErr });
+  // #2948: the create form is the edit form, so it sends Status too.
+  if (status && !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+  }
   if (enrollment_status && !VALID_ENROLLMENT_STATUSES.includes(enrollment_status)) {
     return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
   }
@@ -391,6 +395,14 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (unitsErr) return res.status(400).json({ error: unitsErr });
   const mandatoryErr = validateMandatory(mandatory);
   if (mandatoryErr) return res.status(400).json({ error: mandatoryErr });
+  // #2948: One-time Purchase and One per Member are set on create as on edit (#2606/#2607).
+  const oneTimeErr = validateMandatory(one_time_purchase)?.replace('mandatory', 'one_time_purchase') ?? null;
+  if (oneTimeErr) return res.status(400).json({ error: oneTimeErr });
+  const onePerMemberErr = validateMandatory(one_per_member)?.replace('mandatory', 'one_per_member') ?? null;
+  if (onePerMemberErr) return res.status(400).json({ error: onePerMemberErr });
+  if (validity_days != null && validity_days !== '' && (!Number.isInteger(Number(validity_days)) || Number(validity_days) < 0)) {
+    return res.status(400).json({ error: 'validity_days must be a non-negative integer' });
+  }
   if (sharing_type !== undefined && sharing_type !== null && !(PRODUCT_SHARING_TYPES as readonly string[]).includes(sharing_type)) {
     return res.status(400).json({ error: `sharing_type must be one of: ${PRODUCT_SHARING_TYPES.join(', ')}` });
   }
@@ -422,9 +434,9 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, sharing_type, one_per_member, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, one_time_purchase, sharing_type, one_per_member, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name.trim(),
@@ -438,11 +450,12 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           // #832: absent means non-mandatory — the ticket's default for a new
           // item and for every row that existed before the column did.
           mandatory ? 1 : 0,
+          one_time_purchase ? 1 : 0,
           sharingDecision.value || 'individual',
           one_per_member ? 1 : 0,
           notes?.trim() || null,
           package_information?.trim() || null,
-          validity_days != null ? parseInt(validity_days, 10) : null,
+          validity_days != null && validity_days !== '' ? parseInt(validity_days, 10) : null,
           tax_rate_id != null ? Number(tax_rate_id) : null,
           tax_behavior || 'inclusive',
           actor,

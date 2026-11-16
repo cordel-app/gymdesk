@@ -201,10 +201,9 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
   it('shows it under the Price input in both forms, off their live values (#805)', () => {
     // The editor reads the *form*, not the saved row, so changing Type or Units
     // updates the sentence before Save.
-    expect(source).toContain('const draftSessionNote = noteText(sessionPackageNoteForForm(inlineNew));');
-    expect(source).toContain('noteText(sessionPackageNoteForForm(editForm))');
-    expect(source).toContain('{draftSessionNote && <p style={formHelpTextStyle}>{draftSessionNote}</p>}');
-    expect(source).toContain('{editSessionNote && <p style={formHelpTextStyle}>{editSessionNote}</p>}');
+    // #2948: one control renderer for both forms, reading the form it is handed.
+    expect(source).toContain('const sessionNoteForForm = noteText(sessionPackageNoteForForm(form));');
+    expect(source).toContain('{sessionNoteForForm && <p style={formHelpTextStyle}>{sessionNoteForForm}</p>}');
   });
 
   it('leaves the collapsed Price cell room for the sentence it now carries', () => {
@@ -224,8 +223,8 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
     expect(source).toContain('item.amount_incl_tax != null');
     expect(source).toContain('fmtAmount(item.amount, item.currency)');
     // Both forms still submit the price under the API's `amount` key, unscaled.
-    expect(source).toContain("amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,");
-    expect(source).toContain("amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,");
+    expect(source).toContain('toProductPayload(inlineNew, SESSION_TYPE)');
+    expect(source).toContain('toProductPayload(editForm, SESSION_TYPE)');
     // Nothing on this page multiplies a price by a unit count.
     expect(source).not.toMatch(/amount[^\n]*\*\s*(?:units|item\.units|Number\(.*units)/);
   });
