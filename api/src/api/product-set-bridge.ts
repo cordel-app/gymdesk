@@ -507,12 +507,33 @@ export function applyPromotionMutator(gymId: string, actor: string | null, promo
  * `status = 'revoked'` and the moment, because the Billing Events ledger tags a
  * charge by the window the application stood (#635 stage 9) — a committed
  * version's history is never a deletion.
+ *
+ * #2880: an application that is still a Draft's **reference** (no snapshot taken,
+ * `draftReferenceApplicationSql()`) is a provisional selection, not history, so
+ * removing it deletes the row — with any earlier removed reference of the same
+ * Promotion on that Draft — and re-applying it inserts one fresh reference. A
+ * confirmed application a clone Draft carries over is revoked exactly as before.
  */
 export function revokePromotionMutator(promotionId: number, actor: string | null) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
     // M4b-2: revoking changes the plan's applied Promotions, so the version takes its own copy of the plan.
     const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
     await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+    const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
+    const { rows: standingRef } = await tx.query<{ id: number }>(
+      `SELECT ump.id FROM user_membership_promotions ump
+        WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
+          AND ${draftReferenceApplicationSql('ump')}
+        FOR UPDATE`,
+      [draft.gym_id, draft.id, promotionId]);
+    if (standingRef.length > 0) {
+      await tx.query(
+        `DELETE ump FROM user_membership_promotions ump
+          WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ?
+            AND ump.status IN ('applied', 'revoked') AND ump.snapshot_confirmed_at IS NULL`,
+        [draft.gym_id, draft.id, promotionId]);
+      return { ok: true };
+    }
     const { rowCount } = await tx.query(
       `UPDATE user_membership_promotions
           SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
