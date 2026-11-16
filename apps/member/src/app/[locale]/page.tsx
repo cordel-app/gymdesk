@@ -24,6 +24,7 @@ import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { BookingDetailDialog } from '@/components/BookingDetailDialog';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
+import { isFamilyOnlyBooking } from '@/lib/familyParticipants';
 import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { formatGymTime } from '@/lib/gymFormat';
 import { formatPaymentAmount } from '@/lib/memberPayments';
@@ -382,6 +383,7 @@ export default function HomePage() {
       {confirmCancelOpen && nextBooking?.my_booking_id && (
         <CancelBookingConfirmDialog
           busy={cancelBusy}
+          familyBooking={isFamilyOnlyBooking(nextBooking.professional_services, nextBooking.my_professional_service_id)}
           onClose={() => setConfirmCancelOpen(false)}
           onConfirm={cancelNextBooking}
         />

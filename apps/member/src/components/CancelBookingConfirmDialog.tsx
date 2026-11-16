@@ -16,18 +16,25 @@ import { MemberDialog } from '@/components/MemberDialog';
  *
  * It decides nothing about whether a booking *can* be cancelled — that is the
  * API's `can_cancel` — and it is shown only after that button was offered.
+ *
+ * #2901: a Family Only booking is cancelled for every family member attending,
+ * so `familyBooking` swaps the title and body for the family wording
+ * (`isFamilyOnlyBooking()` decides it); the two buttons are the same.
  */
-export function CancelBookingConfirmDialog({ onConfirm, onClose, busy }: {
+export function CancelBookingConfirmDialog({ onConfirm, onClose, busy, familyBooking = false }: {
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
   busy: boolean;
+  familyBooking?: boolean;
 }) {
   const t = useTranslations('member_schedule');
+  const titleKey = familyBooking ? 'cancel_confirm_family_title' : 'cancel_confirm_title';
+  const bodyKey = familyBooking ? 'cancel_confirm_family_body' : 'cancel_confirm_body';
 
   return (
     <MemberDialog
       labelledBy="cancel-booking-confirm-title"
-      title={t('cancel_confirm_title')}
+      title={t(titleKey)}
       onClose={busy ? () => {} : onClose}
       actions={(
         <>
@@ -50,7 +57,7 @@ export function CancelBookingConfirmDialog({ onConfirm, onClose, busy }: {
         </>
       )}
     >
-      <p style={{ margin: 0, fontSize: 15, color: memberTheme.textSecondary }}>{t('cancel_confirm_body')}</p>
+      <p style={{ margin: 0, fontSize: 15, color: memberTheme.textSecondary }}>{t(bodyKey)}</p>
     </MemberDialog>
   );
 }

@@ -16,7 +16,7 @@ import { formatGymDateTime } from '@/lib/gymFormat';
 import { serviceChoices, defaultChoice, selectionMissing, bookedService, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, isFamilyOnlyBooking, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
@@ -788,6 +788,7 @@ export default function MemberCalendarPage() {
       {confirmCancelOpen && (
         <CancelBookingConfirmDialog
           busy={actionLoading}
+          familyBooking={!!selected && isFamilyOnlyBooking(selected.professional_services, selected.my_professional_service_id)}
           onClose={() => setConfirmCancelOpen(false)}
           onConfirm={async () => {
             await cancelBooking();
