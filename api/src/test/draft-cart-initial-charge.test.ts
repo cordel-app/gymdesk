@@ -96,7 +96,7 @@ describe('Draft initial payment and simulation (#2899)', () => {
     expect(initial?.total).toBe(review.body.amount_due);
 
     // Reading the review and the forecast commits and charges nothing.
-    expect((await setOf((await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [set.id])).rows[0].user_membership_id)).status).toBe('draft');
+    expect((await setOf((await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [set.id])).rows[0].user_membership_id)).status).toBe('in_cart');
     const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [set.id]);
     expect(Number(rows[0].n)).toBe(0);
   });

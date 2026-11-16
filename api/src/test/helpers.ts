@@ -850,7 +850,7 @@ export async function confirmTestDraftPromotions(gymId: string, umId: number): P
   const { confirmDraftPromotionSnapshots } = await import('../api/membership-promotions');
   const { rows } = await db.query<{ id: number }>(
     `SELECT DISTINCT ps.id FROM product_sets ps
-      WHERE ps.gym_id = ? AND ps.status = 'draft'
+      WHERE ps.gym_id = ? AND ps.status = 'in_cart'
         AND (ps.user_membership_id = ?
              OR ps.id IN (SELECT ump.product_set_id FROM user_membership_promotions ump
                            WHERE ump.gym_id = ? AND ump.user_membership_id = ?))`,

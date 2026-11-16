@@ -13,7 +13,7 @@ const item = (state: MemberSetReviewItem['state'], name = 'Locker'): MemberSetRe
 });
 
 const review = (over: Partial<MemberSetReview> = {}): MemberSetReview => ({
-  product_set_id: 7, status: 'draft', summary_items: [item('active', 'Old'), item('draft')],
+  product_set_id: 7, status: 'in_cart', summary_items: [item('active', 'Old'), item('draft')],
   immediate_lines: [], amount_due: 10, payment_required: true, tax_total: 1.74, currency: 'EUR', error: null, ...over,
 });
 

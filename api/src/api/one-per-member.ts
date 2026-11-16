@@ -92,7 +92,7 @@ export async function memberHoldsProduct(
          JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = r.id
          JOIN product_sets ps ON ps.id = lnk.product_set_id AND ps.gym_id = r.gym_id
         WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.product_id = ? AND r.source_id IS NOT NULL
-          AND ps.status IN ('draft', 'pending_payment', 'active')
+          AND ps.status IN ('in_cart', 'pending_payment', 'active')
           AND (r.ends_at IS NULL OR r.ends_at >= UTC_DATE())
         LIMIT 1`,
       [gymId, memberId, productId],

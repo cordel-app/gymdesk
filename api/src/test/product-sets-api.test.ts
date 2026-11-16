@@ -213,7 +213,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     // The Member card reads the in-flight version beside the assignments.
     const cfg1 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
     expect(cfg1.status).toBe(200);
-    expect(cfg1.body.product_sets).toEqual([expect.objectContaining({ id: c.body.id, status: 'draft', expired: false })]);
+    expect(cfg1.body.product_sets).toEqual([expect.objectContaining({ id: c.body.id, status: 'in_cart', expired: false })]);
 
     const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);

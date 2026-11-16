@@ -216,7 +216,7 @@ export function MemberExpandedRow({
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
   // #1537: the Draft is the member's own in-flight version (created on first use).
   // #1613 — the in-flight version (Draft or awaiting payment) whose simulation is shown.
-  const inFlightSetId = ['draft', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
+  const inFlightSetId = ['in_cart', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
     ? configuration.current_product_set!.id : null;
   const [reviewOpen, setReviewOpen] = useState(false);
   const [committedKey, setCommittedKey] = useState(0);
@@ -580,7 +580,7 @@ export function MemberExpandedRow({
 
           {/* #1660 — Summary: the pending draft's additions and removals, last on
               the tab, with Save & Pay / Cancel directly beneath. */}
-          {(configuration.product_sets ?? []).some((p: any) => p.status === 'draft' || p.status === 'pending_payment') && (
+          {(configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment') && (
             <Section label={t('members.section_summary')}>
               <ProductSetsInFlight
                 productSets={configuration.product_sets}

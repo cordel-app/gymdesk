@@ -47,9 +47,9 @@ export function productSetName(
 
 /** The `members` locale key of a status badge; unknown statuses read as the raw value's own key-less fallback (`null`). */
 export function productSetStatusKey(status: string, expired: boolean): string | null {
-  if (status === 'draft' && expired) return 'product_set_status_expired';
+  if (status === 'in_cart' && expired) return 'product_set_status_expired';
   switch (status) {
-    case 'draft': return 'product_set_status_draft';
+    case 'in_cart': return 'product_set_status_in_cart';
     case 'pending_payment': return 'product_set_status_pending_payment';
     case 'active': return 'product_set_status_active';
     case 'superseded': return 'product_set_status_superseded';

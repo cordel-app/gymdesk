@@ -85,7 +85,7 @@ export async function loadEditLockForDraftEdit(
   const { rows } = await db.query<any>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'draft' AND ps.user_membership_id IS NULL
+        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'in_cart' AND ps.user_membership_id IS NULL
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`}
       LIMIT 1`,
     [gymId, ownerMemberId]);

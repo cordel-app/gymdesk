@@ -187,7 +187,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const promoId = await createPromotion(planId, { action: 'percentage_discount', value: 50 });
     const res = await assign(member.userId, planId, { promotion_ids: [promoId] });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     // The figure the Draft's Save & Pay will charge, reported before paying.
     expect(Number(res.body.membership_fee)).toBe(proratedToNextFirst(20));
     expect(res.body.payment_required).toBe(true);
@@ -200,7 +200,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
       'SELECT owner_member_id, created_by, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
     expect(ps[0].owner_member_id).toBe(member.id);
     expect(ps[0].created_by).toBe('MMP Member');
-    expect(ps[0].status).toBe('draft');
+    expect(ps[0].status).toBe('in_cart');
     expect(ps[0].membership_plan_id).toBe(planId);
     const { rows: snap } = await db.query<any>(
       'SELECT membership_fee_price FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [res.body.id]);
@@ -219,7 +219,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     // The Draft is listed as the member's own version; nothing awaits payment yet.
     asMemberTwice(member.userId);
     const sets = await request.get('/me/product-sets').set(h());
-    expect(sets.body.map((r: any) => [r.id, r.status])).toContainEqual([res.body.id, 'draft']);
+    expect(sets.body.map((r: any) => [r.id, r.status])).toContainEqual([res.body.id, 'in_cart']);
     asMember(member.userId);
     const me = await request.get('/me/membership').set(h());
     expect(me.body.membership).toBeNull();
@@ -241,7 +241,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const waive = await createPromotion(planId, { action: 'waive', value: null, durationMonths: 2 });
     const res = await assign(member.userId, planId, { promotion_ids: [waive] });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.payment_required).toBe(false);
     asMemberTwice(member.userId);
     const activated = await request.post(`/me/product-sets/${res.body.id}/activate`).set(h()).send({});
@@ -286,7 +286,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const planId = await createPlan({ price: 40 });
     const res = await assign(member.userId, planId);
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     // A repeated Choose this plan creates no second Draft.
     const again = await assign(member.userId, await createPlan({ price: 40 }));
     expect(again.status).toBe(409);
@@ -339,7 +339,7 @@ describe('a ProductSet plan paid through the webhook is the member\'s plan', () 
     const planId = await createPlan({ price: 40 });
     const res = await assign(member.userId, planId);
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     const paid = await pay(member.userId, res.body.id);
     expect(paid.status).toBe(201);
 

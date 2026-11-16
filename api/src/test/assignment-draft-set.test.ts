@@ -61,7 +61,7 @@ describe('a Draft assignment is created set-first', () => {
     expect(Number(rows[0].membership_plan_id)).toBe(planB);
     expect(await draftSetOf(first.body.id)).toBeNull();
     const { rows: sets } = await db.query<any>(
-      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')`, [gymId, m]);
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')`, [gymId, m]);
     expect(sets).toHaveLength(1);
     const { rows: ev } = await db.query<any>('SELECT id FROM billing_events WHERE gym_id = ? AND member_id = ?', [gymId, m]);
     expect(ev).toHaveLength(0);

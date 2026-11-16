@@ -193,7 +193,7 @@ export async function importAssignmentAsProductSet(
     // #1325 PR 3e: a Draft assignment is created set-first, so its version is
     // already the Draft here — Save & Pay moves it to Pending Payment with its
     // initial event, and a commit with nothing to pay activates it.
-    if (set.status === 'draft' && opts.pending) {
+    if (set.status === 'in_cart' && opts.pending) {
       const moved = await submitSetForPayment(tx, gymId, Number(set.id));
       if (moved.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be submitted: ${moved.kind}`), { status: moved.kind === 'expired' ? 410 : 409 });
@@ -201,7 +201,7 @@ export async function importAssignmentAsProductSet(
       await writePendingInitialEvent(tx, gymId, Number(set.id), opts.actor === undefined ? SYSTEM_ACTOR : opts.actor);
       return Number(set.id);
     }
-    if (!opts.pending && (set.status === 'pending_payment' || set.status === 'draft')) {
+    if (!opts.pending && (set.status === 'pending_payment' || set.status === 'in_cart')) {
       const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: opts.actor });
       if (out.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: out.kind === 'expired' ? 410 : 409 });

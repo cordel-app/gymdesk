@@ -193,7 +193,7 @@ export async function loadMemberProductSetView(
   };
 
   let expiresIn: number | null = null;
-  if (set.status === 'draft') {
+  if (set.status === 'in_cart') {
     const { rows } = await db.query<any>(
       `SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), last_activity_at + INTERVAL ${DRAFT_TTL_MINUTES} MINUTE) AS s
          FROM product_sets WHERE id = ? AND gym_id = ?`, [Number(set.id), gymId]);

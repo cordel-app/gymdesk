@@ -12,5 +12,5 @@
 export function draftReferenceApplicationSql(alias: string): string {
   return `(${alias}.snapshot_confirmed_at IS NULL AND EXISTS (
             SELECT 1 FROM product_sets draft_ps
-             WHERE draft_ps.id = ${alias}.product_set_id AND draft_ps.status = 'draft'))`;
+             WHERE draft_ps.id = ${alias}.product_set_id AND draft_ps.status = 'in_cart'))`;
 }

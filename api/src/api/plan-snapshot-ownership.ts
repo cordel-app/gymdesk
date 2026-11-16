@@ -92,7 +92,7 @@ const PRODUCT_SET_JUNCTIONS = [
  */
 
 export async function deleteProductSetAndOwnPlanSnapshots(
-  tx: Tx, gymId: string, productSetId: number, status: 'draft' | 'pending_payment',
+  tx: Tx, gymId: string, productSetId: number, status: 'in_cart' | 'pending_payment',
 ): Promise<boolean> {
   const { rows: linked } = await tx.query<{ id: number }>(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
@@ -136,5 +136,5 @@ export async function deleteProductSetAndOwnPlanSnapshots(
  * never deleted here.
  */
 export async function discardDraftSet(tx: Tx, gymId: string, productSetId: number): Promise<boolean> {
-  return deleteProductSetAndOwnPlanSnapshots(tx, gymId, productSetId, 'draft');
+  return deleteProductSetAndOwnPlanSnapshots(tx, gymId, productSetId, 'in_cart');
 }

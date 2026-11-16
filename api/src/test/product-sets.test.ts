@@ -56,7 +56,7 @@ describe('ProductSet versioning (#1325)', () => {
 
   it('the database itself refuses two in-flight rows for one owner', async () => {
     const a = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'draft', ?)`,
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, otherMemberId, today()]);
     await expect(db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,

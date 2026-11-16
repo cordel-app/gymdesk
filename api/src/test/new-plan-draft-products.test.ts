@@ -55,7 +55,7 @@ async function memberWithNewPlanDraft() {
   const planId = await plan(40);
   const umId = await createTestDraftAssignment(gymId, Number(memberId), planId);
   const { rows } = await db.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'`, [gymId, memberId]);
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'`, [gymId, memberId]);
   return { memberId: Number(memberId), umId, planId, draftId: Number(rows[0].id) };
 }
 

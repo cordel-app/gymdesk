@@ -117,18 +117,18 @@ export async function removeSetPurchase(tx: Conn, gymId: string, productSetId: n
 const ER_DUP_ENTRY = 1062;
 
 /**
- * The status a cart purchase holds while its Product Set holds `setStatus` (#2949 stage 1: a Draft
- * set's purchases are `in_cart`; a set awaiting payment and its purchases are both `pending_payment`).
+ * The status a cart purchase holds while its Product Set holds `setStatus` (#2949: a set in the cart
+ * (`in_cart`, stage 2) holds `in_cart` purchases; a set awaiting payment and its purchases are both `pending_payment`).
  */
-export function purchaseStatusForSet(setStatus: 'draft' | 'pending_payment' | 'cancelled'): string {
-  if (setStatus === 'draft') return IN_CART_PURCHASE_STATUS;
+export function purchaseStatusForSet(setStatus: 'in_cart' | 'pending_payment' | 'cancelled'): string {
+  if (setStatus === 'in_cart') return IN_CART_PURCHASE_STATUS;
   return setStatus === 'pending_payment' ? PENDING_PURCHASE_STATUS : 'cancelled';
 }
 
 /** Moves every linked purchase from the status of set status `fromSet` to that of `toSet` (Save & Pay, back to Draft). */
 export async function moveSetPurchases(
   tx: Conn, gymId: string, productSetId: number,
-  fromSet: 'draft' | 'pending_payment', toSet: 'draft' | 'pending_payment' | 'cancelled',
+  fromSet: 'in_cart' | 'pending_payment', toSet: 'in_cart' | 'pending_payment' | 'cancelled',
 ): Promise<void> {
   const from = purchaseStatusForSet(fromSet);
   const to = purchaseStatusForSet(toSet);
@@ -160,7 +160,7 @@ export async function activateSetPurchases(tx: Conn, gymId: string, productSetId
 }
 
 /** Deletes the purchases a Product Set being deleted (a Draft or an unpaid checkout) still holds. */
-export async function deleteSetPurchases(tx: Conn, gymId: string, productSetId: number, setStatus: 'draft' | 'pending_payment'): Promise<void> {
+export async function deleteSetPurchases(tx: Conn, gymId: string, productSetId: number, setStatus: 'in_cart' | 'pending_payment'): Promise<void> {
   const status = purchaseStatusForSet(setStatus);
   for (const p of await loadSetPurchases(tx, gymId, productSetId)) {
     if (p.status !== status) continue;

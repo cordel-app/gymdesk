@@ -6,14 +6,14 @@ const set = (status: string, expired = false): any => ({ id: 1, status, expired 
 describe('recurring products state (#1537)', () => {
   it('shows only Active or Draft, and a pending payment reads as a Draft', () => {
     expect(recurringState(set('active'), true)).toMatchObject({ chip: 'active', canStartEdit: true, editing: false });
-    expect(recurringState(set('draft'), true)).toMatchObject({ chip: 'draft', editing: true, canSaveAndPay: true, canCancel: true });
+    expect(recurringState(set('in_cart'), true)).toMatchObject({ chip: 'draft', editing: true, canSaveAndPay: true, canCancel: true });
     expect(recurringState(set('pending_payment'), true)).toMatchObject({ chip: 'draft', paymentPending: true, editing: false, canSaveAndPay: true });
     expect(recurringState(null, true).chip).toBeNull();
   });
 
   it('offers nothing to write without access, and nothing on an expired Draft', () => {
     expect(recurringState(set('active'), false).canStartEdit).toBe(false);
-    expect(recurringState(set('draft', true), true)).toMatchObject({ editing: false, canSaveAndPay: false, expired: true });
+    expect(recurringState(set('in_cart', true), true)).toMatchObject({ editing: false, canSaveAndPay: false, expired: true });
   });
 });
 

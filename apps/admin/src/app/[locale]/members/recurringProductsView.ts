@@ -34,7 +34,7 @@ export function recurringState(current: ProductSetSummary | null, canWrite: bool
   if (current.status === 'active') {
     return { ...none, chip: 'active', canStartEdit: canWrite };
   }
-  if (current.status === 'draft') {
+  if (current.status === 'in_cart') {
     const expired = !!current.expired;
     return {
       ...none, chip: 'draft', expired,
