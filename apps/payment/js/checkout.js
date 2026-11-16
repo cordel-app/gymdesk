@@ -117,10 +117,17 @@
       gymLogoEl.src = data.logoUrl;
       gymLogoEl.alt = data.gymName || '';
       gymLogoEl.hidden = false;
-      // #2094 — the tab icon is the gym's logo; a logo that fails to load keeps the default.
+    } else {
+      gymLogoEl.hidden = true;
+    }
+    // #2094/#2881 — the tab icon is the one the Admin and Members apps show: the
+    // gym's logo symbol when it has one, else its logo (`iconUrl`, decided by the
+    // API). An icon that fails to load keeps the default.
+    var iconSource = data.iconUrl || data.logoUrl;
+    if (iconSource) {
       var iconUrl = null;
       try {
-        var parsedIcon = new URL(data.logoUrl, window.location.href);
+        var parsedIcon = new URL(iconSource, window.location.href);
         if (parsedIcon.protocol === 'https:' || parsedIcon.protocol === 'http:') iconUrl = parsedIcon.href;
       } catch (e) { iconUrl = null; }
       var iconProbe = new Image();
@@ -135,8 +142,6 @@
         icon.href = iconUrl;
       };
       if (iconUrl) iconProbe.src = iconUrl;
-    } else {
-      gymLogoEl.hidden = true;
     }
     // The name renders next to the logo unless the logo already contains it.
     gymNameEl.hidden = !!(data.logoUrl && data.logoContainsGymName);

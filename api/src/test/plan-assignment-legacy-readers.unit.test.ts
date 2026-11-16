@@ -49,11 +49,9 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-config.ts': 2,
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 2,
-  'api/billing-simulation.ts': 1,
   'api/card-updates.ts': 1,
   'api/entitlement-plan-links.ts': 1,
   'api/me-product-set-lines.ts': 1,
-  'api/me.ts': 1,
   'api/member-membership-configuration.ts': 2,
   'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
@@ -177,7 +175,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(LEGACY_STATEMENTS['api/payment-requests.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/payment-requests.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'um')");
     const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
-    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
+    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBeGreaterThanOrEqual(4);
   });
 
   it('M6b-16: the Billing Event readers and the member\'s payment history read plan_snapshots', () => {
@@ -188,9 +186,15 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The two statements left in billingEventPayments.ts are the dunning pause, a writer.
     expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBe(2);
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8')).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
-    // The one statement left in me.ts is `GET /me/membership`'s pending-payment plan read.
-    expect(LEGACY_STATEMENTS['api/me.ts']).toBe(1);
+    // M6b-17 moved the one statement left in me.ts (`GET /me/membership`'s pending-payment plan read).
     expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
+  });
+
+  it('M6b-17: the pending-payment plan read and the Billing Simulation loader read plan_snapshots', () => {
+    for (const file of ['api/me.ts', 'api/billing-simulation.ts']) expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+    const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
+    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(5);
+    expect(readFileSync(join(API_SRC, 'api/billing-simulation.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
