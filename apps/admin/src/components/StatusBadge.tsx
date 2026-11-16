@@ -9,6 +9,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   cancelled:    { bg: '#fdeaea', fg: '#c0392b' },
   expired:      { bg: '#f3eafd', fg: '#7d3cbd' },
   draft:        { bg: '#eef2f7', fg: '#5a6b7b' },
+  // #2949: an item in the member's cart wears the `draft` tone it replaces.
+  in_cart:      { bg: '#eef2f7', fg: '#5a6b7b' },
   deleted:      { bg: '#fdeaea', fg: '#c0392b' },
   invited:      { bg: '#e8f0fe', fg: '#1a56a8' },
   not_enrolled: { bg: '#f0f0f0', fg: '#666666' },

@@ -154,5 +154,18 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE NOT (pr.plan_assignment_id <=> a.anchor_id)${scope('pr')}
       ORDER BY pr.id`);
 
+  // #2125 M6b-36: a Product Set's re-keyed assignment (migration 432), by the same rule.
+  await add('product_set_assignment_mismatch',
+    'A Product Set whose plan_assignment_id is not the anchor of its user_membership_id.',
+    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.user_membership_id, ps.plan_assignment_id,
+            a.anchor_id AS expected_plan_assignment_id
+       FROM product_sets ps
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
+                   GROUP BY gym_id, source_user_membership_id) a
+              ON a.gym_id = ps.gym_id AND a.um_id = ps.user_membership_id
+      WHERE NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
+      ORDER BY ps.id`);
+
   return { clean: checks.every((c) => c.count === 0), checks };
 }

@@ -292,7 +292,7 @@ export function MemberPurchasedProducts({
       mobile: 'actions',
       render: (item) => {
         const billingPath = billingEventPath(locale, item);
-        const isOneTimeDraft = item.status === 'draft' && item.source !== 'recurring';
+        const isOneTimeDraft = item.status === 'in_cart' && item.source !== 'recurring';
         const draftLineId = editableDraftLineId(item);
         return (
           <ContextMenu
@@ -388,7 +388,7 @@ export function MemberPurchasedProducts({
             const cells: Record<string, React.ReactNode> = {
               ...c,
               promotion_benefit: draftBenefit,
-              status: <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />,
+              status: <StatusBadge key="status" status="in_cart" label={t('add_product_draft_badge')} />,
             };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}

@@ -544,7 +544,7 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
          UNION ALL
          SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
            FROM product_oneoff_snapshots
-       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'in_cart'`,
       [purchaseId, gymId, memberId],
     );
     const draft = rows[0];

@@ -73,7 +73,7 @@ describe('Save persists a draft without paying', () => {
     const res = await auth(request.post(base(m))).send({ product_id: p, draft: true });
     expect(res.status).toBe(201);
     expect(res.body.kind).toBe('one_time_draft');
-    expect(await statusOf(res.body.purchaseId)).toBe('draft');
+    expect(await statusOf(res.body.purchaseId)).toBe('in_cart');
 
     const { rows } = await db.query<any>(`SELECT payment_request_id FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [res.body.purchaseId]);
     expect(rows[0].payment_request_id).toBeNull();
@@ -81,7 +81,7 @@ describe('Save persists a draft without paying', () => {
     expect(Number(events.rows[0].n)).toBe(0);
 
     const list = await auth(request.get(`/members/${m}/products`));
-    expect(list.body.items.find((i: any) => i.id === res.body.purchaseId)?.status).toBe('draft');
+    expect(list.body.items.find((i: any) => i.id === res.body.purchaseId)?.status).toBe('in_cart');
   });
 
   it('keeps one draft per Product and still offers it', async () => {
@@ -150,7 +150,7 @@ describe('Cancel hard-deletes only the draft', () => {
     const del = await auth(request.delete(`${base(m)}/${b.body.purchaseId}`));
     expect(del.status).toBe(200);
     expect(await statusOf(b.body.purchaseId)).toBeNull();
-    expect(await statusOf(a.body.purchaseId)).toBe('draft');
+    expect(await statusOf(a.body.purchaseId)).toBe('in_cart');
   });
 
   it('refuses to delete a pending or active purchase', async () => {

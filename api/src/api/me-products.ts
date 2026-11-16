@@ -59,7 +59,7 @@ import {
   type ProductPurchaseFields,
   type PurchaseBlock,
   PENDING_PURCHASE_STATUS,
-  DRAFT_PURCHASE_STATUS,
+  IN_CART_PURCHASE_STATUS,
   PURCHASE_CART_TTL_MINUTES,
   PRODUCT_PURCHASE_SOURCE,
   describeProductPurchase,
@@ -490,7 +490,7 @@ export async function writeDraftPurchase(
 ): Promise<number> {
   const { row, snapshot, price, actorName, assignedMemberId } = resolved;
   const id = await insertPurchase(tx, {
-    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
+    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: IN_CART_PURCHASE_STATUS,
     productName: snapshot.product_name, productType: snapshot.product_type,
     billingFrequency: snapshot.billing_frequency, units: snapshot.units,
     amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
@@ -522,10 +522,10 @@ export async function deletePurchaseDraft(
     if (!(await lockPurchase(tx, gymId, memberId, purchaseId))) return false;
     const { rows } = await tx.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
-      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, DRAFT_PURCHASE_STATUS],
+      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, IN_CART_PURCHASE_STATUS],
     );
     if (!rows[0]) return false;
-    await deletePurchase(tx, gymId, purchaseId, { memberId, status: DRAFT_PURCHASE_STATUS });
+    await deletePurchase(tx, gymId, purchaseId, { memberId, status: IN_CART_PURCHASE_STATUS });
     return true;
   });
 }
@@ -549,7 +549,7 @@ export async function expireStandalonePurchaseDrafts(
 ): Promise<ExpiredPurchaseDraft[]> {
   const age = `status = ? AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`;
   const predicate = scope ? `gym_id = ? AND member_id = ? AND ${age}` : age;
-  const params = scope ? [scope.gymId, scope.memberId, DRAFT_PURCHASE_STATUS] : [DRAFT_PURCHASE_STATUS];
+  const params = scope ? [scope.gymId, scope.memberId, IN_CART_PURCHASE_STATUS] : [IN_CART_PURCHASE_STATUS];
   const { rows } = await db.query<{ id: number; gym_id: string; member_id: number }>(
     `SELECT mp.id, mp.gym_id, mp.member_id FROM ${purchaseSnapshotsSql(predicate, { notInProductSet: true })} mp`,
     purchaseSnapshotParams(params),
@@ -563,10 +563,10 @@ export async function expireStandalonePurchaseDrafts(
       if (!(await lockPurchase(tx, gymId, memberId, id))) return false;
       const { rows: fresh } = await tx.query<{ id: number }>(
         `SELECT mp.id FROM ${purchaseSnapshotsSql(`gym_id = ? AND member_id = ? AND source_id = ? AND ${age}`, { notInProductSet: true })} mp`,
-        purchaseSnapshotParams([gymId, memberId, id, DRAFT_PURCHASE_STATUS]),
+        purchaseSnapshotParams([gymId, memberId, id, IN_CART_PURCHASE_STATUS]),
       );
       if (!fresh[0]) return false;
-      return deletePurchase(tx, gymId, id, { memberId, status: DRAFT_PURCHASE_STATUS });
+      return deletePurchase(tx, gymId, id, { memberId, status: IN_CART_PURCHASE_STATUS });
     }).catch((err) => { console.error(`expireStandalonePurchaseDrafts: purchase ${id} failed`, err); return false; });
     if (deleted) expired.push({ id, gymId, memberId });
   }
@@ -585,7 +585,7 @@ async function hasDraftPurchase(
     `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
       WHERE mp.product_id = ? AND mp.status = ?
       LIMIT 2`,
-    [...memberPurchaseSnapshotParams(gymId, memberId), productId, DRAFT_PURCHASE_STATUS],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId, IN_CART_PURCHASE_STATUS],
   );
   return rows.some((r) => Number(r.id) !== ignoreId);
 }
@@ -657,7 +657,7 @@ export async function startProductPurchase(
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
-        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: DRAFT_PURCHASE_STATUS });
+        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
       }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to

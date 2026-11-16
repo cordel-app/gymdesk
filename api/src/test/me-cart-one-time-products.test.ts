@@ -90,7 +90,7 @@ describe('one-time Products in the member cart', () => {
     expect(sessions.status).toBe(200);
     const oneOffId = Number(oneOff.body.purchase_id);
     const sessionsId = Number(sessions.body.purchase_id);
-    expect(await purchaseStatus(oneOffId)).toBe('draft');
+    expect(await purchaseStatus(oneOffId)).toBe('in_cart');
 
     // Nothing is charged before Pay.
     expect(Number((await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [id])).rows[0].n)).toBe(0);
@@ -128,7 +128,7 @@ describe('one-time Products in the member cart', () => {
     expect(await purchaseStatus(oneOffId)).toBe('pending_payment');
     expect((await db.transaction((tx) => returnPendingToDraft(tx, gymId, id))).kind).toBe('cancelled');
     expect(await setStatus(id)).toBe('draft');
-    expect(await purchaseStatus(oneOffId)).toBe('draft');
+    expect(await purchaseStatus(oneOffId)).toBe('in_cart');
 
     // Paid on the second try: the purchases become the member's with the set.
     expect((await as(m.clerk, 'post', `/${id}/save-and-pay`).send({})).status).toBe(201);
@@ -159,7 +159,7 @@ describe('one-time Products in the member cart', () => {
     const del = await as(m.clerk, 'delete', `/${id}/purchases/${a}`);
     expect(del.status).toBe(200);
     expect(await purchaseStatus(a)).toBeNull();
-    expect(await purchaseStatus(b)).toBe('draft');
+    expect(await purchaseStatus(b)).toBe('in_cart');
     const view = await as(m.clerk, 'get', `/${id}`);
     expect(view.body.purchases.map((p: any) => p.id)).toEqual([b]);
     expect(view.body.cart).toEqual({ plans: 0, products: 1 });

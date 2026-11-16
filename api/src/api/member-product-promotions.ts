@@ -1,6 +1,6 @@
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { assignedMemberSql } from '../domain/productAssignee';
-import { DRAFT_PURCHASE_STATUS, purchaseCartExpiresAt } from '../domain/memberProductPurchase';
+import { IN_CART_PURCHASE_STATUS, purchaseCartExpiresAt } from '../domain/memberProductPurchase';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
@@ -419,7 +419,7 @@ export async function loadMemberPurchases(
       cancelled_on: row.cancelled_on ?? null,
       validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
-      cart_expires_at: row.status === DRAFT_PURCHASE_STATUS && !Number(row.in_product_set) && row.created_at
+      cart_expires_at: row.status === IN_CART_PURCHASE_STATUS && !Number(row.in_product_set) && row.created_at
         ? purchaseCartExpiresAt(new Date(row.created_at)).toISOString() : null,
       created_by: row.created_by ?? null,
       origin: toItemOrigin(row.origin),
@@ -638,7 +638,7 @@ async function loadRecurringPurchases(
       return {
         id: -Number(row.id),
         product_id: Number(row.product_id),
-        status: 'draft' as const,
+        status: 'in_cart' as const, // #2949 stage 1: a line of the open Draft reads In Cart, like a one-time purchase
         product_name: row.item_name,
         product_type: row.item_type,
         billing_frequency: row.item_billing_frequency ?? null,

@@ -59,7 +59,7 @@ import { DRAFT_TTL_MINUTES } from './productSet';
 export const PRODUCT_PURCHASE_SOURCE = 'product_purchase';
 
 /** What `member_products_oneoff_snapshot.status` may hold, mirrored by `chk_mprod_status`. */
-export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled', 'draft'] as const;
+export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled', 'in_cart'] as const;
 export type MemberProductStatus = (typeof MEMBER_PRODUCT_STATUSES)[number];
 
 /** #799's actor snapshot, mirrored by `chk_mprod_created_by_type`. */
@@ -69,8 +69,9 @@ export type PurchaseActorType = (typeof PURCHASE_ACTOR_TYPES)[number];
 /**
  * #1657 stage 2 — a one-time Product staff saved without paying. It has no
  * payment request, never blocks the pending key and is invisible to the member.
+ * #2949 stage 1: stored as `in_cart` (it was `draft`), shown as **In Cart**.
  */
-export const DRAFT_PURCHASE_STATUS: MemberProductStatus = 'draft';
+export const IN_CART_PURCHASE_STATUS: MemberProductStatus = 'in_cart';
 
 /**
  * #2962 — how long a standalone one-time Product stays in the cart (a staff

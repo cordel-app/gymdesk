@@ -81,9 +81,6 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
           <TotalRow label={t('checkout_total_discounts')} value={`−${money(payment.discount_total)}`} />
         </>}
         <TotalRow label={t('checkout_subtotal_excl_vat')} value={money(payment.subtotal_excl_tax)} />
-        {payment.taxes.map((r) => (
-          <TotalRow key={String(r.rate_percent)} label={t('checkout_tax_at_rate', { rate: r.rate_percent ?? 0, base: money(r.base) })} value={money(r.tax)} />
-        ))}
         <TotalRow label={t('checkout_total_vat')} value={money(payment.tax_total)} />
         <TotalRow strong label={t('checkout_total_initial_payment')} value={money(payment.total)} />
       </div>

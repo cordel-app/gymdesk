@@ -101,6 +101,45 @@ export async function syncPaymentRequestAssignmentIds(exec: Exec, gymId: string,
   }
 }
 
+/**
+ * #2125 M6b-36 — the SET clause that keeps `product_sets.plan_assignment_id` (migration 432) equal to
+ * the anchor of the set's `user_membership_id`, written by every writer of that column **after** it in
+ * the same single-table UPDATE (MySQL assigns left to right, so the subquery reads the new value). An
+ * unaliased `product_sets` is required. None where the set names no assignment or no snapshot names it
+ * yet; `syncProductSetAssignmentIds()` fills it once one does.
+ */
+export const PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL =
+  `plan_assignment_id = (SELECT MIN(pa_anchor.id) FROM plan_snapshots pa_anchor
+                          WHERE pa_anchor.gym_id = product_sets.gym_id
+                            AND pa_anchor.source_user_membership_id = product_sets.user_membership_id)`;
+
+/**
+ * #2125 M6b-36 — keeps `product_sets.plan_assignment_id` in step with `user_membership_id`, the source
+ * of truth until the readers move, by the rule the two columns above use: the given sets, and every
+ * set naming one of the given assignments, take that assignment's anchor (none where it has none).
+ * Called by `syncPlanAssignment()`, which covers an anchor that appears after the set was linked (a
+ * Draft links its assignment before the sync names it on a snapshot). Nothing reads the column yet;
+ * `plan-assignments:validate` reports drift (`product_set_assignment_mismatch`).
+ */
+export async function syncProductSetAssignmentIds(
+  exec: Exec, gymId: string, productSetIds: number[], userMembershipIds: number[] = [],
+): Promise<void> {
+  const sets = [...new Set(productSetIds)];
+  const ums = [...new Set(userMembershipIds)];
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (sets.length > 0) { clauses.push(`id IN (${sets.map(() => '?').join(',')})`); params.push(...sets); }
+  if (ums.length > 0) { clauses.push(`user_membership_id IN (${ums.map(() => '?').join(',')})`); params.push(...ums); }
+  if (clauses.length === 0) return;
+  // The comparison repeats the subquery rather than naming the column, so a set already in step is not
+  // written (its row lock is not taken by a re-sync that changes nothing).
+  const anchor = PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL.replace(/^plan_assignment_id = /, '');
+  await exec.query(
+    `UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL}
+      WHERE gym_id = ? AND (${clauses.join(' OR ')}) AND NOT (plan_assignment_id <=> ${anchor})`,
+    [gymId, ...params]);
+}
+
 /** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
 export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
   if (userMembershipId == null) return null;
@@ -127,11 +166,15 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
        LEFT JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    await syncProductSetAssignmentIds(tx, gymId, [productSetId]);
+    return;
+  }
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
   const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
   await syncPromotionAssignmentIds(tx, gymId, umIds);
   await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
+  await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
   const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
