@@ -21,7 +21,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { serviceChoices, defaultChoice, selectionMissing, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, isFamilyOnlyBooking, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
@@ -94,7 +94,7 @@ export default function MemberSchedulePage() {
   const dayKey = (iso: string) => formatGymDate(iso, { ...gymFormat, date_format: 'YYYY-MM-DD' });
   const dayLabel = (iso: string) => formatGymDate(iso, gymFormat);
   const timeOnly = (iso: string) => formatGymTime(iso, gymFormat);
-  const [confirmCancel, setConfirmCancel] = useState<{ bookingId: number; sessionId: number } | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<{ bookingId: number; sessionId: number; family?: boolean } | null>(null);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -383,7 +383,7 @@ export default function MemberSchedulePage() {
                             }}
                             busy={pendingSession === s.id}
                             onClose={close}
-                            onCancel={(bookingId) => { close(); setConfirmCancel({ bookingId, sessionId: s.id }); }}
+                            onCancel={(bookingId) => { close(); setConfirmCancel({ bookingId, sessionId: s.id, family: isFamilyOnlyBooking(s.professional_services, s.my_professional_service_id) }); }}
                           />
                         )}
                       >
@@ -480,7 +480,7 @@ export default function MemberSchedulePage() {
                   {controlsShown && (
                   <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
-                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id })}>
+                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id, family: isFamilyOnlyBooking(s.professional_services, s.my_professional_service_id) })}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
                       </button>
                     ) : myStatus && s.my_booking_id && cancellationNoticeKey(s) ? (
@@ -588,6 +588,7 @@ export default function MemberSchedulePage() {
       {confirmCancel && (
         <CancelBookingConfirmDialog
           busy={pendingSession === confirmCancel.sessionId}
+          familyBooking={!!confirmCancel.family}
           onClose={() => setConfirmCancel(null)}
           onConfirm={async () => {
             const target = confirmCancel;

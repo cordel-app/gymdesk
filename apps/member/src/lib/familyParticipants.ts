@@ -102,3 +102,17 @@ export function toggleParticipant(
   const order = addableMembers(bookerId, family, []).map((m) => m.member_id);
   return order.filter((m) => next.includes(m));
 }
+
+/**
+ * #2901: whether the member's booking is of a `family_only` service — its
+ * cancellation cancels the booking for every family member attending, so the
+ * confirmation says so. Read off the event's own services and the service the
+ * booking names; the API is what cancels the family's bookings.
+ */
+export function isFamilyOnlyBooking(
+  services: { id: number; booking_type?: string | null }[] | null | undefined,
+  bookedServiceId: number | null | undefined,
+): boolean {
+  if (bookedServiceId == null) return false;
+  return (services ?? []).some((s) => Number(s.id) === Number(bookedServiceId) && s.booking_type === 'family_only');
+}
