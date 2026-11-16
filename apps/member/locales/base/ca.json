@@ -474,6 +474,10 @@
     "promotion_duration_cycles": "{count, plural, one {# cicle de facturació} other {# cicles de facturació}}",
     "promotion_unavailable_error": "Aquesta promoció ja no està disponible per a aquest producte. Comprova el preu de nou.",
     "download_receipt": "Descarregar rebut",
+    "document_receipt": "Rebut",
+    "document_simplified_invoice": "Factura simplificada",
+    "document_full_invoice": "Factura",
+    "document_refund_receipt": "Rebut de reemborsament",
     "status": {
       "active": "Activa",
       "paused": "Pausada",
