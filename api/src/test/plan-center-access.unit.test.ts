@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCenterAccess, centerAllowed, onlineAllowed, parseCenterAccessInput } from '../domain/planCenterAccess';
+import { resolveCenterAccess, centerAllowed, onlineAllowed, parseCenterAccessInput, allCentersScope } from '../domain/planCenterAccess';
 
 describe('resolveCenterAccess (#2383)', () => {
   it('specific centers grant only the selected ones', () => {
@@ -83,5 +83,22 @@ describe('#2420 On-line mode', () => {
   });
   it('accepts online as a mode', () => {
     expect(parseCenterAccessInput({ center_access_mode: 'online' })).toEqual({ mode: 'online', centerIds: [], online: null });
+  });
+});
+
+describe('allCentersScope (#2953)', () => {
+  it('no live plan or an All Centers plan restricts nothing', () => {
+    expect(allCentersScope([], 5)).toBeNull();
+    expect(allCentersScope([{ mode: 'all_centers', centerIds: [] }, { mode: 'specific_centers', centerIds: [1] }], null)).toBeNull();
+  });
+  it('unions the physical centers the plans grant, default center included', () => {
+    expect(allCentersScope([
+      { mode: 'specific_centers', centerIds: [3, 1] },
+      { mode: 'member_default_center', centerIds: [] },
+    ], 2)).toEqual([1, 2, 3]);
+  });
+  it('an On-line-only member spans no physical center', () => {
+    expect(allCentersScope([{ mode: 'online', centerIds: [] }], 4)).toEqual([]);
+    expect(allCentersScope([{ mode: 'specific_centers', centerIds: [], online: true }], null)).toEqual([]);
   });
 });
