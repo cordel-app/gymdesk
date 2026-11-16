@@ -258,7 +258,9 @@
     "cancel_unavailable_title": "Cancellation unavailable.",
     "cancel_unavailable_service": "Bookings for professional services cannot be cancelled less than 24 hours before the event starts.",
     "cancel_unavailable_generic": "Bookings cannot be cancelled less than 24 hours before the event starts.",
-    "buy": "Buy"
+    "buy": "Buy",
+    "show_booking_options": "Show booking options",
+    "hide_booking_options": "Hide booking options"
   },
   "member_calendar": {
     "filter_all": "All",

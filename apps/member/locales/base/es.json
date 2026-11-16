@@ -258,7 +258,9 @@
     "cancel_unavailable_title": "Cancelación no disponible.",
     "cancel_unavailable_service": "Las reservas de servicios profesionales no se pueden cancelar con menos de 24 horas de antelación al inicio del evento.",
     "cancel_unavailable_generic": "Las reservas no se pueden cancelar con menos de 24 horas de antelación al inicio del evento.",
-    "buy": "Comprar"
+    "buy": "Comprar",
+    "show_booking_options": "Mostrar opciones de reserva",
+    "hide_booking_options": "Ocultar opciones de reserva"
   },
   "member_calendar": {
     "filter_all": "Todos",

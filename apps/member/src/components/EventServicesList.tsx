@@ -40,13 +40,26 @@ export interface ServiceChooser {
   onChoose: (id: number) => void;
 }
 
-export function EventServicesList({ services, bookedId = null, choose = null }: {
+export function EventServicesList({ services, bookedId = null, choose = null, collapsed = false }: {
   services: EventService[] | null | undefined;
   bookedId?: number | null;
   choose?: ServiceChooser | null;
+  /** #2904 — only the heading: the choices stay folded until the card is expanded. */
+  collapsed?: boolean;
 }) {
   const t = useTranslations('event_services');
   if (!services || services.length === 0) return null;
+  if (collapsed) {
+    // No stopPropagation: a click on the heading reaches the card and expands it.
+    return (
+      <div style={styles.wrap}>
+        <div style={styles.title}>
+          <ActivityMetaIcon name="service" size={15} />
+          <span>{t('title')}</span>
+        </div>
+      </div>
+    );
+  }
   if (bookedId != null) {
     const used = services.find((s) => s.id === bookedId);
     if (used) services = [used]; else bookedId = null;
