@@ -121,19 +121,15 @@ describe('Promotions only on a plan added in the Draft (#1863)', () => {
     const memberId = await createMember('IDP Reapply');
     const umId = await createTestDraftAssignment(gymId, memberId, planId, { config: { base_price: 100 } });
     expect((await apply(umId, promoId)).status).toBe(201);
+    // #2880: removing it from a Draft deletes the reference, so the spent
+    // application is one revoked on the running plan.
+    await activateTestAssignment(gymId, umId);
     const revoked = await request
       .delete(`/user-memberships/${umId}/promotions/${promoId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(revoked.status).toBeLessThan(300);
 
-    const onDraft = await request
-      .get(`/user-memberships/${umId}/promotions`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(onDraft.body[0].can_reapply).toBe(true);
-
-    await activateTestAssignment(gymId, umId);
     const onActive = await request
       .get(`/user-memberships/${umId}/promotions`)
       .set('Authorization', TEST_AUTH_HEADER)
