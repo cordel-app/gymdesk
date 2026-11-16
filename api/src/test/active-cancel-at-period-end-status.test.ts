@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, legacyAssignmentQuery, request,
+  snapshotTestAssignment,
 } from './helpers';
 import { ASSIGNMENT_STATUSES, CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 
@@ -34,6 +35,8 @@ async function createAssignment(memberId: number, status: string, startsAt: stri
      VALUES (?, ?, ?, ?, ?, ?, 40)`,
     [gymId, memberId, planId, status, startsAt, endsAt],
   );
+  // #2125 M6b-31: the Member card's plan history reads the assignment's current plan snapshot.
+  await snapshotTestAssignment(insertId);
   return insertId;
 }
 

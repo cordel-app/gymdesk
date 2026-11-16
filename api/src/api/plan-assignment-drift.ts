@@ -14,6 +14,7 @@
  * snapshot) or a change made before that stage (`npm run plan-assignments:settle`).
  */
 import { assignmentPlanSnapshotId } from './assignment-config';
+import { assignmentModifierSql } from '../domain/planAssignments';
 
 type Exec = { query: <T = any>(sql: string, params?: any[]) => Promise<{ rows: T[] }> };
 
@@ -110,6 +111,20 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
        FROM user_memberships um
        JOIN plan_snapshots cfg ON cfg.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}
       WHERE (${anyDiffers})${scope('um')}
+      ORDER BY um.id`);
+
+  // #2125 M6b-31: the Member card's plan history reports the latest modifier across the
+  // assignment's snapshots (`assignmentModifierSql()`), so that is what is compared, never one
+  // snapshot's own pair (a shared snapshot keeps the modifier it was written with).
+  await add('modifier_mismatch',
+    'An assignment whose latest snapshot modifier differs from the user_memberships row.',
+    `SELECT um.id AS user_membership_id, um.gym_id, pa.assignment_id,
+            um.modified_by AS assignment_modified_by, ${assignmentModifierSql('modified_by')} AS snapshot_modified_by
+       FROM user_memberships um
+       JOIN plan_snapshots pa ON pa.id = (SELECT MIN(x.id) FROM plan_snapshots x
+                                           WHERE x.source_user_membership_id = um.id AND x.gym_id = um.gym_id)
+      WHERE (${differs('um.modified_at', assignmentModifierSql('modified_at'))}
+             OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
       ORDER BY um.id`);
 
   return { clean: checks.every((c) => c.count === 0), checks };

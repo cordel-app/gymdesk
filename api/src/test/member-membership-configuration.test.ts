@@ -27,7 +27,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -104,6 +104,8 @@ async function createAssignment(
   );
   // #1325 PR 3c: the next billing date is the ProductSet's scheduled event.
   if (nextBillingDate) await seedScheduledEvent(gymId, memberId, insertId, nextBillingDate);
+  // #2125 M6b-31: the plan history reads the assignment's current plan snapshot.
+  await snapshotTestAssignment(insertId);
   return insertId;
 }
 
@@ -781,6 +783,7 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH, created_at = ? WHERE id = ?',
       ['2022-01-01 09:00:00', lapsedUm],
     );
+    await snapshotTestAssignment(lapsedUm);
     const rejoinUm = await createAssignment(gymId, memberId, newPlan, { startsAt: '2026-09-01' });
 
     const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
