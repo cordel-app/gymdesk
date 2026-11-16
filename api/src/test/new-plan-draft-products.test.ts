@@ -99,6 +99,11 @@ describe('adding a recurring Product to a new-plan Draft (#2891)', () => {
     expect(events).toHaveLength(0);
 
     // A second add is an edit of that same Draft.
+    // Past the duplicate-submission window, so the second add is a purchase of its own.
+    await db.query(
+      `UPDATE product_periodical_snapshots s
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = s.id
+         SET s.created_at = s.created_at - INTERVAL 1 MINUTE WHERE lnk.product_set_id = ?`, [draftId]);
     const again = await auth(request.post(`/members/${memberId}/product-purchases`)).send({ product_id: productId });
     expect(again.status).toBe(201);
     expect(again.body.product_set_id).toBe(draftId);
