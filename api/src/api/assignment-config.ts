@@ -89,7 +89,7 @@ export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
 
 import { db } from '../infra/db';
-import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { currentAssignmentSnapshotSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 
 const OVERLAID: AssignmentConfigColumn[] = [
   'membership_fee_price', 'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at',
@@ -101,7 +101,9 @@ const OVERLAID: AssignmentConfigColumn[] = [
 /**
  * Overlays the version's configuration onto assignment rows read as `um.*`
  * (a list is a derived table, which cannot carry a column twice, so the
- * overlay is a second, batched read — one statement for a whole page).
+ * overlay is a second, batched read — one statement for a whole page). Since #2125 M6b-20 the
+ * assignment is read from its current plan snapshot (`GYM_ASSIGNMENT_ROWS_SQL`), never
+ * `user_memberships`; a row with no snapshot keeps the values it was read with.
  */
 export async function withAssignmentConfig<T extends { id: number | string }>(
   gymId: string, rows: T[],
@@ -110,8 +112,8 @@ export async function withAssignmentConfig<T extends { id: number | string }>(
   const ids = rows.map((r) => Number(r.id));
   const { rows: cfgRows } = await db.query<any>(
     `SELECT um.id, ${OVERLAID.map((c) => `${assignmentConfig(c)} AS ${c}`).join(', ')}
-       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
-      WHERE um.gym_id = ? AND um.id IN (${ids.map(() => '?').join(',')})`,
+       FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
+      WHERE um.id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
   );
   const byId = new Map<number, any>(cfgRows.map((r) => [Number(r.id), r]));

@@ -9,6 +9,7 @@ import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { PlanDurationStatus, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { PromotionTimelineStatus } from '../domain/promotionTimeline';
 
 /**
@@ -73,9 +74,13 @@ export const FEE_ASSIGNMENT_COLUMNS = `
    OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
   ) AS has_billing_snapshot`;
 
-/** The FROM/JOIN `FEE_ASSIGNMENT_COLUMNS` resolves against. */
+/**
+ * The FROM/JOIN `FEE_ASSIGNMENT_COLUMNS` resolves against. Since #2125 M6b-20 the assignment is
+ * read from its current plan snapshot (`GYM_ASSIGNMENT_ROWS_SQL`, `id` the legacy id the callers
+ * still name), never `user_memberships`. Binds one `?` first: the gym id.
+ */
 export const FEE_ASSIGNMENT_FROM = `
-  FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+  FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
   LEFT JOIN billing_policies bp
          ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id`;
@@ -325,8 +330,8 @@ async function priceWithApplications(
 export async function loadFeeAssignment(gymId: string, umId: number): Promise<FeeAssignmentRow | null> {
   const { rows } = await db.query<FeeAssignmentRow>(
     `SELECT ${FEE_ASSIGNMENT_COLUMNS} ${FEE_ASSIGNMENT_FROM}
-      WHERE um.id = ? AND um.gym_id = ?`,
-    [umId, gymId],
+      WHERE um.id = ?`,
+    [gymId, umId],
   );
   return rows[0] ?? null;
 }
@@ -338,7 +343,7 @@ export async function loadFeeAssignments(gymId: string, umIds: number[]): Promis
   if (ids.length === 0) return out;
   const { rows } = await db.query<FeeAssignmentRow>(
     `SELECT ${FEE_ASSIGNMENT_COLUMNS} ${FEE_ASSIGNMENT_FROM}
-      WHERE um.gym_id = ? AND um.id IN (${ids.map(() => '?').join(',')})`,
+      WHERE um.id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
   );
   for (const row of rows) out.set(Number(row.id), row);
