@@ -1,6 +1,7 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentConfigSnapshotId } from './assignment-config';
+import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
@@ -294,6 +295,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
 export async function loadAssignedPlanSnapshot(
   gymId: string, umId: number,
 ): Promise<AssignedPlanSnapshot> {
+  // #2125 M6b-21: the assignment is read from its current plan snapshot, never `user_memberships`.
   const [{ rows: umRows }, ...benefitResults] = await Promise.all([
     db.query(
       `SELECT ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods,
@@ -304,8 +306,8 @@ export async function loadAssignedPlanSnapshot(
               ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action,
               ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
               ${assignmentConfig('auto_renew')} AS auto_renew
-       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ? AND um.gym_id = ?`,
-      [umId, gymId],
+       FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ?`,
+      [gymId, umId],
     ),
     ...CATEGORIES.map((category) => db.query(
       selectSnapshotSection(PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]),
@@ -418,16 +420,17 @@ export async function loadPlanBenefitsForSimulation(
 
   const ids = assignments.map((a) => a.id);
   const marks = ids.map(() => '?').join(',');
+  // #2125 M6b-21: each arm binds the gym id (`GYM_ASSIGNMENT_ROWS_SQL`) then the legacy ids.
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, um.id AS user_membership_id, b.product_id, b.quantity,
              b.item_name, b.item_billing_frequency, b.unit_price, b.\`action\`, b.\`value\`,
              b.direct_discount_percent, b.assigned_member_id,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
-      FROM user_memberships um
+      FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
       JOIN ${PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category]} b
         ON b.plan_snapshot_id = ${assignmentConfigSnapshotId('um.id', 'um.gym_id')} AND b.gym_id = um.gym_id
-      WHERE um.gym_id = ? AND um.id IN (${marks})`).join(' UNION ALL '),
+      WHERE um.id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
   );
   for (const row of rows as any[]) {
