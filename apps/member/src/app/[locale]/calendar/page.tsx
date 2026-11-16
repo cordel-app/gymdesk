@@ -707,7 +707,7 @@ export default function MemberCalendarPage() {
                 onSelfChange={setBookerAttends}
               />
             )}
-            {unlockServiceIds.length > 0 && bookingAction(serviceChoiceList) !== 'buy' && (
+            {unlockServiceIds.length > 0 && bookingAction(serviceChoiceList, chosenServiceId) !== 'buy' && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
                 style={{ ...actionBtn(), marginBottom: 12 }}
@@ -720,19 +720,19 @@ export default function MemberCalendarPage() {
               <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>{t('select_service_validation')}</p>
             )}
             {/* #2605 §3 / #2848: no unit to book — the explanation stands where the action was. */}
-            {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'buy' && (
+            {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList, chosenServiceId) === 'buy' && (
               <p role="alert" style={{ color: memberTheme.statusError, fontSize: 13, margin: '0 0 8px' }}>
-                {t(zeroBalanceReason(serviceChoiceList) === 'all_booked' ? 'no_available_balance' : 'no_balance')}
+                {t(zeroBalanceReason(serviceChoiceList, chosenServiceId) === 'all_booked' ? 'no_available_balance' : 'no_balance')}
               </p>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'buy' && (
+              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList, chosenServiceId) === 'buy' && (
                 /* #2848 §2/§3: Buy replaces Book and opens the Add Product catalogue narrowed to these services. */
-                <button onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(serviceChoiceList))}`)} style={actionBtn()}>
+                <button onClick={() => router.push(`/${locale}${productsPathForServices(buyServiceIds(serviceChoiceList, chosenServiceId))}`)} style={actionBtn()}>
                   {t('action_buy')}
                 </button>
               )}
-              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList) === 'book' && (
+              {selected.availability_state === 'AVAILABLE' && bookingAction(serviceChoiceList, chosenServiceId) === 'book' && (
                 <button onClick={book} disabled={actionLoading || groupInvalid} style={actionBtn()}>
                   {t('action_book')}
                 </button>

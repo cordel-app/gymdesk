@@ -31,7 +31,8 @@ const SIZE = 40;
 /**
  * #2587 — `bookedId` shows only the service the member's booking used, with a
  * `Booked` chip; `choose` makes each row a selectable option with its balance
- * (a zero balance is disabled) and the validation line above the action.
+ * and the validation line above the action. A zero balance stays selectable
+ * (#2848 stage 2): choosing it is how the member reaches Buy for that service.
  */
 export interface ServiceChooser {
   choices: ServiceChoice[];
@@ -88,7 +89,7 @@ export function EventServicesList({ services, bookedId = null, choose = null }: 
             <span style={styles.name}>{s.name}</span>
             {bookedId != null && <span style={styles.chip}>{t('booked')}</span>}
             {choice ? (
-              <span style={styles.capacity}>{choice.balance == null ? '' : t('balance', { n: choice.balance })}</span>
+              <span style={{ ...styles.capacity, ...(choice.disabled ? styles.balanceZero : null) }}>{choice.balance == null ? '' : t('balance', { n: choice.balance })}</span>
             ) : (
               <span style={styles.capacity}>{t('capacity', { n: s.capacity })}</span>
             )}
@@ -100,14 +101,12 @@ export function EventServicesList({ services, bookedId = null, choose = null }: 
             key={s.id}
             role="radio"
             aria-checked={selected}
-            aria-disabled={choice.disabled}
-            tabIndex={choice.disabled ? -1 : 0}
-            onClick={() => { if (!choice.disabled) choose.onChoose(s.id); }}
-            onKeyDown={(e) => { if (!choice.disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose.onChoose(s.id); } }}
+            tabIndex={0}
+            onClick={() => choose.onChoose(s.id)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose.onChoose(s.id); } }}
             style={{
               ...styles.row, ...styles.option,
               ...(selected ? styles.optionSelected : null),
-              ...(choice.disabled ? styles.optionDisabled : null),
             }}
           >
             {rowEl}
@@ -130,6 +129,6 @@ const styles: Record<string, React.CSSProperties> = {
   chip: { flex: '0 0 auto', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: memberTheme.pageBackground, color: memberTheme.textSecondary, border: `1px solid ${memberTheme.separator}` },
   option: { padding: 8, borderRadius: 10, border: `1px solid ${memberTheme.separator}`, cursor: 'pointer' },
   optionSelected: { borderColor: memberTheme.primaryButton, boxShadow: `0 0 0 2px ${memberTheme.primaryButton}` },
-  optionDisabled: { opacity: 0.5, cursor: 'not-allowed' },
+  balanceZero: { color: memberTheme.statusError },
   capacity: { flex: '0 0 auto', fontSize: 13, color: memberTheme.textSecondary, whiteSpace: 'nowrap' },
 };
