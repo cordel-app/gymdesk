@@ -6,7 +6,7 @@ import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
-  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks,
+  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks, refundReceiptMenuEntries,
 } from '../app/[locale]/payments/billing-events/receiptsInvoicesView';
 import type { InvoiceRow } from '../app/[locale]/payments/billing-events/verifactuInvoiceView';
 
@@ -96,5 +96,20 @@ describe('Receipts & Invoices section', () => {
     expect(fullInvoiceFormError({ customer_name: 'A', customer_tax_id: '', customer_address: 'x' })).toBe('full_inv_tax_id_required');
     expect(fullInvoiceFormError({ customer_name: 'A', customer_tax_id: 'B1', customer_address: '' })).toBe('full_inv_address_required');
     expect(fullInvoiceFormError({ customer_name: 'A', customer_tax_id: 'B1', customer_address: 'C' })).toBeNull();
+  });
+});
+
+describe('refundReceiptMenuEntries (#2935)', () => {
+  it('offers nothing when the event has no Refund Receipt', () => {
+    expect(refundReceiptMenuEntries(undefined)).toEqual([]);
+    expect(refundReceiptMenuEntries([])).toEqual([]);
+  });
+
+  it('offers one plain entry for a single refund and numbered entries for several', () => {
+    expect(refundReceiptMenuEntries([{ id: 7, receipt_number: 'R-2026-0001' }]))
+      .toEqual([{ id: 7, labelKey: 'view_refund_receipt', number: 'R-2026-0001' }]);
+    expect(refundReceiptMenuEntries([
+      { id: 7, receipt_number: 'R-2026-0001' }, { id: 9, receipt_number: 'R-2026-0002' },
+    ]).map((e) => [e.id, e.labelKey])).toEqual([[7, 'view_refund_receipt_numbered'], [9, 'view_refund_receipt_numbered']]);
   });
 });
