@@ -98,6 +98,30 @@ export interface MemberBillingEvent {
   payment_method_name?: string | null;
   /** #1123 §4 — derived by the API's one implementation, never here. */
   status: MemberBillingEventStatus;
+  /** #2936 — the latest stored document of each kind; absent kinds are not listed. */
+  documents?: MemberPaymentDocument[];
+}
+
+/** #2936 — one downloadable document of a payment, as `GET /me/billing-events` reports it. */
+export type MemberPaymentDocumentKind = 'receipt' | 'simplified_invoice' | 'full_invoice' | 'refund_receipt';
+export interface MemberPaymentDocument {
+  kind: MemberPaymentDocumentKind;
+  id: number;
+  number: string;
+}
+
+/** The API path a document is downloaded from; the server re-checks ownership. */
+export function paymentDocumentPath(doc: MemberPaymentDocument): string {
+  switch (doc.kind) {
+    case 'receipt': return `/me/receipts/${doc.id}`;
+    case 'refund_receipt': return `/me/refund-receipts/${doc.id}/pdf`;
+    default: return `/me/invoices/${doc.id}/pdf`;
+  }
+}
+
+/** The locale key naming a document kind. */
+export function paymentDocumentLabelKey(kind: MemberPaymentDocumentKind): string {
+  return `membership.document_${kind}`;
 }
 
 /** Past Billing Events, grouped the way the forecast groups its own: by date. */

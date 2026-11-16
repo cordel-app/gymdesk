@@ -474,6 +474,10 @@
     "promotion_duration_cycles": "{count, plural, one {# billing cycle} other {# billing cycles}}",
     "promotion_unavailable_error": "This promotion is no longer available for this product. Please check the price again.",
     "download_receipt": "Download receipt",
+    "document_receipt": "Receipt",
+    "document_simplified_invoice": "Simplified invoice",
+    "document_full_invoice": "Invoice",
+    "document_refund_receipt": "Refund receipt",
     "status": {
       "active": "Active",
       "paused": "Paused",

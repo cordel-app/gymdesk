@@ -49,6 +49,10 @@ import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { receiptPdf } from './receipt-documents';
+import { refundReceiptPdf } from './refund-receipts';
+import { loadMemberPaymentDocuments, ownEventOfDocument } from './member-payment-documents';
+import { invoiceKeyColumn, type InvoiceType } from '../domain/billingDocumentKeys';
+import { getPrivateDocument } from '../infra/private-storage';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { localizedDescriptionSql } from '../domain/nutritionDescriptionTranslations';
@@ -3052,9 +3056,12 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
        ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
+    // #2936 — the latest stored document of each kind, for the download actions.
+    const documents = await loadMemberPaymentDocuments(gymId, rows);
     const items = rows.map(({ latest_tx_status, ...row }) => ({
       ...row,
       status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
+      documents: documents.get(Number(row.id)) ?? [],
     }));
     res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
@@ -3354,6 +3361,8 @@ meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureE
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #2936: documents are part of the Payments tab, which is the Family Owner's (#2776).
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
     const { rows: evRows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
               ct.code AS charge_type_code, m.name AS member_name
@@ -3382,6 +3391,64 @@ meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureE
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="recibo-${ev.receipt_number}.pdf"`);
     res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #2936 — the member downloads the latest stored invoice of one of their own
+// Billing Events. Only the invoice `memberPaymentDocuments()` offers for that
+// event is served (a replaced or superseded one is a 404), from its stored
+// representation (paid, else not-paid); nothing is issued or rendered here.
+meRouter.get('/invoices/:id/pdf', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const invoiceId = parseInt(String(req.params.id), 10);
+  if (!invoiceId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const event = await ownEventOfDocument(gymId, memberId, 'invoices', invoiceId);
+    if (!event) return res.status(404).json({ error: 'Not found' });
+    const offered = (await loadMemberPaymentDocuments(gymId, [event])).get(event.id) ?? [];
+    if (!offered.some((d) => (d.kind === 'simplified_invoice' || d.kind === 'full_invoice') && d.id === invoiceId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const { rows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [invoiceId, gymId]);
+    const inv = rows[0];
+    const type = inv.invoice_type as InvoiceType;
+    const key: string | null = inv[invoiceKeyColumn(type, 'paid')] ?? inv[invoiceKeyColumn(type, 'not-paid')];
+    if (!key) return res.status(404).json({ error: 'Not found' });
+    const doc = await getPrivateDocument(key);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="factura-${inv.fiscal_number}.pdf"`);
+    res.send(doc.body);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #2936 — the member downloads the latest Refund Receipt of one of their own
+// Billing Events (#2935). Only the one offered for that event is served.
+meRouter.get('/refund-receipts/:id/pdf', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const refundReceiptId = parseInt(String(req.params.id), 10);
+  if (!refundReceiptId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const event = await ownEventOfDocument(gymId, memberId, 'refund_receipts', refundReceiptId);
+    if (!event) return res.status(404).json({ error: 'Not found' });
+    const offered = (await loadMemberPaymentDocuments(gymId, [event])).get(event.id) ?? [];
+    if (!offered.some((d) => d.kind === 'refund_receipt' && d.id === refundReceiptId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const result = await refundReceiptPdf(gymId, refundReceiptId);
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="reembolso-${result.receiptNumber}.pdf"`);
+    res.send(result.pdf);
   } catch (err) {
     next(err);
   }
