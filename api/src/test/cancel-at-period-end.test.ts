@@ -5,8 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
-  createTestGym, createTestMembership, request,
-} from './helpers';
+  createTestGym, createTestMembership, request, snapshotTestAssignment } from './helpers';
 import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
 
 const SECRET = 'test-billing-secret-2659';
@@ -98,6 +97,7 @@ describe('cancelling a projected plan', () => {
     const m = await member();
     const um = await assign(m);
     await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [um]);
+    await snapshotTestAssignment(um); // #2125 M6b-27: the bridge reads the plan snapshot
     expect((await cancel(um)).status).toBe(204);
     expect((await stored(um)).status).toBe('cancelled');
   });
