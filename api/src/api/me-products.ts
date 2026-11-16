@@ -73,6 +73,7 @@ import {
   loadAppliedPromotions,
   loadPromotionOffers,
 } from './member-product-promotions';
+import { productPurchaseEventNameFor } from './billing-event-name';
 
 /**
  * A catalogue row plus what this member has done about it (stage 2, §6) and
@@ -637,11 +638,14 @@ export async function startProductPurchase(
       // has an event and the webhook settles it instead of inserting one. It
       // belongs to no ProductSet and no assignment — a one-off purchase sits
       // outside the version chain — so both keys stay NULL.
+      // #2940: a one-time purchase is named for its Product.
+      const eventName = await productPurchaseEventNameFor(
+        tx, input.gymId, snapshot.product_name, new Date().toISOString().slice(0, 10));
       const { insertId: billingEventId } = await tx.query(
         `INSERT INTO billing_events
-           (gym_id, member_id, payer_member_id, event_type, amount, charge_type_id, source, created_by)
-         VALUES (?, ?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
-        [input.gymId, input.memberId, payer.payerMemberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
+           (gym_id, member_id, payer_member_id, event_type, name, amount, charge_type_id, source, created_by)
+         VALUES (?, ?, ?, 'product_purchase', ?, ?, ?, 'provider', ?)`,
+        [input.gymId, input.memberId, payer.payerMemberId, eventName, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
       );
       await tx.query(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,

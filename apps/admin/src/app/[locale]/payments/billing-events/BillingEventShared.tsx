@@ -57,10 +57,21 @@ export interface BillingEventHeaderRow {
   refund_receipts?: { id: number; receipt_number: string }[];
 }
 
+/**
+ * #2940: what a Billing Event is called — its generated `name`, or, for an event
+ * written before names existed, the plan name it was shown under until then. The
+ * name itself is the API's (`domain/billingEventName.ts`); nothing here decides it.
+ */
+export function billingEventDisplayName(row: { name?: string | null; plan_name?: string | null }): string {
+  return row.name ?? row.plan_name ?? '—';
+}
+
 /** The fields a row of the shared Billing Events table reads. */
 export interface BillingEventsTableRow extends BillingEventHeaderRow {
   type?: 'real' | 'virtual';
   plan_name?: string | null;
+  /** #2940: the event's generated name; null for an event written before it. */
+  name?: string | null;
   billing_date: string;
   created_at: string | null;
 }
@@ -97,7 +108,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
           <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
             <th style={{ ...th, width: 32 }} />
             <th style={th}>{t('billing_events_page.col_member')}</th>
-            <th style={th}>{t('billing_events_page.col_plan')}</th>
+            <th style={th}>{t('billing_events_page.col_event_name')}</th>
             <th style={th}>{t('billing_events_page.header_method')}</th>
             <th style={{ ...th, textAlign: 'right' }}>{t('billing_events_page.header_attempts')}</th>
             <th style={th}>{t('billing_events_page.col_date')}</th>
@@ -135,7 +146,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
                     {isExpandable ? (isExpanded ? '▾' : '▸') : null}
                   </td>
                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
-                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{billingEventDisplayName(row)}</td>
                   <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.attempt_count ?? 0}</td>
                   <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gym)}</td>

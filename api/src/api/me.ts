@@ -3043,7 +3043,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // would let the member's Payments card call an event paid that the
     // Payments dashboard calls failed.
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.event_type, be.previous_status, be.new_status,
+      `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
               be.amount, be.notes, be.created_at, be.receipt_number, be.cancelled_at,
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
