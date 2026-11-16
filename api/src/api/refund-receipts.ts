@@ -54,8 +54,10 @@ export async function issueRefundReceipt(
     return { id: Number(existing[0].id), receiptNumber: existing[0].receipt_number, allocated: false };
   }
 
-  // The year the refund receipt is issued in, as for a receipt (#787).
-  const year = new Date().getUTCFullYear();
+  // The year the refund receipt is issued in, from the database clock that
+  // also stamps `issued_at`, so the number's year and the date cannot differ.
+  const { rows: clock } = await tx.query<{ y: number }>('SELECT YEAR(UTC_TIMESTAMP()) AS y');
+  const year = Number(clock[0].y);
   await tx.query(
     'INSERT IGNORE INTO refund_receipt_sequences (gym_id, year, last_seq) VALUES (?, ?, 0)',
     [gymId, year],
