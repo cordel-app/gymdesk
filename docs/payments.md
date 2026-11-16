@@ -1373,6 +1373,11 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
   application's own snapshot, never a live join.
 - **Billing & Duration is the Plan's only billing section** since #635 stage 13
   (migration 189).
+- **An initial charge's lines state their tax** (#2947). `initialCharge()` gives every line its rate
+  and net (`domain/initialChargeTaxes.ts`): a Membership Fee its plan's effective rate, a Product its
+  own, a cart purchase its frozen one, anything else the gym's system rate (the rate
+  `invoiceLineTaxes()` falls back to). The net is split from the line's final, VAT-inclusive amount;
+  the amount itself is the engine's and is never changed.
 
 ### Observability today
 
