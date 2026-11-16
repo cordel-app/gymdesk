@@ -9,6 +9,7 @@ import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { issueDueSimplifiedInvoices } from './billing-invoices';
 import { expireDrafts, expirePendingPayments } from './product-sets';
 import { reconcileAbandonedRequests } from './payment-settlement';
+import { reconcilePendingProviderRefunds } from './billing-event-refunds';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
 // stage 11 (see that module for why), and is re-exported here so every caller
@@ -261,6 +262,8 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     const draftsExpired = await expireDrafts();
     // #1991 stage 4: a Pending Payment whose link expired returns to Draft.
     const pendingReturned = await expirePendingPayments();
+    // #2480 follow-up: a provider refund left pending is settled from the provider's own record.
+    const refunds = await reconcilePendingProviderRefunds(req.log);
 
     const expired = unopened + abandoned;
     req.log.info(
@@ -276,6 +279,8 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       purchases_cancelled: purchasesCancelled,
       drafts_expired: draftsExpired,
       pending_returned_to_draft: pendingReturned,
+      refunds_completed: refunds.completed,
+      refunds_failed: refunds.failed,
     };
     await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: cleanupBody });
     res.json(cleanupBody);

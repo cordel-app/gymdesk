@@ -7,6 +7,7 @@ import type {
   ExecuteRecurringResult,
   RefundPaymentParams,
   RefundPaymentResult,
+  RefundedAmountResult,
 } from './types';
 
 export interface PaymentProvider {
@@ -38,4 +39,11 @@ export interface PaymentProvider {
    * refuses the request outright (the caller keeps its refund pending/failed).
    */
   refundPayment(params: RefundPaymentParams): Promise<RefundPaymentResult>;
+  /**
+   * #2480 follow-up: reads back how much of a payment the provider has refunded, so a
+   * refund left pending (no answer, or an answer still in flight) can be
+   * settled from the provider's own record. Throws when the provider cannot
+   * be reached.
+   */
+  getRefundedAmount(providerRef: string): Promise<RefundedAmountResult>;
 }

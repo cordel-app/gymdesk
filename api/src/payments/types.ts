@@ -87,6 +87,18 @@ export interface RefundPaymentParams {
   amount: number;
 }
 
+/** What the provider says has been refunded of one payment so far (#2480 follow-up). */
+export interface RefundedAmountResult {
+  /** The provider's raw status of the original payment (e.g. `REFUNDED`). */
+  providerStatus: string | null;
+  /**
+   * Minor units refunded of that payment in total, across every refund taken
+   * on it. `null` when the provider's answer does not say, which is an
+   * unknown, never zero.
+   */
+  refundedAmount: number | null;
+}
+
 export interface RefundPaymentResult {
   /** The provider's raw status after the refund (e.g. `REFUNDED`, `PARTIALLY_REFUNDED`). */
   providerStatus: string | null;

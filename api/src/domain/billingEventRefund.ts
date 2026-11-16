@@ -187,3 +187,42 @@ export function refundOutcomeFromProvider(status: string | null | undefined): 'c
   if (s === 'PENDING' || s === 'PENDING_PROCESSING' || s === 'AUTHORIZED') return 'pending';
   return 'failed';
 }
+
+/**
+ * #2480 follow-up — how long a provider refund may stay pending before the provider's
+ * own record is taken as proof it did not happen. MONEI records a refund on
+ * the payment as it is made, so a refund it still does not count after a day
+ * was never taken (the call never reached it), and failing it releases the
+ * reserved amount so staff can refund again.
+ */
+export const PENDING_REFUND_FAIL_AFTER_HOURS = 24;
+
+export interface PendingProviderRefund { id: number; cents: number; ageMinutes: number }
+
+/**
+ * #2480 follow-up — settles the pending provider refunds of one payment from what the
+ * provider says it has refunded of it in total. Completed refunds are already
+ * counted in that total; what is left covers the pending ones oldest first.
+ * A covered refund is completed; an uncovered one is failed only once it is
+ * older than the grace period, and otherwise left pending for the next run.
+ * An unknown total (`null`) settles nothing.
+ */
+export function allocateProviderRefunds(
+  refundedCents: number | null,
+  completedCents: number,
+  pending: PendingProviderRefund[],
+  failAfterHours: number = PENDING_REFUND_FAIL_AFTER_HOURS,
+): { completed: number[]; failed: number[] } {
+  const result = { completed: [] as number[], failed: [] as number[] };
+  if (refundedCents === null) return result;
+  let available = refundedCents - completedCents;
+  for (const r of [...pending].sort((a, b) => a.id - b.id)) {
+    if (available >= r.cents) {
+      result.completed.push(r.id);
+      available -= r.cents;
+    } else if (r.ageMinutes >= failAfterHours * 60) {
+      result.failed.push(r.id);
+    }
+  }
+  return result;
+}
