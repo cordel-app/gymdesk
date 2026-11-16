@@ -60,7 +60,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/product-sets-router.ts': 2,
   'api/product-sets.ts': 3,
   'api/scheduled-event-execution.ts': 2,
-  'api/user-memberships.ts': 18,
+  'api/user-memberships.ts': 17,
   'domain/billingEventPayments.ts': 2,
 };
 
