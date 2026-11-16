@@ -46,12 +46,11 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assigned-plan-snapshot.ts': 2,
   'api/assignment-commit.ts': 4,
-  'api/assignment-config.ts': 2,
+  'api/assignment-config.ts': 1,
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 2,
   'api/entitlement-plan-links.ts': 1,
   'api/member-membership-configuration.ts': 2,
-  'api/membership-fee-pricing.ts': 1,
   'api/membership-plans.ts': 6,
   'api/membership-promotions.ts': 4,
   'api/one-active-plan.ts': 2,
@@ -206,6 +205,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
     }
     expect(readFileSync(join(API_SRC, 'api/user-membership-services.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+  });
+
+  it('M6b-20: the Membership Fee pricing loader and the configuration overlay read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/membership-fee-pricing.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/membership-fee-pricing.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
+    // The one statement left in assignment-config.ts is `assignmentVersionId()`'s link lookup.
+    expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBe(1);
+    expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
   });
 
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
