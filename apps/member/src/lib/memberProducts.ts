@@ -663,6 +663,7 @@ export function draftPlanState(planId: number, view: MemberSetView | null): Draf
 export function draftErrorKey(message: string | null | undefined): string {
   switch (message) {
     case 'family_owner_only': return 'membership.family_owner_only';
+    case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     case 'in_flight': return 'membership.draft_error_in_flight';
     case 'edit_locked': return 'membership.draft_error_locked';
     case 'duplicate_submission': return 'membership.draft_error_duplicate';
@@ -776,6 +777,7 @@ export function setCommitErrorKey(code: string | null | undefined): string {
   switch (code) {
     case 'draft_expired': return 'membership.draft_error_expired';
     case 'edit_locked': return 'membership.draft_error_locked';
+    case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     case 'in_flight': return 'membership.draft_error_in_flight';
     case 'not_committable':
     case 'nothing_to_pay':

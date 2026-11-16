@@ -1197,6 +1197,47 @@ export default function MembershipPage() {
   }
 
   /**
+   * #2895 — a Draft staff created by assigning a plan and are still setting
+   * up: the member sees what it holds, but there is nothing to pay or cancel
+   * yet (staff decide how it is paid; choosing **Members App** turns it into
+   * the pending cart above), no item leaves on its own and the two Add
+   * actions are shown disabled, with the reason, because a second purchase
+   * cannot start beside it. The server refuses every write to it as well.
+   */
+  function renderStaffDraftCart() {
+    const { plans, products } = cartCounts(setView);
+    const items = cartItems(setView);
+    const counts = [
+      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
+      products > 0 ? t('membership.cart_products', { count: products }) : null,
+    ].filter(Boolean).join(' · ');
+    return (
+      <section style={styles.section} data-cart data-cart-awaiting-staff>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t('membership.cart_staff_heading')}</h2>
+              <span style={cartMutedStyle}>{counts}</span>
+              <span style={cartMutedStyle}>{t('membership.cart_staff_hint')}</span>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
+        </div>
+      </section>
+    );
+  }
+
+  /**
    * #2746 stage 3 (§6) — the cart once its payment has started: the same items,
    * still grouped as one purchase, headed *You have a pending payment* with the
    * amount being paid (the initial event's, `pending_amount`). Pay retries the
@@ -1273,6 +1314,7 @@ export default function MembershipPage() {
     const phase = cartPhase(setView, appMember?.id ?? null);
     if (phase == null) return null;
     if (phase === 'pending_payment') return renderPendingCart();
+    if (phase === 'awaiting_staff') return renderStaffDraftCart();
     const { plans, products } = cartCounts(setView);
     const items = cartItems(setView);
     const action = cartCommitAction(setView, review);
@@ -1861,17 +1903,22 @@ export default function MembershipPage() {
    * conditions wherever they are drawn: inside the cart (secondary, under its
    * items) while there is one, above the plans otherwise.
    */
-  function renderAddButtons(style: React.CSSProperties) {
+  function renderAddButtons(style: React.CSSProperties, disabledReason: string | null = null) {
     if (mode !== 'overview' || !canAdd || !((!pendingMembership && gymOffersPlans) || products !== null)) return null;
+    // #2895: disabled (never hidden) while another purchase is being prepared, with the reason beside them.
+    const disabled = disabledReason != null;
+    const btn = disabled ? { ...style, ...styles.busy } : style;
     return (
       <>
         {!pendingMembership && gymOffersPlans && (
-          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
+          <button type="button" style={btn} disabled={disabled} title={disabledReason ?? undefined}
+            onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
             {t('membership.add_plan')}
           </button>
         )}
         {products !== null && (
-          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
+          <button type="button" style={btn} disabled={disabled} title={disabledReason ?? undefined}
+            onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
             {t('membership.add_product')}
           </button>
         )}
@@ -1879,9 +1926,15 @@ export default function MembershipPage() {
     );
   }
 
-  function renderCartAddButtons() {
-    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn });
-    return buttons && <div style={styles.cartAddRow} data-cart-add>{buttons}</div>;
+  function renderCartAddButtons(disabledReason: string | null = null) {
+    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }, disabledReason);
+    if (!buttons) return null;
+    return (
+      <>
+        <div style={styles.cartAddRow} data-cart-add>{buttons}</div>
+        {disabledReason && <p style={{ ...cartMutedStyle, margin: '8px 0 0' }} data-cart-add-reason>{disabledReason}</p>}
+      </>
+    );
   }
 
   // #2426 — the server's overview of a plan, worded and formatted here; every

@@ -40,7 +40,7 @@ import { toMinorUnits } from '../payments/money';
 import { getRequestLocale } from '../infra/locale';
 import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
-import { cartCounts } from '../domain/shoppingCart';
+import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
 import { contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
@@ -783,6 +783,7 @@ meProductSetsRouter.delete('/:id', async (req, res) => {
   try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'ProductSet not found' }); }
   const set = await loadSet(ctx.gymId, req.params.id);
   if (!set || Number(set.owner_member_id) !== memberId) return res.status(404).json({ error: 'ProductSet not found' });
+  if (awaitsStaffSetup(set)) return refuseStaffDraft(res);
   const result = await cancelCheckout(ctx.gymId, set);
   if (result.kind !== 'cancelled') return res.status(409).json(cancelFailure(result));
   recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id });
@@ -809,6 +810,26 @@ async function ownedSet(req: any, res: any): Promise<{ memberId: number; set: an
   return { memberId, set };
 }
 
+/** #2895: the answer to a member's write on a Draft staff are still setting up. */
+function refuseStaffDraft(res: any) {
+  res.status(409).json({
+    error: AWAITING_STAFF_SETUP,
+    message: 'Your gym is still preparing this change. It can be paid here once the gym makes it available.',
+  });
+}
+
+/**
+ * #2895 — `ownedSet()` for a write: a Draft staff created by assigning a plan
+ * (`awaitsStaffSetup()`) is the member's to read, never to pay, discard or
+ * change, so every write refuses it with `409 awaiting_staff_setup`.
+ */
+async function writableOwnedSet(req: any, res: any): Promise<{ memberId: number; set: any } | null> {
+  const owned = await ownedSet(req, res);
+  if (!owned) return null;
+  if (awaitsStaffSetup(owned.set)) { refuseStaffDraft(res); return null; }
+  return owned;
+}
+
 meProductSetsRouter.post('/draft', async (req, res, next) => {
   const ctx = getTenantContext(req);
   try {
@@ -822,6 +843,9 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
       gymId: ctx.gymId, memberId, actor: actorOf(req), today: todayUtc(),
     }));
     if (out.kind === 'in_flight') {
+      // #2895: a Draft staff are still setting up is not a change awaiting the member's payment.
+      const inFlight = await loadSet(ctx.gymId, out.productSetId);
+      if (inFlight && awaitsStaffSetup(inFlight)) return refuseStaffDraft(res);
       return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
     }
     if (out.created) {
@@ -855,7 +879,11 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
     // the initial event Save & Pay wrote, never a figure re-priced for the read.
     const pending_amount = isOwner && owned.set.status === 'pending_payment'
       ? await loadPendingInitialAmount(gymId, Number(owned.set.id)) : null;
-    res.json({ ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }), pending_amount });
+    res.json({
+      ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }), pending_amount,
+      // #2895: a Draft staff are still setting up — readable, not payable or editable here.
+      awaiting_staff_setup: awaitsStaffSetup(owned.set),
+    });
   } catch (err) { next(err); }
 });
 
@@ -914,14 +942,14 @@ meProductSetsRouter.get('/:id/review', async (req, res, next) => {
  */
 meProductSetsRouter.post('/:id/save-and-pay', async (req, res, next) => {
   try {
-    if (!(await ownedSet(req, res))) return;
+    if (!(await writableOwnedSet(req, res))) return;
     return await saveAndPayHandler(req, res, { member: true });
   } catch (err) { next(err); }
 });
 
 meProductSetsRouter.post('/:id/activate', async (req, res, next) => {
   try {
-    if (!(await ownedSet(req, res))) return;
+    if (!(await writableOwnedSet(req, res))) return;
     return await activateHandler(req, res, { member: true });
   } catch (err) { next(err); }
 });
@@ -932,7 +960,7 @@ meProductSetsRouter.get('/:id/billing-event-simulation', async (req, res, next) 
 });
 
 meProductSetsRouter.post('/:id/services', async (req, res, next) => {
-  const owned = await ownedSet(req, res);
+  const owned = await writableOwnedSet(req, res);
   if (!owned) return;
   if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
@@ -951,13 +979,13 @@ meProductSetsRouter.post('/:id/services', async (req, res, next) => {
 });
 
 meProductSetsRouter.put('/:id/services/:serviceId', async (req, res, next) => {
-  if (!(await ownedSet(req, res))) return;
+  if (!(await writableOwnedSet(req, res))) return;
   return editDraft(req, res, 'update', (tx, d) => setServiceQuantity(tx, d, Number(req.params.serviceId), req.body?.quantity), next,
     { service_quantity: { service: Number(req.params.serviceId), quantity: req.body?.quantity }, source: 'members_app' });
 });
 
 meProductSetsRouter.delete('/:id/services/:serviceId', async (req, res, next) => {
-  if (!(await ownedSet(req, res))) return;
+  if (!(await writableOwnedSet(req, res))) return;
   return editDraft(req, res, 'update', (tx, d) => removeService(tx, d, Number(req.params.serviceId)), next,
     { remove_service: Number(req.params.serviceId), source: 'members_app' });
 });
@@ -971,7 +999,7 @@ meProductSetsRouter.delete('/:id/services/:serviceId', async (req, res, next) =>
  * benefits — never a price, a fee or another member.
  */
 meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
-  const owned = await ownedSet(req, res);
+  const owned = await writableOwnedSet(req, res);
   if (!owned) return;
   if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
@@ -993,7 +1021,7 @@ meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
 });
 
 meProductSetsRouter.delete('/:id/plans/:planSnapshotId', async (req, res, next) => {
-  if (!(await ownedSet(req, res))) return;
+  if (!(await writableOwnedSet(req, res))) return;
   const snapshotId = Number(req.params.planSnapshotId);
   if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
   return editDraft(req, res, 'update', (tx, d) => removeMemberPlanFromDraft(tx, d, snapshotId), next,
@@ -1010,7 +1038,7 @@ meProductSetsRouter.delete('/:id/plans/:planSnapshotId', async (req, res, next) 
  * Promotions and who it is for — never a price or a discount.
  */
 meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
-  const owned = await ownedSet(req, res);
+  const owned = await writableOwnedSet(req, res);
   if (!owned) return;
   if (await refuseUnlessMayAdd(res, getTenantContext(req).gymId, owned.memberId)) return;
   const { gymId } = getTenantContext(req);
@@ -1066,7 +1094,7 @@ meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
 
 /** #2746 stage 1 — removes one one-time Product from the member's Draft, leaving every other item. */
 meProductSetsRouter.delete('/:id/purchases/:purchaseId', async (req, res, next) => {
-  if (!(await ownedSet(req, res))) return;
+  if (!(await writableOwnedSet(req, res))) return;
   const { gymId } = getTenantContext(req);
   const purchaseId = Number(req.params.purchaseId);
   if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'not_found' });

@@ -126,6 +126,34 @@ describe('the cart awaiting payment (#2746 stage 3, §6)', () => {
   });
 });
 
+describe('a Draft staff are still setting up (#2895)', () => {
+  const staff = (over: Partial<MemberCartView> = {}) => draft({ awaiting_staff_setup: true, owner_member_id: 5, ...over } as any);
+
+  it('is its own phase, with nothing to pay and no item removable', () => {
+    expect(cartPhase(staff(), 5)).toBe('awaiting_staff');
+    expect(cartCommitAction(staff(), review())).toBeNull();
+    expect(cartCommitAction(staff({ lines: [], plans: [] }), review())).toBeNull();
+    expect(cartItemsRemovable(staff())).toBe(false);
+    // Its items are still listed and counted.
+    expect(cartCounts(staff())).toEqual({ plans: 1, products: 2 });
+  });
+
+  it('the member’s own Draft is unchanged', () => {
+    expect(cartPhase(draft({ awaiting_staff_setup: false } as any), 5)).toBe('draft');
+    expect(cartItemsRemovable(draft())).toBe(true);
+  });
+
+  it('once staff choose Members App (Pending Payment) it is the owner’s pending cart', () => {
+    const v = staff({ status: 'pending_payment', awaiting_staff_setup: false } as any);
+    expect(cartPhase(v, 5)).toBe('pending_payment');
+  });
+
+  it('words its refusal as the gym preparing a change, never as awaiting payment', () => {
+    expect(cartErrorKey('awaiting_staff_setup')).toBe('membership.cart_error_awaiting_staff');
+    expect(cartErrorKey('awaiting_staff_setup')).not.toBe(cartErrorKey('in_flight'));
+  });
+});
+
 describe('the cart’s Pay (§5)', () => {
   it('pays a cart holding only one-time Products, which the review’s diff does not list', () => {
     const v = draft({ lines: [], plans: [] });
