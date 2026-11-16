@@ -6,7 +6,13 @@ import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-const today = () => new Date().toISOString().slice(0, 10);
+// A monthly schedule is anchored on the 1st (#2125 M5c), so a plan starting mid-month owes a
+// prorated first stretch. Start on the 1st of next month so the first charge is the whole fee
+// whatever day the suite runs.
+const firstOfNextMonth = () => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+};
 let gymId: string;
 let reducedRateId: number;
 
@@ -44,7 +50,7 @@ async function reviewOfNewAssignment(planId: number) {
   const { insertId: memberId } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
     [gymId, 'VAT Member', `vat-${uniq()}@t.com`]);
   const res = await staff('post', `/membership-plans/${planId}/assign`)
-    .send({ starts_at: today(), owner_member_id: memberId, beneficiary_member_ids: [memberId] });
+    .send({ starts_at: firstOfNextMonth(), owner_member_id: memberId, beneficiary_member_ids: [memberId] });
   expect(res.status).toBe(201);
   const { rows } = await db.query<any>(
     'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [res.body.id]);
