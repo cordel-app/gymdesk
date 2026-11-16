@@ -1,0 +1,114 @@
+// #2899 — a Draft's initial payment and its Billing Event simulation are derived from the
+// Draft's current contents. A Draft that adds a Membership Plan beside one the member already
+// holds owes the added plan's fee (here: two beneficiaries × two pre-paid months, plus the
+// stretch that aligns it to the running schedule), and never the running plan's fee again. The
+// review the cart and Save & Pay read and the Draft's forecast quote the same figure, and
+// reading them commits nothing.
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db } from '../infra/db';
+import {
+  TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request,
+} from './helpers';
+
+const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const today = () => new Date().toISOString().slice(0, 10);
+let gymId: string;
+
+beforeAll(async () => {
+  gymId = await createTestGym();
+  await createTestMembership(gymId, 'admin');
+});
+afterAll(async () => {
+  await db.query('DELETE FROM payment_requests WHERE gym_id = ?', [gymId]);
+  await db.query('DELETE FROM billing_events WHERE gym_id = ?', [gymId]);
+  await cleanupTestGyms();
+  await db.end();
+});
+
+/** A monthly, per-member plan for two members, with two pre-paid periods. */
+async function plan(price: number, prepaid: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit,
+        free_periods, paid_periods, bonus_periods, pay_beforehand_periods, membership_fee_scope)
+     VALUES (?, ?, 'active', 'public', '2', 0, 12, 0, ?, 'per_member')`, [gymId, `Draft Cart Plan ${uniq()}`, prepaid]);
+  await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+     VALUES (?, ?, ?, '2025-01-01', 'active')`, [gymId, insertId, price]);
+  await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, 1, 'month')`, [gymId, insertId]);
+  return insertId;
+}
+
+async function member(): Promise<number> {
+  const { insertId } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+    [gymId, 'Draft Cart Member', `dcart-${uniq()}@t.com`]);
+  return insertId;
+}
+
+const staff = (method: 'get' | 'post', path: string) =>
+  (request as any)[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+
+async function assign(planId: number, owner: number, beneficiaries: number[]): Promise<number> {
+  const res = await staff('post', `/membership-plans/${planId}/assign`)
+    .send({ starts_at: today(), owner_member_id: owner, beneficiary_member_ids: beneficiaries });
+  expect(res.status).toBe(201);
+  return Number(res.body.id);
+}
+
+async function setOf(userMembershipId: number) {
+  const { rows } = await db.query<any>(
+    'SELECT id, status, previous_product_set_id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1',
+    [userMembershipId]);
+  return rows[0];
+}
+
+/** A family of two holding a running €30 per-member plan. */
+async function familyWithRunningPlan() {
+  const owner = await member();
+  const kid = await member();
+  await createTestFamily(gymId, owner, [kid]);
+  const running = await plan(30, 0);
+  await activateTestAssignment(gymId, await assign(running, owner, [owner, kid]));
+  return { owner, kid, runningName: await planName(running) };
+}
+
+const planName = async (id: number) => String((await db.query<any>('SELECT name FROM membership_plans WHERE id = ?', [id])).rows[0].name);
+
+describe('Draft initial payment and simulation (#2899)', () => {
+  it('charges the fee of a plan the Draft adds beside a running one, and the forecast agrees', async () => {
+    const { owner, kid, runningName } = await familyWithRunningPlan();
+    const added = await plan(70, 2);
+    const set = await setOf(await assign(added, owner, [owner, kid]));
+    expect(set.status).toBe('draft');
+    expect(set.previous_product_set_id).not.toBeNull();
+
+    const review = await staff('get', `/product-sets/${set.id}/review`);
+    expect(review.status).toBe(200);
+    // The added plan's fee alone: the running €30 plan was paid by the version it supersedes.
+    expect(review.body.immediate_lines).toHaveLength(1);
+    expect(review.body.immediate_lines[0]).toMatchObject({ item_name: await planName(added), quantity: 2, prepaid_periods: 2 });
+    expect(review.body.immediate_lines.some((l: any) => l.item_name === runningName)).toBe(false);
+    // Two members × two pre-paid €70 months, plus any stretch up to the running schedule's next date.
+    expect(review.body.amount_due).toBeGreaterThanOrEqual(280);
+
+    const sim = await staff('get', `/product-sets/${set.id}/billing-event-simulation`);
+    expect(sim.status).toBe(200);
+    const initial = sim.body.dates.find((d: any) => d.kind === 'initial_payment');
+    expect(initial?.total).toBe(review.body.amount_due);
+
+    // Reading the review and the forecast commits and charges nothing.
+    expect((await setOf((await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [set.id])).rows[0].user_membership_id)).status).toBe('draft');
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [set.id]);
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it('does not ask again for the running plan when a Draft adds no plan', async () => {
+    const { owner, runningName } = await familyWithRunningPlan();
+    const draft = await staff('post', '/product-sets/draft').send({ member_id: owner });
+    expect([200, 201]).toContain(draft.status);
+
+    const review = await staff('get', `/product-sets/${draft.body.id}/review`);
+    expect(review.status).toBe(200);
+    expect(review.body.immediate_lines.some((l: any) => l.item_name === runningName)).toBe(false);
+    expect(review.body.amount_due).toBe(0);
+  });
+});
