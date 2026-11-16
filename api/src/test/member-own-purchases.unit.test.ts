@@ -35,7 +35,7 @@ describe('ownPurchaseState', () => {
   });
 
   it('hides drafts and failed payments', () => {
-    expect(ownPurchaseState(row({ status: 'draft' }), TODAY)).toBeNull();
+    expect(ownPurchaseState(row({ status: 'in_cart' }), TODAY)).toBeNull();
     expect(ownPurchaseState(row({ status: 'cancelled' }), TODAY)).toBeNull();
   });
 });

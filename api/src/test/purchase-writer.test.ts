@@ -159,7 +159,7 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
       expect(saved.status).toBe(201);
       const draftId = Number(saved.body.purchaseId);
       expectWritten(await pair(draftId, type));
-      expect((await pair(draftId, type)).snapshot.status).toBe('draft');
+      expect((await pair(draftId, type)).snapshot.status).toBe('in_cart');
       expect(await promotionCounts(draftId, type)).toEqual({ snapshot: 1 });
 
       // Pay the draft: the draft goes, the pending purchase is written with its event link.
