@@ -166,7 +166,7 @@ describe('family group booking (#2674)', () => {
     expect((await bookings(ev)).map((r) => r.member_id).sort()).toEqual([me, kid].sort());
   });
 
-  it('keeps the others while the family meets the minimum, then cancels the last one below it (#2813 §6)', async () => {
+  it('cancels the booking for every family member attending and names who cancelled (#2901)', async () => {
     const clerk = `fg-${uniq()}`;
     const kidClerk = `fg-${uniq()}`;
     const me = await member('Mum', clerk);
@@ -177,26 +177,26 @@ describe('family group booking (#2674)', () => {
     const ev = await event();
     const res = await bookAs(clerk, { class_session_id: ev, professional_service_id: familyService, participant_member_ids: [kid1, kid2] });
     expect(res.status).toBe(201);
-    const idOf = async (m: number) => {
-      const { rows } = await db.query('SELECT id FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?', [ev, m]);
-      return Number((rows as any[])[0].id);
-    };
+    const { rows: own } = await db.query('SELECT id FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?', [ev, kid1]);
 
-    // Two of three remain: min 2 is met, nothing else moves.
+    // Two would remain (min 2 met) and both are cancelled anyway: it is one family booking.
     asMember(kidClerk);
-    const first = await request.delete(`/me/bookings/${await idOf(kid1)}`).set(headers());
-    expect(first.status).toBe(204);
-    expect((await bookings(ev)).map((r) => r.member_id).sort()).toEqual([me, kid2].sort());
-
-    // One would remain: below min 2, so the last one is cancelled and told why.
-    asMember(clerk);
-    const second = await request.delete(`/me/bookings/${await idOf(me)}`).set(headers());
-    expect(second.status).toBe(204);
+    const del = await request.delete(`/me/bookings/${Number((own as any[])[0].id)}`).set(headers());
+    expect(del.status).toBe(204);
     expect(await bookings(ev)).toHaveLength(0);
     expect(await reservations(me) + await reservations(kid1) + await reservations(kid2)).toBe(0);
+
     const { rows: alerts } = await db.query(
-      "SELECT member_id FROM member_notifications WHERE gym_id = ? AND type = 'booking_cancelled_by_partner' AND entity_id = ?", [gymId, ev]);
-    expect((alerts as any[]).map((a) => Number(a.member_id))).toEqual([kid2]);
+      "SELECT member_id, payload FROM member_notifications WHERE gym_id = ? AND type = 'family_booking_cancelled' AND entity_id = ?", [gymId, ev]);
+    const list = alerts as any[];
+    expect(list.map((a) => Number(a.member_id)).sort()).toEqual([me, kid2].sort());
+    for (const a of list) {
+      const payload = typeof a.payload === 'string' ? JSON.parse(a.payload) : a.payload;
+      expect(payload.cancelled_by_name).toBe('Ada');
+    }
+    const { rows: partnerAlerts } = await db.query(
+      "SELECT 1 FROM member_notifications WHERE gym_id = ? AND type = 'booking_cancelled_by_partner' AND entity_id = ?", [gymId, ev]);
+    expect(partnerAlerts).toHaveLength(0);
   });
 
   it('refuses a selection below the minimum, above the maximum or outside the family, booking nothing', async () => {
