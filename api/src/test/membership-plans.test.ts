@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery, createTestFamily } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery, createTestFamily, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -55,6 +55,8 @@ async function createActiveUserMembership(
      VALUES (?, ?, ?, 'active', CURDATE())`,
     [gymId, memberId, planId],
   );
+  // #2125 M6b-22: the plan's counts read the assignment's plan snapshot.
+  await snapshotTestAssignment(Number(insertId));
   return insertId;
 }
 

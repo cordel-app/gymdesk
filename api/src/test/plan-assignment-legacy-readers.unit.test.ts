@@ -50,7 +50,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-lifecycle.ts': 2,
   'api/entitlement-plan-links.ts': 1,
   'api/member-membership-configuration.ts': 2,
-  'api/membership-plans.ts': 6,
+  'api/membership-plans.ts': 2,
   'api/membership-promotions.ts': 2,
   'api/one-active-plan.ts': 2,
   'api/plan-assignment-drift.ts': 3,
@@ -230,5 +230,12 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The two statements left in membership-promotions.ts read inside a writing transaction or lock the row.
     const promotions = readFileSync(join(API_SRC, 'api/membership-promotions.ts'), 'utf8');
     expect(promotions.split('SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
+  });
+  it('M6b-22: the Membership Plan router\'s assignment counts read plan_snapshots', () => {
+    // The two statements left in membership-plans.ts are the bulk assign's INSERT and the reprice's candidates.
+    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBe(2);
+    const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
+    expect(plans.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(3);
+    expect(plans).toContain("isCurrentAssignmentSnapshotSql('pa')");
   });
 });
