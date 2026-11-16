@@ -30,6 +30,7 @@ import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { BookingDetailDialog } from '@/components/BookingDetailDialog';
+import { bookingControlsCollapsible, showBookingControls } from '@/lib/bookingCardControls';
 
 interface Session {
   id: number;
@@ -342,13 +343,24 @@ export default function MemberSchedulePage() {
               const myStatus = s.my_booking_status;
               const spots = s.spots_left;
               const isExpanded = expandedSession === s.id;
+              // #2904 — a bookable Professional Service card folds its booking
+              // controls until the member expands it; toggling books nothing.
+              const foldsControls = bookingControlsCollapsible(s);
+              const controlsShown = showBookingControls(s, isExpanded);
+              const toggle = () => setExpandedSession(isExpanded ? null : s.id);
               return (
                 <div
                   key={`s-${s.id}`}
                   style={styles.sessionCard}
-                  onClick={() => setExpandedSession(isExpanded ? null : s.id)}
+                  onClick={toggle}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+                  }}
                   role="button"
                   tabIndex={0}
+                  aria-expanded={isExpanded}
+                  aria-label={foldsControls ? `${s.class_type_name} · ${t(isExpanded ? 'member_schedule.hide_booking_options' : 'member_schedule.show_booking_options')}` : undefined}
                 >
                   {/* #1880 §4/§5 — the image fills the card's height on the left and
                       opens the enlarged preview with the description; with no image
@@ -383,6 +395,7 @@ export default function MemberSchedulePage() {
                   <div style={styles.cardBody}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                     {s.access_locked ? (
                       <span style={styles.pillLocked}>🔒 {t('member_schedule.plan_only')}</span>
                     ) : myStatus === 'booked' ? (
@@ -398,6 +411,8 @@ export default function MemberSchedulePage() {
                     ) : (
                       <span style={styles.pillFull}>{t('member_schedule.full')}</span>
                     )}
+                    <span style={styles.chevron} aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+                    </span>
                   </div>
                   <div style={{ ...styles.name, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span>{s.class_type_name}</span>
@@ -423,6 +438,7 @@ export default function MemberSchedulePage() {
                     </div>
                   ) : null))}
                   <EventServicesList
+                    collapsed={foldsControls && !isExpanded}
                     services={s.professional_services}
                     bookedId={s.my_booking_id ? (s.my_professional_service_id ?? null) : null}
                     choose={choicesFor(s).length > 0 ? {
@@ -433,7 +449,7 @@ export default function MemberSchedulePage() {
                   />
                   {(() => {
                     const svc = groupServiceFor(s);
-                    if (!svc || !familyRead) return null;
+                    if (!svc || !familyRead || !controlsShown) return null;
                     const { min, max } = groupLimits(svc);
                     return (
                       <FamilyParticipantsPicker
@@ -461,6 +477,7 @@ export default function MemberSchedulePage() {
                       )}
                     </div>
                   )}
+                  {controlsShown && (
                   <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
                       <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id })}>
@@ -499,6 +516,7 @@ export default function MemberSchedulePage() {
                       </button>
                     )}
                   </div>
+                  )}
                   </div>
                 </div>
               );
@@ -599,6 +617,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardImage: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   cardBody: { flex: 1, minWidth: 0, padding: 14 },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
+  chevron: { marginLeft: 8, fontSize: 14, color: memberTheme.textMuted, flex: '0 0 auto' },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
   name: { fontSize: 16, fontWeight: 600, color: memberTheme.text },
   sub: { fontSize: 13, color: memberTheme.textMuted, marginTop: 2 },
