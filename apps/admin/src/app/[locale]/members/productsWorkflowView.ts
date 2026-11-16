@@ -40,8 +40,10 @@ export interface ReviewSummary {
 
 /** #2860 — `initial_payment` of the review (`initialPaymentBreakdown()`), every figure the server's. */
 export interface InitialPaymentLike {
+  /** #2890 — the lines' totals before discounts. */
+  total_before_discounts: number;
   lines: Array<{
-    name: string | null; quantity: number; unit_price: number; discount: number;
+    name: string | null; quantity: number; unit_price: number; line_total: number; discount: number;
     promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
     tax_rate_percent: number | null; tax_amount: number; amount: number;
     /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
@@ -95,6 +97,11 @@ export function discountText(l: InitialPaymentLike['lines'][number]):
     return { key: 'checkout_discount_percent', values: { percent: l.treatment_value } };
   }
   return { key: 'checkout_discount_direct' };
+}
+
+/** #2890 — a line a benefit or discount takes all the way down to €0.00. */
+export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], 'amount' | 'discount'>): boolean {
+  return l.discount > 0 && l.amount === 0;
 }
 
 export interface WorkflowInput {
