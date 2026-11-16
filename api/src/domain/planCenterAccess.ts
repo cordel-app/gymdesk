@@ -81,6 +81,23 @@ export function onlineAllowed(access: EffectiveCenterAccess): boolean {
   return access.online;
 }
 
+/**
+ * #2953: the physical centers a Member's "All centers" filter spans — the
+ * centers their live plans let them use. `null` means no restriction: a Member
+ * with no live plan (the booking gate checks no center for them either) or one
+ * whose plans grant every center. An empty list (an On-line-only Member) spans
+ * no physical center, so only events tied to no center remain.
+ */
+export function allCentersScope(
+  plans: PlanCenterAccessInput[],
+  memberDefaultCenterId: number | null,
+): number[] | null {
+  if (plans.length === 0) return null;
+  const access = resolveCenterAccess(plans, memberDefaultCenterId);
+  if (access.all) return null;
+  return [...access.centerIds].sort((a, b) => a - b);
+}
+
 /** Request parsing for `PUT /membership-plans/:id/centers`. */
 export function parseCenterAccessInput(
   body: { center_access_mode?: unknown; center_ids?: unknown; online_access?: unknown },

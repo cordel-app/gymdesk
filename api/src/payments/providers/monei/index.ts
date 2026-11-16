@@ -8,6 +8,7 @@ import type {
   ExecuteRecurringResult,
   RefundPaymentParams,
   RefundPaymentResult,
+  RefundedAmountResult,
 } from '../../types';
 import { MoneiClient } from './client';
 import { chargePayload, verifyAndParseWebhook } from './webhook';
@@ -114,6 +115,26 @@ export class MoneiProvider implements PaymentProvider {
       errorCode: payment.statusCode ?? null,
       errorMessage: payment.statusMessage ?? null,
     };
+  }
+
+  /**
+   * #2480 follow-up: MONEI keeps the total refunded on the payment itself
+   * (`refundedAmount`, in cents). A fully refunded payment that omits it is
+   * read as its whole amount; a partially refunded one that omits it is an
+   * unknown (`null`), never zero.
+   */
+  async getRefundedAmount(providerRef: string): Promise<RefundedAmountResult> {
+    const payment = await this.client.getPayment(providerRef);
+    const providerStatus = typeof payment.status === 'string' ? payment.status : null;
+    let refundedAmount: number | null = null;
+    if (typeof payment.refundedAmount === 'number' && Number.isFinite(payment.refundedAmount)) {
+      refundedAmount = payment.refundedAmount;
+    } else if (String(providerStatus).toUpperCase() === 'REFUNDED' && typeof payment.amount === 'number') {
+      refundedAmount = payment.amount;
+    } else if (String(providerStatus).toUpperCase() !== 'PARTIALLY_REFUNDED') {
+      refundedAmount = 0;
+    }
+    return { providerStatus, refundedAmount };
   }
 
   async executeRecurring(params: ExecuteRecurringParams): Promise<ExecuteRecurringResult> {
