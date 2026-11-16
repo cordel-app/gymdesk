@@ -222,14 +222,14 @@ describe('a Draft bills nothing and books nothing', () => {
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
-    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))\"");
-    // #2125 M6b-4: only the Additional Services leg still asks that of `user_memberships`. The plan's
-    // own sessions and a Promotion's read the assignment's current plan snapshot through the access
-    // readers' predicate, which a Draft or Pending Payment snapshot never satisfies either.
-    const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\}/g) ?? [];
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(pa.status = 'active' OR (pa.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))\"");
+    // #2125 M6b-4/M6b-19: every assignment leg reads the assignment's current plan snapshot. The
+    // Additional Services leg keeps the wallet's paid-through predicate; the plan's own sessions and
+    // a Promotion's take the access readers' one. A Draft or Pending Payment snapshot satisfies neither.
+    expect(loader).not.toContain('FROM user_memberships');
+    const assignmentReads = loader.match(/FROM plan_snapshots pa[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\} AND \$\{isCurrentAssignmentSnapshotSql\('pa'\)\}/g) ?? [];
     expect(assignmentReads).toHaveLength(1);
-    const snapshotReads = loader.match(/FROM plan_snapshots pa[\s\S]*?WHERE[^;]*?\$\{entitlingAssignmentSql\('pa'\)\}/g) ?? [];
-    expect(snapshotReads).toHaveLength(2);
+    expect(loader.split("${entitlingAssignmentSql('pa')}").length - 1).toBe(2);
   });
 });
 
