@@ -3021,6 +3021,35 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
   }
 });
 
+// #2937 — the priced lines of a page of the member's Billing Events, keyed by
+// event. The ids come from the member's own ledger read above, and the gym is
+// filtered again here, so no other member's or gym's line can be returned.
+async function loadMemberBillingEventLines(gymId: number | string, eventIds: number[]) {
+  const byEvent = new Map<number, Array<{
+    id: number; kind: string; item_name: string; quantity: number;
+    regular_unit_price: string | null; promotion_name: string | null; amount: string;
+  }>>();
+  const ids = eventIds.filter((id) => Number.isInteger(id) && id > 0);
+  if (ids.length === 0) return byEvent;
+  const { rows } = await db.query<any>(
+    `SELECT id, billing_event_id, kind, item_name, quantity, regular_unit_price, promotion_name, amount
+       FROM billing_event_lines
+      WHERE gym_id = ? AND billing_event_id IN (${ids.map(() => '?').join(', ')})
+      ORDER BY billing_event_id, id`,
+    [gymId, ...ids],
+  );
+  for (const r of rows) {
+    const key = Number(r.billing_event_id);
+    const list = byEvent.get(key) ?? [];
+    list.push({
+      id: Number(r.id), kind: r.kind, item_name: r.item_name, quantity: Number(r.quantity),
+      regular_unit_price: r.regular_unit_price, promotion_name: r.promotion_name, amount: r.amount,
+    });
+    byEvent.set(key, list);
+  }
+  return byEvent;
+}
+
 // P1.8: read-only paginated ledger for the caller's own member row.
 meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -3058,10 +3087,14 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     );
     // #2936 — the latest stored document of each kind, for the download actions.
     const documents = await loadMemberPaymentDocuments(gymId, rows);
+    // #2937 — each event's own priced lines (#1474), for the expanded row.
+    // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
+    const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
     const items = rows.map(({ latest_tx_status, ...row }) => ({
       ...row,
       status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
       documents: documents.get(Number(row.id)) ?? [],
+      lines: linesByEvent.get(Number(row.id)) ?? [],
     }));
     res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
