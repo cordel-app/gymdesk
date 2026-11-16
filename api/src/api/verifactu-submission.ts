@@ -297,7 +297,7 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
   const sign = rectifying ? -1 : 1;
   // The same lines and fallback rate the PDF's and the record's totals came from.
   const desglose = buildDesglose(
-    lines.map((l) => ({ amount: sign * l.amount, taxRate: l.taxRate })),
+    lines.map((l) => ({ amount: sign * l.amount, taxRate: l.rate })),
     fallbackRate,
     rectifying ? negateTotals(totals) : totals,
   );
