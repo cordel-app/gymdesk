@@ -5,6 +5,7 @@
 // list read off `um.*` (`purchased_at`, `replace_on_activation`, `replaces_user_membership_id`).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
@@ -105,5 +106,37 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     const list = await auth(request.get('/user-memberships'), otherGymId);
     expect(list.status).toBe(200);
     expect(list.body.some((r: any) => Number(r.id) === um)).toBe(false);
+  });
+
+  it('closing a Pending Payment assignment keeps its set as cancelled, so the closed row is still read', async () => {
+    const owner = await member();
+    const um = await createTestDraftAssignment(gymId, owner, await plan());
+    const pay = await auth(request.post(`/user-memberships/${um}/save-and-pay`)).send({});
+    expect(pay.status).toBeLessThan(300);
+    expect(pay.body.status ?? 'pending_payment').toBe('pending_payment');
+
+    const closed = await auth(request.post(`/user-memberships/${um}/close`)).send({});
+    expect(closed.status).toBe(200);
+    expect(closed.body.status).toBe('cancelled');
+    expect(closed.body.ends_at).toBeTruthy();
+
+    const one = await auth(request.get(`/user-memberships/${um}`));
+    expect(one.status).toBe(200);
+    expect(one.body.status).toBe('cancelled');
+
+    const { rows: sets } = await db.query<any>(
+      'SELECT status FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, um]);
+    expect(sets.map((r: any) => r.status)).toEqual(['cancelled']);
+    const { rows: audits } = await db.query<any>(
+      `SELECT COUNT(*) AS n FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership'
+          AND entity_id = ? AND action = 'status_change'
+          AND JSON_UNQUOTE(JSON_EXTRACT(new_values, '$.status')) = 'cancelled'`, [gymId, String(um)]);
+    expect(Number(audits[0].n)).toBe(1);
+
+    const report = await findPlanAssignmentDrift(db as any, gymId);
+    for (const name of ['assignment_without_snapshot', 'lifecycle_mismatch']) {
+      const check = report.checks.find((c) => c.name === name)!;
+      expect(check.sample.some((r: any) => Number(r.user_membership_id) === um)).toBe(false);
+    }
   });
 });

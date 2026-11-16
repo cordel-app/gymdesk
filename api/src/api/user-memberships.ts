@@ -10,7 +10,7 @@ import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActiv
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
-import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
+import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
 import { beneficiarySelectionError, parseBeneficiaryIds, parseMemberLimitInput, toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { ownerFamilyMemberIds } from './owner-family';
@@ -24,6 +24,9 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { resolveRequestActor } from '../domain/auditActor';
+import { cancelPendingProductSet, reconcileSetPayments } from './product-set-cancellation';
+import { syncPlanSnapshotsForAssignment } from './plan-snapshot-sync';
+import { logger } from '../lib/logger';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
@@ -1739,6 +1742,14 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     });
   }
 
+  // #2125 M6b-32: a pending assignment's version is cancelled and kept (#2747's
+  // `cancelPendingProductSet()`), never deleted, so the assignment keeps its plan snapshot (the
+  // record every reader now takes it from). The provider is asked about any submitted attempt first,
+  // exactly as the Product Set's own Cancel does.
+  const pendingSetId = current.status === 'pending_payment'
+    ? await pendingSetIdForAssignment(db, gymId, Number(current.id)) : null;
+  if (pendingSetId != null) await reconcileSetPayments(gymId, pendingSetId, logger);
+
   const result = await db.transaction(async (tx) => {
     const { rows: locked } = await tx.query(
       'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -1748,9 +1759,19 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     const prev = locked[0];
     if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
     // #1325 PR 3b: a pending assignment's version goes with it (or the close is
-    // refused while a payment on it is unresolved).
-    if (prev.status === 'pending_payment' && !(await cancelPendingSetForAssignment(tx, gymId, Number(prev.id)))) {
-      return { kind: 'unresolved' } as const;
+    // refused while a payment on it is unresolved or settled).
+    let transitionRecorded = false;
+    if (prev.status === 'pending_payment') {
+      const setId = await pendingSetIdForAssignment(tx, gymId, Number(prev.id));
+      if (setId != null) {
+        const out = await cancelPendingProductSet(tx, gymId, setId, {
+          actor: resolveRequestActor(getTenantContext(req)), actorUserId: userId ?? null, source: sourceForRole(role),
+        });
+        if (out.kind === 'payment_unresolved' || out.kind === 'payment_settled') return { kind: 'unresolved' } as const;
+        // The cancel moved the assignment to `cancelled` and recorded that transition; the close
+        // below adds only its own end date, and the snapshot is re-synced with it.
+        transitionRecorded = out.kind === 'cancelled';
+      }
     }
     await tx.query(
       `UPDATE user_memberships
@@ -1760,11 +1781,15 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
     );
-    await recordStatusChange(tx, {
-      gymId, userMembershipId: prev.id, memberId: prev.member_id,
-      previousStatus: prev.status, newStatus: 'cancelled',
-      source: sourceForRole(role), actorUserId: userId,
-    });
+    if (transitionRecorded) {
+      await syncPlanSnapshotsForAssignment(tx, gymId, Number(prev.id));
+    } else {
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: prev.id, memberId: prev.member_id,
+        previousStatus: prev.status, newStatus: 'cancelled',
+        source: sourceForRole(role), actorUserId: userId,
+      });
+    }
     return { kind: 'ok' } as const;
   });
 

@@ -14,7 +14,7 @@ import {
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import { DraftRefusal, LockedDraft, isRefusal, lockDraft } from './product-set-draft';
 import { ensureInitialEvent, initialCharge, loadEditLock } from './product-set-checkout';
-import { cancelInFlight, createDraft, submitForPayment as submitSetForPayment } from './product-sets';
+import { createDraft, submitForPayment as submitSetForPayment } from './product-sets';
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
@@ -246,24 +246,17 @@ export async function openInitialEventForAssignment(
 }
 
 /**
- * A Pending Payment assignment closed or deleted before it was paid takes its
- * pending version with it (`cancelInFlight()`: the initial event and its
- * attempts go too, which that function allows only while no payment is in
- * flight or settled). `false` when the version could not be cancelled — the
- * payment is unresolved — so the caller refuses the close rather than leaving a
- * paid-for version behind.
+ * #2125 M6b-32 — the in-flight (`pending_payment`) ProductSet an assignment is linked to, or null.
+ * Closing a pending assignment cancels and keeps it (`cancelPendingProductSet()`), so the
+ * assignment's plan snapshot survives.
  */
-export async function cancelPendingSetForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<boolean> {
-  const { rows } = await tx.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment') FOR UPDATE`,
-    [gymId, userMembershipId]);
-  if (!rows[0]) return true;
-  const setId = Number(rows[0].id);
-  // The initial event's attempts are the set's: delete the ones nothing settled
-  // (a `cancelInFlight` sees only the request the set names).
-  const out = await cancelInFlight(tx, gymId, setId);
-  if (out.kind === 'unresolved') return false;
-  return true;
+export async function pendingSetIdForAssignment(
+  exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
+): Promise<number | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'pending_payment'
+      ORDER BY id DESC LIMIT 1`, [gymId, userMembershipId]);
+  return rows[0] ? Number(rows[0].id) : null;
 }
 
 /** The ProductSet an assignment is linked to (pending first, then active), for a writer that needs one. */
