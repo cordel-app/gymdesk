@@ -1004,7 +1004,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promotionId, actorText);
     }
 
-    const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [insertId]);
+    const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [gymId, insertId]);
     const { rows: coveredMembers } = await db.query(MEMBERSHIP_MEMBERS_SELECT, [insertId, gymId]);
     recordAudit(req, {
       action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0],
