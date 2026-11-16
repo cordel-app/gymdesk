@@ -28,6 +28,7 @@ import { productSetHistoryIds } from './product-set-history';
 import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershipFeeScope';
+import { feeMemberDiscountsSql, parseFeeMemberDiscounts } from '../domain/feeMemberDiscounts';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { recurringEventNameFor } from './billing-event-name';
 
@@ -367,7 +368,8 @@ export async function loadProductSetSimulationAssignment(
             snap.pay_beforehand_periods, snap.auto_renew,
             snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
             sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
-            ${membershipFeeUnitsSql('snap')} AS membership_fee_units
+            ${membershipFeeUnitsSql('snap')} AS membership_fee_units,
+            ${feeMemberDiscountsSql('snap')} AS fee_member_discounts
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
@@ -467,6 +469,7 @@ export async function loadProductSetSimulationAssignment(
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     // #2834 — one fee per beneficiary for a `per_member` snapshot, one otherwise.
     membershipFeeUnits: Number(row.membership_fee_units ?? 1),
+    membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
     // #2125 M5c — the same alignment `loadProductSetSimulationAssignments()` gives the plan, so a
     // forecast read through this loader shows the dates the persisted obligations fall on.
     ...(row.anchor_date != null && toDateOnly(row.anchor_date) < startsAt
