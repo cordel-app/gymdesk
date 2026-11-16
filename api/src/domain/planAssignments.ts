@@ -113,6 +113,10 @@ export const assignmentModifierSql = (column: 'modified_at' | 'modified_by', ali
  * `created_at` / `created_by`, the anchor being the assignment's first snapshot, M6b-13's rule),
  * its last modification (`assignmentModifierSql()`) and the soft-delete pair of the current
  * snapshot. Shaped like the `user_memberships` row it replaces (`id` is the legacy id).
+ * M6b-32: every column of that row, so `LIST_SELECT` (the assignments list and every write's
+ * answer) reads it as `um.*`: `purchased_at` and `replace_on_activation` off the current snapshot,
+ * and `replaces_user_membership_id` as the legacy id of the assignment the current snapshot's
+ * `replaces_assignment_id` names.
  * Binds one `?`: the gym id. Use it as `FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um`.
  */
 export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
@@ -120,7 +124,10 @@ export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
          pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at, anc.created_by,
          ${assignmentModifierSql('modified_at')} AS modified_at,
          ${assignmentModifierSql('modified_by')} AS modified_by,
-         pa.deleted_at, pa.deleted_by
+         pa.deleted_at, pa.deleted_by,
+         pa.purchased_at, pa.replace_on_activation,
+         (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+           WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces_user_membership_id
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
    WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
