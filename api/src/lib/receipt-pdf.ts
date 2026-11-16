@@ -1,4 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import type { InvoiceLine, TaxBreakdown } from '../domain/billingInvoice';
+import { formatTaxRate } from './invoice-pdf';
 
 export interface ReceiptData {
   receiptNumber: string;
@@ -11,15 +13,18 @@ export interface ReceiptData {
     fiscalPhone: string | null;
   };
   memberName: string;
-  concept: string;
-  totalAmount: number;
-  ivaRate: number; // e.g. 21 for 21%
+  /** #2884: the event's lines, each with its own rate and tax (`invoiceLineTaxes()`). */
+  lines: InvoiceLine[];
+  totals: TaxBreakdown;
   currency: string;
 }
 
 function formatCurrency(amount: number, currency: string): string {
   return `${amount.toFixed(2)} ${currency}`;
 }
+
+// pdf-lib's standard fonts are WinAnsi: drop anything they cannot encode.
+const safe = (s: string) => s.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?');
 
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -98,31 +103,39 @@ export async function generateReceiptPdf(data: ReceiptData): Promise<Buffer> {
   drawHLine(y);
   y -= 20;
 
-  // --- Concept table header ---
+  // --- Line table (#2884: each line states its own rate and tax) ---
+  const col = { qty: 0.42, rate: 0.5, tax: 0.6, amount: 0.8 };
   drawText('Concepto', margin, y, 10, true);
-  drawText('Base imponible', margin + contentWidth * 0.5, y, 10, true);
-  drawText(`IVA (${data.ivaRate}%)`, margin + contentWidth * 0.7, y, 10, true);
-  drawText('Total', margin + contentWidth * 0.87, y, 10, true);
+  drawText('Cant.', margin + contentWidth * col.qty, y, 10, true);
+  drawText('% IVA', margin + contentWidth * col.rate, y, 10, true);
+  drawText('Cuota IVA', margin + contentWidth * col.tax, y, 10, true);
+  drawText('Importe', margin + contentWidth * col.amount, y, 10, true);
   y -= 14;
   drawHLine(y, 1);
   y -= 16;
 
-  // --- Concept row ---
-  const base = data.totalAmount / (1 + data.ivaRate / 100);
-  const iva = data.totalAmount - base;
+  for (const l of data.lines) {
+    drawText(safe(l.name).slice(0, 34), margin, y, 10);
+    drawText(String(l.quantity), margin + contentWidth * col.qty, y, 10);
+    drawText(formatTaxRate(l.rate), margin + contentWidth * col.rate, y, 10);
+    drawText(formatCurrency(l.tax, data.currency), margin + contentWidth * col.tax, y, 10);
+    drawText(formatCurrency(l.amount, data.currency), margin + contentWidth * col.amount, y, 10);
+    y -= 16;
+  }
 
-  drawText(data.concept, margin, y, 11);
-  drawText(formatCurrency(base, data.currency), margin + contentWidth * 0.5, y, 11);
-  drawText(formatCurrency(iva, data.currency), margin + contentWidth * 0.7, y, 11);
-  drawText(formatCurrency(data.totalAmount, data.currency), margin + contentWidth * 0.87, y, 11);
-
-  y -= 20;
+  y -= 4;
   drawHLine(y, 1);
-  y -= 16;
+  y -= 18;
 
-  // --- Total row ---
-  drawText('TOTAL', margin + contentWidth * 0.7, y, 11, true);
-  drawText(formatCurrency(data.totalAmount, data.currency), margin + contentWidth * 0.87, y, 11, true);
+  // --- Totals: net, tax (the sum of the lines' tax) and grand total ---
+  drawText('Base imponible', margin + contentWidth * col.tax, y, 10);
+  drawText(formatCurrency(data.totals.net, data.currency), margin + contentWidth * col.amount, y, 10);
+  y -= 16;
+  drawText('IVA', margin + contentWidth * col.tax, y, 10);
+  drawText(formatCurrency(data.totals.tax, data.currency), margin + contentWidth * col.amount, y, 10);
+  y -= 18;
+  drawText('TOTAL', margin + contentWidth * col.tax, y, 11, true);
+  drawText(formatCurrency(data.totals.total, data.currency), margin + contentWidth * col.amount, y, 11, true);
 
   y -= 40;
   drawHLine(y);

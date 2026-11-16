@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, degrees, type PDFPage } from 'pdf-lib';
 import QRCode from 'qrcode';
-import { stampText, type InvoiceLanguage, type LineInput, type TaxBreakdown } from '../domain/billingInvoice';
+import { stampText, type InvoiceLanguage, type InvoiceLine, type TaxBreakdown } from '../domain/billingInvoice';
 import type { InvoiceType, InvoicePaymentState } from '../domain/billingDocumentKeys';
 
 export interface InvoicePdfData {
@@ -11,7 +11,8 @@ export interface InvoicePdfData {
   issuedAt: Date;
   gym: { name: string; legalName: string | null; cif: string | null; fiscalAddress: string | null; fiscalPhone: string | null };
   customer: { name: string; taxId: string | null; address: string | null };
-  lines: LineInput[];
+  /** #2884: every line carries its own rate and tax (`invoiceLineTaxes()`). */
+  lines: InvoiceLine[];
   totals: TaxBreakdown;
   currency: string;
   /** Set on a rectifying invoice: the original it corrects and why. It carries no PAID stamp. */
@@ -50,10 +51,18 @@ function drawQr(page: PDFPage, url: string, x: number, top: number, size: number
 }
 
 const T: Record<InvoiceLanguage, Record<string, string>> = {
-  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', rectifying: 'RECTIFYING INVOICE', rectifies: 'Rectifies invoice', replaces: 'Replaces simplified invoice', reason: 'Reason', concept: 'Concept', qty: 'Qty', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
-  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Sustituye a la factura simplificada', reason: 'Motivo', concept: 'Concepto', qty: 'Cant.', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
-  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Substitueix la factura simplificada', reason: 'Motiu', concept: 'Concepte', qty: 'Quant.', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
+  en: { simplified: 'SIMPLIFIED INVOICE', full: 'INVOICE', customer: 'Customer', rectifying: 'RECTIFYING INVOICE', rectifies: 'Rectifies invoice', replaces: 'Replaces simplified invoice', reason: 'Reason', concept: 'Concept', qty: 'Qty', rate: 'VAT %', lineTax: 'VAT', amount: 'Amount', net: 'Net', tax: 'Tax', total: 'TOTAL', date: 'Date' },
+  es: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Cliente', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Sustituye a la factura simplificada', reason: 'Motivo', concept: 'Concepto', qty: 'Cant.', rate: '% IVA', lineTax: 'Cuota IVA', amount: 'Importe', net: 'Base imponible', tax: 'IVA', total: 'TOTAL', date: 'Fecha' },
+  ca: { simplified: 'FACTURA SIMPLIFICADA', full: 'FACTURA', customer: 'Client', rectifying: 'FACTURA RECTIFICATIVA', rectifies: 'Rectifica la factura', replaces: 'Substitueix la factura simplificada', reason: 'Motiu', concept: 'Concepte', qty: 'Quant.', rate: '% IVA', lineTax: 'Quota IVA', amount: 'Import', net: 'Base imposable', tax: 'IVA', total: 'TOTAL', date: 'Data' },
 };
+
+/** Column offsets (from the left margin) of the line table. */
+const COL = { qty: 235, rate: 275, tax: 335, amount: 420 } as const;
+
+/** `21%`, `10%`, `0%`, `5.5%`: a rate as a document prints it. */
+export function formatTaxRate(rate: number): string {
+  return `${Number.isInteger(rate) ? rate : rate.toFixed(2).replace(/0$/, '')}%`;
+}
 
 // pdf-lib's standard fonts are WinAnsi: drop anything they cannot encode.
 const safe = (s: string) => s.replace(/[^\x20-\x7E -ÿ]/g, '?');
@@ -127,14 +136,19 @@ export async function generateInvoicePdf(d: InvoicePdfData): Promise<Buffer> {
   if (d.customer.address) { text(d.customer.address.replace(/\s+/g, ' ').slice(0, 90), margin, y, 10); y -= 14; }
   y -= 10; line(y); y -= 20;
 
+  // #2884: each line states its own rate and the tax it contributes.
   text(t.concept, margin, y, 10, true);
-  text(t.qty, margin + 330, y, 10, true);
-  text(t.amount, margin + 420, y, 10, true);
+  text(t.qty, margin + COL.qty, y, 10, true);
+  text(t.rate, margin + COL.rate, y, 10, true);
+  text(t.lineTax, margin + COL.tax, y, 10, true);
+  text(t.amount, margin + COL.amount, y, 10, true);
   y -= 14; line(y, 1); y -= 16;
   for (const l of d.lines) {
-    text(l.name.slice(0, 60), margin, y, 10);
-    text(String(l.quantity), margin + 330, y, 10);
-    text(money(l.amount), margin + 420, y, 10);
+    text(l.name.slice(0, 40), margin, y, 10);
+    text(String(l.quantity), margin + COL.qty, y, 10);
+    text(formatTaxRate(l.rate), margin + COL.rate, y, 10);
+    text(money(l.tax), margin + COL.tax, y, 10);
+    text(money(l.amount), margin + COL.amount, y, 10);
     y -= 16;
   }
   y -= 4; line(y, 1); y -= 18;

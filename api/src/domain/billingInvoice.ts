@@ -57,12 +57,17 @@ export function parseRectificationReason(body: unknown): { ok: true; value: stri
 }
 
 /** The rectifying invoice cancels the original in full: every figure is negated. */
-export function negateLines(lines: LineInput[]): LineInput[] {
-  return lines.map((l) => ({
-    ...l,
-    amount: -l.amount,
-    amountExclTax: l.amountExclTax == null ? null : -l.amountExclTax,
-  }));
+export function negateLines<L extends LineInput>(lines: L[]): L[] {
+  return lines.map((l) => {
+    const out: any = {
+      ...l,
+      amount: -l.amount,
+      amountExclTax: l.amountExclTax == null ? null : -l.amountExclTax,
+    };
+    if (typeof (l as any).net === 'number') out.net = -(l as any).net;
+    if (typeof (l as any).tax === 'number') out.tax = -(l as any).tax;
+    return out as L;
+  });
 }
 export function negateTotals(t: TaxBreakdown): TaxBreakdown {
   return { net: -t.net, tax: -t.tax, total: -t.total };
@@ -87,16 +92,58 @@ export interface TaxBreakdown { net: number; tax: number; total: number }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * #2884: one line of a receipt or invoice with its own tax rate, net and tax.
+ * `amount` stays VAT-inclusive; `net + tax = amount` to the cent.
+ */
+export interface InvoiceLine extends LineInput { rate: number; net: number; tax: number }
+
+/**
+ * The rate a line is stated at: its own stored rate; else, when only its net was
+ * stored, the rate that net implies; else the gym's system rate. A document
+ * never applies one rate to lines that carry their own.
+ */
+export function lineTaxRate(l: LineInput, fallbackRate: number): number {
+  if (l.taxRate != null) return l.taxRate;
+  if (l.amountExclTax != null && l.amountExclTax !== 0) return r2((l.amount / l.amountExclTax - 1) * 100);
+  return fallbackRate;
+}
+
+/**
+ * #2884 — every line's rate, net and tax, plus the document totals built from
+ * them, so `Σ line tax = tax total`, `Σ line net = net total` and
+ * `net + tax = total`. The total is always the event amount (the figure the
+ * VERI*FACTU record informs); the lines restate the engine and sum to it, and
+ * if a legacy event's lines leave a cent of rounding over it lands on the
+ * largest line's tax, so the document still reconciles. The one place a
+ * receipt's or an invoice's per-line tax is decided.
+ */
+export function invoiceLineTaxes(
+  lines: LineInput[], total: number, fallbackRate: number,
+): { lines: InvoiceLine[]; totals: TaxBreakdown } {
+  const cents = (n: number) => Math.round(n * 100);
+  const out: InvoiceLine[] = lines.map((l) => {
+    const rate = lineTaxRate(l, fallbackRate);
+    const net = r2(l.amountExclTax ?? l.amount / (1 + rate / 100));
+    return { ...l, rate, net, tax: r2(l.amount - net) };
+  });
+  if (out.length === 0) {
+    const net = r2(total / (1 + fallbackRate / 100));
+    return { lines: [], totals: { net, tax: r2(total - net), total: r2(total) } };
+  }
+  const residual = cents(total) - out.reduce((s, l) => s + cents(l.net) + cents(l.tax), 0);
+  if (residual !== 0) {
+    const largest = out.reduce((a, b) => (Math.abs(b.amount) > Math.abs(a.amount) ? b : a));
+    largest.tax = r2(largest.tax + residual / 100);
+  }
+  const net = out.reduce((s, l) => s + cents(l.net), 0) / 100;
+  const tax = out.reduce((s, l) => s + cents(l.tax), 0) / 100;
+  return { lines: out, totals: { net, tax, total: r2(total) } };
+}
+
 /** Net/tax/total of the event from its lines; the total is always the event amount. */
 export function taxBreakdown(lines: LineInput[], total: number, fallbackRate: number): TaxBreakdown {
-  let net = 0;
-  for (const l of lines) {
-    const rate = l.taxRate ?? fallbackRate;
-    net += l.amountExclTax ?? l.amount / (1 + rate / 100);
-  }
-  if (lines.length === 0) net = total / (1 + fallbackRate / 100);
-  net = r2(net);
-  return { net, tax: r2(total - net), total: r2(total) };
+  return invoiceLineTaxes(lines, total, fallbackRate).totals;
 }
 
 // ── #2648 stage 6: automatic simplified invoices ────────────────────────────
