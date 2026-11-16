@@ -60,6 +60,8 @@ export interface BillingEventLine {
    * that count; `null` on every other line.
    */
   prepaid_periods: number | null;
+  /** #2883 — the cadence `prepaid_periods` is counted in, beside it; `null` on every other line. */
+  prepaid_cadence: { interval: number; unit: string } | null;
   /** #1867 stage 4 — the partial first period of a Product that joined an existing schedule; `null` otherwise. */
   proration?: { prorated_days: number; period_days: number } | null;
   /** Why `actual_charge` differs from `regular_price`; empty at the regular price. */
@@ -198,6 +200,7 @@ export function groupBillingEventsByDate(
           regular_price: line.regular_price,
           actual_charge: line.actual_charge,
           prepaid_periods: line.prepaid_periods,
+          prepaid_cadence: line.prepaid_cadence ?? null,
           proration: line.proration ?? null,
           benefits: line.benefits,
         });

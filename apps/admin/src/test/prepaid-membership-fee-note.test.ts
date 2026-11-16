@@ -53,7 +53,8 @@ describe('Billing Event Simulation: a prepaid Membership Fee', () => {
   it('is noted from the server\'s own field, not inferred from the quantity', () => {
     const src = read(COMPONENT);
     expect(src).toContain('line.prepaid_periods != null');
-    expect(src).toContain("t('simulation_prepaid_periods'");
+    // #2883 — worded in the plan's own cadence by the one frequency module.
+    expect(src).toContain('prepaidPaymentLabel(line.prepaid_periods, line.prepaid_cadence');
     // No arithmetic on the amounts in the page (#817, #915).
     expect(src).not.toMatch(/line\.(unit_price|regular_price|actual_charge)\s*[*+/-]/);
   });
@@ -67,8 +68,8 @@ describe('Billing Event Simulation: a prepaid Membership Fee', () => {
       .toBe('€70.00 VAT included');
     expect(formatPlanTimelineBilling({ amount: null, waived: true }, 'No charge', 'VAT included', null))
       .toBe('No charge');
-    // And the page passes the server's count rather than deciding one.
-    expect(read(PLANS_PAGE)).toContain('row.prepaidPeriods != null');
+    // And the page passes the server's count rather than deciding one (#2883: with the Plan's cadence).
+    expect(read(PLANS_PAGE)).toContain('row.prepaidPeriods, plan.billing_policy');
   });
 
   it('has its label in every namespace that renders the section, in all three locales', () => {

@@ -4863,7 +4863,12 @@
     "duration_month": "{count, plural, one {# mes} other {# meses}}",
     "duration_year": "{count, plural, one {# año} other {# años}}",
     "duration_week": "{count, plural, one {# semana} other {# semanas}}",
-    "duration_four_weeks": "{count} × 4 semanas"
+    "duration_four_weeks": "{count} × 4 semanas",
+    "prepaid_month": "Prepago de {count, plural, one {# mes} other {# meses}}",
+    "prepaid_week": "Prepago de {count, plural, one {# semana} other {# semanas}}",
+    "prepaid_year": "Prepago de {count, plural, one {# año} other {# años}}",
+    "prepaid_four_weeks": "Prepago de {count} × 4 semanas",
+    "prepaid_periods": "Prepago de {count, plural, one {# periodo} other {# periodos}}"
   },
   "products": {
     "no_description": "Sin descripción disponible.",

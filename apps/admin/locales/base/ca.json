@@ -4890,7 +4890,12 @@
     "duration_month": "{count, plural, one {# mes} other {# mesos}}",
     "duration_year": "{count, plural, one {# any} other {# anys}}",
     "duration_week": "{count, plural, one {# setmana} other {# setmanes}}",
-    "duration_four_weeks": "{count} × 4 setmanes"
+    "duration_four_weeks": "{count} × 4 setmanes",
+    "prepaid_month": "Prepagament de {count, plural, one {# mes} other {# mesos}}",
+    "prepaid_week": "Prepagament de {count, plural, one {# setmana} other {# setmanes}}",
+    "prepaid_year": "Prepagament de {count, plural, one {# any} other {# anys}}",
+    "prepaid_four_weeks": "Prepagament de {count} × 4 setmanes",
+    "prepaid_periods": "Prepagament de {count, plural, one {# període} other {# períodes}}"
   },
   "products": {
     "no_description": "Cap descripció disponible.",

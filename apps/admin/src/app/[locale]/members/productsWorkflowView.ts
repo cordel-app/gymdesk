@@ -44,6 +44,8 @@ export interface InitialPaymentLike {
     name: string | null; quantity: number; unit_price: number; discount: number;
     promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
     tax_rate_percent: number | null; tax_amount: number; amount: number;
+    /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
+    prepaid_periods?: number | null; prepaid_cadence?: { interval: number; unit: string } | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;

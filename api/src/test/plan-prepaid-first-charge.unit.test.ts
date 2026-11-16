@@ -206,14 +206,18 @@ describe('computePlanBillingEventSimulation — the ticket\'s example', () => {
   it('bills the whole prepaid Membership Fee in the first billing event', () => {
     expect(feeLine(result, START)).toMatchObject({
       kind: 'membership_fee',
-      quantity: 3,
-      unit_price: 70,
+      // #2883 — the quantity is the number of fees (one), never the periods: those are
+      // `prepaid_periods`, with the cadence they are counted in, so the line reads
+      // "1 × €210.00 · 3 months pre-payment" rather than three fees.
+      quantity: 1,
+      unit_price: 210,
       // The regular price of that event is the three periods it pays for, so the
       // card reads "Regular price · €210.00" rather than a €210 charge against a
       // €70 regular price.
       regular_price: 210,
       actual_charge: 210,
       prepaid_periods: 3,
+      prepaid_cadence: { interval: 1, unit: 'month' },
       benefits: [],
     });
   });
@@ -256,7 +260,7 @@ describe('computePlanBillingEventSimulation — the ticket\'s example', () => {
   it('changes nothing for a Plan with no Pre-paid Duration', () => {
     const r = simulate({ paid: 3 });
     expect(feeLine(r, START)).toMatchObject({
-      quantity: 1, regular_price: 70, actual_charge: 70, prepaid_periods: null,
+      quantity: 1, regular_price: 70, actual_charge: 70, prepaid_periods: null, prepaid_cadence: null,
     });
   });
 });

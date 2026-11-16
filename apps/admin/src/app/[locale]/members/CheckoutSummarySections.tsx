@@ -17,7 +17,7 @@ import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
 import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
-import { billingFrequencyLabel, cadenceFrequencyLabel } from '@/lib/billingFrequency';
+import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 import { contractedMembersText, discountText, splitContracted } from './productsWorkflowView';
 
@@ -25,6 +25,7 @@ const money = (n: number) => `${n.toFixed(2)} €`;
 
 export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike | null | undefined }) {
   const t = useTranslations('members');
+  const tFreq = useTranslations('billing_frequency');
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
   if (payment.lines.length === 0) return <p style={cardHintStyle}>{t('review_nothing_due')}</p>;
@@ -45,9 +46,15 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
         <tbody>
           {payment.lines.map((l, i) => {
             const d = discountText(l);
+            // #2883 — a Membership Fee charge that collects a Pre-paid Duration says how many billing
+            // periods its amount covers, in the plan's cadence; the quantity stays the number of fees.
+            const prepaid = prepaidPaymentLabel(l.prepaid_periods, l.prepaid_cadence, tFreq as any);
             return (
               <tr key={i} data-initial-payment-line>
-                <td style={td}>{l.name ?? '—'}</td>
+                <td style={td}>
+                  {l.name ?? '—'}
+                  {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
+                </td>
                 <td style={tdNum}>{l.quantity}</td>
                 <td style={tdNum}>{money(l.unit_price)}</td>
                 <td style={td}>

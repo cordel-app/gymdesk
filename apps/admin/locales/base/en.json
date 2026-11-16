@@ -4877,7 +4877,12 @@
     "duration_month": "{count, plural, one {# month} other {# months}}",
     "duration_year": "{count, plural, one {# year} other {# years}}",
     "duration_week": "{count, plural, one {# week} other {# weeks}}",
-    "duration_four_weeks": "{count} × 4 weeks"
+    "duration_four_weeks": "{count} × 4 weeks",
+    "prepaid_month": "{count, plural, one {# month} other {# months}} pre-payment",
+    "prepaid_week": "{count, plural, one {# week} other {# weeks}} pre-payment",
+    "prepaid_year": "{count, plural, one {# year} other {# years}} pre-payment",
+    "prepaid_four_weeks": "{count} × 4 weeks pre-payment",
+    "prepaid_periods": "{count, plural, one {# period} other {# periods}} pre-payment"
   },
   "products": {
     "no_description": "No description available.",

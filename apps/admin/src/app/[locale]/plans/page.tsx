@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { BILLING_FREQUENCY_NAMESPACE } from '@/lib/billingFrequency';
+import { BILLING_FREQUENCY_NAMESPACE, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
@@ -1743,12 +1743,16 @@ export default function PlansPage() {
                               row,
                               t('plans.timeline_no_charge'),
                               t('plans.tax_included_suffix'),
-                              // #946 — the first Pre-paid period collects the whole
-                              // Pre-paid Duration, so the cell says how many periods
-                              // its amount covers.
-                              row.prepaidPeriods != null
-                                ? t('plans.timeline_prepaid_periods', { count: row.prepaidPeriods })
-                                : null,
+                              // #946 / #2883 — the first Pre-paid period collects the whole
+                              // Pre-paid Duration, so the cell says how many periods its
+                              // amount covers, in the Plan's own cadence.
+                              prepaidPaymentLabel(
+                                row.prepaidPeriods, plan.billing_policy ? {
+                                  interval: plan.billing_policy.recurring_billing_interval,
+                                  unit: plan.billing_policy.recurring_billing_unit,
+                                } : null,
+                                (key, values) => t(`${BILLING_FREQUENCY_NAMESPACE}.${key}` as any, values as any),
+                              ),
                             ),
                             tone: planTimelineRowTone(row),
                           }))}
