@@ -2,6 +2,7 @@ import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
+import { billingEventListFilterSql } from '../domain/billingEventListFilters';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
@@ -63,6 +64,12 @@ const billingEventStatusParam = z.preprocess((v) => {
   const arr = Array.isArray(v) ? v : [v];
   return arr.flatMap((s) => String(s).split(',').map((x) => x.trim())).filter(Boolean);
 }, z.array(z.enum(BILLING_EVENT_STATUSES)).optional());
+
+/** #2886: an optional `YYYY-MM-DD` (a longer ISO value is cut to its date). */
+const isoDateParam = z.preprocess(
+  (v) => (v === undefined || v === '' ? undefined : String(v).slice(0, 10)),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+);
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -300,8 +307,15 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     // ProductSet versions of its chain (the same predicate as the card's ledger).
     user_membership_id: z.coerce.number().int().positive().optional(),
     status: billingEventStatusParam,
-    from: z.string().optional(),
-    to: z.string().optional(),
+    // #2886: the event's billing date as the list shows it, inclusive.
+    from: isoDateParam,
+    to: isoDateParam,
+    // #2886: Product (partial name), Processed by, Payment method, Amount range.
+    product: z.string().trim().max(255).optional(),
+    processed_by: z.string().trim().max(255).optional(),
+    payment_method: z.string().trim().max(50).optional(),
+    amount_min: z.coerce.number().finite().optional(),
+    amount_max: z.coerce.number().finite().optional(),
     // #779: `asc` turns the failed filter into a work queue, oldest first.
     order: z.enum(['asc', 'desc']).default('desc'),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -319,8 +333,12 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       where.push(eventsOfAssignmentSql());
       params.push(...eventsOfAssignmentParams(gymId, q.user_membership_id));
     }
-    if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
-    if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
+    const filter = billingEventListFilterSql({
+      product: q.product, processed_by: q.processed_by, payment_method: q.payment_method,
+      date_from: q.from, date_to: q.to, amount_min: q.amount_min, amount_max: q.amount_max,
+    });
+    where.push(...filter.clauses);
+    params.push(...filter.params);
     const whereSql = where.join(' AND ');
 
     const { rows: realRows } = await db.query<{
@@ -563,6 +581,44 @@ export async function loadFailedPaymentsAttention(gymId: string, memberId?: numb
  * actions on each row stay behind `requireModuleWrite('PAYMENTS')`.
  * Registered before `/billing-events/:id` so `attention` is not read as an id.
  */
+/**
+ * GET /payments/billing-events/filter-options — #2886.
+ *
+ * What the list's *Processed by* and *Payment method* filters offer: the values
+ * present on this gym's events and attempts (never a declared list), so a value
+ * offered always matches at least one row.
+ */
+paymentsRouter.get('/billing-events/filter-options', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows: actors } = await db.query<{ name: string }>(
+      `SELECT DISTINCT a.name FROM (
+         SELECT be.created_by AS name FROM billing_events be WHERE be.gym_id = ? AND be.created_by IS NOT NULL
+         UNION
+         SELECT pr.created_by AS name FROM payment_requests pr
+           JOIN billing_events be ON be.id = pr.billing_event_id
+          WHERE be.gym_id = ? AND pr.created_by IS NOT NULL
+       ) a WHERE a.name <> '' ORDER BY a.name`,
+      [gymId, gymId],
+    );
+    const { rows: methods } = await db.query<{ code: string; name: string }>(
+      `SELECT pr.payment_method_code AS code, MIN(pr.payment_method_name) AS name
+         FROM payment_requests pr
+         JOIN billing_events be ON be.id = pr.billing_event_id
+        WHERE be.gym_id = ? AND pr.payment_method_code IS NOT NULL AND pr.payment_method_name IS NOT NULL
+        GROUP BY pr.payment_method_code
+        ORDER BY name`,
+      [gymId],
+    );
+    res.json({
+      processed_by: actors.map((r) => r.name),
+      payment_methods: methods.map((r) => ({ code: r.code, name: r.name })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 paymentsRouter.get('/billing-events/attention', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {

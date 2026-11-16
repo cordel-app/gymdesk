@@ -7,6 +7,11 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
+import {
+  EMPTY_BILLING_EVENT_FILTERS, appendApiFilters, filtersFromUrl, filtersToUrl, hasActiveFilter,
+  type BillingEventFilters,
+} from './billingEventFilters';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -56,6 +61,17 @@ interface PageResult {
 }
 
 interface MemberHit { id: number; name: string; email: string }
+
+/** #2886: what `GET /payments/billing-events/filter-options` offers. */
+interface FilterOptions {
+  processed_by: string[];
+  payment_methods: Array<{ code: string; name: string }>;
+}
+
+/** Keeps a value taken from the URL selectable even when it is not offered. */
+function withCurrent(values: string[], current: string): string[] {
+  return current && !values.includes(current) ? [...values, current] : values;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -159,26 +175,16 @@ export default function BillingEventsPage() {
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
 
-  // Filter state — synced with URL params
-  const [memberId, setMemberId] = useState<number | null>(
-    searchParams.get('memberId') ? Number(searchParams.get('memberId')) : null,
-  );
-  const [memberName, setMemberName] = useState<string>(searchParams.get('memberName') ?? '');
-  // #2553: one Assigned Plan's events (`?userMembershipId=`), shown as a chip.
-  const [userMembershipId, setUserMembershipId] = useState<number | null>(
-    searchParams.get('userMembershipId') ? Number(searchParams.get('userMembershipId')) : null,
-  );
-  const [planName] = useState<string>(searchParams.get('planName') ?? '');
-  const [from, setFrom] = useState(searchParams.get('from') ?? '');
-  const [to, setTo] = useState(searchParams.get('to') ?? '');
-  const [status, setStatus] = useState<string[]>(
-    (searchParams.get('status') ?? '').split(',').filter(Boolean),
-  );
+  // #2886: every filter is one state object, synced with the URL.
+  const [filters, setFilters] = useState<BillingEventFilters>(() => filtersFromUrl(searchParams));
+  // Free-text and number inputs are typed into a draft and committed after a pause.
+  const [draft, setDraft] = useState({ product: filters.product, amountMin: filters.amountMin, amountMax: filters.amountMax });
+  const [options, setOptions] = useState<FilterOptions>({ processed_by: [], payment_methods: [] });
   // #779: `order=asc` is how the sidebar badge opens the failed list as a work
   // queue, oldest first. Carried through the URL like the filters, no control.
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
   // #1521: `?id=` opens one specific event (the Member card's *View billing
-  // event*), expanded; changing any filter leaves it (`pushParams` drops it).
+  // event*), expanded; changing any filter leaves it (`applyFilters` drops it).
   const eventIdParam = Number(searchParams.get('id'));
   const eventId = Number.isInteger(eventIdParam) && eventIdParam > 0 ? eventIdParam : null;
   const [offset, setOffset] = useState(0);
@@ -189,22 +195,30 @@ export default function BillingEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   // Sync filter state to URL
-  function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[]; userMembershipId?: number | null }) {
-    const p = new URLSearchParams();
-    const umId = params.userMembershipId !== undefined ? params.userMembershipId : userMembershipId;
-    const mId = params.memberId !== undefined ? params.memberId : memberId;
-    const mName = params.memberName !== undefined ? params.memberName : memberName;
-    const f = params.from !== undefined ? params.from : from;
-    const t2 = params.to !== undefined ? params.to : to;
-    const s = params.status !== undefined ? params.status : status;
-    if (mId) { p.set('memberId', String(mId)); p.set('memberName', mName); }
-    if (umId) { p.set('userMembershipId', String(umId)); if (planName) p.set('planName', planName); }
-    if (f) p.set('from', f);
-    if (t2) p.set('to', t2);
-    if (s.length > 0) p.set('status', s.join(','));
+  function applyFilters(next: BillingEventFilters) {
+    setFilters(next);
+    const p = filtersToUrl(next);
     if (order === 'asc') p.set('order', 'asc');
     router.replace(`/${locale}/payments/billing-events${p.toString() ? '?' + p.toString() : ''}`, { scroll: false });
   }
+  function patchFilters(patch: Partial<BillingEventFilters>) {
+    applyFilters({ ...filters, ...patch });
+  }
+
+  useEffect(() => {
+    if (draft.product === filters.product && draft.amountMin === filters.amountMin && draft.amountMax === filters.amountMax) return;
+    const timer = setTimeout(() => patchFilters(draft), 400);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
+  useEffect(() => {
+    if (!activeGymId) return;
+    apiFetch<FilterOptions>('/payments/billing-events/filter-options')
+      .then(setOptions)
+      .catch(() => setOptions({ processed_by: [], payment_methods: [] }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGymId]);
 
   const load = useCallback(async (off: number) => {
     if (!activeGymId) return;
@@ -212,11 +226,7 @@ export default function BillingEventsPage() {
     setError(null);
     try {
       const p = new URLSearchParams({ limit: String(DEFAULT_LIMIT), offset: String(off) });
-      if (memberId) p.set('member_id', String(memberId));
-      if (userMembershipId) p.set('user_membership_id', String(userMembershipId));
-      if (from) p.set('from', from);
-      if (to) p.set('to', to);
-      for (const s of status) p.append('status', s);
+      appendApiFilters(p, filters);
       if (order === 'asc') p.set('order', 'asc');
       if (eventId) p.set('id', String(eventId));
       const data = await apiFetch<PageResult>(`/payments/billing-events?${p}`);
@@ -232,7 +242,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, memberId, userMembershipId, from, to, status, order, eventId]);
+  }, [activeGymId, filters, order, eventId]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
@@ -272,88 +282,131 @@ export default function BillingEventsPage() {
       {modal}
       <h1 style={{ margin: '0 0 16px' }}>{t('billing_events_page.title')}</h1>
 
-      {/* Filter bar */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('billing_events_page.filter_member')}
-          </label>
+      {/* Filter bar — #2886: each filter narrows server-side; they combine with AND. */}
+      <FilterBar>
+        <FilterField label={t('billing_events_page.filter_member')}>
           <MemberFilter
-            value={memberName}
+            value={filters.memberName}
             placeholder={t('billing_events_page.filter_member')}
-            onSelect={(m) => {
-              setMemberId(m.id);
-              setMemberName(m.name);
-              pushParams({ memberId: m.id, memberName: m.name });
-            }}
-            onClear={() => {
-              setMemberId(null);
-              setMemberName('');
-              pushParams({ memberId: null, memberName: '' });
-            }}
+            onSelect={(m) => patchFilters({ memberId: m.id, memberName: m.name })}
+            onClear={() => patchFilters({ memberId: null, memberName: '' })}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('billing_events_page.filter_from')}
-          </label>
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_product')} htmlFor="be-filter-product">
           <input
-            type="date"
-            value={from}
-            onChange={(e) => { setFrom(e.target.value); pushParams({ from: e.target.value }); }}
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+            id="be-filter-product"
+            type="search"
+            value={draft.product}
+            placeholder={t('billing_events_page.filter_product_placeholder')}
+            onChange={(e) => setDraft((d) => ({ ...d, product: e.target.value }))}
+            style={{ ...filterControlStyle, minWidth: 180 }}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('billing_events_page.filter_to')}
-          </label>
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_processed_by')} htmlFor="be-filter-processed-by">
+          <select
+            id="be-filter-processed-by"
+            value={filters.processedBy}
+            onChange={(e) => patchFilters({ processedBy: e.target.value })}
+            style={filterControlStyle}
+          >
+            <option value="">{t('billing_events_page.filter_any')}</option>
+            {withCurrent(options.processed_by, filters.processedBy).map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_payment_method')} htmlFor="be-filter-method">
+          <select
+            id="be-filter-method"
+            value={filters.paymentMethod}
+            onChange={(e) => patchFilters({ paymentMethod: e.target.value })}
+            style={filterControlStyle}
+          >
+            <option value="">{t('billing_events_page.filter_any')}</option>
+            {options.payment_methods.map((m) => (
+              <option key={m.code} value={m.code}>{m.name}</option>
+            ))}
+            {filters.paymentMethod && !options.payment_methods.some((m) => m.code === filters.paymentMethod) && (
+              <option value={filters.paymentMethod}>{filters.paymentMethod}</option>
+            )}
+          </select>
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_from')} htmlFor="be-filter-from">
           <input
+            id="be-filter-from"
             type="date"
-            value={to}
-            onChange={(e) => { setTo(e.target.value); pushParams({ to: e.target.value }); }}
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+            value={filters.from}
+            max={filters.to || undefined}
+            onChange={(e) => patchFilters({ from: e.target.value })}
+            style={filterControlStyle}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('billing_events_page.filter_status')}
-          </label>
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_to')} htmlFor="be-filter-to">
+          <input
+            id="be-filter-to"
+            type="date"
+            value={filters.to}
+            min={filters.from || undefined}
+            onChange={(e) => patchFilters({ to: e.target.value })}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_amount_min')} htmlFor="be-filter-amount-min">
+          <input
+            id="be-filter-amount-min"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={draft.amountMin}
+            onChange={(e) => setDraft((d) => ({ ...d, amountMin: e.target.value }))}
+            style={{ ...filterControlStyle, width: 110 }}
+          />
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_amount_max')} htmlFor="be-filter-amount-max">
+          <input
+            id="be-filter-amount-max"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={draft.amountMax}
+            onChange={(e) => setDraft((d) => ({ ...d, amountMax: e.target.value }))}
+            style={{ ...filterControlStyle, width: 110 }}
+          />
+        </FilterField>
+        <FilterField label={t('billing_events_page.filter_status')}>
           <MultiSelectFilter
             label={t('billing_events_page.filter_status')}
             options={STATUS_VALUES.map((v) => ({ value: v, label: statusLabel[v] }))}
-            selected={status}
-            onChange={(next) => { setStatus(next); pushParams({ status: next }); }}
+            selected={filters.status}
+            onChange={(next) => patchFilters({ status: next })}
           />
-        </div>
-        {userMembershipId && (
-          <div>
-            <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-              {t('billing_events_page.filter_plan')}
-            </label>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
-              {planName || `#${userMembershipId}`}
+        </FilterField>
+        {filters.userMembershipId && (
+          <FilterField label={t('billing_events_page.filter_plan')}>
+            <span style={{ ...filterControlStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {filters.planName || `#${filters.userMembershipId}`}
               <button
                 type="button"
                 aria-label={t('billing_events_page.filter_plan_remove')}
-                onClick={() => { setUserMembershipId(null); pushParams({ userMembershipId: null }); }}
-                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: '#6b7280' }}
+                onClick={() => patchFilters({ userMembershipId: null, planName: '' })}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: 'inherit' }}
               >✕</button>
             </span>
-          </div>
+          </FilterField>
         )}
-        {(memberId || userMembershipId || from || to || status.length > 0) && (
+        {hasActiveFilter(filters) && (
           <button
+            type="button"
             onClick={() => {
-              setMemberId(null); setMemberName(''); setUserMembershipId(null); setFrom(''); setTo(''); setStatus([]);
-              router.replace(`/${locale}/payments/billing-events`, { scroll: false });
+              setDraft({ product: '', amountMin: '', amountMax: '' });
+              applyFilters(EMPTY_BILLING_EVENT_FILTERS);
             }}
-            style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: 6, alignSelf: 'flex-end' }}
+            style={filterButtonStyle}
           >
             {t('billing_events_page.filter_clear')}
           </button>
         )}
-      </div>
+      </FilterBar>
 
       {/* Table */}
       {loading && <p style={{ color: '#888', fontSize: 14 }}>{t('billing_events_page.loading')}</p>}
