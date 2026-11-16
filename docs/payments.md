@@ -801,6 +801,17 @@ refunds. Nothing else moves: the original attempt, the ledger row, its lines, a 
 or invoice, the attempt counter and every contracted item stay as they were (a rectifying
 invoice is the existing manual `POST /payments/invoices/:id/rectify`, never automatic).
 
+**A pending Monei refund is settled later from Monei's own record** (#2480 follow-up).
+`POST /billing/cleanup` runs `reconcilePendingProviderRefunds()`
+(`api/src/api/billing-event-refunds.ts`): for each payment with a provider refund pending for
+more than 10 minutes, it asks Monei how much of that payment it has refunded in total
+(`getRefundedAmount()`, the payment's `refundedAmount`) and `allocateProviderRefunds()`
+(`domain/billingEventRefund.ts`) decides, oldest first, which pending refunds that covers beyond
+the completed ones: a covered refund is completed (with its Refund Receipt, #2935), one still
+uncovered after `PENDING_REFUND_FAIL_AFTER_HOURS` (24) is failed and its amount released, and
+the rest stay pending. A payment Monei cannot be asked about, or whose answer gives no total,
+is left for the next run. The cleanup response reports `refunds_completed` / `refunds_failed`.
+
 > **Decisions (#2480)** — change them here if they turn out wrong:
 > - **A refund carries no `billing_event_id`.** It reaches the event through the attempt it
 >   refunds, so the ~60 readers of "the event's latest attempt" need no change.
@@ -1362,6 +1373,11 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
   application's own snapshot, never a live join.
 - **Billing & Duration is the Plan's only billing section** since #635 stage 13
   (migration 189).
+- **An initial charge's lines state their tax** (#2947). `initialCharge()` gives every line its rate
+  and net (`domain/initialChargeTaxes.ts`): a Membership Fee its plan's effective rate, a Product its
+  own, a cart purchase its frozen one, anything else the gym's system rate (the rate
+  `invoiceLineTaxes()` falls back to). The net is split from the line's final, VAT-inclusive amount;
+  the amount itself is the engine's and is never changed.
 
 ### Observability today
 
