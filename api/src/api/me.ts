@@ -1082,9 +1082,11 @@ async function soleFamilyGroupServiceId(gymId: string, sessionId: number): Promi
 
 /**
  * #2813 §5: one individual booking per selected family member, in the caller's
- * transaction — no group. Each member passes the booking gate, reserves their
- * own unit (#2605) and counts toward the service's places (#1984 stage 2a); every
- * row records the initiator as `booked_by_member_id`. The bookings are all-or-
+ * transaction — no group. Each member passes the booking gate and counts toward
+ * the service's places (#1984 stage 2a); every row records the initiator as
+ * `booked_by_member_id`. #2902: the family booking reserves **one** unit (#2605),
+ * on its first row, however many members attend — and spends one
+ * (`spendSessionForBooking()` treats the rows as one family booking). The bookings are all-or-
  * nothing: a member who would be refused or waitlisted rolls every one back.
  * #2850: with `bookerAttends` false the booker books only the selected family
  * members (a parent booking for their children) and holds no booking of their
@@ -1108,7 +1110,7 @@ async function bookFamilyMembers(tx: Tx, input: {
   const ids: number[] = [];
   let first: any = null;
   for (const id of bookerAttends ? [memberId, ...partnerIds] : partnerIds) {
-    const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId);
+    const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId, first === null);
     if (row.status !== 'booked') {
       throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
     }
