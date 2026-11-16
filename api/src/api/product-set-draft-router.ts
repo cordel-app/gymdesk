@@ -11,7 +11,8 @@ import { commitCharge } from './product-set-checkout';
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
-import { loadProductSetSimulationAssignment } from './product-set-configuration';
+import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { mergeBillingEventForecasts } from './me-billing-forecast';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
@@ -165,9 +166,13 @@ export async function simulationHandler(req: any, res: any, next: any) {
   const { gymId } = getTenantContext(req);
   try {
     const id = Number((req.params as any).id);
-    const assignment = await loadProductSetSimulationAssignment(gymId, id);
-    if (!assignment) return res.status(404).json({ error: 'not_found' });
-    const base = computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true });
+    // #2899: every Membership Plan of the version, each through the engine on its own and merged
+    // by date — the loader `planScheduledEvents()` persists from, so a Draft that adds a plan beside
+    // a running one forecasts both rather than whichever plan the one-plan loader happened to read.
+    const assignments = await loadProductSetSimulationAssignments(gymId, id);
+    if (assignments.length === 0) return res.status(404).json({ error: 'not_found' });
+    const base = mergeBillingEventForecasts(assignments.map((assignment) =>
+      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true })));
 
     // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
     // committing asks for today, the figure Save & Pay charges) and the member's

@@ -106,6 +106,17 @@ the pending version and activates it through `activateWithEvents()`: the Active 
 superseded, its obsolete future events replaced, the new version's generated, the assignment
 re-projected.
 
+**A version that follows a running one owes only what it adds (#1521, #2899).** `commitCharge()`
+prices such a version (`previous_product_set_id` set) dated today as a delta against the previous
+version: a carried line is not asked for again (a grown quantity owes the added units), an
+**inherited** plan's Membership Fee is not asked for again, and the fee of each plan the version
+**adds** — a plan whose snapshot the previous version does not link (`planSnapshotInheritedSql()`,
+read through `planScheduledEvents(…, { newPlansOnly: true })`) — is owed exactly as on a first
+version, Pre-paid Duration and alignment stretch included. Before #2899 every fee line was
+dropped, so an Admin Draft adding a plan to a member who already held one reviewed at €0.00. The
+review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
+this one figure, and reading it writes nothing.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
 current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
 which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
