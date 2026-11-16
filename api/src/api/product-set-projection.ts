@@ -4,6 +4,7 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 import { cancellationStatusFor } from '../domain/assignmentStatus';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -214,8 +215,10 @@ export async function projectActiveProductSet(
   // index is never held by two rows; this runs at activation (payment settled),
   // so a failed or abandoned payment never reaches it.
   if (previousUmId != null) {
+    // #2125 M6b-28: the predecessor's start date is its current plan snapshot's.
     const { rows: prev } = await tx.query<{ starts_at: Date | string }>(
-      'SELECT starts_at FROM user_memberships WHERE id = ? AND gym_id = ?', [previousUmId, gymId]);
+      `SELECT pa.starts_at FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+      [gymId, previousUmId]);
     let endsAt = startsAt;
     if (previousPlanId === Number(set.membership_plan_id) && prev[0]) {
       // Same plan: both rows must not count as entitled on the same day.
