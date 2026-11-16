@@ -85,6 +85,8 @@ export interface BillingEventForecast {
 export interface MemberBillingEvent {
   id: number;
   event_type: string;
+  /** #2940 — the event's generated name, the same text the Admin shows; null for an event written before it. */
+  name?: string | null;
   charge_type_code: string | null;
   previous_status: string | null;
   new_status: string | null;

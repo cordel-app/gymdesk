@@ -2177,8 +2177,11 @@ export default function MembershipPage() {
         : null;
       return {
         key: String(event.id),
-        name: t(`membership.event.${event.event_type}` as any)
-          + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''),
+        // #2940: the event's own name when it has one (stored by the API, shown identically in
+        // the Admin); an event written before names existed keeps the label it had.
+        name: event.name
+          ?? (t(`membership.event.${event.event_type}` as any)
+            + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : '')),
         meta: [transition, event.notes].filter(Boolean).join(' · ') || null,
         amount: money(billingEventAmount(event)),
         trailing: (

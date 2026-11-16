@@ -18,6 +18,7 @@ import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
+import { initialEventNameFor } from './billing-event-name';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -229,12 +230,14 @@ export async function ensureInitialEvent(tx: Tx, input: {
       [input.productSetId, input.charge.scheduleKey]);
     scheduleId = rows[0] ? Number(rows[0].id) : null;
   }
+  // #2940: the event's name, decided once from what this version adds or modifies.
+  const name = await initialEventNameFor(tx, input.gymId, input.productSetId, input.startsAt);
   const { insertId } = await tx.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, event_type, source, amount, charge_type_id, product_set_id, schedule_id,
+       (gym_id, member_id, event_type, name, source, amount, charge_type_id, product_set_id, schedule_id,
         period_start, billing_date, is_scheduled, created_by)
-     VALUES (?, ?, 'payment_recorded', 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
-    [input.gymId, input.memberId, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
+     VALUES (?, ?, 'payment_recorded', ?, 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
+    [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
       scheduleId, input.startsAt, input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
