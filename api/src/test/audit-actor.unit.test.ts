@@ -131,6 +131,7 @@ describe('gate: audited tables', () => {
     { file: 'api/cart-checkout.ts', table: 'payment_requests', why: 'billing_event_id link written right after the same transaction inserted the request and its event (#2949 stage 4)' },
     { file: 'api/payment-page.ts', table: 'payment_requests', why: 'page_token = NULL when the hosted page is opened: token consumption, not a change; the settle UPDATEs record modified_by' },
     { file: 'api/product-set-bridge.ts', table: 'billing_events', why: 'linkInitialPaymentToSet re-keys product_set_id/schedule_id/period_start on the first payment event inside the commit that already records the actor' },
+    { file: 'api/product-set-checkout.ts', table: 'billing_events', why: '#2887 follow-up: ensureInitialEvent() releases the schedule period (schedule_id = NULL) a cancelled, unpaid initial event still held, so the new initial event can take it; a schedule re-key, not a business edit of the cancelled event' },
     { file: 'api/schedule-realignment.ts', table: 'billing_events', why: 'consolidateSetOwnerSchedules re-points an untouched event onto the surviving schedule of its cadence (#2125 M5c-2); a schedule re-key by the operator script, not a business edit of the event' },
     { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
     { file: 'api/product-sets.ts', table: 'product_sets', why: 'last_activity_at and status moves of a version; product_sets keeps only created_by (a version is replaced, never edited)' },
