@@ -6266,6 +6266,7 @@
     "type_base_personal_goals": "Personal Goals",
     "type_base_nutrition_goals": "Nutrition Goals",
     "type_base_nutrition_library": "Nutrition Library",
+    "type_base_exercises": "Base Exercises",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",
