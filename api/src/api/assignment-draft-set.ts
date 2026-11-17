@@ -1,5 +1,5 @@
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
-import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, nameAssignmentSnapshot } from './plan-assignment-sync';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
@@ -90,6 +90,8 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     membershipFeePrice: input.membershipFeePrice, startsAt: input.startsAt,
     declinedBenefits: input.declinedBenefits, origin: 'admin',
   });
+  // #2125 M6b-44: the plan snapshot names the new assignment as soon as it exists, so its anchor does too.
+  await nameAssignmentSnapshot(tx, input.gymId, setId, input.userMembershipId);
   await tx.query(
     `UPDATE plan_snapshots
         SET plan_price_id = ?, base_price = ?, discount_reason = ?, discount_expires_at = ?
@@ -256,6 +258,8 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   // running one when it commits), so its plan is a proposed change by construction and is copied
   // now — the sync below then names the Draft assignment on the copy. Any other plan stays shared.
   await ownPrimaryPlanSnapshot(tx, input.gymId, setId);
+  // #2125 M6b-44: the owned copy names the Draft assignment before the sync (which reads the anchor).
+  await nameAssignmentSnapshot(tx, input.gymId, setId, input.userMembershipId);
   await syncDraftAssignment(tx, input.gymId, setId);
   return setId;
 }
@@ -281,6 +285,7 @@ export async function adoptDraftForEdit(tx: Tx, input: {
     activeSetId: input.activeSetId, editedUserMembershipId: input.editedUserMembershipId,
   });
   await ownPrimaryPlanSnapshot(tx, input.gymId, input.draftSetId);
+  await nameAssignmentSnapshot(tx, input.gymId, input.draftSetId, input.userMembershipId);
   await syncDraftAssignment(tx, input.gymId, input.draftSetId);
   return input.draftSetId;
 }

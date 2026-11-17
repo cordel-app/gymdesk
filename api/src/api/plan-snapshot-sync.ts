@@ -9,7 +9,7 @@ import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { syncPlanAssignment } from './plan-assignment-sync';
 import { settleSharedPlanLifecycle } from './plan-assignment-lifecycle';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
-import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { productSetLegacyAssignmentIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
@@ -53,6 +53,15 @@ export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: numb
 async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 2: every write that re-derives a version's plan snapshot re-derives its Product lines too.
   await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
+  // #2125 M6b-44: the assignment the set is linked to is read off its anchor (`plan_assignment_id`),
+  // never `product_sets.user_membership_id`. Read first, apart from the UPDATEs below: they write
+  // `plan_snapshots`, which MySQL will not let a subquery of the same statement read (error 1093). An
+  // assignment no snapshot names yet has no anchor; its writer named the snapshot when it linked the
+  // set (`nameAssignmentSnapshot()`), so nothing is lost by reading none here.
+  const { rows: linkRows } = await tx.query<{ um_id: number | null }>(
+    `SELECT ${productSetLegacyAssignmentIdSql('ps')} AS um_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
+    [productSetId, gymId]);
+  const linkedUmId = linkRows[0]?.um_id != null ? Number(linkRows[0].um_id) : null;
   // Status and closed_at of every snapshot the version links and no other set does. M6b-7: and the
   // day an assignment that is over ended, on the snapshot of its superseded set (the last snapshot
   // of a plan that left the Active set), so the snapshot dates the plan as its assignment does.
@@ -62,7 +71,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
     `UPDATE plan_snapshots s
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
-       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ps.user_membership_id) AND um.gym_id = s.gym_id
+       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ?) AND um.gym_id = s.gym_id
         SET s.status = CASE WHEN ps.status = 'active'
                                  AND um.status IN ('paused','active_cancel_at_period_end','cancelled','expired') THEN um.status
                             WHEN ps.status = 'superseded' AND um.status IN ('cancelled','expired') THEN um.status
@@ -70,7 +79,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
             s.closed_at = um.closed_at,
             s.ends_at = IF(ps.status IN ('superseded','cancelled') AND um.status IN ('cancelled','expired','superseded'), um.ends_at, s.ends_at)
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
-    [productSetId, gymId]);
+    [productSetId, linkedUmId, gymId]);
 
   const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (snapshotId == null) return;
@@ -84,9 +93,9 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
         SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
             s.starts_at = ps.starts_at,
             s.ends_at = IF(ps.status IN ('superseded','cancelled') AND s.closed_at IS NOT NULL, s.ends_at, ps.ends_at),
-            s.source_user_membership_id = COALESCE(ps.user_membership_id, s.source_user_membership_id)
+            s.source_user_membership_id = COALESCE(?, s.source_user_membership_id)
       WHERE s.id = ?`,
-    [productSetId, snapshotId]);
+    [productSetId, linkedUmId, snapshotId]);
   const { rows: snap } = await tx.query<{ id: number; member_id: number }>(
     'SELECT s.id, s.member_id FROM plan_snapshots s WHERE s.id = ? AND s.gym_id = ?', [snapshotId, gymId]);
 

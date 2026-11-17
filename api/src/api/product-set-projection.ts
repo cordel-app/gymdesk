@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { syncPromotionAssignmentIds, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { syncPromotionAssignmentIds, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -251,6 +251,8 @@ export async function projectActiveProductSet(
   await attachApplications(tx, gymId, productSetId, umId);
 
   await tx.query(`UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+  // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
+  await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
   return umId;
 }
 
