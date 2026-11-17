@@ -19,7 +19,7 @@ import { parseMuscleTranslations } from './muscleTranslations';
  */
 export const TRANSFER_ENTITY_TYPES = [
   'muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services',
-  'base_personal_goals', 'base_nutrition_goals',
+  'base_personal_goals', 'base_nutrition_goals', 'base_nutrition_library',
 ] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
@@ -31,6 +31,7 @@ export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]>
   base_professional_services: ['image'],
   base_personal_goals: ['image'],
   base_nutrition_goals: ['image'],
+  base_nutrition_library: ['image'],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -168,3 +169,26 @@ export const BASE_PERSONAL_GOAL_TRANSFER_FIELDS = [
 
 /** The fields of a Base Nutrition Goal an archive carries. */
 export const BASE_NUTRITION_GOAL_TRANSFER_FIELDS = ['name', 'description', 'translations'] as const;
+
+/**
+ * The fields of a Base Nutrition Library food an archive carries: its own content.
+ * Its categories and nutritional qualities are global lookups (`nutrition_library_categories`,
+ * `nutritional_qualities`) identified across databases by their slug, so the archive
+ * names them as `category_slugs` / `quality_slugs`; they are a relationship, so an
+ * import applies them only when it creates the food (a category is required then)
+ * and never on an update.
+ */
+export const BASE_FOOD_TRANSFER_FIELDS = ['name', 'description', 'translations', 'description_translations'] as const;
+
+/**
+ * A list of lookup slugs as an archive names them: `undefined` when absent, else
+ * an array of distinct non-empty strings (`{ error }` otherwise). Whether each
+ * names an existing lookup row is the I/O half's question.
+ */
+export function parseLookupSlugs(value: unknown, field: string): { slugs?: string[] } | { error: string } {
+  if (value === undefined) return {};
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || !v.trim())) {
+    return { error: `${field} must be an array of slugs` };
+  }
+  return { slugs: [...new Set((value as string[]).map((v) => v.trim()))] };
+}

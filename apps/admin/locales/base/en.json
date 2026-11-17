@@ -6263,6 +6263,7 @@
     "type_base_professional_services": "Professional Services",
     "type_base_personal_goals": "Personal Goals",
     "type_base_nutrition_goals": "Nutrition Goals",
+    "type_base_nutrition_library": "Nutrition Library",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",

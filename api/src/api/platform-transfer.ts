@@ -18,6 +18,8 @@ import {
   BASE_PAYMENT_METHOD_TRANSFER_FIELDS,
   BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS,
   BASE_NUTRITION_GOAL_TRANSFER_FIELDS,
+  BASE_FOOD_TRANSFER_FIELDS,
+  parseLookupSlugs,
   BASE_PERSONAL_GOAL_TRANSFER_FIELDS,
   isValidGoalSlug,
   PAYMENT_PROVIDER_TRANSFER_FIELDS,
@@ -67,6 +69,15 @@ import {
   updateBaseNutritionGoal,
 } from './platform-base-nutrition-goals';
 import { BASE_LOCALE } from '../infra/locale';
+import { loadCategoriesMap, loadQualitiesMap, loadTranslationsMap, BASE_FOOD_TABLES } from '../domain/nutritionLibrary';
+import { loadDescriptionTranslationsMap } from '../domain/nutritionDescriptionTranslations';
+import {
+  createBaseFood,
+  loadBaseFood,
+  storeBaseFoodImage,
+  updateBaseFood,
+} from './platform-base-nutrition-library';
+import { nutritionImageBodyParser } from './nutrition-image-storage';
 
 /**
  * #2952 — Cordel → Export / Import, the API half (superadmin only). The Admin
@@ -529,3 +540,110 @@ for (const goal of BASE_GOAL_TRANSFERS) {
     },
   );
 }
+
+// ── Base Nutrition Library (stage 5) ────────────────────────────────────────
+
+platformTransferRouter.get('/base_nutrition_library', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<{ id: number; slug: string; name: string; description: string | null; image_url: string | null }>(
+      `SELECT id, slug, name, description, image_url
+         FROM base_nutrition_library_items
+        WHERE deleted_at IS NULL
+        ORDER BY slug ASC`,
+    );
+    const ids = rows.map((r) => r.id);
+    const [categories, qualities, translations, descriptions] = await Promise.all([
+      loadCategoriesMap(ids, BASE_FOOD_TABLES), loadQualitiesMap(ids, BASE_FOOD_TABLES),
+      loadTranslationsMap(ids, BASE_FOOD_TABLES), loadDescriptionTranslationsMap(ids, BASE_FOOD_TABLES),
+    ]);
+    res.json({
+      type: 'base_nutrition_library',
+      entities: rows.map((f) => ({
+        slug: f.slug,
+        data: {
+          name: f.name,
+          description: f.description ?? null,
+          translations: translations[f.id] ?? {},
+          description_translations: descriptions[f.id] ?? {},
+          category_slugs: (categories[f.id] ?? []).map((c) => c.slug),
+          quality_slugs: (qualities[f.id] ?? []).map((q) => q.slug),
+        },
+        images: { image: f.image_url ?? null },
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
+/** A food's slug is unique among the Base foods, deleted rows included (#2951 stage 5). */
+async function findBaseFoodBySlug(slug: string) {
+  const { rows } = await db.query<{ id: number; deleted_at: string | null }>(
+    'SELECT id, deleted_at FROM base_nutrition_library_items WHERE slug = ?', [slug],
+  );
+  return rows[0] ?? null;
+}
+
+/** Resolves lookup slugs to ids; `{ error }` names the first slug no row carries. */
+async function lookupIdsBySlug(
+  table: 'nutrition_library_categories' | 'nutritional_qualities',
+  slugs: string[],
+  field: string,
+): Promise<{ ids: number[] } | { error: string }> {
+  if (slugs.length === 0) return { ids: [] };
+  const { rows } = await db.query<{ id: number; slug: string }>(
+    `SELECT id, slug FROM ${table} WHERE slug IN (${slugs.map(() => '?').join(',')})`, slugs,
+  );
+  const bySlug = new Map(rows.map((r) => [r.slug, r.id]));
+  const missing = slugs.find((s) => !bySlug.has(s));
+  if (missing) return { error: `${field} names an unknown slug: ${missing}` };
+  return { ids: slugs.map((s) => bySlug.get(s)!) };
+}
+
+platformTransferRouter.post('/base_nutrition_library', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, BASE_FOOD_TRANSFER_FIELDS);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const categories = parseLookupSlugs(req.body.category_slugs, 'category_slugs');
+    if ('error' in categories) return res.status(400).json({ error: categories.error });
+    const qualities = parseLookupSlugs(req.body.quality_slugs, 'quality_slugs');
+    if ('error' in qualities) return res.status(400).json({ error: qualities.error });
+    const found = await findBaseFoodBySlug(slug);
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      // An update writes the food's own content; its categories and qualities are
+      // relationships and are left exactly as they are.
+      action = 'updated';
+      result = await updateBaseFood(req, found.id, input);
+    } else {
+      action = 'created';
+      const categoryIds = await lookupIdsBySlug('nutrition_library_categories', categories.slugs ?? [], 'category_slugs');
+      if ('error' in categoryIds) return res.status(400).json({ error: categoryIds.error });
+      const qualityIds = await lookupIdsBySlug('nutritional_qualities', qualities.slugs ?? [], 'quality_slugs');
+      if ('error' in qualityIds) return res.status(400).json({ error: qualityIds.error });
+      result = await createBaseFood(req, { ...input, category_ids: categoryIds.ids, quality_ids: qualityIds.ids }, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200)
+      .json({ action, entity: await loadBaseFood(result.id, BASE_LOCALE) });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post(
+  '/base_nutrition_library/:slug/image/:slot',
+  requireSuperadmin,
+  transferImageLimiter,
+  nutritionImageBodyParser,
+  async (req, res, next) => {
+    try {
+      if (req.params.slot !== 'image') return res.status(400).json({ error: 'slot must be "image"' });
+      if (!isValidEntitySlug(req.params.slug)) return res.status(404).json({ error: 'Food not found' });
+      const found = await findBaseFoodBySlug(req.params.slug);
+      if (!found || found.deleted_at) return res.status(404).json({ error: 'Food not found' });
+      const result = await storeBaseFoodImage(req, found.id);
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.json({ entity: await loadBaseFood(found.id, BASE_LOCALE) });
+    } catch (err) { next(err); }
+  },
+);
