@@ -8,6 +8,7 @@ import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
+import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
@@ -156,8 +157,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
               ORDER BY be.id DESC LIMIT 1) AS amount_due
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
-        AND ps.membership_plan_id IS NOT NULL AND ps.plan_assignment_id IS NULL
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${CANCELLED_PLAN_SET_SQL}
       ORDER BY ps.id DESC`,
     [gymId, memberId],
   );
