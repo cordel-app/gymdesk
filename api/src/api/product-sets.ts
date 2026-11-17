@@ -5,6 +5,7 @@ import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import { activateSetPurchases, moveSetPurchases } from './set-purchases';
+import { deleteStandaloneCartPurchases } from './cart-checkout';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -227,6 +228,8 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
       `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
     await discardDraftSet(tx, gymId, id);
+    // #2967: Cancel is the whole cart, so the owner's standalone In Cart purchases go with it.
+    await deleteStandaloneCartPurchases(tx, gymId, Number(row.owner_member_id));
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
