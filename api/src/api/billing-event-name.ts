@@ -22,7 +22,11 @@ export async function loadGymName(exec: Exec, gymId: string): Promise<string> {
  * one-time Products of its cart), and whether it is the member's first
  * engagement or modifies a plan they already hold.
  */
-export async function initialEventNameFor(exec: Exec, gymId: string, productSetId: number, purchaseDate: string): Promise<string> {
+export async function initialEventNameFor(
+  exec: Exec, gymId: string, productSetId: number, purchaseDate: string,
+  /** #2949 stage 5: the standalone cart purchases the same checkout pays. */
+  cartProductNames: string[] = [],
+): Promise<string> {
   const { rows: setRows } = await exec.query<{ previous_product_set_id: number | null }>(
     'SELECT previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   const previousId = setRows[0]?.previous_product_set_id != null ? Number(setRows[0].previous_product_set_id) : null;
@@ -75,7 +79,7 @@ export async function initialEventNameFor(exec: Exec, gymId: string, productSetI
     modifiesPlan: previousId != null && (editedPlan || removesPlan),
     added: {
       plans: addedPlans,
-      products: [...lines.map((l: any) => String(l.product_name)), ...purchases.map((p) => p.product_name)],
+      products: [...lines.map((l: any) => String(l.product_name)), ...purchases.map((p) => p.product_name), ...cartProductNames],
     },
   });
 }

@@ -246,6 +246,9 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     providerRef: r.provider_ref, providerStatus: null, status: r.status,
   }));
   if (!canCancelPending(attempts)) return { kind: 'unresolved' };
+  // #2949 stage 5: deleting the checkout returns the standalone cart purchases it joined to the cart.
+  const { releaseJoinedCartPurchases } = await import('./cart-checkout');
+  await releaseJoinedCartPurchases(tx, gymId, id, 'in_cart');
   await tx.query(`DELETE FROM payment_requests WHERE id IN (
       SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL)`, [id]);
   await deleteProductSetAndOwnPlanSnapshots(tx, gymId, id, 'pending_payment');
@@ -279,6 +282,10 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
   })))) return { kind: 'unresolved' };
 
+  // #2949 stage 5: the standalone cart purchases this checkout joined go back to the cart (before the
+  // events that link them are deleted).
+  const { releaseJoinedCartPurchases } = await import('./cart-checkout');
+  await releaseJoinedCartPurchases(tx, gymId, id, 'in_cart', actor);
   if (events.length > 0) {
     const ids = events.map((e) => e.id);
     const marks = ids.map(() => '?').join(',');

@@ -16,7 +16,19 @@
  * The provider's confirmation completes every purchase of the request (`completeProductPurchase()`),
  * a failure or expiry cancels every one (`cancelProductPurchase()`, `cancelAbandonedPurchases()`), and
  * none of it touches a Product Set: a purchase a cart Product Set carries is paid by that set's Save &
- * Pay (#2746) and is never selected here. Combining the two into one checkout is stage 5.
+ * Pay (#2746) and is never selected here.
+ *
+ * #2949 stage 5 — the member's Product Set checkout pays them too. A set's Save & Pay (staff or
+ * member, every method) charges, beside the set's own lines, every standalone `in_cart` purchase of
+ * its owner (`cartPurchasesForCharge()` → `InitialCharge.cartPurchaseIds`), and its initial Billing
+ * Event **joins** exactly those (`joinCartPurchasesToEvent()`): each one moves `in_cart` →
+ * `pending_payment` and is linked to the event through its `billing_event_{oneoff,session}_snapshots`
+ * junction, never to the Product Set. From then on it follows the set's checkout
+ * (`loadJoinedCartPurchases()` finds it through the set's events): activated with the set
+ * (`activateSetPurchases()`), back in the cart when the checkout returns to Draft or is deleted
+ * (`releaseJoinedCartPurchases(…, 'in_cart')`, its event link removed), cancelled with a cancelled
+ * checkout. A purchase added to the cart after Save & Pay is not part of that checkout and stays in the
+ * cart.
  *
  * The amounts are the purchases' frozen ones (`resolvePurchase()` priced each when it entered the
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
@@ -27,8 +39,9 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { withPurposeParam } from '../domain/storedCards';
 import {
-  IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS, PRODUCT_PURCHASE_SOURCE,
+  IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS, PRODUCT_PURCHASE_SOURCE, PURCHASE_CART_TTL_MINUTES,
 } from '../domain/memberProductPurchase';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { lineFromSimulation, type BillingEventLineRow } from '../domain/billingEventLines';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { resolvePayerFor } from './payer-resolution';
@@ -70,14 +83,21 @@ export class CartCheckoutRefused extends Error {
  * caller runs `expireStandalonePurchaseDrafts()` first, so an expired one is never listed or paid.
  */
 export async function loadCartPurchases(exec: Conn, gymId: string, memberId: number): Promise<CartPurchase[]> {
+  // #2962: one past its cart expiry is never listed or paid, even before the sweep deleted it.
   const { rows } = await exec.query<any>(
     `SELECT mp.id, mp.product_id, mp.product_name, mp.product_type, mp.amount, mp.list_price, mp.currency,
             mp.tax_rate_percent, mp.assigned_member_id, mp.created_at
-       FROM ${purchaseSnapshotsSql('gym_id = ? AND member_id = ? AND status = ?', { notInProductSet: true })} mp
+       FROM ${purchaseSnapshotsSql(
+         `gym_id = ? AND member_id = ? AND status = ? AND created_at >= UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`,
+         { notInProductSet: true })} mp
       ORDER BY mp.created_at, mp.id`,
     purchaseSnapshotParams([gymId, memberId, IN_CART_PURCHASE_STATUS]),
   );
-  return rows.map((r: any) => ({
+  return rows.map(toCartPurchase);
+}
+
+function toCartPurchase(r: any): CartPurchase {
+  return {
     id: Number(r.id),
     product_id: r.product_id == null ? null : Number(r.product_id),
     product_name: String(r.product_name),
@@ -88,20 +108,26 @@ export async function loadCartPurchases(exec: Conn, gymId: string, memberId: num
     tax_rate_percent: r.tax_rate_percent == null ? null : Number(r.tax_rate_percent),
     assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
     created_at: r.created_at == null ? null : new Date(r.created_at).toISOString(),
-  }));
+  };
 }
 
 /** A purchase's line on the checkout's Billing Event: its frozen amount, restated. */
 export function purchaseLine(p: CartPurchase): BillingEventLineRow {
+  return cartChargeLine(p).line;
+}
+
+/** The same line in the simulation's own shape too, for a Product Set's initial charge (stage 5). */
+export function cartChargeLine(p: CartPurchase): { simulation: SimulationLine; line: BillingEventLineRow } {
   const simulation: SimulationLine = {
     kind: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
     product_id: p.product_id, quantity: 1, unit_price: p.amount, regular_price: p.list_price ?? p.amount,
     benefits: [], actual_charge: p.amount, price_may_change: false, prepaid_periods: null,
   };
-  return {
+  const line = {
     ...lineFromSimulation(simulation, { taxRatePercent: p.tax_rate_percent, taxBehavior: 'inclusive' }),
     item_type: p.product_type,
   };
+  return { simulation, line };
 }
 
 /** Cents-exact total of the purchases (each amount is a two-decimal euro figure). */
@@ -245,4 +271,133 @@ export async function startCartCheckout(input: {
     if (err?.errno === ER_DUP_ENTRY) throw new CartCheckoutRefused(409, 'purchase_pending', 'A Product in the cart is already awaiting payment');
     throw err;
   }
+}
+
+// ── #2949 stage 5: standalone cart purchases paid by a Product Set's checkout ────────────────────
+
+/** The arm's Product Set junction: a purchase linked there is the set's own (#2746), never joined here. */
+const SET_JUNCTION_OF: Record<string, { junction: string; col: string }> = {
+  product_oneoff_snapshots: { junction: 'product_set_oneoff_snapshots', col: 'product_oneoff_snapshot_id' },
+  product_session_snapshots: { junction: 'product_set_session_snapshots', col: 'product_session_snapshot_id' },
+};
+
+export interface JoinedCartPurchase extends CartPurchase {
+  status: string;
+  member_id: number;
+  snapshot_id: number;
+  snapshot_table: string;
+}
+
+/**
+ * The standalone purchases a Product Set's checkout pays: linked to one of the set's Billing Events
+ * through the event junction, and to no Product Set. Oldest first.
+ */
+export async function loadJoinedCartPurchases(exec: Conn, gymId: string, productSetId: number): Promise<JoinedCartPurchase[]> {
+  const out: JoinedCartPurchase[] = [];
+  for (const j of PURCHASE_EVENT_JUNCTIONS) {
+    const set = SET_JUNCTION_OF[j.table];
+    const { rows } = await exec.query<any>(
+      `SELECT DISTINCT s.source_id AS id, s.id AS snapshot_id, s.member_id, s.status, s.product_id, s.product_name,
+              s.product_type, s.unit_price AS amount, s.list_price, s.currency, s.tax_rate_percent,
+              s.assigned_member_id, s.created_at
+         FROM ${j.junction} bj
+         JOIN billing_events be ON be.id = bj.billing_event_id AND be.gym_id = ? AND be.product_set_id = ?
+         JOIN ${j.table} s ON s.id = bj.${j.snapshotCol} AND s.gym_id = be.gym_id
+        WHERE s.source_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM ${set.junction} psj_ WHERE psj_.${set.col} = s.id)`,
+      [gymId, productSetId]);
+    for (const r of rows) {
+      out.push({
+        ...toCartPurchase(r), status: String(r.status), member_id: Number(r.member_id),
+        snapshot_id: Number(r.snapshot_id), snapshot_table: j.table,
+      });
+    }
+  }
+  return out.sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) || a.id - b.id);
+}
+
+/**
+ * The standalone purchases a Product Set's initial charge includes: while the set is in the cart,
+ * every standalone `in_cart` purchase of its owner; once its checkout exists, the ones that checkout
+ * joined and has not settled.
+ */
+export async function cartPurchasesForCharge(exec: Conn, gymId: string, productSetId: number): Promise<CartPurchase[]> {
+  const { rows } = await exec.query<{ status: string; owner_member_id: number }>(
+    'SELECT status, owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+  const set = rows[0];
+  if (!set) return [];
+  if (set.status === 'in_cart') {
+    return (await loadCartPurchases(exec, gymId, Number(set.owner_member_id))).filter((p) => p.amount > 0);
+  }
+  return (await loadJoinedCartPurchases(exec, gymId, productSetId))
+    .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS);
+}
+
+/**
+ * Joins the named standalone purchases to a Product Set's initial Billing Event (see the header):
+ * each one is locked, re-checked (the owner's, standalone, still `in_cart` and at the amount charged)
+ * and moved to `pending_payment` with its event link. One already joined to this event is left as
+ * it is, so a reused event is idempotent. Anything else refuses the whole checkout (`cart_changed`).
+ */
+export async function joinCartPurchasesToEvent(tx: Conn, input: {
+  gymId: string; productSetId: number; billingEventId: number; purchases: Pick<CartPurchase, 'id' | 'amount'>[]; actor: string | null;
+}): Promise<void> {
+  if (input.purchases.length === 0) return;
+  const { gymId } = input;
+  const { rows: setRows } = await tx.query<{ owner_member_id: number }>(
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, gymId]);
+  const ownerId = Number(setRows[0]?.owner_member_id);
+  const changed = () => new CartCheckoutRefused(409, 'cart_changed', 'The cart changed; read it again');
+
+  const joined = new Set((await loadJoinedCartPurchases(tx, gymId, input.productSetId)).map((p) => p.id));
+  for (const p of input.purchases) {
+    if (joined.has(p.id)) continue;
+    if (!(await lockPurchase(tx, gymId, ownerId, p.id))) throw changed();
+  }
+  const cart = await loadCartPurchases(tx, gymId, ownerId);
+  for (const p of input.purchases) {
+    if (joined.has(p.id)) continue;
+    const fresh = cart.find((c) => c.id === p.id);
+    if (!fresh || fresh.amount !== p.amount) throw changed();
+    let moved: number;
+    try {
+      moved = await updatePurchase(tx, gymId, p.id, { status: PENDING_PURCHASE_STATUS },
+        input.actor ?? SYSTEM_ACTOR, { fromStatus: IN_CART_PURCHASE_STATUS });
+    } catch (err: any) {
+      if (err?.errno === ER_DUP_ENTRY) throw new CartCheckoutRefused(409, 'purchase_pending', 'A Product in the cart is already awaiting payment');
+      throw err;
+    }
+    if (moved === 0) throw changed();
+    const table = purchaseSnapshotTable(fresh.product_type);
+    const j = PURCHASE_EVENT_JUNCTIONS.find((x) => x.table === table)!;
+    await tx.query(
+      `INSERT IGNORE INTO ${j.junction} (billing_event_id, ${j.snapshotCol})
+       SELECT ?, s.id FROM ${table} s WHERE s.gym_id = ? AND s.source_id = ?`,
+      [input.billingEventId, gymId, p.id]);
+  }
+}
+
+/**
+ * The checkout that joined these purchases is over without paying them: `in_cart` puts each pending
+ * one back in the cart as a standalone purchase (its event link removed: the checkout returned to
+ * Draft or was deleted), `cancelled` cancels it with a cancelled checkout (the link kept, as the
+ * set's own purchases keep theirs).
+ */
+export async function releaseJoinedCartPurchases(
+  tx: Conn, gymId: string, productSetId: number, to: 'in_cart' | 'cancelled', actor: string = SYSTEM_ACTOR,
+): Promise<number> {
+  let released = 0;
+  for (const p of await loadJoinedCartPurchases(tx, gymId, productSetId)) {
+    if (p.status !== PENDING_PURCHASE_STATUS) continue;
+    if (to === 'in_cart') {
+      const j = PURCHASE_EVENT_JUNCTIONS.find((x) => x.table === p.snapshot_table)!;
+      await tx.query(
+        `DELETE bj FROM ${j.junction} bj JOIN billing_events be ON be.id = bj.billing_event_id
+          WHERE bj.${j.snapshotCol} = ? AND be.gym_id = ? AND be.product_set_id = ?`,
+        [p.snapshot_id, gymId, productSetId]);
+    }
+    released += await updatePurchase(tx, gymId, p.id,
+      { status: to === 'in_cart' ? IN_CART_PURCHASE_STATUS : 'cancelled' }, actor, { fromStatus: PENDING_PURCHASE_STATUS });
+  }
+  return released;
 }

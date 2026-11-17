@@ -355,7 +355,8 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // nothing is owed today, its free activation (`…/activate`). The figure
     // reported is the initial charge that commit will take (`initialCharge()`,
     // the same engine), so the member sees it before paying.
-    const charge = await initialCharge(gymId, setId, startsAt);
+    // #2949 stage 5: the plan's own charge; the standalone cart purchases are paid with it at Save & Pay.
+    const charge = await initialCharge(gymId, setId, startsAt, db, { includeCart: false });
     const status = 'in_cart';
 
     const { rows: planNameRows } = await db.query<{ name: string }>(

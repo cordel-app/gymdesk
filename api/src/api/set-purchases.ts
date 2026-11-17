@@ -146,8 +146,14 @@ export async function moveSetPurchases(
 
 /** The purchases become the member's when their set does (the webhook's activation, or a free commit). */
 export async function activateSetPurchases(tx: Conn, gymId: string, productSetId: number): Promise<void> {
-  const purchases = (await loadSetPurchases(tx, gymId, productSetId))
-    .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS);
+  // #2949 stage 5: and so do the standalone cart purchases its checkout joined (pending, never in_cart:
+  // one still in the cart was not part of this checkout).
+  const { loadJoinedCartPurchases } = await import('./cart-checkout');
+  const purchases: Array<{ id: number; status: string; validity_days: number | null; billing_frequency: string | null }> = [
+    ...(await loadSetPurchases(tx, gymId, productSetId))
+      .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS),
+    ...await joinedForActivation(tx, gymId, productSetId, loadJoinedCartPurchases),
+  ];
   if (purchases.length === 0) return;
   const { rows } = await tx.query<{ time_zone: string | null }>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
   // #1693: the purchase day is the gym's calendar day of the confirmation.
@@ -199,4 +205,23 @@ export function purchaseChargeLine(p: SetPurchase): { simulation: SimulationLine
 export async function chargeableSetPurchases(exec: Conn, gymId: string, productSetId: number): Promise<SetPurchase[]> {
   return (await loadSetPurchases(exec, gymId, productSetId))
     .filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS);
+}
+
+/** The joined standalone purchases still awaiting payment, with what their validity is computed from. */
+async function joinedForActivation(
+  tx: Conn, gymId: string, productSetId: number,
+  load: (exec: Conn, gymId: string, productSetId: number) => Promise<Array<{ id: number; status: string; snapshot_id: number; snapshot_table: string }>>,
+): Promise<Array<{ id: number; status: string; validity_days: number | null; billing_frequency: string | null }>> {
+  const out: Array<{ id: number; status: string; validity_days: number | null; billing_frequency: string | null }> = [];
+  for (const p of await load(tx, gymId, productSetId)) {
+    if (p.status !== PENDING_PURCHASE_STATUS) continue;
+    const { rows } = await tx.query<any>(
+      `SELECT validity_days, billing_frequency FROM ${p.snapshot_table} WHERE id = ? AND gym_id = ?`, [p.snapshot_id, gymId]);
+    out.push({
+      id: p.id, status: p.status,
+      validity_days: rows[0]?.validity_days == null ? null : Number(rows[0].validity_days),
+      billing_frequency: rows[0]?.billing_frequency ?? null,
+    });
+  }
+  return out;
 }

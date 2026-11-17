@@ -7,6 +7,7 @@ import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { settleFromProviderLookup } from './payment-settlement';
 import { recordStatusChange } from './billing-events';
 import { moveSetPurchases } from './set-purchases';
+import { releaseJoinedCartPurchases } from './cart-checkout';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 
 /**
@@ -147,6 +148,8 @@ export async function cancelPendingProductSet(
     [actor, gymId, productSetId]);
 
   await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'cancelled');
+  // #2949 stage 5: the standalone cart purchases this checkout joined are cancelled with it.
+  await releaseJoinedCartPurchases(tx, gymId, productSetId, 'cancelled', actor ?? undefined);
   await tx.query(
     `UPDATE product_sets SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?
       WHERE id = ? AND status = 'pending_payment'`,
