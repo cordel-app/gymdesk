@@ -81,7 +81,7 @@ describe('My Products page wiring', () => {
     expect(page).toMatch(/cartAddRow: \{[^}]*justifyContent: 'flex-start'/);
     // The row above the plans steps aside while the cart is shown.
     const header = page.slice(page.indexOf('function renderPlansHeader()'), page.indexOf('function renderAddButtons('));
-    expect(header).toContain('if (cartPhase(setView, appMember?.id ?? null) != null) return null;');
+    expect(header).toContain('if (cartPhase(setView, appMember?.id ?? null, standaloneCart) != null) return null;');
   });
 
   it('draws no back link of its own: the header\'s "← My Products" is the only one (#2741)', () => {

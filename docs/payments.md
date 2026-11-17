@@ -1109,6 +1109,18 @@ the Admin assignment card's own Save & Pay (`importAssignmentAsProductSet(…, {
 moves the set to Pending Payment before its charge is computed) and the Members App plan choice's
 `membership_fee` preview (`includeCart: false`).
 
+**What the cart screens show (#2949 stage 6).** The member's set read (`GET /me/product-sets/:id`,
+owner only) reports those purchases as `cart_purchases` (`cartPurchasesForCharge()`: every
+standalone `in_cart` purchase while the set is in the cart, the joined ones while its checkout is in
+flight), and the *Review your changes* `contracted_items` lists them as one-time Products for the
+owner (or the family member they were bought for). Nothing is priced for either read. In the
+Members App *Add to cart* writes a standalone purchase (`POST /me/cart/purchases`) and never opens a
+Product Set; `apps/member/src/lib/memberCart.ts` decides the cart from the set view plus
+`GET /me/cart/purchases`: with a Draft the standalone items join its card and its Save & Pay; with
+none they are a cart of their own whose Pay is `POST /me/cart/checkout`; while a set's checkout is in
+flight (or staff are still setting a Draft up), a purchase added since is a second card beside it,
+paid on its own.
+
 ---
 
 ## C. Reference
