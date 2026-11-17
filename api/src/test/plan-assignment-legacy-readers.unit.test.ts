@@ -48,7 +48,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 1,
   'api/membership-plans.ts': 1,
-  'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
   'api/plan-assignment-drift.ts': 4,
   'api/plan-assignment-lifecycle.ts': 1,
@@ -293,5 +292,10 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(links).toContain("isCurrentAssignmentSnapshotSql('pa')");
     // A plan the activation's projection has just cancelled is linked by the projection itself.
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain('linkCancellingPlan(tx, gymId, productSetId, previousUmId)');
+  });
+
+  it('M6b-50: a Promotion apply reads the assignment from plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/membership-promotions.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/membership-promotions.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
   });
 });
