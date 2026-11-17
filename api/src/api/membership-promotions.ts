@@ -26,7 +26,7 @@ import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
-import { GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -570,9 +570,14 @@ export async function applyPromotionToMembership(
   actorArg?: string | null,
 ): Promise<{ user_membership_id: number; promotion_id: number; membership_fee: number }> {
   return db.transaction(async (tx) => {
+    // #2125 M6b-50: the assignment is read off its current plan snapshot
+    // (`assignmentOfLegacyIdSql()`), never from `user_memberships`. No row lock is taken here:
+    // the only write below goes through the Draft, and `lockDraft()` locks its Product Set,
+    // which is what serialises two applies on one Draft.
     const { rows: umRows } = await tx.query(
-      'SELECT id, member_id, membership_plan_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-      [umId, gymId],
+      `SELECT pa.source_user_membership_id AS id, pa.member_id, pa.membership_plan_id, pa.status
+         FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+      [gymId, umId],
     );
     if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
     const um = umRows[0];
