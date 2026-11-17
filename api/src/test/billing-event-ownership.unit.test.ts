@@ -20,7 +20,9 @@ describe('billingEventOwnership', () => {
     expect(sql).toContain('x.product_set_id');
     expect(sql).toContain('p2.owner_member_id = p1.owner_member_id');
     expect(sql).not.toContain('root_product_set_id');
-    expect(sql).toContain('p2.user_membership_id IS NOT NULL');
+    expect(sql).toContain('p2.plan_assignment_id IS NOT NULL');
+    expect(sql).toContain('anc.source_user_membership_id');
+    expect(sql).not.toContain('user_membership_id IS NOT NULL');
     expect(sql).toMatch(/ORDER BY p2\.id DESC\s+LIMIT 1/);
   });
 
@@ -28,6 +30,9 @@ describe('billingEventOwnership', () => {
     const sql = eventsOfAssignmentSql();
     expect((sql.match(/\?/g) ?? []).length).toBe(3);
     expect(eventsOfAssignmentParams('g', 7)).toEqual(['g', 'g', 7]);
+    // #2125 M6b-38: through the set's anchor, never the column the re-key drops.
+    expect(sql).toContain('anc.id = p2.plan_assignment_id');
+    expect(sql).not.toMatch(/p2\.user_membership_id/);
   });
 
   it('no production source reads or writes billing_events.user_membership_id', () => {

@@ -14,6 +14,14 @@
  * The link lives on whichever Product Set currently projects the assignment, so
  * the scalar takes the owner's latest linked Product Set; a Billing Event of
  * a superseded version is still that contract's.
+ *
+ * #2125 M6b-38 — the link is read through the set's anchor
+ * (`product_sets.plan_assignment_id`, M6b-36: the id of the assignment's first
+ * plan snapshot), never through `product_sets.user_membership_id`, the column the
+ * re-key drops. Both directions still speak the legacy `user_memberships` id at
+ * their edge (the scalar answers it, the predicate binds it), read off the anchor
+ * snapshot's `source_user_membership_id`, because every caller still names an
+ * assignment by it.
  */
 
 /**
@@ -21,11 +29,13 @@
  * versions are all plan-less). Usable in a SELECT list or a JOIN condition.
  */
 export function eventAssignmentSql(alias = 'be'): string {
-  return `(SELECT p2.user_membership_id
+  return `(SELECT anc.source_user_membership_id
              FROM product_sets p1
              JOIN product_sets p2
                ON p2.owner_member_id = p1.owner_member_id AND p2.gym_id = p1.gym_id
-            WHERE p1.id = ${alias}.product_set_id AND p2.user_membership_id IS NOT NULL
+             JOIN plan_snapshots anc
+               ON anc.id = p2.plan_assignment_id AND anc.gym_id = p2.gym_id
+            WHERE p1.id = ${alias}.product_set_id AND p2.plan_assignment_id IS NOT NULL
             ORDER BY p2.id DESC
             LIMIT 1)`;
 }
@@ -39,7 +49,8 @@ export function eventsOfAssignmentSql(alias = 'be'): string {
             SELECT ps.id FROM product_sets ps
              WHERE ps.gym_id = ? AND ps.owner_member_id IN (
                      SELECT p2.owner_member_id FROM product_sets p2
-                      WHERE p2.gym_id = ? AND p2.user_membership_id = ?))`;
+                       JOIN plan_snapshots anc ON anc.id = p2.plan_assignment_id AND anc.gym_id = p2.gym_id
+                      WHERE p2.gym_id = ? AND anc.source_user_membership_id = ?))`;
 }
 
 export function eventsOfAssignmentParams(gymId: string, userMembershipId: number): [string, string, number] {
