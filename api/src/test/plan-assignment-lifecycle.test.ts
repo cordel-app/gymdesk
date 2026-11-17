@@ -1,6 +1,7 @@
-// #2125 M6b-2: a lifecycle change (pause, resume, cancellation, the end-of-period sweep) on a plan
-// snapshot more than one Product Set links is written on a copy made for the owner's Active set: same
-// assignment, the previous snapshot left as it was, the Promotion snapshots reused rather than copied.
+// #2125 M6b-2: a lifecycle change (pause, resume) on a plan snapshot more than one Product Set links is
+// written on a copy made for the owner's Active set: same assignment, the previous snapshot left as it
+// was, the Promotion snapshots reused rather than copied. #3007: a cancellation (and the end-of-period
+// sweep) is written on the shared snapshot itself, with no copy.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -258,11 +259,15 @@ describe('Promotion snapshots of a lifecycle copy', () => {
 });
 
 describe('cancelling a plan', () => {
-  it('gives the new Active set a copy that cancels at the period end, and leaves the previous set\'s snapshot as it was', async () => {
+  // #3007: a cancellation writes the shared snapshot itself — no copy — and the superseded set that
+  // links it reads the new lifecycle too.
+  it('writes the cancellation on the shared snapshot itself: no copy, the previous set reads it too', async () => {
     const { m, um } = await reusedPlan();
     const previous = await activeSetOf(m);
     const [before] = await linkOfSet(m, previous);
     const stateBefore = (await snapshot(before.snapshot))!;
+    const { rows: countBefore } = await db.query<any>(
+      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE source_user_membership_id = ?', [um]);
 
     await cancel(um);
 
@@ -270,22 +275,21 @@ describe('cancelling a plan', () => {
     expect(active).not.toBe(previous);
     const [carried] = await linkOfSet(m, active);
     expect(carried.entitlementOnly).toBe(true);
-    expect(carried.snapshot).not.toBe(before.snapshot);
-    const copy = (await snapshot(carried.snapshot))!;
-    expect(copy).toMatchObject({
-      status: CANCELS_AT_PERIOD_END_STATUS, um, assignmentId: stateBefore.assignmentId, copiedFrom: before.snapshot,
+    expect(carried.snapshot).toBe(before.snapshot);
+    const cancelled = (await snapshot(carried.snapshot))!;
+    expect(cancelled).toMatchObject({
+      status: CANCELS_AT_PERIOD_END_STATUS, um, assignmentId: stateBefore.assignmentId, copiedFrom: stateBefore.copiedFrom,
     });
-    expect(copy.endsAt).not.toBeNull();
-    expect(copy.closedAt).not.toBeNull();
-    // The previous Product Set still links the snapshot it had, which did not take the cancellation.
+    expect(cancelled.endsAt).not.toBeNull();
+    expect(cancelled.closedAt).not.toBeNull();
     expect((await linkOfSet(m, previous))[0].snapshot).toBe(before.snapshot);
-    const original = (await snapshot(before.snapshot))!;
-    expect(original.status).not.toBe(CANCELS_AT_PERIOD_END_STATUS);
-    expect(original.endsAt).toBe(stateBefore.endsAt);
+    const { rows: countAfter } = await db.query<any>(
+      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE source_user_membership_id = ?', [um]);
+    expect(Number(countAfter[0].n)).toBe(Number(countBefore[0].n));
     expect(await driftOf(um)).toEqual([]);
   });
 
-  it('the end-of-period sweep cancels the Active set\'s copy and a Draft stops carrying the plan', async () => {
+  it('the end-of-period sweep cancels the same snapshot in place and a Draft stops carrying the plan', async () => {
     const { m, um } = await reusedPlan();
     await cancel(um);
     const active = await activeSetOf(m);
@@ -300,9 +304,8 @@ describe('cancelling a plan', () => {
 
     const [ended] = await linkOfSet(m, active);
     expect(ended.entitlementOnly).toBe(true);
-    const copy = (await snapshot(ended.snapshot))!;
-    expect(copy).toMatchObject({ status: 'cancelled', um });
-    expect(ended.snapshot).not.toBe(carried.snapshot);
+    expect(ended.snapshot).toBe(carried.snapshot);
+    expect((await snapshot(ended.snapshot))!).toMatchObject({ status: 'cancelled', um });
     expect(await linkOfSet(m, draft)).toEqual([]);
     expect(await driftOf(um)).toEqual([]);
   });

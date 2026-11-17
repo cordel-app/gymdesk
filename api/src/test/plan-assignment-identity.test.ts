@@ -211,7 +211,7 @@ describe('the drift check', () => {
     expect((await snapshotsOf(um))[0]).toMatchObject({ id: snap.id, status: CANCELS_AT_PERIOD_END_STATUS });
   });
 
-  it('a cancelled plan is not reported: the cancellation is written on a copy of the shared snapshot (M6b-2)', async () => {
+  it('a cancelled plan is not reported: the cancellation is written on the shared snapshot itself (#3007)', async () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
     await activate(um);
     expect((await auth(request.delete(`/user-memberships/${um}`))).status).toBe(204);
@@ -228,7 +228,11 @@ describe('the drift check', () => {
     const { rows: carried } = await db.query<any>(
       `SELECT j.product_set_id AS set_id, j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
          JOIN plan_snapshots s ON s.id = j.plan_snapshot_id WHERE s.source_user_membership_id = ? AND j.entitlement_only = 1`, [um]);
-    const { rows: other } = await db.query<any>("SELECT id FROM product_sets WHERE gym_id = ? AND id <> ? ORDER BY id DESC LIMIT 1", [gymId, carried[0].set_id]);
+    // #3007: the cancelled version already links the same snapshot (no copy), so pick a set that does not.
+    const { rows: other } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND id NOT IN
+         (SELECT product_set_id FROM product_set_plan_snapshots WHERE plan_snapshot_id = ?) ORDER BY id DESC LIMIT 1`,
+      [gymId, carried[0].id]);
     await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only) VALUES (?, ?, 1)', [other[0].id, carried[0].id]);
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     const row = (await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um);

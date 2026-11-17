@@ -10,7 +10,6 @@ import {
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import { findUnsettledActiveSets } from '../api/plan-assignment-lifecycle';
 import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
-import { deleteUnlinkedPlanSnapshots } from '../api/plan-assignment-sync';
 import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
 
 let gymId: string;
@@ -148,26 +147,25 @@ describe('a replaced plan', () => {
 });
 
 describe('a plan cancelled with nothing left to run', () => {
-  it('reads cancelled on a copy the plan-less Active set carries when older Product Sets share its snapshot', async () => {
+  it('reads cancelled on the shared snapshot itself, carried by the plan-less Active set (#3007: no copy)', async () => {
     const { m, um } = await runningPlan(true, lastWeek());
-    const [original] = await snapshotsOf(um);
+    const before = await snapshotsOf(um);
+    const [original] = before;
 
     await cancel(um);
 
     const closed = await assignment(um);
     expect(closed.status).toBe('cancelled');
     const current = await currentOf(um);
-    expect(current).toMatchObject({
-      status: 'cancelled', assignmentId: original.assignmentId, copiedFrom: original.id, endsAt: closed.endsAt,
-    });
+    expect(current).toMatchObject({ id: original.id, status: 'cancelled', assignmentId: original.assignmentId, endsAt: closed.endsAt });
     expect(current.closedAt).not.toBeNull();
+    expect((await snapshotsOf(um)).map((s) => s.id)).toEqual(before.map((s) => s.id));
     const active = await activeSetOf(m);
-    expect(await linksTo(current.id)).toEqual([{ set: active, setStatus: 'active', entitlementOnly: true }]);
-    expect((await snapshotsOf(um))[0].status).toBe(original.status);
+    expect((await linksTo(current.id)).filter((l) => l.setStatus === 'active'))
+      .toEqual([{ set: active, setStatus: 'active', entitlementOnly: true }]);
     // The Member has no running plan, and a new Draft does not bring the cancelled one back.
-    expect((await linksTo(current.id)).length).toBe(1);
-    await draftOf(m);
-    expect((await linksTo(current.id)).map((l) => l.set)).toEqual([active]);
+    const draft = await draftOf(m);
+    expect((await linksTo(current.id)).map((l) => l.set)).not.toContain(draft);
     expect(await driftOf(um)).toEqual([]);
   });
 
@@ -193,14 +191,14 @@ describe('a plan cancelled with nothing left to run', () => {
 });
 
 describe('the repair of plans that ended before this stage', () => {
-  /** A cancelled plan as it was left before M6b-6: no copy, the shared snapshot still reading active. */
+  /** A cancelled plan as it was left before M6b-6: not carried, the shared snapshot still reading active. */
   async function endedBeforeThisStage(): Promise<{ m: number; um: number; active: number; original: number }> {
     const { m, um } = await runningPlan(true, lastWeek());
     await cancel(um);
-    const copy = await currentOf(um);
+    const carried = await currentOf(um);
     const active = await activeSetOf(m);
-    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?', [active, copy.id]);
-    await db.transaction((tx) => deleteUnlinkedPlanSnapshots(tx, gymId, [copy.id]));
+    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?', [active, carried.id]);
+    await db.query("UPDATE plan_snapshots SET status = 'active', closed_at = NULL WHERE id = ?", [carried.id]);
     const [original] = await snapshotsOf(um);
     expect((await currentOf(um)).id).toBe(original.id);
     expect(original.status).toBe('active');
@@ -218,8 +216,10 @@ describe('the repair of plans that ended before this stage', () => {
     const done = await settlePlanAssignmentLifecycles({ gymId, execute: true });
     expect(done.remaining).toBe(0);
     const current = await currentOf(um);
-    expect(current).toMatchObject({ status: 'cancelled', copiedFrom: original });
-    expect(await linksTo(current.id)).toEqual([{ set: active, setStatus: 'active', entitlementOnly: true }]);
+    // #3007: the cancellation is stated on the snapshot itself, which the Active set now carries.
+    expect(current).toMatchObject({ id: original, status: 'cancelled' });
+    expect((await linksTo(current.id)).filter((l) => l.setStatus === 'active'))
+      .toEqual([{ set: active, setStatus: 'active', entitlementOnly: true }]);
   });
 
   it('M6b-7: a plan whose superseded set alone links its snapshot gets its status and end date in place', async () => {
