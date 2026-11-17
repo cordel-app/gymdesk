@@ -593,7 +593,6 @@ export default function SystemGymsPage() {
             <DetailRow label={t('label_status')} value={tStatus(gym.status)} />
 
             <SectionHeader title={t('section_configuration')} />
-            <DetailRow label={t('label_slug')} value={gym.slug} />
             <DetailRow label={t('label_plan')} value={gym.plan} />
             <DetailRow label={t('label_theme')} value={gym.theme?.name ?? '—'} />
             <DetailRow label={t('label_payment_provider')} value={gym.payment_provider?.name ?? '—'} />

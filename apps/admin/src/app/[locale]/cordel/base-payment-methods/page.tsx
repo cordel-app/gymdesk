@@ -40,6 +40,7 @@ type Translations = Record<Loc, { name: string; description: string }>;
 interface Method {
   id: number;
   code: string;
+  slug: string;
   status: 'active' | 'inactive';
   display_name: string;
   display_description: string | null;
@@ -389,6 +390,7 @@ export default function BasePaymentMethodsPage() {
         {details && (
           <div style={{ fontSize: 14 }}>
             <p><strong>{t('col_code')}:</strong> {details.code}</p>
+            <p><strong>{t('details_slug')}:</strong> <code>{details.slug}</code></p>
             <p><strong>{t('col_status')}:</strong> {t(details.status)}</p>
             {LOCALES.map((l) => (
               <p key={l}><strong>{l.toUpperCase()}:</strong> {details.translations[l]?.name ?? dash}
