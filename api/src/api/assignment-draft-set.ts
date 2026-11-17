@@ -9,7 +9,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -59,10 +59,10 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   // A Pending Payment version, or a Draft that is not an assignment's (it holds
   // product lines), is left alone and still answers `in_flight`.
   const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
-    `SELECT ps.id, ps.user_membership_id
-       FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+    `SELECT ps.id, um.id AS user_membership_id
+       FROM product_sets ps JOIN user_memberships um ON um.id = ${productSetLegacyAssignmentIdSql()} AND um.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
-        AND um.status = 'in_cart' AND ps.user_membership_id <> ? FOR UPDATE`,
+        AND um.status = 'in_cart' AND um.id <> ? FOR UPDATE`,
     [input.gymId, input.ownerMemberId, input.userMembershipId],
   );
   for (const old of stale) {

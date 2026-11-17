@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
@@ -85,7 +86,7 @@ export async function createDraft(tx: Tx, input: {
     if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1) {
       // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
       await tx.query(
-        `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
+        `DELETE um FROM user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
           WHERE ps.id = ? AND um.status = 'in_cart'`, [inFlight.id]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
     } else {
@@ -295,7 +296,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND status = 'pending_payment'`, [id]);
   await tx.query(
-    `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
+    `UPDATE user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
         SET um.status = 'in_cart', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
       WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
   await syncPlanSnapshot(tx, gymId, id);
