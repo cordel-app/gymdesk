@@ -32,6 +32,11 @@
  * only** (`entitlement_only = 1`: never billed, projected, primary or cloned onto a successor), and the
  * copy rule above then writes the closed status on that set's own copy. The snapshot a superseded set
  * alone links is written in place by the sync (`plan-snapshot-sync.ts`), so no copy is made for it.
+ *
+ * #3007 (Oscar, 2026-11-17) narrows rule 1 for a **cancellation**: an assigned plan has one contractual
+ * snapshot, so cancelling it (`active_cancel_at_period_end`, `cancelled`) writes the status, `closed_at`
+ * and end date on the shared snapshot itself, and the historical Product Sets that link it read the
+ * new lifecycle too (`isCancellationInPlace()`). Pause, resume, expiry and a superseded record still copy.
  */
 import type { Tx } from '../infra/db';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
@@ -117,6 +122,20 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
     if (Number(r.differs) !== 1) continue;
     const entitlementOnly = Number(r.entitlement_only) === 1;
     let target = Number(r.snapshot_id);
+    if (Number(r.shared) === 1 && isCancellationInPlace(String(r.wanted_status))) {
+      // #3007: a cancellation is written on the snapshot itself, shared or not. The Product Sets that
+      // link it (the superseded one the plan was committed in, an in-flight Draft) read its new
+      // status and end date too, which is the owner's model: one contractual snapshot per assignment.
+      await dropEndedInFlightLinks(tx, gymId, Number(r.owner_member_id), target, String(r.wanted_status));
+      await tx.query(
+        `UPDATE plan_snapshots s
+           JOIN product_set_plan_snapshots psj ON psj.id = ?
+           ${ASSIGNMENT_OF_SNAPSHOT}
+            SET s.status = ${WANTED_STATUS}, s.closed_at = um.closed_at, s.ends_at = um.ends_at,
+                s.modified_at = um.modified_at, s.modified_by = um.modified_by
+          WHERE s.id = ? AND s.gym_id = ?`, [r.link_id, target, gymId]);
+      continue;
+    }
     if (Number(r.shared) === 1) {
       const original = target;
       target = await copyPlanSnapshotToVersion(tx, gymId, original, productSetId,
@@ -193,6 +212,37 @@ async function moveSessionLedger(tx: Tx, gymId: string, original: number, copy: 
     await tx.query(
       `UPDATE ${table} l ${LINES.replace('%REF%', 'l.source_reference_id')}
           SET l.source_reference_id = c.id WHERE l.gym_id = ? AND l.source_kind = 'plan_session'`, [original, copy, gymId]);
+  }
+}
+
+/**
+ * #3007: the lifecycle statuses a shared plan snapshot takes **in place** rather than on a copy — a
+ * member's cancellation (running to its last paid day, or over at once). Pausing, resuming, expiring
+ * and a superseded record keep M6b-2's copy.
+ */
+export const IN_PLACE_LIFECYCLE_STATUSES = [CANCELS_AT_PERIOD_END_STATUS, 'cancelled'] as const;
+
+export function isCancellationInPlace(status: string): boolean {
+  return (IN_PLACE_LIFECYCLE_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * #3007: with no copy to re-point, an in-flight set keeps its link to the very snapshot that took the
+ * cancellation; only a link carried for entitlement to a plan that ended is dropped (`inFlightLinkMove()`).
+ */
+async function dropEndedInFlightLinks(
+  tx: Tx, gymId: string, ownerMemberId: number, snapshotId: number, newStatus: string,
+): Promise<void> {
+  const { rows } = await tx.query<{ id: number; entitlement_only: number }>(
+    `SELECT j.id, j.entitlement_only
+       FROM product_set_plan_snapshots j
+       JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = ? AND p.owner_member_id = ?
+                          AND p.status IN ('in_cart','pending_payment')
+      WHERE j.plan_snapshot_id = ?`, [gymId, ownerMemberId, snapshotId]);
+  for (const link of rows) {
+    if (inFlightLinkMove(newStatus, Number(link.entitlement_only) === 1) === 'drop') {
+      await tx.query('DELETE FROM product_set_plan_snapshots WHERE id = ?', [link.id]);
+    }
   }
 }
 
