@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, legacyAssignmentQuery, linkTestSetToAssignment } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyAssignmentQuery, linkTestSetToAssignment, snapshotTestAssignment } from './helpers';
 
 const provider = vi.hoisted(() => ({
   next: { success: true, providerRef: 'ref', providerStatus: 'SUCCEEDED' } as any,
@@ -154,6 +154,8 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at, base_price) VALUES (?, ?, 'active', ?, 0)`,
       [gymId, memberId, YESTERDAY]);
     await linkTestSetToAssignment(Number(ps[0].product_set_id), Number(um.insertId));
+    // #2125 M6b-47: the pause reads the assignment's status off its plan snapshot.
+    await snapshotTestAssignment(Number(um.insertId));
 
     await executeDueScheduledEvents({ today: TODAY });
     let status = (await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um.insertId])).rows[0].status;
