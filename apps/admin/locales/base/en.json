@@ -4412,6 +4412,7 @@
     "status_deleted": "Deleted",
     "ownership": "Type",
     "ownership_system": "System",
+    "details_slug": "Slug",
     "ownership_gym": "Gym",
     "details": "Details",
     "edit": "Edit",

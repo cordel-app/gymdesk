@@ -192,6 +192,11 @@ export interface GoalRow {
    * `goalDisplayName()` resolves a locale key from, never shown raw.
    */
   slug: string | null;
+  /**
+   * #2951: the goal's persistent slug (a Base goal's `slug`, a gym goal's own
+   * `entity_slug`), shown read-only in Details and nowhere else.
+   */
+  entity_slug?: string | null;
   name: string;
   description: string | null;
   /**

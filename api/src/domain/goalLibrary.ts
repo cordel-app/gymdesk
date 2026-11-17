@@ -27,7 +27,7 @@ export const GOAL_LIBRARY_KINDS = ['personal', 'nutrition'] as const;
 export type GoalLibraryKind = (typeof GOAL_LIBRARY_KINDS)[number];
 
 /** The table each kind lives in. Mirrored by migration 206. */
-export const GOAL_LIBRARY_TABLES: Record<GoalLibraryKind, string> = {
+export const GOAL_LIBRARY_TABLES: Record<GoalLibraryKind, 'personal_goals' | 'nutrition_goals'> = {
   personal: 'personal_goals',
   nutrition: 'nutrition_goals',
 };

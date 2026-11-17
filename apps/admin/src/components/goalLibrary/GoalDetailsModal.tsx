@@ -46,6 +46,8 @@ export function GoalDetailsModal({ goal, kind, scope = 'gym', name, label, onClo
           label={label('ownership')}
           value={isSystemOriginGoal(goal) ? label('ownership_system') : label('ownership_gym')}
         />
+        {/* #2951 §8: the persistent slug is read-only and shown here only — never on the card or in Edit. */}
+        <Field label={label('details_slug')} value={displayValue(goal.entity_slug ?? null)} />
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{label('section_audit')}</p>
