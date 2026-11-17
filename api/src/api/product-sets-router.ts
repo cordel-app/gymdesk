@@ -1,4 +1,4 @@
-import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
@@ -239,16 +239,21 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
 async function syncLinkedAssignmentToPendingPayment(
   tx: Tx, gymId: string, userMembershipId: number, actor: string | null, source: 'admin' | 'member' = 'admin',
 ) {
+  // #2125 M6b-48: the assignment's owner is read off its current plan snapshot
+  // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the legacy row is still
+  // dual-written, by an UPDATE guarded on `in_cart`, which is what decides whether it moves
+  // and serialises two Save & Pays (it replaces the `FOR UPDATE` read of the legacy row).
   const { rows } = await tx.query<{ member_id: number }>(
-    `SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart' FOR UPDATE`,
-    [userMembershipId, gymId],
+    `SELECT pa.member_id FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+    [gymId, userMembershipId],
   );
   if (!rows[0]) return;
-  await tx.query(
+  const { rowCount } = await tx.query(
     `UPDATE user_memberships SET status = 'pending_payment', modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
     [actor, userMembershipId, gymId],
   );
+  if (rowCount === 0) return;
   await recordStatusChange(tx, {
     gymId, userMembershipId, memberId: Number(rows[0].member_id),
     previousStatus: 'in_cart', newStatus: 'pending_payment', source, actorUserId: null,
