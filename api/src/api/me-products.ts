@@ -780,18 +780,24 @@ export async function completeProductPurchase(
   );
   if (!pending[0]) return 0;
   const purchasedOn = DateTime.now().setZone(resolveTimeZone(pending[0].time_zone)).toISODate()!;
-  const validUntil = computeValidUntil({
-    purchasedOn,
-    validityDays: pending[0].validity_days == null ? null : Number(pending[0].validity_days),
-    billingFrequency: pending[0].billing_frequency ?? null,
-  });
+  // #2949 stage 4: a cart checkout pays several standalone purchases with one request, so every
+  // pending purchase the request reaches becomes the member's (one, for any other purchase).
   // #2126 stage 5b: the record and the snapshot move together (`updatePurchase()`), still
   // constrained on `pending_payment`. The provider's confirmation is the system's act (#1182).
-  return updatePurchase(
-    tx, gymId, Number(pending[0].id),
-    { status: 'active', purchasedAt: new Date(), validUntil },
-    SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
-  );
+  let changed = 0;
+  for (const p of pending) {
+    const validUntil = computeValidUntil({
+      purchasedOn,
+      validityDays: p.validity_days == null ? null : Number(p.validity_days),
+      billingFrequency: p.billing_frequency ?? null,
+    });
+    changed += await updatePurchase(
+      tx, gymId, Number(p.id),
+      { status: 'active', purchasedAt: new Date(), validUntil },
+      SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
+    );
+  }
+  return changed;
 }
 
 /**

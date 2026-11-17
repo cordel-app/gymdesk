@@ -52,6 +52,8 @@ import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
+import { CartCheckoutRefused, startCartCheckout } from './cart-checkout';
+import { getRequestLocale } from '../infra/locale';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
 
@@ -515,6 +517,44 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
     recordAudit(req, { action: 'update', entityType: 'product_set', entityId: draftId, next: { remove_recurring_line: lineId } });
     res.json({ product_set_id: draftId, deleted: true });
   } catch (err) { next(err); }
+});
+
+/**
+ * #2949 stage 4 — pays the member's standalone cart purchases (the `in_cart` one-time Products no
+ * Product Set carries) together: one Billing Event, one payment request (`startCartCheckout()`).
+ * `purchase_ids` narrows it to the ones named; without it, every one in the cart is paid.
+ */
+memberProductPurchasesRouter.post('/checkout', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const raw = (req.body ?? {}).purchase_ids;
+  let purchaseIds: number[] | null = null;
+  if (raw != null) {
+    if (!Array.isArray(raw) || !raw.every((v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0)) {
+      return res.status(400).json({ error: 'purchase_ids must be an array of positive integers' });
+    }
+    purchaseIds = raw.map(Number);
+  }
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const result = await startCartCheckout({
+      gymId, memberId, memberEmail: member.email ?? '',
+      actorName: resolveRequestActor(tenantCtx) ?? member.name,
+      purchaseIds, requestLocale: getRequestLocale(req),
+    });
+    recordAudit(req, {
+      action: 'update', entityType: 'member', entityId: memberId,
+      next: { cart_checkout: result.billingEventId, product_purchases: result.purchaseIds },
+    });
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err instanceof CartCheckoutRefused) return res.status(err.status).json({ error: err.code, message: err.message });
+    next(err);
+  }
 });
 
 /**

@@ -1055,6 +1055,31 @@ grants that *are* purchasable (the thread's `Q5`). A Promotion that prices a Pro
 nothing is also not offered: this flow buys a Product by paying for it, and granting one for
 free is a decision a ticket has to take.
 
+### D2. Several standalone cart purchases, one payment (#2949 stage 4)
+
+A one-time purchase can wait in the cart as an `in_cart` row no Product Set carries: written by
+staff as a draft (#1657) or by the member through `POST /me/cart/purchases` (no Product Set
+created). `startCartCheckout()` (`api/src/api/cart-checkout.ts`) pays all of them, or the
+`purchase_ids` named, from `POST /me/cart/checkout` (the member; a family beneficiary gets
+`403 family_owner_pays`) or `POST /members/:id/product-purchases/checkout` (staff):
+
+1. The cart is read after the standalone expiry (#2962); empty → `409 cart_empty`, a named id not
+   in it → `404 purchase_not_in_cart`, a zero total → `409 nothing_to_pay`.
+2. The provider payment is created for the **sum of the frozen amounts** (each priced when it
+   entered the cart; nothing is re-priced — the conservative default, as a cart Product Set's
+   linked purchases are), converted once by `toMinorUnits()`.
+3. One transaction: every purchase locked and re-checked (`409 cart_changed` otherwise), one
+   `payment_requests` row (`source = 'product_purchase'`, the payer resolved as for any purchase),
+   one `product_purchase` Billing Event (no ProductSet; named `Gym - Product` or
+   `Gym - Compra dd/mm/yyyy`), one `billing_event_lines` row per purchase, each purchase
+   `in_cart` → `pending_payment` and linked through its event junction. The charge type is the
+   Products' own when they share one, else none.
+4. The webhook's purchase branch completes **every** pending purchase the request reaches
+   (`completeProductPurchase()`); a failure or expiry cancels every one, as before.
+
+A purchase a cart Product Set carries is never selected: it is paid by that set's Save & Pay
+(#2746). Paying the set and the standalone purchases in one checkout is stage 5.
+
 ---
 
 ## C. Reference
