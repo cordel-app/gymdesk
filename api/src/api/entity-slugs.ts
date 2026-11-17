@@ -34,18 +34,19 @@ export async function allocateGlobalSlug(
 /** The `[a-z0-9-]` slugs of `rows` matching `base` or `base-<n>`, for `nextAvailableSlug()`. */
 async function takenSlugs(
   exec: Pick<Tx, 'query'>,
-  table: 'base_exercises' | 'exercises' | GoalSlugTable,
+  table: 'base_exercises' | 'exercises' | GoalSlugTable | 'professional_services',
   base: string,
-  scope: { gymId: number | string } | null,
+  scope: { gymId: number | string } | null | 'base_rows',
   column: 'slug' | 'entity_slug' = 'slug',
 ): Promise<string[]> {
-  const where = scope ? 'gym_id = ? AND ' : '';
+  // `base_rows`: the Base rows of a table that holds both kinds (`gym_id IS NULL`).
+  const where = scope === 'base_rows' ? 'gym_id IS NULL AND ' : scope ? 'gym_id = ? AND ' : '';
   // A slug carried over from a Base Exercise may hold characters a LIKE pattern reads (`_`), so
   // the suffix pattern escapes them; the exact match needs no escaping.
   const like = `${base.replace(/[\\%_]/g, (c) => `\\${c}`)}-%`;
   const { rows } = await exec.query<{ slug: string }>(
     `SELECT ${column} AS slug FROM ${table} WHERE ${where}(${column} = ? OR ${column} LIKE ?)`,
-    [...(scope ? [scope.gymId] : []), base, like],
+    [...(scope && scope !== 'base_rows' ? [scope.gymId] : []), base, like],
   );
   return rows.map((r) => r.slug);
 }
@@ -109,4 +110,21 @@ export async function allocateGymGoalSlug(
 ): Promise<string> {
   const base = source.carried?.trim() || generateSlug(source.name, 'goal');
   return nextAvailableSlug(base, await takenSlugs(exec, table, base, { gymId }, 'entity_slug'));
+}
+
+/**
+ * #2951 stage 4: the slug a new Professional Service is created with. Base services (`gym_id IS
+ * NULL`) and each gym's own services are separate scopes of the one table (deleted rows included,
+ * so a slug is never reused; `ps_scope_slug_unique` is the backstop). A gym service imported from
+ * a Base one passes the Base service's slug as `carried` and keeps it (§6), suffixed only when the
+ * gym already holds it; any other service — a Duplicate included — is slugged from its name.
+ */
+export async function allocateProfessionalServiceSlug(
+  gymId: number | string | null,
+  source: { name: string | null | undefined; carried?: string | null },
+  exec: Pick<Tx, 'query'> = db,
+): Promise<string> {
+  const base = source.carried?.trim() || generateSlug(source.name, 'professional-service');
+  const scope = gymId === null ? 'base_rows' as const : { gymId };
+  return nextAvailableSlug(base, await takenSlugs(exec, 'professional_services', base, scope));
 }
