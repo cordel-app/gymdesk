@@ -17,7 +17,7 @@ import type { ProductSetSummary } from './membershipConfiguration';
  * that cancels on its end date, is still Active. This reverses #2264, which
  * read an empty Active set as None.
  */
-const PS_STATUSES = ['draft', 'pending_payment', 'active', 'superseded'] as const;
+const PS_STATUSES = ['in_cart', 'pending_payment', 'active', 'superseded'] as const;
 export function psStatusKey(current: ProductSetSummary | null): string | null {
   const s = current?.status;
   return s && (PS_STATUSES as readonly string[]).includes(s) ? s : null;
@@ -123,7 +123,7 @@ export function billingMode(input: WorkflowInput): BillingMode {
   if (input.pendingOneOffs > 0) return 'simulation';
   const status = input.current?.status;
   if (status === 'pending_payment') return 'simulation';
-  if (status === 'draft' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'simulation';
+  if (status === 'in_cart' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'simulation';
   return 'events';
 }
 
@@ -141,7 +141,7 @@ export function saveAndPayEnabled(input: WorkflowInput & { canWrite: boolean }):
 export function saveAndPayTarget(input: WorkflowInput): 'review' | 'purchases' | null {
   const status = input.current?.status;
   if (status === 'pending_payment') return 'review';
-  if (status === 'draft' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'review';
+  if (status === 'in_cart' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'review';
   return input.pendingOneOffs > 0 ? 'purchases' : null;
 }
 
@@ -169,7 +169,7 @@ export type CancelRequest =
 
 export function cancelRequestFor(set: { id: number; status: string } | null | undefined): CancelRequest | null {
   if (!set) return null;
-  if (set.status === 'draft') return { kind: 'discard_draft', path: `/product-sets/${set.id}`, method: 'DELETE' };
+  if (set.status === 'in_cart') return { kind: 'discard_draft', path: `/product-sets/${set.id}`, method: 'DELETE' };
   if (set.status === 'pending_payment') {
     return { kind: 'cancel_pending', path: `/product-sets/${set.id}/cancel`, method: 'POST' };
   }

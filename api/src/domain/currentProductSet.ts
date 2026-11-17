@@ -2,7 +2,7 @@
  * #1582 stage 1 — the one rule for "which ProductSet is this member's current one".
  *
  * Pure: it takes the owner's ProductSet rows and answers. The database already
- * guarantees one `active` and one in-flight (`draft` / `pending_payment`)
+ * guarantees one `active` and one in-flight (`in_cart` / `pending_payment`)
  * version per owner (migration 246's UNIQUE generated columns), so more than one
  * of either is a corrupt state that is reported (`ambiguous`), never papered
  * over by picking one.

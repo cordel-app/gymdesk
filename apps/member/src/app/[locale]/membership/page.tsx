@@ -466,7 +466,7 @@ export default function MembershipPage() {
       // edit, even before the discard pass removes it: read their Active
       // version instead and say what happened.
       if (isExpiredDraft(view)) {
-        const activeId = currentSetId(rows.filter((r) => r.status !== 'draft'));
+        const activeId = currentSetId(rows.filter((r) => r.status !== 'in_cart'));
         view = activeId == null ? null : await apiFetch<MemberCartView>(`/me/product-sets/${activeId}`);
         setDraftError({ productId: null, key: 'membership.draft_error_expired' });
       }
@@ -488,7 +488,7 @@ export default function MembershipPage() {
   // #2477 stage 3 — the Draft's live countdown, from the server's seconds; at
   // zero the page re-reads, so an expired Draft stops being offered for editing.
   const draftSecondsLeft = useDraftCountdown(
-    setView?.status === 'draft' ? setView.expires_in_seconds ?? null : null,
+    setView?.status === 'in_cart' ? setView.expires_in_seconds ?? null : null,
     loadSetView,
   );
 
@@ -570,7 +570,7 @@ export default function MembershipPage() {
   // #2496 stage 5 — the Summary is re-read with the version, so every Draft
   // edit is reflected at once; nothing is computed in the page.
   useEffect(() => {
-    if (!setView || setView.status !== 'draft') { setReview(null); return; }
+    if (!setView || setView.status !== 'in_cart') { setReview(null); return; }
     let cancelled = false;
     apiFetch<MemberSetReview>(`/me/product-sets/${setView.id}/review`)
       .then((r) => { if (!cancelled) setReview(r); })
@@ -605,7 +605,7 @@ export default function MembershipPage() {
 
   /** Discards the whole selection: the member's unpaid Draft, through its own route. */
   async function discardDraft() {
-    if (!setView || setView.status !== 'draft') return;
+    if (!setView || setView.status !== 'in_cart') return;
     setDraftBusy(-1);
     setDraftError(null);
     try {
@@ -625,7 +625,7 @@ export default function MembershipPage() {
    * server keeps every other item and re-prices the cart.
    */
   async function removeCartItem(item: CartItem) {
-    if (!setView || setView.status !== 'draft' || cartBusy !== null) return;
+    if (!setView || setView.status !== 'in_cart' || cartBusy !== null) return;
     setCartBusy(item.key);
     setCartError(null);
     const path = item.kind === 'plan'
@@ -1158,7 +1158,7 @@ export default function MembershipPage() {
         </section>
       );
     }
-    if (!review || setView?.status !== 'draft') return null;
+    if (!review || setView?.status !== 'in_cart') return null;
     const { contracted, cancelled } = reviewSections(review);
     if (contracted.length + cancelled.length === 0 && !commitError) return null;
     const action = setCommitAction(review);

@@ -96,7 +96,7 @@ describe('One per Member', () => {
 
     // A superseded version and a line that already ended hold nothing.
     await setWithLine('superseded', null);
-    const draftId = await setWithLine('draft', '2020-01-31');
+    const draftId = await setWithLine('in_cart', '2020-01-31');
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct)).toBe(false);
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct, { draftSetId: draftId })).toBe(false);
 
@@ -105,7 +105,7 @@ describe('One per Member', () => {
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct)).toBe(true);
     // One in-flight version per owner: the ended Draft goes before the open one is written.
     await db.query('DELETE FROM product_sets WHERE id = ?', [draftId]);
-    const openDraft = await setWithLine('draft', null);
+    const openDraft = await setWithLine('in_cart', null);
     expect(await violatesOnePerMember(db, gymId, owner, lineProduct, { draftSetId: openDraft })).toBe(true);
   });
 });

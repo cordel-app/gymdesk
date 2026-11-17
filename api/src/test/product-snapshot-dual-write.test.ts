@@ -50,7 +50,7 @@ describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {
     expect(add.status).toBeLessThan(300);
     let rows = await lines(setId);
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe('draft');
+    expect(rows[0].status).toBe('in_cart');
     expect(rows[0].member_id).toBe(owner);
     lineId = rows[0].source_id;
 

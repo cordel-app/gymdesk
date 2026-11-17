@@ -96,7 +96,7 @@ describe('a Draft carries the plans cancelling at their period end', () => {
 
     // Add Membership Plan: the Draft holds its own plan first and A's same snapshot, linked, not copied.
     const b = await createTestDraftAssignment(gymId, m, await plan(25), { config: { membership_fee_price: 25 } });
-    const draft = await setOf(b, 'draft');
+    const draft = await setOf(b, 'in_cart');
     expect(await links(draft)).toEqual([{ um: b, entitlementOnly: false }, { um: a, entitlementOnly: true }]);
 
     // The Draft's forecast bills B's fee and never A's.
@@ -140,13 +140,13 @@ describe('a Draft carries the plans cancelling at their period end', () => {
     const edit = await request.post(`/user-memberships/${b}/edit-draft`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(edit.status).toBe(201);
-    const editDraft = await setOf(Number(edit.body.id), 'draft');
+    const editDraft = await setOf(Number(edit.body.id), 'in_cart');
     expect((await links(editDraft)).some((l) => l.entitlementOnly)).toBe(false);
   });
 
   it('a Draft for an owner with nothing cancelling carries no entitlement link', async () => {
     const m = await member();
     const a = await createTestDraftAssignment(gymId, m, await plan(10));
-    expect(await links(await setOf(a, 'draft'))).toEqual([{ um: a, entitlementOnly: false }]);
+    expect(await links(await setOf(a, 'in_cart'))).toEqual([{ um: a, entitlementOnly: false }]);
   });
 });

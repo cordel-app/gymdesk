@@ -47,7 +47,7 @@ describe('/me/product-sets draft', () => {
     const first = await as(A, 'post', '/draft');
     expect(first.status).toBe(201);
     expect(first.body.owner_member_id).toBe(memberA);
-    expect(first.body.status).toBe('draft');
+    expect(first.body.status).toBe('in_cart');
     const second = await as(A, 'post', '/draft');
     expect(second.status).toBe(200);
     expect(second.body.id).toBe(first.body.id);
@@ -62,7 +62,7 @@ describe('/me/product-sets draft', () => {
     expect(q.status).toBe(200);
     const review = await as(A, 'get', `/${draft.id}/review`);
     expect(review.status).toBe(200);
-    expect(review.body.status).toBe('draft');
+    expect(review.body.status).toBe('in_cart');
     const sim = await as(A, 'get', `/${draft.id}/billing-event-simulation`);
     expect(sim.status).toBe(200);
     const { rows } = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);

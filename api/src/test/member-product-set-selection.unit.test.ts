@@ -7,7 +7,7 @@ import { currentSetId, setPlans, setLineStatusKey, setProductLines } from '../..
 
 describe('currentSetId', () => {
   it('prefers the Draft over an older Active version (issue example)', () => {
-    expect(currentSetId([{ id: 3, status: 'draft' }, { id: 2, status: 'active' }, { id: 1, status: 'superseded' }])).toBe(3);
+    expect(currentSetId([{ id: 3, status: 'in_cart' }, { id: 2, status: 'active' }, { id: 1, status: 'superseded' }])).toBe(3);
   });
   it('takes the version awaiting payment before the Active one', () => {
     expect(currentSetId([{ id: 6, status: 'pending_payment' }, { id: 5, status: 'active' }])).toBe(6);
@@ -27,7 +27,7 @@ describe('currentSetId', () => {
 
 describe('the two sections read the same view', () => {
   it('takes plans and lines from that one view', () => {
-    const view = { id: 3, status: 'draft', lines: [{ id: 1, product_id: 10, change: 'added' as const }],
+    const view = { id: 3, status: 'in_cart', lines: [{ id: 1, product_id: 10, change: 'added' as const }],
       plans: [{ plan_snapshot_id: 8, membership_plan_id: 2, plan_name: 'C', change: 'added' as const }] };
     expect(setPlans(view).map((p) => p.plan_name)).toEqual(['C']);
     expect(setProductLines(view).map((l) => l.product_id)).toEqual([10]);

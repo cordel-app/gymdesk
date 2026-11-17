@@ -60,7 +60,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
     `SELECT ps.id, ps.user_membership_id
        FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
         AND um.status = 'draft' AND ps.user_membership_id <> ? FOR UPDATE`,
     [input.gymId, input.ownerMemberId, input.userMembershipId],
   );
@@ -110,7 +110,7 @@ export async function linkedDraftSetFor(
 ): Promise<{ id: number; owner_member_id: number } | null> {
   const { rows } = await tx.query<{ id: number; owner_member_id: number }>(
     `SELECT id, owner_member_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft' FOR UPDATE`,
+      WHERE gym_id = ? AND user_membership_id = ? AND status = 'in_cart' FOR UPDATE`,
     [gymId, userMembershipId],
   );
   return rows[0] ? { id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id) } : null;
@@ -123,7 +123,7 @@ export async function linkedDraftSetFor(
  */
 export async function deleteLinkedDraftSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number }>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'draft'`,
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'in_cart'`,
     [gymId, userMembershipId],
   );
   for (const r of rows) await discardDraftSet(tx, gymId, Number(r.id));
@@ -273,7 +273,7 @@ export async function adoptDraftForEdit(tx: Tx, input: {
 }): Promise<number> {
   await tx.query(
     `UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL}, last_activity_at = UTC_TIMESTAMP()
-      WHERE id = ? AND gym_id = ? AND status = 'draft' AND user_membership_id IS NULL`,
+      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND user_membership_id IS NULL`,
     [input.userMembershipId, input.draftSetId, input.gymId]);
   await attachEditedPlanPromotions(tx, input.gymId, {
     draftSetId: input.draftSetId, draftUserMembershipId: input.userMembershipId,

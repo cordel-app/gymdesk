@@ -1609,7 +1609,7 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       if (!active) return { kind: 'not_projected' as const };
       const { rows: owned } = await tx.query<any>(
         `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND um.status = 'draft' FOR UPDATE`,
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND um.status = 'draft' FOR UPDATE`,
         [gymId, active.owner_member_id]);
       if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
       // #2858: a plain Draft the owner already holds (their recurring products, cloned from this

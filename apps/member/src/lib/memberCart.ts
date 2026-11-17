@@ -48,7 +48,7 @@ export type CartItem =
   | { kind: 'purchase'; key: string; name: string; purchaseId: number; productId: number | null; amount: number; currency: string };
 
 function isDraft(view: MemberCartView | null): view is MemberCartView {
-  return !!view && view.status === 'draft';
+  return !!view && view.status === 'in_cart';
 }
 
 /**
@@ -56,7 +56,7 @@ function isDraft(view: MemberCartView | null): view is MemberCartView {
  * purchase once its payment has started (§6 keeps it grouped as one).
  */
 function isCartVersion(view: MemberCartView | null): view is MemberCartView {
-  return !!view && (view.status === 'draft' || view.status === 'pending_payment');
+  return !!view && (view.status === 'in_cart' || view.status === 'pending_payment');
 }
 
 /**
@@ -69,7 +69,7 @@ export type CartPhase = 'draft' | 'pending_payment' | 'awaiting_staff';
 
 /** #2895: whether the Draft is the gym's, still being set up — the server's flag, never derived here. */
 export function awaitsStaffSetup(view: MemberCartView | null): boolean {
-  return !!view && view.status === 'draft' && view.awaiting_staff_setup === true;
+  return !!view && view.status === 'in_cart' && view.awaiting_staff_setup === true;
 }
 
 /**
@@ -81,7 +81,7 @@ export function awaitsStaffSetup(view: MemberCartView | null): boolean {
 export function cartPhase(view: MemberCartView | null, viewerMemberId: number | null): CartPhase | null {
   if (!hasCart(view)) return null;
   if (awaitsStaffSetup(view)) return 'awaiting_staff';
-  if (view!.status === 'draft') return 'draft';
+  if (view!.status === 'in_cart') return 'draft';
   if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;
   return 'pending_payment';
 }
@@ -168,7 +168,7 @@ export function cartCommitAction(view: MemberCartView | null, review: MemberSetR
   if (awaitsStaffSetup(view)) return null;
   const summary = setCommitAction(review);
   if (summary) return summary;
-  if (!review || review.status !== 'draft' || review.error || review.amount_due == null) return null;
+  if (!review || review.status !== 'in_cart' || review.error || review.amount_due == null) return null;
   if (!hasCart(view) || awaitsStaffSetup(view)) return null;
   return review.payment_required ? 'save_and_pay' : 'activate';
 }

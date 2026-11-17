@@ -181,7 +181,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
       `SELECT id, status, owner_member_id, previous_product_set_id, starts_at
          FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
     const set = rows[0];
-    if (!set || (set.status !== 'draft' && set.status !== 'pending_payment')) return res.json(base);
+    if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(base);
 
     let initial: { date: string; lines: BillingEventLine[] } | null = null;
     try {
@@ -194,7 +194,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
     const { rows: oneOffRows } = await db.query<any>(
       // #2126 stage 3d: the one-time purchases are read from the Product snapshot tables.
       `SELECT product_id, product_name, amount, list_price FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
-        WHERE status IN ('draft', 'pending_payment')
+        WHERE status IN ('in_cart', 'pending_payment')
         ORDER BY id`, memberPurchaseSnapshotParams(gymId, Number(set.owner_member_id)));
     const oneOffs = oneOffRows.map((r: any) => ({
       product_id: r.product_id != null ? Number(r.product_id) : null,

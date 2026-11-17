@@ -77,7 +77,7 @@ export type MemberServiceRow = AssignedPlanService & { plan_name: string | null 
  */
 export interface ProductSetRow {
   id: number;
-  status: 'draft' | 'pending_payment' | string;
+  status: 'in_cart' | 'pending_payment' | string;
   plan_name: string | null;
   /** #2742 — the assignment this version is linked to, or null (a Members App plan awaiting payment). */
   user_membership_id?: number | null;
@@ -101,7 +101,7 @@ export interface ProductSetRow {
  */
 export interface ProductSetSummary {
   id: number;
-  status: 'draft' | 'pending_payment' | 'active' | 'superseded' | string;
+  status: 'in_cart' | 'pending_payment' | 'active' | 'superseded' | string;
   plan_name: string | null;
   /** #1490 — the Membership Plan's own lifecycle status (not the version's). */
   plan_status?: string | null;

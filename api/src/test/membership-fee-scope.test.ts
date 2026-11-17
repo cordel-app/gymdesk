@@ -169,7 +169,7 @@ describe('Membership Fee scope on the Members App plan view (#2834 stage 2)', ()
   ] as const)('%s with %i extra beneficiaries reports the scope and %i fee(s); the fee is one fee', async (scope, extra, units) => {
     const planId = await plan(40, scope);
     const { setId } = await version(await member(), planId, 40, extra);
-    const view = await loadMemberProductSetView(gymId, { id: setId, status: 'draft', previous_product_set_id: null });
+    const view = await loadMemberProductSetView(gymId, { id: setId, status: 'in_cart', previous_product_set_id: null });
     const p = view.plans[0];
     expect(p.membership_fee_scope).toBe(scope);
     expect(p.membership_fee_units).toBe(units);

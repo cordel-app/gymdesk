@@ -308,7 +308,7 @@ describe('POST /billing/cleanup — asks MONEI before writing a payment off', ()
     // Expired, then returned to Draft by the same run, which deletes the attempt.
     const row = await requestRow(c.requestId);
     expect(row === undefined || row.status === 'expired').toBe(true);
-    expect(await setStatus(c.setId)).toBe('draft');
+    expect(await setStatus(c.setId)).toBe('in_cart');
   });
 
   it('leaves the request pending when MONEI cannot be asked', async () => {

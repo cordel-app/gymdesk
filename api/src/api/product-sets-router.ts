@@ -103,7 +103,7 @@ function shape(row: any) {
     superseded_at: row.superseded_at ?? null,
     cancelled_at: row.cancelled_at ?? null,
     last_activity_at: row.last_activity_at ?? null,
-    expired: row.status === 'draft' && Number(row.stale) === 1,
+    expired: row.status === 'in_cart' && Number(row.stale) === 1,
   };
 }
 
@@ -264,8 +264,8 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
-  if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
-  if (set.status !== 'draft' && (opts.member || set.status !== 'pending_payment')) {
+  if (set.status === 'in_cart' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
+  if (set.status !== 'in_cart' && (opts.member || set.status !== 'pending_payment')) {
     return res.status(409).json({ error: 'not_committable', status: set.status });
   }
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
@@ -280,7 +280,7 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
     return res.status(409).json({ error: 'nothing_to_pay', message: 'No initial payment is owed; activate the ProductSet instead.' });
   }
 
-  if (set.status === 'draft') {
+  if (set.status === 'in_cart') {
     const moved = await db.transaction(async (tx) => {
       const out = await submitForPayment(tx, gymId, Number(set.id));
       // The Admin's Draft assignment is a cache of this version (#1325 PR
@@ -317,7 +317,7 @@ async function activateHandler(req: any, res: any, opts: { member?: boolean } = 
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
-  if (set.status !== 'draft') return res.status(409).json({ error: 'not_committable', status: set.status });
+  if (set.status !== 'in_cart') return res.status(409).json({ error: 'not_committable', status: set.status });
   if (Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
 
   // #1537: the same delta Save & Pay would charge, so a replacement that adds
@@ -366,8 +366,8 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
 
     const set = await loadSet(gymId, req.params.id);
     if (!set) return res.status(404).json({ error: 'ProductSet not found' });
-    if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
-    if (set.status !== 'draft') return res.status(409).json({ error: 'not_committable', status: set.status });
+    if (set.status === 'in_cart' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
+    if (set.status !== 'in_cart') return res.status(409).json({ error: 'not_committable', status: set.status });
     const memberId = Number(set.owner_member_id);
     const blocking = await loadEditLock(gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
@@ -392,7 +392,7 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
     const staged = await db.transaction(async (tx) => {
       const { rows: locked } = await tx.query<{ status: string }>(
         'SELECT status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE', [Number(set.id), gymId]);
-      if (locked[0]?.status !== 'draft') return { kind: 'not_committable' as const, status: locked[0]?.status };
+      if (locked[0]?.status !== 'in_cart') return { kind: 'not_committable' as const, status: locked[0]?.status };
       const moved = await submitForPayment(tx, gymId, Number(set.id));
       if (moved.kind !== 'ok') return { kind: moved.kind };
       const eventId = await ensureInitialEvent(tx, { gymId, productSetId: Number(set.id), memberId, startsAt, charge, chargeTypeId, actor });
@@ -611,10 +611,10 @@ async function reviewHandler(req: any, res: any, next: any) {
   try {
     const set = await loadSet(gymId, req.params.id);
     if (!set) return res.status(404).json({ error: 'ProductSet not found' });
-    if (set.status !== 'draft' && set.status !== 'pending_payment') {
+    if (set.status !== 'in_cart' && set.status !== 'pending_payment') {
       return res.status(409).json({ error: 'not_committable', status: set.status });
     }
-    if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
+    if (set.status === 'in_cart' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
 
     // One engine assignment per Membership Plan of each version (#2446 stage 4): a
     // version holding several plans lists, prices and diffs every one of them.
@@ -758,7 +758,7 @@ meProductSetsRouter.get('/', async (req, res) => {
     [ctx.gymId, memberId, ctx.gymId, memberId]);
   // #2663: `own` says whose version a row is, so the Members App prefers the
   // member's own version over a family version they are only covered by.
-  res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId)
+  res.json(rows.filter((r) => r.status !== 'in_cart' || Number(r.owner_member_id) === memberId)
     .map((r) => ({ ...shape(r), own: Number(r.owner_member_id) === memberId })));
 });
 
@@ -916,7 +916,7 @@ async function readableSet(req: any, res: any): Promise<{ memberId: number; set:
   const set = await loadSet(ctx.gymId, req.params.id);
   if (!set) { res.status(404).json({ error: 'ProductSet not found' }); return null; }
   if (Number(set.owner_member_id) === memberId) return { memberId, set };
-  if (set.status !== 'draft') {
+  if (set.status !== 'in_cart') {
     const { rows } = await db.query<any>(
       `SELECT 1 FROM product_set_plan_snapshots j
          JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = j.plan_snapshot_id

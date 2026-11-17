@@ -1,3 +1,4 @@
+import { planSnapshotStatusForSet, planSnapshotStatusForSetSql } from '../domain/productSet';
 import { stampAssignmentId } from './plan-assignment-sync';
 import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
@@ -80,7 +81,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
         membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
         auto_renew, recurring_billing_interval, recurring_billing_unit, membership_fee_scope, member_limit, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, input.memberId, membershipPlanId, setRows[0].status, input.startsAt, scheduleId,
+    [gymId, input.memberId, membershipPlanId, planSnapshotStatusForSet(setRows[0].status), input.startsAt, scheduleId,
       input.membershipFeePrice ?? null, plan.free_periods ?? null, plan.paid_periods ?? null,
       plan.bonus_periods ?? null, plan.pay_beforehand_periods ?? null,
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
@@ -142,7 +143,7 @@ export async function copyPlanSnapshotToVersion(
         source_user_membership_id, created_by, owner_is_beneficiary, membership_fee_scope, member_limit,
         assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
         modified_at, modified_by, promotions_plan_snapshot_id)
-     SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
+     SELECT s.gym_id, s.member_id, s.membership_plan_id, ${planSnapshotStatusForSetSql('ps.status')}, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,

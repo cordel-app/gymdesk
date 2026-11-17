@@ -86,7 +86,7 @@ export async function ensureRecurringDraft(tx: Tx, input: {
     actor: input.actor,
   });
   if (created.kind === 'in_flight') {
-    if (created.status === 'draft') {
+    if (created.status === 'in_cart') {
       const { rows } = await tx.query<any>(
         `SELECT ps.user_membership_id, ${staffProductDraftSql('ps')} AS editable
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
@@ -222,7 +222,7 @@ export async function editRecurringPurchaseLine(tx: Tx, input: {
   actor: Actor;
 }): Promise<{ kind: 'ok'; productSetId: number; lineId: number; productId: number } | { kind: 'no_draft' } | DraftRefusal> {
   const { rows: drafts } = await tx.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'
       ORDER BY id DESC LIMIT 1`,
     [input.gymId, input.memberId]);
   if (!drafts[0]) return { kind: 'no_draft' };
