@@ -135,6 +135,9 @@ describe('POST /assignment-lifecycle/run', () => {
     await db.query(
       `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?`,
       [CANCELS_AT_PERIOD_END_STATUS, running]);
+    // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
+    await snapshotTestAssignment(due);
+    await snapshotTestAssignment(running);
 
     const first = await sweep();
     expect(first.status).toBe(200);

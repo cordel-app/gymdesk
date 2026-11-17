@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { cancelAtPeriodEndDueSql } from '../domain/assignmentStatus';
+import { CANCELS_AT_PERIOD_END_STATUS, cancelAtPeriodEndDueSql } from '../domain/assignmentStatus';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { recordStatusChange } from './billing-events';
 
@@ -35,24 +36,37 @@ function checkInternalSecret(req: Request, res: Response): boolean {
   return true;
 }
 
-/** Moves every due `active_cancel_at_period_end` assignment to `cancelled`; answers how many moved. */
+/**
+ * Moves every due `active_cancel_at_period_end` assignment to `cancelled`; answers how many moved.
+ *
+ * #2125 M6b-47: the due assignments are picked from `plan_snapshots` (each assignment's current
+ * snapshot, `isCurrentAssignmentSnapshotSql()`), never from `user_memberships`. The legacy row is
+ * still dual-written, by an UPDATE guarded on the status it is moving away from, so a row another
+ * writer moved in between is left alone and gets no second audit row; `recordStatusChange()`
+ * re-syncs the snapshot.
+ */
 export async function endCancelledAtPeriodEnd(): Promise<number> {
   return db.transaction(async (tx) => {
     const { rows } = await tx.query<{ id: number; gym_id: string; member_id: number; status: string }>(
-      `SELECT um.id, um.gym_id, um.member_id, um.status FROM user_memberships um
-        WHERE ${cancelAtPeriodEndDueSql('um')} FOR UPDATE`);
+      `SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.status FROM plan_snapshots pa
+        WHERE ${cancelAtPeriodEndDueSql('pa')} AND pa.source_user_membership_id IS NOT NULL
+          AND ${isCurrentAssignmentSnapshotSql('pa')}
+        ORDER BY pa.source_user_membership_id`);
+    let moved = 0;
     for (const row of rows) {
-      await tx.query(
+      const { rowCount } = await tx.query(
         `UPDATE user_memberships
             SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ?`,
-        [SYSTEM_ACTOR, row.id]);
+          WHERE id = ? AND gym_id = ? AND status = ?`,
+        [SYSTEM_ACTOR, row.id, row.gym_id, CANCELS_AT_PERIOD_END_STATUS]);
+      if (rowCount === 0) continue;
       await recordStatusChange(tx, {
-        gymId: row.gym_id, userMembershipId: row.id, memberId: Number(row.member_id),
+        gymId: row.gym_id, userMembershipId: Number(row.id), memberId: Number(row.member_id),
         previousStatus: row.status, newStatus: 'cancelled', source: 'system', actorUserId: null,
       });
+      moved += 1;
     }
-    return rows.length;
+    return moved;
   });
 }
 

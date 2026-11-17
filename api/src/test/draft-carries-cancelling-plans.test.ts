@@ -136,6 +136,8 @@ describe('a Draft carries the plans cancelling at their period end', () => {
 
     // Once the sweep has moved A to cancelled, a new Draft no longer carries it.
     await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [a]);
+    // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [a]);
     expect((await sweep()).status).toBe(200);
     expect((await assignment(a)).status).toBe('cancelled');
     const edit = await request.post(`/user-memberships/${b}/edit-draft`)
