@@ -10,6 +10,8 @@
 // purpose — the issue forbids prices, discounts and taxes there, and a shape
 // with no money field cannot leak one.
 
+import type { FeeChargeSplit } from './billingSimulation';
+
 /** One line of the commit charge, as `GET /product-sets/:id/review` reports it. */
 export interface ChargeLineLike {
   item_name: string | null;
@@ -30,6 +32,8 @@ export interface ChargeLineLike {
   /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; absent elsewhere. */
   prepaid_periods?: number | null;
   prepaid_cadence?: { interval: number; unit: string } | null;
+  /** #2970 — the prorated stretch and the full prepaid periods of a Membership Fee's first charge. */
+  fee_split?: FeeChargeSplit | null;
 }
 
 /**
@@ -48,6 +52,7 @@ export function chargeLineView(l: any): ChargeLineLike {
     amount_excl_tax: l.amount_excl_tax != null ? Number(l.amount_excl_tax) : null,
     prepaid_periods: l.prepaid_periods ?? null,
     prepaid_cadence: l.prepaid_cadence ?? null,
+    fee_split: l.fee_split ?? null,
   };
 }
 
@@ -75,6 +80,12 @@ export interface InitialPaymentLine {
    */
   prepaid_periods: number | null;
   prepaid_cadence: { interval: number; unit: string } | null;
+  /**
+   * #2970 — the line's first charge in two separate parts: the prorated stretch (dates, days, amount)
+   * and the N full prepaid periods (coverage, amount). VAT included; they sum to `amount`. `null`
+   * unless the line has a prorated stretch.
+   */
+  fee_split: FeeChargeSplit | null;
 }
 
 export interface InitialPaymentTaxRow {
@@ -139,6 +150,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       tax_rate_percent: rate, tax_amount: tax, amount,
       prepaid_periods: l.prepaid_periods != null && l.prepaid_periods > 0 ? Number(l.prepaid_periods) : null,
       prepaid_cadence: l.prepaid_periods != null && l.prepaid_periods > 0 ? l.prepaid_cadence ?? null : null,
+      fee_split: l.fee_split ?? null,
     };
   });
   const taxRows = [...taxes.values()]

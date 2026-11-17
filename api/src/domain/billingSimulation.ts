@@ -465,6 +465,13 @@ export interface SimulationLine {
    * (`domain/proration.ts`). `actual_charge` is already the prorated amount.
    */
   proration?: { prorated_days: number; period_days: number } | null;
+  /**
+   * #2970 — on a Membership Fee line whose first charge is a prorated stretch **plus** a Pre-paid
+   * Duration: the two parts kept apart (the stretch with its days and dates, the N full periods
+   * with their coverage and amount). Both amounts are VAT-inclusive, sum to the line's
+   * `actual_charge`, and are read off the engine's own resolution — never priced again.
+   */
+  fee_split?: FeeChargeSplit | null;
   /** #2657 stage 3 — the member a Plan line held per member is for; absent otherwise. */
   assigned_member_id?: number;
 }
@@ -830,6 +837,12 @@ function hasPromotionalEffect(promo: AppliedPromotionForBilling): boolean {
  * and whether a Promotion still governs it (which is not the same thing — a
  * paid promotional period can charge the regular price).
  */
+/** #2970 — the parts of a Membership Fee's first charge: a prorated stretch and N full prepaid periods. */
+export interface FeeChargeSplit {
+  prorated: { days: number; period_days: number; start: string; end: string; amount: number };
+  prepaid: { periods: number; start: string; end: string; amount: number } | null;
+}
+
 export interface ResolvedCharge {
   amount: number;
   benefits: SimulationBenefit[];
@@ -880,6 +893,9 @@ export interface ResolvedCharge {
    * Discount: one amount per fee unit, whose sum is the line's charge. Absent otherwise.
    */
   unitAmounts?: number[];
+  /** #2970 — the first charge's prorated stretch and prepaid lump, per fee (before the units multiply). */
+  proratedAmount?: number;
+  prepaidAmount?: number;
   /**
    * #946 — how many Pre-paid periods this charge covers, set only on the one
    * Membership Fee charge that collects a Plan's Pre-paid Duration up front.
@@ -998,7 +1014,8 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
     const periods = lead.prepaidPeriods ?? 0;
     const perPeriod = periods > 0 ? lead.amount / periods : lead.amount;
     const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
-    return { ...lead, amount: round2(stretch + (periods > 0 ? lead.amount : 0)) };
+    const lump = periods > 0 ? lead.amount : 0;
+    return { ...lead, amount: round2(stretch + lump), proratedAmount: stretch, prepaidAmount: lump };
   };
   const resolveOne = resolveFor(a);
   const resolveUnits = unitBenefits?.map((b) => resolveFor({ ...a, personalFeeBenefit: b })) ?? null;
@@ -1020,7 +1037,12 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
         seen.add(key);
         return true;
       });
-      return { ...units[0], benefits, unitAmounts: units.map((u) => u.amount) };
+      const sum = (pick: (u: ResolvedCharge) => number | undefined) =>
+        units.some((u) => pick(u) != null) ? round2(units.reduce((n, u) => n + (pick(u) ?? 0), 0)) : undefined;
+      return {
+        ...units[0], benefits, unitAmounts: units.map((u) => u.amount),
+        proratedAmount: sum((u) => u.proratedAmount), prepaidAmount: sum((u) => u.prepaidAmount),
+      };
     },
     line: (date, resolved) => {
       // #946 — one Membership Fee charge covers more than one period exactly
@@ -1054,8 +1076,33 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
         prepaid_cadence: prepaid ? { interval: a.recurringInterval as number, unit: a.recurringUnit as string } : null,
         proration: proration && date === a.startsAt
           ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
+        fee_split: proration && joinDate && date === a.startsAt && resolved.proratedAmount != null
+          ? feeChargeSplit(a, base.advance, proration, joinDate, resolved, units) : null,
       };
     },
+  };
+}
+
+/**
+ * #2970 — the first charge's two parts, from the engine's own resolution. The prorated stretch runs
+ * from the start date to the day before the first aligned billing date; the Pre-paid Duration is N
+ * **full** periods beginning on that date, so the two never cover the same day.
+ */
+function feeChargeSplit(
+  a: SimulationAssignment, advance: (d: string) => string, proration: { proratedDays: number; periodDays: number },
+  joinDate: string, resolved: ResolvedCharge, units: number,
+): FeeChargeSplit {
+  const periods = resolved.prepaidPeriods ?? 0;
+  let prepaidEnd = joinDate;
+  for (let i = 0; i < periods; i++) prepaidEnd = advance(prepaidEnd);
+  const prorated = round2((resolved.proratedAmount ?? 0) * (resolved.unitAmounts ? 1 : units));
+  const lump = round2((resolved.prepaidAmount ?? 0) * (resolved.unitAmounts ? 1 : units));
+  return {
+    prorated: {
+      days: proration.proratedDays, period_days: proration.periodDays,
+      start: a.startsAt, end: dayBefore(joinDate), amount: prorated,
+    },
+    prepaid: periods > 0 ? { periods, start: joinDate, end: dayBefore(prepaidEnd), amount: lump } : null,
   };
 }
 

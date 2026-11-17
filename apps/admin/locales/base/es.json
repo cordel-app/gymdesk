@@ -689,6 +689,8 @@
     "checkout_discount_percent": "{percent}% de descuento",
     "checkout_discount_direct": "descuento",
     "checkout_line_no_charge": "Sin cargo",
+    "checkout_split_prorated": "Periodo prorrateado {start} – {end}: {days} de {period} días · {amount}",
+    "checkout_split_prepaid": "Periodos completos prepagados ({periods}) {start} – {end}, aparte del periodo prorrateado · {amount}",
     "checkout_recurring": "Recurrentes",
     "checkout_one_off_products": "Pago único",
     "checkout_one_off": "Pago único",

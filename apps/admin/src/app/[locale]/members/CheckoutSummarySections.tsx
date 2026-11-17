@@ -18,6 +18,8 @@ import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
 import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
+import { formatGymDateOnly } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 import { contractedMembersText, discountText, lineReducedToZero, splitContracted } from './productsWorkflowView';
@@ -27,6 +29,7 @@ const money = (n: number) => `${n.toFixed(2)} €`;
 export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike | null | undefined }) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
+  const fmt = useGymFormatSettings();
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
   if (payment.lines.length === 0) return <p style={cardHintStyle}>{t('review_nothing_due')}</p>;
@@ -55,6 +58,27 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
               <tr key={i} data-initial-payment-line>
                 <td style={td}>
                   {l.name ?? '—'}
+                  {l.fee_split && (
+                    // #2970 — the prorated stretch and the full prepaid periods are separate parts of
+                    // this charge, each with its own dates and amount (VAT included).
+                    <span data-fee-split style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      <span data-fee-prorated style={{ display: 'block' }}>
+                        {t('checkout_split_prorated', {
+                          start: formatGymDateOnly(l.fee_split.prorated.start, fmt), end: formatGymDateOnly(l.fee_split.prorated.end, fmt),
+                          days: l.fee_split.prorated.days, period: l.fee_split.prorated.period_days, amount: money(l.fee_split.prorated.amount),
+                        })}
+                      </span>
+                      {l.fee_split.prepaid && (
+                        <span data-fee-prepaid style={{ display: 'block' }}>
+                          {t('checkout_split_prepaid', {
+                            periods: l.fee_split.prepaid.periods,
+                            start: formatGymDateOnly(l.fee_split.prepaid.start, fmt), end: formatGymDateOnly(l.fee_split.prepaid.end, fmt),
+                            amount: money(l.fee_split.prepaid.amount),
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  )}
                   {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
                 </td>
                 <td style={tdNum}>{l.quantity}</td>
