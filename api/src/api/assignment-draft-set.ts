@@ -2,6 +2,7 @@ import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, nameAssignmentSnapshot } from './plan-assignment-sync';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
+import { staffProductDraftSql } from './editable-draft';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
 import { syncMandatoryQuantities } from './product-set-draft';
@@ -70,17 +71,36 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
       [old.user_membership_id, input.gymId]);
   }
-  const created = await createDraft(tx, {
-    gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
-    startsAt: input.startsAt, actor: input.actor,
-  });
-  if (created.kind === 'in_flight') {
-    throw Object.assign(
-      new Error('This member already has a ProductSet version in flight'),
-      { status: 409, code: 'in_flight', productSetId: created.productSetId },
-    );
+  // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
+  // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities
+  // and Promotions stay as they were; the plan is frozen onto it below like onto a fresh Draft.
+  const { rows: cart } = await tx.query<{ id: number }>(
+    `SELECT ps.id FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
+        AND ps.plan_assignment_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj WHERE cj.product_set_id = ps.id)
+      FOR UPDATE`,
+    [input.gymId, input.ownerMemberId],
+  );
+  let setId: number;
+  if (cart[0]) {
+    setId = Number(cart[0].id);
+    await tx.query(
+      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?, last_activity_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id = ?`, [input.membershipPlanId, input.startsAt, setId, input.gymId]);
+  } else {
+    const created = await createDraft(tx, {
+      gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
+      startsAt: input.startsAt, actor: input.actor,
+    });
+    if (created.kind === 'in_flight') {
+      throw Object.assign(
+        new Error('This member already has a ProductSet version in flight'),
+        { status: 409, code: 'in_flight', productSetId: created.productSetId },
+      );
+    }
+    setId = created.productSet.id;
   }
-  const setId = created.productSet.id;
   await tx.query(
     `UPDATE product_sets SET ends_at = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
     [input.endsAt, input.userMembershipId, setId, input.gymId],
@@ -235,17 +255,36 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   membershipPlanId: number | null; startsAt: string; endsAt: string | null;
   actor: { name: string | null; type?: string | null };
 }): Promise<number> {
-  const created = await createDraft(tx, {
-    gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
-    startsAt: input.startsAt, actor: input.actor,
-  });
-  if (created.kind === 'in_flight') {
-    throw Object.assign(
-      new Error('This member already has a ProductSet version in flight'),
-      { status: 409, code: 'in_flight', productSetId: created.productSetId },
-    );
+  // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
+  // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities
+  // and Promotions stay as they were; the plan is frozen onto it below like onto a fresh Draft.
+  const { rows: cart } = await tx.query<{ id: number }>(
+    `SELECT ps.id FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
+        AND ps.plan_assignment_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj WHERE cj.product_set_id = ps.id)
+      FOR UPDATE`,
+    [input.gymId, input.ownerMemberId],
+  );
+  let setId: number;
+  if (cart[0]) {
+    setId = Number(cart[0].id);
+    await tx.query(
+      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?, last_activity_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id = ?`, [input.membershipPlanId, input.startsAt, setId, input.gymId]);
+  } else {
+    const created = await createDraft(tx, {
+      gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
+      startsAt: input.startsAt, actor: input.actor,
+    });
+    if (created.kind === 'in_flight') {
+      throw Object.assign(
+        new Error('This member already has a ProductSet version in flight'),
+        { status: 409, code: 'in_flight', productSetId: created.productSetId },
+      );
+    }
+    setId = created.productSet.id;
   }
-  const setId = created.productSet.id;
   await tx.query(`UPDATE product_sets SET ends_at = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
     [input.endsAt, input.userMembershipId, setId, input.gymId]);
   await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
