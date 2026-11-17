@@ -1,3 +1,4 @@
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import type { logger } from '../lib/logger';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db, type Tx } from '../infra/db';
@@ -106,7 +107,8 @@ export async function cancelPendingProductSet(
 ): Promise<CancelPendingOutcome> {
   const { actor } = who;
   const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null }>(
-    'SELECT id, status, user_membership_id FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE',
+    `SELECT ps.id, ps.status, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
+       FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
     [productSetId, gymId]);
   const set = sets[0];
   if (!set) return { kind: 'not_found' };

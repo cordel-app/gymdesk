@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, linkTestSetToAssignment } from './helpers';
 import {
   activate, addCoverage, cancelInFlight, createDraft, expireDrafts, submitForPayment, touchDraft,
 } from '../api/product-sets';
@@ -122,7 +122,8 @@ describe('ProductSet versioning (#1325)', () => {
     const { insertId: umId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, owner, today()]);
-    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, draft.productSet.id]);
+    // #2125 M6b-45: the cancel reads the link off the set's anchor, so the fixture links as the writers do.
+    await linkTestSetToAssignment(draft.productSet.id, umId);
     const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));
     expect(out.kind).toBe('cancelled');
     const { rows } = await db.query('SELECT id FROM user_memberships WHERE id = ?', [umId]);

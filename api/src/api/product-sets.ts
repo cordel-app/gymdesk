@@ -225,7 +225,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   if (!row) return { kind: 'not_found' };
   if (row.status === 'in_cart') {
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
-      `SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
+      `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
     await discardDraftSet(tx, gymId, id);
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
     // this version; left behind it would keep showing as a Draft plan on a

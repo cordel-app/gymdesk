@@ -1,3 +1,4 @@
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
@@ -182,7 +183,9 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   // #2125 stage 17: the plan snapshot is written directly (it is the plan's configuration). A version
   // being re-snapshotted updates its primary snapshot; otherwise the snapshot is created.
   const { rows: setInfo } = await tx.query<any>(
-    'SELECT owner_member_id, status, starts_at, ends_at, user_membership_id, created_by FROM product_sets WHERE id = ? AND gym_id = ?',
+    `SELECT ps.owner_member_id, ps.status, ps.starts_at, ps.ends_at,
+            ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.created_by
+       FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId]);
   const set = setInfo[0];
   const values = [

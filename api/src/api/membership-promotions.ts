@@ -756,7 +756,8 @@ export async function applyPromotionToProductSet(
   // The owner is the assignment the version is itself linked to (a set-first
   // Draft); a clone Draft is linked at projection, never to its predecessor's.
   const { rows: own } = await tx.query<any>(
-    'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+    `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
+    [productSetId, gymId]);
   const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
     ? Number(own[0].user_membership_id) : null;
   // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
