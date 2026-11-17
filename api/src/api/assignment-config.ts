@@ -32,9 +32,16 @@ export type AssignmentConfigColumn =
  * `idExpr` (a column or a `?`). The rows an assignment's benefits, applied
  * Promotions and recurring services are read from are that version's own
  * (`product_set_id = <this>`); there is no per-assignment copy of them.
+ *
+ * #2125 M6b-39 — "linked to the assignment" is the set's anchor (`product_sets.plan_assignment_id`,
+ * M6b-36), never `product_sets.user_membership_id`, the column the re-key drops. The caller still
+ * names the assignment by its legacy id, read off the anchor snapshot's `source_user_membership_id`
+ * (the anchor is the lowest snapshot naming that id, so it names exactly it).
  */
 export const assignmentVersionId = (idExpr: string) =>
-  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
+  `(SELECT p9.id FROM product_sets p9
+      JOIN plan_snapshots a9 ON a9.id = p9.plan_assignment_id AND a9.gym_id = p9.gym_id
+     WHERE a9.source_user_membership_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
  * #2125 stage 15 — the version whose **version-level** lines (recurring Products and services) an
@@ -47,11 +54,14 @@ export const assignmentVersionId = (idExpr: string) =>
  * #2125 M6b-26 — the assignment's status is its current plan snapshot's, never the `user_memberships` row's.
  * #2125 M6b-37 — that snapshot is found through the set's own anchor (`p9.plan_assignment_id`,
  * `assignmentOfAnchorSql()`), not through `product_sets.user_membership_id`.
+ * #2125 M6b-39 — and the set is picked by that anchor too: the anchor's
+ * `source_user_membership_id` is the legacy id, so `u9` (an assignment's snapshots share its
+ * `source_user_membership_id`) names it exactly.
  */
 export const assignmentLineVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
       JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')}
-     WHERE p9.user_membership_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
+     WHERE u9.source_user_membership_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
      ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
