@@ -381,7 +381,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(buy.body.kind).toBe('recurring_draft');
 
     const draft = await auth(request.get(`/product-sets/${buy.body.product_set_id}`));
-    expect(draft.body.status).toBe('draft');
+    expect(draft.body.status).toBe('in_cart');
     expect(Number(draft.body.membership_plan_id)).toBe(planId);
     // The previous version is untouched and nothing was charged or written.
     const still = await auth(request.get(`/product-sets/${created.body.id}`));
@@ -510,7 +510,7 @@ describe('#1923 — a Promotion leaves the recurring line in the Draft', () => {
     const ok = await auth(request.post(base(m))).send({ product_id: locker, promotion_ids: [promo] });
     expect(ok.status).toBe(201);
     const detail = await auth(request.get(`/product-sets/${ok.body.product_set_id}`));
-    expect(detail.body.status).toBe('draft');
+    expect(detail.body.status).toBe('in_cart');
     const lines = detail.body.configuration?.services ?? [];
     expect(lines.map((l: any) => Number(l.productId))).toEqual([locker]);
     const sim = await auth(request.get(`/product-sets/${ok.body.product_set_id}/billing-event-simulation`));
@@ -598,8 +598,8 @@ describe('#2479 — the Products list shows every line of the Draft being edited
     expect(lockers[0]).toMatchObject({ status: 'active', amount: 10, list_price: 20, pending_termination: false });
     expect(lockers[0].promotions.map((p: any) => p.promotion_id)).toEqual([lockerPromo]);
 
-    // The line only the Draft carries is a Draft row with its own Promotion.
-    expect(towels[0]).toMatchObject({ status: 'draft', amount: 8, list_price: 10 });
+    // The line only the Draft carries is an In Cart row with its own Promotion.
+    expect(towels[0]).toMatchObject({ status: 'in_cart', amount: 8, list_price: 10 });
     expect(towels[0].promotions.map((p: any) => p.promotion_id)).toEqual([towelPromo]);
   });
 

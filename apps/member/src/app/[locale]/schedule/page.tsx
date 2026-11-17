@@ -21,7 +21,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { serviceChoices, defaultChoice, selectionMissing, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, isFamilyOnlyBooking, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { BOOKINGS_TABS, UPCOMING_WINDOW_DAYS, bookingsTabAfter, type BookingsTab } from '@/lib/bookingsTabs';
@@ -30,6 +30,7 @@ import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { EventServicesList, type EventService } from '@/components/EventServicesList';
 import { BookingDetailDialog } from '@/components/BookingDetailDialog';
+import { bookingControlsCollapsible, showBookingControls } from '@/lib/bookingCardControls';
 
 interface Session {
   id: number;
@@ -78,6 +79,9 @@ interface PastBooking {
 
 interface FilterOption { id: number; name: string }
 
+/** #2953: the `center_id` the API reads as "every center this member may use". */
+const ALL_CENTERS = 'all';
+
 export default function MemberSchedulePage() {
   const t = useTranslations();
   const locale = useLocale();
@@ -93,7 +97,7 @@ export default function MemberSchedulePage() {
   const dayKey = (iso: string) => formatGymDate(iso, { ...gymFormat, date_format: 'YYYY-MM-DD' });
   const dayLabel = (iso: string) => formatGymDate(iso, gymFormat);
   const timeOnly = (iso: string) => formatGymTime(iso, gymFormat);
-  const [confirmCancel, setConfirmCancel] = useState<{ bookingId: number; sessionId: number } | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<{ bookingId: number; sessionId: number; family?: boolean } | null>(null);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,7 +170,9 @@ export default function MemberSchedulePage() {
     try {
       const params = new URLSearchParams({ to: toStr });
       if (filterAtId) params.set('activity_type_id', filterAtId);
-      if (filterCenterId) params.set('center_id', filterCenterId);
+      // #2953: "All centers" is named explicitly, so the API spans every center the
+      // member's plans give access to rather than the app's active center.
+      params.set('center_id', filterCenterId || ALL_CENTERS);
       if (filterTrainerId) params.set('trainer_membership_id', filterTrainerId);
       const sessionData = await apiFetch<Session[]>(`/me/schedule?${params.toString()}`);
       setSessions(sessionData);
@@ -178,7 +184,7 @@ export default function MemberSchedulePage() {
     setPastLoading(true);
     setPastError(null);
     try {
-      const result = await apiFetch<{ items: PastBooking[] }>('/me/activity-history?limit=20');
+      const result = await apiFetch<{ items: PastBooking[] }>(`/me/activity-history?limit=20&center_id=${ALL_CENTERS}`);
       setPastBookings(result.items);
     } catch (err: any) { setPastError(err.message ?? t('common.error')); }
     finally { setPastLoading(false); }
@@ -342,13 +348,24 @@ export default function MemberSchedulePage() {
               const myStatus = s.my_booking_status;
               const spots = s.spots_left;
               const isExpanded = expandedSession === s.id;
+              // #2904 — a bookable Professional Service card folds its booking
+              // controls until the member expands it; toggling books nothing.
+              const foldsControls = bookingControlsCollapsible(s);
+              const controlsShown = showBookingControls(s, isExpanded);
+              const toggle = () => setExpandedSession(isExpanded ? null : s.id);
               return (
                 <div
                   key={`s-${s.id}`}
                   style={styles.sessionCard}
-                  onClick={() => setExpandedSession(isExpanded ? null : s.id)}
+                  onClick={toggle}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+                  }}
                   role="button"
                   tabIndex={0}
+                  aria-expanded={isExpanded}
+                  aria-label={foldsControls ? `${s.class_type_name} · ${t(isExpanded ? 'member_schedule.hide_booking_options' : 'member_schedule.show_booking_options')}` : undefined}
                 >
                   {/* #1880 §4/§5 — the image fills the card's height on the left and
                       opens the enlarged preview with the description; with no image
@@ -371,7 +388,7 @@ export default function MemberSchedulePage() {
                             }}
                             busy={pendingSession === s.id}
                             onClose={close}
-                            onCancel={(bookingId) => { close(); setConfirmCancel({ bookingId, sessionId: s.id }); }}
+                            onCancel={(bookingId) => { close(); setConfirmCancel({ bookingId, sessionId: s.id, family: isFamilyOnlyBooking(s.professional_services, s.my_professional_service_id) }); }}
                           />
                         )}
                       >
@@ -383,6 +400,7 @@ export default function MemberSchedulePage() {
                   <div style={styles.cardBody}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                     {s.access_locked ? (
                       <span style={styles.pillLocked}>🔒 {t('member_schedule.plan_only')}</span>
                     ) : myStatus === 'booked' ? (
@@ -398,6 +416,8 @@ export default function MemberSchedulePage() {
                     ) : (
                       <span style={styles.pillFull}>{t('member_schedule.full')}</span>
                     )}
+                    <span style={styles.chevron} aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+                    </span>
                   </div>
                   <div style={{ ...styles.name, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span>{s.class_type_name}</span>
@@ -423,6 +443,7 @@ export default function MemberSchedulePage() {
                     </div>
                   ) : null))}
                   <EventServicesList
+                    collapsed={foldsControls && !isExpanded}
                     services={s.professional_services}
                     bookedId={s.my_booking_id ? (s.my_professional_service_id ?? null) : null}
                     choose={choicesFor(s).length > 0 ? {
@@ -433,7 +454,7 @@ export default function MemberSchedulePage() {
                   />
                   {(() => {
                     const svc = groupServiceFor(s);
-                    if (!svc || !familyRead) return null;
+                    if (!svc || !familyRead || !controlsShown) return null;
                     const { min, max } = groupLimits(svc);
                     return (
                       <FamilyParticipantsPicker
@@ -461,9 +482,10 @@ export default function MemberSchedulePage() {
                       )}
                     </div>
                   )}
+                  {controlsShown && (
                   <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
-                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id })}>
+                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id, family: isFamilyOnlyBooking(s.professional_services, s.my_professional_service_id) })}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
                       </button>
                     ) : myStatus && s.my_booking_id && cancellationNoticeKey(s) ? (
@@ -499,6 +521,7 @@ export default function MemberSchedulePage() {
                       </button>
                     )}
                   </div>
+                  )}
                   </div>
                 </div>
               );
@@ -570,6 +593,7 @@ export default function MemberSchedulePage() {
       {confirmCancel && (
         <CancelBookingConfirmDialog
           busy={pendingSession === confirmCancel.sessionId}
+          familyBooking={!!confirmCancel.family}
           onClose={() => setConfirmCancel(null)}
           onConfirm={async () => {
             const target = confirmCancel;
@@ -599,6 +623,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardImage: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   cardBody: { flex: 1, minWidth: 0, padding: 14 },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
+  chevron: { marginLeft: 8, fontSize: 14, color: memberTheme.textMuted, flex: '0 0 auto' },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
   name: { fontSize: 16, fontWeight: 600, color: memberTheme.text },
   sub: { fontSize: 13, color: memberTheme.textMuted, marginTop: 2 },

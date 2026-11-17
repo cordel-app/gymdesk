@@ -1,5 +1,6 @@
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { assignedMemberSql } from '../domain/productAssignee';
+import { IN_CART_PURCHASE_STATUS, purchaseCartExpiresAt } from '../domain/memberProductPurchase';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
@@ -296,6 +297,11 @@ export interface MemberPurchasedProduct {
   cancelled_on?: string | null;
   validity_state?: string | null;
   created_at: string | null;
+  /**
+   * #2962 — when a standalone one-time Product in the cart (a `draft` no Product Set carries)
+   * expires, as an ISO instant; `null` for every other purchase. The Admin counts down to it.
+   */
+  cart_expires_at?: string | null;
   /** The plain-text actor snapshot (#1182): the member, or `Staff (impersonating …)`. */
   created_by: string | null;
   /** #1883 — where it came from; null reads as Unknown. */
@@ -380,6 +386,7 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
+            mp.in_product_set,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
@@ -412,6 +419,8 @@ export async function loadMemberPurchases(
       cancelled_on: row.cancelled_on ?? null,
       validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
+      cart_expires_at: row.status === IN_CART_PURCHASE_STATUS && !Number(row.in_product_set) && row.created_at
+        ? purchaseCartExpiresAt(new Date(row.created_at)).toISOString() : null,
       created_by: row.created_by ?? null,
       origin: toItemOrigin(row.origin),
       // With no Promotion the two figures are the same number: the purchase was
@@ -581,14 +590,14 @@ async function loadRecurringPurchases(
        JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
        JOIN product_periodical_snapshots s
          ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
       ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],
   );
   const hasDraft = draftRows.length > 0 || (await db.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' LIMIT 1`,
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' LIMIT 1`,
     [gymId, memberId],
   )).rows.length > 0;
   const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
@@ -629,7 +638,7 @@ async function loadRecurringPurchases(
       return {
         id: -Number(row.id),
         product_id: Number(row.product_id),
-        status: 'draft' as const,
+        status: 'in_cart' as const, // #2949 stage 1: a line of the open Draft reads In Cart, like a one-time purchase
         product_name: row.item_name,
         product_type: row.item_type,
         billing_frequency: row.item_billing_frequency ?? null,

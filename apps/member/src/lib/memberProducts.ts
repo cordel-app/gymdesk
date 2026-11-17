@@ -522,7 +522,7 @@ export interface MemberSetRow {
  * in-flight version, else the active one). A superseded version is history and
  * is never selected (#2663 Scenario E: no arbitrary fallback).
  */
-export const SELECTABLE_SET_STATUSES = ['draft', 'pending_payment', 'active'] as const;
+export const SELECTABLE_SET_STATUSES = ['in_cart', 'pending_payment', 'active'] as const;
 
 /**
  * #2663 — the one Product Set the *My Plans* and *My Products* sections both
@@ -613,7 +613,7 @@ export type DraftProductState =
 export function draftProductState(product: Pick<MemberProduct, 'id'>, view: MemberSetView | null): DraftProductState {
   if (!view) return { state: 'none' };
   const lines = view.lines.filter((l) => Number(l.product_id) === product.id);
-  const added = view.status === 'draft' ? lines.find((l) => l.change === 'added') : undefined;
+  const added = view.status === 'in_cart' ? lines.find((l) => l.change === 'added') : undefined;
   if (added) return { state: 'added', lineId: Number(added.id) };
   if (lines.length > 0) return { state: 'held' };
   return { state: 'none' };
@@ -626,7 +626,7 @@ export function showsAddToDraft(product: MemberProduct, view: MemberSetView | nu
 
 /** The lines and the plan this Draft added (what the selection notice counts); 0 outside a Draft. */
 export function draftAddedCount(view: MemberSetView | null): number {
-  if (!view || view.status !== 'draft') return 0;
+  if (!view || view.status !== 'in_cart') return 0;
   return view.lines.filter((l) => l.change === 'added').length
     + (view.plans ?? []).filter((p) => p.change === 'added').length;
 }
@@ -647,7 +647,7 @@ export type DraftPlanState =
   | { state: 'no_draft' };
 
 export function draftPlanState(planId: number, view: MemberSetView | null): DraftPlanState {
-  if (!view || view.status !== 'draft') return { state: 'no_draft' };
+  if (!view || view.status !== 'in_cart') return { state: 'no_draft' };
   const plans = view.plans ?? [];
   const added = plans.find((p) => p.change === 'added' && Number(p.membership_plan_id) === planId);
   if (added) return { state: 'added', planSnapshotId: Number(added.plan_snapshot_id) };
@@ -663,6 +663,7 @@ export function draftPlanState(planId: number, view: MemberSetView | null): Draf
 export function draftErrorKey(message: string | null | undefined): string {
   switch (message) {
     case 'family_owner_only': return 'membership.family_owner_only';
+    case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     case 'in_flight': return 'membership.draft_error_in_flight';
     case 'edit_locked': return 'membership.draft_error_locked';
     case 'duplicate_submission': return 'membership.draft_error_duplicate';
@@ -694,12 +695,16 @@ export interface MemberSetReviewLine {
   item_name: string | null;
   quantity: number;
   amount: number;
+  /** The regular price of the whole line (unit × quantity), VAT included — #2890, despite the name. */
   regular_unit_price: number | null;
   promotion_name: string | null;
   treatment_action: string | null;
   treatment_value: number | null;
   tax_rate_percent: number | null;
   amount_excl_tax: number | null;
+  /** #2883 — the Pre-paid periods a Membership Fee line collects up front, and their cadence. */
+  prepaid_periods?: number | null;
+  prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
 /** `GET /me/product-sets/:id/review`, as the Summary reads it. */
@@ -734,16 +739,20 @@ export type SetCommitAction = 'save_and_pay' | 'activate';
  * decided here.
  */
 export function setCommitAction(review: MemberSetReview | null): SetCommitAction | null {
-  if (!review || review.status !== 'draft' || review.error || review.amount_due == null) return null;
+  if (!review || review.status !== 'in_cart' || review.error || review.amount_due == null) return null;
   const { contracted, cancelled } = reviewSections(review);
   if (contracted.length + cancelled.length === 0) return null;
   return review.payment_required ? 'save_and_pay' : 'activate';
 }
 
-/** The discount a charge line carries off its regular price (promotion or benefit), or `null` for none. */
+/**
+ * The discount a charge line carries off its regular price (promotion or benefit), or `null` for none.
+ * #2890: `regular_unit_price` is the engine's regular price of the **whole line**
+ * (`unit × quantity`) despite its name, so it is compared with the charge as it stands.
+ */
 export function reviewLineDiscount(line: MemberSetReviewLine): number | null {
   if (line.regular_unit_price == null) return null;
-  const off = Math.round((line.regular_unit_price * line.quantity - line.amount) * 100) / 100;
+  const off = Math.round((line.regular_unit_price - line.amount) * 100) / 100;
   return off > 0 ? off : null;
 }
 
@@ -768,6 +777,7 @@ export function setCommitErrorKey(code: string | null | undefined): string {
   switch (code) {
     case 'draft_expired': return 'membership.draft_error_expired';
     case 'edit_locked': return 'membership.draft_error_locked';
+    case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     case 'in_flight': return 'membership.draft_error_in_flight';
     case 'not_committable':
     case 'nothing_to_pay':

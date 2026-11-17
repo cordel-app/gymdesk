@@ -2,6 +2,7 @@ import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
+import { billingEventListFilterSql } from '../domain/billingEventListFilters';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
@@ -10,6 +11,7 @@ import { isFeatureEnabled, requireFeatureEnabled } from '../infra/featureFlags';
 import {
   cancelBillingEvent, loadRefundOptions, loadRefundSummaries, refundBillingEvent,
 } from './billing-event-refunds';
+import { loadRefundReceiptsForEvents, refundReceiptPdf } from './refund-receipts';
 import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -63,6 +65,12 @@ const billingEventStatusParam = z.preprocess((v) => {
   const arr = Array.isArray(v) ? v : [v];
   return arr.flatMap((s) => String(s).split(',').map((x) => x.trim())).filter(Boolean);
 }, z.array(z.enum(BILLING_EVENT_STATUSES)).optional());
+
+/** #2886: an optional `YYYY-MM-DD` (a longer ISO value is cut to its date). */
+const isoDateParam = z.preprocess(
+  (v) => (v === undefined || v === '' ? undefined : String(v).slice(0, 10)),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+);
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -300,8 +308,15 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     // ProductSet versions of its chain (the same predicate as the card's ledger).
     user_membership_id: z.coerce.number().int().positive().optional(),
     status: billingEventStatusParam,
-    from: z.string().optional(),
-    to: z.string().optional(),
+    // #2886: the event's billing date as the list shows it, inclusive.
+    from: isoDateParam,
+    to: isoDateParam,
+    // #2886: Product (partial name), Processed by, Payment method, Amount range.
+    product: z.string().trim().max(255).optional(),
+    processed_by: z.string().trim().max(255).optional(),
+    payment_method: z.string().trim().max(50).optional(),
+    amount_min: z.coerce.number().finite().optional(),
+    amount_max: z.coerce.number().finite().optional(),
     // #779: `asc` turns the failed filter into a work queue, oldest first.
     order: z.enum(['asc', 'desc']).default('desc'),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -319,13 +334,17 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       where.push(eventsOfAssignmentSql());
       params.push(...eventsOfAssignmentParams(gymId, q.user_membership_id));
     }
-    if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
-    if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
+    const filter = billingEventListFilterSql({
+      product: q.product, processed_by: q.processed_by, payment_method: q.payment_method,
+      date_from: q.from, date_to: q.to, amount_min: q.amount_min, amount_max: q.amount_max,
+    });
+    where.push(...filter.clauses);
+    params.push(...filter.params);
     const whereSql = where.join(' AND ');
 
     const { rows: realRows } = await db.query<{
       id: number; member_id: number; member_name: string | null;
-      user_membership_id: number | null; plan_name: string | null;
+      user_membership_id: number | null; plan_name: string | null; event_name: string | null;
       created_at: Date; amount: string | null; event_type: string;
       currency: string | null;
       membership_status: string | null;
@@ -345,6 +364,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
                         AND i.invoice_type = 'full' AND i.related_invoice_id IS NULL AND i.status = 'issued') AS has_full_invoice,
               ${eventAssignmentSql()} AS user_membership_id,
               COALESCE(mp.name, mpp.name) AS plan_name,
+              be.name AS event_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
@@ -383,6 +403,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       id: number | null; type: 'real' | 'virtual';
       member_id: number; member_name: string | null;
       user_membership_id: number | null; plan_name: string | null;
+      /** #2940: the event's generated name; null for an event written before it (shown as before). */
+      name: string | null;
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
@@ -411,6 +433,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       receipt_number: string | null;
       can_issue_receipt: boolean;
       has_full_invoice: boolean;
+      /** #2935: the event's Refund Receipts, one per completed refund, oldest first. */
+      refund_receipts: { id: number; receipt_number: string }[];
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -422,6 +446,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       gymId, realRows.map((r) => Number(r.user_membership_id)).filter((n) => Number.isInteger(n) && n > 0));
     const mayRefund = await callerMayRefund(req);
     const refundsByEvent = await loadRefundSummaries(gymId, realRows.map((r) => Number(r.id)));
+    const refundReceiptsByEvent = await loadRefundReceiptsForEvents(db, gymId, realRows.map((r) => Number(r.id)));
     const past: BillingEventRow[] = realRows.map((r) => {
       const scheduledEvent = Number(r.is_scheduled) === 1;
       const cancelled = r.cancelled_at != null;
@@ -434,6 +459,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         member_name: r.member_name,
         user_membership_id: r.user_membership_id,
         plan_name: r.plan_name,
+        name: r.event_name ?? null,
         billing_date: r.event_billing_date != null
           ? toDateOnly(r.event_billing_date) as string
           : new Date(r.created_at).toISOString().slice(0, 10),
@@ -456,6 +482,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         receipt_number: r.receipt_number ?? null,
         can_issue_receipt: isReceiptableEvent(r.event_type, r.latest_tx_status) && parseFloat(r.amount ?? '0') > 0,
         has_full_invoice: Number(r.has_full_invoice) === 1,
+        refund_receipts: (refundReceiptsByEvent.get(Number(r.id)) ?? [])
+          .map((rr) => ({ id: rr.id, receipt_number: rr.receipt_number })),
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         ...(() => {
@@ -563,6 +591,44 @@ export async function loadFailedPaymentsAttention(gymId: string, memberId?: numb
  * actions on each row stay behind `requireModuleWrite('PAYMENTS')`.
  * Registered before `/billing-events/:id` so `attention` is not read as an id.
  */
+/**
+ * GET /payments/billing-events/filter-options — #2886.
+ *
+ * What the list's *Processed by* and *Payment method* filters offer: the values
+ * present on this gym's events and attempts (never a declared list), so a value
+ * offered always matches at least one row.
+ */
+paymentsRouter.get('/billing-events/filter-options', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows: actors } = await db.query<{ name: string }>(
+      `SELECT DISTINCT a.name FROM (
+         SELECT be.created_by AS name FROM billing_events be WHERE be.gym_id = ? AND be.created_by IS NOT NULL
+         UNION
+         SELECT pr.created_by AS name FROM payment_requests pr
+           JOIN billing_events be ON be.id = pr.billing_event_id
+          WHERE be.gym_id = ? AND pr.created_by IS NOT NULL
+       ) a WHERE a.name <> '' ORDER BY a.name`,
+      [gymId, gymId],
+    );
+    const { rows: methods } = await db.query<{ code: string; name: string }>(
+      `SELECT pr.payment_method_code AS code, MIN(pr.payment_method_name) AS name
+         FROM payment_requests pr
+         JOIN billing_events be ON be.id = pr.billing_event_id
+        WHERE be.gym_id = ? AND pr.payment_method_code IS NOT NULL AND pr.payment_method_name IS NOT NULL
+        GROUP BY pr.payment_method_code
+        ORDER BY name`,
+      [gymId],
+    );
+    res.json({
+      processed_by: actors.map((r) => r.name),
+      payment_methods: methods.map((r) => ({ code: r.code, name: r.name })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 paymentsRouter.get('/billing-events/attention', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
@@ -589,6 +655,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
               pr.attempt, pr.provider_status, pr.payment_method_code, pr.payment_method_name, pr.failure_code, pr.failure_message, pr.notes,
               pr.transaction_type, pr.refund_of_payment_request_id, pr.provider_refund_ref,
               pr.created_by, pr.modified_at, pr.modified_by,
+              rr.id AS refund_receipt_id, rr.receipt_number AS refund_receipt_number,
               m.name AS member_name,
               mp.name AS plan_name,
               pm.card_brand, pm.card_last4
@@ -597,6 +664,8 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
        LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
        LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
        LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
+       -- #2935: the Refund Receipt a completed refund transaction was documented by.
+       LEFT JOIN refund_receipts rr ON rr.payment_request_id = pr.id
        WHERE pr.gym_id = ?
          AND (pr.billing_event_id = ?
               -- #2480: a refund reaches its event through the attempt it returns money from.
@@ -626,7 +695,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
 
   try {
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.product_set_id, be.event_type, be.amount,
+      `SELECT be.id, be.member_id, ${eventAssignmentSql()} AS user_membership_id, be.product_set_id, be.event_type, be.name, be.amount,
               be.notes, be.source, be.created_by, be.created_at,
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
@@ -691,6 +760,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       member_name: ev.member_name,
       user_membership_id: ev.user_membership_id,
       plan_name: ev.plan_name,
+      name: ev.name ?? null,
       amount: ev.amount,
       currency: 'EUR',
       status,
@@ -1009,6 +1079,24 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="recibo-${receiptNumber}.pdf"`);
     res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /payments/refund-receipts/:id — #2935: a Refund Receipt's PDF. It is
+// issued by the refund writer when the refund completes; this route only reads
+// (and, the first time, renders and stores) it — it never issues one.
+paymentsRouter.get('/refund-receipts/:id', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = parseInt(String(req.params.id), 10);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const doc = await refundReceiptPdf(gymId, id);
+    if (!doc) return res.status(404).json({ error: 'Refund receipt not found' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="devolucion-${doc.receiptNumber}.pdf"`);
+    res.send(doc.pdf);
   } catch (err) {
     next(err);
   }

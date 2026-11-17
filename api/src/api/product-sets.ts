@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
@@ -54,7 +55,7 @@ async function lockInFlight(tx: Tx, gymId: string, ownerMemberId: number) {
   const { rows } = await tx.query<ProductSetRow & { expired: number }>(
     `SELECT ${COLUMNS}, NOT (${FRESH_DRAFT_SQL}) AS expired
        FROM product_sets
-      WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')
+      WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
       FOR UPDATE`,
     [gymId, ownerMemberId],
   );
@@ -82,11 +83,11 @@ export async function createDraft(tx: Tx, input: {
 }): Promise<CreateDraftOutcome> {
   const inFlight = await lockInFlight(tx, input.gymId, input.ownerMemberId);
   if (inFlight) {
-    if (inFlight.status === 'draft' && Number(inFlight.expired) === 1) {
+    if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1) {
       // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
       await tx.query(
-        `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-          WHERE ps.id = ? AND um.status = 'draft'`, [inFlight.id]);
+        `DELETE um FROM user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
+          WHERE ps.id = ? AND um.status = 'in_cart'`, [inFlight.id]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
@@ -98,7 +99,7 @@ export async function createDraft(tx: Tx, input: {
     `INSERT INTO product_sets
        (gym_id, owner_member_id, previous_product_set_id, status,
         membership_plan_id, starts_at, created_by)
-     VALUES (?, ?, ?, 'draft', ?, ?, ?)`,
+     VALUES (?, ?, ?, 'in_cart', ?, ?, ?)`,
     [input.gymId, input.ownerMemberId,
       active ? active.id : null, input.membershipPlanId, input.startsAt,
       input.actor.name],
@@ -115,7 +116,7 @@ export async function createDraft(tx: Tx, input: {
 export async function touchDraft(tx: Tx, gymId: string, id: number): Promise<boolean> {
   const { rowCount } = await tx.query(
     `UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP()
-      WHERE id = ? AND gym_id = ? AND status = 'draft' AND ${FRESH_DRAFT_SQL}`,
+      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND ${FRESH_DRAFT_SQL}`,
     [id, gymId],
   );
   return rowCount > 0;
@@ -140,7 +141,7 @@ async function lockSet(tx: Tx, gymId: string, id: number) {
 export async function submitForPayment(tx: Tx, gymId: string, id: number, paymentRequestId: number | null = null): Promise<MoveOutcome> {
   const row = await lockSet(tx, gymId, id);
   if (!row) return { kind: 'not_found' };
-  if (row.status !== 'draft') return { kind: 'not_allowed', status: row.status };
+  if (row.status !== 'in_cart') return { kind: 'not_allowed', status: row.status };
   if (Number(row.expired) === 1) return { kind: 'expired' };
   // #2624 stage 4: the Promotions applied while it was a Draft are captured now.
   const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
@@ -149,9 +150,9 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   const { syncPlanLineAllocations } = await import('./plan-line-allocation');
   await syncPlanLineAllocations(tx, gymId, id, { split: true });
   // #2746: the one-time Products in the cart move with it.
-  await moveSetPurchases(tx, gymId, id, 'draft', 'pending_payment');
+  await moveSetPurchases(tx, gymId, id, 'in_cart', 'pending_payment');
   await tx.query(
-    `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'draft'`,
+    `UPDATE product_sets SET status = 'pending_payment', payment_request_id = ?, pending_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'in_cart'`,
     [paymentRequestId, id],
   );
   await syncPlanSnapshot(tx, gymId, id);
@@ -168,9 +169,9 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
   const row = await lockSet(tx, gymId, id);
   if (!row) return { kind: 'not_found' };
   if (row.status === 'active') return { kind: 'ok', productSet: row };
-  if (row.status !== 'draft' && row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
-  if (row.status === 'draft' && Number(row.expired) === 1) return { kind: 'expired' };
-  if (row.status === 'draft') {
+  if (row.status !== 'in_cart' && row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
+  if (row.status === 'in_cart' && Number(row.expired) === 1) return { kind: 'expired' };
+  if (row.status === 'in_cart') {
     // #2624 stage 4: a free commit confirms the Draft's Promotion snapshots too.
     const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
     await confirmDraftPromotionSnapshots(tx, gymId, id);
@@ -222,15 +223,15 @@ export type CancelOutcome =
 export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise<CancelOutcome> {
   const row = await lockSet(tx, gymId, id);
   if (!row) return { kind: 'not_found' };
-  if (row.status === 'draft') {
+  if (row.status === 'in_cart') {
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
-      `SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
+      `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
     await discardDraftSet(tx, gymId, id);
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
     const um = linked[0]?.user_membership_id;
-    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`, [um, gymId]);
+    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`, [um, gymId]);
     return { kind: 'cancelled' };
   }
   if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
@@ -246,6 +247,9 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     providerRef: r.provider_ref, providerStatus: null, status: r.status,
   }));
   if (!canCancelPending(attempts)) return { kind: 'unresolved' };
+  // #2949 stage 5: deleting the checkout returns the standalone cart purchases it joined to the cart.
+  const { releaseJoinedCartPurchases } = await import('./cart-checkout');
+  await releaseJoinedCartPurchases(tx, gymId, id, 'in_cart');
   await tx.query(`DELETE FROM payment_requests WHERE id IN (
       SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL)`, [id]);
   await deleteProductSetAndOwnPlanSnapshots(tx, gymId, id, 'pending_payment');
@@ -279,6 +283,10 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
   })))) return { kind: 'unresolved' };
 
+  // #2949 stage 5: the standalone cart purchases this checkout joined go back to the cart (before the
+  // events that link them are deleted).
+  const { releaseJoinedCartPurchases } = await import('./cart-checkout');
+  await releaseJoinedCartPurchases(tx, gymId, id, 'in_cart', actor);
   if (events.length > 0) {
     const ids = events.map((e) => e.id);
     const marks = ids.map(() => '?').join(',');
@@ -290,13 +298,13 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     `DELETE FROM payment_requests WHERE gym_id = ? AND id IN (
        SELECT payment_request_id FROM (SELECT payment_request_id FROM product_sets WHERE id = ? AND payment_request_id IS NOT NULL) x)
       AND status <> 'completed'`, [gymId, id]);
-  await moveSetPurchases(tx, gymId, id, 'pending_payment', 'draft');
+  await moveSetPurchases(tx, gymId, id, 'pending_payment', 'in_cart');
   await tx.query(
-    `UPDATE product_sets SET status = 'draft', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
+    `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND status = 'pending_payment'`, [id]);
   await tx.query(
-    `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-        SET um.status = 'draft', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
+    `UPDATE user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
+        SET um.status = 'in_cart', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
       WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
   await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'cancelled' };
@@ -332,7 +340,7 @@ export async function expirePendingPayments(): Promise<number> {
 export async function expireDrafts(): Promise<number> {
   const { rows } = await db.query<{ id: number; gym_id: string }>(
     `SELECT id, gym_id FROM product_sets
-      WHERE status = 'draft'
+      WHERE status = 'in_cart'
         AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
   );
   let n = 0;
@@ -344,7 +352,7 @@ export async function expireDrafts(): Promise<number> {
     const out = await db.transaction(async (tx) => {
       const { rows: fresh } = await tx.query(
         `SELECT id FROM product_sets
-          WHERE id = ? AND gym_id = ? AND status = 'draft'
+          WHERE id = ? AND gym_id = ? AND status = 'in_cart'
             AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE FOR UPDATE`,
         [r.id, r.gym_id]);
       if (fresh.length === 0) return { kind: 'skipped' };

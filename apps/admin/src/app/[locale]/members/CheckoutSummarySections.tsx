@@ -2,8 +2,9 @@
 
 // #2860 — the Product Set Summary shown before Save & Pay, as two sections:
 //
-//   - Initial Payment: the commit charge line by line (unit price, discount,
-//     tax rate, tax, final amount) with the subtotal, the discounts, the tax
+//   - Initial Payment: the commit charge line by line (quantity, the price of
+//     one unit, the line total before discounts, the discount and what it is,
+//     tax rate, tax, final amount — #2890) with the subtotal, the discounts, the tax
 //     breakdown by rate and the total. Every figure is the server's
 //     (`initial_payment` on `GET /product-sets/:id/review`, which restates
 //     `commitCharge()`): nothing here adds anything up.
@@ -17,14 +18,15 @@ import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
 import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
-import { billingFrequencyLabel, cadenceFrequencyLabel } from '@/lib/billingFrequency';
+import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
-import { contractedMembersText, discountText, splitContracted } from './productsWorkflowView';
+import { contractedMembersText, discountText, lineReducedToZero, splitContracted } from './productsWorkflowView';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
 
 export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike | null | undefined }) {
   const t = useTranslations('members');
+  const tFreq = useTranslations('billing_frequency');
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
   if (payment.lines.length === 0) return <p style={cardHintStyle}>{t('review_nothing_due')}</p>;
@@ -36,6 +38,7 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
             <th style={th}>{t('checkout_col_item')}</th>
             <th style={thNum}>{t('checkout_col_quantity')}</th>
             <th style={thNum}>{t('checkout_col_unit_price')}</th>
+            <th style={thNum}>{t('checkout_col_line_total')}</th>
             <th style={th}>{t('checkout_col_discount')}</th>
             <th style={thNum}>{t('checkout_col_tax_rate')}</th>
             <th style={thNum}>{t('checkout_col_tax')}</th>
@@ -45,29 +48,39 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
         <tbody>
           {payment.lines.map((l, i) => {
             const d = discountText(l);
+            // #2883 — a Membership Fee charge that collects a Pre-paid Duration says how many billing
+            // periods its amount covers, in the plan's cadence; the quantity stays the number of fees.
+            const prepaid = prepaidPaymentLabel(l.prepaid_periods, l.prepaid_cadence, tFreq as any);
             return (
               <tr key={i} data-initial-payment-line>
-                <td style={td}>{l.name ?? '—'}</td>
+                <td style={td}>
+                  {l.name ?? '—'}
+                  {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
+                </td>
                 <td style={tdNum}>{l.quantity}</td>
                 <td style={tdNum}>{money(l.unit_price)}</td>
+                <td style={tdNum} data-line-total>{money(l.line_total)}</td>
                 <td style={td}>
                   {l.discount > 0 ? `−${money(l.discount)}` : '—'}
                   {d && <span style={{ ...cardHintStyle, margin: 0 }}>{` (${d.key ? t(d.key as any, d.values as any) : d.text})`}</span>}
                 </td>
                 <td style={tdNum}>{l.tax_rate_percent != null ? `${l.tax_rate_percent}%` : '—'}</td>
                 <td style={tdNum}>{money(l.tax_amount)}</td>
-                <td style={tdNum}>{money(l.amount)}</td>
+                <td style={tdNum}>
+                  {money(l.amount)}
+                  {lineReducedToZero(l) && <div style={{ ...cardHintStyle, margin: 0 }} data-line-free>{t('checkout_line_no_charge')}</div>}
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
       <div style={totals}>
+        {payment.discount_total > 0 && <>
+          <TotalRow label={t('checkout_total_before_discounts')} value={money(payment.total_before_discounts)} />
+          <TotalRow label={t('checkout_total_discounts')} value={`−${money(payment.discount_total)}`} />
+        </>}
         <TotalRow label={t('checkout_subtotal_excl_vat')} value={money(payment.subtotal_excl_tax)} />
-        {payment.discount_total > 0 && <TotalRow label={t('checkout_total_discounts')} value={`−${money(payment.discount_total)}`} />}
-        {payment.taxes.map((r) => (
-          <TotalRow key={String(r.rate_percent)} label={t('checkout_tax_at_rate', { rate: r.rate_percent ?? 0, base: money(r.base) })} value={money(r.tax)} />
-        ))}
         <TotalRow label={t('checkout_total_vat')} value={money(payment.tax_total)} />
         <TotalRow strong label={t('checkout_total_initial_payment')} value={money(payment.total)} />
       </div>

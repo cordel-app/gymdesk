@@ -53,12 +53,13 @@
 //    whole package and never per session (#942).
 
 import { isRecurringFrequency } from './productClassification';
+import { DRAFT_TTL_MINUTES } from './productSet';
 
 /** `payment_requests.source` of a product purchase (migration 228). */
 export const PRODUCT_PURCHASE_SOURCE = 'product_purchase';
 
 /** What `member_products_oneoff_snapshot.status` may hold, mirrored by `chk_mprod_status`. */
-export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled', 'draft'] as const;
+export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled', 'in_cart'] as const;
 export type MemberProductStatus = (typeof MEMBER_PRODUCT_STATUSES)[number];
 
 /** #799's actor snapshot, mirrored by `chk_mprod_created_by_type`. */
@@ -68,8 +69,23 @@ export type PurchaseActorType = (typeof PURCHASE_ACTOR_TYPES)[number];
 /**
  * #1657 stage 2 — a one-time Product staff saved without paying. It has no
  * payment request, never blocks the pending key and is invisible to the member.
+ * #2949 stage 1: stored as `in_cart` (it was `draft`), shown as **In Cart**.
  */
-export const DRAFT_PURCHASE_STATUS: MemberProductStatus = 'draft';
+export const IN_CART_PURCHASE_STATUS: MemberProductStatus = 'in_cart';
+
+/**
+ * #2962 — how long a standalone one-time Product stays in the cart (a staff
+ * draft no Product Set carries) before it expires and is deleted. It is the
+ * Product Set Draft's own two hours (#1325), one number, so the two kinds of
+ * cart item cannot disagree; counted from the purchase's `created_at`, since a
+ * standalone draft is never edited (Pay and Cancel are its only moves).
+ */
+export const PURCHASE_CART_TTL_MINUTES = DRAFT_TTL_MINUTES;
+
+/** #2962 — when a standalone cart purchase created at `createdAt` expires. */
+export function purchaseCartExpiresAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + PURCHASE_CART_TTL_MINUTES * 60_000);
+}
 
 /** The status a purchase is created with: paid for, or it never happened. */
 export const PENDING_PURCHASE_STATUS: MemberProductStatus = 'pending_payment';

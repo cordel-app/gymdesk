@@ -38,6 +38,8 @@ export interface Transaction {
   transaction_type?: 'payment' | 'refund';
   refund_of_payment_request_id?: number | null;
   provider_refund_ref?: string | null;
+  /** #2935: the Refund Receipt a completed refund was documented by. */
+  refund_receipt_number?: string | null;
 }
 
 export /** #640 §2 — the read-only Billing Event details view. */
@@ -47,6 +49,8 @@ interface BillingEventDetails {
   member_name: string | null;
   user_membership_id: number | null;
   plan_name: string | null;
+  /** #2940: the event's generated name; null for an event written before it. */
+  name?: string | null;
   amount: string | null;
   currency: string | null;
   status: string;
@@ -249,6 +253,7 @@ export function ExpandedRow({
             }}>
               <DetailField label={t('billing_events_page.det_id')}>{details.id}</DetailField>
               <DetailField label={t('billing_events_page.det_member')}>{details.member_name ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_event_name')}>{details.name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_plan')}>{details.plan_name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_amount')}>
                 {fmtAmount(details.amount)} {details.currency ?? ''}
@@ -359,6 +364,11 @@ export function ExpandedRow({
                     {tx.transaction_type === 'refund' && (
                       <span style={{ marginRight: 6, padding: '1px 6px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: '#ede9fe', color: '#5b21b6' }}>
                         {t('billing_events_page.tx_refund')}
+                      </span>
+                    )}
+                    {tx.refund_receipt_number && (
+                      <span style={{ marginRight: 6, color: '#6b7280', fontSize: 12 }}>
+                        {t('billing_events_page.tx_refund_receipt', { number: tx.refund_receipt_number })}
                       </span>
                     )}
                     {tx.status}

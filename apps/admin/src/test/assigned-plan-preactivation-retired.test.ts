@@ -77,7 +77,7 @@ describe('#786 — no awaiting_payment status in the admin', () => {
 describe('#1108 — the admin commits a Draft through Save & Pay (stage 2 over stage 1\'s activation route)', () => {
   it('offers Save & Pay for a Draft, and the two payments for a Pending Payment row, and nothing else out of them', () => {
     const row = sources['AssignedPlanExpandedRow.tsx'];
-    expect(row).toContain("detail.status === 'draft'");
+    expect(row).toContain("detail.status === 'in_cart'");
     expect(row).toContain("t('action_save_and_pay')");
     expect(row).toContain("detail.status === 'pending_payment'");
     expect(row).toContain("t('action_record_cash_payment')");
@@ -97,7 +97,7 @@ describe('#1108 — the admin commits a Draft through Save & Pay (stage 2 over s
   });
 
   it('lets the Assigned Plans filter name a Draft', () => {
-    expect(sources['page.tsx']).toMatch(/LIFECYCLE_STATUSES[^=]*=\s*\[[^\]]*'draft'/);
+    expect(sources['page.tsx']).toMatch(/LIFECYCLE_STATUSES[^=]*=\s*\[[^\]]*'in_cart'/);
   });
 
   it.each(LOCALE_CODES)('%s labels the Save & Pay, cash payment and payment link actions, and the Pending Payment status', (code) => {

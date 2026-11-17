@@ -65,6 +65,7 @@
 // price by a cent.
 
 import { applyLineDirectDiscount } from './lineDirectDiscount';
+import { feeUnitBenefits, type FeeMemberDiscount } from './feeMemberDiscounts';
 import { advanceBillingDate } from './billingDate';
 import { cadenceForFrequency } from './scheduleAllocation';
 import { prorate } from './proration';
@@ -295,6 +296,13 @@ export interface SimulationAssignment {
    * loader cannot forget it; the fee line is multiplied by it here and nowhere else.
    */
   membershipFeeUnits: number;
+  /**
+   * #2945 — each fee unit's own Direct Discount (%), one entry per beneficiary of a `per_member`
+   * plan in `member_id` order (`feeMemberDiscountsSql()`): `null` follows `personalFeeBenefit`,
+   * a number replaces it for that one fee. Absent, or every entry `null`: every unit is priced
+   * with `personalFeeBenefit`, the pre-#2945 arithmetic.
+   */
+  membershipFeeMemberDiscounts?: FeeMemberDiscount[] | null;
 }
 
 /**
@@ -445,6 +453,12 @@ export interface SimulationLine {
    * Membership Fee cycle.
    */
   prepaid_periods: number | null;
+  /**
+   * #2883 — the billing cadence `prepaid_periods` is counted in (the assignment's own pair), so a
+   * surface can say "2 months pre-payment" or "2 × 4 weeks pre-payment" rather than a bare count.
+   * Set exactly when `prepaid_periods` is; absent or `null` everywhere else.
+   */
+  prepaid_cadence?: { interval: number; unit: string } | null;
   /**
    * #1867 stage 4 — set on the first, partial charge of a recurring Product that
    * joined an existing schedule mid-period: the days charged out of the period's
@@ -862,6 +876,11 @@ export interface ResolvedCharge {
    */
   periodStatus?: PlanDurationStatus | PromotionTimelineStatus;
   /**
+   * #2945 — the Membership Fee of a `per_member` plan whose beneficiaries carry their own Direct
+   * Discount: one amount per fee unit, whose sum is the line's charge. Absent otherwise.
+   */
+  unitAmounts?: number[];
+  /**
    * #946 — how many Pre-paid periods this charge covers, set only on the one
    * Membership Fee charge that collects a Plan's Pre-paid Duration up front.
    * The line reports it so the simulation can say "3 periods prepaid" rather
@@ -958,30 +977,50 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   // pre-paid, paid or bonus period. Its first charge is the stretch, prorated by actual days at the
   // price of the period it leads into, **plus** the whole Pre-paid Duration when that period starts
   // one — so the first schedule date, already paid up front, then bills nothing.
-  const durationContext = joinDate ? { ...a, startsAt: joinDate } : a;
+  // #2945 — each fee unit's own benefit, when a beneficiary's fee carries a Direct Discount of its
+  // own; `null` keeps the pre-#2945 path (one fee priced, then multiplied by the units).
+  const unitBenefits = feeUnitBenefits(a.personalFeeBenefit, a.membershipFeeMemberDiscounts, feeUnits(a));
+  const resolveFor = (ctx: SimulationAssignment) => (date: string, occurrence: number): ResolvedCharge => {
+    const durationContext = joinDate ? { ...ctx, startsAt: joinDate } : ctx;
+    if (!joinDate || !proration) return resolveMembershipFee(regular, date, ctx);
+    if (occurrence !== 0) {
+      const resolved = resolveMembershipFee(regular, date, durationContext);
+      // The first schedule date's Pre-paid lump was collected with the prorated stretch.
+      if (date === joinDate && (resolved.prepaidPeriods ?? 0) > 0) {
+        return {
+          amount: 0, quantity: 0, promotional: true, pending: resolved.pending, periodStatus: 'prepaid_plan',
+          benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'prepaid_plan' }],
+        };
+      }
+      return resolved;
+    }
+    const lead = resolveMembershipFee(regular, joinDate, durationContext);
+    const periods = lead.prepaidPeriods ?? 0;
+    const perPeriod = periods > 0 ? lead.amount / periods : lead.amount;
+    const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
+    return { ...lead, amount: round2(stretch + (periods > 0 ? lead.amount : 0)) };
+  };
+  const resolveOne = resolveFor(a);
+  const resolveUnits = unitBenefits?.map((b) => resolveFor({ ...a, personalFeeBenefit: b })) ?? null;
   return {
     cadence,
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
     resolve: (date, occurrence) => {
-      if (!joinDate || !proration) return resolveMembershipFee(regular, date, a);
-      if (occurrence !== 0) {
-        const resolved = resolveMembershipFee(regular, date, durationContext);
-        // The first schedule date's Pre-paid lump was collected with the prorated stretch.
-        if (date === joinDate && (resolved.prepaidPeriods ?? 0) > 0) {
-          return {
-            amount: 0, quantity: 0, promotional: true, pending: resolved.pending, periodStatus: 'prepaid_plan',
-            benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'prepaid_plan' }],
-          };
-        }
-        return resolved;
-      }
-      const lead = resolveMembershipFee(regular, joinDate, durationContext);
-      const periods = lead.prepaidPeriods ?? 0;
-      const perPeriod = periods > 0 ? lead.amount / periods : lead.amount;
-      const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
-      return { ...lead, amount: round2(stretch + (periods > 0 ? lead.amount : 0)) };
+      if (!resolveUnits) return resolveOne(date, occurrence);
+      // #2945 — every unit priced with its own benefit; the line charges their sum. The first
+      // unit's resolution stands for the cycle (period, horizon, pre-paid), which the units share:
+      // they differ only by the personal benefit, applied last.
+      const units = resolveUnits.map((r) => r(date, occurrence));
+      const seen = new Set<string>();
+      const benefits = units.flatMap((u) => u.benefits).filter((b) => {
+        const key = JSON.stringify(b);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return { ...units[0], benefits, unitAmounts: units.map((u) => u.amount) };
     },
     line: (date, resolved) => {
       // #946 — one Membership Fee charge covers more than one period exactly
@@ -993,19 +1032,26 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
       // #2834 — a `per_member` plan owes one fee per beneficiary: the cycle's fee, priced once by
       // `resolveMembershipFee()`, times the units. The one place the fee is multiplied.
       const units = feeUnits(a);
+      const prepaid = resolved.prepaidPeriods != null && resolved.prepaidPeriods > 0;
       return {
         kind: 'membership_fee',
         label: a.planName ?? 'Membership Fee',
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
         product_id: null,
-        quantity: periods * units,
-        unit_price: regular,
+        // #2883 — the quantity is the number of fees (one per family, or one per beneficiary of a
+        // `per_member` plan), never the Pre-paid periods: those are `prepaid_periods`, so a family
+        // fee covering two months reads as one fee of €140 for two months, not as two of €70.
+        quantity: units,
+        unit_price: round2(regular * periods),
         regular_price: round2(regular * periods * units),
         benefits: resolved.benefits,
-        actual_charge: round2(resolved.amount * units),
+        actual_charge: resolved.unitAmounts
+          ? round2(resolved.unitAmounts.reduce((sum, n) => sum + n, 0))
+          : round2(resolved.amount * units),
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
         prepaid_periods: resolved.prepaidPeriods ?? null,
+        prepaid_cadence: prepaid ? { interval: a.recurringInterval as number, unit: a.recurringUnit as string } : null,
         proration: proration && date === a.startsAt
           ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
       };
@@ -1224,8 +1270,19 @@ const memberOf = (item: BillableItem): { assigned_member_id?: number } =>
   (item.assignedMemberId != null ? { assigned_member_id: item.assignedMemberId } : {});
 
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
-  const cadence = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
-  if (!cadence) return null;
+  const base = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
+  if (!base) return null;
+  // #2964 — an included Product billed on the plan's own cadence bills on the plan's schedule: a
+  // plan joining the billing calendar mid-period charges it a prorated first stretch beside the
+  // fee's, then on the calendar's dates. Same join date and proration as `buildMembershipFeeStream()`.
+  const itemCadence = cadenceForFrequency(item.billingFrequency);
+  const onPlanCadence = itemCadence != null && a.recurringInterval != null && a.recurringUnit != null
+    && Number(itemCadence.interval) === Number(a.recurringInterval) && itemCadence.unit === a.recurringUnit;
+  const joinDate = a.alignTo && onPlanCadence ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
+  const proration = joinDate && itemCadence ? prorate(1, itemCadence, a.startsAt, joinDate) : null;
+  const cadence: Cadence = joinDate
+    ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
+    : base;
   const unit = round2(item.unitPrice);
   const regular = round2(unit * item.quantity);
   // The Plan's own treatment of the line. It applies to every occurrence for
@@ -1233,7 +1290,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
   // Benefit (#772) — it never sets `promotional`: a discount that never ends
   // *is* this contract's regular charge, and treating it as promotional would
   // push the horizon to the safety cap for every discounted item.
-  const base = applyLineBenefit(unit, item.quantity, item.benefit);
+  const lineBase = applyLineBenefit(unit, item.quantity, item.benefit);
   const planBenefitLines: SimulationBenefit[] = item.benefit.action === 'no_benefit' ? [] : [{
     source: 'membership_plan', name: null,
     action: item.benefit.action, value: item.benefit.value, period_status: null,
@@ -1251,8 +1308,12 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date, occurrence) => withLineDirectDiscount(
-      resolveCoveredCharge(coverage, base, planBenefitLines, date, occurrence), item.directDiscountPercent),
+    resolve: (date, occurrence) => {
+      const resolved = withLineDirectDiscount(
+        resolveCoveredCharge(coverage, lineBase, planBenefitLines, date, occurrence), item.directDiscountPercent);
+      if (!proration || occurrence !== 0) return resolved;
+      return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
+    },
     line: (date, resolved) => ({
       kind: 'product',
       label: item.name,
@@ -1266,6 +1327,8 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
       prepaid_periods: null,
+      ...(proration && date === a.startsAt
+        ? { proration: { prorated_days: proration.proratedDays, period_days: proration.periodDays } } : {}),
       ...memberOf(item),
     }),
   };

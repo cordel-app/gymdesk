@@ -21,7 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyChildQuery, createTestDraftAssignment, confirmTestDraftPromotions } from './helpers';
+  request, legacyChildQuery, createTestDraftAssignment, activateTestAssignment, confirmTestDraftPromotions } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -183,11 +183,13 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     expect(res.body.find((r: any) => r.promotion_id === promotionId).display_status).toBe('active');
   });
 
-  it('reads as inactive once revoked', async () => {
+  it('reads as inactive once revoked on a confirmed plan', async () => {
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `Revoked-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
     await applyPromotion(gymId, umId, promotionId);
+    // #2880: a Draft's removal deletes the reference; the inactive history is a confirmed plan's.
+    await activateTestAssignment(gymId, umId);
     expect((await revokePromotion(gymId, umId, promotionId)).status).toBe(200);
 
     const res = await listPromotions(gymId, umId);

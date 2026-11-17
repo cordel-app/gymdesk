@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
 import { familyWalletOf, inList } from '../api/family-wallet';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
-import { entitlingAssignmentSql } from './planAssignments';
+import { entitlingAssignmentSql, isCurrentAssignmentSnapshotSql } from './planAssignments';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -61,11 +61,13 @@ import { entitlingAssignmentSql } from './planAssignments';
  * inclusive). Wallet kinds that belong to no assignment (a purchased package, a
  * staff correction) are untouched and stay open indefinitely.
  *
- * #2125 M6b-4: only the Additional Services leg (the Product Set's recurring lines) still asks
- * this of `user_memberships`. The plan's own sessions and a Promotion's read the assignment's
- * current plan snapshot through `entitlingAssignmentSql()`, the access readers' predicate.
+ * #2125 M6b-4: the plan's own sessions and a Promotion's read the assignment's current plan
+ * snapshot through `entitlingAssignmentSql()`, the access readers' predicate. Since M6b-19 the
+ * Additional Services leg (the Product Set's recurring lines) asks this of the assignment's current
+ * snapshot too (`pa`), which carries a closed plan's status and paid-through `ends_at` since the
+ * settle run (M6b-6/7).
  */
-const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND um.ends_at >= UTC_DATE()))";
+const ENTITLED_ASSIGNMENT_SQL = "(pa.status = 'active' OR (pa.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))";
 
 export type ProfessionalServiceGrantKind =
   | 'class_package'
@@ -261,20 +263,22 @@ export async function loadMemberProfessionalServiceGrants(
             gc.id                 AS product_id,
             gc.name               AS product_name,
             umsv.quantity * COALESCE(gc.units, 1) AS sessions,
-            um.member_id          AS holder_member_id
-     FROM user_memberships um
-     JOIN product_set_periodical_snapshots umsvl ON umsvl.product_set_id = ${assignmentLineVersionId('um.id')}
+            pa.member_id          AS holder_member_id
+     FROM plan_snapshots pa
+     JOIN product_set_periodical_snapshots umsvl
+       ON umsvl.product_set_id = ${assignmentLineVersionId('pa.source_user_membership_id')}
      JOIN product_periodical_snapshots umsv
-       ON umsv.id = umsvl.product_periodical_snapshot_id AND umsv.gym_id = um.gym_id
+       ON umsv.id = umsvl.product_periodical_snapshot_id AND umsv.gym_id = pa.gym_id
           AND umsv.source_id IS NOT NULL
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips
-       ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
+       ON sips.product_id = gc.id AND sips.gym_id = pa.gym_id
      JOIN professional_services ps
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
-       ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.member_id IN ${IN} AND ${ENTITLED_ASSIGNMENT_SQL}
+       ON gps.professional_service_id = ps.id AND gps.gym_id = pa.gym_id AND gps.status = 'active'
+     WHERE pa.gym_id = ? AND pa.member_id IN ${IN} AND pa.source_user_membership_id IS NOT NULL
+       AND ${ENTITLED_ASSIGNMENT_SQL} AND ${isCurrentAssignmentSnapshotSql('pa')}
        AND umsv.starts_at <= UTC_DATE()
        AND (umsv.ends_at IS NULL OR umsv.ends_at >= UTC_DATE())`,
     [gymId, ...ids],

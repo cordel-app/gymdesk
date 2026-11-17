@@ -46,7 +46,7 @@ const base: InvoicePdfData = {
   type: 'simplified', state: 'not-paid', lang: 'es', number: 'S-2026-000001', issuedAt: new Date('2026-11-11T10:00:00Z'),
   gym: { name: 'Gym', legalName: 'Gym SL', cif: '12345678Z', fiscalAddress: 'Calle 1', fiscalPhone: null },
   customer: { name: 'Ana', taxId: null, address: null },
-  lines: [{ name: 'Cuota', quantity: 1, amount: 29.99 } as any],
+  lines: [{ name: 'Cuota', quantity: 1, amount: 29.99, amountExclTax: null, taxRate: 21, rate: 21, net: 24.79, tax: 5.2 }],
   totals: { net: 24.79, tax: 5.2, total: 29.99 } as any,
   currency: 'EUR',
 };

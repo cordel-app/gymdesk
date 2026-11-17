@@ -7,6 +7,7 @@
 //
 // The caller is a superadmin: it acts as the gym's admin and impersonates the Member for `/me`.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, request,
@@ -94,7 +95,7 @@ const planName = async (id: number) =>
 /** A future scheduled obligation on the assignment's Active Product Set. */
 async function eventOf(um: number, gym = gymId): Promise<number> {
   const { rows } = await db.query<any>(
-    "SELECT id, owner_member_id FROM product_sets WHERE user_membership_id = ? AND status = 'active'", [um]);
+    `SELECT id, owner_member_id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [um]);
   const { insertId } = await db.query(
     `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, billing_date, is_scheduled)
      VALUES (?, ?, 'charge_created', 'system', '10.00', ?, DATE_ADD(CURDATE(), INTERVAL 10 DAY), 1)`,

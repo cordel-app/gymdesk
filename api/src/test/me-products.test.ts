@@ -200,6 +200,83 @@ describe('which Products the member is shown (#1121 Q1)', () => {
   });
 });
 
+// #2905 — the Add Product catalogue's Professional Service filter: the options
+// come with the catalogue, and choosing one narrows it on the server.
+describe('the Professional Service filter (#2905)', () => {
+  async function createService(gid: string, name: string, status: 'active' | 'inactive' = 'active'): Promise<number> {
+    const { insertId } = await db.query(
+      'INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)',
+      [gid, name],
+    );
+    await db.query(
+      'INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, ?)',
+      [gid, insertId, status],
+    );
+    return insertId;
+  }
+  const link = (productId: number, serviceId: number) => db.query(
+    'INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)',
+    [gid, productId, serviceId],
+  );
+
+  let gid: string;
+  let pilates: number;
+  let training: number;
+  beforeAll(async () => {
+    gid = await createTestGym('Products Service Filter Gym');
+    await createTestMembership(gid, 'member', 'mep-psf-member');
+    await createLinkedMember(gid, 'mep-psf-member');
+    pilates = await createService(gid, 'Pilates');
+    training = await createService(gid, 'Personal Training');
+    const unused = await createService(gid, 'Nutrition Coaching');
+    const inactive = await createService(gid, 'Retired Service', 'inactive');
+    const hidden = await createService(gid, 'Staff Only Service');
+    await link(await createItem(gid, { name: 'Pilates Pack', type: 'sessions', units: 5 }), pilates);
+    await link(await createItem(gid, { name: 'PT Pack', type: 'sessions', units: 10 }), training);
+    await link(await createItem(gid, { name: 'Old Pack', type: 'sessions', units: 1 }), inactive);
+    await link(await createItem(gid, { name: 'Desk Pack', type: 'sessions', units: 1, enrollment: 'staff_only' }), hidden);
+    await createItem(gid, { name: 'Towel' });
+    void unused;
+  });
+
+  it('lists only active services that a visible Product grants, by name', async () => {
+    const res = await asMember(gid, 'mep-psf-member');
+    expect(res.status).toBe(200);
+    expect(res.body.professional_services).toEqual([
+      { id: training, name: 'Personal Training' },
+      { id: pilates, name: 'Pilates' },
+    ]);
+  });
+
+  it('a chosen service narrows the list; the options stay the same', async () => {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'mep-psf-member' } as any);
+    const res = await request.get(`${ROOT}?professional_service_ids=${pilates}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.status).toBe(200);
+    expect(names(res.body)).toEqual(['Pilates Pack']);
+    expect(res.body.professional_services.map((s: any) => s.id)).toEqual([training, pilates]);
+  });
+
+  it('no filter keeps Products that grant no service', async () => {
+    const res = await asMember(gid, 'mep-psf-member');
+    expect([...names(res.body)].sort()).toEqual(['Old Pack', 'PT Pack', 'Pilates Pack', 'Towel'].sort());
+  });
+
+  it('names a service in the member’s language, falling back to the base name', async () => {
+    await db.query(
+      `INSERT INTO professional_service_translations (professional_service_id, locale, name, description) VALUES (?, 'es', 'Entrenamiento personal', NULL)`,
+      [training],
+    );
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'mep-psf-member' } as any);
+    const res = await request.get(ROOT).set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gid).set('x-locale', 'es');
+    expect(res.body.professional_services).toEqual([
+      { id: training, name: 'Entrenamiento personal' },
+      { id: pilates, name: 'Pilates' },
+    ]);
+  });
+});
+
 describe('what each row carries (#1121 §4)', () => {
   it('quotes the VAT-inclusive price and says tax is included', async () => {
     const gid = await createTestGym('Products Tax Gym');

@@ -6,14 +6,16 @@
  * what the lifecycle is, which transitions are legal and when a Draft has gone
  * stale.
  *
- *   draft ──► pending_payment ──► active ──► superseded
+ *   in_cart ──► pending_payment ──► active ──► superseded
  *     │                             ▲
  *     └──── (no payment owed) ──────┘
  *                 │
  *                 └──► cancelled   (#2747: kept, never deleted)
  *
- * - `draft`            being prepared; persisted section by section and expires
- *                      after `DRAFT_TTL_MINUTES` without activity.
+ * - `in_cart`          being prepared (the member's cart; `draft` until #2949 stage 2,
+ *                      migration 434); persisted section by section and expires after
+ *                      `DRAFT_TTL_MINUTES` without activity. The routes and messages still
+ *                      call it a Draft.
  * - `pending_payment`  committed (Save & Pay); the initial payment is awaited.
  * - `active`           the current committed configuration of the chain.
  * - `superseded`       replaced by a newer version that reached `active`.
@@ -25,7 +27,7 @@
  * `product_sets_one_in_flight`); everything else here is the application's.
  */
 
-export const PRODUCT_SET_STATUSES = ['draft', 'pending_payment', 'active', 'superseded', 'cancelled'] as const;
+export const PRODUCT_SET_STATUSES = ['in_cart', 'pending_payment', 'active', 'superseded', 'cancelled'] as const;
 export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
 
 /** A Draft expires after two hours without a successful update (#1325). */
@@ -35,12 +37,15 @@ export const DRAFT_TTL_MINUTES = 120;
 export const PENDING_TTL_MINUTES = 120;
 
 const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]>> = {
-  draft: ['pending_payment', 'active'],
+  in_cart: ['pending_payment', 'active'],
   pending_payment: ['active', 'cancelled'],
   active: ['superseded'],
   superseded: [],
   cancelled: [],
 };
+
+/** #2949 stage 2: the status of a Product Set in the member's cart (it was `draft`). */
+export const IN_CART_SET_STATUS = 'in_cart';
 
 export function isProductSetStatus(value: unknown): value is ProductSetStatus {
   return typeof value === 'string' && (PRODUCT_SET_STATUSES as readonly string[]).includes(value);
@@ -52,7 +57,7 @@ export function canTransition(from: ProductSetStatus, to: ProductSetStatus): boo
 
 /** Statuses that occupy the owner's single in-flight slot. */
 export function isInFlight(status: ProductSetStatus): boolean {
-  return status === 'draft' || status === 'pending_payment';
+  return status === 'in_cart' || status === 'pending_payment';
 }
 
 /**

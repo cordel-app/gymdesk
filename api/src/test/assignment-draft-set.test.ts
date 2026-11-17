@@ -1,5 +1,6 @@
 // #1325 PR 3e — the Admin's Draft assignment is a ProductSet Draft from birth.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 import { expireDrafts } from '../api/product-sets';
@@ -33,7 +34,7 @@ const api = (method: 'post' | 'put' | 'delete', path: string) =>
 
 async function draftSetOf(umId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, status, owner_member_id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
+    `SELECT id, status, owner_member_id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, umId]);
   return rows[0] ?? null;
 }
 
@@ -44,7 +45,7 @@ describe('a Draft assignment is created set-first', () => {
       .send({ member_id: m, membership_plan_id: await plan('P'), starts_at: '2026-06-01' });
     expect(res.status).toBe(201);
     const set = await draftSetOf(res.body.id);
-    expect(set).toMatchObject({ status: 'draft', owner_member_id: m });
+    expect(set).toMatchObject({ status: 'in_cart', owner_member_id: m });
   });
 
   it('assigning again while a Draft is open replaces it: one Draft, the latest plan (#1707)', async () => {
@@ -61,7 +62,7 @@ describe('a Draft assignment is created set-first', () => {
     expect(Number(rows[0].membership_plan_id)).toBe(planB);
     expect(await draftSetOf(first.body.id)).toBeNull();
     const { rows: sets } = await db.query<any>(
-      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')`, [gymId, m]);
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')`, [gymId, m]);
     expect(sets).toHaveLength(1);
     const { rows: ev } = await db.query<any>('SELECT id FROM billing_events WHERE gym_id = ? AND member_id = ?', [gymId, m]);
     expect(ev).toHaveLength(0);

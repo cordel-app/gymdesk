@@ -1,6 +1,7 @@
 import { DEFAULT_SERVICE_BOOKING_TYPE, parseServiceBookingType, type ServiceBookingType } from '../domain/serviceBookingType';
 import { Router } from 'express';
 import { db } from '../infra/db';
+import { allocateProfessionalServiceSlug } from './entity-slugs';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { PLATFORM_STORAGE_ROOT } from '../infra/storage';
 import {
@@ -58,7 +59,7 @@ const shape = attachTranslations;
 
 async function loadOne(id: unknown, locale: string) {
   const { rows } = await db.query<Row>(
-    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.booking_type, ps.image_url, ps.image_thumbnail_url,
+    `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.booking_type, ps.slug, ps.image_url, ps.image_thumbnail_url,
             ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
        FROM professional_services ps WHERE ps.id = ? AND ${BASE_WHERE}`,
     [id],
@@ -78,7 +79,7 @@ platformProfessionalServicesRouter.get('/', requireSuperadmin, async (req, res, 
       params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
     const { rows } = await db.query<Row>(
-      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.booking_type, ps.image_url, ps.image_thumbnail_url,
+      `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key, ps.max_capacity, ps.min_participants, ps.booking_type, ps.slug, ps.image_url, ps.image_thumbnail_url,
               ps.created_at, ps.created_by, ps.modified_at, ps.modified_by
          FROM professional_services ps WHERE ${where} ORDER BY ps.name ASC`,
       params,
@@ -119,11 +120,12 @@ platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res,
   const actor = resolvePlatformActor(req.superadminName);
   try {
     const id = await db.transaction(async (tx) => {
+      const slug = await allocateProfessionalServiceSlug(null, { name: name.value }, tx);
       const { insertId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, booking_type, created_by)
-         VALUES (NULL, ?, ?, 1, NULL, ?, ?, ?, ?)`,
-        [name.value, description.value, capacity.value, minParticipants.value, bookingType.value, actor],
+           (gym_id, name, slug, description, is_system, system_key, max_capacity, min_participants, booking_type, created_by)
+         VALUES (NULL, ?, ?, ?, 1, NULL, ?, ?, ?, ?)`,
+        [name.value, slug, description.value, capacity.value, minParticipants.value, bookingType.value, actor],
       );
       await writeTranslations(tx, insertId, translations.value);
       // A Base service no gym could see would be pointless: give every existing

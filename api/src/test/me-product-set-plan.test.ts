@@ -2,6 +2,7 @@
 // Integration: the member's first plan joins the Draft their Products are on, judged by the
 // immediate purchase's own checks; one Draft is one purchase, and nothing is charged.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
@@ -77,7 +78,7 @@ describe('POST /me/product-sets/:id/plans', () => {
 
     // Still one in-flight version for the member, and nothing billed yet.
     const { rows: sets } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'`, [gymId, m.id]);
+      `SELECT COUNT(*) AS n FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'`, [gymId, m.id]);
     expect(Number(sets[0].n)).toBe(1);
     const { rows: events } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [draft.id]);
     expect(Number(events[0].n)).toBe(0);
@@ -85,7 +86,7 @@ describe('POST /me/product-sets/:id/plans', () => {
     // Committing the Draft activates the plan and the Product together.
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: draft.id, today: TODAY }));
     const { rows: um } = await db.query<any>(
-      `SELECT um.status FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id
+      `SELECT um.status FROM user_memberships um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
         WHERE ps.id = ?`, [draft.id]);
     expect(um[0]?.status).toBe('active');
     const { rows: lines } = await db.query<any>(
@@ -142,6 +143,31 @@ describe('POST /me/product-sets/:id/plans', () => {
       .toMatchObject({ mandatory: true, assigned_member_id: m.id, member_name: 'M' });
     expect(after.find((b) => b.product_id === towel))
       .toMatchObject({ assigned_member_id: null, member_name: null });
+  });
+
+  it("reports each plan line's final price: frozen unit price x quantity after its treatment and Direct Discount (#2892)", async () => {
+    const m = await member();
+    const draft = (await as(m.clerk, 'post', '/draft')).body;
+    const towel = await product(`Towel-${uniq()}`);
+    const insurance = await product(`Insurance-${uniq()}`);
+    const planId = await plan(30, { optional: towel, mandatory: insurance });
+    const add = await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: planId });
+    expect(add.status).toBe(200);
+    // The towel: 2 units at the frozen 10.00 with a 25% Direct Discount; the insurance waived.
+    await db.query(
+      `UPDATE plan_periodical_snapshots SET quantity = 2, direct_discount_percent = 25
+        WHERE plan_snapshot_id = ? AND product_id = ?`, [add.body.plan_snapshot_id, towel]);
+    await db.query(
+      `UPDATE plan_periodical_snapshots SET \`action\` = 'waive', \`value\` = NULL
+        WHERE plan_snapshot_id = ? AND product_id = ?`, [add.body.plan_snapshot_id, insurance]);
+    // The catalogue price moving afterwards changes nothing: the line's own price is frozen.
+    await db.query('UPDATE products SET amount = 99.00 WHERE id = ?', [towel]);
+
+    const view = await as(m.clerk, 'get', `/${draft.id}`);
+    expect(view.status).toBe(200);
+    const benefits = view.body.plans[0].benefits as any[];
+    expect(benefits.find((b) => b.product_id === towel).final_price).toBeCloseTo(15, 2);
+    expect(benefits.find((b) => b.product_id === insurance).final_price).toBe(0);
   });
 
   it('refuses a second plan on the Draft, a plan not offered to members, and a member who holds a plan', async () => {

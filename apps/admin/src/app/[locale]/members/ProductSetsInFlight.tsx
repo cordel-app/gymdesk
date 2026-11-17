@@ -37,7 +37,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
   const [link, setLink] = useState<{ id: number; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const inFlight = productSets.filter((p) => p.status === 'draft' || p.status === 'pending_payment');
+  const inFlight = productSets.filter((p) => p.status === 'in_cart' || p.status === 'pending_payment');
   if (inFlight.length === 0) return null;
 
   async function run(id: number, action: () => Promise<void>) {
@@ -63,10 +63,10 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
               {' · '}
               {ps.expired
                 ? t('product_set_status_expired')
-                : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_draft')}
+                : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_in_cart')}
               {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
             </span>
-            {ps.status === 'draft' && review && (
+            {ps.status === 'in_cart' && review && (
               <div data-checkout-summary style={{ marginTop: 8 }}>
                 <div style={cardSubLabelStyle}>{t('checkout_initial_payment')}</div>
                 <InitialPaymentSection payment={review.initial_payment} />

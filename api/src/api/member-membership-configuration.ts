@@ -10,6 +10,7 @@ import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -49,7 +50,7 @@ import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignm
 // count — #1108 stage 1 added `draft` to both for that reason: a Draft is what
 // the staff are configuring, so it has to appear on the Member card beside the
 // forecast that projects it.
-const LIVE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'] as const;
+const LIVE_STATUSES = ['in_cart', 'pending_payment', 'active', 'paused'] as const;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts and
@@ -83,7 +84,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
 
   // Every assignment, newest first — the Member page has shown the full plan
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
-  // ones the Services section and the simulation act on.
+  // ones the Services section and the simulation act on. #2125 M6b-31: each assignment is read
+  // off its current plan snapshot (`ASSIGNMENT_HISTORY_ROWS_SQL`), its creator off its anchor
+  // snapshot and its last modifier off the latest snapshot that recorded one.
   const { rows: rawPlans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at,
@@ -94,11 +97,11 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live,
             (um.status IN ('active_cancel_at_period_end', 'cancelled') AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()) AS is_cancelled_valid
-     FROM user_memberships um
+     FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
      ORDER BY um.starts_at DESC, um.id DESC`,
-    [...LIVE_STATUSES, gymId, memberId, memberId],
+    [...LIVE_STATUSES, gymId, gymId, memberId, memberId],
   );
 
   // #1325: the next billing date of a plan a ProductSet bills is its ledger's.
@@ -129,9 +132,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // beside `plans` for the Member card to show and act on. A Draft idle past two
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ps.user_membership_id, ps.membership_plan_id,
-            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'draft'
+    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.membership_plan_id,
+            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name,
             (SELECT be.amount FROM billing_events be
@@ -139,7 +142,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
               ORDER BY be.id DESC LIMIT 1) AS amount_due
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('draft', 'pending_payment')
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('in_cart', 'pending_payment')
       ORDER BY ps.id DESC`,
     [gymId, memberId],
   );
@@ -163,17 +166,19 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // being configured (or awaiting payment) if there is one, otherwise the Active
   // one, with every Superseded version as history. A pure read: nothing here
   // creates a Billing Event. `ends_at` is the plan's end date of the assignment
-  // the version projects (null while open-ended or never projected).
+  // the version projects (null while open-ended or never projected). #2125 M6b-28: read off the
+  // assignment's current plan snapshot, never the `user_memberships` row; M6b-37: found through
+  // the set's anchor `ps.plan_assignment_id`, not `ps.user_membership_id`.
   const { rows: setRows } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
-            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'draft'
+            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
-            mp.name AS plan_name, mp.lifecycle_status AS plan_status, um.ends_at AS ends_at
+            mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
       ORDER BY ps.id DESC`,
     [gymId, memberId],

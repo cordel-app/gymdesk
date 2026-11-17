@@ -12,7 +12,7 @@ const body = read('components/assignedPlan/AssignedPlanExpandedRow.tsx');
 
 describe('#1725 single plan menu', () => {
   it('offers Edit on a Draft from the row menu through the table helper', () => {
-    expect(section).toMatch(/plan\.status === 'draft'[\s\S]{0,200}helpers\.startEdit\(plan\.id\)/);
+    expect(section).toMatch(/plan\.status === 'in_cart'[\s\S]{0,200}helpers\.startEdit\(plan\.id\)/);
     expect(table).toContain('rowActions(row, { startEdit })');
   });
   it('the table asks the body to enter Edit mode with a token', () => {

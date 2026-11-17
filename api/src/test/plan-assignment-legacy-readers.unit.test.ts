@@ -44,31 +44,24 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  'api/assigned-plan-snapshot.ts': 2,
   'api/assignment-commit.ts': 4,
-  'api/assignment-config.ts': 2,
   'api/assignment-draft-set.ts': 3,
-  'api/assignment-lifecycle.ts': 2,
+  'api/assignment-lifecycle.ts': 1,
   'api/entitlement-plan-links.ts': 1,
-  'api/member-membership-configuration.ts': 2,
-  'api/membership-fee-pricing.ts': 1,
-  'api/membership-plans.ts': 6,
-  'api/membership-promotions.ts': 4,
+  'api/membership-plans.ts': 1,
+  'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
-  'api/plan-assignment-drift.ts': 3,
+  'api/plan-assignment-drift.ts': 4,
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
-  'api/product-set-bridge.ts': 2,
   'api/product-set-cancellation.ts': 2,
-  'api/product-set-projection.ts': 8,
+  'api/product-set-projection.ts': 7,
   'api/product-sets-router.ts': 2,
   'api/product-sets.ts': 3,
-  'api/scheduled-event-execution.ts': 2,
-  'api/user-membership-services.ts': 2,
-  'api/user-memberships.ts': 29,
-  'domain/billingEventPayments.ts': 2,
-  'domain/memberProfessionalServices.ts': 1,
+  'api/scheduled-event-execution.ts': 1,
+  'api/user-memberships.ts': 17,
+  'domain/billingEventPayments.ts': 1,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -188,8 +181,8 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     const payments = readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8');
     expect(payments).toContain("assignmentOfLegacyIdSql(eventAssignmentSql(), 'ps_pa')");
     expect(payments).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
-    // The two statements left in billingEventPayments.ts are the dunning pause, a writer.
-    expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBe(2);
+    // The statement left in billingEventPayments.ts is the dunning pause's dual-write (M6b-47 moved its read).
+    expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBe(1);
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8')).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
     // M6b-17 moved the one statement left in me.ts (`GET /me/membership`'s pending-payment plan read).
     expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
@@ -202,6 +195,22 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(readFileSync(join(API_SRC, 'api/billing-simulation.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
   });
 
+  it('M6b-19: the wallet\'s Additional Services leg and an assignment\'s services read plan_snapshots', () => {
+    for (const file of ['domain/memberProfessionalServices.ts', 'api/user-membership-services.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("isCurrentAssignmentSnapshotSql('pa')");
+    }
+    expect(readFileSync(join(API_SRC, 'api/user-membership-services.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+  });
+
+  it('M6b-20: the Membership Fee pricing loader and the configuration overlay read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/membership-fee-pricing.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/membership-fee-pricing.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
+    // M6b-26 moved the one statement left (`assignmentLineVersionId()`'s status read).
+    expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
+  });
+
   it('counts a statement in code, across a line break, and ignores a comment and a look-alike table', () => {
     expect(statements("db.query('SELECT 1 FROM user_memberships um')")).toBe(1);
     expect(statements('`SELECT 1 FROM a\n   JOIN\n   user_memberships um ON 1`')).toBe(1);
@@ -209,5 +218,65 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(statements('// FROM user_memberships (history)')).toBe(0);
     expect(statements("'SELECT 1 FROM class_type_user_memberships'")).toBe(0);
     expect(statements("'SELECT 1 FROM user_memberships_archive'")).toBe(0);
+  });
+
+  it('M6b-21: the Assigned Plan snapshot reads and the Promotion routes\' status gates read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/assigned-plan-snapshot.ts']).toBeUndefined();
+    const snapshot = readFileSync(join(API_SRC, 'api/assigned-plan-snapshot.ts'), 'utf8');
+    expect(snapshot.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
+    // The two statements left in membership-promotions.ts read inside a writing transaction or lock the row.
+    const promotions = readFileSync(join(API_SRC, 'api/membership-promotions.ts'), 'utf8');
+    expect(promotions.split('SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
+  });
+  it('M6b-22: the Membership Plan router\'s assignment counts read plan_snapshots', () => {
+    // Since M6b-29 the one statement left in membership-plans.ts is the bulk assign's INSERT.
+    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBe(1);
+    const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
+    expect(plans.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
+    expect(plans).toContain("isCurrentAssignmentSnapshotSql('pa')");
+  });
+
+  it('M6b-29: the Plan reprice\'s candidate assignments read plan_snapshots', () => {
+    const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
+    expect(plans).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}');
+  });
+
+  it('M6b-26: an assignment\'s version-level lines are chosen by its plan snapshot\'s status', () => {
+    expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBeUndefined();
+    expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8'))
+      .toContain("assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')");
+  });
+
+  it('M6b-27: the bridge\'s closed-assignment check and the cancellation start date read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/product-set-bridge.ts']).toBeUndefined();
+    const bridge = readFileSync(join(API_SRC, 'api/product-set-bridge.ts'), 'utf8');
+    expect(bridge).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+    expect(bridge).toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+  });
+
+  it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(7);
+    expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+    expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
+      .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+  });
+
+  it('M6b-31: the Member card\'s plan history reads plan_snapshots, creator and modifier included', () => {
+    expect(LEGACY_STATEMENTS['api/member-membership-configuration.ts']).toBeUndefined();
+    const config = readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8');
+    expect(config).toContain('FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um');
+  });
+
+  it('M6b-47: the end-of-period sweep and both dunning pauses pick their assignment from plan_snapshots', () => {
+    const sweep = readFileSync(join(API_SRC, 'api/assignment-lifecycle.ts'), 'utf8');
+    expect(sweep).toContain("isCurrentAssignmentSnapshotSql('pa')");
+    expect(readFileSync(join(API_SRC, 'api/scheduled-event-execution.ts'), 'utf8'))
+      .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+    expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8'))
+      .toContain("assignmentOfLegacyIdSql('?', 'pa')");
+    // What is left in each is the dual-write itself, guarded on the status it moves away from.
+    for (const file of ['api/assignment-lifecycle.ts', 'api/scheduled-event-execution.ts', 'domain/billingEventPayments.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBe(1);
+    }
   });
 });

@@ -17,7 +17,7 @@ import type { ProductSetSummary } from './membershipConfiguration';
  * that cancels on its end date, is still Active. This reverses #2264, which
  * read an empty Active set as None.
  */
-const PS_STATUSES = ['draft', 'pending_payment', 'active', 'superseded'] as const;
+const PS_STATUSES = ['in_cart', 'pending_payment', 'active', 'superseded'] as const;
 export function psStatusKey(current: ProductSetSummary | null): string | null {
   const s = current?.status;
   return s && (PS_STATUSES as readonly string[]).includes(s) ? s : null;
@@ -26,6 +26,14 @@ export function psStatusKey(current: ProductSetSummary | null): string | null {
 /** A one-off purchase waiting for its payment: it will generate an immediate Billing Event. */
 export function pendingOneOffCount(purchases: Array<{ status: string }>): number {
   return purchases.filter((p) => p.status === 'pending_payment').length;
+}
+
+/**
+ * #2965 — the standalone cart: the one-time purchases waiting in the cart that no Product Set
+ * carries. The server marks exactly those with `cart_expires_at` (#2962).
+ */
+export function standaloneCartCount(purchases: Array<{ status: string; cart_expires_at?: string | null }>): number {
+  return purchases.filter((p) => p.status === 'in_cart' && p.cart_expires_at != null).length;
 }
 
 /** The review answer reduced to what the mode needs. */
@@ -40,10 +48,14 @@ export interface ReviewSummary {
 
 /** #2860 — `initial_payment` of the review (`initialPaymentBreakdown()`), every figure the server's. */
 export interface InitialPaymentLike {
+  /** #2890 — the lines' totals before discounts. */
+  total_before_discounts: number;
   lines: Array<{
-    name: string | null; quantity: number; unit_price: number; discount: number;
+    name: string | null; quantity: number; unit_price: number; line_total: number; discount: number;
     promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
     tax_rate_percent: number | null; tax_amount: number; amount: number;
+    /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
+    prepaid_periods?: number | null; prepaid_cadence?: { interval: number; unit: string } | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -95,11 +107,28 @@ export function discountText(l: InitialPaymentLike['lines'][number]):
   return { key: 'checkout_discount_direct' };
 }
 
+/** #2890 — a line a benefit or discount takes all the way down to €0.00. */
+export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], 'amount' | 'discount'>): boolean {
+  return l.discount > 0 && l.amount === 0;
+}
+
 export interface WorkflowInput {
   current: ProductSetSummary | null;
   /** `GET /product-sets/:id/review` of the Draft; `null` until read or when there is no Draft. */
   review: ReviewSummary | null;
   pendingOneOffs: number;
+  /** #2965 — `standaloneCartCount()`; absent reads as none. */
+  cartPurchases?: number;
+}
+
+/** A Draft that has not expired — the cart the standalone purchases are paid with (#2949 stage 5). */
+function liveDraft(input: WorkflowInput): boolean {
+  return input.current?.status === 'in_cart' && !input.current?.expired;
+}
+
+/** Nothing in flight a standalone cart could join: it is paid on its own (`POST …/checkout`). */
+function cartAlone(input: WorkflowInput): boolean {
+  return (input.cartPurchases ?? 0) > 0 && !liveDraft(input) && input.current?.status !== 'pending_payment';
 }
 
 export type BillingMode = 'simulation' | 'events';
@@ -114,25 +143,28 @@ export function billingMode(input: WorkflowInput): BillingMode {
   if (input.pendingOneOffs > 0) return 'simulation';
   const status = input.current?.status;
   if (status === 'pending_payment') return 'simulation';
-  if (status === 'draft' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'simulation';
+  if (status === 'in_cart' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'simulation';
   return 'events';
 }
 
 /** The global Save & Pay: on while something supported waits to be saved or paid. */
 export function saveAndPayEnabled(input: WorkflowInput & { canWrite: boolean }): boolean {
   if (!input.canWrite) return false;
-  return billingMode(input) === 'simulation';
+  return billingMode(input) === 'simulation' || saveAndPayTarget(input) != null;
 }
 
 /**
  * Which surface Save & Pay opens. A Draft or a pending version goes through the
- * existing review → save-and-pay flow; a pending one-off alone keeps its own
+ * existing review → save-and-pay flow; a cart of standalone purchases with no
+ * Draft is paid together (`cart`, #2965); a pending one-off alone keeps its own
  * payment link, so the action points the operator to the Products card.
  */
-export function saveAndPayTarget(input: WorkflowInput): 'review' | 'purchases' | null {
+export function saveAndPayTarget(input: WorkflowInput): 'review' | 'cart' | 'purchases' | null {
   const status = input.current?.status;
   if (status === 'pending_payment') return 'review';
-  if (status === 'draft' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'review';
+  // #2965 — a Draft's Save & Pay pays the standalone cart purchases too, so they alone are a reason to open it.
+  if (liveDraft(input) && ((input.review?.changes.length ?? 0) > 0 || (input.cartPurchases ?? 0) > 0)) return 'review';
+  if (cartAlone(input)) return 'cart';
   return input.pendingOneOffs > 0 ? 'purchases' : null;
 }
 
@@ -160,7 +192,7 @@ export type CancelRequest =
 
 export function cancelRequestFor(set: { id: number; status: string } | null | undefined): CancelRequest | null {
   if (!set) return null;
-  if (set.status === 'draft') return { kind: 'discard_draft', path: `/product-sets/${set.id}`, method: 'DELETE' };
+  if (set.status === 'in_cart') return { kind: 'discard_draft', path: `/product-sets/${set.id}`, method: 'DELETE' };
   if (set.status === 'pending_payment') {
     return { kind: 'cancel_pending', path: `/product-sets/${set.id}/cancel`, method: 'POST' };
   }

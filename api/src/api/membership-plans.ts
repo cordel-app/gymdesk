@@ -72,7 +72,7 @@ import {
   grossBenefitUnitPrice,
   withProductBenefitPrices,
 } from './product-benefit-pricing';
-import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { DEFAULT_MEMBERSHIP_FEE_SCOPE, parseMembershipFeeScopeInput, toMembershipFeeScope } from '../domain/membershipFeeScope';
 
 interface PlanRow {
@@ -330,9 +330,10 @@ export async function enrichPlan(
       [plan.id, gymId],
     ).then(r => r.rows),
     db.query(
-      `SELECT COUNT(*) AS n FROM user_memberships
-       WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
-      [plan.id, gymId],
+      // #2125 M6b-22: each assignment counted once, from its current plan snapshot.
+      `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
+       WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+      [gymId, plan.id],
     ).then(r => Number(r.rows[0].n)),
     // Full catalog of active products for this gym, so the admin UI can
     // populate the Benefit selectors without a separate round trip.
@@ -676,13 +677,16 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   // Membership on this plan (#374 — the limit is enforced server-side).
   if (member_limit && member_limit !== 'family') {
     const cap = parseInt(member_limit, 10);
+    // #2125 M6b-22: each active assignment's current plan snapshot and its own beneficiaries.
     const { rows: over } = await db.query(
       `SELECT COUNT(*) AS n FROM (
-         SELECT umm.user_membership_id
-         FROM ${ASSIGNMENT_BENEFICIARIES} umm
-         JOIN user_memberships um ON um.id = umm.user_membership_id AND um.status = 'active'
-         WHERE um.membership_plan_id = ? AND um.gym_id = ?
-         GROUP BY umm.user_membership_id
+         SELECT pa.id
+         FROM plan_snapshots pa
+         JOIN plan_snapshot_beneficiaries pab ON pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id
+         WHERE pa.membership_plan_id = ? AND pa.gym_id = ? AND pa.status = 'active'
+           AND pa.source_user_membership_id IS NOT NULL
+           AND ${isCurrentAssignmentSnapshotSql('pa')}
+         GROUP BY pa.id
          HAVING COUNT(*) > ?
        ) over_limit`,
       [req.params.id, gymId, cap],
@@ -815,9 +819,10 @@ membershipPlansRouter.delete('/:id/image', requireRole('admin'), async (req, res
 membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: active } = await db.query(
-    `SELECT COUNT(*) AS n FROM user_memberships
-     WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
-    [req.params.id, gymId],
+    // #2125 M6b-22: the assignments' current plan snapshots.
+    `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
+     WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+    [gymId, req.params.id],
   );
   if (Number(active[0].n) > 0) {
     return res.status(400).json({ error: 'Cannot delete a plan with active memberships.' });
@@ -999,7 +1004,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promotionId, actorText);
     }
 
-    const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [insertId]);
+    const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [gymId, insertId]);
     const { rows: coveredMembers } = await db.query(MEMBERSHIP_MEMBERS_SELECT, [insertId, gymId]);
     recordAudit(req, {
       action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0],
@@ -1145,9 +1150,10 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
 membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: active } = await db.query(
-    `SELECT COUNT(*) AS n FROM user_memberships
-     WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
-    [req.params.id, gymId],
+    // #2125 M6b-22: the assignments' current plan snapshots.
+    `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
+     WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+    [gymId, req.params.id],
   );
   if (Number(active[0].n) > 0) {
     return res.status(400).json({ error: 'Cannot deactivate a plan with active memberships.' });
@@ -1612,12 +1618,16 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
     // #1325 PR 3e-2: each assignment is repriced on the version its configuration
     // is (see `assignment-reprice.ts`), one transaction per row so a locked or
     // refused one leaves only itself as it was.
+    // #2125 M6b-29: the candidates are read from each assignment's current plan snapshot
+    // (`GYM_ASSIGNMENT_ROWS_SQL`, binding the gym id first); `um.id` is still the legacy id the
+    // per-row reprice names.
     const actorText = resolveRequestActor(getTenantContext(req));
     const { rows: candidates } = await db.query(
       `SELECT um.id, um.starts_at, ${assignmentConfig('discount_reason')} AS discount_reason
-         FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
-        WHERE um.membership_plan_id = ? AND um.gym_id = ? AND um.status IN (${statusMarks})`,
-      [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+         FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
+        WHERE um.membership_plan_id = ? AND um.gym_id = ? AND um.status IN (${statusMarks})
+        ORDER BY um.id`,
+      [gymId, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
     );
     let updated = 0;
     let keptDiscounted = 0;

@@ -25,6 +25,7 @@
 // bookable and is not the member's plan — is `draft-membership-assignment.test.ts`.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
 import {
@@ -102,7 +103,7 @@ async function assignDraft(
     member_id: memberId, membership_plan_id: planId, starts_at: startsAt,
   }, gym);
   expect(created.status).toBe(201);
-  expect(created.body.status).toBe('draft');
+  expect(created.body.status).toBe('in_cart');
   return created.body.id as number;
 }
 
@@ -115,7 +116,7 @@ async function assignDraft(
 async function legacyDraft(memberId: number, planId: number, startsAt: string, gym = gymId): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, starts_at, status)
-     VALUES (?, ?, ?, ?, 'draft')`,
+     VALUES (?, ?, ?, ?, 'in_cart')`,
     [gym, memberId, planId, startsAt],
   );
   await legacyChildQuery(
@@ -185,7 +186,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     expect(live.ends_at).toBe('2026-12-31');
     expect(live.closed_at).toBeNull();
     // And the refused Draft is still a Draft, ready to be committed or discarded.
-    expect(rows.find((r: any) => r.id === draftId).status).toBe('draft');
+    expect(rows.find((r: any) => r.id === draftId).status).toBe('in_cart');
   });
 
   it('confirm: true cancels the current plan, dates it, and leaves the new one the only live row', async () => {
@@ -278,7 +279,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const rows = await assignmentsOf(memberId);
     expect(liveRows(rows)).toHaveLength(1);
     expect(rows.find((r: any) => r.id === liveId).status).toBe('active');
-    expect(rows.find((r: any) => r.id === draftId).status).toBe('draft');
+    expect(rows.find((r: any) => r.id === draftId).status).toBe('in_cart');
   });
 
   it('another gym\'s live plan for a same-named member is not a conflict (tenant isolation)', async () => {
@@ -330,7 +331,7 @@ describe('POST /user-memberships/:id/assign-new-plan — supersede shape', () =>
     expect(res.status).toBe(201);
     // #1108 stage 1: the successor is a Draft and the plan it replaces is still
     // running — the supersede is the commit's.
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect((await assignmentsOf(memberId)).find((r: any) => r.id === liveId).status).toBe('active');
 
     expect((await commit(res.body.id, { confirm: true })).status).toBe(200);
@@ -510,7 +511,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const { rows: initial } = await db.query<any>(
       `SELECT be.amount, be.product_set_id FROM billing_events be
         JOIN product_sets ps ON ps.id = be.product_set_id
-       WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`, [draft]);
+       WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.event_type = 'payment_recorded'`, [draft]);
     expect(initial).toHaveLength(1);
     expect(Number(initial[0].amount)).toBe(30);
 
@@ -641,6 +642,42 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
       `SELECT DISTINCT bl.item_name FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
         WHERE be.product_set_id = ? AND be.is_scheduled = 1 AND bl.kind = 'membership_fee'`, [sets[0].id]);
     expect(billed.map((r: any) => String(r.item_name).replace(/-\d+-\w+$/, '')).sort()).toEqual(['One A', 'One C']);
+  });
+
+  it("the replace target is read from the Draft's plan snapshot, not the legacy row (#2125 M6b-35)", async () => {
+    const memberId = await createMember(gymId, 'Replace Target Snapshot');
+    const [a, b, c] = [await createPlan(gymId, 'Tgt A'), await createPlan(gymId, 'Tgt B'), await createPlan(gymId, 'Tgt C')];
+    for (const planId of [a, b, c]) {
+      await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+                      VALUES (?, ?, 20, '2020-01-01', 'active')`, [gymId, planId]);
+      await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+                      VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    }
+    const umA = await assignLive(memberId, a, '2026-01-01');
+    const umB = await assignDraft(memberId, b, '2026-02-01');
+    expect((await commit(umB, { on_conflict: 'add' })).status).toBe(200);
+
+    const created = await post(`/user-memberships/${umB}/assign-new-plan`, { membership_plan_id: c, starts_at: '2026-04-01' });
+    expect(created.status).toBe(201);
+    // assign-new-plan writes the target on the Draft's own snapshot, as the anchor of B.
+    const { rows: anchorB } = await db.query<any>(
+      'SELECT MIN(id) AS id FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, umB]);
+    const { rows: draftSnap } = await db.query<any>(
+      'SELECT replaces_assignment_id AS r FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?',
+      [gymId, created.body.id]);
+    expect(draftSnap.map((r: any) => Number(r.r))).toEqual([Number(anchorB[0].id)]);
+
+    // The legacy column no longer decides: with it cleared, the commit still names B alone.
+    await db.query('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id]);
+    const asked = await commit(created.body.id);
+    expect(asked.status).toBe(409);
+    expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);
+    expect((await commit(created.body.id, { on_conflict: 'replace' })).status).toBe(200);
+    const { rows: statuses } = await db.query<any>(
+      'SELECT id, status FROM user_memberships WHERE id IN (?, ?)', [umA, umB]);
+    const byId = Object.fromEntries(statuses.map((r: any) => [r.id, r.status]));
+    expect(byId[umA]).toBe('active');
+    expect(byId[umB]).toBe('superseded');
   });
 
   it("on_conflict: 'replace' is the same as confirm: true (#2125)", async () => {

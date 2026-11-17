@@ -204,7 +204,7 @@ async function moveInFlightLinks(
     `SELECT j.id, j.entitlement_only
        FROM product_set_plan_snapshots j
        JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = ? AND p.owner_member_id = ?
-                          AND p.status IN ('draft','pending_payment')
+                          AND p.status IN ('in_cart','pending_payment')
       WHERE j.plan_snapshot_id = ?`, [gymId, ownerMemberId, original]);
   for (const link of rows) {
     const move = inFlightLinkMove(newStatus, Number(link.entitlement_only) === 1);

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, linkTestSetToAssignment } from './helpers';
 import {
   activate, addCoverage, cancelInFlight, createDraft, expireDrafts, submitForPayment, touchDraft,
 } from '../api/product-sets';
@@ -56,7 +56,7 @@ describe('ProductSet versioning (#1325)', () => {
 
   it('the database itself refuses two in-flight rows for one owner', async () => {
     const a = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'draft', ?)`,
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, otherMemberId, today()]);
     await expect(db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
@@ -120,9 +120,10 @@ describe('ProductSet versioning (#1325)', () => {
       gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor }));
     if (draft.kind !== 'created') throw new Error('expected created');
     const { insertId: umId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'draft', ?)`,
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, owner, today()]);
-    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, draft.productSet.id]);
+    // #2125 M6b-45: the cancel reads the link off the set's anchor, so the fixture links as the writers do.
+    await linkTestSetToAssignment(draft.productSet.id, umId);
     const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));
     expect(out.kind).toBe('cancelled');
     const { rows } = await db.query('SELECT id FROM user_memberships WHERE id = ?', [umId]);
@@ -163,7 +164,7 @@ describe('Draft expiry (#1325)', () => {
     const ownerB = await member(`ps-e-${Date.now()}@example.com`);
     const idle = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
-       VALUES (?, ?, 'draft', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerA, today()]);
+       VALUES (?, ?, 'in_cart', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerA, today()]);
     const pending = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
        VALUES (?, ?, 'pending_payment', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerB, today()]);

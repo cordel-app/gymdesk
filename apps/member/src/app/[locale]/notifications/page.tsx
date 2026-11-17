@@ -57,7 +57,7 @@ function timeAgo(iso: string, locale: string): string {
 type CategoryFilter = 'all' | 'staff' | 'auto';
 const CATEGORY_FILTERS: CategoryFilter[] = ['all', 'staff', 'auto'];
 
-const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h', 'booking_cancelled_by_partner', 'activity_discontinued'];
+const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h', 'booking_cancelled_by_partner', 'activity_discontinued', 'family_booking_cancelled'];
 
 export default function NotificationsPage() {
   const t = useTranslations('notifications');
@@ -178,7 +178,7 @@ export default function NotificationsPage() {
                 <div style={styles.sub}>{t('cancel_reason', { reason: n.payload.reason })}</div>
               )}
               {DETAIL_TYPES.includes(n.type) && (
-                <div style={styles.sub}>{t(`detail_${n.type}` as any)}</div>
+                <div style={styles.sub}>{t(`detail_${n.type}` as any, { name: String(n.payload?.cancelled_by_name ?? '') })}</div>
               )}
               {n.payload?.starts_at && (
                 <div style={styles.sub}>

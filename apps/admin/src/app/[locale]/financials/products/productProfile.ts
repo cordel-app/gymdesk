@@ -347,3 +347,76 @@ export function applyProductTextValues(v: ProductTexts, field: ProductTextField,
     },
   };
 }
+
+/**
+ * #2948: the values `+ Add Product` opens with. The create card is the Edit
+ * form (same layout, same controls, same validation), so it needs a starting
+ * point for every field the edit form binds: these are the API's own defaults
+ * for a new row (`POST /products`), so an untouched field saves exactly what
+ * leaving it out of the body did before.
+ */
+export function newProductFormValues(): ProductFormValues {
+  return {
+    name: '',
+    type: 'fee',
+    units: '',
+    description: '',
+    tr: { es: { name: '', description: '' }, ca: { name: '', description: '' } },
+    amount: '',
+    billing_frequency: '',
+    status: 'active',
+    enrollment_status: 'public',
+    notes: '',
+    package_information: '',
+    validity_days: '',
+    tax_rate_id: '',
+    mandatory: false,
+    one_time_purchase: false,
+    one_per_member: false,
+    sharing_type: 'individual',
+    professionalServiceIds: [],
+  };
+}
+
+/**
+ * #2948: the one client-side check both the create card and the inline editor
+ * run before saving — the locale key of the first problem, or null. A System
+ * row's name is frozen (and not submitted), so it is not required there.
+ */
+export function productFormErrorKey(form: ProductFormValues, { isSystem }: { isSystem: boolean }): string | null {
+  if (!isSystem && !form.name.trim()) return 'error_name_required';
+  if (!form.type) return 'error_type_required';
+  if (form.units !== '') {
+    const n = Number(form.units);
+    if (isNaN(n) || !Number.isInteger(n) || n <= 0) return 'error_units_positive';
+  }
+  return null;
+}
+
+/**
+ * #2948: the body both `POST /products` and `PUT /products/:id` receive, built
+ * from the one form. `sessionType` is the Type that carries Professional
+ * Services (#546), passed in so this module keeps its single spelling elsewhere.
+ */
+export function toProductPayload(form: ProductFormValues, sessionType: string) {
+  return {
+    name: form.name.trim() || undefined,
+    type: form.type || undefined,
+    units: form.units !== '' ? parseInt(form.units, 10) : null,
+    description: form.description.trim() || null,
+    translations: toTranslationsPayload(form.tr),
+    amount: form.amount !== '' ? parseFloat(form.amount) : null,
+    billing_frequency: form.billing_frequency || null,
+    status: form.status,
+    enrollment_status: form.enrollment_status,
+    notes: form.notes.trim() || null,
+    package_information: form.package_information.trim() || null,
+    validity_days: form.validity_days !== '' ? parseInt(form.validity_days, 10) : null,
+    tax_rate_id: form.tax_rate_id !== '' ? parseInt(form.tax_rate_id, 10) : null,
+    mandatory: form.mandatory,
+    one_time_purchase: form.one_time_purchase,
+    one_per_member: form.one_per_member,
+    sharing_type: effectiveSharingType(form),
+    professional_service_ids: form.type === sessionType ? form.professionalServiceIds : undefined,
+  };
+}

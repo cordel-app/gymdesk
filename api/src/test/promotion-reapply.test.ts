@@ -21,6 +21,11 @@
 //      frontend's: false while something is standing, false for a Promotion
 //      that is no longer active or is outside its own window.
 //
+// #2880 narrows (1) for a Draft: a Promotion applied to a Draft is a provisional
+// reference, so taking it off deletes the reference and putting it back inserts
+// one fresh row — no Inactive entry accumulates. The history above is a
+// confirmed assignment's; the cases below run on Drafts and assert the Draft rule.
+//
 // Fixtures are inserted directly; the HTTP API is only used for the action
 // under test (CLAUDE.md).
 
@@ -156,15 +161,14 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     expect((await revokePromotion(gymId, umId, promotionId)).status).toBe(200);
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(201);
 
+    // #2880: the Draft holds its current selection, once.
     const rows = await applicationRows(umId, promotionId);
-    expect(rows).toHaveLength(2);
-    expect(rows[0].status).toBe('revoked');
-    expect(rows[0].revoked_at).toBeTruthy();
-    expect(rows[1].status).toBe('applied');
-    expect(rows[1].revoked_at).toBeNull();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('applied');
+    expect(rows[0].revoked_at).toBeNull();
   });
 
-  it('keeps the spent application as history rather than resurrecting it', async () => {
+  it('leaves no Inactive entry on a Draft after removing and re-applying (#2880)', async () => {
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `History-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
@@ -175,22 +179,16 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     await applyPromotion(gymId, umId, promotionId);
 
     const rows = await applicationRows(umId, promotionId);
-    // The original application is carried into the new version as it was —
-    // revoked, with its own window — and the re-apply is a second row: a
-    // re-apply that reused it would rewrite the window the ledger was tagged
-    // against. (A version is a new set of rows, so the id itself is the
-    // version's; the history is what is asserted.)
-    expect(rows).toHaveLength(2);
-    expect(rows[0].status).toBe('revoked');
-    expect(rows[0].revoked_at).not.toBeNull();
-    expect(rows[1].status).toBe('applied');
+    // The removed reference was deleted, not kept as revoked; the re-apply is one fresh reference.
     expect(before.status).toBe('applied');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('applied');
+    expect(rows[0].snapshot).toBeNull();
 
     const res = await listPromotions(gymId, umId);
     const cards = res.body.filter((r: any) => r.promotion_id === promotionId);
-    expect(cards).toHaveLength(2);
-    expect(cards.filter((c: any) => c.display_status === 'active')).toHaveLength(1);
-    expect(cards.filter((c: any) => c.display_status === 'inactive')).toHaveLength(1);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].display_status).toBe('active');
   });
 
   it('refuses a second application while one is still standing', async () => {
@@ -234,7 +232,7 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     expect(rows[0].column_default ?? '').toMatch(/utc_timestamp/i);
   });
 
-  it('allows a second *revoked* row, which the old unique key forbade', async () => {
+  it('keeps one row however many times a Draft toggles the Promotion (#2880)', async () => {
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `Twice-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
@@ -246,8 +244,51 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(201);
 
     const rows = await applicationRows(umId, promotionId);
-    expect(rows).toHaveLength(3);
-    expect(rows.filter((r) => r.status === 'applied')).toHaveLength(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('applied');
+  });
+
+  it('removing the Promotion leaves nothing on the Draft, and confirmation persists nothing for it (#2880)', async () => {
+    const umId = await createAssignment(gymId, planId);
+    const promotionId = await createPromotion(gymId, `Removed-${uniq()}`);
+    await targetPlan(gymId, promotionId, planId);
+    await applyPromotion(gymId, umId, promotionId);
+    const [{ product_set_id: setId }] = await applicationRows(umId, promotionId);
+    expect((await revokePromotion(gymId, umId, promotionId)).status).toBe(200);
+    expect(await applicationRows(umId, promotionId)).toHaveLength(0);
+
+    await confirmDraft(gymId, Number(setId));
+    const { rows } = await db.query(
+      'SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ?',
+      [gymId, setId, promotionId]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('confirmation discards a removed reference left revoked by an earlier toggle (#2880)', async () => {
+    const umId = await createAssignment(gymId, planId);
+    const kept = await createPromotion(gymId, `Kept-${uniq()}`);
+    const dropped = await createPromotion(gymId, `Dropped-${uniq()}`);
+    await targetPlan(gymId, kept, planId);
+    await targetPlan(gymId, dropped, planId);
+    await applyPromotion(gymId, umId, kept);
+    await applyPromotion(gymId, umId, dropped);
+    const [{ product_set_id: setId }] = await applicationRows(umId, kept);
+    // A revoked reference written before removal became a deletion.
+    await db.query(
+      `UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP()
+        WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ?`,
+      [gymId, setId, dropped]);
+
+    await confirmDraft(gymId, Number(setId));
+    const { rows } = await db.query<{ promotion_id: number; status: string; confirmed: number }>(
+      `SELECT promotion_id, status, snapshot_confirmed_at IS NOT NULL AS confirmed
+         FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ? ORDER BY id`,
+      [gymId, setId]);
+    expect(rows.map((r) => [Number(r.promotion_id), r.status, Number(r.confirmed)])).toEqual([[kept, 'applied', 1]]);
+    // A retried confirmation writes nothing more.
+    await confirmDraft(gymId, Number(setId));
+    const again = await db.query('SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
+    expect(again.rows).toHaveLength(1);
   });
 });
 
@@ -282,15 +323,14 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(201);
     expect(await finalPrice(gymId, umId)).toBeCloseTo(65, 2);
 
-    // #2833: on a Draft neither application holds a snapshot; the confirmation
-    // snapshots the standing one from the Promotion as it is then, and the spent
-    // one stays the reference it was.
+    // #2833/#2880: on a Draft the one current selection holds no snapshot; the
+    // confirmation snapshots it from the Promotion as it is then.
     const draftRows = await applicationRows(umId, promotionId);
-    expect(draftRows.map((r) => r.snapshot)).toEqual([null, null]);
-    await confirmDraft(gymId, Number(draftRows[1].product_set_id));
+    expect(draftRows.map((r) => r.snapshot)).toEqual([null]);
+    await confirmDraft(gymId, Number(draftRows[0].product_set_id));
     const rows = await applicationRows(umId, promotionId);
-    const current = rows[1].snapshot as any;
-    expect(rows[0].snapshot).toBeNull();
+    expect(rows).toHaveLength(1);
+    const current = rows[0].snapshot as any;
     expect(current.membership_fee_benefits[0].value).toBeCloseTo(35, 2);
     expect(current.description).toBe('Repriced');
   });
@@ -339,18 +379,19 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await applyPromotion(gymId, umId, promotionId);
 
     const rows = await applicationRows(umId, promotionId);
+    expect(rows).toHaveLength(1);
     const grantSnapshots = () => db.query<{ user_membership_promotion_id: number; unit_price: string }>(
       `SELECT user_membership_promotion_id, unit_price FROM user_membership_promotion_periodical_snapshot
-       WHERE user_membership_promotion_id IN (?, ?) ORDER BY user_membership_promotion_id ASC`,
-      [rows[0].id, rows[1].id],
+       WHERE user_membership_promotion_id = ? ORDER BY user_membership_promotion_id ASC`,
+      [rows[0].id],
     );
     // #2833: a Draft writes no grant snapshot rows; the confirmation writes the
     // standing application's, at the price the item has then.
     expect((await grantSnapshots()).rows).toHaveLength(0);
-    await confirmDraft(gymId, Number(rows[1].product_set_id));
+    await confirmDraft(gymId, Number(rows[0].product_set_id));
     const { rows: snapshots } = await grantSnapshots();
     expect(snapshots).toHaveLength(1);
-    expect(Number(snapshots[0].user_membership_promotion_id)).toBe(Number(rows[1].id));
+    expect(Number(snapshots[0].user_membership_promotion_id)).toBe(Number(rows[0].id));
     expect(parseFloat(snapshots[0].unit_price)).toBeCloseTo(18, 2);
   });
 });
@@ -383,27 +424,14 @@ describe('GET /user-memberships/:id/promotions — can_reapply', () => {
     expect((await cardFor(umId, promotionId)).can_reapply).toBe(false);
   });
 
-  it('is true for a revoked application whose Promotion is still live', async () => {
+  it('leaves no card for a Promotion removed from a Draft (#2880)', async () => {
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `FlagRevoked-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
     await applyPromotion(gymId, umId, promotionId);
     await revokePromotion(gymId, umId, promotionId);
 
-    expect((await cardFor(umId, promotionId)).can_reapply).toBe(true);
-  });
-
-  it('is false on the spent application once a new one stands in its place', async () => {
-    const umId = await createAssignment(gymId, planId);
-    const promotionId = await createPromotion(gymId, `FlagReplaced-${uniq()}`);
-    await targetPlan(gymId, promotionId, planId);
-    await applyPromotion(gymId, umId, promotionId);
-    await revokePromotion(gymId, umId, promotionId);
-    await applyPromotion(gymId, umId, promotionId);
-
-    const rows = await applicationRows(umId, promotionId);
-    expect((await cardFor(umId, promotionId, rows[0].id)).can_reapply).toBe(false);
-    expect((await cardFor(umId, promotionId, rows[1].id)).can_reapply).toBe(false);
+    expect(await cardFor(umId, promotionId)).toBeUndefined();
   });
 
   it('is false, and the apply refused, once the Promotion is no longer active', async () => {
@@ -414,7 +442,7 @@ describe('GET /user-memberships/:id/promotions — can_reapply', () => {
     await revokePromotion(gymId, umId, promotionId);
     await db.query("UPDATE promotions SET lifecycle_status = 'inactive' WHERE id = ?", [promotionId]);
 
-    expect((await cardFor(umId, promotionId)).can_reapply).toBe(false);
+    expect(await cardFor(umId, promotionId)).toBeUndefined();
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(400);
   });
 
@@ -428,7 +456,7 @@ describe('GET /user-memberships/:id/promotions — can_reapply', () => {
     // stays where it was, only a *new* agreement is out of reach.
     await db.query("UPDATE promotions SET ends_at = '2020-12-31' WHERE id = ?", [promotionId]);
 
-    expect((await cardFor(umId, promotionId)).can_reapply).toBe(false);
+    expect(await cardFor(umId, promotionId)).toBeUndefined();
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(400);
   });
 });
@@ -455,10 +483,10 @@ describe('Re-applying a Promotion — tenant isolation and auth', () => {
     await revokePromotion(gymA, umA, promotionA);
   });
 
-  it('never re-applies another gym\'s revoked application', async () => {
+  it('never re-applies a Promotion on another gym\'s assignment', async () => {
     const res = await applyPromotion(gymB, umA, promotionA);
     expect(res.status).toBe(404);
-    expect(await applicationRows(umA, promotionA)).toHaveLength(1);
+    expect(await applicationRows(umA, promotionA)).toHaveLength(0);
   });
 
   it('returns 401 without an Authorization header', async () => {

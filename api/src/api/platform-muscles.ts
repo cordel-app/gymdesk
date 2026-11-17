@@ -1,4 +1,4 @@
-import express, { Router } from 'express';
+import express, { Request, Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -93,7 +93,7 @@ export function slugFromMuscleName(name: string): string {
     .slice(0, 60);
 }
 
-interface MuscleRow {
+export interface MuscleRow {
   id: number;
   slug: string;
   name: string;
@@ -120,7 +120,7 @@ function parseName(body: any): { value: string } | { error: string } {
   return { value };
 }
 
-async function loadMuscle(id: string): Promise<MuscleRow | null> {
+export async function loadMuscle(id: string): Promise<MuscleRow | null> {
   const { rows } = await db.query<MuscleRow>('SELECT * FROM muscles WHERE id = ?', [id]);
   return rows[0] ?? null;
 }
@@ -161,6 +161,180 @@ platformMusclesRouter.get('/:id', requireSuperadmin, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+
+/** What a muscle write answered: the row's id, or the HTTP refusal a route returns as is. */
+export type MuscleWriteResult = { ok: true; id: number } | { ok: false; status: number; body: Record<string, unknown> };
+
+type AuditRequest = Request & { superadminName?: string | null };
+
+/**
+ * Creates a muscle under `slug`. The routes pass the slug derived from the name;
+ * #2952's import passes the slug its archive carries, so an exported muscle keeps
+ * its identity in the database it is imported into.
+ */
+export async function createMuscle(
+  req: AuditRequest,
+  input: { slug: string; name: string; translations?: Record<string, string> },
+): Promise<MuscleWriteResult> {
+  const { slug, name, translations } = input;
+  const dup = await db.query('SELECT id FROM muscles WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [slug, name]);
+  if (dup.rows.length > 0) return { ok: false, status: 409, body: { error: 'A muscle with this name already exists' } };
+  const actor = platformActor(req);
+  const id = await db.transaction(async (tx) => {
+    const result = await tx.query('INSERT INTO muscles (slug, name, created_by) VALUES (?, ?, ?)', [slug, name, actor]);
+    const newId = (result as any).insertId;
+    if (translations) await replaceMuscleTranslations(tx, newId, translations);
+    return newId;
+  });
+  recordAudit(req, { action: 'create', entityType: 'muscle', entityId: id, next: { slug, name } });
+  return { ok: true, id };
+}
+
+/**
+ * Writes a muscle's name and (when given) translations. The slug never moves; a
+ * rename moves the image objects the key follows, and a failed move leaves the
+ * row as it was.
+ */
+export async function updateMuscleContent(
+  req: AuditRequest,
+  muscle: MuscleRow,
+  input: { name: string; translations?: Record<string, string> },
+): Promise<MuscleWriteResult> {
+  const { name, translations } = input;
+  const dup = await db.query('SELECT id FROM muscles WHERE LOWER(name) = LOWER(?) AND id != ? LIMIT 1', [name, muscle.id]);
+  if (dup.rows.length > 0) return { ok: false, status: 409, body: { error: 'A muscle with this name already exists' } };
+
+  const urls: Record<string, string | null> = {
+    image_male_url: muscle.image_male_url,
+    image_male_url_thumbnail: muscle.image_male_url_thumbnail,
+    image_female_url: muscle.image_female_url,
+    image_female_url_thumbnail: muscle.image_female_url_thumbnail,
+  };
+  const moves: { from: string; to: string }[] = [];
+  if (name !== muscle.name) {
+    // The key follows the name: move whichever of the images are ours to the
+    // new keys before the row is re-pointed. A failed copy aborts the rename
+    // with the row untouched.
+    const targets: { column: string; newKey: string }[] = [];
+    for (const sex of MUSCLE_SEXES) {
+      targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].image, newKey: buildMuscleImageKey(name, sex) });
+      targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].thumbnail, newKey: buildMuscleImageThumbnailKey(name, sex) });
+    }
+    const planned: { column: string; newKey: string }[] = [];
+    for (const { column, newKey } of targets) {
+      const url = urls[column];
+      const oldKey = url && isPlatformOwnedMuscleImageUrl(url) ? storageKeyFromObjectUrl(url) : null;
+      if (oldKey && oldKey !== newKey) { moves.push({ from: oldKey, to: newKey }); planned.push({ column, newKey }); }
+    }
+    try {
+      if (moves.length) await ensureStorageFolders(muscleImageFolderKeys());
+      for (const m of moves) await copyStorageObject(m.from, m.to);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'copyStorageObject', key: moves[0]?.to });
+      logger.error({ err, details, muscleId: muscle.id }, 'Cloudflare R2 muscle image move failed');
+      return { ok: false, status: 502, body: { error: `Failed to move image: ${details.message}`, details } };
+    }
+    for (const { column, newKey } of planned) urls[column] = buildStorageObjectUrl(newKey);
+  }
+
+  const actor = platformActor(req);
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `UPDATE muscles SET name = ?, image_male_url = ?, image_male_url_thumbnail = ?,
+              image_female_url = ?, image_female_url_thumbnail = ?, modified_at = UTC_TIMESTAMP(),
+              modified_by = ? WHERE id = ?`,
+      [name, urls.image_male_url, urls.image_male_url_thumbnail, urls.image_female_url, urls.image_female_url_thumbnail, actor, muscle.id],
+    );
+    if (translations) await replaceMuscleTranslations(tx, muscle.id, translations);
+  });
+  if (moves.length) await sweepMuscleObjects(allImageUrls(muscle), Object.values(urls));
+
+  recordAudit(req, {
+    action: 'update', entityType: 'muscle', entityId: muscle.id,
+    previous: { name: muscle.name }, next: { name },
+  });
+  return { ok: true, id: muscle.id };
+}
+
+/**
+ * Processes one picture into the muscle's `sex` pair and points the row at it
+ * (#1413). Nothing is uploaded and nothing is written on a refusal, so the image
+ * the muscle already has stays exactly as it was.
+ */
+export async function storeMuscleImage(
+  req: AuditRequest,
+  muscle: MuscleRow,
+  sex: MuscleSex,
+  original: Buffer,
+): Promise<MuscleWriteResult> {
+  if (original.length === 0) return { ok: false, status: 400, body: { error: 'Request body is empty' } };
+  const maxBytes = muscleImageMaxBytes();
+  if (original.length > maxBytes) {
+    return { ok: false, status: 413, body: { error: `Image exceeds ${Math.floor(maxBytes / (1024 * 1024))} MB limit` } };
+  }
+  if (!isStorageConfigured()) {
+    const missingConfig = getMissingStorageConfigKeys();
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+        missingConfig,
+      },
+    };
+  }
+  const processed = await processMuscleImage(original);
+  if ('rejection' in processed) {
+    return { ok: false, status: 400, body: { error: MEMBER_IMAGE_REJECTION_MESSAGES[processed.rejection], reason: processed.rejection } };
+  }
+  const { image, thumbnail } = processed;
+  const problem = validateMuscleImagePair(image, thumbnail);
+  if (problem) {
+    logger.error({ problem, muscleId: muscle.id }, 'Muscle image processing produced an invalid file');
+    return { ok: false, status: 500, body: { error: 'The image could not be processed' } };
+  }
+
+  const cols = MUSCLE_IMAGE_COLUMNS[sex];
+  const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
+  const imageKey = buildMuscleImageKey(muscle.name, sex);
+  const thumbnailKey = buildMuscleImageThumbnailKey(muscle.name, sex);
+  const imageUrl = buildStorageObjectUrl(imageKey);
+  const thumbnailUrl = buildStorageObjectUrl(thumbnailKey);
+  try {
+    await ensureStorageFolders(muscleImageFolderKeys());
+    await uploadStorageObject(imageKey, MUSCLE_IMAGE_MIME, image);
+    await uploadStorageObject(thumbnailKey, MUSCLE_IMAGE_MIME, thumbnail);
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'uploadStorageObject', key: imageKey });
+    logger.error({ err, details, diagnostics: getStorageDiagnostics(), muscleId: muscle.id }, 'Cloudflare R2 muscle image upload failed');
+    return { ok: false, status: 502, body: { error: `Failed to upload image: ${details.message}`, details } };
+  }
+
+  const actor = platformActor(req);
+  await db.query(
+    `UPDATE muscles SET ${cols.image} = ?, ${cols.thumbnail} = ?, modified_at = UTC_TIMESTAMP(),
+            modified_by = ? WHERE id = ?`,
+    [imageUrl, thumbnailUrl, actor, muscle.id],
+  );
+  await sweepMuscleObjects(previous, [imageUrl, thumbnailUrl]);
+  recordAudit(req, {
+    action: 'update', entityType: 'muscle', entityId: muscle.id,
+    previous: { [cols.image]: previous[0] }, next: { [cols.image]: imageUrl },
+  });
+  return { ok: true, id: muscle.id };
+}
+
+/** One muscle as every read answers it. */
+export async function readMuscle(id: number | string): Promise<any> {
+  const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [id]);
+  return rows[0] ? withMuscleTranslations(rows[0]) : null;
+}
+
+
 platformMusclesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   try {
     const parsed = parseName(req.body);
@@ -169,22 +343,9 @@ platformMusclesRouter.post('/', requireSuperadmin, async (req, res, next) => {
     if (tr.error) return res.status(400).json({ error: tr.error });
     const slug = slugFromMuscleName(parsed.value);
     if (!slug) return res.status(400).json({ error: 'name must contain letters or digits' });
-    const dup = await db.query('SELECT id FROM muscles WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [slug, parsed.value]);
-    if (dup.rows.length > 0) return res.status(409).json({ error: 'A muscle with this name already exists' });
-
-    const actor = platformActor(req);
-    const id = await db.transaction(async (tx) => {
-      const result = await tx.query(
-        'INSERT INTO muscles (slug, name, created_by) VALUES (?, ?, ?)',
-        [slug, parsed.value, actor],
-      );
-      const newId = (result as any).insertId;
-      if (tr.translations) await replaceMuscleTranslations(tx, newId, tr.translations);
-      return newId;
-    });
-    recordAudit(req, { action: 'create', entityType: 'muscle', entityId: id, next: { slug, name: parsed.value } });
-    const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [id]);
-    res.status(201).json(withMuscleTranslations(rows[0]));
+    const result = await createMuscle(req, { slug, name: parsed.value, translations: tr.translations });
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(201).json(await readMuscle(result.id));
   } catch (err) { next(err); }
 });
 
@@ -194,66 +355,11 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
     const parsed = parseName(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-    const name = parsed.value;
     const tr = parseMuscleTranslations(req.body);
     if (tr.error) return res.status(400).json({ error: tr.error });
-
-    const dup = await db.query('SELECT id FROM muscles WHERE LOWER(name) = LOWER(?) AND id != ? LIMIT 1', [name, muscle.id]);
-    if (dup.rows.length > 0) return res.status(409).json({ error: 'A muscle with this name already exists' });
-
-    const urls: Record<string, string | null> = {
-      image_male_url: muscle.image_male_url,
-      image_male_url_thumbnail: muscle.image_male_url_thumbnail,
-      image_female_url: muscle.image_female_url,
-      image_female_url_thumbnail: muscle.image_female_url_thumbnail,
-    };
-    const moves: { from: string; to: string }[] = [];
-    if (name !== muscle.name) {
-      // The key follows the name: move whichever of the images are ours to the
-      // new keys before the row is re-pointed. A failed copy aborts the rename
-      // with the row untouched.
-      const targets: { column: string; newKey: string }[] = [];
-      for (const sex of MUSCLE_SEXES) {
-        targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].image, newKey: buildMuscleImageKey(name, sex) });
-        targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].thumbnail, newKey: buildMuscleImageThumbnailKey(name, sex) });
-      }
-      const planned: { column: string; newKey: string }[] = [];
-      for (const { column, newKey } of targets) {
-        const url = urls[column];
-        const oldKey = url && isPlatformOwnedMuscleImageUrl(url) ? storageKeyFromObjectUrl(url) : null;
-        if (oldKey && oldKey !== newKey) { moves.push({ from: oldKey, to: newKey }); planned.push({ column, newKey }); }
-      }
-      try {
-        if (moves.length) await ensureStorageFolders(muscleImageFolderKeys());
-        for (const m of moves) await copyStorageObject(m.from, m.to);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'copyStorageObject', key: moves[0]?.to });
-        logger.error({ err, details, muscleId: muscle.id }, 'Cloudflare R2 muscle image move failed');
-        return res.status(502).json({ error: `Failed to move image: ${details.message}`, details });
-      }
-      for (const { column, newKey } of planned) urls[column] = buildStorageObjectUrl(newKey);
-    }
-
-    const actor = platformActor(req);
-    await db.transaction(async (tx) => {
-    await tx.query(
-      `UPDATE muscles SET name = ?, image_male_url = ?, image_male_url_thumbnail = ?,
-              image_female_url = ?, image_female_url_thumbnail = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by = ? WHERE id = ?`,
-      [name, urls.image_male_url, urls.image_male_url_thumbnail, urls.image_female_url, urls.image_female_url_thumbnail, actor, muscle.id],
-    );
-    if (tr.translations) await replaceMuscleTranslations(tx, muscle.id, tr.translations);
-    });
-    if (moves.length) await sweepMuscleObjects(allImageUrls(muscle), Object.values(urls));
-
-    recordAudit(req, {
-      action: 'update', entityType: 'muscle', entityId: muscle.id,
-      previous: { name: muscle.name }, next: { name },
-    });
-    const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
-    res.json(withMuscleTranslations(rows[0]));
+    const result = await updateMuscleContent(req, muscle, { name: parsed.value, translations: tr.translations });
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.json(await readMuscle(muscle.id));
   } catch (err) { next(err); }
 });
 
@@ -297,68 +403,11 @@ platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, muscleImageUplo
       return res.status(400).json({ error: 'Request body must be raw image bytes' });
     }
     const original: Buffer = raw;
-    if (original.length === 0) return res.status(400).json({ error: 'Request body is empty' });
-    const maxBytes = muscleImageMaxBytes();
-    if (original.length > maxBytes) {
-      return res.status(413).json({ error: `Image exceeds ${Math.floor(maxBytes / (1024 * 1024))} MB limit` });
-    }
-    if (!isStorageConfigured()) {
-      const missingConfig = getMissingStorageConfigKeys();
-      return res.status(503).json({
-        error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-        missingConfig,
-      });
-    }
     const muscle = await loadMuscle(String(req.params.id));
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
-
-    // Nothing is uploaded and nothing is written on a refusal, so the image the
-    // muscle already has stays exactly as it was.
-    const processed = await processMuscleImage(original);
-    if ('rejection' in processed) {
-      return res.status(400).json({
-        error: MEMBER_IMAGE_REJECTION_MESSAGES[processed.rejection],
-        reason: processed.rejection,
-      });
-    }
-    const { image, thumbnail } = processed;
-    const problem = validateMuscleImagePair(image, thumbnail);
-    if (problem) {
-      logger.error({ problem, muscleId: muscle.id }, 'Muscle image processing produced an invalid file');
-      return res.status(500).json({ error: 'The image could not be processed' });
-    }
-
-    const cols = MUSCLE_IMAGE_COLUMNS[sex];
-    const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
-    const imageKey = buildMuscleImageKey(muscle.name, sex);
-    const thumbnailKey = buildMuscleImageThumbnailKey(muscle.name, sex);
-    const imageUrl = buildStorageObjectUrl(imageKey);
-    const thumbnailUrl = buildStorageObjectUrl(thumbnailKey);
-    try {
-      await ensureStorageFolders(muscleImageFolderKeys());
-      await uploadStorageObject(imageKey, MUSCLE_IMAGE_MIME, image);
-      await uploadStorageObject(thumbnailKey, MUSCLE_IMAGE_MIME, thumbnail);
-    } catch (err: any) {
-      const details = err instanceof StorageOperationError
-        ? err.details
-        : describeStorageError(err, { operation: 'uploadStorageObject', key: imageKey });
-      logger.error({ err, details, diagnostics: getStorageDiagnostics(), muscleId: muscle.id }, 'Cloudflare R2 muscle image upload failed');
-      return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
-    }
-
-    const actor = platformActor(req);
-    await db.query(
-      `UPDATE muscles SET ${cols.image} = ?, ${cols.thumbnail} = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by = ? WHERE id = ?`,
-      [imageUrl, thumbnailUrl, actor, muscle.id],
-    );
-    await sweepMuscleObjects(previous, [imageUrl, thumbnailUrl]);
-    recordAudit(req, {
-      action: 'update', entityType: 'muscle', entityId: muscle.id,
-      previous: { [cols.image]: previous[0] }, next: { [cols.image]: imageUrl },
-    });
-    const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
-    res.json(withMuscleTranslations(rows[0]));
+    const result = await storeMuscleImage(req, muscle, sex, original);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.json(await readMuscle(muscle.id));
   } catch (err) { next(err); }
 });
 

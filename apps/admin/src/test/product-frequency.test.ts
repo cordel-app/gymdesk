@@ -102,9 +102,11 @@ describe('the declaration', () => {
 describe('the page renders the declaration, not its own list', () => {
   it('builds both selects from frequencyOptions()', () => {
     const uses = pageSrc.match(/frequencyOptions\(/g) ?? [];
-    expect(uses.length).toBe(2);
-    expect(pageSrc).toContain('frequencyOptions(inlineNew.billing_frequency)');
-    expect(pageSrc).toContain('frequencyOptions(editForm.billing_frequency)');
+    // #2948: one form control renderer serves the create card and the editor.
+    expect(uses.length).toBe(1);
+    expect(pageSrc).toContain('frequencyOptions(form.billing_frequency)');
+    expect(pageSrc).toMatch(/renderFormControl\(\s*field,\s*inlineNew,/);
+    expect(pageSrc).toMatch(/renderFormControl\(\s*field,\s*editForm,/);
   });
 
   it('no longer spells a frequency list out in the page', () => {
@@ -118,17 +120,17 @@ describe('the page renders the declaration, not its own list', () => {
     // the card's field declaration declares, so every unset value on the card
     // reads the same way — while the create card still carries the literal.
     const placeholders = pageSrc.match(/<option value="">(?:—|\{EMPTY_VALUE\})<\/option>/g) ?? [];
-    expect(placeholders.length).toBeGreaterThanOrEqual(2);
+    expect(placeholders.length).toBeGreaterThanOrEqual(1);
     expect(EMPTY_VALUE).toBe('—');
   });
 
   it('honours the disabled flag rather than rendering every option selectable', () => {
-    expect((pageSrc.match(/disabled=\{o\.disabled\}/g) ?? []).length).toBe(2);
+    expect((pageSrc.match(/disabled=\{o\.disabled\}/g) ?? []).length).toBe(1);
   });
 
   it('flags an item still stored on a retired frequency, naming which one', () => {
-    expect(pageSrc).toContain('legacyFrequencyLabelKey(editForm.billing_frequency)');
-    expect(pageSrc).toContain("t('frequency_legacy_notice', { frequency: tFreq(editLegacyFrequencyLabelKey as any) })");
+    expect(pageSrc).toContain('legacyFrequencyLabelKey(form.billing_frequency)');
+    expect(pageSrc).toContain("t('frequency_legacy_notice', { frequency: tFreq(legacyFrequencyKey as any) })");
   });
 });
 

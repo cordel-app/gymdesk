@@ -141,7 +141,7 @@ export async function copyPlanSnapshotToVersion(
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
         source_user_membership_id, created_by, owner_is_beneficiary, membership_fee_scope, member_limit,
         assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
-        promotions_plan_snapshot_id)
+        modified_at, modified_by, promotions_plan_snapshot_id)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
@@ -149,8 +149,8 @@ export async function copyPlanSnapshotToVersion(
             ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary,
             s.membership_fee_scope, s.member_limit,
             ${opts.keepAssignment === false
-              ? 'NULL, NULL, 0, NULL, NULL, NULL'
-              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by'},
+              ? 'NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL'
+              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by, s.modified_at, s.modified_by'},
             ${opts.reusePromotions ? 'COALESCE(s.promotions_plan_snapshot_id, s.id)' : 'NULL'}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
@@ -161,8 +161,9 @@ export async function copyPlanSnapshotToVersion(
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }
   await tx.query(
-    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner)
-     SELECT gym_id, ?, member_id, is_owner FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
+    // #2945: a beneficiary's own fee discount travels with its row.
+    `INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner, fee_direct_discount_percent)
+     SELECT gym_id, ?, member_id, is_owner, fee_direct_discount_percent FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ?`,
     [insertId, fromSnapshotId]);
   for (const t of PLAN_TABLES) {
     const extra = t.extra ? `, ${t.extra}` : '';

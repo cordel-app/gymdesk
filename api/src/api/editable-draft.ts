@@ -1,4 +1,5 @@
 import type { Tx } from '../infra/db';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 
@@ -20,9 +21,9 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
  * both still answer `in_flight`, so one in-flight version per owner stays the rule.
  */
 export const editableDraftSql = (ps: string): string =>
-  `(${ps}.status = 'draft'
+  `(${ps}.status = 'in_cart'
     AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
-    AND (${ps}.user_membership_id IS NULL OR NOT EXISTS (
+    AND (${ps}.plan_assignment_id IS NULL OR NOT EXISTS (
       SELECT 1 FROM product_set_plan_snapshots ej_ JOIN plan_snapshots es_ ON es_.id = ej_.plan_snapshot_id
        WHERE ej_.product_set_id = ${ps}.id AND ej_.entitlement_only = 0
          AND NOT ${planSnapshotInheritedSql('es_', `${ps}.id`)})))`;
@@ -37,7 +38,7 @@ export const editableDraftSql = (ps: string): string =>
  * owner stays the rule.
  */
 export const staffProductDraftSql = (ps: string): string =>
-  `(${ps}.status = 'draft'
+  `(${ps}.status = 'in_cart'
     AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE)`;
 
 /** The owner's live Draft staff may keep editing, locked; `null` when there is none. */
@@ -45,7 +46,7 @@ export async function lockEditableDraft(
   tx: Pick<Tx, 'query'>, gymId: string, ownerMemberId: number,
 ): Promise<{ id: number; user_membership_id: number | null; previous_product_set_id: number | null } | null> {
   const { rows } = await tx.query<any>(
-    `SELECT ps.id, ps.user_membership_id, ps.previous_product_set_id FROM product_sets ps
+    `SELECT ps.id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.previous_product_set_id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${editableDraftSql('ps')}
       FOR UPDATE`,
     [gymId, ownerMemberId]);

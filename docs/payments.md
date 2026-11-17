@@ -106,6 +106,17 @@ the pending version and activates it through `activateWithEvents()`: the Active 
 superseded, its obsolete future events replaced, the new version's generated, the assignment
 re-projected.
 
+**A version that follows a running one owes only what it adds (#1521, #2899).** `commitCharge()`
+prices such a version (`previous_product_set_id` set) dated today as a delta against the previous
+version: a carried line is not asked for again (a grown quantity owes the added units), an
+**inherited** plan's Membership Fee is not asked for again, and the fee of each plan the version
+**adds** — a plan whose snapshot the previous version does not link (`planSnapshotInheritedSql()`,
+read through `planScheduledEvents(…, { newPlansOnly: true })`) — is owed exactly as on a first
+version, Pre-paid Duration and alignment stretch included. Before #2899 every fee line was
+dropped, so an Admin Draft adding a plan to a member who already held one reviewed at €0.00. The
+review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
+this one figure, and reading it writes nothing.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
 current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
 which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
@@ -579,6 +590,18 @@ Displays (stage 2) quote one fee each: the Assigned Plan card draws one fee row 
 (*Family* for `per_family`, one per beneficiary for `per_member`), and the Members App names the
 scope and the count beside one fee's price; neither multiplies anything.
 
+**A Direct Discount per Membership Fee line (#2945, migration 429).** On a `per_member` snapshot
+each beneficiary row may carry its own `fee_direct_discount_percent`: NULL (every row before the
+ticket) follows the assignment's Personal Membership Fee Benefit (#772), a percentage replaces it
+for that one fee, and `0` is no discount. `domain/feeMemberDiscounts.ts` is the rule; the engine's
+Membership Fee line then prices each fee unit with its own benefit (`unitAmounts`) and charges
+their sum, so a governing Promotion and the plan's durations apply to every fee as before and only
+the last, personal step differs. With no own discount the line is the pre-#2945 arithmetic to the
+cent. The value is written by `PUT /user-memberships/:id/fee-benefit` with `member_discounts`
+(a Draft directly, a running plan through a new version like every other edit) and is copied with
+the beneficiary row when a snapshot is copied. A `per_family` plan has one fee and keeps the
+shared benefit alone.
+
 ### B4b. When obligations fall: the billing calendar (#2125 M5c)
 
 Decided by Oscar on 2026-11-11 (Option B on #2125). A schedule is anchored on its
@@ -778,6 +801,17 @@ refunds. Nothing else moves: the original attempt, the ledger row, its lines, a 
 or invoice, the attempt counter and every contracted item stay as they were (a rectifying
 invoice is the existing manual `POST /payments/invoices/:id/rectify`, never automatic).
 
+**A pending Monei refund is settled later from Monei's own record** (#2480 follow-up).
+`POST /billing/cleanup` runs `reconcilePendingProviderRefunds()`
+(`api/src/api/billing-event-refunds.ts`): for each payment with a provider refund pending for
+more than 10 minutes, it asks Monei how much of that payment it has refunded in total
+(`getRefundedAmount()`, the payment's `refundedAmount`) and `allocateProviderRefunds()`
+(`domain/billingEventRefund.ts`) decides, oldest first, which pending refunds that covers beyond
+the completed ones: a covered refund is completed (with its Refund Receipt, #2935), one still
+uncovered after `PENDING_REFUND_FAIL_AFTER_HOURS` (24) is failed and its amount released, and
+the rest stay pending. A payment Monei cannot be asked about, or whose answer gives no total,
+is left for the next run. The cleanup response reports `refunds_completed` / `refunds_failed`.
+
 > **Decisions (#2480)** — change them here if they turn out wrong:
 > - **A refund carries no `billing_event_id`.** It reaches the event through the attempt it
 >   refunds, so the ~60 readers of "the event's latest attempt" need no change.
@@ -789,6 +823,37 @@ invoice is the existing manual `POST /payments/invoices/:id/rectify`, never auto
 > - ~~**Card terminal is a manual refund method** beside Cash; Monei is offered only for a
 >   provider payment with a `provider_ref`.~~ Reversed by #2797, below.
 > - **A pending Monei refund is not reconciled automatically** yet; it stays reserved.
+
+#### Refund Receipts (#2935, migration 426)
+
+Every refund transaction that **completes** is documented by a Refund Receipt
+(`refund_receipts`, one row per refund `payment_requests` row, `UNIQUE (payment_request_id)`):
+a manual refund (cash, card terminal) gets it inside the transaction that records the refund;
+a Monei refund gets it right after the provider answers `REFUNDED`/`PARTIALLY_REFUNDED`, in a
+transaction of its own whose failure is logged and never undoes the refund (#787's reasoning).
+A pending or failed refund gets none, and each partial refund gets its own. The number is its
+own gapless per-gym, per-year series, `R-YYYY-NNNN` (`refund_receipt_sequences`, never
+`receipt_sequences`), allocated only by `issueRefundReceipt()` (`api/src/api/refund-receipts.ts`)
+under the refund row's lock. The original receipt number, its PDF and every invoice are not
+touched, and no invoice is issued: a fiscal correction stays the manual rectifying invoice.
+
+The PDF ("JUSTIFICANTE DE DEVOLUCIÓN / REFUND RECEIPT", `lib/refund-receipt-pdf.ts`) prints the
+gym's legal name, NIF and fiscal address; the payer's name and tax id (the event's issued full
+invoice's customer data, else the member's NIF/NIE); the refund's date and time, amount,
+currency, method, reference (`provider_refund_ref`, else the transaction id) and refunded
+lines; and the original receipt number, payment date, amount and Billing Event. It is rendered
+once into the private bucket (`refund_receipts.pdf_key`, `buildRefundReceiptKey()`) and served
+by `GET /payments/refund-receipts/:id`, which never issues one. The Billing Events list reports
+`refund_receipts` per event (the ⋮ menu's *View Refund Receipt* entries) and each refund
+transaction its `refund_receipt_number`.
+
+> **Decisions (#2935)** — change them here if they turn out wrong:
+> - **No backfill**: refunds completed before migration 426 have no Refund Receipt.
+> - **The refund reason is the refunded lines**: a refund records no free-text reason, so a
+>   Selected Line Items refund prints its lines and any other prints none.
+> - **No logo**: the receipt and invoice PDFs draw none today; the Refund Receipt follows them.
+> - **The customer is the payer** (`payer_member_id`, else the member), the one the money
+>   went back to.
 
 #### A refund goes back through the original payment method (#2797)
 
@@ -990,6 +1055,72 @@ grants that *are* purchasable (the thread's `Q5`). A Promotion that prices a Pro
 nothing is also not offered: this flow buys a Product by paying for it, and granting one for
 free is a decision a ticket has to take.
 
+### D2. Several standalone cart purchases, one payment (#2949 stage 4)
+
+A one-time purchase can wait in the cart as an `in_cart` row no Product Set carries: written by
+staff as a draft (#1657) or by the member through `POST /me/cart/purchases` (no Product Set
+created). `startCartCheckout()` (`api/src/api/cart-checkout.ts`) pays all of them, or the
+`purchase_ids` named, from `POST /me/cart/checkout` (the member; a family beneficiary gets
+`403 family_owner_pays`) or `POST /members/:id/product-purchases/checkout` (staff):
+
+1. The cart is read after the standalone expiry (#2962); empty → `409 cart_empty`, a named id not
+   in it → `404 purchase_not_in_cart`, a zero total → `409 nothing_to_pay`.
+2. The provider payment is created for the **sum of the frozen amounts** (each priced when it
+   entered the cart; nothing is re-priced — the conservative default, as a cart Product Set's
+   linked purchases are), converted once by `toMinorUnits()`.
+3. One transaction: every purchase locked and re-checked (`409 cart_changed` otherwise), one
+   `payment_requests` row (`source = 'product_purchase'`, the payer resolved as for any purchase),
+   one `product_purchase` Billing Event (no ProductSet; named `Gym - Product` or
+   `Gym - Compra dd/mm/yyyy`), one `billing_event_lines` row per purchase, each purchase
+   `in_cart` → `pending_payment` and linked through its event junction. The charge type is the
+   Products' own when they share one, else none.
+4. The webhook's purchase branch completes **every** pending purchase the request reaches
+   (`completeProductPurchase()`); a failure or expiry cancels every one, as before.
+
+A purchase a cart Product Set carries is never selected: it is paid by that set's Save & Pay
+(#2746).
+
+### D3. A Product Set's Save & Pay pays the whole cart (#2949 stage 5)
+
+A Product Set's initial charge (`initialCharge()`, so the *Review your changes* amount, Save & Pay
+and every `/pay` method take the same figure) adds, beside the set's own lines and its linked
+purchases, one line per **standalone `in_cart` purchase of the set's owner** at its frozen amount
+(`cartPurchasesForCharge()`, `cartChargeLine()` in `api/src/api/cart-checkout.ts`), and lists them
+in `InitialCharge.cartPurchases`. `ensureInitialEvent()` then **joins** exactly those to the set's
+initial event (`joinCartPurchasesToEvent()`): each one is locked and re-checked (the owner's, still
+standalone and `in_cart`, at the amount charged; `409 cart_changed` otherwise), moved to
+`pending_payment` and linked through its `billing_event_{oneoff,session}_snapshots` junction. It is
+**never** linked to the Product Set. So one Billing Event and one payment cover the plan, the
+recurring Products, the set's own one-time purchases and the standalone ones.
+
+From then on a joined purchase follows the set's checkout, found through the set's events
+(`loadJoinedCartPurchases()`):
+
+| The set's checkout | A joined purchase |
+|---|---|
+| paid (webhook, cash, card terminal) → `activate()` | `active`, with its purchase day and validity (`activateSetPurchases()`) |
+| returned to Draft (`returnPendingToDraft()`) or deleted (`cancelInFlight()`) | back to `in_cart`, its event link removed (`releaseJoinedCartPurchases(…, 'in_cart')`) |
+| cancelled and kept (`cancelPendingProductSet()`) | `cancelled`, link kept |
+
+`cancelAbandonedPurchases()` skips a purchase whose request's event belongs to a Product Set, so
+an expired set checkout returns it to the cart rather than cancelling it. A purchase added to the
+cart after Save & Pay is not part of that checkout and stays `in_cart`. Not included, by default:
+the Admin assignment card's own Save & Pay (`importAssignmentAsProductSet(…, { pending: true })`
+moves the set to Pending Payment before its charge is computed) and the Members App plan choice's
+`membership_fee` preview (`includeCart: false`).
+
+**What the cart screens show (#2949 stage 6).** The member's set read (`GET /me/product-sets/:id`,
+owner only) reports those purchases as `cart_purchases` (`cartPurchasesForCharge()`: every
+standalone `in_cart` purchase while the set is in the cart, the joined ones while its checkout is in
+flight), and the *Review your changes* `contracted_items` lists them as one-time Products for the
+owner (or the family member they were bought for). Nothing is priced for either read. In the
+Members App *Add to cart* writes a standalone purchase (`POST /me/cart/purchases`) and never opens a
+Product Set; `apps/member/src/lib/memberCart.ts` decides the cart from the set view plus
+`GET /me/cart/purchases`: with a Draft the standalone items join its card and its Save & Pay; with
+none they are a cart of their own whose Pay is `POST /me/cart/checkout`; while a set's checkout is in
+flight (or staff are still setting a Draft up), a purchase added since is a second card beside it,
+paid on its own.
+
 ---
 
 ## C. Reference
@@ -1030,6 +1161,12 @@ clock.
 no status column: an event's status is its latest linked transaction's, falling back to the
 event type (`deriveBillingEventStatus()`, `api/src/domain/billingEventStatus.ts`).
 
+- `name VARCHAR(255) NULL` (migration 428, #2940) — the event's generated name, written once by
+  its writer through `api/src/api/billing-event-name.ts` over `domain/billingEventName.ts`
+  (`Initial Engagement`, `<Gym> - <Month>`, `<Gym> - <Month> (dd/mm/yyyy)`, `<Gym> - <Item>`,
+  `<Gym> - Compra dd/mm/yyyy`). Display only: nothing prices, settles or invoices from it, and
+  an event written before it (or by a writer that names nothing: adjustments, manual appends,
+  card verifications) holds NULL and is shown as before.
 - `event_type` ∈ `charge_created | payment_recorded | status_changed | adjustment |
   recurring_payment | failed_billing | waived_billing | product_purchase | card_verification`
   — `billing_events_event_type_check`, current definition in **migration 247**.
@@ -1302,6 +1439,11 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
   application's own snapshot, never a live join.
 - **Billing & Duration is the Plan's only billing section** since #635 stage 13
   (migration 189).
+- **An initial charge's lines state their tax** (#2947). `initialCharge()` gives every line its rate
+  and net (`domain/initialChargeTaxes.ts`): a Membership Fee its plan's effective rate, a Product its
+  own, a cart purchase its frozen one, anything else the gym's system rate (the rate
+  `invoiceLineTaxes()` falls back to). The net is split from the line's final, VAT-inclusive amount;
+  the amount itself is the engine's and is never changed.
 
 ### Observability today
 

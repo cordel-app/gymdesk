@@ -28,10 +28,21 @@ function paymentRequestColumn(table: string, junction: string, snapshotCol: stri
            WHERE j.${snapshotCol} = ${table}.id) AS payment_request_id`;
 }
 
+/**
+ * #2962 — whether a member's cart Product Set carries the purchase (#2746, through the arm's
+ * `product_set_{session,oneoff}_snapshots` junction): a standalone draft (0) expires on its own
+ * clock, one in a Product Set (1) follows the set's.
+ */
+function inProductSetColumn(table: string, junction: string, snapshotCol: string): string {
+  return `EXISTS (SELECT 1 FROM ${junction} psj_ WHERE psj_.${snapshotCol} = ${table}.id) AS in_product_set`;
+}
+
 const SESSION_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
-  ${paymentRequestColumn('product_session_snapshots', 'billing_event_session_snapshots', 'product_session_snapshot_id')}`;
+  ${paymentRequestColumn('product_session_snapshots', 'billing_event_session_snapshots', 'product_session_snapshot_id')},
+  ${inProductSetColumn('product_session_snapshots', 'product_set_session_snapshots', 'product_session_snapshot_id')}`;
 const ONEOFF_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
-  ${paymentRequestColumn('product_oneoff_snapshots', 'billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id')}`;
+  ${paymentRequestColumn('product_oneoff_snapshots', 'billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id')},
+  ${inProductSetColumn('product_oneoff_snapshots', 'product_set_oneoff_snapshots', 'product_oneoff_snapshot_id')}`;
 
 /**
  * The member's purchases as a derived table, filtered per arm so each table is read through its

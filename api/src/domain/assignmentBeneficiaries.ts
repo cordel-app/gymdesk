@@ -1,3 +1,4 @@
+import { productSetLegacyAssignmentIdSql } from './planAssignments';
 /**
  * #2125 M6a — who an assignment covers, read straight from its plan snapshot's
  * `plan_snapshot_beneficiaries`.
@@ -10,16 +11,20 @@
  * place that spelling lives: a reader asks it, never `plan_snapshot_beneficiaries` through a second
  * "which snapshot is the assignment's" rule.
  *
+ * #2125 M6b-43: the fallback reads the linking set's assignment off its anchor
+ * (`productSetLegacyAssignmentIdSql()`), never `product_sets.user_membership_id`.
+ *
  * Columns: `user_membership_id`, `gym_id`, `member_id`, `is_owner`, `created_at`.
  */
 const SNAPSHOT_ASSIGNMENT = `COALESCE(s.source_user_membership_id,
-       (SELECT ps.user_membership_id FROM product_set_plan_snapshots j
+       (SELECT ${productSetLegacyAssignmentIdSql('ps')} FROM product_set_plan_snapshots j
           JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = s.gym_id
          WHERE j.plan_snapshot_id = s.id ORDER BY j.product_set_id LIMIT 1))`;
 
 export const ASSIGNMENT_BENEFICIARIES = `(
   SELECT DISTINCT x.user_membership_id AS user_membership_id,
-         b.gym_id AS gym_id, b.member_id AS member_id, b.is_owner AS is_owner, b.created_at AS created_at
+         b.gym_id AS gym_id, b.member_id AS member_id, b.is_owner AS is_owner, b.created_at AS created_at,
+         b.fee_direct_discount_percent AS fee_direct_discount_percent
     FROM (SELECT a.id, a.gym_id, a.user_membership_id,
                  ROW_NUMBER() OVER (PARTITION BY a.gym_id, a.user_membership_id ORDER BY a.id DESC) AS rn
             FROM (SELECT s.id, s.gym_id, ${SNAPSHOT_ASSIGNMENT} AS user_membership_id

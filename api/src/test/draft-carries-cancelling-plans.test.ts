@@ -3,6 +3,7 @@
 // never projected, never re-opened — and stops carrying them once the sweep has
 // moved them to `cancelled`.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
@@ -58,7 +59,7 @@ async function links(setId: number) {
 }
 async function setOf(um: number, status: string): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? AND status = ? ORDER BY id DESC LIMIT 1', [um, status]);
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = ? ORDER BY id DESC LIMIT 1`, [um, status]);
   return Number(rows[0].id);
 }
 async function activeSetOf(memberId: number): Promise<number> {
@@ -96,7 +97,7 @@ describe('a Draft carries the plans cancelling at their period end', () => {
 
     // Add Membership Plan: the Draft holds its own plan first and A's same snapshot, linked, not copied.
     const b = await createTestDraftAssignment(gymId, m, await plan(25), { config: { membership_fee_price: 25 } });
-    const draft = await setOf(b, 'draft');
+    const draft = await setOf(b, 'in_cart');
     expect(await links(draft)).toEqual([{ um: b, entitlementOnly: false }, { um: a, entitlementOnly: true }]);
 
     // The Draft's forecast bills B's fee and never A's.
@@ -135,18 +136,20 @@ describe('a Draft carries the plans cancelling at their period end', () => {
 
     // Once the sweep has moved A to cancelled, a new Draft no longer carries it.
     await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [a]);
+    // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [a]);
     expect((await sweep()).status).toBe(200);
     expect((await assignment(a)).status).toBe('cancelled');
     const edit = await request.post(`/user-memberships/${b}/edit-draft`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(edit.status).toBe(201);
-    const editDraft = await setOf(Number(edit.body.id), 'draft');
+    const editDraft = await setOf(Number(edit.body.id), 'in_cart');
     expect((await links(editDraft)).some((l) => l.entitlementOnly)).toBe(false);
   });
 
   it('a Draft for an owner with nothing cancelling carries no entitlement link', async () => {
     const m = await member();
     const a = await createTestDraftAssignment(gymId, m, await plan(10));
-    expect(await links(await setOf(a, 'draft'))).toEqual([{ um: a, entitlementOnly: false }]);
+    expect(await links(await setOf(a, 'in_cart'))).toEqual([{ um: a, entitlementOnly: false }]);
   });
 });

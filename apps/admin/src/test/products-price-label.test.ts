@@ -99,7 +99,8 @@ const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
     // field declaration now, so the Price label is named *there* and the page
     // resolves it generically. What is left in the page is the two forms that
     // have a field list of their own — the create card and the Details modal.
-    expect(source.match(/t\('label_price'\)/g) ?? []).toHaveLength(2);
+    // #2948: the create card is the layout too, so only the Details modal is left.
+    expect(source.match(/t\('label_price'\)/g) ?? []).toHaveLength(1);
     expect(profileSource).toContain("key: 'amount', labelKey: 'label_price'");
     // The list header comes from the shared column list, in the Amount column's
     // original position (after Units, before Tax Rate).
@@ -113,8 +114,7 @@ const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
     expect(source).toContain('function fmtAmount(amount: string | null, currency: string)');
     expect(source).toContain("const sym = currency === 'EUR' ? '€' : currency;");
     // Both forms still submit the price under the API's `amount` key.
-    expect(source).toContain("amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,");
-    expect(source).toContain("amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,");
+    expect(profileSource).toContain("amount: form.amount !== '' ? parseFloat(form.amount) : null,");
     // The list cell still prefers the tax-inclusive figure and falls back to the raw amount.
     expect(source).toContain('item.amount_incl_tax != null');
     expect(source).toContain('fmtAmount(item.amount, item.currency)');

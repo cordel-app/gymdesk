@@ -344,7 +344,7 @@ describe('the reminder the run raises (#1113 §2)', () => {
 // their two hours, through the manual discard, so an abandoned Draft no longer
 // waits for the twice-daily billing cleanup.
 describe('Draft expiry on the 15-minute pass (#2477 stage 2)', () => {
-  async function draft(minutesIdle: number, status = 'draft'): Promise<number> {
+  async function draft(minutesIdle: number, status = 'in_cart'): Promise<number> {
     const ownerId = await createMember();
     const { insertId } = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
@@ -369,7 +369,7 @@ describe('Draft expiry on the 15-minute pass (#2477 stage 2)', () => {
     expect(res.body.failures).toBeUndefined();
 
     expect(await exists(expired)).toBeNull();
-    expect(await exists(live)).toBe('draft');
+    expect(await exists(live)).toBe('in_cart');
     expect(await exists(pending)).toBe('pending_payment');
   });
 

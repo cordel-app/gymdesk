@@ -63,6 +63,17 @@ export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): str
   `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
 
 /**
+ * #2125 M6b-37 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
+ * assignment an anchor names (`plan_snapshots.assignment_id`, the id of its first snapshot). For a
+ * reader that already holds the anchor, which since M6b-36 is `product_sets.plan_assignment_id`:
+ * it asks the assignment by its own identity rather than through the legacy `user_memberships` id
+ * (`assignmentOfLegacyIdSql()`), which is how a Product Set's readers stop reading
+ * `product_sets.user_membership_id` before that column is dropped.
+ */
+export const assignmentOfAnchorSql = (anchorExpr: string, alias = 'pa'): string =>
+  `(${alias}.assignment_id = ${anchorExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
+
+/**
  * #2125 M6b-13 — the current snapshot of every assignment a Member **owns**, as rows shaped like
  * the `user_memberships` row they replace, for the readers that need a closed plan's status and
  * dates (the New Member rule, the enrollment status). Needs the settle run (M6b-6/7), which is
@@ -96,6 +107,43 @@ export const OWNED_ASSIGNMENT_ROWS_SQL = `(
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
+ * #2125 M6b-31 — the assignment's last modification, read off its snapshots. M6b-30 dual-writes
+ * `modified_at` / `modified_by` onto a snapshot no other Product Set links (a copy carries its
+ * source's), so the assignment's latest modifier is on whichever of its snapshots was written last,
+ * not necessarily on the current one. One correlated subquery per column, over the snapshot
+ * `alias`'s assignment: the latest non-null `modified_at`, ties to the latest snapshot.
+ */
+export const assignmentModifierSql = (column: 'modified_at' | 'modified_by', alias = 'pa'): string =>
+  `(SELECT amod.${column} FROM plan_snapshots amod
+     WHERE amod.assignment_id = ${alias}.assignment_id AND amod.gym_id = ${alias}.gym_id
+     ORDER BY amod.modified_at IS NULL, amod.modified_at DESC, amod.id DESC LIMIT 1)`;
+
+/**
+ * #2125 M6b-31 — every assignment of one gym as its current snapshot, with what the Member card's
+ * plan history reports beside the lifecycle: the assignment's creation (its anchor snapshot's
+ * `created_at` / `created_by`, the anchor being the assignment's first snapshot, M6b-13's rule),
+ * its last modification (`assignmentModifierSql()`) and the soft-delete pair of the current
+ * snapshot. Shaped like the `user_memberships` row it replaces (`id` is the legacy id).
+ * M6b-32: every column of that row, so `LIST_SELECT` (the assignments list and every write's
+ * answer) reads it as `um.*`: `purchased_at` and `replace_on_activation` off the current snapshot,
+ * and `replaces_user_membership_id` as the legacy id of the assignment the current snapshot's
+ * `replaces_assignment_id` names.
+ * Binds one `?`: the gym id. Use it as `FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um`.
+ */
+export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
+  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+         pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at, anc.created_by,
+         ${assignmentModifierSql('modified_at')} AS modified_at,
+         ${assignmentModifierSql('modified_by')} AS modified_by,
+         pa.deleted_at, pa.deleted_by,
+         pa.purchased_at, pa.replace_on_activation,
+         (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+           WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces_user_membership_id
+    FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+   WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
+     AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
+
+/**
  * #2125 M6b-17 — every assignment of one gym as a derived table shaped like the `user_memberships`
  * rows it replaces, each read from its current snapshot (`OWNED_ASSIGNMENT_ROWS_SQL` without the
  * owner bound), for a reader that scopes the assignments itself: the Billing Simulation's loader
@@ -108,3 +156,27 @@ export const GYM_ASSIGNMENT_ROWS_SQL = `(
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
    WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
+
+/**
+ * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment a legacy
+ * `user_memberships` id names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
+ * M6b-36), the lowest snapshot naming that legacy id (the rule `PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`
+ * writes), never of `product_sets.user_membership_id`, the column the re-key drops. For the
+ * lookups that are handed a legacy id and want the sets linked to it; `legacyIdExpr` is a column
+ * or a `?`.
+ */
+export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'ps'): string =>
+  `${alias}.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc
+                                   WHERE ps_anc.gym_id = ${alias}.gym_id
+                                     AND ps_anc.source_user_membership_id = ${legacyIdExpr})`;
+
+/**
+ * #2125 M6b-42 — the legacy `user_memberships` id of the assignment the Product Set `alias` is
+ * linked to, read off the set's anchor (`product_sets.plan_assignment_id`, M6b-36): the anchor
+ * snapshot's own `source_user_membership_id`, which is that legacy id by construction (the anchor is
+ * the lowest snapshot naming it). NULL for a set linked to no assignment. For a reader that needs the
+ * value of the link, never `product_sets.user_membership_id`, the column the re-key drops.
+ */
+export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string =>
+  `(SELECT ps_lid.source_user_membership_id FROM plan_snapshots ps_lid
+     WHERE ps_lid.id = ${alias}.plan_assignment_id AND ps_lid.gym_id = ${alias}.gym_id)`;

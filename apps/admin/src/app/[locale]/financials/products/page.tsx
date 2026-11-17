@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -58,9 +58,11 @@ import {
   applyProductTextValues,
   productTextValues,
   type ProductTextField,
-  toTranslationsPayload,
   PRODUCT_TRANSLATION_LOCALES,
   visibleProductSections,
+  newProductFormValues,
+  productFormErrorKey,
+  toProductPayload,
   effectiveSharingType,
   sharingTypeLockedToFamily,
 } from './productProfile';
@@ -163,15 +165,11 @@ interface Product {
 // context menu opens (#800).
 type EditForm = ProductFormValues;
 
-type InlineNew = {
-  name: string;
-  type: ItemType;
-  units: string;
-  amount: string;
-  billing_frequency: string;
-  tax_rate_id: string;
-  mandatory: boolean;
-  professionalServiceIds: number[];
+// #2948: the create card is the Edit form, so its draft is the same values
+// plus the card's own saving state and error, and the image staged until the
+// new row has an id to key it by (#1715).
+type InlineNew = ProductFormValues & {
+  image: Blob | null;
   saving: boolean;
   error: string | null;
 };
@@ -209,7 +207,7 @@ export default function ProductsPage() {
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
   const [importOpen, setImportOpen] = useState(false);
@@ -233,7 +231,7 @@ export default function ProductsPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   // #2334: which field's translations modal is open, for which row.
   const tAll = useTranslations();
-  const [langModal, setLangModal] = useState<{ field: ProductTextField; item: Product } | null>(null);
+  const [langModal, setLangModal] = useState<{ field: ProductTextField; item: Product | null } | null>(null);
   const langLocales = PRODUCT_TEXT_LOCALES.map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }));
   const textFieldLabel = (f: ProductTextField) => t(f === 'name' ? 'label_name' : 'label_description');
   const globeRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 };
@@ -241,7 +239,6 @@ export default function ProductsPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
-  const newNameRef = useRef<HTMLInputElement>(null);
 
   const [details, setDetails] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
@@ -368,45 +365,54 @@ export default function ProductsPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', mandatory: false, professionalServiceIds: [], saving: false, error: null });
-    setTimeout(() => newNameRef.current?.focus(), 50);
+    setInlineNew({ ...newProductFormValues(), image: null, saving: false, error: null });
   }
 
   function cancelInlineNew() { setInlineNew(null); }
 
+  /** #2948: patch the create draft the same way the editor patches its form. */
+  function patchInlineNew(patch: Partial<ProductFormValues>) {
+    setInlineNew((n) => n && { ...n, ...patch });
+  }
+
+  function patchImage(image: Blob | null) {
+    setInlineNew((n) => n && { ...n, image });
+  }
+
   async function saveInlineNew() {
     if (!inlineNew || !activeGymId) return;
-    if (!inlineNew.name.trim()) {
-      setInlineNew({ ...inlineNew, error: t('error_name_required') });
-      return;
-    }
-    if (!inlineNew.type) {
-      setInlineNew({ ...inlineNew, error: t('error_type_required') });
-      return;
-    }
-    if (inlineNew.units !== '' && (isNaN(Number(inlineNew.units)) || !Number.isInteger(Number(inlineNew.units)) || Number(inlineNew.units) <= 0)) {
-      setInlineNew({ ...inlineNew, error: t('error_units_positive') });
+    const errorKey = productFormErrorKey(inlineNew, { isSystem: false });
+    if (errorKey) {
+      setInlineNew({ ...inlineNew, error: t(errorKey as any) });
       return;
     }
     setInlineNew({ ...inlineNew, saving: true, error: null });
+    let created: Product;
     try {
-      await apiFetch<Product>('/products', {
+      created = await apiFetch<Product>('/products', {
         method: 'POST',
-        body: JSON.stringify({
-          name: inlineNew.name.trim(),
-          type: inlineNew.type,
-          units: inlineNew.units !== '' ? parseInt(inlineNew.units, 10) : null,
-          amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,
-          billing_frequency: inlineNew.billing_frequency || null,
-          tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
-          mandatory: inlineNew.mandatory,
-          professional_service_ids: inlineNew.type === SESSION_TYPE ? inlineNew.professionalServiceIds : undefined,
-        }),
+        body: JSON.stringify(toProductPayload(inlineNew, SESSION_TYPE)),
       });
-      setInlineNew(null);
-      load();
     } catch (err: any) {
       setInlineNew({ ...inlineNew, saving: false, error: err.message ?? t('error_generic') });
+      return;
+    }
+    // #1715: the image key carries the new product's id, so a staged image is
+    // uploaded now. A failed upload never discards the product: it is opened
+    // in Edit mode with the error, where the image control can retry.
+    let imageFailure: string | null = null;
+    if (inlineNew.image) {
+      try {
+        await uploadFetch(`/products/${created.id}/image`, inlineNew.image);
+      } catch (err: any) {
+        imageFailure = err.message ?? t('image_error_upload_failed');
+      }
+    }
+    setInlineNew(null);
+    await load();
+    if (imageFailure) {
+      openEdit(created);
+      setEditError(`${t('image_error_upload_failed')} ${imageFailure}`);
     }
   }
 
@@ -435,34 +441,13 @@ export default function ProductsPage() {
 
   async function handleSave(item: Product) {
     if (!editForm) return;
-    if (!item.is_system && !editForm.name.trim()) { setEditError(t('error_name_required')); return; }
-    if (editForm.units !== '' && (isNaN(Number(editForm.units)) || !Number.isInteger(Number(editForm.units)) || Number(editForm.units) <= 0)) {
-      setEditError(t('error_units_positive')); return;
-    }
+    const errorKey = productFormErrorKey(editForm, { isSystem: Boolean(item.is_system) });
+    if (errorKey) { setEditError(t(errorKey as any)); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/products/${item.id}`, {
         method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim() || undefined,
-          type: editForm.type || undefined,
-          units: editForm.units !== '' ? parseInt(editForm.units, 10) : null,
-          description: editForm.description.trim() || null,
-          translations: toTranslationsPayload(editForm.tr),
-          amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,
-          billing_frequency: editForm.billing_frequency || null,
-          status: editForm.status,
-          enrollment_status: editForm.enrollment_status,
-          notes: editForm.notes.trim() || null,
-          package_information: editForm.package_information.trim() || null,
-          validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
-          tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
-          mandatory: editForm.mandatory,
-          one_time_purchase: editForm.one_time_purchase,
-          one_per_member: editForm.one_per_member,
-          sharing_type: effectiveSharingType(editForm),
-          professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
-        }),
+        body: JSON.stringify(toProductPayload(editForm, SESSION_TYPE)),
       });
       setEditingId(null);
       setEditForm(null);
@@ -534,112 +519,42 @@ export default function ProductsPage() {
 
   function renderInlineNewRow() {
     if (!inlineNew) return null;
-    // #942: off the draft's live Type and Units, so the sentence appears the
-    // moment Sessions is chosen and follows the count as it is typed.
-    const draftSessionNote = noteText(sessionPackageNoteForForm(inlineNew));
+    // #2948: `+ Add Product` opens the Edit form itself — the same
+    // `ProductLayout` over the same declaration, every field a control (a new
+    // row is never a System row) and the Session-only section following the
+    // draft's Type, exactly as it does while editing.
+    const sections = visibleProductSections({
+      isSystem: false,
+      isSessionType: inlineNew.type === SESSION_TYPE,
+    });
     return (
       <div style={cardStyle}>
-        <div style={{ padding: '16px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_name')} *</label>
-              <input
-                ref={newNameRef}
-                value={inlineNew.name}
-                onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
-                placeholder={t('placeholder_name')}
-                style={formControlStyle}
-              />
-            </div>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_type')} *</label>
-              <select
-                value={inlineNew.type}
-                onChange={(e) => setInlineNew({ ...inlineNew, type: e.target.value as ItemType })}
-                style={formControlStyle}
-              >
-                {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}`)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_units')}</label>
-              <input
-                type="number" min="1" step="1"
-                value={inlineNew.units}
-                onChange={(e) => setInlineNew({ ...inlineNew, units: e.target.value })}
-                placeholder="—"
-                style={formControlStyle}
-              />
-            </div>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_price')}</label>
-              <input
-                type="number" min="0" step="0.01"
-                value={inlineNew.amount}
-                onChange={(e) => setInlineNew({ ...inlineNew, amount: e.target.value })}
-                placeholder="0.00"
-                style={formControlStyle}
-              />
-              {/* #942: the person typing the figure is the one who most needs
-                  to know it buys the whole package. */}
-              {draftSessionNote && <p style={formHelpTextStyle}>{draftSessionNote}</p>}
-            </div>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_frequency')}</label>
-              {/* #821 / #945: four choices — neither 'week' nor 'per_session'
-                  is one of them. A new item never holds a legacy value, so
-                  this list is always the four. */}
-              <select
-                value={inlineNew.billing_frequency}
-                onChange={(e) => setInlineNew({ ...inlineNew, billing_frequency: e.target.value })}
-                style={formControlStyle}
-              >
-                <option value="">—</option>
-                {frequencyOptions(inlineNew.billing_frequency).map((o) => (
-                  <option key={o.value} value={o.value} disabled={o.disabled}>{tFreq(o.labelKey as any)}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={formFieldLabelStyle}>{t('label_tax_rate')}</label>
-              <select
-                value={inlineNew.tax_rate_id}
-                onChange={(e) => setInlineNew({ ...inlineNew, tax_rate_id: e.target.value })}
-                style={formControlStyle}
-              >
-                <option value="">{t('option_no_tax')}</option>
-                {taxRateOptions(inlineNew.tax_rate_id).map((tr) => (
-                  <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
-                ))}
-              </select>
-            </div>
+        <div style={expandedBodyStyle}>
+          <ProductLayout
+            sections={sections}
+            editing
+            sectionTitle={(section) => t(section.titleKey as any)}
+            fieldLabel={(field) => t(field.labelKey as any)}
+            renderField={(field) => renderFormControl(
+              field,
+              inlineNew,
+              patchInlineNew,
+              (textField) => setLangModal({ field: textField, item: null }),
+            )}
+            renderValue={() => null}
+          />
+          {/* #1715 — the image sits where it does in the editor; on a new row
+              it is staged and uploaded right after the create succeeds. */}
+          <div style={{ margin: '12px 0 4px' }}>
+            <MemberImageField
+              target={{ kind: 'staged', file: inlineNew.image, onFile: (image) => patchImage(image) }}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+              label={(key) => t(key as any)}
+            />
           </div>
-          {/* #832: its own row rather than a seventh grid cell, so the six
-              tracks above keep their widths. The inline editor below renders
-              the same control, against the same `label_mandatory`. */}
-          <div style={{ ...productFlagsColumnStyle, marginBottom: 12 }}>
-            <ProductFlagRow label={t('label_mandatory')}>
-              <YesNoToggle
-                checked={inlineNew.mandatory}
-                onChange={(v) => setInlineNew({ ...inlineNew, mandatory: v })}
-                yesLabel={t('yes')}
-                noLabel={t('no')}
-                ariaLabel={t('label_mandatory')}
-              />
-            </ProductFlagRow>
-          </div>
-          {inlineNew.type === SESSION_TYPE && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={formFieldLabelStyle}>{t('label_professional_services')}</label>
-              {renderProfessionalServiceCheckboxes(
-                inlineNew.professionalServiceIds,
-                (ids) => setInlineNew({ ...inlineNew, professionalServiceIds: ids }),
-              )}
-            </div>
-          )}
           {inlineNew.error && <p style={formErrorStyle}>{inlineNew.error}</p>}
-          {/* #974 §4: the same left-aligned pair the inline editor below uses,
-              so creating and editing an item do not put Save in two places. */}
+          {/* #974 §4: the same left-aligned pair the inline editor uses. */}
           <div style={inlineActionsRowStyle}>
             <button onClick={cancelInlineNew} style={secondaryBtnSmall}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
@@ -649,6 +564,228 @@ export default function ProductsPage() {
         </div>
       </div>
     );
+  }
+
+  /**
+   * #2948: the control for one field of the product form. The create card and
+   * `⋮ → Edit` both render it through `ProductLayout`, so the two forms have
+   * the same fields, order, controls and conditional behaviour by construction.
+   */
+  function renderFormControl(
+    field: VisibleProductField,
+    form: ProductFormValues,
+    setForm: (patch: Partial<ProductFormValues>) => void,
+    openTranslations: (field: ProductTextField) => void,
+  ): React.ReactNode {
+  // #2948: Session note and retired-frequency notice off the form's own
+  // live values, so both forms say the same thing as the user types.
+  const sessionNoteForForm = noteText(sessionPackageNoteForForm(form));
+  const legacyFrequencyKey = legacyFrequencyLabelKey(form.billing_frequency);
+    switch (field.key) {
+      case 'name':
+        return (
+          <div style={globeRowStyle}>
+            <input
+              value={form.name}
+              onChange={(e) => setForm({ name: e.target.value })}
+              autoFocus
+              style={{ ...formControlStyle, flex: 1 }}
+            />
+            <GlobeButton label={t('translations_open', { field: textFieldLabel('name') })} onClick={() => openTranslations('name')} />
+          </div>
+        );
+      case 'type':
+        return (
+          <select
+            value={form.type}
+            onChange={(e) => setForm({ type: e.target.value as ItemType })}
+            style={formControlStyle}
+          >
+            {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}` as any)}</option>)}
+          </select>
+        );
+      case 'description':
+        return (
+          <div style={globeRowStyle}>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ description: e.target.value })}
+              rows={2}
+              style={{ ...productTextareaStyle, flex: 1 }}
+            />
+            <GlobeButton label={t('translations_open', { field: textFieldLabel('description') })} onClick={() => openTranslations('description')} />
+          </div>
+        );
+      case 'units':
+        return (
+          <input
+            type="number" min="1" step="1"
+            value={form.units}
+            onChange={(e) => setForm({ units: e.target.value })}
+            placeholder={EMPTY_VALUE}
+            style={formControlStyle}
+          />
+        );
+      case 'status':
+        return (
+          <select
+            value={form.status}
+            onChange={(e) => setForm({ status: e.target.value as ItemStatus })}
+            style={formControlStyle}
+          >
+            {STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
+          </select>
+        );
+      case 'enrollment_status':
+        return (
+          <select
+            value={form.enrollment_status}
+            onChange={(e) => setForm({ enrollment_status: e.target.value as EnrollmentStatus })}
+            style={formControlStyle}
+          >
+            {ENROLLMENT_STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
+          </select>
+        );
+      case 'mandatory':
+        // #832: offered on a System item too — the flag is written outside
+        // `PUT /:id`'s `is_system` guard, unlike the three fields above it.
+        return (
+          <div style={productFlagsColumnStyle}>
+            <ProductFlagRow label={t('label_mandatory')}>
+              <YesNoToggle
+                checked={form.mandatory}
+                onChange={(v) => setForm({ mandatory: v })}
+                yesLabel={t('yes')}
+                noLabel={t('no')}
+                ariaLabel={t('label_mandatory')}
+              />
+            </ProductFlagRow>
+            <ProductFlagRow label={t('one_time_purchase')}>
+              <YesNoToggle
+                checked={form.one_time_purchase}
+                onChange={(v) => setForm({ one_time_purchase: v })}
+                yesLabel={t('yes')}
+                noLabel={t('no')}
+                ariaLabel={t('one_time_purchase')}
+              />
+            </ProductFlagRow>
+            <ProductFlagRow label={t('one_per_member')}>
+              <YesNoToggle
+                checked={form.one_per_member}
+                onChange={(v) => setForm({ one_per_member: v })}
+                yesLabel={t('yes')}
+                noLabel={t('no')}
+                ariaLabel={t('one_per_member')}
+              />
+            </ProductFlagRow>
+            <div>
+              <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
+              <select
+                style={formControlStyle}
+                value={effectiveSharingType(form)}
+                disabled={sharingTypeLockedToFamily(form)}
+                onChange={(e) => setForm({ sharing_type: e.target.value as 'individual' | 'shared' })}
+              >
+                <option value="individual">{t('sharing_individual')}</option>
+                <option value="shared">{t('sharing_shared')}</option>
+              </select>
+              {sharingTypeLockedToFamily(form) && (
+                <div style={formHelpTextStyle}>{t('sharing_family_required')}</div>
+              )}
+            </div>
+          </div>
+        );
+      case 'amount':
+        return (
+          <div>
+            <input
+              type="number" min="0" step="0.01"
+              value={form.amount}
+              onChange={(e) => setForm({ amount: e.target.value })}
+              placeholder="0.00"
+              style={formControlStyle}
+            />
+            {/* #942, as in the create card — the same note from the same
+                rule, off this form's live Type and Units. */}
+            {sessionNoteForForm && <p style={formHelpTextStyle}>{sessionNoteForForm}</p>}
+          </div>
+        );
+      case 'billing_frequency':
+        return (
+          <div>
+            {/* #821 / #945: an item stored on a retired frequency ('week',
+                'per_session') still shows it — disabled, so it reads
+                truthfully and submits back unchanged, but cannot be re-chosen
+                once the user moves off it. */}
+            <select
+              value={form.billing_frequency}
+              onChange={(e) => setForm({ billing_frequency: e.target.value })}
+              style={formControlStyle}
+            >
+              <option value="">{EMPTY_VALUE}</option>
+              {frequencyOptions(form.billing_frequency).map((o) => (
+                <option key={o.value} value={o.value} disabled={o.disabled}>{tFreq(o.labelKey as any)}</option>
+              ))}
+            </select>
+            {/* #945: the notice names the frequency the row holds, since
+                there are two retired values now. The label is resolved before
+                `t()` is called and passed in as a value — next-intl has no
+                `defaultValue` option and would print the key. */}
+            {legacyFrequencyKey && (
+              <div style={legacyFrequencyNoticeStyle}>
+                {t('frequency_legacy_notice', { frequency: tFreq(legacyFrequencyKey as any) })}
+              </div>
+            )}
+          </div>
+        );
+      case 'validity_days':
+        return (
+          <input
+            type="number" min="0" step="1"
+            value={form.validity_days}
+            onChange={(e) => setForm({ validity_days: e.target.value })}
+            placeholder={EMPTY_VALUE}
+            style={formControlStyle}
+          />
+        );
+      case 'tax_rate_id':
+        return (
+          <select
+            value={form.tax_rate_id}
+            onChange={(e) => setForm({ tax_rate_id: e.target.value })}
+            style={formControlStyle}
+          >
+            <option value="">{t('option_no_tax')}</option>
+            {taxRateOptions(form.tax_rate_id).map((tr) => (
+              <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+            ))}
+          </select>
+        );
+      case 'professional_services':
+        return renderProfessionalServiceCheckboxes(
+          form.professionalServiceIds,
+          (ids) => setForm({ professionalServiceIds: ids }),
+        );
+      case 'package_information':
+        return (
+          <textarea
+            value={form.package_information}
+            onChange={(e) => setForm({ package_information: e.target.value })}
+            rows={3}
+            placeholder={t('placeholder_package_info')}
+            style={productTextareaStyle}
+          />
+        );
+      case 'notes':
+        return (
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ notes: e.target.value })}
+            rows={3}
+            style={productTextareaStyle}
+          />
+        );
+    }
   }
 
   const listText: ProductListText = {
@@ -669,11 +806,6 @@ export default function ProductsPage() {
     // from the form instead, so it tracks a Type or Units the user has changed
     // but not yet saved.
     const sessionNote = noteText(sessionPackageNote(item));
-    const editSessionNote = editForm ? noteText(sessionPackageNoteForForm(editForm)) : null;
-    // #945: null unless the form holds a retired frequency ('week', #821;
-    // 'per_session', #945) — the editor is where such a value gets corrected,
-    // so the notice that flags it belongs beside its select.
-    const editLegacyFrequencyLabelKey = editForm ? legacyFrequencyLabelKey(editForm.billing_frequency) : null;
 
     // #974: both halves ask the one declaration which sections this row shows
     // and which of its fields it may edit. The Session-only Professional
@@ -793,216 +925,6 @@ export default function ProductsPage() {
       }
     }
 
-    /** The control for one field, while `⋮ → Edit` is open on this row. */
-    function renderEditControl(field: VisibleProductField): React.ReactNode {
-      if (!editForm) return null;
-      switch (field.key) {
-        case 'name':
-          return (
-            <div style={globeRowStyle}>
-              <input
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                autoFocus
-                style={{ ...formControlStyle, flex: 1 }}
-              />
-              <GlobeButton label={t('translations_open', { field: textFieldLabel('name') })} onClick={() => setLangModal({ field: 'name', item })} />
-            </div>
-          );
-        case 'type':
-          return (
-            <select
-              value={editForm.type}
-              onChange={(e) => setEditForm({ ...editForm, type: e.target.value as ItemType })}
-              style={formControlStyle}
-            >
-              {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}` as any)}</option>)}
-            </select>
-          );
-        case 'description':
-          return (
-            <div style={globeRowStyle}>
-              <textarea
-                value={editForm.description}
-                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                rows={2}
-                style={{ ...productTextareaStyle, flex: 1 }}
-              />
-              <GlobeButton label={t('translations_open', { field: textFieldLabel('description') })} onClick={() => setLangModal({ field: 'description', item })} />
-            </div>
-          );
-        case 'units':
-          return (
-            <input
-              type="number" min="1" step="1"
-              value={editForm.units}
-              onChange={(e) => setEditForm({ ...editForm, units: e.target.value })}
-              placeholder={EMPTY_VALUE}
-              style={formControlStyle}
-            />
-          );
-        case 'status':
-          return (
-            <select
-              value={editForm.status}
-              onChange={(e) => setEditForm({ ...editForm, status: e.target.value as ItemStatus })}
-              style={formControlStyle}
-            >
-              {STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
-            </select>
-          );
-        case 'enrollment_status':
-          return (
-            <select
-              value={editForm.enrollment_status}
-              onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as EnrollmentStatus })}
-              style={formControlStyle}
-            >
-              {ENROLLMENT_STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
-            </select>
-          );
-        case 'mandatory':
-          // #832: offered on a System item too — the flag is written outside
-          // `PUT /:id`'s `is_system` guard, unlike the three fields above it.
-          return (
-            <div style={productFlagsColumnStyle}>
-              <ProductFlagRow label={t('label_mandatory')}>
-                <YesNoToggle
-                  checked={editForm.mandatory}
-                  onChange={(v) => setEditForm({ ...editForm, mandatory: v })}
-                  yesLabel={t('yes')}
-                  noLabel={t('no')}
-                  ariaLabel={t('label_mandatory')}
-                />
-              </ProductFlagRow>
-              <ProductFlagRow label={t('one_time_purchase')}>
-                <YesNoToggle
-                  checked={editForm.one_time_purchase}
-                  onChange={(v) => setEditForm({ ...editForm, one_time_purchase: v })}
-                  yesLabel={t('yes')}
-                  noLabel={t('no')}
-                  ariaLabel={t('one_time_purchase')}
-                />
-              </ProductFlagRow>
-              <ProductFlagRow label={t('one_per_member')}>
-                <YesNoToggle
-                  checked={editForm.one_per_member}
-                  onChange={(v) => setEditForm({ ...editForm, one_per_member: v })}
-                  yesLabel={t('yes')}
-                  noLabel={t('no')}
-                  ariaLabel={t('one_per_member')}
-                />
-              </ProductFlagRow>
-              <div>
-                <label style={formFieldLabelStyle}>{t('sharing_type')}</label>
-                <select
-                  style={formControlStyle}
-                  value={effectiveSharingType(editForm)}
-                  disabled={sharingTypeLockedToFamily(editForm)}
-                  onChange={(e) => setEditForm({ ...editForm, sharing_type: e.target.value as 'individual' | 'shared' })}
-                >
-                  <option value="individual">{t('sharing_individual')}</option>
-                  <option value="shared">{t('sharing_shared')}</option>
-                </select>
-                {sharingTypeLockedToFamily(editForm) && (
-                  <div style={formHelpTextStyle}>{t('sharing_family_required')}</div>
-                )}
-              </div>
-            </div>
-          );
-        case 'amount':
-          return (
-            <div>
-              <input
-                type="number" min="0" step="0.01"
-                value={editForm.amount}
-                onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
-                placeholder="0.00"
-                style={formControlStyle}
-              />
-              {/* #942, as in the create card — the same note from the same
-                  rule, off this form's live Type and Units. */}
-              {editSessionNote && <p style={formHelpTextStyle}>{editSessionNote}</p>}
-            </div>
-          );
-        case 'billing_frequency':
-          return (
-            <div>
-              {/* #821 / #945: an item stored on a retired frequency ('week',
-                  'per_session') still shows it — disabled, so it reads
-                  truthfully and submits back unchanged, but cannot be re-chosen
-                  once the user moves off it. */}
-              <select
-                value={editForm.billing_frequency}
-                onChange={(e) => setEditForm({ ...editForm, billing_frequency: e.target.value })}
-                style={formControlStyle}
-              >
-                <option value="">{EMPTY_VALUE}</option>
-                {frequencyOptions(editForm.billing_frequency).map((o) => (
-                  <option key={o.value} value={o.value} disabled={o.disabled}>{tFreq(o.labelKey as any)}</option>
-                ))}
-              </select>
-              {/* #945: the notice names the frequency the row holds, since
-                  there are two retired values now. The label is resolved before
-                  `t()` is called and passed in as a value — next-intl has no
-                  `defaultValue` option and would print the key. */}
-              {editLegacyFrequencyLabelKey && (
-                <div style={legacyFrequencyNoticeStyle}>
-                  {t('frequency_legacy_notice', { frequency: tFreq(editLegacyFrequencyLabelKey as any) })}
-                </div>
-              )}
-            </div>
-          );
-        case 'validity_days':
-          return (
-            <input
-              type="number" min="0" step="1"
-              value={editForm.validity_days}
-              onChange={(e) => setEditForm({ ...editForm, validity_days: e.target.value })}
-              placeholder={EMPTY_VALUE}
-              style={formControlStyle}
-            />
-          );
-        case 'tax_rate_id':
-          return (
-            <select
-              value={editForm.tax_rate_id}
-              onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
-              style={formControlStyle}
-            >
-              <option value="">{t('option_no_tax')}</option>
-              {taxRateOptions(editForm.tax_rate_id).map((tr) => (
-                <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
-              ))}
-            </select>
-          );
-        case 'professional_services':
-          return renderProfessionalServiceCheckboxes(
-            editForm.professionalServiceIds,
-            (ids) => setEditForm({ ...editForm, professionalServiceIds: ids }),
-          );
-        case 'package_information':
-          return (
-            <textarea
-              value={editForm.package_information}
-              onChange={(e) => setEditForm({ ...editForm, package_information: e.target.value })}
-              rows={3}
-              placeholder={t('placeholder_package_info')}
-              style={productTextareaStyle}
-            />
-          );
-        case 'notes':
-          return (
-            <textarea
-              value={editForm.notes}
-              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-              rows={3}
-              style={productTextareaStyle}
-            />
-          );
-      }
-    }
-
     // #1188: Details is always the last option (#802's order), after
     // Activate / Deactivate and after Delete where a row has one.
     const menuItems: ContextMenuItem[] = [
@@ -1050,7 +972,12 @@ export default function ProductsPage() {
               editing={isEditing}
               sectionTitle={(section) => t(section.titleKey as any)}
               fieldLabel={(field) => t(field.labelKey as any)}
-              renderField={renderEditControl}
+              renderField={(field) => editForm && renderFormControl(
+                field,
+                editForm,
+                (patch) => setEditForm((f) => f && { ...f, ...patch }),
+                (textField) => setLangModal({ field: textField, item }),
+              )}
               renderValue={renderReadOnlyValue}
             />
             {/* #1715 — the product's image. Read-only outside Edit mode; in it
@@ -1181,17 +1108,23 @@ export default function ProductsPage() {
         title={langModal ? t('translations_title', { field: textFieldLabel(langModal.field) }) : ''}
         locales={langLocales}
         values={langModal
-          ? productTextValues(editForm && editingId === langModal.item.id ? editForm : toProductFormValues(langModal.item), langModal.field)
+          ? productTextValues(
+            langModal.item === null
+              ? (inlineNew ?? newProductFormValues())
+              : editForm && editingId === langModal.item.id ? editForm : toProductFormValues(langModal.item),
+            langModal.field,
+          )
           : {}}
         multiline={langModal?.field === 'description'}
-        readOnly={!(langModal && editForm && editingId === langModal.item.id)}
+        readOnly={!(langModal && (langModal.item === null || (editForm && editingId === langModal.item.id)))}
         saveLabel={t('save')}
         cancelLabel={t('cancel')}
         closeLabel={t('translations_close')}
         emptyLabel="—"
         onClose={() => setLangModal(null)}
         onSave={(vals) => {
-          if (langModal) setEditForm((f) => f && { ...f, ...applyProductTextValues(f, langModal.field, vals) });
+          if (langModal?.item === null) setInlineNew((n) => n && { ...n, ...applyProductTextValues(n, langModal.field, vals) });
+          else if (langModal) setEditForm((f) => f && { ...f, ...applyProductTextValues(f, langModal.field, vals) });
           setLangModal(null);
         }}
       />

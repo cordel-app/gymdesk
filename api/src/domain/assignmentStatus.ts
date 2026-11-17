@@ -16,7 +16,7 @@
 export const CANCELS_AT_PERIOD_END_STATUS = 'active_cancel_at_period_end' as const;
 
 export const ASSIGNMENT_STATUSES = [
-  'draft', 'pending_payment', 'active', 'paused',
+  'in_cart', 'pending_payment', 'active', 'paused',
   CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired', 'superseded',
 ] as const;
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];

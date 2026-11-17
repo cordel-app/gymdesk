@@ -6,6 +6,7 @@
 import { db } from '../infra/db';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { buildReceiptKey } from '../domain/billingDocumentKeys';
+import { loadInvoiceFigures } from './invoice-figures';
 import {
   isPrivateStorageConfigured, putPrivateDocument, getPrivateDocument,
 } from '../infra/private-storage';
@@ -26,11 +27,10 @@ async function render(input: ReceiptPdfInput): Promise<Buffer> {
     [input.gymId],
   );
   const gym = gymRows[0];
-  const { rows: taxRows } = await db.query<any>(
-    "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-    [input.gymId],
-  );
-  const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
+  // #2884: the receipt states the event's own lines, each at its own rate — the
+  // figures an invoice of the same event prints.
+  const { lines, totals } = await loadInvoiceFigures(
+    db, input.gymId, input.eventId, input.amount, input.chargeTypeCode ?? 'membership_fee');
   return generateReceiptPdf({
     receiptNumber: input.receiptNumber,
     issuedAt: input.issuedAt,
@@ -42,9 +42,8 @@ async function render(input: ReceiptPdfInput): Promise<Buffer> {
       fiscalPhone: gym.fiscal_phone,
     },
     memberName: input.memberName ?? 'Socio',
-    concept: input.chargeTypeCode ?? 'membership_fee',
-    totalAmount: input.amount,
-    ivaRate,
+    lines,
+    totals,
     currency: 'EUR',
   });
 }

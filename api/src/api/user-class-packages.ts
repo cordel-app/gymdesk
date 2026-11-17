@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
+import { productPurchaseEventNameFor } from './billing-event-name';
 
 /**
  * P3.2: user class packages nested under members.
@@ -115,7 +116,7 @@ userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, re
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
   const { rows: pkgRows } = await db.query(
-    "SELECT id, number_of_sessions, validity_days, price, status FROM class_packages WHERE id = ? AND gym_id = ?",
+    "SELECT id, name, number_of_sessions, validity_days, price, status FROM class_packages WHERE id = ? AND gym_id = ?",
     [class_package_id, gymId],
   );
   if (pkgRows.length === 0) return res.status(404).json({ error: 'Package not found' });
@@ -132,11 +133,14 @@ userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, re
       // Ledger charge — use the class_package charge type (seeded in migration 008).
       const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'class_package'");
       if (ctRows.length > 0) {
+        // #2940: a one-time purchase is named for what was bought.
+        const eventName = await productPurchaseEventNameFor(
+          tx, gymId, String(pkgRows[0].name ?? ''), new Date().toISOString().slice(0, 10));
         await tx.query(
           `INSERT INTO billing_events
-           (gym_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
-           VALUES (?, ?, 'product_purchase', ?, ?, ?, ?, 'Class package purchase')`,
-          [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', resolveRequestActor(ctx), pkgRows[0].price],
+           (gym_id, member_id, event_type, name, charge_type_id, source, created_by, amount, notes)
+           VALUES (?, ?, 'product_purchase', ?, ?, ?, ?, ?, 'Class package purchase')`,
+          [gymId, memberId, eventName, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', resolveRequestActor(ctx), pkgRows[0].price],
         );
       }
       return insertId;

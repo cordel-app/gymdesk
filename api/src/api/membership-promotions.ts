@@ -26,6 +26,7 @@ import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
+import { GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -413,12 +414,13 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
              OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
              OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
             ) AS has_billing_snapshot
-     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-     WHERE um.id = ? AND um.gym_id = ?`,
-    [userMembershipId, gymId],
+     WHERE um.id = ?`,
+    // #2125 M6b-25: the assignment is its current plan snapshot (gym id first, then the legacy id).
+    [gymId, userMembershipId],
   );
   if (umRows.length === 0) return null;
   const um = umRows[0];
@@ -630,10 +632,19 @@ export async function applyPromotionToMembership(
  */
 export async function assignmentBeingEdited(tx: Tx, productSetId: number): Promise<number | null> {
   const { rows } = await tx.query<any>(
-    `SELECT COALESCE(ps.user_membership_id, prev.user_membership_id) AS um
+    `SELECT COALESCE(${productSetLegacyAssignmentIdSql()}, ${productSetLegacyAssignmentIdSql('prev')}) AS um
        FROM product_sets ps LEFT JOIN product_sets prev ON prev.id = ps.previous_product_set_id
       WHERE ps.id = ?`, [productSetId]);
   return rows[0]?.um != null ? Number(rows[0].um) : null;
+}
+
+/**
+ * #2893 — the refusal of a Promotion already applied, worded for its target: a
+ * Membership Plan or a Product. No message says a Promotion is applied to a
+ * ProductSet, which is only the container of the two.
+ */
+export function duplicatePromotionMessage(target: 'plan' | 'product'): string {
+  return `This promotion is already applied to this ${target}.`;
 }
 
 export async function applyPromotionToProductSet(
@@ -658,7 +669,7 @@ export async function applyPromotionToProductSet(
   );
   if (setRows.length === 0) throw Object.assign(new Error('ProductSet not found'), { status: 404 });
   const set = setRows[0];
-  if (set.status !== 'draft') {
+  if (set.status !== 'in_cart') {
     throw Object.assign(new Error('A Promotion can only be applied to a Draft ProductSet'), { status: 409 });
   }
 
@@ -734,7 +745,9 @@ export async function applyPromotionToProductSet(
     lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
   );
   if (existing.some((r: any) => Number(r.promotion_id) === promotionId)) {
-    throw Object.assign(new Error('This promotion is already applied to this ProductSet'), { status: 409 });
+    // #2893: a Promotion is applied to a Membership Plan or to a Product, never to the ProductSet
+    // that holds them, so the refusal names the target it was applied to.
+    throw Object.assign(new Error(duplicatePromotionMessage(opts.productTarget ? 'product' : 'plan')), { status: 409 });
   }
   if (!promo.stackable && existing.length > 0) {
     throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
@@ -743,7 +756,8 @@ export async function applyPromotionToProductSet(
   // The owner is the assignment the version is itself linked to (a set-first
   // Draft); a clone Draft is linked at projection, never to its predecessor's.
   const { rows: own } = await tx.query<any>(
-    'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+    `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
+    [productSetId, gymId]);
   const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
     ? Number(own[0].user_membership_id) : null;
   // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
@@ -776,8 +790,8 @@ export async function applyPromotionToProductSet(
  * confirmation rolls the snapshots back with the status. Until then a Draft
  * holds no snapshot at all (#2833) and is read from the live Promotion.
  *
- * Only an application still `applied` is snapshotted; a revoked one stays the
- * reference it is. A confirmed application (a copy of the predecessor's, or one
+ * Only an application still `applied` is snapshotted; a revoked reference is
+ * deleted (#2880 — a removed selection is not history). A confirmed application (a copy of the predecessor's, or one
  * already captured) is never touched, so a retried confirmation finds nothing
  * left and writes nothing. Any grant rows already present (a working copy
  * written before #2833) are replaced, never duplicated. An application whose
@@ -785,6 +799,13 @@ export async function applyPromotionToProductSet(
  * already resolves live.
  */
 export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  // #2880: a Promotion removed from the Draft before confirmation is not history of this
+  // assignment — a reference that was revoked (written before removal became a deletion) is
+  // discarded here rather than confirmed as an inactive application.
+  const { rowCount: discarded } = await tx.query(
+    `DELETE FROM user_membership_promotions
+      WHERE gym_id = ? AND product_set_id = ? AND status = 'revoked' AND snapshot_confirmed_at IS NULL`,
+    [gymId, productSetId]);
   const { rows } = await tx.query<{ id: number; promotion_id: number }>(
     `SELECT ump.id, ump.promotion_id FROM user_membership_promotions ump
       WHERE ump.gym_id = ? AND ump.product_set_id = ?
@@ -802,7 +823,7 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
     }
     await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
   }
-  if (rows.length > 0) await syncPlanSnapshot(tx, gymId, productSetId);
+  if (rows.length > 0 || discarded > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
@@ -1033,7 +1054,7 @@ export async function assignmentPromotionEditability(
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );
-  const draftVersion = versionRows.length > 0 && versionRows[0].status === 'draft';
+  const draftVersion = versionRows.length > 0 && versionRows[0].status === 'in_cart';
   const planTakesPromotions = draftVersion
     && !versionRows.some((r: any) => Number(r.is_inherited ?? 0) === 1);
   return { draftVersion, planTakesPromotions };
@@ -1146,7 +1167,7 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
 
   // #1325 PR 3e-4a: the application is the version's, written above. A plan
   // whose version takes no edit (closed, or awaiting payment) answers here.
-  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  const { rows: gate } = await db.query(`SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, umId]);
   if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
   return res.status(409).json({ error: `Promotions cannot be applied to a membership with status '${gate[0].status}'` });
 });
@@ -1160,7 +1181,7 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
     mutate: revokePromotionMutator(promotionId, resolveRequestActor(getTenantContext(req))),
     respond: async () => ({ ok: true }),
   })) return;
-  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  const { rows: gate } = await db.query(`SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, umId]);
   if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
   return res.status(409).json({ error: `Promotions cannot be revoked on a membership with status '${gate[0].status}'` });
 });

@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
+import { allocateProfessionalServiceSlug } from './entity-slugs';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -33,6 +34,7 @@ const SELECT = `
     ps.max_capacity,
     ps.min_participants,
     ps.booking_type,
+    ps.slug,
     ps.image_url,
     ps.image_thumbnail_url,
     ps.base_professional_service_id,
@@ -131,7 +133,7 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
     const prefix = await gymStorageFolderPrefix(gymId);
     for (const baseId of [...new Set<number>(ids)]) {
       const { rows } = await db.query(
-        `SELECT id, name, description, max_capacity, min_participants, booking_type, image_url, image_thumbnail_url FROM professional_services
+        `SELECT id, name, slug, description, max_capacity, min_participants, booking_type, image_url, image_thumbnail_url FROM professional_services
           WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
         [baseId],
       );
@@ -145,11 +147,13 @@ professionalServicesRouter.post('/import', requireRole('admin'), async (req, res
       if (taken.length > 0) { skipped.push(base.id); continue; }
       try {
         const { insertId } = await db.transaction(async (tx) => {
+          // #2951 §6: the copy carries its Base service's slug.
+          const slug = await allocateProfessionalServiceSlug(gymId, { name: base.name, carried: base.slug }, tx);
           const { insertId: serviceId } = await tx.query(
             `INSERT INTO professional_services
-               (gym_id, name, description, is_system, system_key, max_capacity, min_participants, booking_type, base_professional_service_id, created_by)
-             VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
-            [gymId, base.name, base.description, base.max_capacity, base.min_participants, base.booking_type, base.id, actor],
+               (gym_id, name, slug, description, is_system, system_key, max_capacity, min_participants, booking_type, base_professional_service_id, created_by)
+             VALUES (?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
+            [gymId, base.name, slug, base.description, base.max_capacity, base.min_participants, base.booking_type, base.id, actor],
           );
           await tx.query(
             `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
@@ -223,11 +227,12 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
 
   try {
     const { insertId } = await db.transaction(async (tx) => {
+      const slug = await allocateProfessionalServiceSlug(gymId, { name: name.trim() }, tx);
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, booking_type, created_by)
-         VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description?.trim() || null, capacity.value, minParticipants.value, bookingType.value, actor],
+           (gym_id, name, slug, description, is_system, system_key, max_capacity, min_participants, booking_type, created_by)
+         VALUES (?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+        [gymId, name.trim(), slug, description?.trim() || null, capacity.value, minParticipants.value, bookingType.value, actor],
       );
       await writeTranslations(tx, serviceId, translations);
       await tx.query(
@@ -489,13 +494,15 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
     const newName = `${src.name} - Copy`;
 
     const { insertId } = await db.transaction(async (tx) => {
+      // #2951: a duplicate is a new service, slugged from its own name.
+      const slug = await allocateProfessionalServiceSlug(gymId, { name: newName }, tx);
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, max_capacity, min_participants, booking_type, image_url, image_thumbnail_url, created_by)
-         VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)`,
+           (gym_id, name, slug, description, is_system, system_key, max_capacity, min_participants, booking_type, image_url, image_thumbnail_url, created_by)
+         VALUES (?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)`,
         // #2010: the copy inherits the source's image *references*. No object is
         // copied or re-processed, so one object may be referenced by several rows.
-        [gymId, newName, src.description, src.max_capacity, src.min_participants, src.booking_type, src.image_url ?? null, src.image_thumbnail_url ?? null, actor],
+        [gymId, newName, slug, src.description, src.max_capacity, src.min_participants, src.booking_type, src.image_url ?? null, src.image_thumbnail_url ?? null, actor],
       );
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)

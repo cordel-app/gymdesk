@@ -1,4 +1,5 @@
 import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
+import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
@@ -14,12 +15,13 @@ import {
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import { DraftRefusal, LockedDraft, isRefusal, lockDraft } from './product-set-draft';
 import { ensureInitialEvent, initialCharge, loadEditLock } from './product-set-checkout';
-import { cancelInFlight, createDraft, submitForPayment as submitSetForPayment } from './product-sets';
+import { createDraft, submitForPayment as submitSetForPayment } from './product-sets';
 import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
+import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -185,13 +187,13 @@ export async function importAssignmentAsProductSet(
   opts: { pending?: boolean; /** #1182: the plain-text actor of the commit; omitted = System. */ actor?: string | null } = {},
 ): Promise<number | null> {
   const { rows: linked } = await tx.query<any>(
-    'SELECT id, status FROM product_sets WHERE gym_id = ? AND user_membership_id = ? FOR UPDATE', [gymId, userMembershipId]);
+    `SELECT id, status FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} FOR UPDATE`, [gymId, userMembershipId]);
   if (linked.length > 0) {
     const set = linked[0];
     // #1325 PR 3e: a Draft assignment is created set-first, so its version is
     // already the Draft here — Save & Pay moves it to Pending Payment with its
     // initial event, and a commit with nothing to pay activates it.
-    if (set.status === 'draft' && opts.pending) {
+    if (set.status === 'in_cart' && opts.pending) {
       const moved = await submitSetForPayment(tx, gymId, Number(set.id));
       if (moved.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be submitted: ${moved.kind}`), { status: moved.kind === 'expired' ? 410 : 409 });
@@ -199,7 +201,7 @@ export async function importAssignmentAsProductSet(
       await writePendingInitialEvent(tx, gymId, Number(set.id), opts.actor === undefined ? SYSTEM_ACTOR : opts.actor);
       return Number(set.id);
     }
-    if (!opts.pending && (set.status === 'pending_payment' || set.status === 'draft')) {
+    if (!opts.pending && (set.status === 'pending_payment' || set.status === 'in_cart')) {
       const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: opts.actor });
       if (out.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: out.kind === 'expired' ? 410 : 409 });
@@ -233,7 +235,7 @@ export async function openInitialEventForAssignment(
        JOIN billing_events be ON be.product_set_id = ps.id AND be.gym_id = ps.gym_id
         AND be.event_type = 'payment_recorded'
         AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
-      WHERE ps.gym_id = ? AND ps.user_membership_id = ? AND ps.status = 'pending_payment'
+      WHERE ps.gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND ps.status = 'pending_payment'
       ORDER BY be.id DESC LIMIT 1`,
     [gymId, userMembershipId]);
   if (!rows[0]) return null;
@@ -245,24 +247,17 @@ export async function openInitialEventForAssignment(
 }
 
 /**
- * A Pending Payment assignment closed or deleted before it was paid takes its
- * pending version with it (`cancelInFlight()`: the initial event and its
- * attempts go too, which that function allows only while no payment is in
- * flight or settled). `false` when the version could not be cancelled — the
- * payment is unresolved — so the caller refuses the close rather than leaving a
- * paid-for version behind.
+ * #2125 M6b-32 — the in-flight (`pending_payment`) ProductSet an assignment is linked to, or null.
+ * Closing a pending assignment cancels and keeps it (`cancelPendingProductSet()`), so the
+ * assignment's plan snapshot survives.
  */
-export async function cancelPendingSetForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<boolean> {
-  const { rows } = await tx.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment') FOR UPDATE`,
-    [gymId, userMembershipId]);
-  if (!rows[0]) return true;
-  const setId = Number(rows[0].id);
-  // The initial event's attempts are the set's: delete the ones nothing settled
-  // (a `cancelInFlight` sees only the request the set names).
-  const out = await cancelInFlight(tx, gymId, setId);
-  if (out.kind === 'unresolved') return false;
-  return true;
+export async function pendingSetIdForAssignment(
+  exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
+): Promise<number | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT id FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'pending_payment'
+      ORDER BY id DESC LIMIT 1`, [gymId, userMembershipId]);
+  return rows[0] ? Number(rows[0].id) : null;
 }
 
 /** The ProductSet an assignment is linked to (pending first, then active), for a writer that needs one. */
@@ -270,7 +265,7 @@ export async function productSetIdForAssignment(
   exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
 ): Promise<number | null> {
   const { rows } = await exec.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('pending_payment','active')
+    `SELECT id FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status IN ('pending_payment','active')
       ORDER BY FIELD(status, 'pending_payment', 'active'), id DESC LIMIT 1`, [gymId, userMembershipId]);
     return rows[0] ? Number(rows[0].id) : null;
 }
@@ -298,8 +293,8 @@ export async function activeProductSetIdForMember(
  */
 export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows: sets } = await tx.query<any>(
-    `SELECT id, starts_at FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' LIMIT 1`, [gymId, userMembershipId]);
+    `SELECT id, starts_at FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'active' LIMIT 1`, [gymId, userMembershipId]);
   const set = sets[0];
   if (!set) return;
   const { rows: ev } = await tx.query<any>(
@@ -346,8 +341,8 @@ export type ReconfigureOutcome =
 /** The Active ProductSet an assignment is the projection of, if any. */
 export async function projectedSetFor(tx: Tx, gymId: string, userMembershipId: number): Promise<{ id: number; owner_member_id: number; membership_plan_id: number | null } | null> {
   const { rows } = await tx.query<any>(
-    `SELECT id, owner_member_id, membership_plan_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' FOR UPDATE`, [gymId, userMembershipId]);
+    `SELECT id, owner_member_id, membership_plan_id FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'active' FOR UPDATE`, [gymId, userMembershipId]);
   return rows[0] ? { id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id), membership_plan_id: rows[0].membership_plan_id != null ? Number(rows[0].membership_plan_id) : null } : null;
 }
 
@@ -360,7 +355,7 @@ async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
   const direct = await projectedSetFor(tx, gymId, userMembershipId);
   if (direct) return { ...direct, linked: userMembershipId };
   const { rows } = await tx.query<any>(
-    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.user_membership_id
+    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.status = 'active'
         AND EXISTS (SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
@@ -404,8 +399,11 @@ export async function reconfigureProjected(
   const set = await editableSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
   // A closed assignment is not a live projection whatever its set says: the
-  // legacy route refuses the edit with the reason it always gave.
-  const { rows: umRows } = await tx.query<any>('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [input.userMembershipId, input.gymId]);
+  // legacy route refuses the edit with the reason it always gave. #2125 M6b-27: the status is the
+  // assignment's current plan snapshot's, never the `user_memberships` row's.
+  const { rows: umRows } = await tx.query<any>(
+    `SELECT pa.status FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+    [input.gymId, input.userMembershipId]);
   if (!umRows[0] || (isCancelledAssignmentStatus(umRows[0].status) || ['expired', 'superseded'].includes(umRows[0].status))) return { kind: 'not_projected' };
 
   const blocking = await loadEditLock(input.gymId, set.owner_member_id, todayUtc());
@@ -419,7 +417,7 @@ export async function reconfigureProjected(
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
 
   const draftId = created.productSet.id;
-  await tx.query('UPDATE product_sets SET user_membership_id = NULL, ends_at = ? WHERE id = ?',
+  await tx.query('UPDATE product_sets SET plan_assignment_id = NULL, ends_at = ? WHERE id = ?',
     [setRows[0].ends_at == null ? null : dateOnly(setRows[0].ends_at), draftId]);
   await cloneConfiguration(tx, input.gymId, set.id, draftId);
 
@@ -429,8 +427,8 @@ export async function reconfigureProjected(
   if ('kind' in edited) return edited;
 
   // The new version takes over the same assignment (it is the same contract).
-  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [set.linked, draftId]);
-  await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [set.id]);
+  await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [set.linked, draftId]);
+  await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [set.id]);
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
   return { kind: 'ok', productSetId: draftId };
@@ -439,12 +437,15 @@ export async function reconfigureProjected(
 /**
  * #1196 / #2481: the day a cancelled plan keeps its entitlement through (inclusive) — the end of the last paid
  * period, or yesterday when nothing was paid. The one computation behind both the cancellation and the
- * confirmation dialog's preview, so the date shown is the date applied.
+ * confirmation dialog's preview, so the date shown is the date applied. #2125 M6b-27: the assignment's
+ * start date is its current plan snapshot's,
+ * found since M6b-37 through the set's anchor `ps.plan_assignment_id`.
  */
 export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
   const { rows: info } = await tx.query<any>(
-    `SELECT um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
-       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+    `SELECT pa.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+       FROM product_sets ps
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
       WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
   const paidThrough = await loadPaidThrough(tx, gymId, set.id);
   return cancellationEndDate({
@@ -507,12 +508,33 @@ export function applyPromotionMutator(gymId: string, actor: string | null, promo
  * `status = 'revoked'` and the moment, because the Billing Events ledger tags a
  * charge by the window the application stood (#635 stage 9) — a committed
  * version's history is never a deletion.
+ *
+ * #2880: an application that is still a Draft's **reference** (no snapshot taken,
+ * `draftReferenceApplicationSql()`) is a provisional selection, not history, so
+ * removing it deletes the row — with any earlier removed reference of the same
+ * Promotion on that Draft — and re-applying it inserts one fresh reference. A
+ * confirmed application a clone Draft carries over is revoked exactly as before.
  */
 export function revokePromotionMutator(promotionId: number, actor: string | null) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
     // M4b-2: revoking changes the plan's applied Promotions, so the version takes its own copy of the plan.
     const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
     await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+    const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
+    const { rows: standingRef } = await tx.query<{ id: number }>(
+      `SELECT ump.id FROM user_membership_promotions ump
+        WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
+          AND ${draftReferenceApplicationSql('ump')}
+        FOR UPDATE`,
+      [draft.gym_id, draft.id, promotionId]);
+    if (standingRef.length > 0) {
+      await tx.query(
+        `DELETE ump FROM user_membership_promotions ump
+          WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ?
+            AND ump.status IN ('applied', 'revoked') AND ump.snapshot_confirmed_at IS NULL`,
+        [draft.gym_id, draft.id, promotionId]);
+      return { ok: true };
+    }
     const { rowCount } = await tx.query(
       `UPDATE user_membership_promotions
           SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),

@@ -18,6 +18,10 @@ import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
+import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
+import { initialEventNameFor } from './billing-event-name';
+import { loadInitialChargeTaxRates } from './initial-charge-taxes';
+import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -82,7 +86,7 @@ export async function loadEditLockForDraftEdit(
   const { rows } = await db.query<any>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'draft' AND ps.user_membership_id IS NULL
+        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'in_cart' AND ps.plan_assignment_id IS NULL
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`}
       LIMIT 1`,
     [gymId, ownerMemberId]);
@@ -106,6 +110,11 @@ export interface InitialCharge {
   simulationLines: SimulationLine[];
   lines: BillingEventLineRow[];
   scheduleKey: string | null;
+  /**
+   * #2949 stage 5: the standalone cart purchases (no Product Set carries them) this charge includes,
+   * with the amount each was charged at; the initial event joins exactly these.
+   */
+  cartPurchases?: Array<{ id: number; amount: number; product_name: string }>;
 }
 
 /** What the version's first obligation is: every line dated on its start date. */
@@ -118,7 +127,11 @@ export async function initialCharge(
    * a payment that was made, so they are not asked for again. A line whose
    * quantity grew owes the added units alone.
    */
-  opts: { previousProductSetId?: number | null } = {},
+  opts: {
+    previousProductSetId?: number | null;
+    /** #2949 stage 5: include the owner's standalone cart purchases (default); a plan preview does not. */
+    includeCart?: boolean;
+  } = {},
 ): Promise<InitialCharge | null> {
   // #2125 stage 14: a version that adds a plan beside the running ones carries them as inherited
   // native snapshots; what it owes now is the added plan alone, never the plans already paid.
@@ -127,6 +140,16 @@ export async function initialCharge(
   let first = planned.filter((e) => e.date === startsAt);
 
   if (opts.previousProductSetId != null) {
+    // #2899: the fee of a plan this version *adds* (one the previous version does not carry) is
+    // owed now, as it is for a first version; only an inherited plan's fee was already paid.
+    // `newPlansOnly` is the one answer to "which plans are new" (`planSnapshotInheritedSql()`).
+    const added = (await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: true }))
+      .filter((e) => e.date === startsAt);
+    const addedFees = new Map<string, SimulationLine[]>();
+    for (const e of added) {
+      const fees = e.lines.filter((l) => l.kind === 'membership_fee');
+      if (fees.length > 0) addedFees.set(`${e.scheduleKey ?? '~'}|${e.date}`, fees);
+    }
     const previous = await planScheduledEvents(gymId, opts.previousProductSetId, startsAt, 1, exec);
     const carried = new Map<number, number>();
     for (const e of previous.filter((p) => p.date === startsAt)) {
@@ -152,21 +175,43 @@ export async function initialCharge(
           }];
         }),
       }))
+      .map((e) => {
+        const key = `${e.scheduleKey ?? '~'}|${e.date}`;
+        const fees = addedFees.get(key);
+        addedFees.delete(key);
+        return fees ? { ...e, lines: [...fees, ...e.lines] } : e;
+      })
       .filter((e) => e.lines.length > 0);
+    // An added plan's fee on a schedule the rest of the version has nothing on that day.
+    for (const e of added) {
+      const fees = addedFees.get(`${e.scheduleKey ?? '~'}|${e.date}`);
+      if (fees) first.push({ ...e, lines: fees });
+    }
   }
   // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
-  const purchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
+  const setPurchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
+  // #2949 stage 5: and so are the owner's standalone cart purchases, so one Save & Pay pays the whole cart.
+  const cart = opts.includeCart === false ? [] : await cartPurchasesForCharge(exec, gymId, productSetId);
+  const purchases = [...setPurchases, ...cart.map(cartChargeLine)];
   if (first.length === 0 && purchases.length === 0) return null;
-  const lines = [...first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l))), ...purchases.map((p) => p.line)];
+  // #2947: every line states the rate it is charged at and its net, after its discounts.
+  const engineLines = first.flatMap((e) => e.lines);
+  const taxRates = await loadInitialChargeTaxRates(exec, gymId, productSetId,
+    engineLines.map((l) => l.product_id).filter((id): id is number => id != null));
+  const lines = [
+    ...engineLines.map((l) => withLineTax(lineFromSimulation(l), initialLineTaxRate(l, taxRates))),
+    ...purchases.map((p) => withLineTax(p.line, initialLineTaxRate({ ...p.line, frozen_rate: p.line.tax_rate_percent }, taxRates))),
+  ];
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
   return {
     amount: linesTotal(lines), lines,
     simulationLines: [...first.flatMap((e) => e.lines), ...purchases.map((p) => p.simulation)],
     scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null,
+    cartPurchases: cart.map((p) => ({ id: p.id, amount: p.amount, product_name: p.product_name })),
   };
 }
 
-async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
+export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
   for (const l of lines) {
     await tx.query(
       `INSERT INTO billing_event_lines
@@ -198,6 +243,10 @@ export async function ensureInitialEvent(tx: Tx, input: {
     [input.gymId, input.productSetId]);
   if (existing[0]) {
     await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, Number(existing[0].id));
+    await joinCartPurchasesToEvent(tx, {
+      gymId: input.gymId, productSetId: input.productSetId, billingEventId: Number(existing[0].id),
+      purchases: input.charge.cartPurchases ?? [], actor: input.actor,
+    });
     return Number(existing[0].id);
   }
 
@@ -208,17 +257,25 @@ export async function ensureInitialEvent(tx: Tx, input: {
       [input.productSetId, input.charge.scheduleKey]);
     scheduleId = rows[0] ? Number(rows[0].id) : null;
   }
+  // #2940: the event's name, decided once from what this version adds or modifies.
+  const name = await initialEventNameFor(tx, input.gymId, input.productSetId, input.startsAt,
+    (input.charge.cartPurchases ?? []).map((p) => p.product_name));
   const { insertId } = await tx.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, event_type, source, amount, charge_type_id, product_set_id, schedule_id,
+       (gym_id, member_id, event_type, name, source, amount, charge_type_id, product_set_id, schedule_id,
         period_start, billing_date, is_scheduled, created_by)
-     VALUES (?, ?, 'payment_recorded', 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
-    [input.gymId, input.memberId, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
+     VALUES (?, ?, 'payment_recorded', ?, 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
+    [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
       scheduleId, input.startsAt, input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
   // #2746: each one-time Product of the cart reaches its payment through this event.
   await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, insertId);
+  // #2949 stage 5: and so does every standalone cart purchase the charge included (pending_payment now).
+  await joinCartPurchasesToEvent(tx, {
+    gymId: input.gymId, productSetId: input.productSetId, billingEventId: insertId,
+    purchases: input.charge.cartPurchases ?? [], actor: input.actor,
+  });
   return insertId;
 }
 

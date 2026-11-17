@@ -19,8 +19,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, getAssignmentConfig
-} from './helpers';
+  request, legacyAssignmentQuery, getAssignmentConfig, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -35,6 +34,13 @@ function dayOffset(days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * #2964 — assignments start on the 1st of the current month, a date of the billing calendar, so
+ * the first period is a whole one; a start between calendar dates is prorated up to the next one
+ * (`billing-calendar-alignment.test.ts`), which is not what this file asserts.
+ */
+const PLAN_START = `${dayOffset(0).slice(0, 8)}01`;
 
 async function createPlan(gymId: string, price = 100): Promise<number> {
   const { insertId } = await db.query(
@@ -72,7 +78,7 @@ const assign = async (gymId: string, planId: number, memberId: number) => {
     .post('/user-memberships')
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0) });
+    .send({ member_id: memberId, membership_plan_id: planId, starts_at: PLAN_START });
   if (res.status === 201) await activateAssignment(gymId, res.body.id);
   return res;
 };
@@ -177,6 +183,7 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
   it('refuses to edit a terminal assignment', async () => {
     const closed = await assignPlan(gymId);
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [closed.umId]);
+    await snapshotTestAssignment(closed.umId); // #2125 M6b-27: the bridge reads the plan snapshot
     const res = await putFeeBenefit(gymId, closed.umId, { action: 'percentage_discount', value: 10 });
     expect(res.status).toBe(400);
     const { rows } = await (async () => ({ rows: [await getAssignmentConfig(closed.umId)] }))();

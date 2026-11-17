@@ -120,7 +120,7 @@ describe('loadProductSetSimulationAssignments', () => {
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
+       VALUES (?, ?, ?, 'in_cart', ?, ?, 30, 1, 'month', 0)`,
       [gymId, owner, second, NEXT_FIRST, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id, Number(added));
 
@@ -181,7 +181,7 @@ describe('planScheduledEvents with several plans (#2125 stage 7)', () => {
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, 'draft', ?, ?, 30, 1, 'month', 0)`,
+       VALUES (?, ?, ?, 'in_cart', ?, ?, 30, 1, 'month', 0)`,
       [gymId, owner, second, NEXT_FIRST, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id, Number(added));
 
@@ -210,7 +210,7 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
           membership_fee_price, recurring_billing_interval, recurring_billing_unit, auto_renew)
-       VALUES (?, ?, ?, 'draft', ?, ?, 31, 1, 'month', 0)`,
+       VALUES (?, ?, ?, 'in_cart', ?, ?, 31, 1, 'month', 0)`,
       [gymId, owner, second, joinStart, snap[0].schedule_id]);
     await linkPlanSnapshots(set.id, Number(added));
 

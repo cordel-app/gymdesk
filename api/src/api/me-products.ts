@@ -39,6 +39,7 @@ import { violatesOnePerMember } from './one-per-member';
 import { resolveAssignedMember } from './product-assignee';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
+import { attachTranslations as attachServiceTranslations } from './professional-service-translations';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { withPurposeParam } from '../domain/storedCards';
@@ -58,7 +59,8 @@ import {
   type ProductPurchaseFields,
   type PurchaseBlock,
   PENDING_PURCHASE_STATUS,
-  DRAFT_PURCHASE_STATUS,
+  IN_CART_PURCHASE_STATUS,
+  PURCHASE_CART_TTL_MINUTES,
   PRODUCT_PURCHASE_SOURCE,
   describeProductPurchase,
   productPurchaseBlock,
@@ -72,6 +74,7 @@ import {
   loadAppliedPromotions,
   loadPromotionOffers,
 } from './member-product-promotions';
+import { productPurchaseEventNameFor } from './billing-event-name';
 
 /**
  * A catalogue row plus what this member has done about it (stage 2, §6) and
@@ -194,6 +197,40 @@ export async function memberProductCatalogue(
       applied_promotion: live && applied.get(live.id) ? withMedia(applied.get(live.id)!) : null,
     };
   });
+}
+
+/**
+ * #2905 — the Professional Services the Add Product catalogue may be narrowed
+ * by: every service active for the gym (the rule `validateProfessionalServiceIds()`
+ * applies to a new link) that at least one Product the member may be shown is
+ * linked to. A service no visible Product grants is left out, since choosing it
+ * could only answer an empty list. Read from the **unfiltered** catalogue, so the
+ * options do not shrink while a filter is applied. Names are in the request's
+ * locale, falling back to the base text (#2110).
+ */
+export async function memberProductServiceFilters(
+  gymId: string,
+  locale: string,
+): Promise<Array<{ id: number; name: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT DISTINCT ps.id, ps.name, ps.description
+       FROM professional_services ps
+       JOIN product_professional_services pps ON pps.professional_service_id = ps.id
+       JOIN products p ON p.id = pps.product_id
+       LEFT JOIN gym_professional_services gps
+         ON gps.professional_service_id = ps.id AND gps.gym_id = ?
+      WHERE p.gym_id = ? AND ${memberProductCatalogueSql('p')}
+        AND (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL
+        AND COALESCE(gps.status, 'active') = 'active'`,
+    [gymId, gymId, ...memberProductCatalogueParams(), gymId],
+  );
+  const localized = await attachServiceTranslations(
+    rows.map((r: any) => ({ id: Number(r.id), name: String(r.name), description: r.description ?? null })),
+    locale,
+  );
+  return localized
+    .map((s) => ({ id: s.id, name: s.display_name }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
 }
 
 /** #2424 — a Promotion's description and pictures (thumbnail first, master for the preview). */
@@ -358,6 +395,8 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
   const pending = await hasPendingPurchase(input.gymId, input.memberId, input.productId);
   // #1657: staff hold at most one draft per Product; a payment started *from*
   // that draft is the one place it is expected.
+  // #2962: a standalone cart purchase past its two hours is gone before it can block a new one.
+  if (input.staff) await expireStandalonePurchaseDrafts({ gymId: input.gymId, memberId: input.memberId });
   if (input.staff && (await hasDraftPurchase(input.gymId, input.memberId, input.productId, ignoreDraftId))) {
     throw new PurchaseRefused('draft_exists');
   }
@@ -451,7 +490,7 @@ export async function writeDraftPurchase(
 ): Promise<number> {
   const { row, snapshot, price, actorName, assignedMemberId } = resolved;
   const id = await insertPurchase(tx, {
-    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: DRAFT_PURCHASE_STATUS,
+    gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: IN_CART_PURCHASE_STATUS,
     productName: snapshot.product_name, productType: snapshot.product_type,
     billingFrequency: snapshot.billing_frequency, units: snapshot.units,
     amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
@@ -483,12 +522,55 @@ export async function deletePurchaseDraft(
     if (!(await lockPurchase(tx, gymId, memberId, purchaseId))) return false;
     const { rows } = await tx.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
-      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, DRAFT_PURCHASE_STATUS],
+      [...memberPurchaseSnapshotParams(gymId, memberId), purchaseId, IN_CART_PURCHASE_STATUS],
     );
     if (!rows[0]) return false;
-    await deletePurchase(tx, gymId, purchaseId, { memberId, status: DRAFT_PURCHASE_STATUS });
+    await deletePurchase(tx, gymId, purchaseId, { memberId, status: IN_CART_PURCHASE_STATUS });
     return true;
   });
+}
+
+/** #2962 — one standalone cart purchase the expiry deleted. */
+export interface ExpiredPurchaseDraft { id: number; gymId: string; memberId: number }
+
+/**
+ * #2962 — deletes every standalone one-time Product in the cart (a `draft` purchase no Product Set
+ * carries) older than `PURCHASE_CART_TTL_MINUTES`, exactly as **Cancel** deletes one: it was never
+ * paid for, so nothing is charged and no payment, Billing Event or completed purchase is touched.
+ * A purchase in a member's cart Product Set follows the set's own expiry (#1325) and is left alone.
+ *
+ * Run for one member before any read or write of their cart (so an expired purchase is never shown,
+ * counted as held or paid) and for the whole deployment by `POST /billing/cleanup`. Each purchase is
+ * deleted in a transaction of its own and re-checked under its lock, so one that was paid for in
+ * between survives. The age is compared in SQL against `UTC_TIMESTAMP()`, as the Product Set's is.
+ */
+export async function expireStandalonePurchaseDrafts(
+  scope: { gymId: string; memberId: number } | null = null,
+): Promise<ExpiredPurchaseDraft[]> {
+  const age = `status = ? AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`;
+  const predicate = scope ? `gym_id = ? AND member_id = ? AND ${age}` : age;
+  const params = scope ? [scope.gymId, scope.memberId, IN_CART_PURCHASE_STATUS] : [IN_CART_PURCHASE_STATUS];
+  const { rows } = await db.query<{ id: number; gym_id: string; member_id: number }>(
+    `SELECT mp.id, mp.gym_id, mp.member_id FROM ${purchaseSnapshotsSql(predicate, { notInProductSet: true })} mp`,
+    purchaseSnapshotParams(params),
+  );
+  const expired: ExpiredPurchaseDraft[] = [];
+  for (const r of rows) {
+    const gymId = r.gym_id;
+    const memberId = Number(r.member_id);
+    const id = Number(r.id);
+    const deleted = await db.transaction(async (tx) => {
+      if (!(await lockPurchase(tx, gymId, memberId, id))) return false;
+      const { rows: fresh } = await tx.query<{ id: number }>(
+        `SELECT mp.id FROM ${purchaseSnapshotsSql(`gym_id = ? AND member_id = ? AND source_id = ? AND ${age}`, { notInProductSet: true })} mp`,
+        purchaseSnapshotParams([gymId, memberId, id, IN_CART_PURCHASE_STATUS]),
+      );
+      if (!fresh[0]) return false;
+      return deletePurchase(tx, gymId, id, { memberId, status: IN_CART_PURCHASE_STATUS });
+    }).catch((err) => { console.error(`expireStandalonePurchaseDrafts: purchase ${id} failed`, err); return false; });
+    if (deleted) expired.push({ id, gymId, memberId });
+  }
+  return expired;
 }
 
 /** One draft of this Product for this member, other than `ignoreId`. */
@@ -503,7 +585,7 @@ async function hasDraftPurchase(
     `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
       WHERE mp.product_id = ? AND mp.status = ?
       LIMIT 2`,
-    [...memberPurchaseSnapshotParams(gymId, memberId), productId, DRAFT_PURCHASE_STATUS],
+    [...memberPurchaseSnapshotParams(gymId, memberId), productId, IN_CART_PURCHASE_STATUS],
   );
   return rows.some((r) => Number(r.id) !== ignoreId);
 }
@@ -575,7 +657,7 @@ export async function startProductPurchase(
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
-        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: DRAFT_PURCHASE_STATUS });
+        await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
       }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to
@@ -602,11 +684,14 @@ export async function startProductPurchase(
       // has an event and the webhook settles it instead of inserting one. It
       // belongs to no ProductSet and no assignment — a one-off purchase sits
       // outside the version chain — so both keys stay NULL.
+      // #2940: a one-time purchase is named for its Product.
+      const eventName = await productPurchaseEventNameFor(
+        tx, input.gymId, snapshot.product_name, new Date().toISOString().slice(0, 10));
       const { insertId: billingEventId } = await tx.query(
         `INSERT INTO billing_events
-           (gym_id, member_id, payer_member_id, event_type, amount, charge_type_id, source, created_by)
-         VALUES (?, ?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
-        [input.gymId, input.memberId, payer.payerMemberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
+           (gym_id, member_id, payer_member_id, event_type, name, amount, charge_type_id, source, created_by)
+         VALUES (?, ?, ?, 'product_purchase', ?, ?, ?, 'provider', ?)`,
+        [input.gymId, input.memberId, payer.payerMemberId, eventName, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
       );
       await tx.query(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,
@@ -695,18 +780,24 @@ export async function completeProductPurchase(
   );
   if (!pending[0]) return 0;
   const purchasedOn = DateTime.now().setZone(resolveTimeZone(pending[0].time_zone)).toISODate()!;
-  const validUntil = computeValidUntil({
-    purchasedOn,
-    validityDays: pending[0].validity_days == null ? null : Number(pending[0].validity_days),
-    billingFrequency: pending[0].billing_frequency ?? null,
-  });
+  // #2949 stage 4: a cart checkout pays several standalone purchases with one request, so every
+  // pending purchase the request reaches becomes the member's (one, for any other purchase).
   // #2126 stage 5b: the record and the snapshot move together (`updatePurchase()`), still
   // constrained on `pending_payment`. The provider's confirmation is the system's act (#1182).
-  return updatePurchase(
-    tx, gymId, Number(pending[0].id),
-    { status: 'active', purchasedAt: new Date(), validUntil },
-    SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
-  );
+  let changed = 0;
+  for (const p of pending) {
+    const validUntil = computeValidUntil({
+      purchasedOn,
+      validityDays: p.validity_days == null ? null : Number(p.validity_days),
+      billingFrequency: p.billing_frequency ?? null,
+    });
+    changed += await updatePurchase(
+      tx, gymId, Number(p.id),
+      { status: 'active', purchasedAt: new Date(), validUntil },
+      SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
+    );
+  }
+  return changed;
 }
 
 /**
@@ -760,9 +851,11 @@ export async function cancelAbandonedPurchases(
   const { rows: abandoned } = await conn.query<{ id: number; gym_id: string }>(
     // #2746: a purchase in a member's cart is paid by its Product Set's checkout and moves with it
     // (`set-purchases.ts`), so its request expiring returns it to the Draft rather than cancelling it.
+    // #2949 stage 5: so does a standalone one a Product Set's checkout joined (its event is the set's).
     `SELECT mp.id, mp.gym_id FROM ${purchaseSnapshotsSql('status = ?', { notInProductSet: true })} mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
-      WHERE pr.status IN ('expired', 'failed')`,
+       LEFT JOIN billing_events be ON be.id = pr.billing_event_id AND be.gym_id = pr.gym_id
+      WHERE pr.status IN ('expired', 'failed') AND be.product_set_id IS NULL`,
     purchaseSnapshotParams([PENDING_PURCHASE_STATUS]),
   );
   let cancelled = 0;

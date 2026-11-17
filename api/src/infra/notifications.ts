@@ -59,7 +59,13 @@ export type NotificationType =
   /** #1984 stage 2b-1: the other participant of a Duo booking cancelled it, which cancels the whole group. */
   | 'booking_cancelled_by_partner'
   /** #2324: the Activity was deactivated or deleted; one alert per member, never per event. */
-  | 'activity_discontinued';
+  | 'activity_discontinued'
+  /**
+   * #2901: another member of the family cancelled a Family Only booking, which
+   * cancels it for every family member attending. The payload's
+   * `cancelled_by_name` names who cancelled; the cancelling member gets none.
+   */
+  | 'family_booking_cancelled';
 
 export interface NotificationPayload {
   title: string;

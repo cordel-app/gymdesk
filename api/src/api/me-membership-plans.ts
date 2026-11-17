@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { AWAITING_STAFF_SETUP, awaitsStaffSetup } from '../domain/shoppingCart';
 import { refuseUnlessMayAdd } from './family-add-rights';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -302,12 +303,16 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // #1288 §28: no plan is replaced from the Members App, and a Draft or a
     // payment already in flight blocks a second purchase (stage 4's shared Draft
     // takes a plan through `POST /me/product-sets/:id/plans` instead).
-    const { rows: inFlight } = await db.query<{ id: number }>(
-      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')
-        AND NOT (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
+    const { rows: inFlight } = await db.query<{ id: number; status: string; plan_assignment_id: number | null }>(
+      `SELECT id, status, plan_assignment_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
+        AND NOT (status = 'in_cart' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
       [gymId, memberId],
     );
     if (inFlight[0]) {
+      // #2895: a Draft staff are still setting up is not a membership awaiting the member's payment.
+      if (awaitsStaffSetup(inFlight[0])) {
+        return res.status(409).json({ error: AWAITING_STAFF_SETUP, message: 'Your gym is still preparing a change to your plan.' });
+      }
       return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
     }
     const choice = await judgeMemberPlanChoice(gymId, memberId, planId, promotionIds, req.body?.declined_benefits);
@@ -350,8 +355,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // nothing is owed today, its free activation (`…/activate`). The figure
     // reported is the initial charge that commit will take (`initialCharge()`,
     // the same engine), so the member sees it before paying.
-    const charge = await initialCharge(gymId, setId, startsAt);
-    const status = 'draft';
+    // #2949 stage 5: the plan's own charge; the standalone cart purchases are paid with it at Save & Pay.
+    const charge = await initialCharge(gymId, setId, startsAt, db, { includeCart: false });
+    const status = 'in_cart';
 
     const { rows: planNameRows } = await db.query<{ name: string }>(
       'SELECT name FROM membership_plans WHERE id = ?', [planId]);

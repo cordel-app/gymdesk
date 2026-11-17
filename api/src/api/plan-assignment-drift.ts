@@ -14,6 +14,7 @@
  * snapshot) or a change made before that stage (`npm run plan-assignments:settle`).
  */
 import { assignmentPlanSnapshotId } from './assignment-config';
+import { assignmentModifierSql } from '../domain/planAssignments';
 
 type Exec = { query: <T = any>(sql: string, params?: any[]) => Promise<{ rows: T[] }> };
 
@@ -111,6 +112,63 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
        JOIN plan_snapshots cfg ON cfg.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}
       WHERE (${anyDiffers})${scope('um')}
       ORDER BY um.id`);
+
+  // #2125 M6b-31: the Member card's plan history reports the latest modifier across the
+  // assignment's snapshots (`assignmentModifierSql()`), so that is what is compared, never one
+  // snapshot's own pair (a shared snapshot keeps the modifier it was written with).
+  await add('modifier_mismatch',
+    'An assignment whose latest snapshot modifier differs from the user_memberships row.',
+    `SELECT um.id AS user_membership_id, um.gym_id, pa.assignment_id,
+            um.modified_by AS assignment_modified_by, ${assignmentModifierSql('modified_by')} AS snapshot_modified_by
+       FROM user_memberships um
+       JOIN plan_snapshots pa ON pa.id = (SELECT MIN(x.id) FROM plan_snapshots x
+                                           WHERE x.source_user_membership_id = um.id AND x.gym_id = um.gym_id)
+      WHERE (${differs('um.modified_at', assignmentModifierSql('modified_at'))}
+             OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
+      ORDER BY um.id`);
+
+  // #2125 M6b-33: an applied Promotion's re-keyed assignment (migration 430) must be the anchor of
+  // the user_memberships row it still names (none when it names none, or no snapshot names it).
+  await add('promotion_assignment_mismatch',
+    'A Promotion application whose assignment_id is not the anchor of its user_membership_id.',
+    `SELECT ump.id AS application_id, ump.gym_id, ump.user_membership_id, ump.assignment_id,
+            a.anchor_id AS expected_assignment_id
+       FROM user_membership_promotions ump
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
+                   GROUP BY gym_id, source_user_membership_id) a
+              ON a.gym_id = ump.gym_id AND a.um_id = ump.user_membership_id
+      WHERE NOT (ump.assignment_id <=> a.anchor_id)${scope('ump')}
+      ORDER BY ump.id`);
+
+  // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
+  await add('payment_request_assignment_mismatch',
+    'A payment request whose plan_assignment_id is not the anchor of its user_membership_id.',
+    `SELECT pr.id AS payment_request_id, pr.gym_id, pr.user_membership_id, pr.plan_assignment_id,
+            a.anchor_id AS expected_plan_assignment_id
+       FROM payment_requests pr
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
+                   GROUP BY gym_id, source_user_membership_id) a
+              ON a.gym_id = pr.gym_id AND a.um_id = pr.user_membership_id
+      WHERE NOT (pr.plan_assignment_id <=> a.anchor_id)${scope('pr')}
+      ORDER BY pr.id`);
+
+  // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
+  // names. Since migration 441 dropped `product_sets.user_membership_id`, the check is that the link
+  // is the lowest snapshot naming the same legacy assignment as the snapshot it points at.
+  await add('product_set_assignment_mismatch',
+    'A Product Set whose plan_assignment_id is not the anchor (lowest snapshot) of the assignment it names.',
+    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.plan_assignment_id,
+            a.anchor_id AS expected_plan_assignment_id
+       FROM product_sets ps
+       JOIN plan_snapshots cur ON cur.id = ps.plan_assignment_id
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
+                   GROUP BY gym_id, source_user_membership_id) a
+              ON a.gym_id = cur.gym_id AND a.um_id = cur.source_user_membership_id
+      WHERE cur.source_user_membership_id IS NULL OR NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
+      ORDER BY ps.id`);
 
   return { clean: checks.every((c) => c.count === 0), checks };
 }

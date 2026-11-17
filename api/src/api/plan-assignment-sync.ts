@@ -15,7 +15,8 @@
  * sides disagree, and M6b-4 may only drop `user_memberships` once that is clean.
  */
 import type { Tx } from '../infra/db';
-import { planSnapshotSharedSql } from './plan-snapshot-lines';
+import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 type Exec = { query: Tx['query'] };
 
@@ -58,26 +59,161 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
 }
 
 /**
+ * #2125 M6b-33 — keeps `user_membership_promotions.assignment_id` (migration 430) in step with
+ * `user_membership_id`, the source of truth until M6b-4: an application of a legacy assignment takes
+ * that assignment's anchor (the lowest snapshot id naming it, the rule `stampAssignmentIds()` gives
+ * the snapshots), and none where no snapshot names it. Asked per assignment, never as a scan. The
+ * writer that clears an application's `user_membership_id` (`attachApplications()`) clears this column
+ * in the same statement. Nothing reads it yet; `plan-assignments:validate` reports drift
+ * (`promotion_assignment_mismatch`).
+ */
+export async function syncPromotionAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
+  const ids = [...new Set(userMembershipIds)];
+  if (ids.length === 0) return;
+  const anchors = await anchorsOf(exec, gymId, ids);
+  for (const umId of ids) {
+    const anchor = anchors.get(umId) ?? null;
+    await exec.query(
+      `UPDATE user_membership_promotions SET assignment_id = ?
+        WHERE gym_id = ? AND user_membership_id = ? AND NOT (assignment_id <=> ?)`,
+      [anchor, gymId, umId, anchor]);
+  }
+}
+
+/**
+ * #2125 M6b-34 — keeps `payment_requests.plan_assignment_id` (migration 431) in step with
+ * `user_membership_id`, the source of truth until M6b-4, by the rule `syncPromotionAssignmentIds()`
+ * uses: a request of a legacy assignment takes that assignment's anchor, none where no snapshot names
+ * it. A new request is stamped with the attempt (`recordPaymentAttempt()`); this re-sync, from
+ * `syncPlanAssignment()`, covers an anchor that moved since. Nothing reads the column yet;
+ * `plan-assignments:validate` reports drift (`payment_request_assignment_mismatch`).
+ */
+export async function syncPaymentRequestAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
+  const ids = [...new Set(userMembershipIds)];
+  if (ids.length === 0) return;
+  const anchors = await anchorsOf(exec, gymId, ids);
+  for (const umId of ids) {
+    const anchor = anchors.get(umId) ?? null;
+    await exec.query(
+      `UPDATE payment_requests SET plan_assignment_id = ?
+        WHERE gym_id = ? AND user_membership_id = ? AND NOT (plan_assignment_id <=> ?)`,
+      [anchor, gymId, umId, anchor]);
+  }
+}
+
+/**
+ * #2125 M6b-36 / M6b-46 — the SET clause that links a Product Set to an assignment: its
+ * `plan_assignment_id` (migration 432) becomes the anchor (lowest plan snapshot id) naming the
+ * legacy assignment id bound to its one `?`. An unaliased `product_sets` is required. None where no
+ * snapshot names that assignment yet; `nameAssignmentSnapshot()` names the set's primary snapshot and
+ * re-links it. Since M6b-46 (migration 441) `product_sets.user_membership_id` is gone and this is the
+ * only way a set is linked; a writer that unlinks a set writes `plan_assignment_id = NULL`.
+ */
+export const PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL =
+  `plan_assignment_id = (SELECT MIN(pa_anchor.id) FROM plan_snapshots pa_anchor
+                          WHERE pa_anchor.gym_id = product_sets.gym_id
+                            AND pa_anchor.source_user_membership_id = ?)`;
+
+/** The lowest snapshot naming the same legacy assignment as the set's current anchor (none kept). */
+const RENORMALIZED_ANCHOR_SQL =
+  `COALESCE((SELECT MIN(pa_norm.id) FROM plan_snapshots pa_cur
+               JOIN plan_snapshots pa_norm ON pa_norm.gym_id = pa_cur.gym_id
+                                         AND pa_norm.source_user_membership_id = pa_cur.source_user_membership_id
+              WHERE pa_cur.id = product_sets.plan_assignment_id), plan_assignment_id)`;
+
+/**
+ * #2125 M6b-36 / M6b-46 — keeps `product_sets.plan_assignment_id` pointing at its assignment's
+ * anchor, the lowest snapshot naming the legacy assignment (the rule `stampAssignmentIds()` gives
+ * every snapshot): the given sets, and every set whose anchor names one of the given assignments, are
+ * re-pointed at that lowest snapshot when a lower one names the assignment after the set was linked.
+ * The link itself is `plan_assignment_id` since M6b-46; this never links or unlinks a set.
+ */
+export async function syncProductSetAssignmentIds(
+  exec: Exec, gymId: string, productSetIds: number[], userMembershipIds: number[] = [],
+): Promise<void> {
+  const sets = new Set(productSetIds.map(Number));
+  const ums = [...new Set(userMembershipIds)];
+  if (ums.length > 0) {
+    // Found by a plain read first and written by primary key, so the UPDATE locks only those rows
+    // (a range scan of the gym's sets under a concurrent writer deadlocks).
+    const { rows } = await exec.query<{ id: number }>(
+      `SELECT ps.id FROM product_sets ps
+         JOIN plan_snapshots pa_um ON pa_um.id = ps.plan_assignment_id
+        WHERE ps.gym_id = ? AND pa_um.source_user_membership_id IN (${ums.map(() => '?').join(',')})`,
+      [gymId, ...ums]);
+    for (const r of rows) sets.add(Number(r.id));
+  }
+  const ids = [...sets];
+  if (ids.length === 0) return;
+  // The comparison repeats the subquery rather than naming the column, so a set already in step is not
+  // written (its row lock is not taken by a re-sync that changes nothing).
+  await exec.query(
+    `UPDATE product_sets SET plan_assignment_id = ${RENORMALIZED_ANCHOR_SQL}
+      WHERE id IN (${ids.map(() => '?').join(',')}) AND gym_id = ? AND plan_assignment_id IS NOT NULL
+        AND NOT (plan_assignment_id <=> ${RENORMALIZED_ANCHOR_SQL})`,
+    [...ids, gymId]);
+}
+
+/**
+ * #2125 M6b-44 — names a Product Set's primary plan snapshot after the assignment the set is linked
+ * to, so the assignment's anchor exists as soon as the link does. Called by every writer that links a
+ * set to a `user_memberships` row, once the set's primary snapshot is the one it will keep (after it
+ * was frozen, cloned or owned), and before the set is synced. Until M6b-43 the snapshot sync named it
+ * from `product_sets.user_membership_id`; since M6b-44 the sync reads the set's anchor, which only
+ * exists once a snapshot names the assignment, so a link to an assignment no snapshot names yet (a new
+ * Draft assignment, one the projection opens) is named here. A snapshot another Product Set links is
+ * left alone, as the sync always left it, and the set's `plan_assignment_id` is re-derived after.
+ */
+export async function nameAssignmentSnapshot(
+  exec: Exec, gymId: string, productSetId: number, userMembershipId: number,
+): Promise<void> {
+  const primary = await primaryPlanSnapshotId(exec, gymId, productSetId);
+  if (primary != null && !(await isPlanSnapshotShared(exec, productSetId, primary))) {
+    await exec.query(
+      `UPDATE plan_snapshots SET source_user_membership_id = ?
+        WHERE id = ? AND gym_id = ? AND NOT (source_user_membership_id <=> ?)`,
+      [userMembershipId, primary, gymId, userMembershipId]);
+    await stampAssignmentIds(exec, gymId, [primary]);
+  }
+  await exec.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
+    [userMembershipId, productSetId, gymId]);
+}
+
+/** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
+export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
+  if (userMembershipId == null) return null;
+  return (await anchorsOf(exec, gymId, [Number(userMembershipId)])).get(Number(userMembershipId)) ?? null;
+}
+
+/**
  * Keeps the identity and the assignment-level facts of a Product Set's plan snapshots in step with
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
  *
  * Identity is stamped on every snapshot the set links. The facts (`purchased_at`,
- * `replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by`) are copied only onto a
+ * `replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by` and, since M6b-30,
+ * `modified_at`/`modified_by`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
  * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
  * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number; replaces: number | null; shared: number }>(
-    `SELECT s.id, um.replaces_user_membership_id AS replaces,
+  const { rows } = await tx.query<{ id: number; um_id: number | null; replaces: number | null; shared: number }>(
+    `SELECT s.id, s.source_user_membership_id AS um_id, um.replaces_user_membership_id AS replaces,
             ${planSnapshotSharedSql('s.id', 'psj.product_set_id')} AS shared
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
        LEFT JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    await syncProductSetAssignmentIds(tx, gymId, [productSetId]);
+    return;
+  }
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
+  const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
+  await syncPromotionAssignmentIds(tx, gymId, umIds);
+  await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
+  await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
   const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
@@ -88,7 +224,9 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
               s.replace_on_activation = um.replace_on_activation,
               s.replaces_assignment_id = ?,
               s.deleted_at = um.deleted_at,
-              s.deleted_by = um.deleted_by
+              s.deleted_by = um.deleted_by,
+              s.modified_at = um.modified_at,
+              s.modified_by = um.modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
       [r.replaces != null ? (replaced.get(Number(r.replaces)) ?? null) : null, r.id, gymId]);
   }
@@ -122,4 +260,65 @@ export async function deleteUnlinkedPlanSnapshots(exec: Exec, gymId: string, pla
       [gymId, ...ids]);
     await exec.query(`DELETE FROM plan_snapshots WHERE gym_id = ? AND id IN (${idMarks})`, [gymId, ...ids]);
   }
+}
+
+/**
+ * #2125 M6b-35 — the replacement an assignment carries, read from its **current** plan snapshot
+ * (`assignmentOfLegacyIdSql()`): whether its activation replaces (`replace_on_activation`, written
+ * by Save & Pay) and which assignment it was raised to replace (`replaces_assignment_id`, written by
+ * `assign-new-plan`), reported as that assignment's legacy id because the live conflicts it is
+ * matched against (`replacementTargets()`) are still named by it. The commit and Save & Pay read it
+ * after locking the legacy row, so the snapshot they read is the one their own transaction wrote.
+ * An assignment no snapshot states replaces nothing.
+ */
+export async function assignmentReplacementOf(
+  exec: Exec, gymId: string, userMembershipId: number,
+): Promise<{ replaceOnActivation: boolean; replacesUserMembershipId: number | null }> {
+  const { rows } = await exec.query<{ replace_on_activation: number | null; replaces: number | null }>(
+    `SELECT pa.replace_on_activation,
+            (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+              WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces
+       FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}
+      LIMIT 1`, [gymId, userMembershipId]);
+  const r = rows[0];
+  return {
+    replaceOnActivation: Number(r?.replace_on_activation ?? 0) === 1,
+    replacesUserMembershipId: r?.replaces == null ? null : Number(r.replaces),
+  };
+}
+
+/**
+ * #2125 M6b-35 — writes an assignment's replacement on its own plan snapshots (those no other
+ * Product Set links, the rule every write of the sync keeps): `replaces_assignment_id` as the anchor
+ * of the replaced assignment, `replace_on_activation` as given. A field left `undefined` is not
+ * written. `user_memberships` still carries both columns (dual-written until the table goes); this
+ * is the writer the reader above depends on, so it does not wait for a later sync.
+ */
+export async function writeAssignmentReplacement(
+  exec: Exec, gymId: string, userMembershipId: number,
+  change: { replaceOnActivation?: boolean; replacesUserMembershipId?: number | null },
+): Promise<void> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (change.replaceOnActivation !== undefined) {
+    sets.push('s.replace_on_activation = ?');
+    params.push(change.replaceOnActivation ? 1 : 0);
+  }
+  if (change.replacesUserMembershipId !== undefined) {
+    const replaced = change.replacesUserMembershipId;
+    const anchor = replaced == null ? null
+      : (await anchorsOf(exec, gymId, [Number(replaced)])).get(Number(replaced)) ?? null;
+    sets.push('s.replaces_assignment_id = ?');
+    params.push(anchor);
+  }
+  if (sets.length === 0) return;
+  await exec.query(
+    `UPDATE plan_snapshots s SET ${sets.join(', ')}
+      WHERE s.gym_id = ? AND s.source_user_membership_id = ?
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j1
+                         JOIN product_set_plan_snapshots j2
+                           ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id
+                        WHERE j1.plan_snapshot_id = s.id)`,
+    [...params, gymId, userMembershipId]);
 }

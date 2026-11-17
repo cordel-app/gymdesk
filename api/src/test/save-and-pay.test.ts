@@ -10,6 +10,7 @@
 // and each writes the money and the status in one transaction.
 
 import crypto from 'crypto';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -70,7 +71,7 @@ async function createFreePlan(): Promise<number> {
 async function assignDraft(memberId: number, planId: number, startsAt = '2026-03-01'): Promise<number> {
   const res = await api('post', '/user-memberships').send({ member_id: memberId, membership_plan_id: planId, starts_at: startsAt });
   expect(res.status).toBe(201);
-  expect(res.body.status).toBe('draft');
+  expect(res.body.status).toBe('in_cart');
   return res.body.id;
 }
 
@@ -153,8 +154,8 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
     expect(res.body.lifecycle_status).toBe('pending_payment');
     expect(Number(res.body.membership_fee)).toBe(30);
     expect(await statusChanges(umId)).toEqual([
-      { previous_status: null, new_status: 'draft' },
-      { previous_status: 'draft', new_status: 'pending_payment' },
+      { previous_status: null, new_status: 'in_cart' },
+      { previous_status: 'in_cart', new_status: 'pending_payment' },
     ]);
   });
 
@@ -184,7 +185,7 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
     const refused = await api('post', `/user-memberships/${second}/save-and-pay`).send({});
     expect(refused.status).toBe(409);
     expect(refused.body.error).toBe('active_plan_exists');
-    expect(await status(second)).toBe('draft');
+    expect(await status(second)).toBe('in_cart');
 
     const confirmed = await api('post', `/user-memberships/${second}/save-and-pay`).send({ confirm: true });
     expect(confirmed.status).toBe(200);
@@ -269,7 +270,7 @@ describe('the payment activates', () => {
     expect(pr[0].status).toBe('completed');
     // #1325 PR 3: the activation hands the assignment to a ProductSet, whose
     // persisted events are the schedule.
-    const { rows: sets } = await db.query("SELECT status FROM product_sets WHERE user_membership_id = ? AND status = 'active'", [umId]);
+    const { rows: sets } = await db.query(`SELECT status FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [umId]);
     expect(sets).toHaveLength(1);
     const changes = await statusChanges(umId);
     expect(changes[changes.length - 1]).toEqual({ previous_status: 'pending_payment', new_status: 'active' });
@@ -297,7 +298,7 @@ describe('the payment activates', () => {
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.amount FROM billing_events be
          JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`,
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.event_type = 'payment_recorded'`,
       [umId],
     );
     expect(rows).toHaveLength(1);

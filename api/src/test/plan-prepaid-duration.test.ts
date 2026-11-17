@@ -41,8 +41,8 @@ let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 
 /** Fixed start date, so the projected dates in the assertions are stable. */
-const START = '2026-03-10';
-const MONTHS = ['2026-03-10', '2026-04-10', '2026-05-10', '2026-06-10', '2026-07-10'];
+const START = '2026-03-01';
+const MONTHS = ['2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01'];
 
 async function createMember(gymId: string): Promise<number> {
   const { insertId } = await db.query(
@@ -239,7 +239,11 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
     // carries no benefit and says how many periods it covers.
     expect(feeBenefits(body, 1)).toEqual([]);
     const prepaid = feeLines(body)[1];
-    expect(prepaid).toMatchObject({ quantity: 2, regular_price: 200, actual_charge: 200, prepaid_periods: 2 });
+    // #2883 — one fee covering two periods: the quantity is the fee count, the periods are their own field.
+    expect(prepaid).toMatchObject({
+      quantity: 1, unit_price: 200, regular_price: 200, actual_charge: 200, prepaid_periods: 2,
+      prepaid_cadence: { interval: 1, unit: 'month' },
+    });
     expect(feeBenefits(body, 0)[0]).toMatchObject({ period_status: 'free_plan' });
     expect(feeBenefits(body, 2)).toEqual([]);
   });

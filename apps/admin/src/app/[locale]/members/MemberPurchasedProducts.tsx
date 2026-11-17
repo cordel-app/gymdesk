@@ -56,6 +56,7 @@ import { AddProductDetails, EditDraftLineForm, addProductDraftCells, useAddProdu
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
+  cartCountdown,
   filterPurchasesByStatus,
   PURCHASE_STATUS_FILTER_DEFAULT,
   PURCHASE_STATUS_FILTER_VALUES,
@@ -104,7 +105,7 @@ export function MemberPurchasedProducts({
   });
   // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
   const [discarding, setDiscarding] = useState<PurchasedProduct | null>(null);
-  const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'));
+  const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'), t('purchase_cart_expired_error'));
   const draftBusy = draft.busy;
   const draftError = draft.error;
   const payDraft = (item: PurchasedProduct) => draft.pay(item.id);
@@ -279,7 +280,10 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_status'),
       mobile: 'keep',
       render: (item) => (
-        <StatusBadge status={displayPurchaseStatus(item)} label={t(`purchase_status_${displayPurchaseStatus(item)}` as any)} />
+        <>
+          <StatusBadge status={displayPurchaseStatus(item)} label={t(`purchase_status_${displayPurchaseStatus(item)}` as any)} />
+          {item.cart_expires_at && <CartCountdown expiresAt={item.cart_expires_at} onExpired={onChanged} />}
+        </>
       ),
     },
     {
@@ -288,7 +292,7 @@ export function MemberPurchasedProducts({
       mobile: 'actions',
       render: (item) => {
         const billingPath = billingEventPath(locale, item);
-        const isOneTimeDraft = item.status === 'draft' && item.source !== 'recurring';
+        const isOneTimeDraft = item.status === 'in_cart' && item.source !== 'recurring';
         const draftLineId = editableDraftLineId(item);
         return (
           <ContextMenu
@@ -384,7 +388,7 @@ export function MemberPurchasedProducts({
             const cells: Record<string, React.ReactNode> = {
               ...c,
               promotion_benefit: draftBenefit,
-              status: <StatusBadge key="status" status="draft" label={t('add_product_draft_badge')} />,
+              status: <StatusBadge key="status" status="in_cart" label={t('add_product_draft_badge')} />,
             };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}
@@ -518,4 +522,32 @@ function date(value: string | null, settings: GymFormatSettings): string {
   if (!value) return '—';
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? '—' : formatGymDate(parsed, settings);
+}
+
+/**
+ * #2962 — the time left before a standalone one-time Product leaves the cart, ticking every second.
+ * At zero it asks the page to reload: the server deletes the expired purchase on that read, so the
+ * row disappears and can no longer be paid for. Decides nothing (`cartCountdown()` formats).
+ */
+function CartCountdown({ expiresAt, onExpired }: { expiresAt: string; onExpired: () => void }) {
+  const t = useTranslations('members');
+  const [now, setNow] = useState(() => Date.now());
+  const countdown = cartCountdown(expiresAt, now);
+  const expired = countdown?.expired ?? false;
+  useEffect(() => {
+    if (expired) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [expired]);
+  useEffect(() => {
+    if (expired) onExpired();
+    // onExpired is the page's reload; only the transition to zero triggers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expired]);
+  if (!countdown) return null;
+  return (
+    <div role="timer" aria-live="off" style={{ ...cardMutedTextStyle, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+      {expired ? t('purchase_cart_expired') : t('purchase_cart_expires_in', { time: countdown.label })}
+    </div>
+  );
 }

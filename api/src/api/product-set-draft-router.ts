@@ -11,7 +11,8 @@ import { commitCharge } from './product-set-checkout';
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
-import { loadProductSetSimulationAssignment } from './product-set-configuration';
+import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { mergeBillingEventForecasts } from './me-billing-forecast';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
@@ -165,9 +166,13 @@ export async function simulationHandler(req: any, res: any, next: any) {
   const { gymId } = getTenantContext(req);
   try {
     const id = Number((req.params as any).id);
-    const assignment = await loadProductSetSimulationAssignment(gymId, id);
-    if (!assignment) return res.status(404).json({ error: 'not_found' });
-    const base = computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true });
+    // #2899: every Membership Plan of the version, each through the engine on its own and merged
+    // by date — the loader `planScheduledEvents()` persists from, so a Draft that adds a plan beside
+    // a running one forecasts both rather than whichever plan the one-plan loader happened to read.
+    const assignments = await loadProductSetSimulationAssignments(gymId, id);
+    if (assignments.length === 0) return res.status(404).json({ error: 'not_found' });
+    const base = mergeBillingEventForecasts(assignments.map((assignment) =>
+      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true })));
 
     // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
     // committing asks for today, the figure Save & Pay charges) and the member's
@@ -176,7 +181,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
       `SELECT id, status, owner_member_id, previous_product_set_id, starts_at
          FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
     const set = rows[0];
-    if (!set || (set.status !== 'draft' && set.status !== 'pending_payment')) return res.json(base);
+    if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(base);
 
     let initial: { date: string; lines: BillingEventLine[] } | null = null;
     try {
@@ -189,7 +194,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
     const { rows: oneOffRows } = await db.query<any>(
       // #2126 stage 3d: the one-time purchases are read from the Product snapshot tables.
       `SELECT product_id, product_name, amount, list_price FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
-        WHERE status IN ('draft', 'pending_payment')
+        WHERE status IN ('in_cart', 'pending_payment')
         ORDER BY id`, memberPurchaseSnapshotParams(gymId, Number(set.owner_member_id)));
     const oneOffs = oneOffRows.map((r: any) => ({
       product_id: r.product_id != null ? Number(r.product_id) : null,

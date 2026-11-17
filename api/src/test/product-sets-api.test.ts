@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 
@@ -78,7 +79,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
 
     const created = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: planId, starts_at: TODAY });
     expect(created.status).toBe(201);
-    expect(created.body.status).toBe('draft');
+    expect(created.body.status).toBe('in_cart');
     const id = created.body.id;
 
     // A second in-flight version is refused.
@@ -185,7 +186,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     expect(del.status).toBe(404);
     const still = await auth(request.get(`/product-sets/${c.body.id}`));
     expect(still.status).toBe(200);
-    expect(still.body.status).toBe('draft');
+    expect(still.body.status).toBe('in_cart');
   });
 
   it('is tenant scoped', async () => {
@@ -213,7 +214,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     // The Member card reads the in-flight version beside the assignments.
     const cfg1 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
     expect(cfg1.status).toBe(200);
-    expect(cfg1.body.product_sets).toEqual([expect.objectContaining({ id: c.body.id, status: 'draft', expired: false })]);
+    expect(cfg1.body.product_sets).toEqual([expect.objectContaining({ id: c.body.id, status: 'in_cart', expired: false })]);
 
     const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);
@@ -275,7 +276,7 @@ describe('Save & Pay on an assignment’s version moves the assignment to Pendin
       .send({ member_id: m, membership_plan_id: await plan(12), starts_at: TODAY });
     expect(created.status).toBe(201);
     const { rows: sets } = await db.query<any>(
-      'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, created.body.id]);
+      `SELECT id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, created.body.id]);
 
     const pay = await auth(request.post(`/product-sets/${sets[0].id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);

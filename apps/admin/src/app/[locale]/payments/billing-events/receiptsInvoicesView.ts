@@ -106,3 +106,20 @@ export function fullInvoiceFormError(form: FullInvoiceForm): string | null {
   if (!form.customer_address.trim()) return 'full_inv_address_required';
   return null;
 }
+
+/**
+ * #2935: the ⋮ menu's *View Refund Receipt* entries, one per Refund Receipt the
+ * API reported (oldest first). With several partial refunds each entry names
+ * its number so they can be told apart. Refund Receipts are issued by the
+ * system when a refund completes, so there is no Generate entry.
+ */
+export function refundReceiptMenuEntries(
+  receipts: { id: number; receipt_number: string }[] | null | undefined,
+): { id: number; labelKey: 'view_refund_receipt' | 'view_refund_receipt_numbered'; number: string }[] {
+  const list = receipts ?? [];
+  return list.map((r) => ({
+    id: r.id,
+    labelKey: list.length > 1 ? 'view_refund_receipt_numbered' : 'view_refund_receipt',
+    number: r.receipt_number,
+  }));
+}

@@ -1,9 +1,11 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { syncPromotionAssignmentIds, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 import { cancellationStatusFor } from '../domain/assignmentStatus';
+import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -66,7 +68,7 @@ async function closeAssignment(
 ) {
   const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
     `SELECT status, member_id, ends_at FROM user_memberships
-      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
+      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','in_cart') FOR UPDATE`,
     [id, gymId]);
   if (!before[0]) return;
   // #2659 stage 2: a member's cancellation keeps the plan running to its last
@@ -96,7 +98,8 @@ async function closeAssignment(
 
 const SET_SELECT = `
   SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.previous_product_set_id,
-         ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
+         ps.membership_plan_id, ps.starts_at, ps.ends_at,
+         ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id,
          ps.created_by,
          snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
          snap.pay_beforehand_periods, snap.auto_renew,
@@ -121,7 +124,7 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
   // that version's history, keyed by it, and stop being the assignment's.
   await tx.query(
     `UPDATE user_membership_promotions
-        SET user_membership_id = NULL
+        SET user_membership_id = NULL, assignment_id = NULL
       WHERE gym_id = ? AND user_membership_id = ? AND product_set_id <> ?`,
     [gymId, umId, productSetId]);
   await tx.query(
@@ -130,6 +133,8 @@ async function attachApplications(tx: Tx, gymId: string, productSetId: number, u
         SET user_membership_id = ?
       WHERE ump.gym_id = ? AND ump.product_set_id = ?`,
     [umId, gymId, productSetId]);
+  // #2125 M6b-33: the re-keyed column follows in the same transaction.
+  await syncPromotionAssignmentIds(tx, gymId, [umId]);
 }
 
 /**
@@ -163,8 +168,10 @@ export async function projectActiveProductSet(
   let previousUmId: number | null = set.user_membership_id != null ? Number(set.user_membership_id) : null;
   let previousPlanId: number | null = null;
   if (previousUmId == null && set.previous_product_set_id != null) {
+    // #2125 M6b-43: the predecessor's link is read off its anchor, as the set's own is (SET_SELECT).
     const { rows: prev } = await tx.query<{ user_membership_id: number | null }>(
-      'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
+      `SELECT ${productSetLegacyAssignmentIdSql('prev')} AS user_membership_id
+         FROM product_sets prev WHERE prev.id = ? AND prev.gym_id = ?`,
       [set.previous_product_set_id, gymId]);
     previousUmId = prev[0]?.user_membership_id != null ? Number(prev[0].user_membership_id) : null;
   }
@@ -178,7 +185,7 @@ export async function projectActiveProductSet(
   // A plan-less version has no assignment; a previous one is closed.
   if (set.membership_plan_id == null) {
     if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
-    await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [productSetId]);
+    await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [productSetId]);
     return null;
   }
 
@@ -204,7 +211,7 @@ export async function projectActiveProductSet(
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
     await attachApplications(tx, gymId, productSetId, umId);
-    if (continuedUmId != null) await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
+    if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
     return umId;
   }
 
@@ -214,8 +221,10 @@ export async function projectActiveProductSet(
   // index is never held by two rows; this runs at activation (payment settled),
   // so a failed or abandoned payment never reaches it.
   if (previousUmId != null) {
+    // #2125 M6b-28: the predecessor's start date is its current plan snapshot's.
     const { rows: prev } = await tx.query<{ starts_at: Date | string }>(
-      'SELECT starts_at FROM user_memberships WHERE id = ? AND gym_id = ?', [previousUmId, gymId]);
+      `SELECT pa.starts_at FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+      [gymId, previousUmId]);
     let endsAt = startsAt;
     if (previousPlanId === Number(set.membership_plan_id) && prev[0]) {
       // Same plan: both rows must not count as entitled on the same day.
@@ -241,7 +250,9 @@ export async function projectActiveProductSet(
   // ids, the grant snapshots) belong to the assignment it projects.
   await attachApplications(tx, gymId, productSetId, umId);
 
-  await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
+  await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+  // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
+  await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
   return umId;
 }
 

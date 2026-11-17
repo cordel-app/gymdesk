@@ -205,15 +205,15 @@ for (const kind of KINDS) {
       expect(res.body.total).toBeGreaterThan(2);
     });
 
-    it('creates a System goal with 201, a null gym_id, no slug and the superadmin actor', async () => {
+    it('creates a System goal with 201, a null gym_id, a slug from its name and the superadmin actor', async () => {
       const name = `PGL Created ${RUN}`;
       const res = await createGoal(path, table, { name, description: '  Platform goal  ' });
       expect(res.status).toBe(201);
       expect(res.body.name).toBe(name);
       expect(res.body.gym_id).toBeNull();
-      // The router never writes `slug`: a System goal added later carries the
-      // single name entered here, not an invented locale-key handle.
-      expect(res.body.slug).toBeNull();
+      // #2951 stage 3: generated once from the name. It is not a seeded slug, so
+      // no locale key resolves for it and the goal is shown under its own name.
+      expect(res.body.slug).toBe(`pgl-created-${RUN}`.toLowerCase());
       expect(res.body.status).toBe('active');
       expect(res.body.description).toBe('Platform goal');
       expect(res.body.created_by).toBe('Super Admin');
@@ -224,7 +224,7 @@ for (const kind of KINDS) {
       expect(list.body.items.some((g: any) => g.id === res.body.id)).toBe(true);
     });
 
-    it('renames a System goal with 200 and never writes a slug', async () => {
+    it('renames a System goal with 200 and never rewrites its slug', async () => {
       const created = await createGoal(path, table, { name: `PGL Rename Before ${RUN}` });
       expect(created.status).toBe(201);
 
@@ -234,12 +234,12 @@ for (const kind of KINDS) {
         .send({ name: `PGL Rename After ${RUN}`, slug: 'hacked_slug' });
       expect(renamed.status).toBe(200);
       expect(renamed.body.name).toBe(`PGL Rename After ${RUN}`);
-      expect(renamed.body.slug).toBeNull();
+      expect(renamed.body.slug).toBe(created.body.slug);
       expect(renamed.body.modified_by).toBe('Super Admin');
       expect(renamed.body.modified_at).not.toBeNull();
 
       const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${systemTable(table)} WHERE id = ?`, [created.body.id]);
-      expect(rows[0].slug).toBeNull();
+      expect(rows[0].slug).toBe(`pgl-rename-before-${RUN}`.toLowerCase());
     });
 
     it('soft-deletes a System goal, hides it, lists it under ?status=deleted, then 409s', async () => {

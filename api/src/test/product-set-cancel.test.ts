@@ -33,7 +33,7 @@ vi.mock('../payments', async (importOriginal) => {
 
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, linkTestSetToAssignment, request, TEST_AUTH_HEADER } from './helpers';
 
 const SECRET = 'test-product-set-cancel';
 let gymId: string;
@@ -86,7 +86,7 @@ async function pending(memberId?: number, opts: { assignment?: boolean } = {}) {
     ({ insertId: umId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
       [gymId, ownerId, TODAY]));
-    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, c.body.id]);
+    await linkTestSetToAssignment(Number(c.body.id), Number(umId));
   }
   const { rows } = await db.query<any>(
     `SELECT pr.id, pr.provider_ref, pr.provider_order FROM payment_requests pr

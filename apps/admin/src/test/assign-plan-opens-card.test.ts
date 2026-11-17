@@ -29,6 +29,6 @@ describe('Assign plan opens the new card (#1692)', () => {
   });
   it('a Draft is editable in the configuration sections, as the API allows (#1813)', () => {
     const cfg = read('components', 'assignedPlan', 'AssignedPlanConfiguration.tsx');
-    expect(cfg).toMatch(/const EDITABLE_STATUSES = \['draft', 'active', 'paused'\]/);
+    expect(cfg).toMatch(/const EDITABLE_STATUSES = \['in_cart', 'active', 'paused'\]/);
   });
 });

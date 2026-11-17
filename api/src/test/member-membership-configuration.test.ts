@@ -20,6 +20,7 @@
 // come back is the whole history with `is_live` true on at most one row.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -27,7 +28,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery, snapshotTestAssignment } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -104,6 +105,8 @@ async function createAssignment(
   );
   // #1325 PR 3c: the next billing date is the ProductSet's scheduled event.
   if (nextBillingDate) await seedScheduledEvent(gymId, memberId, insertId, nextBillingDate);
+  // #2125 M6b-31: the plan history reads the assignment's current plan snapshot.
+  await snapshotTestAssignment(insertId);
   return insertId;
 }
 
@@ -435,9 +438,9 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
     expect(res.body.promotions).toBeUndefined();
     // Both applications are untouched in the database — only the read changed.
     const { rows } = await db.query(
-      `SELECT DISTINCT ps.user_membership_id AS user_membership_id, ump.promotion_id
+      `SELECT DISTINCT ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id, ump.promotion_id
          FROM user_membership_promotions ump JOIN product_sets ps ON ps.id = ump.product_set_id
-        WHERE ps.user_membership_id IN (?, ?) AND ump.status = 'applied'`,
+        WHERE (${productSetOfLegacyAssignmentSql('?', 'ps')} OR ${productSetOfLegacyAssignmentSql('?', 'ps')}) AND ump.status = 'applied'`,
       [standardUm, premiumUm],
     );
     expect(rows.map((r: any) => Number(r.promotion_id)).sort(byNumber))
@@ -781,6 +784,7 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH, created_at = ? WHERE id = ?',
       ['2022-01-01 09:00:00', lapsedUm],
     );
+    await snapshotTestAssignment(lapsedUm);
     const rejoinUm = await createAssignment(gymId, memberId, newPlan, { startsAt: '2026-09-01' });
 
     const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
@@ -817,14 +821,14 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
       return insertId as number;
     };
     const first = await insert('superseded');
-    const second = await insert('draft', first);
+    const second = await insert('in_cart', first);
 
     const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
     const res = await getConfiguration(gymId, memberId);
     const after = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
 
     expect(res.status).toBe(200);
-    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', created_by: 'Tester' });
+    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'in_cart', created_by: 'Tester' });
     expect(res.body.past_product_sets.map((p: any) => p.id)).toEqual([first]);
     expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
   });

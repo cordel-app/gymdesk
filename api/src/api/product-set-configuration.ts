@@ -1,3 +1,4 @@
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
@@ -28,7 +29,9 @@ import { productSetHistoryIds } from './product-set-history';
 import { insertRecurringLine, ownRecurringLine, updateRecurringLine } from './recurring-line-writer';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershipFeeScope';
+import { feeMemberDiscountsSql, parseFeeMemberDiscounts } from '../domain/feeMemberDiscounts';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
+import { recurringEventNameFor } from './billing-event-name';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -180,7 +183,9 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   // #2125 stage 17: the plan snapshot is written directly (it is the plan's configuration). A version
   // being re-snapshotted updates its primary snapshot; otherwise the snapshot is created.
   const { rows: setInfo } = await tx.query<any>(
-    'SELECT owner_member_id, status, starts_at, ends_at, user_membership_id, created_by FROM product_sets WHERE id = ? AND gym_id = ?',
+    `SELECT ps.owner_member_id, ps.status, ps.starts_at, ps.ends_at,
+            ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.created_by
+       FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId]);
   const set = setInfo[0];
   const values = [
@@ -366,7 +371,8 @@ export async function loadProductSetSimulationAssignment(
             snap.pay_beforehand_periods, snap.auto_renew,
             snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
             sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
-            ${membershipFeeUnitsSql('snap')} AS membership_fee_units
+            ${membershipFeeUnitsSql('snap')} AS membership_fee_units,
+            ${feeMemberDiscountsSql('snap')} AS fee_member_discounts
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id AND psj.entitlement_only = 0
@@ -466,6 +472,7 @@ export async function loadProductSetSimulationAssignment(
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     // #2834 — one fee per beneficiary for a `per_member` snapshot, one otherwise.
     membershipFeeUnits: Number(row.membership_fee_units ?? 1),
+    membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
     // #2125 M5c — the same alignment `loadProductSetSimulationAssignments()` gives the plan, so a
     // forecast read through this loader shows the dates the persisted obligations fall on.
     ...(row.anchor_date != null && toDateOnly(row.anchor_date) < startsAt
@@ -639,12 +646,14 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
       if (paidUp.length > 0) continue;
     }
 
+    // #2940: a recurring obligation is named for its billing period.
+    const name = await recurringEventNameFor(tx, gymId, scheduleId, event.date);
     const { insertId } = await tx.query(
       `INSERT INTO billing_events
-         (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,
+         (gym_id, member_id, event_type, name, source, amount, product_set_id, schedule_id,
           period_start, period_end, billing_date, is_scheduled, created_by)
-       VALUES (?, ?, 'charge_created', 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [gymId, setRows[0].owner_member_id, amount, productSetId, scheduleId,
+       VALUES (?, ?, 'charge_created', ?, 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
         event.date, event.periodEnd, event.date, actor],
     );
     for (const l of lines) {

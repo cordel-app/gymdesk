@@ -32,8 +32,14 @@ async function exists(id: number): Promise<boolean> {
   return rows.length === 1;
 }
 
+// #2125 M6b-46: migration 441 dropped `product_sets.user_membership_id`, which the migration's live-set
+// count reads; against today's schema that link is the set's anchor's legacy id.
+const ANCHOR_LINK = '(SELECT anc.source_user_membership_id FROM plan_snapshots anc WHERE anc.id = product_sets.plan_assignment_id)';
 const run = (gyms: string[]) =>
-  knex.transaction((trx) => migration.deleteCancelledWithoutEndDate(trx, { gymIds: gyms }));
+  knex.transaction((trx) => migration.deleteCancelledWithoutEndDate({
+    raw: (sql: string, bindings?: unknown) => trx.raw(
+      sql.replace(/(FROM product_sets\s+WHERE )user_membership_id\b/, `$1${ANCHOR_LINK}`), bindings as any),
+  }, { gymIds: gyms }));
 
 beforeAll(async () => {
   knex = knexFactory({ client: 'mysql2', connection: process.env.DATABASE_URL });
@@ -59,7 +65,7 @@ describe('migration 297 — cancelled assignments without an end date (#1694)', 
   it('deletes only cancelled rows with ends_at NULL, keeps payment requests, audits each delete, and is re-runnable', async () => {
     const target = await assignment(gymId, 'cancelled', null);
     const cancelledWithEnd = await assignment(gymId, 'cancelled', '2026-02-01');
-    const keep = await Promise.all(['active', 'paused', 'draft', 'expired', 'pending_payment']
+    const keep = await Promise.all(['active', 'paused', 'in_cart', 'expired', 'pending_payment']
       .map((s) => assignment(gymId, s, null)));
     const otherGym = await assignment(otherGymId, 'cancelled', null);
 

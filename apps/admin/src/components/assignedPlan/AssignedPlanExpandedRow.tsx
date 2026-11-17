@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -60,14 +60,14 @@ import { ReviewChangesModal } from '@/app/[locale]/members/ReviewChangesModal';
 // `draft` is in it because closing is how a Draft is discarded — there is no
 // expiry sweep (Q1a), so staff need a way out of a Draft that is not activation.
 // #1108 stage 2: a Pending Payment row is discarded the way a Draft is.
-const CLOSEABLE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'];
+const CLOSEABLE_STATUSES = ['in_cart', 'pending_payment', 'active', 'paused'];
 
 // The statuses whose configuration can still be edited at all — a cancelled or
 // expired assignment bills nothing further, so Edit mode has nothing to offer
 // and the action is not shown. Mirrors SNAPSHOT_EDITABLE_STATUSES in
 // api/src/api/user-memberships.ts, which #1108 §2 widened with `draft`: a Draft
 // is the pre-checkout configuration state and is *fully* editable.
-const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
+const EDITABLE_STATUSES = ['in_cart', 'active', 'paused'];
 
 function fmtDate(iso: string | null, s: GymFormatSettings) {
   return iso ? formatGymDate(iso, s) : null;
@@ -350,13 +350,13 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // the Assigned Plans page outside the mode (#897).
   // #1533: a Draft is the one assignment configured from the Member card too —
   // it has not been committed, so it keeps the full body, `⋮` and Edit mode.
-  const hostEmbedded = embedded && detail.status !== 'draft';
+  const hostEmbedded = embedded && detail.status !== 'in_cart';
   const editing = !hostEmbedded && isEditing;
 
   // #1108: a Draft is committed through Save & Pay (stage 2), the one action it
   // offers beyond editing and discarding it; a Pending Payment row offers the
   // two ways its first payment arrives.
-  const canSaveAndPay = detail.status === 'draft';
+  const canSaveAndPay = detail.status === 'in_cart';
   const canRecordPayment = detail.status === 'pending_payment';
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
@@ -374,7 +374,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         label: isEditing ? t('action_done_editing') : t('action_edit'),
         onClick: () => setIsEditing(!isEditing),
         ...write,
-      }].filter(() => !(isEditing && detail.status === 'draft'))
+      }].filter(() => !(isEditing && detail.status === 'in_cart'))
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
     // #2553: the plan's own Billing Events, across every ProductSet of its chain.
@@ -432,7 +432,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           ))}
         </div>
         {/* #2879 stage 2 — a Draft's Members per Membership and beneficiaries, in Edit mode only. */}
-        {editing && detail.status === 'draft' && (
+        {editing && detail.status === 'in_cart' && (
           <DraftBeneficiariesEditor
             assignedPlanId={detail.id}
             canWrite={canWritePayments}
@@ -510,6 +510,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         planAccess={detail.plan_access ?? []}
         feeScope={detail.membership_fee_scope ?? null}
         beneficiaries={detail.members ?? []}
+        currentFeeByMember={detail.membership_fee_by_member ?? null}
         cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}
@@ -585,11 +586,17 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                   row,
                   t('timeline_no_charge'),
                   t('tax_included_suffix'),
-                  // #946 — the first Pre-paid period collects the whole Pre-paid
-                  // Duration, so the cell says how many periods its amount covers.
-                  row.prepaidPeriods != null
-                    ? t('timeline_prepaid_periods', { count: row.prepaidPeriods })
-                    : null,
+                  // #946 / #2883 — the first Pre-paid period collects the whole Pre-paid
+                  // Duration, so the cell says how many periods its amount covers, in
+                  // the assignment's own cadence.
+                  prepaidPaymentLabel(
+                    row.prepaidPeriods,
+                    detail.billing_policy ? {
+                      interval: detail.billing_policy.recurring_billing_interval,
+                      unit: detail.billing_policy.recurring_billing_unit,
+                    } : null,
+                    tFreq as any,
+                  ),
                 ),
                 tone: exampleTimelineRowTone(row),
               }))}
@@ -653,7 +660,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
       {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in
           place of Done Editing. */}
-      {editing && detail.status === 'draft' && (
+      {editing && detail.status === 'in_cart' && (
         <div style={inlineActionsRowStyle}>
           <button type="button" style={secondaryBtnSmall} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
             onClick={() => setDiscardOpen(true)}>{t('action_draft_cancel')}</button>

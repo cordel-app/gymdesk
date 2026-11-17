@@ -74,14 +74,17 @@ beforeAll(async () => {
   );
   sessionId = s;
   await db.query(
-    `INSERT INTO calendar_event_bookings (gym_id, member_id, calendar_event_id, status, booked_at) VALUES (?, ?, ?, 'booked', UTC_TIMESTAMP())`,
-    [gymId, memberId, sessionId],
+    `INSERT INTO calendar_event_bookings (gym_id, member_id, calendar_event_id, status, booked_at, professional_service_id) VALUES (?, ?, ?, 'booked', UTC_TIMESTAMP(), ?)`,
+    [gymId, memberId, sessionId, duo],
   );
 });
 
 describe('professional_services on the member reads (#2500)', () => {
   const check = (list: any[]) => {
     expect(list.map((s) => [s.id, s.capacity]).sort()).toEqual([[duo, 2], [single, 1]].sort());
+    // #2903: booked and remaining are the service's own, never the event's 10 places.
+    expect(list.find((s) => s.id === duo)).toMatchObject({ capacity: 2, occupied: 1, remaining: 1 });
+    expect(list.find((s) => s.id === single)).toMatchObject({ capacity: 1, occupied: 0, remaining: 1 });
     expect(list.find((s) => s.id === duo)).toMatchObject({ description: 'About', image_url: 'https://img.test/x.webp' });
   };
 

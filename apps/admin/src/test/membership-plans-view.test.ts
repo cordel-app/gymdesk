@@ -12,7 +12,7 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
   });
 
   it('a Draft replaces the Active snapshot in the view, never both', () => {
-    const v = visiblePlans([plan(1, 'active'), plan(2, 'draft')]);
+    const v = visiblePlans([plan(1, 'active'), plan(2, 'in_cart')]);
     expect(v.rows.map((r) => r.id)).toEqual([2]);
     expect(v.heading).toBe('draft');
     expect(v.showInFlightList).toBe(false);
@@ -27,7 +27,7 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
   });
 
   it('#2742: a Draft beside a Pending Payment version still takes the view out of Active', () => {
-    expect(visiblePlans([plan(2, 'draft'), plan(3, 'pending_payment')]).heading).toBe('draft');
+    expect(visiblePlans([plan(2, 'in_cart'), plan(3, 'pending_payment')]).heading).toBe('draft');
   });
 
   it('with no plan the empty state is untouched', () => {
@@ -51,7 +51,7 @@ describe('#1538 stage 3 canEditLivePlan', () => {
   });
   it('is not offered on an in-flight, linked, past or plan-less row', async () => {
     const { canEditLivePlan } = await import('../app/[locale]/members/membershipPlansView');
-    expect(canEditLivePlan({ ...base, status: 'draft' })).toBe(false);
+    expect(canEditLivePlan({ ...base, status: 'in_cart' })).toBe(false);
     expect(canEditLivePlan({ ...base, status: 'pending_payment' })).toBe(false);
     expect(canEditLivePlan({ ...base, assignment_relationship: 'linked' })).toBe(false);
     expect(canEditLivePlan({ ...base, is_live: false })).toBe(false);
@@ -72,7 +72,7 @@ describe('#2659 stage 3: a Draft lists the plans cancelling at their period end 
   it('keeps a Cancels-on-End-Date plan, replaces the Active one, never lists a finished one', () => {
     const cancelling = { id: 1, status: 'active_cancel_at_period_end', is_live: false, is_current: true } as any;
     const finished = { id: 2, status: 'cancelled', is_live: false, is_current: false } as any;
-    const v = visiblePlans([plan(3, 'active'), cancelling, finished, plan(4, 'draft')]);
+    const v = visiblePlans([plan(3, 'active'), cancelling, finished, plan(4, 'in_cart')]);
     expect(v.rows.map((r: any) => r.id)).toEqual([4, 1]);
     expect(v.heading).toBe('draft');
   });

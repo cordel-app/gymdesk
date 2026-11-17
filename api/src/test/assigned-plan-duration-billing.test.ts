@@ -33,9 +33,9 @@ afterAll(async () => {
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/** A fixed start date, so the projected dates in the assertions are stable. */
-const START = '2026-03-10';
-const MONTHS = ['2026-03-10', '2026-04-10', '2026-05-10', '2026-06-10', '2026-07-10', '2026-08-10'];
+/** A fixed start on a billing-calendar date (the 1st, #2964), so the projected dates are stable and the first period is a whole one. */
+const START = '2026-03-01';
+const MONTHS = ['2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
 
 async function createMember(gymId: string): Promise<number> {
   const { insertId } = await db.query(

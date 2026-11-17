@@ -8,6 +8,7 @@
 // the live Promotion.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestGym, createTestMembership, request,
@@ -68,7 +69,7 @@ async function application(umId: number, promoId: number) {
   const { rows } = await db.query<any>(
     `SELECT ump.snapshot, ump.snapshot_confirmed_at FROM user_membership_promotions ump
        JOIN product_sets ps ON ps.id = ump.product_set_id
-      WHERE ps.user_membership_id = ? AND ump.promotion_id = ? ORDER BY ump.id DESC LIMIT 1`, [umId, promoId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ? ORDER BY ump.id DESC LIMIT 1`, [umId, promoId]);
   const row = rows[0];
   const snap = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
   return { snap, confirmed: row.snapshot_confirmed_at != null };
@@ -89,14 +90,14 @@ async function grantRows(umId: number, promoId: number) {
        FROM user_membership_promotion_oneoff_snapshot g
        JOIN user_membership_promotions ump ON ump.id = g.user_membership_promotion_id
        JOIN product_sets ps ON ps.id = ump.product_set_id
-      WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promoId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ?`, [umId, promoId]);
   const { rows: planRows } = await db.query<any>(
     `SELECT t.\`value\`, pps.snapshot
        FROM plan_promotion_snapshots pps
        JOIN user_membership_promotions ump ON ump.id = pps.source_id
        JOIN product_sets ps ON ps.id = ump.product_set_id
        LEFT JOIN plan_promotion_oneoff_product_snapshots t ON t.plan_promotion_snapshot_id = pps.id
-      WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promoId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ?`, [umId, promoId]);
   return { own: rows, plan: planRows };
 }
 
@@ -134,7 +135,7 @@ describe('Promotion snapshots are captured at confirmation (#2624 §8)', () => {
 
     const { rows: events } = await db.query<any>(
       `SELECT be.amount FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`, [umId]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.event_type = 'payment_recorded'`, [umId]);
     expect(events).toHaveLength(1);
     expect(Number(events[0].amount)).toBeLessThanOrEqual(75);
 
@@ -147,7 +148,7 @@ describe('Promotion snapshots are captured at confirmation (#2624 §8)', () => {
     expect(Number(after.snap.membership_fee_benefits[0].value)).toBe(25);
     const { rows: count } = await db.query<any>(
       `SELECT COUNT(*) AS n FROM user_membership_promotions ump JOIN product_sets ps ON ps.id = ump.product_set_id
-        WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promoId]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ?`, [umId, promoId]);
     expect(Number(count[0].n)).toBe(1);
   });
 

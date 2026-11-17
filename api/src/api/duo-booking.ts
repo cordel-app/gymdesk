@@ -41,13 +41,19 @@ export async function cancelGroupPartners(
 
 /**
  * Cancels the given bookings on behalf of another member's cancellation (a Duo
- * partner, #1984; a family below its service's minimum, #2813) and alerts each
- * member with `booking_cancelled_by_partner`. Nothing is spent: the cancelled
- * members did not act. Returns anyone promoted off the waiting list.
+ * partner, #1984; the rest of a Family Only booking, #2901) and alerts each
+ * member: `booking_cancelled_by_partner` by default, or the alert type and
+ * extra payload the caller names (#2901's `family_booking_cancelled`, which
+ * names who cancelled). Nothing is spent: the cancelled members did not act.
+ * Returns anyone promoted off the waiting list.
  */
 export async function cancelPartnerBookings(
   gymId: string, rows: { id: number; member_id: number }[], actor: string | null,
-  alert: { sessionId: number; title: string; starts_at: string },
+  alert: {
+    sessionId: number; title: string; starts_at: string;
+    type?: 'booking_cancelled_by_partner' | 'family_booking_cancelled';
+    extra?: Record<string, unknown>;
+  },
 ): Promise<{ promotedMemberIds: number[] }> {
   const promotedMemberIds: number[] = [];
   const notified: number[] = [];
@@ -57,8 +63,8 @@ export async function cancelPartnerBookings(
     if (res.promotedMemberId) promotedMemberIds.push(Number(res.promotedMemberId));
   }
   await recordNotifications(gymId, notified.map((memberId) => ({
-    memberId, type: 'booking_cancelled_by_partner' as const, entityType: 'session' as const,
-    entityId: alert.sessionId, payload: { title: alert.title, starts_at: alert.starts_at },
+    memberId, type: alert.type ?? 'booking_cancelled_by_partner', entityType: 'session' as const,
+    entityId: alert.sessionId, payload: { title: alert.title, starts_at: alert.starts_at, ...(alert.extra ?? {}) },
   })));
   return { promotedMemberIds };
 }

@@ -21,7 +21,7 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
  * two cannot disagree. Bind nothing; it expects the set aliased `ps`.
  */
 export const CANCELLED_PLAN_SET_SQL = `ps.status = 'cancelled'
-        AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+        AND ps.membership_plan_id IS NOT NULL AND ps.plan_assignment_id IS NULL
         AND EXISTS (
           SELECT 1 FROM product_set_plan_snapshots cpj_
             JOIN plan_snapshots cps_ ON cps_.id = cpj_.plan_snapshot_id

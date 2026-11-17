@@ -4,6 +4,7 @@ import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 export const request = supertest(app);
 
@@ -133,13 +134,25 @@ export type AssignmentConfigPatch = Partial<Record<AssignmentConfigColumn, unkno
 
 async function latestLinkedSet(umId: number): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [umId]);
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [umId]);
   return rows[0] ? Number(rows[0].id) : null;
+}
+
+/**
+ * #2125 M6b-46: links a fixture's Product Set to the assignment `umId` names, the way the writers do
+ * (`PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`): its anchor, the lowest snapshot naming it, or none yet.
+ */
+async function relinkTestSet(setId: number, umId: number): Promise<void> {
+  await db.query(
+    `UPDATE product_sets SET plan_assignment_id = (SELECT MIN(a.id) FROM plan_snapshots a
+                                                    WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
+      WHERE id = ?`, [umId, setId]);
 }
 
 /** Copies a config holder's snapshot onto a freshly created Active version. */
 async function adoptConfigHolder(setId: number, umId: number | null): Promise<void> {
   if (umId == null) return;
+  await relinkTestSet(setId, umId);
   // A version is the assignment's: it carries its plan (a plan-less version is
   // the retirement of a plan, which the projection treats as such).
   await db.query(
@@ -151,7 +164,7 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   if (own.length > 0) return;
   const { rows: holder } = await db.query<{ id: number }>(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
-      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.id DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ps.id <> ? ORDER BY ps.id DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
   if (!holder[0]) return;
   const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
   const scols = ASSIGNMENT_CONFIG_COLUMNS.map((c) => `s.${c}`).join(', ');
@@ -159,15 +172,16 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
     `INSERT INTO plan_snapshots
        (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id, ${cols})
      SELECT s.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at,
-            ps.user_membership_id, ${scols}
-       FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [setId, holder[0].id]);
+            ?, ${scols}
+       FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [umId, setId, holder[0].id]);
   await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, adopted]);
   // The Active version is the assignment's now: a holder only existed to carry
   // what the fixture wrote before one did. M5b: its snapshots go by reference.
   await db.query(
-    'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by = ?',
+    `DELETE FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND id <> ? AND created_by = ?`,
     [umId, setId, FIXTURE_HOLDER]);
   await deleteUnlinkedPlanSnapshots();
+  await relinkTestSet(setId, umId);
   await syncFixtureSnapshot(setId);
 }
 
@@ -201,7 +215,7 @@ export async function getAssignmentConfig(umId: number): Promise<Record<string, 
        FROM product_sets ps
        LEFT JOIN plan_snapshots snap ON snap.id = (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2
                                                     WHERE j2.product_set_id = ps.id AND j2.entitlement_only = 0 ORDER BY j2.id LIMIT 1)
-      WHERE ps.user_membership_id = ? ORDER BY ps.id DESC LIMIT 1`, [umId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} ORDER BY ps.id DESC LIMIT 1`, [umId]);
   return rows[0] ?? {};
 }
 
@@ -217,10 +231,9 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     if (!um) throw new Error(`setAssignmentConfig: assignment ${umId} not found`);
     const { insertId } = await db.query(
       `INSERT INTO product_sets
-         (gym_id, owner_member_id, status, membership_plan_id, starts_at, ends_at,
-          user_membership_id, superseded_at)
-       VALUES (?, ?, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
-      [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
+         (gym_id, owner_member_id, status, membership_plan_id, starts_at, ends_at, superseded_at)
+       VALUES (?, ?, 'superseded', ?, ?, ?, UTC_TIMESTAMP())`,
+      [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at]);
     await db.query("UPDATE product_sets SET created_by = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
     setId = Number(insertId);
   }
@@ -231,10 +244,11 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
     const { insertId } = await db.query(
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id)
-       SELECT ps.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ps.user_membership_id
-         FROM product_sets ps WHERE ps.id = ?`, [setId]);
+       SELECT ps.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ?
+         FROM product_sets ps WHERE ps.id = ?`, [umId, setId]);
     snapshotId = Number(insertId);
     await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapshotId]);
+    await relinkTestSet(setId, umId);
   }
   const defined = keys.filter((k) => patch[k] !== undefined);
   await db.query(
@@ -277,11 +291,11 @@ function literalValue(token: string, params: unknown[]): unknown {
  * `IN (?, …)` predicate becomes the same lookup through that version.
  */
 const LATEST_VERSION = (idExpr: string) =>
-  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
+  `(SELECT p9.id FROM product_sets p9 WHERE ${productSetOfLegacyAssignmentSql(idExpr, 'p9')} ORDER BY p9.id DESC LIMIT 1)`;
 
 async function versionOfAssignment(userMembershipId: number): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [userMembershipId]);
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [userMembershipId]);
   if (rows[0]) return Number(rows[0].id);
   const { rows: um } = await db.query<{ gym_id: string; member_id: number }>(
     'SELECT gym_id, member_id FROM user_memberships WHERE id = ?', [userMembershipId]);
@@ -330,7 +344,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
           'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
           `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
-           VALUES (?, ?, ?, 'draft', ?, 'admin', ?)`,
+           VALUES (?, ?, ?, 'in_cart', ?, 'admin', ?)`,
           [resolved.gym_id, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
         await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
         rows.push({ id: Number(insertId) });
@@ -522,32 +536,32 @@ export async function ensureTestProductSet(
   // One Active set per owner (`product_sets_one_active`), whichever gym a
   // fixture moved the member to since: it follows the member.
   const { rows } = await db.query<{ id: number; user_membership_id: number | null }>(
-    "SELECT id, user_membership_id FROM product_sets WHERE owner_member_id = ? AND status = 'active' LIMIT 1", [memberId]);
+    `SELECT id, ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets
+      WHERE owner_member_id = ? AND status = 'active' LIMIT 1`, [memberId]);
   // A second live assignment of one member (a fixture the model forbids) is
   // carried by a superseded version of its own, so the first keeps its set.
   if (!opts.takeActive && rows[0] && userMembershipId != null && rows[0].user_membership_id != null
       && Number(rows[0].user_membership_id) !== userMembershipId) {
     const { insertId } = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
-       VALUES (?, ?, 'superseded', '2000-01-01', ?)`,
-      [gymId, memberId, userMembershipId]);
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at)
+       VALUES (?, ?, 'superseded', '2000-01-01')`,
+      [gymId, memberId]);
     await adoptConfigHolder(Number(insertId), userMembershipId);
     await followAssignmentDates(Number(insertId), userMembershipId);
     return Number(insertId);
   }
   if (rows[0]) {
     await db.query(
-      'UPDATE product_sets SET gym_id = ?, user_membership_id = COALESCE(?, user_membership_id) WHERE id = ?',
-      [gymId, userMembershipId, rows[0].id]);
+      'UPDATE product_sets SET gym_id = ? WHERE id = ?', [gymId, rows[0].id]);
     await adoptConfigHolder(Number(rows[0].id), userMembershipId);
     await followAssignmentDates(Number(rows[0].id), userMembershipId);
     return Number(rows[0].id);
   }
   try {
     const { insertId } = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
-       VALUES (?, ?, 'active', '2000-01-01', ?)`,
-      [gymId, memberId, userMembershipId]);
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at)
+       VALUES (?, ?, 'active', '2000-01-01')`,
+      [gymId, memberId]);
     await adoptConfigHolder(Number(insertId), userMembershipId);
     await followAssignmentDates(Number(insertId), userMembershipId);
     return Number(insertId);
@@ -587,7 +601,7 @@ export async function billingEventsOfAssignment<T = any>(gymId: string, umId: nu
               SELECT ps.id FROM product_sets ps
                WHERE ps.gym_id = ? AND ps.owner_member_id IN (
                        SELECT p2.owner_member_id FROM product_sets p2
-                        WHERE p2.gym_id = ? AND p2.user_membership_id = ?))
+                        WHERE p2.gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'p2')}))
       ORDER BY be.id ASC`,
     [gymId, gymId, gymId, umId],
   );
@@ -796,7 +810,7 @@ export async function createTestDraftAssignment(
   const umId = await db.transaction(async (tx) => {
     const { insertId } = await tx.query(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?)`,
+       VALUES (?, ?, ?, ?, ?, 'in_cart', ?)`,
       [memberId, gymId, planId, startsAt, opts.endsAt ?? null, 'Test fixture'],
     );
     await createDraftSetForAssignment(tx, {
@@ -850,8 +864,8 @@ export async function confirmTestDraftPromotions(gymId: string, umId: number): P
   const { confirmDraftPromotionSnapshots } = await import('../api/membership-promotions');
   const { rows } = await db.query<{ id: number }>(
     `SELECT DISTINCT ps.id FROM product_sets ps
-      WHERE ps.gym_id = ? AND ps.status = 'draft'
-        AND (ps.user_membership_id = ?
+      WHERE ps.gym_id = ? AND ps.status = 'in_cart'
+        AND (${productSetOfLegacyAssignmentSql('?', 'ps')}
              OR ps.id IN (SELECT ump.product_set_id FROM user_membership_promotions ump
                            WHERE ump.gym_id = ? AND ump.user_membership_id = ?))`,
     [gymId, umId, gymId, umId]);
@@ -1053,9 +1067,9 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
     return Number(existing[0].id);
   }
   const { insertId: setId } = await db.query(
-    `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, membership_plan_id, user_membership_id)
-     VALUES (?, ?, 'superseded', ?, ?, ?)`,
-    [um.gym_id, um.member_id, um.starts_at, um.membership_plan_id, umId]);
+    `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, membership_plan_id)
+     VALUES (?, ?, 'superseded', ?, ?)`,
+    [um.gym_id, um.member_id, um.starts_at, um.membership_plan_id]);
   const { insertId: snapId } = await db.query(
     `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at,
                                  source_user_membership_id, created_at)
@@ -1065,6 +1079,7 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [snapId]);
   await db.query(
     'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapId]);
+  await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [snapId, setId]);
   return Number(snapId);
 }
 
@@ -1083,4 +1098,29 @@ export async function createTestFamily(gymId: string, ownerId: number, otherIds:
       [gymId, insertId, id]);
   }
   return insertId;
+}
+
+/**
+ * #2125 M6b-42 — links a Product Set to a hand-inserted assignment the way the real writers do: the
+ * set's `user_membership_id` **and** its anchor `plan_assignment_id`, the lowest plan snapshot naming
+ * that assignment. When no snapshot names it yet, the set's own first plan snapshot is named (as the
+ * snapshot sync does for a Draft), else `snapshotTestAssignment()` gives it one.
+ */
+export async function linkTestSetToAssignment(productSetId: number, umId: number): Promise<void> {
+  const { rows: named } = await db.query<{ id: number }>(
+    'SELECT id FROM plan_snapshots WHERE source_user_membership_id = ? LIMIT 1', [umId]);
+  if (!named[0]) {
+    const { rows: own } = await db.query<{ id: number }>(
+      `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND s.source_user_membership_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
+    if (own[0]) {
+      await db.query('UPDATE plan_snapshots SET source_user_membership_id = ? WHERE id = ?', [umId, own[0].id]);
+    } else {
+      await snapshotTestAssignment(umId);
+    }
+  }
+  await db.query(
+    `UPDATE product_sets SET plan_assignment_id = (SELECT MIN(a.id) FROM plan_snapshots a
+                                   WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
+      WHERE id = ?`, [umId, productSetId]);
 }

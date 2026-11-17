@@ -42,6 +42,8 @@ export interface PurchasedProduct {
   cancelled_on?: string | null;
   validity_state?: string | null;
   created_at: string | null;
+  /** #2962 — when a standalone one-time Product in the cart expires (ISO instant); `null` otherwise. */
+  cart_expires_at?: string | null;
   created_by: string | null;
   /** #1883 — `members_app` | `admin`; null/absent reads Unknown. */
   origin?: string | null;
@@ -247,10 +249,10 @@ export function forecastForProduct<
 
 /** #1654 — the Products card's status filter; `''` is "All". */
 export const PURCHASE_STATUS_FILTER_DEFAULT = 'open';
-export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'draft', 'active', 'pending_payment', 'cancelled'] as const;
+export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'in_cart', 'active', 'pending_payment', 'cancelled'] as const;
 
 /**
- * Which purchases a filter value shows. The default, `open`, is Draft (#1657: a saved
+ * Which purchases a filter value shows. The default, `open`, is In Cart (#1657, #2949: a saved
  * one-time purchase stays in the list), Active plus Pending payment (a purchase not yet paid is the pre-active state a Draft is
  * for a recurring Product); `''` shows every status. Presentation only — the
  * status is the purchase's own stored value.
@@ -258,7 +260,7 @@ export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'draft', 'active', 'pendin
 export function filterPurchasesByStatus<T extends { status: string }>(items: T[], filter: string): T[] {
   if (filter === '') return items;
   if (filter === PURCHASE_STATUS_FILTER_DEFAULT) {
-    return items.filter((i) => i.status === 'draft' || i.status === 'active' || i.status === 'pending_payment');
+    return items.filter((i) => i.status === 'in_cart' || i.status === 'active' || i.status === 'pending_payment');
   }
   return items.filter((i) => i.status === filter);
 }
@@ -277,4 +279,31 @@ export function displayPurchaseStatus(item: { status: string; pending_terminatio
 export function editableDraftLineId(item: Pick<PurchasedProduct, 'source' | 'draft_line_id' | 'pending_termination'>): number | null {
   if (item.source !== 'recurring' || item.pending_termination) return null;
   return item.draft_line_id ?? null;
+}
+
+/**
+ * #2962 — what a cart countdown shows `nowMs` against the server's `cart_expires_at`: the time
+ * left as `H:MM:SS` (never negative), and whether it has run out. `null` for a purchase the server
+ * gave no expiry (anything but a standalone cart purchase). Presentation only: the expiry instant
+ * is the server's, and the server is what deletes the purchase.
+ */
+export function cartCountdown(
+  expiresAt: string | null | undefined,
+  nowMs: number,
+): { remainingMs: number; expired: boolean; label: string } | null {
+  if (!expiresAt) return null;
+  const at = Date.parse(expiresAt);
+  if (Number.isNaN(at)) return null;
+  const remainingMs = Math.max(0, at - nowMs);
+  const total = Math.ceil(remainingMs / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const label = `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return { remainingMs, expired: remainingMs === 0, label };
+}
+
+/** #2962 — the server's refusal to pay for a cart purchase that has expired. */
+export function isPurchaseExpiredError(err: any): boolean {
+  return err?.status === 410 && err?.body?.error === 'purchase_expired';
 }

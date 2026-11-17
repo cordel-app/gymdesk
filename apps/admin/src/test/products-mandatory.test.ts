@@ -46,30 +46,30 @@ describe('Products: Mandatory attribute (#832)', () => {
   });
 
   it('renders a Yes/No toggle, not a dropdown or a text field, in both forms (#2606)', () => {
-    const controls = [...page.matchAll(/checked=\{(inlineNew|editForm)\.mandatory\}/g)].map((m) => m[1]);
-    expect(controls).toContain('inlineNew');
-    expect(controls).toContain('editForm');
-    // Each checked= binding belongs to a YesNoToggle, whose input is a checkbox switch.
-    expect([...page.matchAll(/<YesNoToggle\s*\n\s*checked=\{(inlineNew|editForm)\.mandatory\}/g)]).toHaveLength(2);
-    expect(page).not.toMatch(/value=\{(inlineNew|editForm)\.mandatory\}/);
+    // #2948: one control, rendered by the create card and the editor alike.
+    expect([...page.matchAll(/<YesNoToggle\s*\n\s*checked=\{form\.mandatory\}/g)]).toHaveLength(1);
+    expect(page).toMatch(/renderFormControl\(\s*field,\s*inlineNew,/);
+    expect(page).toMatch(/renderFormControl\(\s*field,\s*editForm,/);
+    expect(page).not.toMatch(/value=\{(form|inlineNew|editForm)\.mandatory\}/);
   });
 
   it('defaults a new item to unchecked and seeds the editor from the stored row', () => {
-    expect(page).toContain('mandatory: false, professionalServiceIds: []');
+    expect(profile).toMatch(/export function newProductFormValues[\s\S]*?mandatory: false,/);
     // #974: the row → form mapping lives beside the field set it fills, so a
     // column added to the card cannot be left out of the form.
     expect(profile).toContain('mandatory: Boolean(item.mandatory)');
   });
 
   it('submits the flag from the create and the edit payload', () => {
-    expect(page).toContain('mandatory: inlineNew.mandatory');
-    expect(page).toContain('mandatory: editForm.mandatory');
+    expect(profile).toContain('mandatory: form.mandatory,');
+    expect(page).toContain('toProductPayload(inlineNew, SESSION_TYPE)');
+    expect(page).toContain('toProductPayload(editForm, SESSION_TYPE)');
   });
 
   // §2: a System item's Mandatory flag is editable, unlike its name/type/units,
   // so the control must not sit inside one of the page's `!isSystem` guards.
   it('offers the checkbox for a System item too', () => {
-    const control = page.indexOf('checked={editForm.mandatory}');
+    const control = page.indexOf('checked={form.mandatory}');
     expect(control).toBeGreaterThan(-1);
     const enclosing = page.lastIndexOf('{!isSystem && (', control);
     if (enclosing > -1) {

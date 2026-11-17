@@ -30,6 +30,7 @@ import {
   PurchaseRefused,
   grossPrice,
   deletePurchaseDraft,
+  expireStandalonePurchaseDrafts,
   saveProductPurchaseDraft,
   startProductPurchase,
 } from './me-products';
@@ -51,6 +52,9 @@ import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
+import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
+import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
+import { getRequestLocale } from '../infra/locale';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
 
@@ -427,14 +431,14 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
       `SELECT s.product_id FROM product_sets ps
          JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
          JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
-        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND s.source_id = ?`,
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND s.source_id = ?`,
       [gymId, memberId, lineId]);
     if (!lineRows[0]) return res.status(404).json({ error: 'Draft line not found' });
     const productId = Number(lineRows[0].product_id);
 
     if (promotionIds && promotionIds.length > 0) {
       if (new Set(promotionIds).size !== promotionIds.length) {
-        return res.status(400).json({ error: 'duplicate_promotion', message: 'A promotion can only be applied once' });
+        return res.status(400).json({ error: 'duplicate_promotion', message: 'This promotion is already applied to this product.' });
       }
       const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
       if (missing.length > 0) return res.status(409).json({ error: 'promotion_requires_products', products: missing });
@@ -498,7 +502,7 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
     try {
       draftId = await db.transaction(async (tx) => {
         const { rows } = await tx.query<any>(
-          `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+          `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'
             ORDER BY id DESC LIMIT 1`, [gymId, memberId]);
         if (!rows[0]) throw new Refused({ kind: 'no_draft' });
         const locked = await lockDraft(tx, gymId, Number(rows[0].id));
@@ -517,6 +521,82 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
 });
 
 /**
+ * #2965 — the Summary of a cart holding only standalone purchases (no Draft Product Set carries
+ * them; when one does, its `GET /product-sets/:id/review` already lists them): what `POST /checkout`
+ * would charge, line by line, and what it contracts. Read-only — no Billing Event, payment request
+ * or purchase is written (bar #2962's expiry, which every cart read applies).
+ */
+memberProductPurchasesRouter.get('/cart-summary', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const cart = await loadCartPurchases(db, gymId, memberId);
+    const amountDue = cartTotal(cart);
+    const memberIds = [...new Set(cart.map((p) => p.assigned_member_id ?? memberId))];
+    const names = new Map<number, string | null>();
+    if (memberIds.length > 0) {
+      const { rows } = await db.query<any>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND id IN (${memberIds.map(() => '?').join(',')})`,
+        [gymId, ...memberIds]);
+      for (const r of rows) names.set(Number(r.id), r.name ?? null);
+    }
+    res.json({
+      purchase_ids: cart.map((p) => p.id),
+      initial_payment: initialPaymentBreakdown(cart.map((p) => chargeLineView(cartChargeLine(p).line)), amountDue),
+      contracted_items: contractedItems({
+        plans: [], lines: [],
+        purchases: cart.map((p) => ({
+          product_name: p.product_name, units: null, billing_frequency: null,
+          assigned_member_id: p.assigned_member_id, member_id: memberId,
+        })),
+      }, names),
+      amount_due: amountDue,
+      currency: cart[0]?.currency ?? 'EUR',
+    });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2949 stage 4 — pays the member's standalone cart purchases (the `in_cart` one-time Products no
+ * Product Set carries) together: one Billing Event, one payment request (`startCartCheckout()`).
+ * `purchase_ids` narrows it to the ones named; without it, every one in the cart is paid.
+ */
+memberProductPurchasesRouter.post('/checkout', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const raw = (req.body ?? {}).purchase_ids;
+  let purchaseIds: number[] | null = null;
+  if (raw != null) {
+    if (!Array.isArray(raw) || !raw.every((v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0)) {
+      return res.status(400).json({ error: 'purchase_ids must be an array of positive integers' });
+    }
+    purchaseIds = raw.map(Number);
+  }
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const result = await startCartCheckout({
+      gymId, memberId, memberEmail: member.email ?? '',
+      actorName: resolveRequestActor(tenantCtx) ?? member.name,
+      purchaseIds, requestLocale: getRequestLocale(req),
+    });
+    recordAudit(req, {
+      action: 'update', entityType: 'member', entityId: memberId,
+      next: { cart_checkout: result.billingEventId, product_purchases: result.purchaseIds },
+    });
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err instanceof CartCheckoutRefused) return res.status(err.status).json({ error: err.code, message: err.message });
+    next(err);
+  }
+});
+
+/**
  * #1657 stage 2 — pay a saved draft: it is re-resolved and re-priced through the
  * same loader as a fresh purchase (a Promotion that lapsed refuses it, leaving
  * the draft untouched) and promoted to the pending purchase in one transaction.
@@ -530,6 +610,11 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
+    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
+    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId });
+    if (expired.some((e) => e.id === purchaseId)) {
+      return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
+    }
     const { rows } = await db.query<any>(
       // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
       `SELECT id, product_id, direct_discount_percent, assigned_member_id FROM (
@@ -538,7 +623,7 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
          UNION ALL
          SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
            FROM product_oneoff_snapshots
-       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'in_cart'`,
       [purchaseId, gymId, memberId],
     );
     const draft = rows[0];

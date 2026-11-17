@@ -1,3 +1,4 @@
+import { allocateGymFoodSlug } from './entity-slugs';
 import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -43,7 +44,7 @@ export const nutritionLibraryRouter = Router();
  * are Cordel employees' and are not published to every tenant. A gym's own rows
  * carry theirs, and `created_at`/`modified_at` are returned either way.
  */
-const ITEM_COLUMNS = `nli.id, nli.gym_id, nli.name, nli.status, nli.image_url,
+const ITEM_COLUMNS = `nli.id, nli.gym_id, nli.name, nli.slug, nli.status, nli.image_url,
   nli.created_at, nli.modified_at, ${itemDetailColumnsSql('nli', { maskPlatformActors: true })}`;
 
 /* ── Categories catalogue (read-only) ────────────────────────────────────── */
@@ -156,11 +157,12 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     );
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
 
+    const slug = await allocateGymFoodSlug(gymId, name.trim());
     const { insertId } = await db.query(
       `INSERT INTO nutrition_library_items
-         (gym_id, name, description, image_url, status, created_by)
-       VALUES (?, ?, ?, ?, 'active', ?)`,
-      [gymId, name.trim(), description.value ?? null, image_url ?? null, actor],
+         (gym_id, name, slug, description, image_url, status, created_by)
+       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+      [gymId, name.trim(), slug, description.value ?? null, image_url ?? null, actor],
     );
 
     await replaceCategories(insertId, category_ids);

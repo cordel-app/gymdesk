@@ -13,7 +13,7 @@ const item = (state: MemberSetReviewItem['state'], name = 'Locker'): MemberSetRe
 });
 
 const review = (over: Partial<MemberSetReview> = {}): MemberSetReview => ({
-  product_set_id: 7, status: 'draft', summary_items: [item('active', 'Old'), item('draft')],
+  product_set_id: 7, status: 'in_cart', summary_items: [item('active', 'Old'), item('draft')],
   immediate_lines: [], amount_due: 10, payment_required: true, tax_total: 1.74, currency: 'EUR', error: null, ...over,
 });
 
@@ -43,7 +43,7 @@ describe('setCommitAction', () => {
 
 describe('reviewLineDiscount', () => {
   it("is the line's regular price minus its charge, and null when nothing was taken off", () => {
-    const line = { item_name: 'Locker', quantity: 2, amount: 15, regular_unit_price: 10, promotion_name: 'Half',
+    const line = { item_name: 'Locker', quantity: 2, amount: 15, regular_unit_price: 20, promotion_name: 'Half',
       treatment_action: null, treatment_value: null, tax_rate_percent: 21, amount_excl_tax: 12.4 };
     expect(reviewLineDiscount(line)).toBe(5);
     expect(reviewLineDiscount({ ...line, amount: 20 })).toBeNull();

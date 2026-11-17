@@ -23,7 +23,7 @@ const REPORTED = ASSIGNMENT_STATUSES.filter((s) => !EXCLUDED.includes(`'${s}'`))
 
 describe('#2803 Members table plan status labels', () => {
   it('the enrollment read excludes only Draft and Pending Payment', () => {
-    expect(ASSIGNMENT_STATUSES.filter((s) => !REPORTED.includes(s))).toEqual(['draft', 'pending_payment']);
+    expect(ASSIGNMENT_STATUSES.filter((s) => !REPORTED.includes(s))).toEqual(['in_cart', 'pending_payment']);
   });
 
   for (const code of ['en', 'es', 'ca']) {

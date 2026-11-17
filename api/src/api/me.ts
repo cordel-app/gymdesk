@@ -43,13 +43,17 @@ import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
 import { createSoloFamily } from './family-membership';
 import { cancelGroupPartners, cancelPartnerBookings, membersShareCoverage } from './duo-booking';
-import { FAMILY_GROUP_MESSAGES, cancelsRemainingFamilyBookings, isFamilyGroupService, judgeFamilyParticipants, parseBookerAttends } from '../domain/familyGroupBooking';
+import { FAMILY_GROUP_MESSAGES, isFamilyGroupService, judgeFamilyParticipants, parseBookerAttends } from '../domain/familyGroupBooking';
 import { loadServiceCapacityViews } from './service-capacity';
 import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
-import { generateReceiptPdf } from '../lib/receipt-pdf';
+import { receiptPdf } from './receipt-documents';
+import { refundReceiptPdf } from './refund-receipts';
+import { loadMemberPaymentDocuments, ownEventOfDocument } from './member-payment-documents';
+import { invoiceKeyColumn, type InvoiceType } from '../domain/billingDocumentKeys';
+import { getPrivateDocument } from '../infra/private-storage';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { localizedDescriptionSql } from '../domain/nutritionDescriptionTranslations';
@@ -75,6 +79,7 @@ import { AssigneeRefused, loadEligibleAssignees } from './product-assignee';
 import {
   PurchaseRefused,
   memberProductCatalogue,
+  memberProductServiceFilters,
   startProductPurchase,
   PromotionRefused,
   PricingRefused,
@@ -107,6 +112,10 @@ import {
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
 import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
+import { allCentersScopeSql } from './plan-center-access';
+
+/** #2953: the `center_id` value the Members App sends for its "All centers" option. */
+const ALL_CENTERS_FILTER = 'all';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -796,7 +805,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     // own authorization scoping below, so a member can't request a center
     // they aren't assigned to by passing this query param.
     const filterCenterId = req.query.center_id as string | undefined;
-    if (filterCenterId) {
+    if (filterCenterId === ALL_CENTERS_FILTER) {
+      // #2953: "All centers" spans every center the member's plans let them use
+      // (plus events tied to no center), never just the app's active center.
+      const scope = await allCentersScopeSql(db, gymId, memberId);
+      if (scope) { where.push(scope.sql); params.push(...scope.params); }
+    } else if (filterCenterId) {
       const requested = Number(filterCenterId);
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(requested);
@@ -1083,9 +1097,11 @@ async function soleFamilyGroupServiceId(gymId: string, sessionId: number): Promi
 
 /**
  * #2813 §5: one individual booking per selected family member, in the caller's
- * transaction — no group. Each member passes the booking gate, reserves their
- * own unit (#2605) and counts toward the service's places (#1984 stage 2a); every
- * row records the initiator as `booked_by_member_id`. The bookings are all-or-
+ * transaction — no group. Each member passes the booking gate and counts toward
+ * the service's places (#1984 stage 2a); every row records the initiator as
+ * `booked_by_member_id`. #2902: the family booking reserves **one** unit (#2605),
+ * on its first row, however many members attend — and spends one
+ * (`spendSessionForBooking()` treats the rows as one family booking). The bookings are all-or-
  * nothing: a member who would be refused or waitlisted rolls every one back.
  * #2850: with `bookerAttends` false the booker books only the selected family
  * members (a parent booking for their children) and holds no booking of their
@@ -1109,7 +1125,7 @@ async function bookFamilyMembers(tx: Tx, input: {
   const ids: number[] = [];
   let first: any = null;
   for (const id of bookerAttends ? [memberId, ...partnerIds] : partnerIds) {
-    const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId);
+    const row = await bookMemberOnSession(gymId, id, sessionId, false, false, tx, false, actor, serviceId, first === null);
     if (row.status !== 'booked') {
       throw Object.assign(new Error('There are not enough places for every participant'), { status: 409, code: 'group_requires_places' });
     }
@@ -1275,15 +1291,16 @@ meRouter.get('/class-packages', requireRole('member'), requireFeatureEnabled('or
 });
 
 /**
- * #2813 §6: after a member cancelled their booking of a `family_only` service,
- * the family's other live bookings of the same occurrence and service (individual
- * rows, no group) are cancelled when fewer than the service's minimum remain, and
- * each of those members is told why. Below-minimum is
- * `cancelsRemainingFamilyBookings()`'s decision.
+ * #2901: a member who cancels their booking of a `family_only` service cancels
+ * the family booking — every other live booking of the same occurrence and
+ * service held by a member of their family (individual rows, no group, #2813) —
+ * and each of those members is told who cancelled
+ * (`family_booking_cancelled`, `cancelled_by_name`). The cancelling member is
+ * not alerted. This replaces #2813 §6's "only below the service's minimum".
  */
-async function cancelFamilyBelowMinimum(
+async function cancelFamilyBooking(
   gymId: string, memberId: number,
-  booking: { class_session_id: number; professional_service_id: number; min_participants: number | null; title: string; starts_at: string },
+  booking: { class_session_id: number; professional_service_id: number; title: string; starts_at: string },
   actor: string | null,
 ): Promise<{ promotedMemberIds: number[] }> {
   const family = (await loadEligibleAssignees(db, gymId, memberId)).map((m) => m.member_id).filter((id) => id !== memberId);
@@ -1294,9 +1311,12 @@ async function cancelFamilyBelowMinimum(
       WHERE gym_id = ? AND calendar_event_id = ? AND professional_service_id = ? AND status = 'booked'
         AND booking_group_id IS NULL AND member_id IN (${ph})`,
     [gymId, booking.class_session_id, booking.professional_service_id, ...family]);
-  if (!cancelsRemainingFamilyBookings(rows.length, booking.min_participants)) return { promotedMemberIds: [] };
+  if (rows.length === 0) return { promotedMemberIds: [] };
+  const { rows: me } = await db.query('SELECT name FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
   return cancelPartnerBookings(gymId, rows as any[], actor, {
     sessionId: Number(booking.class_session_id), title: booking.title, starts_at: booking.starts_at,
+    type: 'family_booking_cancelled',
+    extra: { cancelled_by_name: (me as any[])[0]?.name ?? null },
   });
 }
 
@@ -1308,7 +1328,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       `SELECT ceb.id, ceb.status, ceb.booking_group_id, ceb.calendar_event_id AS class_session_id, ce.starts_at,
-              ceb.professional_service_id, ps.booking_type, ps.min_participants,
+              ceb.professional_service_id, ps.booking_type,
               at.name AS title,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
@@ -1348,9 +1368,8 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
       });
       promoted.push(...grp.promotedMemberIds);
     } else if (rows[0].status === 'booked' && rows[0].booking_type === 'family_only') {
-      // #2813 §6: the family's individual bookings of this occurrence and service
-      // answer to its minimum together; below it, the rest are cancelled too.
-      const fam = await cancelFamilyBelowMinimum(gymId, memberId, rows[0], resolveRequestActor(ctx));
+      // #2901: cancelling a Family Only booking cancels it for the whole family.
+      const fam = await cancelFamilyBooking(gymId, memberId, rows[0], resolveRequestActor(ctx));
       promoted.push(...fam.promotedMemberIds);
     }
     for (const pid of promoted) {
@@ -2291,7 +2310,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // with, read from its snapshots only (`attachPastPlanDetails()`).
     const past_memberships = await attachPastPlanDetails(gymId, withCancelledPlanSets(assignmentHistory, cancelledSetRows));
     // #2660: the member's Draft assignments are listed beside their live plans
-    // under the Admin's own status (`draft`), never as the member's plan — the
+    // under the Admin's own status (`in_cart`), never as the member's plan — the
     // ordering and filter above still decide `membership` without them.
     const { rows: draftRows } = await db.query<any>(
       `SELECT um.id, um.membership_plan_id, p.name AS plan_name, um.status,
@@ -2299,7 +2318,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               um.starts_at, um.ends_at, um.closed_at
          FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
          LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-        WHERE um.status = 'draft'
+        WHERE um.status = 'in_cart'
         ORDER BY um.starts_at DESC, um.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],
@@ -2980,7 +2999,11 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const { centerId } = getCenterContext(req);
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?', 'ce.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
-    if (centerId != null) {
+    if (req.query.center_id === ALL_CENTERS_FILTER) {
+      // #2953: My Bookings' Past tab applies the same "All centers" scope as Upcoming.
+      const scope = await allCentersScopeSql(db, gymId, memberId);
+      if (scope) { where.push(scope.sql); params.push(...scope.params); }
+    } else if (centerId != null) {
       // See the matching comment in GET /me/schedule (#478): a NULL center_id
       // occurrence isn't tied to a specific center and must stay visible.
       where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
@@ -3011,6 +3034,35 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
   }
 });
 
+// #2937 — the priced lines of a page of the member's Billing Events, keyed by
+// event. The ids come from the member's own ledger read above, and the gym is
+// filtered again here, so no other member's or gym's line can be returned.
+async function loadMemberBillingEventLines(gymId: number | string, eventIds: number[]) {
+  const byEvent = new Map<number, Array<{
+    id: number; kind: string; item_name: string; quantity: number;
+    regular_unit_price: string | null; promotion_name: string | null; amount: string;
+  }>>();
+  const ids = eventIds.filter((id) => Number.isInteger(id) && id > 0);
+  if (ids.length === 0) return byEvent;
+  const { rows } = await db.query<any>(
+    `SELECT id, billing_event_id, kind, item_name, quantity, regular_unit_price, promotion_name, amount
+       FROM billing_event_lines
+      WHERE gym_id = ? AND billing_event_id IN (${ids.map(() => '?').join(', ')})
+      ORDER BY billing_event_id, id`,
+    [gymId, ...ids],
+  );
+  for (const r of rows) {
+    const key = Number(r.billing_event_id);
+    const list = byEvent.get(key) ?? [];
+    list.push({
+      id: Number(r.id), kind: r.kind, item_name: r.item_name, quantity: Number(r.quantity),
+      regular_unit_price: r.regular_unit_price, promotion_name: r.promotion_name, amount: r.amount,
+    });
+    byEvent.set(key, list);
+  }
+  return byEvent;
+}
+
 // P1.8: read-only paginated ledger for the caller's own member row.
 meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -3033,7 +3085,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // would let the member's Payments card call an event paid that the
     // Payments dashboard calls failed.
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.event_type, be.previous_status, be.new_status,
+      `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
               be.amount, be.notes, be.created_at, be.receipt_number, be.cancelled_at,
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
@@ -3046,9 +3098,16 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
        ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
+    // #2936 — the latest stored document of each kind, for the download actions.
+    const documents = await loadMemberPaymentDocuments(gymId, rows);
+    // #2937 — each event's own priced lines (#1474), for the expanded row.
+    // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
+    const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
     const items = rows.map(({ latest_tx_status, ...row }) => ({
       ...row,
       status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
+      documents: documents.get(Number(row.id)) ?? [],
+      lines: linesByEvent.get(Number(row.id)) ?? [],
     }));
     res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
@@ -3108,13 +3167,19 @@ meRouter.get(
       if (!filter.ok) return res.status(400).json({ error: filter.error });
       // #2254: names and descriptions in the member's language (base text as fallback).
       const items = await memberProductCatalogue(gymId, memberId, filter.ids);
-      const localized = await attachProductTranslations('product', items as any[], getRequestLocale(req));
+      const locale = getRequestLocale(req);
+      const [localized, professionalServices] = await Promise.all([
+        attachProductTranslations('product', items as any[], locale),
+        // #2905: the options of the catalogue's Professional Service filter.
+        memberProductServiceFilters(gymId, locale),
+      ]);
       res.json({
         items: items.map((item, i) => ({
           ...item,
           name: localized[i].display_name,
           description: localized[i].display_description,
         })),
+        professional_services: professionalServices,
       });
     } catch (err) {
       next(err);
@@ -3342,6 +3407,8 @@ meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureE
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #2936: documents are part of the Payments tab, which is the Family Owner's (#2776).
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
     const { rows: evRows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
               ct.code AS charge_type_code, m.name AS member_name
@@ -3355,37 +3422,79 @@ meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureE
     const ev = evRows[0];
     if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
 
-    const { rows: gymRows } = await db.query<any>(
-      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
-      [gymId],
-    );
-    const gym = gymRows[0];
-    const { rows: taxRows } = await db.query<any>(
-      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
-      [gymId],
-    );
-    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
-
-    const pdfBuffer = await generateReceiptPdf({
+    // #2884: the member's receipt is the stored receipt document (#2567 stage 2),
+    // with every line at its own rate, never a second rendering.
+    const pdfBuffer = await receiptPdf({
+      gymId,
+      eventId: ev.id,
       receiptNumber: ev.receipt_number,
       issuedAt: new Date(ev.receipt_issued_at),
-      gym: {
-        name: gym.name,
-        legalName: gym.legal_name,
-        cif: gym.cif,
-        fiscalAddress: gym.fiscal_address,
-        fiscalPhone: gym.fiscal_phone,
-      },
-      memberName: ev.member_name ?? 'Socio',
-      concept: ev.charge_type_code ?? 'membership_fee',
-      totalAmount: parseFloat(ev.amount),
-      ivaRate,
-      currency: 'EUR',
+      memberName: ev.member_name,
+      chargeTypeCode: ev.charge_type_code,
+      amount: parseFloat(ev.amount),
     });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="recibo-${ev.receipt_number}.pdf"`);
     res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #2936 — the member downloads the latest stored invoice of one of their own
+// Billing Events. Only the invoice `memberPaymentDocuments()` offers for that
+// event is served (a replaced or superseded one is a 404), from its stored
+// representation (paid, else not-paid); nothing is issued or rendered here.
+meRouter.get('/invoices/:id/pdf', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const invoiceId = parseInt(String(req.params.id), 10);
+  if (!invoiceId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const event = await ownEventOfDocument(gymId, memberId, 'invoices', invoiceId);
+    if (!event) return res.status(404).json({ error: 'Not found' });
+    const offered = (await loadMemberPaymentDocuments(gymId, [event])).get(event.id) ?? [];
+    if (!offered.some((d) => (d.kind === 'simplified_invoice' || d.kind === 'full_invoice') && d.id === invoiceId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const { rows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [invoiceId, gymId]);
+    const inv = rows[0];
+    const type = inv.invoice_type as InvoiceType;
+    const key: string | null = inv[invoiceKeyColumn(type, 'paid')] ?? inv[invoiceKeyColumn(type, 'not-paid')];
+    if (!key) return res.status(404).json({ error: 'Not found' });
+    const doc = await getPrivateDocument(key);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="factura-${inv.fiscal_number}.pdf"`);
+    res.send(doc.body);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #2936 — the member downloads the latest Refund Receipt of one of their own
+// Billing Events (#2935). Only the one offered for that event is served.
+meRouter.get('/refund-receipts/:id/pdf', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const refundReceiptId = parseInt(String(req.params.id), 10);
+  if (!refundReceiptId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const event = await ownEventOfDocument(gymId, memberId, 'refund_receipts', refundReceiptId);
+    if (!event) return res.status(404).json({ error: 'Not found' });
+    const offered = (await loadMemberPaymentDocuments(gymId, [event])).get(event.id) ?? [];
+    if (!offered.some((d) => d.kind === 'refund_receipt' && d.id === refundReceiptId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const result = await refundReceiptPdf(gymId, refundReceiptId);
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="reembolso-${result.receiptNumber}.pdf"`);
+    res.send(result.pdf);
   } catch (err) {
     next(err);
   }

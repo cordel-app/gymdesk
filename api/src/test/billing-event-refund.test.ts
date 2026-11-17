@@ -4,14 +4,16 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
+import { reconcilePendingProviderRefunds } from '../api/billing-event-refunds';
 import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, ensureTestProductSet,
 } from './helpers';
 
 const refundPayment = vi.fn();
+const getRefundedAmount = vi.fn();
 vi.mock('../payments', () => ({
-  getPaymentProvider: () => ({ refundPayment, executeRecurring: vi.fn(), createPaymentRequest: vi.fn() }),
+  getPaymentProvider: () => ({ refundPayment, getRefundedAmount, executeRecurring: vi.fn(), createPaymentRequest: vi.fn() }),
 }));
 
 let gymId: string;
@@ -37,7 +39,7 @@ afterAll(async () => {
   await db.end();
 });
 
-beforeEach(() => { refundPayment.mockReset(); });
+beforeEach(() => { refundPayment.mockReset(); getRefundedAmount.mockReset(); });
 
 type Attempt = { status: string; method: string; amount: string; name?: string | null; providerRef?: string | null };
 
@@ -368,5 +370,72 @@ describe('Refund — flag and permissions', () => {
     expect((await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' }, otherGymId)).status).toBe(404);
     const unauth = await request.post(`/payments/billing-events/${e.billingEventId}/refund`).set('x-gym-id', gymId).send({});
     expect(unauth.status).toBe(401);
+  });
+});
+
+// #2480 follow-up: a MONEI refund the refund call left pending is settled later from
+// what MONEI says it has refunded of the payment.
+describe('Pending MONEI refund reconciliation', () => {
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as any;
+  const age = (billingEventId: number, minutes: number) => db.query(
+    `UPDATE payment_requests r JOIN payment_requests o ON o.id = r.refund_of_payment_request_id
+        SET r.created_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)
+      WHERE o.billing_event_id = ? AND r.status = 'pending'`, [minutes, billingEventId]);
+  async function pendingMoneiRefund(body: object = { kind: 'full', method: 'provider' }) {
+    const ref = `pay_rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const e = await createEvent(gymId, [{ status: 'completed', method: 'provider', amount: '40.00', name: 'Monei', providerRef: ref }]);
+    refundPayment.mockRejectedValueOnce(new Error('fetch failed: timeout'));
+    expect((await post(e.billingEventId, 'refund', body)).status).toBe(502);
+    return { ...e, ref };
+  }
+
+  it('completes a pending refund MONEI has made, issues its receipt and shows the event refunded', async () => {
+    const e = await pendingMoneiRefund();
+    await age(e.billingEventId, 30);
+    getRefundedAmount.mockImplementation(async (ref: string) =>
+      ref === e.ref ? { providerStatus: 'REFUNDED', refundedAmount: 4000 } : { providerStatus: 'SUCCEEDED', refundedAmount: 0 });
+    await reconcilePendingProviderRefunds(log);
+    const [refund] = await refundRows(e.billingEventId);
+    expect(refund.status).toBe('completed');
+    expect(refund.provider_status).toBe('REFUNDED');
+    const { rows } = await db.query<any>('SELECT id FROM refund_receipts WHERE payment_request_id = ?', [refund.id]);
+    expect(rows).toHaveLength(1);
+    const row = await listRow(e.memberId, e.billingEventId);
+    expect(row.refund_state).toBe('full');
+    expect(row.normalized_payment_status).toBe('refunded');
+    // A second run changes nothing.
+    await reconcilePendingProviderRefunds(log);
+    expect((await db.query<any>('SELECT id FROM refund_receipts WHERE payment_request_id = ?', [refund.id])).rows).toHaveLength(1);
+  });
+
+  it('leaves a refund MONEI does not count yet pending, and fails it after a day so the amount is released', async () => {
+    const e = await pendingMoneiRefund();
+    await age(e.billingEventId, 60);
+    getRefundedAmount.mockResolvedValue({ providerStatus: 'SUCCEEDED', refundedAmount: 0 });
+    await reconcilePendingProviderRefunds(log);
+    expect((await refundRows(e.billingEventId))[0].status).toBe('pending');
+
+    await age(e.billingEventId, 25 * 60);
+    await reconcilePendingProviderRefunds(log);
+    expect((await refundRows(e.billingEventId))[0].status).toBe('failed');
+    expect((await listRow(e.memberId, e.billingEventId)).refundable_amount).toBe('40.00');
+  });
+
+  it('leaves the refund pending when MONEI cannot be reached or does not say how much', async () => {
+    const e = await pendingMoneiRefund();
+    await age(e.billingEventId, 25 * 60);
+    getRefundedAmount.mockRejectedValue(new Error('fetch failed'));
+    await reconcilePendingProviderRefunds(log);
+    expect((await refundRows(e.billingEventId))[0].status).toBe('pending');
+    getRefundedAmount.mockResolvedValue({ providerStatus: 'PARTIALLY_REFUNDED', refundedAmount: null });
+    await reconcilePendingProviderRefunds(log);
+    expect((await refundRows(e.billingEventId))[0].status).toBe('pending');
+  });
+
+  it('does not touch a refund young enough to still be inside its own refund call', async () => {
+    const e = await pendingMoneiRefund();
+    getRefundedAmount.mockResolvedValue({ providerStatus: 'REFUNDED', refundedAmount: 4000 });
+    await reconcilePendingProviderRefunds(log);
+    expect((await refundRows(e.billingEventId))[0].status).toBe('pending');
   });
 });

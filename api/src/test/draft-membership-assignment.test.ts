@@ -18,6 +18,7 @@
 // into real Billing Events are stage 2's; nothing here anticipates them.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -84,13 +85,13 @@ describe('#1108 stage 1 — every assignment path creates a Draft', () => {
     const planId = await createPlan(gymId, `Draft Plan ${uniq()}`);
 
     const created = await assignPlan(gymId, memberId, planId);
-    expect(created.status).toBe('draft');
+    expect(created.status).toBe('in_cart');
     // The stored column, not something the response composed.
-    expect(await readStatus(created.id)).toBe('draft');
+    expect(await readStatus(created.id)).toBe('in_cart');
     // `lifecycle_status` is a projection of the stored status (#410) and a
     // stored `draft` outranks the date-aware part of it: a future-dated Draft
     // reads `draft`, not `pending`.
-    expect(created.lifecycle_status).toBe('draft');
+    expect(created.lifecycle_status).toBe('in_cart');
     // §1: no billing. A Draft is outside the nightly run's own
     // `WHERE status = 'active'` and has no cycle to be charged on yet.
     expect(created.next_billing_date).toBeNull();
@@ -103,7 +104,7 @@ describe('#1108 stage 1 — every assignment path creates a Draft', () => {
     const res = await api('post', `/membership-plans/${planId}/assign`, gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-03-01' });
     expect(res.status).toBe(201);
-    expect(await readStatus(res.body.id)).toBe('draft');
+    expect(await readStatus(res.body.id)).toBe('in_cart');
   });
 
   it('assign-new-plan creates the successor as a Draft and leaves the plan it replaces running', async () => {
@@ -118,7 +119,7 @@ describe('#1108 stage 1 — every assignment path creates a Draft', () => {
     const res = await api('post', `/user-memberships/${first.id}/assign-new-plan`, gymId)
       .send({ membership_plan_id: secondPlan, starts_at: '2026-06-01' });
     expect(res.status).toBe(201);
-    expect(await readStatus(res.body.id)).toBe('draft');
+    expect(await readStatus(res.body.id)).toBe('in_cart');
     // The point of the Draft: the member keeps the plan they are on while its
     // replacement is configured. The supersede happens at the commit.
     expect(await readStatus(first.id)).toBe('active');
@@ -132,7 +133,7 @@ describe('#1108 stage 1 — every assignment path creates a Draft', () => {
     const rows = await statusChangeRows(gymId, created.id);
     expect(rows.length).toBe(1);
     expect(rows[0].previous_status).toBeNull();
-    expect(rows[0].new_status).toBe('draft');
+    expect(rows[0].new_status).toBe('in_cart');
   });
 });
 
@@ -158,7 +159,7 @@ describe('#1108 stage 1 — a Draft is not the member\'s Membership Plan', () =>
     const draft = await api('post', '/user-memberships', gymId)
       .send({ member_id: memberId, membership_plan_id: nextPlan, starts_at: '2026-09-01' });
     expect(draft.status).toBe(201);
-    expect(draft.body.status).toBe('draft');
+    expect(draft.body.status).toBe('in_cart');
     expect(await readStatus(live.id)).toBe('active');
   });
 
@@ -183,7 +184,7 @@ describe('#1108 stage 1 — a Draft is not the member\'s Membership Plan', () =>
 
     const { rows } = await db.query<{ status: string }>(
       `SELECT um.status FROM user_memberships um
-        WHERE um.gym_id = ? AND um.member_id = ? AND um.status <> 'draft'`,
+        WHERE um.gym_id = ? AND um.member_id = ? AND um.status <> 'in_cart'`,
       [gymId, memberId],
     );
     // The member-facing filter is one constant
@@ -212,7 +213,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
     expect(await readStatus(draft.id)).toBe('active');
 
     const rows = await statusChangeRows(gymId, draft.id);
-    expect(rows[rows.length - 1].previous_status).toBe('draft');
+    expect(rows[rows.length - 1].previous_status).toBe('in_cart');
     expect(rows[rows.length - 1].new_status).toBe('active');
   });
 
@@ -237,7 +238,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
 
     const res = await api('post', `/user-memberships/${draft.id}/activate`, gymId).send({});
     expect(res.status).toBe(404);
-    expect(await readStatus(draft.id)).toBe('draft');
+    expect(await readStatus(draft.id)).toBe('in_cart');
   });
 
   it('409s with the replacement conflict when the member already holds a live plan, and supersedes it on confirm', async () => {
@@ -254,7 +255,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
     expect(refused.body.error).toBe('active_plan_exists');
     expect(refused.body.current_plan.id).toBe(live.id);
     // Refusing changes nothing.
-    expect(await readStatus(draft.id)).toBe('draft');
+    expect(await readStatus(draft.id)).toBe('in_cart');
     expect(await readStatus(live.id)).toBe('active');
 
     const confirmed = await api('post', `/user-memberships/${draft.id}/activate`, gymId)
@@ -286,7 +287,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
       .send({ confirm: true });
     expect(res.status).toBe(400);
     expect(await readStatus(live.id)).toBe('active');
-    expect(await readStatus(draft.id)).toBe('draft');
+    expect(await readStatus(draft.id)).toBe('in_cart');
   });
 
   it('refuses a plain PUT status flip out of draft and names the activation route', async () => {
@@ -297,7 +298,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
     const res = await api('put', `/user-memberships/${draft.id}`, gymId).send({ status: 'active' });
     expect(res.status).toBe(400);
     expect(String(res.body.error)).toContain('activate');
-    expect(await readStatus(draft.id)).toBe('draft');
+    expect(await readStatus(draft.id)).toBe('in_cart');
   });
 
   it('discards a Draft through Close, with no unused-value warning to confirm', async () => {
@@ -355,7 +356,7 @@ describe('#1108 stage 1 — a Draft is editable, projected, and not billable', (
     const { rows } = await db.query<{ n: number }>(
       `SELECT COUNT(*) AS n FROM billing_events be
          JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ? AND be.is_scheduled = 1`,
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.is_scheduled = 1`,
       [draft.id],
     );
     expect(Number(rows[0].n)).toBe(0);

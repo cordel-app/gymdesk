@@ -35,19 +35,28 @@ import {
   type BillingEventCardLine,
   PaymentsSection,
   PaymentsSubcard,
+  PastBillingEventRow,
 } from '@/components/MemberPaymentsCard';
 import {
   MemberProductsSection,
   type MemberProductCardItem,
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
-import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
+import { SERVICE_FILTER_PARAM, productsPathForServices, serviceFilterFromParam, serviceFilterSelectValue, type ServiceOption } from '@/lib/serviceRequired';
+
+/** #2905 — `GET /me/products`, narrowed to the services named (none: the whole catalogue). */
+function productsQuery(ids: number[]): string {
+  return '/me/products' + (ids.length ? `?${SERVICE_FILTER_PARAM}=${ids.join(',')}` : '');
+}
 import {
   type CartItem,
   type MemberCartView,
+  type MemberStandaloneCart,
+  EMPTY_STANDALONE_CART,
   cartCommitAction,
   cartCounts,
   cartErrorKey,
+  cartItemRemovePath,
   cartItems,
   cartItemsRemovable,
   cartPendingAmount,
@@ -55,6 +64,10 @@ import {
   cartProductState,
   hasCart,
   pendingCartCancelErrorKey,
+  separateStandaloneCart,
+  standaloneCartItems,
+  standaloneCommitAction,
+  standaloneSecondsLeft,
 } from '@/lib/memberCart';
 import { RETRY_PAYMENT_PARAM, wantsPaymentRetry } from '@/lib/paymentReturn';
 import {
@@ -62,6 +75,7 @@ import {
   type MemberServiceBalanceItem,
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
+import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -153,8 +167,15 @@ import {
   lineTreatmentKey,
   lineTreatmentName,
   nextPaymentDate,
-  pastBillingEventGroups,
+  billingEventHasDetails,
+  billingEventIssuedDate,
+  billingEventLineAmount,
+  billingEventLineRegularAmount,
   showsRegularPrice,
+  prepaidPaymentKey,
+  paymentDocumentLabelKey,
+  paymentDocumentPath,
+  type MemberPaymentDocument,
 } from '@/lib/memberPayments';
 
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
@@ -290,10 +311,18 @@ export default function MembershipPage() {
   // #1189 stage 4 — set when a refused booking sent the member here: only the
   // Products that grant sessions of those Professional Services are listed.
   const [serviceFilter, setServiceFilter] = useState<number[]>([]);
+  // #2905 — the Professional Services the catalogue may be narrowed by (the
+  // server's list, read from the unfiltered catalogue), and the in-flight
+  // re-read when the member picks one.
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
+  const [filteringProducts, setFilteringProducts] = useState(false);
+  // The notice "products that unlock the class you tried to book" is about a
+  // filter a refused booking set (#1189 stage 4), not one the member chose.
+  const [filterFromBooking, setFilterFromBooking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [downloadingReceipt, setDownloadingReceipt] = useState<number | null>(null);
+  const [downloadingDocument, setDownloadingDocument] = useState<string | null>(null);
 
   // #1121 stage 2 — the Product the member is confirming, and that one
   // dialog's own submit state. `null` means no dialog.
@@ -323,6 +352,10 @@ export default function MembershipPage() {
   // for, and the refusal of the last one (keyed by Product). Every figure and
   // every rule stays the server's; this is which card says what.
   const [setView, setSetView] = useState<MemberCartView | null>(null);
+  // #2949 stage 6 — the member's standalone one-time purchases (`GET /me/cart/purchases`),
+  // read with the set view; the seconds until the first leaves the cart, taken at that read.
+  const [standaloneCart, setStandaloneCart] = useState<MemberStandaloneCart>(EMPTY_STANDALONE_CART);
+  const [standaloneSeconds, setStandaloneSeconds] = useState<number | null>(null);
   // #2663 — `My Plans` and `My Products` render only once the one selected version is known.
   const [setViewLoaded, setSetViewLoaded] = useState(false);
   const [draftBusy, setDraftBusy] = useState<number | null>(null);
@@ -384,6 +417,7 @@ export default function MembershipPage() {
     // need a Suspense boundary around this whole page.
     const filter = serviceFilterFromParam(new URLSearchParams(window.location.search).get(SERVICE_FILTER_PARAM));
     setServiceFilter(filter);
+    setFilterFromBooking(filter.length > 0);
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes, serviceRes, ownRes, assigneeRes] = await Promise.all([
@@ -394,7 +428,7 @@ export default function MembershipPage() {
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
           apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
-          apiFetch<{ items: MemberProduct[] }>('/me/products' + (filter.length ? `?${SERVICE_FILTER_PARAM}=${filter.join(',')}` : '')).catch(() => null),
+          apiFetch<{ items: MemberProduct[]; professional_services?: ServiceOption[] }>(productsQuery(filter)).catch(() => null),
           // Read with the page, not on opening the catalogue: a gym with no plans
           // to offer must not show a control that opens onto "no plans". A failed
           // read leaves `null`, which keeps the control (and the read on open).
@@ -418,6 +452,7 @@ export default function MembershipPage() {
         setPaymentRequests(prs);
         setForecast(projection);
         setProducts(catalogue?.items ?? null);
+        setServiceOptions(catalogue?.professional_services ?? []);
         setPlanCatalogue(plansRes?.plans ?? null);
         setServiceBalances(serviceRes?.items ?? null);
         setOwnPurchases(ownRes?.items ?? []);
@@ -434,6 +469,11 @@ export default function MembershipPage() {
 
   // #2496 stage 3 — read with the page and after every Draft edit.
   async function loadSetView() {
+    // #2949 stage 6: a failed read is an empty standalone cart, never a reason to hide the set's.
+    const standalone = apiFetch<MemberStandaloneCart>('/me/cart/purchases')
+      .then((c) => ({ purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null }))
+      .catch(() => EMPTY_STANDALONE_CART)
+      .then((c) => { setStandaloneCart(c); setStandaloneSeconds(standaloneSecondsLeft(c, Date.now())); });
     try {
       const rows = await apiFetch<MemberSetRow[]>('/me/product-sets');
       const id = currentSetId(rows);
@@ -442,7 +482,7 @@ export default function MembershipPage() {
       // edit, even before the discard pass removes it: read their Active
       // version instead and say what happened.
       if (isExpiredDraft(view)) {
-        const activeId = currentSetId(rows.filter((r) => r.status !== 'draft'));
+        const activeId = currentSetId(rows.filter((r) => r.status !== 'in_cart'));
         view = activeId == null ? null : await apiFetch<MemberCartView>(`/me/product-sets/${activeId}`);
         setDraftError({ productId: null, key: 'membership.draft_error_expired' });
       }
@@ -452,6 +492,7 @@ export default function MembershipPage() {
       // still judges the add itself.
       setSetView(null);
     } finally {
+      await standalone;
       setSetViewLoaded(true);
     }
   }
@@ -463,10 +504,13 @@ export default function MembershipPage() {
 
   // #2477 stage 3 — the Draft's live countdown, from the server's seconds; at
   // zero the page re-reads, so an expired Draft stops being offered for editing.
+  // #2949 stage 6: with standalone purchases in the cart, the first of them to leave it counts too.
+  const setSeconds = setView?.status === 'in_cart' ? setView.expires_in_seconds ?? null : null;
   const draftSecondsLeft = useDraftCountdown(
-    setView?.status === 'draft' ? setView.expires_in_seconds ?? null : null,
+    setSeconds == null ? standaloneSeconds : standaloneSeconds == null ? setSeconds : Math.min(setSeconds, standaloneSeconds),
     loadSetView,
   );
+  const viewerId = appMember?.id ?? null;
 
   /** Adds a recurring Product to the member's Draft, creating it if there is none. */
   async function addToDraft(product: MemberProduct) {
@@ -546,7 +590,7 @@ export default function MembershipPage() {
   // #2496 stage 5 — the Summary is re-read with the version, so every Draft
   // edit is reflected at once; nothing is computed in the page.
   useEffect(() => {
-    if (!setView || setView.status !== 'draft') { setReview(null); return; }
+    if (!setView || setView.status !== 'in_cart') { setReview(null); return; }
     let cancelled = false;
     apiFetch<MemberSetReview>(`/me/product-sets/${setView.id}/review`)
       .then((r) => { if (!cancelled) setReview(r); })
@@ -560,7 +604,8 @@ export default function MembershipPage() {
    * nothing owed activates. The amount is the server's; the body names nothing.
    */
   async function commitSet() {
-    const action = cartCommitAction(setView, review);
+    const action = cartCommitAction(setView, review, viewerId, standaloneCart);
+    if (action === 'cart_checkout') return checkoutStandalone();
     if (!review || !action || commitBusy) return;
     setCommitBusy(true);
     setCommitError(null);
@@ -579,13 +624,42 @@ export default function MembershipPage() {
     setCommitBusy(false);
   }
 
-  /** Discards the whole selection: the member's unpaid Draft, through its own route. */
+  /**
+   * #2949 stage 6 — the standalone purchases' own checkout (no Draft to pay them):
+   * one payment for all of them, at the server's total, on the hosted page.
+   */
+  async function checkoutStandalone() {
+    if (commitBusy) return;
+    setCommitBusy(true);
+    setCommitError(null);
+    try {
+      const out = await apiFetch<{ checkoutUrl: string }>('/me/cart/checkout', { method: 'POST' });
+      window.location.href = out.checkoutUrl;
+      return; // stays busy while the browser leaves for the payment page
+    } catch (err: any) {
+      setCommitError(cartErrorKey(err?.message));
+      await loadSetView();
+    }
+    setCommitBusy(false);
+  }
+
+  /**
+   * Discards the whole selection: the member's unpaid Draft, through its own
+   * route, and (#2949 stage 6) every standalone purchase in the cart. A Draft
+   * staff are still setting up, or a set awaiting payment, is never touched.
+   */
   async function discardDraft() {
-    if (!setView || setView.status !== 'draft') return;
+    const phase = cartPhase(setView, viewerId, standaloneCart);
+    if (phase == null) return;
     setDraftBusy(-1);
     setDraftError(null);
     try {
-      await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+      if (phase === 'draft' && setView && setView.status === 'in_cart') {
+        await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+      }
+      for (const p of standaloneCart.purchases) {
+        await apiFetch(`/me/cart/purchases/${p.id}`, { method: 'DELETE' });
+      }
     } catch (err: any) {
       setDraftError({ productId: null, key: draftErrorKey(err?.message) });
     } finally {
@@ -601,14 +675,14 @@ export default function MembershipPage() {
    * server keeps every other item and re-prices the cart.
    */
   async function removeCartItem(item: CartItem) {
-    if (!setView || setView.status !== 'draft' || cartBusy !== null) return;
+    if (cartBusy !== null) return;
+    // #2949 stage 6: a standalone purchase leaves through its own route; a set item only from a Draft.
+    const standalone = item.kind === 'purchase' && item.standalone;
+    if (!standalone && (!setView || setView.status !== 'in_cart')) return;
+    const path = cartItemRemovePath(item, setView?.id ?? null);
+    if (!path) return;
     setCartBusy(item.key);
     setCartError(null);
-    const path = item.kind === 'plan'
-      ? `/me/product-sets/${setView.id}/plans/${item.planSnapshotId}`
-      : item.kind === 'line'
-        ? `/me/product-sets/${setView.id}/services/${item.lineId}`
-        : `/me/product-sets/${setView.id}/purchases/${item.purchaseId}`;
     try {
       await apiFetch(path, { method: 'DELETE' });
     } catch (err: any) {
@@ -689,19 +763,21 @@ export default function MembershipPage() {
     }
   }
 
-  async function downloadReceipt(eventId: number) {
-    setDownloadingReceipt(eventId);
+  // #2936 — a stored document of one of the member's payments, opened in a new tab.
+  async function downloadDocument(doc: MemberPaymentDocument) {
+    const key = `${doc.kind}:${doc.id}`;
+    setDownloadingDocument(key);
     try {
       const token = await getToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`/api/proxy/me/receipts/${eventId}`, { headers });
+      const res = await fetch(`/api/proxy${paymentDocumentPath(doc)}`, { headers });
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
     } finally {
-      setDownloadingReceipt(null);
+      setDownloadingDocument(null);
     }
   }
 
@@ -732,7 +808,6 @@ export default function MembershipPage() {
 
   const nextGroup = nextPaymentDate(forecast);
   const laterGroups = forecastDatesAfterNext(forecast);
-  const pastGroups = pastBillingEventGroups(events);
 
   const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, gymFmt);
 
@@ -759,9 +834,12 @@ export default function MembershipPage() {
         // #946 — the one line that collects a Pre-paid Duration up front says how
         // many periods its amount covers, because the periods after it charge
         // nothing and an unexplained multiple of the fee reads as an error.
-        line.prepaid_periods != null
-          ? t('payments.prepaid_periods', { count: line.prepaid_periods })
-          : null,
+        // #2883 — in the plan's own cadence ("2 months pre-payment"); the quantity above is the
+        // number of fees, never these periods.
+        (() => {
+          const key = prepaidPaymentKey(line.prepaid_periods, line.prepaid_cadence);
+          return key ? t(`payments.${key}` as any, { count: line.prepaid_periods as number }) : null;
+        })(),
       ].filter(Boolean).join(' · ');
       return {
         key: `${line.kind}-${line.product_id ?? 'fee'}-${index}`,
@@ -837,7 +915,7 @@ export default function MembershipPage() {
    */
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
-    const benefits = (plan.benefits ?? []) as (Benefit & { mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
+    const benefits = (plan.benefits ?? []) as (Benefit & { final_price?: number | null; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
     const feeScopeNote = planFeeScopeNote(plan);
@@ -896,40 +974,49 @@ export default function MembershipPage() {
             </dl>
           )}
           {benefits.length > 0 && (
-            <div style={styles.nestedBenefits}>
-              <h2 style={styles.nestedBenefitsHeading}>{t('membership.items_heading')}</h2>
+            // #2892 — one plain list per group: no framed card per item and no
+            // section box, smaller detail text, the Product's picture beside it
+            // when it has one and the line's final price right-aligned with its currency.
+            <div style={styles.planLines} data-plan-lines>
               {ITEM_GROUPS.map((group) => {
                 const rows = benefits.filter((b) => itemGroupOf(b) === group);
                 if (rows.length === 0) return null;
                 return (
-                  <div key={group} style={styles.benefitGroup}>
-                    <h3 style={styles.h3}>{t(`membership.item_group.${group}`)}</h3>
+                  <div key={group} style={styles.planLineGroup}>
+                    <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
-                      {rows.map((b) => (
-                        <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`} style={styles.benefitItem}>
-                          {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
-                          {b.image_thumbnail_url && (
-                            <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
-                            </ImagePreviewButton>
-                          )}
-                          <span>{b.name}</span>
-                          {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
-                          {b.mandatory !== false && (
-                            <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
-                          )}
-                          {/* #2805 — a line held per member (#2657 stage 3) says whose it is. */}
-                          {b.member_name && (
-                            <span style={styles.benefitMeta}>· {t('membership.product_assignee_line', { name: b.member_name })}</span>
-                          )}
-                          <span style={styles.benefitMeta}>× {b.quantity}</span>
-                          <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
-                          {b.billing_frequency && (
-                            <span style={styles.benefitMeta}>· {t(`membership.frequency.${b.billing_frequency}` as any)}</span>
-                          )}
-                        </li>
-                      ))}
+                      {rows.map((b, index) => {
+                        const meta = [
+                          b.member_name ? t('membership.product_assignee_line', { name: b.member_name }) : null,
+                          `× ${b.quantity}`,
+                          b.billing_frequency ? t(`membership.frequency.${b.billing_frequency}` as any) : null,
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`}
+                            style={index === 0 ? styles.planLine : { ...styles.planLine, ...rowDividerStyle }}>
+                            {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
+                            {b.image_thumbnail_url && (
+                              <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
+                              </ImagePreviewButton>
+                            )}
+                            <span style={styles.planLineText}>
+                              <span style={styles.planLineName}>
+                                {b.name}
+                                {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
+                                {b.mandatory !== false && (
+                                  <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
+                                )}
+                              </span>
+                              <span style={styles.planLineMeta}>{meta}</span>
+                            </span>
+                            <span style={styles.planLinePrice} data-plan-line-price>
+                              {b.final_price != null ? formatPaymentAmount(b.final_price, 'EUR', gymFmt) : '—'}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 );
@@ -1028,11 +1115,55 @@ export default function MembershipPage() {
    * One function because two branches of this page render it — a member with a
    * plan and one without — and two copies would drift.
    */
+  /**
+   * #2905 — narrows the catalogue to one Professional Service, or clears it.
+   * The server filters (`?professional_service_ids=`, the same read a refused
+   * booking links to), and the address bar follows so a reload keeps it.
+   */
+  async function applyServiceFilter(ids: number[]) {
+    setServiceFilter(ids);
+    setFilterFromBooking(false);
+    window.history.replaceState(null, '', `/${locale}${productsPathForServices(ids)}`);
+    setFilteringProducts(true);
+    try {
+      const res = await apiFetch<{ items: MemberProduct[] }>(productsQuery(ids));
+      setProducts(res.items);
+    } catch {
+      // Keep the list on screen; the select still says what was asked for.
+    } finally {
+      setFilteringProducts(false);
+    }
+  }
+
+  function renderServiceFilter() {
+    if (mode !== 'add_product' || serviceOptions.length === 0) return null;
+    return (
+      <label style={styles.assigneeField}>
+        <span style={styles.assigneeLabel}>{t('membership.products_service_filter_label')}</span>
+        <select
+          style={inputStyle}
+          value={serviceFilterSelectValue(serviceFilter)}
+          disabled={filteringProducts}
+          onChange={(e) => applyServiceFilter(e.target.value ? [Number(e.target.value)] : [])}
+        >
+          <option value="">{t('membership.products_service_filter_all')}</option>
+          {serviceFilter.length > 1 && (
+            <option value="multiple" disabled>{t('membership.products_service_filter_several')}</option>
+          )}
+          {serviceOptions.map((s) => (
+            <option key={s.id} value={String(s.id)}>{s.name}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
   function renderProducts() {
     if (products === null) return null;
     return (
       <>
-      {serviceFilter.length > 0 && (
+      {renderServiceFilter()}
+      {filterFromBooking && serviceFilter.length > 0 && (
         <p style={{ fontSize: 13, margin: '0 0 8px' }}>
           {t('membership.products_filtered_notice')}{' '}
           <a
@@ -1077,7 +1208,7 @@ export default function MembershipPage() {
         </section>
       );
     }
-    if (!review || setView?.status !== 'draft') return null;
+    if (!review || setView?.status !== 'in_cart') return null;
     const { contracted, cancelled } = reviewSections(review);
     if (contracted.length + cancelled.length === 0 && !commitError) return null;
     const action = setCommitAction(review);
@@ -1087,8 +1218,8 @@ export default function MembershipPage() {
       const freqKey = reviewFrequencyKey(i.billing_frequency);
       const price = i.final_price ?? i.regular_price;
       return (
-        <li key={k} style={styles.benefitItem}>
-          <span style={i.state === 'cancelling' ? { textDecoration: 'line-through' } : undefined}>{i.name}</span>
+        <li key={k} style={styles.summaryItem}>
+          <span style={i.state === 'cancelling' ? { ...styles.summaryText, textDecoration: 'line-through' } : styles.summaryText}>{i.name}</span>
           {i.quantity != null && i.quantity > 1 && <span style={styles.benefitMeta}>× {i.quantity}</span>}
           {price != null && <span style={styles.benefitMeta}>· {money(price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
           {i.promotions.filter(Boolean).length > 0 && <span style={styles.benefitMeta}>· {i.promotions.filter(Boolean).join(', ')}</span>}
@@ -1096,60 +1227,72 @@ export default function MembershipPage() {
       );
     };
     const reviewError = review.error ? setCommitErrorKey(review.error) : null;
+    // #2894 — the Summary sits near the top of the page (right under the cart)
+    // as a collapsible card, closed by default with the total beside its title.
+    // Opening it is presentation only: the review was read with the version, so
+    // the draft and its selections are untouched. Its body is one linear list
+    // with small labels rather than a card per line. The error and the commit
+    // button stay outside the card, so a closed Summary never hides either.
     return (
-      <section style={styles.section} data-set-summary>
-        <h2 style={styles.h2}>{t('membership.summary_heading')}</h2>
-        <div style={styles.card}>
-          <h3 style={styles.h3}>{t('membership.summary_contracted')}</h3>
+      <div data-set-summary>
+        <MemberCollapsibleCard
+          title={t('membership.summary_heading')}
+          summary={t('membership.summary_total_short', { amount: money(review.amount_due) })}
+          bodyStyle={styles.summaryBody}
+        >
+          <p style={styles.summaryLabel}>{t('membership.summary_contracted')}</p>
           {contracted.length === 0
-            ? <p style={styles.hint}>{t('membership.summary_none')}</p>
-            : <ul style={styles.benefitList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
+            ? <p style={styles.summaryHint}>{t('membership.summary_none')}</p>
+            : <ul style={styles.summaryList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
           {cancelled.length > 0 && (<>
-            <h3 style={styles.h3}>{t('membership.summary_cancelled')}</h3>
-            <ul style={styles.benefitList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
+            <p style={styles.summaryLabel}>{t('membership.summary_cancelled')}</p>
+            <ul style={styles.summaryList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
           </>)}
-          <h3 style={styles.h3}>{t('membership.summary_initial_payment')}</h3>
+          <p style={styles.summaryLabel}>{t('membership.summary_initial_payment')}</p>
           {review.immediate_lines.length === 0
-            ? <p style={styles.hint}>{t('membership.summary_nothing_due')}</p>
+            ? <p style={styles.summaryHint}>{t('membership.summary_nothing_due')}</p>
             : (
-              <ul style={styles.eventList}>
+              <ul style={styles.summaryList}>
                 {review.immediate_lines.map((l, n) => {
                   const discount = reviewLineDiscount(l);
+                  const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
                   const sub = [
-                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price * l.quantity) }) : null,
+                    // #2883 — a Membership Fee collecting a Pre-paid Duration says how many periods it covers.
+                    prepaidKey ? t(`payments.${prepaidKey}` as any, { count: l.prepaid_periods as number }) : null,
+                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
                     l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
                     discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
                     l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,
                   ].filter(Boolean).join(' · ');
                   return (
-                    <li key={`l-${n}`} style={styles.eventItem}>
+                    <li key={`l-${n}`} style={styles.summaryLine}>
                       <div style={styles.eventLine}>
-                        <span style={styles.eventLabel}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
-                        <span style={styles.eventAmount}>{money(l.amount)}</span>
+                        <span style={styles.summaryText}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
+                        <span style={styles.summaryAmount}>{money(l.amount)}</span>
                       </div>
-                      {sub && <div style={styles.eventSub}>{sub}</div>}
+                      {sub && <div style={styles.summarySub}>{sub}</div>}
                     </li>
                   );
                 })}
               </ul>
             )}
-          <div style={styles.eventLine}>
-            <span style={{ ...styles.eventLabel, fontWeight: 700 }}>{t('membership.summary_total')}</span>
-            <span style={{ ...styles.eventAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
+          <div style={styles.summaryTotal}>
+            <span style={{ ...styles.summaryText, fontWeight: 700 }}>{t('membership.summary_total')}</span>
+            <span style={{ ...styles.summaryAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
           </div>
-          {(reviewError || commitError) && (
-            <p role="alert" style={{ ...styles.draftError, margin: '10px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
-          )}
-          {/* #2746 stage 2 — the cart card above carries the one Pay; the
-              button stays here only for a Draft that changes something without
-              adding an item (it only cancels one). */}
-          {action && !hasCart(setView) && (
-            <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 14 }} disabled={commitBusy} onClick={commitSet}>
-              {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
-            </button>
-          )}
-        </div>
-      </section>
+        </MemberCollapsibleCard>
+        {(reviewError || commitError) && (
+          <p role="alert" style={{ ...styles.draftError, margin: '8px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
+        )}
+        {/* #2746 stage 2 — the cart card above carries the one Pay; the
+            button stays here only for a Draft that changes something without
+            adding an item (it only cancels one). */}
+        {action && !hasCart(setView, viewerId, standaloneCart) && (
+          <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 10 }} disabled={commitBusy} onClick={commitSet}>
+            {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -1162,11 +1305,52 @@ export default function MembershipPage() {
     // #2746 stage 2 — the cart card carries the count, the countdown and the
     // global Cancel; this notice is left for a refusal with no cart to show it.
     const generalError = draftError && draftError.productId === null ? draftError.key : null;
-    if (hasCart(setView) || !generalError) return null;
+    if (hasCart(setView, viewerId, standaloneCart) || !generalError) return null;
     return (
       <div style={{ ...noticeStyle('info'), marginTop: 12 }}>
         <span role="alert" style={styles.draftError}>{t(generalError as any)}</span>
       </div>
+    );
+  }
+
+  /**
+   * #2895 — a Draft staff created by assigning a plan and are still setting
+   * up: the member sees what it holds, but there is nothing to pay or cancel
+   * yet (staff decide how it is paid; choosing **Members App** turns it into
+   * the pending cart above), no item leaves on its own and the two Add
+   * actions are shown disabled, with the reason, because a second purchase
+   * cannot start beside it. The server refuses every write to it as well.
+   */
+  function renderStaffDraftCart() {
+    const { plans, products } = cartCounts(setView, viewerId);
+    const items = cartItems(setView, viewerId);
+    const counts = [
+      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
+      products > 0 ? t('membership.cart_products', { count: products }) : null,
+    ].filter(Boolean).join(' · ');
+    return (
+      <section style={styles.section} data-cart data-cart-awaiting-staff>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t('membership.cart_staff_heading')}</h2>
+              <span style={cartMutedStyle}>{counts}</span>
+              <span style={cartMutedStyle}>{t('membership.cart_staff_hint')}</span>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
+        </div>
+      </section>
     );
   }
 
@@ -1178,8 +1362,8 @@ export default function MembershipPage() {
    * whole purchase after a confirmation (#2747). No item leaves on its own.
    */
   function renderPendingCart() {
-    const { plans, products } = cartCounts(setView);
-    const items = cartItems(setView);
+    const { plans, products } = cartCounts(setView, viewerId);
+    const items = cartItems(setView, viewerId);
     const amount = cartPendingAmount(setView);
     const total = amount == null ? '—' : formatPaymentAmount(amount, 'EUR', gymFmt);
     const busy = commitBusy || submitting;
@@ -1237,6 +1421,84 @@ export default function MembershipPage() {
   }
 
   /**
+   * #2949 stage 6 — the member's standalone one-time purchases as a cart of
+   * their own: when there is no Draft to pay them (`phase === 'standalone'`),
+   * or `beside` a set whose checkout is in flight, which they are not part of.
+   * The total is the server's (`GET /me/cart/purchases`), Pay is
+   * `POST /me/cart/checkout`, each item has its own Cancel and the global
+   * Cancel removes them all after the same confirmation. Nothing is priced here.
+   */
+  function renderStandaloneCart(beside: boolean) {
+    const items = standaloneCartItems(standaloneCart);
+    const action = standaloneCommitAction(standaloneCart);
+    const total = standaloneCart.total == null ? '—' : formatPaymentAmount(standaloneCart.total, standaloneCart.currency ?? 'EUR', gymFmt);
+    const remaining = formatDraftRemaining(draftSecondsLeft);
+    const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
+    const busy = commitBusy || draftBusy !== null || cartBusy !== null;
+    const error = beside ? cartError : (cartError ?? commitError);
+    return (
+      <section style={styles.section} data-cart data-cart-standalone>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t(beside ? 'membership.cart_standalone_heading' : 'membership.cart_heading')}</h2>
+              <span style={cartMutedStyle}>{t('membership.cart_products', { count: items.length })}</span>
+              <span style={cartTotalStyle} data-cart-total>{total}</span>
+              {beside && <span style={cartMutedStyle}>{t('membership.cart_standalone_hint')}</span>}
+              {!beside && remaining != null && (
+                <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+                  {t('membership.draft_expires_in')} {remaining}
+                </span>
+              )}
+            </div>
+            <div style={styles.cartActions}>
+              <button
+                type="button"
+                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
+                disabled={busy || !action}
+                onClick={checkoutStandalone}
+              >
+                {commitBusy ? t('membership.cart_paying') : t('membership.cart_pay')}
+              </button>
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
+                disabled={busy}
+                onClick={() => setConfirmDiscard(true)}
+              >
+                {t('membership.cart_cancel')}
+              </button>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t('membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                  {item.kind === 'purchase' && (
+                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
+                  disabled={busy}
+                  onClick={() => removeCartItem(item)}
+                >
+                  {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!beside && renderCartAddButtons()}
+          {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
+        </div>
+      </section>
+    );
+  }
+
+  /**
    * #2746 stage 2 — the shopping cart (§4): the member's Draft Product Set as
    * one purchase, at the top of My Products. The counts are the server's
    * (`cart`), the total is the server's review (`commitCharge()`, the figure
@@ -1244,12 +1506,17 @@ export default function MembershipPage() {
    * actions commit or discard the whole Draft. Nothing here prices anything.
    */
   function renderCart() {
-    const phase = cartPhase(setView, appMember?.id ?? null);
+    const phase = cartPhase(setView, viewerId, standaloneCart);
     if (phase == null) return null;
-    if (phase === 'pending_payment') return renderPendingCart();
-    const { plans, products } = cartCounts(setView);
-    const items = cartItems(setView);
-    const action = cartCommitAction(setView, review);
+    // #2949 stage 6: purchases added while the set's checkout is in flight (or staff are
+    // setting it up) are not part of it, so they are a cart card of their own beside it.
+    const beside = separateStandaloneCart(setView, viewerId, standaloneCart) ? renderStandaloneCart(true) : null;
+    if (phase === 'pending_payment') return <>{renderPendingCart()}{beside}</>;
+    if (phase === 'awaiting_staff') return <>{renderStaffDraftCart()}{beside}</>;
+    if (phase === 'standalone') return renderStandaloneCart(false);
+    const { plans, products } = cartCounts(setView, viewerId, standaloneCart);
+    const items = cartItems(setView, viewerId, standaloneCart);
+    const action = cartCommitAction(setView, review, viewerId, standaloneCart);
     const currency = review?.currency ?? 'EUR';
     const total = review?.amount_due == null ? '—' : formatPaymentAmount(review.amount_due, currency, gymFmt);
     const remaining = formatDraftRemaining(draftSecondsLeft);
@@ -1308,7 +1575,7 @@ export default function MembershipPage() {
                     <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
                   )}
                 </span>
-                {cartItemsRemovable(setView) && (<button
+                {(cartItemsRemovable(setView) || (item.kind === 'purchase' && item.standalone)) && (<button
                   type="button"
                   style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
                   disabled={busy}
@@ -1387,18 +1654,11 @@ export default function MembershipPage() {
         </PaymentsSubcard>
 
         <PaymentsSubcard title={t('payments.past_heading')}>
-          {pastGroups.length === 0 ? (
+          {events.length === 0 ? (
             <p style={styles.hint}>{t('payments.past_empty')}</p>
           ) : (
-            pastGroups.map((group) => (
-              <BillingEventCard
-                key={group.date}
-                date={formatPaymentDate(group.date, gymFmt)}
-                total={money(group.total)}
-                totalLabel={t('payments.total')}
-                lines={pastCardLines(group.events)}
-              />
-            ))
+            // #2937 — one compact, independently collapsible row per event.
+            events.map((event) => renderPastBillingEvent(event))
           )}
         </PaymentsSubcard>
 
@@ -1637,10 +1897,10 @@ export default function MembershipPage() {
     // Product Set, never bought on its own (the server's `addable_to_draft`).
     if (product.addable_to_draft) return draftAction(product);
     // #2746 stage 2 — a one-time Product joins the cart, or is already in it.
-    const inCart = cartProductState(product.id, setView);
+    const inCart = cartProductState(product.id, setView, standaloneCart);
     if (inCart.state === 'in_cart') {
-      const key = `purchase-${inCart.purchaseId}`;
-      const item = cartItems(setView).find((i) => i.key === key);
+      const item = [...cartItems(setView, viewerId, standaloneCart), ...standaloneCartItems(standaloneCart)]
+        .find((i) => i.key === inCart.key);
       return (
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <StatusPill status="pending" label={t('membership.cart_in_cart')} />
@@ -1721,9 +1981,10 @@ export default function MembershipPage() {
   }
 
   /**
-   * #2746 stage 2 — a one-time Product goes into the member's cart (their Draft
-   * Product Set, created if there is none) instead of starting a payment of its
-   * own: nothing is charged until the cart's Pay (§2). The body names the
+   * #2746 stage 2 — a one-time Product goes into the member's cart instead of
+   * starting a payment of its own: nothing is charged until the cart's Pay (§2).
+   * Since #2949 stage 6 it is a standalone purchase (`/me/cart/purchases`), never
+   * linked to a Product Set; a Draft's Save & Pay pays it with the rest. The body names the
    * Product, the applied Promotion and who it is for — the route re-reads and
    * re-prices the Promotion (#1118 §8), so the browser never names a price.
    */
@@ -1732,8 +1993,9 @@ export default function MembershipPage() {
     setPurchaseError(null);
     try {
       const applied = appliedPromotionFor(product);
-      const draft = await apiFetch<{ id: number }>('/me/product-sets/draft', { method: 'POST' });
-      await apiFetch(`/me/product-sets/${draft.id}/purchases`, {
+      // #2949 stage 6: a one-time Product enters the cart on its own (stage 4), never a
+      // Product Set; the Draft's Save & Pay pays it with the rest when there is one (stage 5).
+      await apiFetch('/me/cart/purchases', {
         method: 'POST',
         body: JSON.stringify({
           product_id: product.id,
@@ -1825,7 +2087,7 @@ export default function MembershipPage() {
    */
   function renderPlansHeader() {
     // #2814 — while the cart is shown the two actions live inside it.
-    if (cartPhase(setView, appMember?.id ?? null) != null) return null;
+    if (cartPhase(setView, appMember?.id ?? null, standaloneCart) != null) return null;
     const buttons = renderAddButtons(primaryButtonStyle);
     return buttons && <div style={styles.addPlanRow}>{buttons}</div>;
   }
@@ -1835,17 +2097,22 @@ export default function MembershipPage() {
    * conditions wherever they are drawn: inside the cart (secondary, under its
    * items) while there is one, above the plans otherwise.
    */
-  function renderAddButtons(style: React.CSSProperties) {
+  function renderAddButtons(style: React.CSSProperties, disabledReason: string | null = null) {
     if (mode !== 'overview' || !canAdd || !((!pendingMembership && gymOffersPlans) || products !== null)) return null;
+    // #2895: disabled (never hidden) while another purchase is being prepared, with the reason beside them.
+    const disabled = disabledReason != null;
+    const btn = disabled ? { ...style, ...styles.busy } : style;
     return (
       <>
         {!pendingMembership && gymOffersPlans && (
-          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
+          <button type="button" style={btn} disabled={disabled} title={disabledReason ?? undefined}
+            onClick={() => router.push(`/${locale}${ADD_PLAN_PATH}`)}>
             {t('membership.add_plan')}
           </button>
         )}
         {products !== null && (
-          <button type="button" style={style} onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
+          <button type="button" style={btn} disabled={disabled} title={disabledReason ?? undefined}
+            onClick={() => router.push(`/${locale}${ADD_PRODUCT_PATH}`)}>
             {t('membership.add_product')}
           </button>
         )}
@@ -1853,9 +2120,15 @@ export default function MembershipPage() {
     );
   }
 
-  function renderCartAddButtons() {
-    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn });
-    return buttons && <div style={styles.cartAddRow} data-cart-add>{buttons}</div>;
+  function renderCartAddButtons(disabledReason: string | null = null) {
+    const buttons = renderAddButtons({ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }, disabledReason);
+    if (!buttons) return null;
+    return (
+      <>
+        <div style={styles.cartAddRow} data-cart-add>{buttons}</div>
+        {disabledReason && <p style={{ ...cartMutedStyle, margin: '8px 0 0' }} data-cart-add-reason>{disabledReason}</p>}
+      </>
+    );
   }
 
   // #2426 — the server's overview of a plan, worded and formatted here; every
@@ -2031,46 +2304,71 @@ export default function MembershipPage() {
     );
   }
 
-  function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
-    return group.map((event) => {
-      const transition = event.event_type === 'status_changed' && event.new_status
-        ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
-          + ` → ${t(`membership.status.${event.new_status}` as any)}`
-        : null;
-      return {
-        key: String(event.id),
-        name: t(`membership.event.${event.event_type}` as any)
-          + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''),
-        meta: [transition, event.notes].filter(Boolean).join(' · ') || null,
-        amount: money(billingEventAmount(event)),
-        trailing: (
+  /**
+   * #2937 — one past Billing Event: title, issued date, status and amount in the
+   * header; its own stored lines and the payment details (method, notes,
+   * documents) once expanded. Every figure is the ledger's.
+   */
+  function renderPastBillingEvent(event: BillingEvent) {
+    const transition = event.event_type === 'status_changed' && event.new_status
+      ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
+        + ` → ${t(`membership.status.${event.new_status}` as any)}`
+      : null;
+    // #2940: the event's own name when it has one; an event written before names
+    // existed keeps the label it had.
+    const title = event.name
+      ?? (t(`membership.event.${event.event_type}` as any)
+        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
+    const lines: BillingEventCardLine[] = (event.lines ?? []).map((line) => ({
+      key: String(line.id),
+      heading: t(`payments.${lineKindKey(line)}` as any),
+      name: line.item_name,
+      meta: [
+        line.quantity > 1 ? t('payments.quantity', { count: line.quantity }) : null,
+        line.promotion_name,
+      ].filter(Boolean).join(' · ') || null,
+      amount: money(billingEventLineAmount(line)),
+      regularAmount: money(billingEventLineRegularAmount(line)),
+    }));
+    const notes = [transition, event.notes].filter(Boolean).join(' · ') || null;
+    return (
+      <PastBillingEventRow
+        key={event.id}
+        title={title}
+        date={formatPaymentDate(billingEventIssuedDate(event), gymFmt)}
+        // The status is the event's own, derived once by the API (#640).
+        status={(
+          <span style={statusPillStyle(statusTone(event.status))}>
+            {t(`payments.status.${event.status}` as any)}
+          </span>
+        )}
+        amount={money(billingEventAmount(event))}
+        lines={lines}
+        expandable={billingEventHasDetails(event)}
+        details={(
           <>
-            {/* The status is the event's own, derived once by the API (#640) —
-                a date carrying a settled charge and a rejected one must not be
-                summarised into a single verdict. */}
-            <span style={statusPillStyle(statusTone(event.status))}>
-              {t(`payments.status.${event.status}` as any)}
-            </span>
-            {/* #787 — the receipt number is the gate: the server allocates one
-                only for a payment that was received. */}
-            {event.payment_method_name && (
-              <span style={{ fontSize: 12, opacity: 0.75 }}>{event.payment_method_name}</span>
-            )}
-            {event.receipt_number && (
-              <button
-                onClick={() => downloadReceipt(event.id)}
-                disabled={downloadingReceipt === event.id}
-                style={styles.receiptBtn}
-              >
-                {downloadingReceipt === event.id
-                  ? '…'
-                  : `${t('membership.download_receipt')} (${event.receipt_number})`}
-              </button>
-            )}
+            {event.payment_method_name && <span>{event.payment_method_name}</span>}
+            {notes && <span>{notes}</span>}
+            {/* #2936 — one action per stored document; a kind with none is absent. */}
+            {(event.documents ?? []).map((doc) => {
+              const key = `${doc.kind}:${doc.id}`;
+              return (
+                <button
+                  key={key}
+                  onClick={() => downloadDocument(doc)}
+                  disabled={downloadingDocument === key}
+                  style={styles.receiptBtn}
+                >
+                  {downloadingDocument === key
+                    ? '…'
+                    : `${t(paymentDocumentLabelKey(doc.kind) as any)} (${doc.number})`}
+                </button>
+              );
+            })}
           </>
-        ),
-      };
-    });
+        )}
+      />
+    );
   }
 
   /**
@@ -2302,9 +2600,9 @@ export default function MembershipPage() {
     return (
       <main style={styles.container}>
         {renderCart()}
+        {renderSetSummary()}
         {renderProducts()}
         {products === null && <p style={styles.hint}>{t('membership.products_empty')}</p>}
-        {renderSetSummary()}
         {renderDialogs()}
       </main>
     );
@@ -2318,11 +2616,11 @@ export default function MembershipPage() {
         {renderTabs()}
         {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
         {renderCart()}
+        {renderSetSummary()}
         {renderPlansHeader()}
         {renderMyPlans()}
         {renderMyProducts()}
         {renderOwnPurchases()}
-        {renderSetSummary()}
         </>)}
         {renderDialogs()}
       </main>
@@ -2335,6 +2633,8 @@ export default function MembershipPage() {
       {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
       {/* #2746 stage 2 — the cart, at the top of My Products. */}
       {renderCart()}
+      {/* #2894 — the Summary, collapsible, before My Plans and My Products. */}
+      {renderSetSummary()}
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -2357,7 +2657,6 @@ export default function MembershipPage() {
           follows them rather than splitting the membership from its own
           pending payment. */}
       {renderOwnPurchases()}
-      {renderSetSummary()}
 
       {packages.length > 0 && (
         <section style={styles.section}>
@@ -2415,16 +2714,33 @@ const styles: Record<string, React.CSSProperties> = {
   h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
   // #1776: the plan's benefits sit inside its card, indented and on a tinted
   // inner surface, so they read as the plan's own rather than a sibling.
-  nestedBenefits: { marginTop: 16 },
-  nestedBenefitsHeading: { fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: memberTheme.textSecondary },
-  benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
   benefitMandatory: { ...statusPillStyle('neutral'), padding: '1px 8px', fontSize: 11 },
+  // #2892 — My Plans' expanded lines: hairlines between rows, no card per item.
+  planLines: { marginTop: 12 },
+  planLineGroup: { marginBottom: 10 },
+  planLineGroupLabel: { margin: '0 0 4px', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: memberTheme.textMuted },
+  planLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' },
+  planLineText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  planLineName: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, color: memberTheme.text, overflowWrap: 'anywhere' },
+  planLineMeta: { fontSize: 12, color: memberTheme.textMuted },
+  planLinePrice: { flexShrink: 0, marginLeft: 'auto', textAlign: 'right', fontSize: 13, fontWeight: 600, color: memberTheme.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
+  // #2894 — the Summary's compact, linear body: small labels, hairline rows, no nested cards.
+  summaryBody: { padding: '0 16px 14px', fontSize: 13 },
+  summaryLabel: { margin: '10px 0 4px', fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: memberTheme.textMuted },
+  summaryHint: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
+  summaryList: { listStyle: 'none', padding: 0, margin: 0 },
+  summaryItem: { ...rowDividerStyle, padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
+  summaryLine: { ...rowDividerStyle, padding: '5px 0' },
+  summaryText: { fontSize: 13, color: memberTheme.text },
+  summaryAmount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text },
+  summarySub: { fontSize: 11.5, color: memberTheme.textMuted, marginTop: 2 },
+  summaryTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingTop: 8 },
   eventItem: { ...sectionCardStyle, padding: '12px 14px', marginBottom: 6 },
   eventLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   eventLabel: { fontSize: 14, fontWeight: 500, color: memberTheme.text },

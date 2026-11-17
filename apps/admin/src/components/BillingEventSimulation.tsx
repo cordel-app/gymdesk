@@ -31,6 +31,8 @@
 // and charges nothing.
 
 import React, { ReactNode, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, prepaidPaymentLabel } from '@/lib/billingFrequency';
 
 import {
   TIMELINE_CYCLE_LINE,
@@ -121,16 +123,21 @@ function priceLabel(line: BillingEventSimulationLine, t: Translate): string {
 }
 
 /** The Status cell: the treatment, the Pre-paid count, and what it would have cost. */
-function statusCell(line: BillingEventSimulationLine, t: Translate): React.ReactNode {
+function statusCell(
+  line: BillingEventSimulationLine, t: Translate,
+  tFreq: (key: string, values?: Record<string, number>) => string,
+): React.ReactNode {
+  // #946 / #2883 — a Pre-paid Duration is collected in one charge on the first of its periods, so
+  // the line says how many periods that amount covers, in the plan's own cadence ("2 months
+  // pre-payment"), from the server's count and cadence. The quantity beside the name is the
+  // number of fees, never the periods.
+  const prepaid = line.prepaid_periods != null
+    ? prepaidPaymentLabel(line.prepaid_periods, line.prepaid_cadence ?? null, tFreq)
+    : null;
   return (
     <>
       {priceLabel(line, t)}
-      {/* #946 — a Pre-paid Duration is collected in one charge on the first of
-          its periods, so the line says how many periods that amount covers
-          rather than leaving a ×3 against the Plan's monthly price unexplained. */}
-      {line.prepaid_periods != null && (
-        <span> · {t('simulation_prepaid_periods', { count: line.prepaid_periods })}</span>
-      )}
+      {prepaid && <span> · {prepaid}</span>}
       {/* #1867 stage 4 — a Product joining an existing schedule mid-period is
           charged the days up to the schedule's next date, and says so. */}
       {line.proration != null && (
@@ -158,6 +165,7 @@ export function BillingEventTable({
   t: Translate;
   formatDate: (date: string) => string;
 }) {
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   return (
     <div style={periodTableWrap}>
       <table style={tableStyle}>
@@ -197,7 +205,7 @@ export function BillingEventTable({
                     <span style={{ color: '#888', fontWeight: 400 }}> ×{line.quantity}</span>
                   )}
                 </td>
-                <td style={timelineTdStyle}>{statusCell(line, t)}</td>
+                <td style={timelineTdStyle}>{statusCell(line, t, tFreq as any)}</td>
                 <td style={{ ...timelineTdStyle, textAlign: 'right', color: TIMELINE_TONE_TEXT[tone] }}>
                   {fmtMoney(line.actual_charge)}
                 </td>

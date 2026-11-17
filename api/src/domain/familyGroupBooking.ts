@@ -2,11 +2,10 @@
  * #2674 / #2813 — a family booking: a member books a `family_only` Professional
  * Service, naming the other members of their Family who attend with them. Since
  * #2813 each selected member gets an individual booking of their own (no
- * `booking_group_id`): each passes the booking gate and reserves its own unit,
- * the initiator recorded as `booked_by_member_id` on every row. The family's
- * bookings of one occurrence and service still answer to the service's minimum
- * together: a cancellation that leaves fewer than the minimum cancels the rest
- * (`cancelsRemainingFamilyBookings()`).
+ * `booking_group_id`): each passes the booking gate (since #2902 the family booking reserves and spends one unit),
+ * the initiator recorded as `booked_by_member_id` on every row. Since #2901 a
+ * member who cancels their own booking cancels the family's other bookings of
+ * that occurrence and service too (`DELETE /me/bookings/:id`).
  *
  * Pure: which services take the participant selection, what a selection must
  * satisfy and the initial selection the Members App offers. The SQL half is the
@@ -25,15 +24,6 @@ export interface GroupServiceShape {
 /** Every `family_only` service takes a participant selection (#2813 §1; #2674 also required a minimum above one). */
 export function isFamilyGroupService(s: GroupServiceShape | null | undefined): boolean {
   return !!s && s.booking_type === 'family_only';
-}
-
-/**
- * #2813 §6: after one family member cancels, whether the family's remaining
- * bookings of that occurrence and service are cancelled too — some remain, but
- * fewer than the service's minimum.
- */
-export function cancelsRemainingFamilyBookings(remaining: number, minParticipants: number | null | undefined): boolean {
-  return remaining > 0 && remaining < Math.max(1, Number(minParticipants ?? 1));
 }
 
 export type FamilyGroupRefusal =

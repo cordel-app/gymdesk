@@ -1,5 +1,6 @@
 import { db, type Tx } from '../infra/db';
 import { recordPaymentAttempt } from './payment-attempt';
+import { issueRefundReceipt } from './refund-receipts';
 import { getPaymentProvider } from '../payments';
 import { canCancelPending } from '../domain/productSet';
 import {
@@ -8,8 +9,10 @@ import {
 import {
   LineState, RefundBalance, RefundMethod, RefundRequestInput, RefundState,
   completedRefundCents, decideRefund, fromCents, isManualRefundMethod, refundBalance, refundMethodFor,
-  refundOutcomeFromProvider, refundState, toCents,
+  refundOutcomeFromProvider, refundState, toCents, allocateProviderRefunds,
 } from '../domain/billingEventRefund';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
+import type { logger } from '../lib/logger';
 
 /**
  * #2480 — Cancel a pending Billing Event and Refund a collected one. The pure
@@ -323,6 +326,9 @@ export async function refundBillingEvent(
         [gymId, insertId, l.id, fromCents(l.cents), actor],
       );
     }
+    // #2935: a manual refund completes here, so its Refund Receipt is issued
+    // in the same transaction (a failure rolls the refund back with it).
+    if (!viaProvider) await issueRefundReceipt(tx, gymId, Number(insertId), actor);
     await tx.query(
       'UPDATE billing_events SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
       [actor, billingEventId, gymId],
@@ -373,6 +379,17 @@ export async function refundBillingEvent(
       return { failure: { status: 502, error: `The payment provider did not refund the payment${answer.errorMessage ? `: ${answer.errorMessage}` : '.'}` } };
     }
     status = outcome;
+    if (outcome === 'completed') {
+      // #2935: the provider confirmed the money went back. The refund itself is
+      // already recorded and the money moved, so a failure here must not undo
+      // or hide it: the failure is logged, as the nightly run does for a
+      // receipt it cannot auto-issue (#787).
+      try {
+        await db.transaction((tx) => issueRefundReceipt(tx, gymId, refundId, actor));
+      } catch (err) {
+        console.error(`Refund receipt for refund #${refundId} could not be issued:`, err);
+      }
+    }
   }
 
   const refunds = await loadRefunds(db, original.id);
@@ -395,4 +412,103 @@ export async function refundBillingEvent(
       },
     },
   };
+}
+
+type Log = Pick<typeof logger, 'info' | 'warn' | 'error'>;
+
+/** At most this many refunded payments are looked up per cleanup run. */
+export const REFUND_RECONCILE_BATCH_SIZE = 100;
+/** A refund younger than this may still be inside its own refund call. */
+const REFUND_RECONCILE_MIN_AGE_MINUTES = 10;
+
+export interface RefundReconcileResult { completed: number; failed: number }
+
+/**
+ * #2480 follow-up — a provider refund the refund call left `pending` (MONEI answered a
+ * status still in flight, or could not be reached) is settled here from the
+ * provider's own record, from `POST /billing/cleanup`. For each payment with
+ * such a refund, MONEI is asked how much of it has been refunded in total and
+ * `allocateProviderRefunds()` decides which pending refunds that covers: those
+ * are completed (and get their Refund Receipt, #2935), one still uncovered
+ * after a day is failed (its amount is released), the rest stay pending. A
+ * payment the provider could not be asked about is left for the next run.
+ * The rows are written under the Billing Event's row lock, as the refund
+ * writer's are, and only while still `pending`.
+ */
+export async function reconcilePendingProviderRefunds(log: Log): Promise<RefundReconcileResult> {
+  const result: RefundReconcileResult = { completed: 0, failed: 0 };
+  const { rows: originals } = await db.query<{ id: number; gym_id: string; billing_event_id: number; provider_ref: string }>(
+    `SELECT DISTINCT o.id, o.gym_id, o.billing_event_id, o.provider_ref
+       FROM payment_requests r
+       JOIN payment_requests o ON o.id = r.refund_of_payment_request_id
+      WHERE r.transaction_type = 'refund' AND r.status = 'pending' AND r.method = 'provider'
+        AND o.provider_ref IS NOT NULL
+        AND r.created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${REFUND_RECONCILE_MIN_AGE_MINUTES} MINUTE)
+      ORDER BY o.id
+      LIMIT ${REFUND_RECONCILE_BATCH_SIZE}`,
+  );
+  if (originals.length === 0) return result;
+
+  let provider;
+  try {
+    provider = getPaymentProvider();
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Refund reconcile: no payment provider configured');
+    return result;
+  }
+
+  for (const o of originals) {
+    let answer;
+    try {
+      answer = await provider.getRefundedAmount(o.provider_ref);
+    } catch (err) {
+      log.warn({ paymentRequestId: o.id, err: (err as Error).message }, 'Refund reconcile: provider lookup failed, retried next run');
+      continue;
+    }
+    const settled = await db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ? FOR UPDATE', [o.billing_event_id, o.gym_id]);
+      const { rows } = await tx.query<any>(
+        `SELECT id, amount, status, method, TIMESTAMPDIFF(MINUTE, created_at, UTC_TIMESTAMP()) AS age_minutes
+           FROM payment_requests
+          WHERE refund_of_payment_request_id = ? AND transaction_type = 'refund'`,
+        [o.id],
+      );
+      const completedCents = rows.filter((r: any) => r.status === 'completed' && r.method === 'provider')
+        .reduce((sum: number, r: any) => sum + toCents(r.amount), 0);
+      const pending = rows.filter((r: any) => r.status === 'pending' && r.method === 'provider'
+        && Number(r.age_minutes) >= REFUND_RECONCILE_MIN_AGE_MINUTES)
+        .map((r: any) => ({ id: Number(r.id), cents: toCents(r.amount), ageMinutes: Number(r.age_minutes) }));
+      const decision = allocateProviderRefunds(answer.refundedAmount, completedCents, pending);
+      for (const id of decision.completed) {
+        await tx.query(
+          `UPDATE payment_requests
+              SET status = 'completed', provider_status = ?, provider_refund_ref = COALESCE(provider_refund_ref, ?),
+                  completed_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ? AND status = 'pending'`,
+          [answer.providerStatus, o.provider_ref, SYSTEM_ACTOR, id],
+        );
+      }
+      for (const id of decision.failed) {
+        await tx.query(
+          `UPDATE payment_requests
+              SET status = 'failed', provider_status = ?, failure_message = ?,
+                  modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ? AND status = 'pending'`,
+          [answer.providerStatus, 'The payment provider has no record of this refund.', SYSTEM_ACTOR, id],
+        );
+      }
+      return decision;
+    });
+    result.completed += settled.completed.length;
+    result.failed += settled.failed.length;
+    for (const id of settled.completed) {
+      // As in the refund call: the money moved, so a receipt failure is logged, never undone.
+      try {
+        await db.transaction((tx) => issueRefundReceipt(tx, o.gym_id, id, SYSTEM_ACTOR));
+      } catch (err) {
+        log.error({ refundId: id, err: (err as Error).message }, 'Refund reconcile: refund receipt could not be issued');
+      }
+    }
+  }
+  return result;
 }

@@ -16,7 +16,7 @@ import { formatGymDateTime } from '@/lib/gymFormat';
 import { serviceChoices, defaultChoice, selectionMissing, bookedService, bookingAction, buyServiceIds, zeroBalanceReason } from '@/lib/serviceSelection';
 import { useServiceBalances } from '@/lib/useServiceBalances';
 import { useFamilyMembers } from '@/lib/useFamilyMembers';
-import { groupLimits, groupServiceOf, initialParticipants, participantsValid } from '@/lib/familyParticipants';
+import { groupLimits, groupServiceOf, initialParticipants, isFamilyOnlyBooking, participantsValid } from '@/lib/familyParticipants';
 import { FamilyParticipantsPicker } from '@/components/FamilyParticipantsPicker';
 import { requiredServiceIds, requiredServiceNames, selectableServices, productsPathForServices, type ServiceOption } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, closedWeekdays, closedDayClassNames, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
@@ -36,7 +36,9 @@ import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDia
 import {
   EVENT_STATUS_CHIP_STYLE,
   eventBackgroundColor,
+  MEMBER_META_SEPARATOR,
   memberEventMetaLine,
+  memberEventOccupancy,
   memberEventStatusLine,
   eventStatusChip,
   memberStatusChip,
@@ -568,7 +570,13 @@ export default function MemberCalendarPage() {
                   </div>
                 )}
                 <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {t('occupancy_count', { booked: s.booked_count, capacity: s.effective_capacity })}
+                  {/* #2903: a Professional Service event reads each service's own places, never the Activity's. */}
+                  {memberEventOccupancy(s)
+                    .map((o) => {
+                      const count = t('occupancy_count', { booked: o.booked, capacity: o.capacity });
+                      return o.name ? `${o.name} ${count}` : count;
+                    })
+                    .join(MEMBER_META_SEPARATOR)}
                 </div>
                 {statusLine && (
                   <div style={{ marginTop: 1, overflow: 'hidden' }}>
@@ -788,6 +796,7 @@ export default function MemberCalendarPage() {
       {confirmCancelOpen && (
         <CancelBookingConfirmDialog
           busy={actionLoading}
+          familyBooking={!!selected && isFamilyOnlyBooking(selected.professional_services, selected.my_professional_service_id)}
           onClose={() => setConfirmCancelOpen(false)}
           onConfirm={async () => {
             await cancelBooking();

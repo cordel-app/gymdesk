@@ -44,7 +44,9 @@ import { thumbnailSrc } from './promotionPlacement';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { memberAllocations, splitLineAmount } from '@/lib/planUnitAssignees';
 import { planAccessLabel, type PlanAccessEntry } from '@/lib/planAccess';
-import { membershipFeeRowSlots, type FeeBeneficiary } from '@/lib/membershipFeeRows';
+import {
+  feeMemberDiscountsPayload, feeRowDiscountText, feeRowFinalPrice, membershipFeeRowSlots, type FeeBeneficiary,
+} from '@/lib/membershipFeeRows';
 import { membershipFeeScopeLabelKey } from '@/lib/membershipFeeScope';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -82,7 +84,7 @@ import type {
 // is fully editable, #1108): a
 // cancelled or expired assignment is history — it bills nothing further, so its
 // configuration is read-only.
-const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
+const EDITABLE_STATUSES = ['in_cart', 'active', 'paused'];
 
 // Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
 // the same four fields, in the same order, as the Plan's own section. #892:
@@ -151,6 +153,8 @@ interface Props {
    */
   feeScope?: string | null;
   beneficiaries?: FeeBeneficiary[];
+  /** #2945 — the current-cycle fee of each beneficiary whose fee carries its own discount. */
+  currentFeeByMember?: Record<string, number> | null;
   /**
    * Whether the card is in Edit mode (#797/#897). Outside it every section is
    * read-only and carries no `Edit` button at all — absent, not disabled.
@@ -273,7 +277,7 @@ function toAllocationRows(
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], cardEditing, canWrite, readOnlyTitle,
+  assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], currentFeeByMember = null, cardEditing, canWrite, readOnlyTitle,
   promotionsSelectable = false, membershipPlanId = null, ownerMemberId = null, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
@@ -340,10 +344,18 @@ export function AssignedPlanConfiguration({
   // #2834 stage 2 (#2800's rule) — `per_family`: one fee row, Member column *Family*;
   // `per_member`: one fee row per beneficiary, naming that beneficiary. Each row is one
   // fee at the server's price; the engine is what multiplies the charge.
-  const feeRows: ProductBenefitRow[] = membershipFeeRowSlots(feeScope, beneficiaries).map((slot) => ({
-    ...feeRow,
-    member_name: slot.family ? t('fee_member_family') : slot.member_name,
-  }));
+  // #2945 — each row reads its own Direct Discount and the fee priced with it.
+  const feeSlots = membershipFeeRowSlots(feeScope, beneficiaries);
+  const sharedDiscountText = feeDiscountValue(snapshot.personal_fee_benefit);
+  const feeRows: ProductBenefitRow[] = feeSlots.map((slot) => {
+    const text = feeRowDiscountText(slot, sharedDiscountText);
+    return {
+      ...feeRow,
+      member_name: slot.family ? t('fee_member_family') : slot.member_name,
+      direct_discount_percent: text === '' ? null : Number(text),
+      final_price_incl_tax: feeRowFinalPrice(slot, currentFee, currentFeeByMember),
+    };
+  });
   // #2802 — the access the plan grants (its centers, On-line), one row per beneficiary at
   // quantity 1 and €0. The entries are the server's, from the plan's own access
   // configuration; the rows are display only and no total reads them.
@@ -377,15 +389,16 @@ export function AssignedPlanConfiguration({
   const promotionToggle = useAppliedPromotionToggle(assignedPlanId, onChanged);
   const toggleGate = { cardEditing, canWrite, readOnlyTitle };
   // #2853: a Draft's Plan Promotions are chosen from the live catalogue, in Edit mode.
-  const draftPicker = cardEditing && planStatus === 'draft' && promotionsSelectable
+  const draftPicker = cardEditing && planStatus === 'in_cart' && promotionsSelectable
     && membershipPlanId != null && ownerMemberId != null;
   const [productDetail, setProductDetail] = useState<AssignedPlanSnapshotBenefit | null>(null);
   const [promotionDetail, setPromotionDetail] = useState<AppliedPromotion | null>(null);
 
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
-  // #2835: the fee's Direct Discount (%) as typed in its own cell.
-  const [feeDiscount, setFeeDiscount] = useState('');
+  // #2835: the fee's Direct Discount (%) as typed in its own cell. #2945: one per fee row, so a
+  // per-member plan's rows are edited independently.
+  const [feeDiscounts, setFeeDiscounts] = useState<string[]>([]);
   // #2835: the open section's rows, each the drawn row beside the row its
   // replace-all `PUT` sends (`inlineLineEdit.ts`).
   const [lineEntries, setLineEntries] = useState<LineEntry<AssignedPlanSnapshotBenefit>[]>([]);
@@ -418,7 +431,7 @@ export function AssignedPlanConfiguration({
   }
 
   function openFeeBenefitEdit() {
-    setFeeDiscount(feeDiscountValue(snapshot.personal_fee_benefit));
+    setFeeDiscounts(feeSlots.map((slot) => feeRowDiscountText(slot, sharedDiscountText)));
     setEditing('fee_benefit');
   }
 
@@ -443,7 +456,7 @@ export function AssignedPlanConfiguration({
   function cancelEdit() {
     setEditing(null);
     setDurationForm(null);
-    setFeeDiscount('');
+    setFeeDiscounts([]);
     setLineEntries([]);
   }
 
@@ -475,9 +488,22 @@ export function AssignedPlanConfiguration({
     // #2835: the fee's Direct Discount (%) is its Personal Membership Fee
     // Benefit (#772). Replace-all: empty or 0 is `no_benefit`, which the server
     // stores with no percentage rather than remembering the last one.
-    const payload = feeDiscountPayload(feeDiscount);
+    // #2945: a per-member plan's rows each carry their own discount; only the rows staff changed
+    // are sent, so an untouched one keeps what it stores.
+    if (feeDiscounts.some((v) => !isValidDiscountPercent(v))) {
+      toast(t('direct_discount_invalid'));
+      return;
+    }
+    const memberDiscounts = feeMemberDiscountsPayload(
+      feeSlots, feeSlots.map((slot) => feeRowDiscountText(slot, sharedDiscountText)), feeDiscounts,
+    );
+    const payload = memberDiscounts ? { member_discounts: memberDiscounts } : feeDiscountPayload(feeDiscounts[0] ?? '');
     if (!payload) {
       toast(t('direct_discount_invalid'));
+      return;
+    }
+    if (memberDiscounts && memberDiscounts.length === 0) {
+      cancelEdit();
       return;
     }
     setSaving(true);
@@ -718,10 +744,10 @@ export function AssignedPlanConfiguration({
             if (editing !== 'fee_benefit') return undefined;
             // Only the fee row carries a discount; an access row stays a value.
             if (row.product_type !== 'membership_fee') return '—';
-            // #2834 stage 2: one benefit discounts every fee of a per-member plan, so
-            // the input sits on the first fee row and the others keep reading it.
-            if (idx > 0) return undefined;
-            return discountInput(feeDiscount, setFeeDiscount, row.product_name);
+            // #2945: every fee row has its own input; a per-member plan's rows are independent.
+            if (idx >= feeDiscounts.length) return undefined;
+            return discountInput(feeDiscounts[idx], (v: string) => setFeeDiscounts((cur) => cur.map((x, i) => (i === idx ? v : x))),
+              row.member_name ? `${row.product_name} — ${row.member_name}` : row.product_name);
           }}
           renderRowAction={() => null}
         />

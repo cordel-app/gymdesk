@@ -31,6 +31,8 @@ export interface PsRow {
   max_capacity: number | null;
   min_participants?: number | null;
   booking_type?: PsBookingType;
+  /** #2951: the persistent slug, shown read-only in Details and nowhere else. */
+  slug?: string | null;
   image_url?: string | null;
   base_professional_service_id?: number | null;
   image_thumbnail_url?: string | null;

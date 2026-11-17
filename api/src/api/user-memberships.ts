@@ -8,8 +8,10 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
-import { projectedSetFor, cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
+import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
 import { beneficiarySelectionError, parseBeneficiaryIds, parseMemberLimitInput, toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { ownerFamilyMemberIds } from './owner-family';
@@ -23,6 +25,9 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { resolveRequestActor } from '../domain/auditActor';
+import { cancelPendingProductSet, reconcileSetPayments } from './product-set-cancellation';
+import { syncPlanSnapshotsForAssignment } from './plan-snapshot-sync';
+import { logger } from '../lib/logger';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
@@ -61,7 +66,9 @@ import {
   PERSONAL_FEE_BENEFIT_ACTIONS,
   PersonalFeeBenefitAction,
   isPersonalFeeBenefitAction,
+  toPersonalFeeBenefit,
 } from '../domain/personalFeeBenefit';
+import { feeUnitBenefit } from '../domain/feeMemberDiscounts';
 import {
   LiveAssignment,
   activePlanConflictBody,
@@ -113,7 +120,7 @@ type Status = AssignmentStatus;
 // `PUT` reaches neither, for the reason above. A pending row is cancelled
 // through DELETE / close, as a Draft is.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
-  draft: ['pending_payment', 'active', 'cancelled'],
+  in_cart: ['pending_payment', 'active', 'cancelled'],
   pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
@@ -130,11 +137,11 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
  * `POST /membership-plans/:id/assign` all write it, and stage 2's Save & Pay is
  * what moves a row out of it.
  */
-export const ASSIGNMENT_CREATION_STATUS = 'draft';
+export const ASSIGNMENT_CREATION_STATUS = 'in_cart';
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancels_on_end_date', 'cancelled', 'superseded'] as const;
+const LIFECYCLE_STATUSES = ['in_cart', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancels_on_end_date', 'cancelled', 'superseded'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -160,10 +167,11 @@ async function viewContext(
   if (raw === undefined) return { status: 'none' };
   const memberId = Number(raw);
   if (!Number.isInteger(memberId) || memberId <= 0) return { status: 'invalid' };
+  // #2125 M6b-23: the assignment's owner from its current plan snapshot.
   const { rows } = await db.query(
-    `SELECT um.member_id FROM user_memberships um
-     WHERE um.id = ? AND um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}`,
-    [userMembershipId, gymId, memberId, memberId],
+    `SELECT um.member_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
+     WHERE um.id = ? AND ${MEMBER_MEMBERSHIP_SQL}`,
+    [gymId, userMembershipId, memberId, memberId],
   );
   if (rows.length === 0) return { status: 'invalid' };
   return { status: 'ok', relationship: assignmentRelationship(memberId, rows[0].member_id) };
@@ -221,7 +229,7 @@ export const LIFECYCLE_STATUS_SQL = `
   CASE
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
-    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
+    WHEN um.status IN ('in_cart', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -235,10 +243,13 @@ export const LIST_SELECT = `
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
          ${LIFECYCLE_STATUS_SQL} AS lifecycle_status
-  FROM user_memberships um
+  FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
+// #2125 M6b-32: the rows are each assignment's current plan snapshot (`ASSIGNMENT_HISTORY_ROWS_SQL`,
+// the Member card's plan history's own source), so `LIST_SELECT` binds one `?` first: the gym id.
+// Every caller still scopes `um.gym_id` / `um.id` itself after it.
 // Note: the commercial columns on `um.*` are the cache; `withAssignmentConfig()` overlays the
 // version's own values (#1325 PR 3e-2), and `withDerivedBilling()` the four billing values.
 // Note: the four billing values (`next_billing_date`, `last_billed_at`, `failed_attempts`,
@@ -253,8 +264,8 @@ export const LIST_SELECT = `
  */
 async function loadAssignmentRow(gymId: string, id: string | string[] | number, scoped = true) {
   const { rows } = scoped
-    ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [id, gymId])
-    : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [id]);
+    ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [gymId, id, gymId])
+    : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [gymId, id]);
   if (rows.length === 0) return null;
   const [row] = await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rows[0]]));
   return { ...row, membership_fee: await currentMembershipFee(gymId, Number(row.id)) };
@@ -287,7 +298,7 @@ userMembershipsRouter.get('/', async (req, res) => {
   }));
   if (!q) return;
 
-  const params: any[] = [gymId];
+  const params: any[] = [gymId, gymId];
   let inner = `${LIST_SELECT} WHERE um.gym_id = ?`;
   if (q.status) { inner += ' AND um.status = ?'; params.push(q.status); }
   // #1191: a Member's Assigned Plans are the Memberships they own OR are covered
@@ -544,7 +555,7 @@ async function assignedPlanEffectivePrice(gymId: string, planId: number | null, 
 
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+  const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [gymId, req.params.id, gymId]);
   if (rawRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = (await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rawRows[0]])))[0];
 
@@ -574,6 +585,24 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   // one question.
   const feeRow = await loadFeeAssignment(gymId, Number(um.id));
   const membershipFee = feeRow ? (await priceMembershipFeeOn(feeRow, currentCycleDate(feeRow))).amount : null;
+  // #2945 — a beneficiary whose fee carries its own Direct Discount: that fee for the current
+  // cycle, priced by the same resolver with that discount in place of the shared benefit. Keyed
+  // by member id; a member following the shared benefit is absent and reads `membership_fee`.
+  const membershipFeeByMember: Record<string, number> = {};
+  if (feeRow && (um as any).membership_fee_scope === 'per_member') {
+    for (const m of members as any[]) {
+      if (m.fee_direct_discount_percent == null) continue;
+      const own = feeUnitBenefit(
+        toPersonalFeeBenefit(feeRow.personal_fee_benefit_action, feeRow.personal_fee_benefit_value),
+        Number(m.fee_direct_discount_percent),
+      );
+      const priced = await priceMembershipFeeOn(
+        { ...feeRow, personal_fee_benefit_action: own.action, personal_fee_benefit_value: own.value },
+        currentCycleDate(feeRow),
+      );
+      membershipFeeByMember[String(m.member_id)] = priced.amount;
+    }
+  }
   const exampleTimeline = feeRow ? await assignedPlanFeeTimeline(gymId, feeRow) : null;
   // #924 stage 4 (§8) — the Billing Event Forecast: every line this assignment
   // still has ahead of it, grouped by the date it falls on. Read through the
@@ -611,6 +640,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
     // regular fee it is priced from and the one an edit writes.
     membership_fee: membershipFee,
+    membership_fee_by_member: membershipFeeByMember,
     plan_access: planAccess,
     members,
     billing_policy: billingPolicy,
@@ -655,8 +685,9 @@ userMembershipsRouter.get('/:id/example-timeline', async (req, res, next) => {
 userMembershipsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
+    // #2125 M6b-23: the assignment's current plan snapshot.
     const { rows } = await db.query(
-      'SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId],
+      `SELECT um.id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
     res.json(await assignedPlanBillingForecast(gymId, Number(req.params.id)));
@@ -677,8 +708,8 @@ userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
   const { rows } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status, ${assignmentConfig('base_price')} AS base_price,
             um.starts_at, um.ends_at, cfg.recurring_billing_interval, cfg.recurring_billing_unit
-     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ? AND um.gym_id = ?`,
-    [req.params.id, gymId],
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   res.json(await computeBillingEventsView(gymId, rows[0]));
@@ -919,11 +950,12 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   // flip here would activate a second live plan for the member with no
   // confirmation and no cancellation of the first.
   if (status === 'active') {
+    // #2125 M6b-24: the assignment's status from its current plan snapshot.
     const { rows: pre } = await db.query<{ status: string }>(
-      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
-      [req.params.id, gymId],
+      `SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+      [gymId, req.params.id],
     );
-    if (pre[0]?.status === 'draft') {
+    if (pre[0]?.status === 'in_cart') {
       return res.status(400).json({
         error: 'A Draft membership is activated through POST /user-memberships/:id/activate, '
           + 'which replaces the member\'s current plan.',
@@ -942,9 +974,10 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   // are part of what Save & Pay committed, so none of them move until it is
   // paid or discarded.
   if ('starts_at' in req.body || 'ends_at' in req.body || 'discount_reason' in req.body || 'discount_expires_at' in req.body) {
+    // #2125 M6b-24: the assignment's status from its current plan snapshot.
     const { rows: pre } = await db.query<{ status: string }>(
-      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
-      [req.params.id, gymId],
+      `SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+      [gymId, req.params.id],
     );
     if (pre[0]?.status === PENDING_PAYMENT_STATUS) {
       return res.status(400).json({ error: 'A membership pending payment is locked; cancel it to change its configuration.' });
@@ -1032,7 +1065,8 @@ userMembershipsRouter.get('/:id/cancellation-preview', requireModuleWrite('PAYME
   const { gymId } = getTenantContext(req);
   try {
     const out = await db.transaction(async (tx) => {
-      const { rows } = await tx.query('SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      // #2125 M6b-24: the assignment found through its current plan snapshot.
+      const { rows } = await tx.query(`SELECT um.id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`, [gymId, req.params.id]);
       if (rows.length === 0) return null;
       const { projectedSetFor, cancellationEndFor } = await import('./product-set-bridge');
       const set = await projectedSetFor(tx, gymId, Number(req.params.id));
@@ -1295,9 +1329,11 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
-           VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
+           VALUES (?, ?, (SELECT pa.member_id FROM plan_snapshots pa
+                          WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}), ?, 'EUR', ?, ?, 'completed', 'monei',
                    'manual', ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-          [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
+          // #2125 M6b-25: the payer column is the assignment's owner, read from its current plan snapshot.
+          [gymId, req.params.id, gymId, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
         await recordPaymentAttempt(tx, cashAttemptId);
@@ -1443,9 +1479,10 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   // selection is validated. The new assignment doesn't exist yet at this point
   // — nothing is excluded from the Member's history, and the row being
   // superseded is exactly what makes a still-current member not new.
+  // #2125 M6b-24: the owner from the assignment's current plan snapshot.
   const { rows: supersededRows } = await db.query(
-    'SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
-    [req.params.id, gymId],
+    `SELECT um.member_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (supersededRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
 
@@ -1517,6 +1554,9 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
       });
+      // #2125 M6b-35: the replace target is written on the Draft's own plan snapshot, which is what
+      // the commit reads (`assignmentReplacementOf()`); the legacy column above is the dual-write.
+      await writeAssignmentReplacement(tx, gymId, Number(insertId), { replacesUserMembershipId: Number(req.params.id) });
       return { kind: 'created' as const, insertId };
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1563,13 +1603,13 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
         [req.params.id, gymId]);
       const um = rows[0];
       if (!um) return { kind: 'not_found' as const };
-      if (um.status === 'draft') return { kind: 'created' as const, id: Number(um.id), reused: true };
+      if (um.status === 'in_cart') return { kind: 'created' as const, id: Number(um.id), reused: true };
       if (!['active', 'paused'].includes(um.status)) return { kind: 'invalid' as const, status: String(um.status) };
       const active = await projectedSetFor(tx, gymId, Number(um.id));
       if (!active) return { kind: 'not_projected' as const };
       const { rows: owned } = await tx.query<any>(
-        `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND um.status = 'draft' FOR UPDATE`,
+        `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ${productSetLegacyAssignmentIdSql()} AND um.gym_id = ps.gym_id
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND um.status = 'in_cart' FOR UPDATE`,
         [gymId, active.owner_member_id]);
       if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
       // #2858: a plain Draft the owner already holds (their recurring products, cloned from this
@@ -1589,11 +1629,14 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
         source: sourceForRole(role), actorUserId: userId,
       });
       if (adopt != null) {
-        await adoptDraftForEdit(tx, { gymId, userMembershipId: Number(insertId), draftSetId: adopt });
+        await adoptDraftForEdit(tx, {
+          gymId, userMembershipId: Number(insertId), draftSetId: adopt,
+          activeSetId: active.id, editedUserMembershipId: Number(um.id),
+        });
       } else {
         await createDraftSetFromActive(tx, {
           gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
-          membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+          editedUserMembershipId: Number(um.id), membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
           actor: { name: actorText },
         });
       }
@@ -1674,7 +1717,7 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // that is not activation. Closing one is also always warning-free, because
 // `computeUnusedValueWarnings()` reads the derived next billing date, which a
 // Draft never has.
-const CLOSEABLE_FROM: readonly Status[] = ['draft', 'pending_payment', 'active', 'paused'];
+const CLOSEABLE_FROM: readonly Status[] = ['in_cart', 'pending_payment', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4
@@ -1701,9 +1744,10 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   })) return;
   const confirm = req.body?.confirm === true;
 
+  // #2125 M6b-24: the assignment's status and plan from its current plan snapshot.
   const { rows: currentRows } = await db.query<any>(
-    `SELECT id, status, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ?`,
-    [req.params.id, gymId],
+    `SELECT um.id, um.status, um.membership_plan_id FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, req.params.id],
   );
   if (currentRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   // #1325 PR 3c: what is still scheduled is the ProductSet's, read off its ledger.
@@ -1726,6 +1770,14 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     });
   }
 
+  // #2125 M6b-32: a pending assignment's version is cancelled and kept (#2747's
+  // `cancelPendingProductSet()`), never deleted, so the assignment keeps its plan snapshot (the
+  // record every reader now takes it from). The provider is asked about any submitted attempt first,
+  // exactly as the Product Set's own Cancel does.
+  const pendingSetId = current.status === 'pending_payment'
+    ? await pendingSetIdForAssignment(db, gymId, Number(current.id)) : null;
+  if (pendingSetId != null) await reconcileSetPayments(gymId, pendingSetId, logger);
+
   const result = await db.transaction(async (tx) => {
     const { rows: locked } = await tx.query(
       'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -1735,9 +1787,19 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     const prev = locked[0];
     if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
     // #1325 PR 3b: a pending assignment's version goes with it (or the close is
-    // refused while a payment on it is unresolved).
-    if (prev.status === 'pending_payment' && !(await cancelPendingSetForAssignment(tx, gymId, Number(prev.id)))) {
-      return { kind: 'unresolved' } as const;
+    // refused while a payment on it is unresolved or settled).
+    let transitionRecorded = false;
+    if (prev.status === 'pending_payment') {
+      const setId = await pendingSetIdForAssignment(tx, gymId, Number(prev.id));
+      if (setId != null) {
+        const out = await cancelPendingProductSet(tx, gymId, setId, {
+          actor: resolveRequestActor(getTenantContext(req)), actorUserId: userId ?? null, source: sourceForRole(role),
+        });
+        if (out.kind === 'payment_unresolved' || out.kind === 'payment_settled') return { kind: 'unresolved' } as const;
+        // The cancel moved the assignment to `cancelled` and recorded that transition; the close
+        // below adds only its own end date, and the snapshot is re-synced with it.
+        transitionRecorded = out.kind === 'cancelled';
+      }
     }
     await tx.query(
       `UPDATE user_memberships
@@ -1747,11 +1809,15 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
     );
-    await recordStatusChange(tx, {
-      gymId, userMembershipId: prev.id, memberId: prev.member_id,
-      previousStatus: prev.status, newStatus: 'cancelled',
-      source: sourceForRole(role), actorUserId: userId,
-    });
+    if (transitionRecorded) {
+      await syncPlanSnapshotsForAssignment(tx, gymId, Number(prev.id));
+    } else {
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: prev.id, memberId: prev.member_id,
+        previousStatus: prev.status, newStatus: 'cancelled',
+        source: sourceForRole(role), actorUserId: userId,
+      });
+    }
     return { kind: 'ok' } as const;
   });
 
@@ -1785,7 +1851,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // as ATTACHABLE_STATUSES in user-membership-services.ts.
 // #1108 §2: a Draft is *fully editable* — it is the pre-checkout configuration
 // state, so every section of its snapshot is writable until it is committed.
-const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'active', 'paused'];
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['in_cart', 'active', 'paused'];
 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
@@ -1796,10 +1862,11 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
  * capture a snapshot; the row is re-read and locked inside the transaction.
  */
 async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[]) {
+  // #2125 M6b-24: read from the assignment's current plan snapshot.
   const { rows } = await db.query(
-    `SELECT id, membership_plan_id, status, starts_at
-     FROM user_memberships WHERE id = ? AND gym_id = ?`,
-    [id, gymId],
+    `SELECT um.id, um.membership_plan_id, um.status, um.starts_at
+     FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
+    [gymId, id],
   );
   return rows[0] ?? null;
 }
@@ -1974,7 +2041,7 @@ userMembershipsRouter.get('/:id/benefit-assignees', async (req, res, next) => {
     const { rows } = await db.query<{ id: number }>(
       `SELECT ${assignmentPlanSnapshotId('?', '?')} AS id`, [um.id, gymId]);
     const snapId = rows[0]?.id != null ? Number(rows[0].id) : null;
-    res.json({ editable: um.status === 'draft', eligible: await loadAssignmentAssigneeOptions(gymId, snapId) });
+    res.json({ editable: um.status === 'in_cart', eligible: await loadAssignmentAssigneeOptions(gymId, snapId) });
   } catch (err) { next(err); }
 });
 
@@ -1983,7 +2050,7 @@ userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS
   try {
     const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
     if (!um) return res.status(404).json({ error: 'Membership not found' });
-    if (um.status !== 'draft') {
+    if (um.status !== 'in_cart') {
       return res.status(409).json({ error: 'not_a_draft', message: 'Family members are chosen per unit only before the plan is confirmed' });
     }
     const section = parseUnitSection(req.body?.section);
@@ -2031,7 +2098,7 @@ userMembershipsRouter.get('/:id/beneficiaries', async (req, res, next) => {
     if (!um) return res.status(404).json({ error: 'Membership not found' });
     const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
     if (!state) return res.status(404).json({ error: 'Membership not found' });
-    res.json({ editable: um.status === 'draft', ...state });
+    res.json({ editable: um.status === 'in_cart', ...state });
   } catch (err) { next(err); }
 });
 
@@ -2040,7 +2107,7 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
   try {
     const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
     if (!um) return res.status(404).json({ error: 'Membership not found' });
-    if (um.status !== 'draft') {
+    if (um.status !== 'in_cart') {
       return res.status(409).json({ error: 'not_a_draft', message: 'The beneficiaries are chosen only before the plan is confirmed' });
     }
     const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
@@ -2071,7 +2138,7 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
 // additional Members are capped by the plan's member_limit ('1' | '2' | 'family').
 
 export const MEMBERS_SELECT = `
-  SELECT umm.member_id, umm.is_owner, m.name, m.email
+  SELECT umm.member_id, umm.is_owner, m.name, m.email, umm.fee_direct_discount_percent
   FROM ${ASSIGNMENT_BENEFICIARIES} umm
   JOIN members m ON m.id = umm.member_id
   WHERE umm.user_membership_id = ? AND umm.gym_id = ?
@@ -2085,10 +2152,10 @@ async function findMembershipWithPlanLimit(id: string | string[], gymId: string)
     `SELECT um.id, um.membership_plan_id,
             COALESCE((SELECT s.member_limit FROM plan_snapshots s
                        WHERE s.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}), p.member_limit) AS member_limit
-       FROM user_memberships um
+       FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-      WHERE um.id = ? AND um.gym_id = ?`,
-    [id, gymId],
+      WHERE um.id = ?`,
+    [gymId, id],
   );
   return rows[0] ?? null;
 }

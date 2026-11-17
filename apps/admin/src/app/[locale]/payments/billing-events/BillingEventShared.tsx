@@ -19,7 +19,7 @@ import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
-import { menuDocumentBlocks, type FullInvoiceForm } from './receiptsInvoicesView';
+import { menuDocumentBlocks, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
 import { notifyBillingEventDocumentsChanged } from './documentsChanged';
 
 type T = ReturnType<typeof useTranslations>;
@@ -53,12 +53,25 @@ export interface BillingEventHeaderRow {
   receipt_number?: string | null;
   can_issue_receipt?: boolean;
   has_full_invoice?: boolean;
+  /** #2935: one per completed refund, issued by the system. */
+  refund_receipts?: { id: number; receipt_number: string }[];
+}
+
+/**
+ * #2940: what a Billing Event is called — its generated `name`, or, for an event
+ * written before names existed, the plan name it was shown under until then. The
+ * name itself is the API's (`domain/billingEventName.ts`); nothing here decides it.
+ */
+export function billingEventDisplayName(row: { name?: string | null; plan_name?: string | null }): string {
+  return row.name ?? row.plan_name ?? '—';
 }
 
 /** The fields a row of the shared Billing Events table reads. */
 export interface BillingEventsTableRow extends BillingEventHeaderRow {
   type?: 'real' | 'virtual';
   plan_name?: string | null;
+  /** #2940: the event's generated name; null for an event written before it. */
+  name?: string | null;
   billing_date: string;
   created_at: string | null;
 }
@@ -95,7 +108,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
           <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
             <th style={{ ...th, width: 32 }} />
             <th style={th}>{t('billing_events_page.col_member')}</th>
-            <th style={th}>{t('billing_events_page.col_plan')}</th>
+            <th style={th}>{t('billing_events_page.col_event_name')}</th>
             <th style={th}>{t('billing_events_page.header_method')}</th>
             <th style={{ ...th, textAlign: 'right' }}>{t('billing_events_page.header_attempts')}</th>
             <th style={th}>{t('billing_events_page.col_date')}</th>
@@ -133,7 +146,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
                     {isExpandable ? (isExpanded ? '▾' : '▸') : null}
                   </td>
                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
-                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{billingEventDisplayName(row)}</td>
                   <td style={{ padding: '8px 12px' }}>{row.payment_method_name ?? '—'}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.attempt_count ?? 0}</td>
                   <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gym)}</td>
@@ -202,7 +215,11 @@ export function BillingEventStatusBadge({ row, t }: { row: Pick<BillingEventHead
 /** The latest attempt's normalized payment status; `—` when the event has none. */
 export function NormalizedPaymentStatusBadge({ status, t }: { status: string | null | undefined; t: T }) {
   if (!status) return <>—</>;
-  const tone = status === 'completed' ? 'paid' : status === 'pending' ? 'pending' : 'failed';
+  // #2480 follow-up: a refund is money returned, not a failed payment.
+  const tone = status === 'completed' ? 'paid'
+    : status === 'pending' ? 'pending'
+    : status === 'refunded' || status === 'partially_refunded' ? 'recorded'
+    : 'failed';
   return <StatusBadge status={tone} label={t(`billing_events_page.normalized_${status}` as any)} />;
 }
 
@@ -244,6 +261,16 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       toast(err?.message ?? t('billing_events_page.action_error'));
     } finally {
       setReceiptBusyId(null);
+    }
+  }
+
+  /** #2935: opens an existing Refund Receipt's PDF (never issues one). */
+  async function viewRefundReceipt(refundReceiptId: number) {
+    try {
+      const blob = await pdfFetch(`/payments/refund-receipts/${refundReceiptId}`, 'GET');
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (err: any) {
+      toast(err?.message ?? t('billing_events_page.action_error'));
     }
   }
 
@@ -401,6 +428,12 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
         disabled: blocks.receipt != null || receiptBusyId === id,
         title: blockTitle(blocks.receipt),
       });
+      for (const rr of refundReceiptMenuEntries(row.refund_receipts)) {
+        items.push({
+          label: t(`billing_events_page.${rr.labelKey}`, { number: rr.number }),
+          onClick: () => viewRefundReceipt(rr.id),
+        });
+      }
       items.push({
         label: t('billing_events_page.generate_full_invoice'),
         onClick: () => { setInvoiceError(null); setInvoicing(row); },

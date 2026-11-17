@@ -86,12 +86,12 @@ export async function ensureRecurringDraft(tx: Tx, input: {
     actor: input.actor,
   });
   if (created.kind === 'in_flight') {
-    if (created.status === 'draft') {
+    if (created.status === 'in_cart') {
       const { rows } = await tx.query<any>(
-        `SELECT ps.user_membership_id, ${staffProductDraftSql('ps')} AS editable
+        `SELECT ps.plan_assignment_id, ${staffProductDraftSql('ps')} AS editable
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
-      if (rows[0] && (rows[0].user_membership_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
+      if (rows[0] && (rows[0].plan_assignment_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
         await tx.query(
           'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
           [created.productSetId, input.gymId]);
@@ -222,7 +222,7 @@ export async function editRecurringPurchaseLine(tx: Tx, input: {
   actor: Actor;
 }): Promise<{ kind: 'ok'; productSetId: number; lineId: number; productId: number } | { kind: 'no_draft' } | DraftRefusal> {
   const { rows: drafts } = await tx.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'
       ORDER BY id DESC LIMIT 1`,
     [input.gymId, input.memberId]);
   if (!drafts[0]) return { kind: 'no_draft' };

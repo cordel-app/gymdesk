@@ -528,6 +528,8 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
             <ModalField label={t('label_max_capacity')} value={capacityText(details)} />
             <ModalField label={t('label_booking_type')} value={t(bookingTypeLabelKey(details.booking_type))} />
             {details.status && <ModalField label={t('label_status')} value={tStatus(details.status)} />}
+            {/* #2951 §8: the persistent slug is read-only and shown here only — never on the card or in Edit. */}
+            <ModalField label={t('details_slug')} value={details.slug || dash} />
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ModalField label={t('audit_created_at')} value={when(details.created_at)} />

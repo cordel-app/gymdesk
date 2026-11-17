@@ -30,6 +30,7 @@ type ProviderStatus = typeof STATUSES[number];
 interface PaymentProvider {
   id: number;
   name: string;
+  slug: string;
   provider_key: string;
   description: string | null;
   is_default: boolean;
@@ -591,6 +592,10 @@ export default function CordelPaymentProvidersPage() {
               <div>
                 <span style={detailLabelStyle}>{t('label_provider_key')}</span>
                 <p style={{ margin: '2px 0 0', fontSize: 14 }}><code>{details.provider_key}</code></p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_slug')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}><code>{details.slug}</code></p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('label_is_default')}</span>

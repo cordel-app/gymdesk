@@ -8,14 +8,14 @@ import {
 
 describe('ProductSet lifecycle (#1325)', () => {
   it('allows only the agreed transitions', () => {
-    expect(canTransition('draft', 'pending_payment')).toBe(true);
-    expect(canTransition('draft', 'active')).toBe(true);
+    expect(canTransition('in_cart', 'pending_payment')).toBe(true);
+    expect(canTransition('in_cart', 'active')).toBe(true);
     expect(canTransition('pending_payment', 'active')).toBe(true);
     expect(canTransition('active', 'superseded')).toBe(true);
-    expect(canTransition('pending_payment', 'draft')).toBe(false);
-    expect(canTransition('active', 'draft')).toBe(false);
+    expect(canTransition('pending_payment', 'in_cart')).toBe(false);
+    expect(canTransition('active', 'in_cart')).toBe(false);
     expect(canTransition('superseded', 'active')).toBe(false);
-    expect(canTransition('draft', 'superseded')).toBe(false);
+    expect(canTransition('in_cart', 'superseded')).toBe(false);
     // #2747: only a Pending Payment is cancelled, and a cancelled set is terminal.
     expect(canTransition('pending_payment', 'cancelled')).toBe(true);
     expect(canTransition('active', 'cancelled')).toBe(false);
@@ -38,9 +38,14 @@ describe('ProductSet lifecycle (#1325)', () => {
     expect(isProductSetStatus('cancelled')).toBe(true); // #2747
     expect(isProductSetStatus('expired')).toBe(false);
     expect(isProductSetStatus('active')).toBe(true);
-    expect(isInFlight('draft')).toBe(true);
+    expect(isInFlight('in_cart')).toBe(true);
     expect(isInFlight('pending_payment')).toBe(true);
     expect(isInFlight('active')).toBe(false);
+  });
+
+  it('stores a set in the cart as in_cart, and no longer accepts draft (#2949 stage 2)', () => {
+    expect(isProductSetStatus('in_cart')).toBe(true);
+    expect(isProductSetStatus('draft')).toBe(false);
   });
 
   it('expires a Draft only after more than two hours of inactivity', () => {
