@@ -146,11 +146,16 @@ platformTransferRouter.post(
       if (!mime.startsWith('image/')) {
         return res.status(415).json({ error: 'Unsupported content type. Send the picture as an image/* body' });
       }
+      // `req.body` is whatever a parser left there, and a request can make that a
+      // string or an array — both carry a `length`, so only a Buffer is image bytes.
       const raw: unknown = req.body;
-      if (!Buffer.isBuffer(raw)) return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+        return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      }
+      const original: Buffer = raw;
       const { rows } = await db.query<MuscleRow>('SELECT * FROM muscles WHERE slug = ?', [req.params.slug]);
       if (!rows[0]) return res.status(404).json({ error: 'Muscle not found' });
-      const result = await storeMuscleImage(req, rows[0], sex, raw);
+      const result = await storeMuscleImage(req, rows[0], sex, original);
       if (!result.ok) return res.status(result.status).json(result.body);
       res.json({ entity: await readMuscle(result.id) });
     } catch (err) { next(err); }
