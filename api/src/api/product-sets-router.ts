@@ -43,7 +43,7 @@ import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
 import { cartPurchasesForCharge } from './cart-checkout';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
-import { contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
+import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
@@ -639,17 +639,7 @@ async function reviewHandler(req: any, res: any, next: any) {
       } else {
         const { charge } = await commitCharge(gymId, set);
         amountDue = charge ? Math.round(charge.amount * 100) / 100 : 0;
-        lines = (charge?.lines ?? []).map((l: any) => ({
-          item_name: l.item_name ?? null, quantity: Number(l.quantity), amount: Number(l.amount),
-          regular_unit_price: l.regular_unit_price != null ? Number(l.regular_unit_price) : null,
-          promotion_name: l.promotion_name ?? null,
-          treatment_action: l.treatment_action ?? null,
-          treatment_value: l.treatment_value != null ? Number(l.treatment_value) : null,
-          tax_rate_percent: l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null,
-          amount_excl_tax: l.amount_excl_tax != null ? Number(l.amount_excl_tax) : null,
-          prepaid_periods: l.prepaid_periods ?? null,
-          prepaid_cadence: l.prepaid_cadence ?? null,
-        }));
+        lines = (charge?.lines ?? []).map(chargeLineView);
         if (!Number.isFinite(amountDue) || amountDue < 0) { amountDue = null; error = 'amount_unavailable'; }
       }
     } catch {

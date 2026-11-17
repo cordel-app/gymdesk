@@ -32,6 +32,25 @@ export interface ChargeLineLike {
   prepaid_cadence?: { interval: number; unit: string } | null;
 }
 
+/**
+ * #2965 — a stored or simulated charge line (`BillingEventLineRow`) as the Summary reads it. The
+ * Product Set review and the standalone cart's summary both go through it, so one line cannot be
+ * read two ways.
+ */
+export function chargeLineView(l: any): ChargeLineLike {
+  return {
+    item_name: l.item_name ?? null, quantity: Number(l.quantity), amount: Number(l.amount),
+    regular_unit_price: l.regular_unit_price != null ? Number(l.regular_unit_price) : null,
+    promotion_name: l.promotion_name ?? null,
+    treatment_action: l.treatment_action ?? null,
+    treatment_value: l.treatment_value != null ? Number(l.treatment_value) : null,
+    tax_rate_percent: l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null,
+    amount_excl_tax: l.amount_excl_tax != null ? Number(l.amount_excl_tax) : null,
+    prepaid_periods: l.prepaid_periods ?? null,
+    prepaid_cadence: l.prepaid_cadence ?? null,
+  };
+}
+
 export interface InitialPaymentLine {
   name: string | null;
   quantity: number;
