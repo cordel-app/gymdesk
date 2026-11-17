@@ -52,7 +52,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductDetails, EditDraftLineForm, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { AddProductDetails, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
@@ -127,6 +127,11 @@ export function MemberPurchasedProducts({
   const deleteBusy = lineDelete.busy;
   const deleteError = lineDelete.error;
   useEffect(() => { if (committedKey) setEditing(null); }, [committedKey]);
+  // #3020 — `⋮ → Edit` turns the row itself into the add form (same fields, same cells): no second panel below it.
+  const editForm = useAddProductForm({
+    memberId, isAdmin, canPay, recurringOnly: true, embedded: true, enabled: editing !== null,
+    edit: editing?.edit ?? null, onClose: () => setEditing(null), onChanged,
+  });
 
   function startEdit(item: PurchasedProduct, lineId: number) {
     setEditing({
@@ -185,7 +190,7 @@ export function MemberPurchasedProducts({
       : <span style={cardMutedTextStyle}>{dash}</span>;
   };
 
-  const columns: Column<PurchasedProduct>[] = [
+  const baseColumns: Column<PurchasedProduct>[] = [
     {
       key: 'product',
       header: t('purchase_col_product'),
@@ -196,12 +201,12 @@ export function MemberPurchasedProducts({
       render: (item) => (
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 500 }}>{item.product_name}</div>
-          {item.promotion && (
-            <div data-product-promotion style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 13 }}>
+          {(item.promotions && item.promotions.length > 0 ? item.promotions : item.promotion ? [item.promotion] : []).map((promo) => (
+            <div key={promo.promotion_id} data-product-promotion style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 13 }}>
               <span style={cardMutedTextStyle}>{t('purchase_col_applied_promotion')}:</span>
-              <span>{promotionLabel(item.promotion)}</span>
+              <span>{promotionLabel(promo)}</span>
             </div>
-          )}
+          ))}
         </div>
       ),
     },
@@ -351,6 +356,32 @@ export function MemberPurchasedProducts({
     },
   ];
 
+  // #3020 — the edited row draws the form's cells in the columns' own places; every other row reads as before.
+  const editCells: Record<string, React.ReactNode> | null = editing ? (() => {
+    const c = addProductDraftCells(editForm, null);
+    const chosen = (editForm.product?.promotions ?? []).filter((pr) => editForm.promotionIds.includes(pr.promotion_id));
+    const benefit = chosen.length === 0 ? dash : chosen.map((pr) => [
+      benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
+      pr.duration_cycles != null ? t('purchase_promotion_cycles', { count: pr.duration_cycles }) : null,
+    ].filter(Boolean).join(' · ')).join(', ');
+    return {
+      product: (
+        <div style={{ minWidth: 0 }}>
+          {c.product}
+          <div style={{ marginTop: 8 }} data-edit-product-quantity>
+            <EditQuantityField form={editForm} label={t('draft_line_quantity')} />
+          </div>
+        </div>
+      ),
+      price: c.price, tax: c.tax, promotion: c.promotion, promotion_benefit: benefit, discount: c.discount, final: c.final,
+    };
+  })() : null;
+  const columns: Column<PurchasedProduct>[] = baseColumns.map((col) => {
+    const key = col.key;
+    if (!key || !editCells || !(key in editCells)) return col;
+    return { ...col, render: (item: PurchasedProduct) => (editing?.rowId === item.id ? editCells[key] : col.render!(item)) } as Column<PurchasedProduct>;
+  });
+
   return (
     <div>
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
@@ -394,14 +425,7 @@ export function MemberPurchasedProducts({
           })() : undefined}
           renderExpanded={(item) => (editing?.rowId === item.id ? (
             <div data-draft-line-edit>
-              <EditDraftLineForm
-                memberId={memberId}
-                isAdmin={isAdmin}
-                canPay={canPay}
-                edit={editing.edit}
-                onClose={() => setEditing(null)}
-                onChanged={onChanged}
-              />
+              <AddProductDetails form={editForm} />
             </div>
           ) : <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />)}
       />
