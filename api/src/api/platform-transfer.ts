@@ -15,8 +15,12 @@ import {
   TRANSFER_IMAGE_RATE_LIMIT_WINDOW_MS,
   TransferAction,
   isTransferableObjectKey,
+  BASE_PAYMENT_METHOD_TRANSFER_FIELDS,
+  PAYMENT_PROVIDER_TRANSFER_FIELDS,
+  isValidEntitySlug,
   isValidMuscleSlug,
   muscleSexFromSlot,
+  parseSlugTransferRecord,
   parseMuscleTransferRecord,
   transferImageRateLimitMax,
 } from '../domain/entityTransfer';
@@ -30,6 +34,16 @@ import {
   updateMuscleContent,
 } from './platform-muscles';
 import { logger } from '../lib/logger';
+import { ProviderRow, createPaymentProvider, loadProvider, shapeProvider, updatePaymentProvider } from './payment-providers';
+import {
+  createBasePaymentMethod,
+  loadAllBasePaymentMethods,
+  loadBasePaymentMethod,
+  storeBasePaymentMethodImage,
+  updateBasePaymentMethod,
+} from './platform-base-payment-methods';
+import { memberImageBodyParser } from './member-image-storage';
+import { BASE_LOCALE } from '../infra/locale';
 
 /**
  * #2952 — Cordel → Export / Import, the API half (superadmin only). The Admin
@@ -158,6 +172,122 @@ platformTransferRouter.post(
       const result = await storeMuscleImage(req, rows[0], sex, original);
       if (!result.ok) return res.status(result.status).json(result.body);
       res.json({ entity: await readMuscle(result.id) });
+    } catch (err) { next(err); }
+  },
+);
+
+/**
+ * A row found by an imported slug that was soft-deleted is not restored: an
+ * import updates what exists and creates what does not, and the slug of a
+ * deleted row is still taken (#2951), so the entity is reported as failed.
+ */
+const DELETED_REFUSAL = { error: 'An entity with this slug was deleted; restore it before importing' };
+
+// ── Payment Providers (stage 2) ─────────────────────────────────────────────
+
+platformTransferRouter.get('/payment_providers', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<ProviderRow>(
+      'SELECT * FROM payment_providers WHERE deleted_at IS NULL ORDER BY slug ASC',
+    );
+    res.json({
+      type: 'payment_providers',
+      entities: rows.map((p) => ({
+        slug: p.slug,
+        data: { name: p.name, provider_key: p.provider_key, description: p.description, status: p.status },
+        images: {},
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post('/payment_providers', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, PAYMENT_PROVIDER_TRANSFER_FIELDS);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const { rows } = await db.query<ProviderRow>('SELECT id, deleted_at FROM payment_providers WHERE slug = ?', [slug]);
+    const found = rows[0];
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      action = 'updated';
+      const existing = await loadProvider(found.id);
+      result = await updatePaymentProvider(req, existing!, input);
+    } else {
+      action = 'created';
+      result = await createPaymentProvider(req, input, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    const row = await loadProvider(result.id);
+    res.status(action === 'created' ? 201 : 200).json({ action, entity: shapeProvider(row!) });
+  } catch (err) { next(err); }
+});
+
+// ── Base Payment Methods (stage 2) ──────────────────────────────────────────
+
+platformTransferRouter.get('/base_payment_methods', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const rows = await loadAllBasePaymentMethods(BASE_LOCALE);
+    res.json({
+      type: 'base_payment_methods',
+      entities: rows.filter((m) => !m.deleted_at).map((m) => ({
+        slug: m.slug,
+        data: { code: m.code, status: m.status, translations: m.translations },
+        images: { image: m.image_url ?? null },
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
+async function findBasePaymentMethodBySlug(slug: string) {
+  const { rows } = await db.query<{ id: number; deleted_at: string | null }>(
+    'SELECT id, deleted_at FROM base_payment_methods WHERE slug = ?', [slug],
+  );
+  return rows[0] ?? null;
+}
+
+platformTransferRouter.post('/base_payment_methods', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, BASE_PAYMENT_METHOD_TRANSFER_FIELDS);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const found = await findBasePaymentMethodBySlug(slug);
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      action = 'updated';
+      const existing = await loadBasePaymentMethod(found.id, BASE_LOCALE);
+      // The code is the method's stable identifier (#1663): an update never
+      // writes it, and an archive naming another code for this slug is refused.
+      result = await updateBasePaymentMethod(req, existing!, input);
+    } else {
+      action = 'created';
+      result = await createBasePaymentMethod(req, input, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200)
+      .json({ action, entity: await loadBasePaymentMethod(result.id, BASE_LOCALE) });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post(
+  '/base_payment_methods/:slug/image/:slot',
+  requireSuperadmin,
+  transferImageLimiter,
+  memberImageBodyParser,
+  async (req, res, next) => {
+    try {
+      if (req.params.slot !== 'image') return res.status(400).json({ error: 'slot must be "image"' });
+      if (!isValidEntitySlug(req.params.slug)) return res.status(404).json({ error: 'Payment method not found' });
+      const found = await findBasePaymentMethodBySlug(req.params.slug);
+      if (!found || found.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
+      const existing = await loadBasePaymentMethod(found.id, BASE_LOCALE);
+      const result = await storeBasePaymentMethodImage(req, existing!);
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.json({ entity: await loadBasePaymentMethod(found.id, BASE_LOCALE) });
     } catch (err) { next(err); }
   },
 );

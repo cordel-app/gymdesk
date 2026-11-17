@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { allocateGlobalSlug } from './entity-slugs';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { db, Tx } from '../infra/db';
@@ -33,7 +33,7 @@ const MAX_NAME_LENGTH = 120;
 const MAX_DESCRIPTION_LENGTH = 500;
 const STATUSES = ['active', 'inactive'] as const;
 
-interface ProviderRow {
+export interface ProviderRow {
   id: number;
   name: string;
   slug: string;
@@ -50,7 +50,7 @@ interface ProviderRow {
   gym_count: number;
 }
 
-function shapeProvider(row: ProviderRow) {
+export function shapeProvider(row: ProviderRow) {
   const { default_provider_key: _d, active_name_key: _n, ...rest } = row as any;
   return {
     ...rest,
@@ -71,7 +71,7 @@ const SELECT_PROVIDER = `
 
 // Express 5 types a route param as `string | string[]`; it is passed straight
 // into the query's params, which is how every other router handles it.
-async function loadProvider(id: unknown) {
+export async function loadProvider(id: unknown) {
   const { rows } = await db.query<ProviderRow>(`${SELECT_PROVIDER} WHERE p.id = ?`, [id]);
   return rows[0] ?? null;
 }
@@ -152,23 +152,39 @@ paymentProvidersRouter.get('/:id/references', requireSuperadmin, async (req, res
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
-paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
-  const { name, provider_key, description, status, is_default } = req.body ?? {};
+/** What a write answered: the row's id, or the HTTP refusal a route returns as is. */
+export type PaymentProviderWriteResult =
+  | { ok: true; id: number }
+  | { ok: false; status: number; body: Record<string, unknown> };
+
+type AuditRequest = Request & { superadminName?: string | null };
+
+/**
+ * Creates a provider. The route lets the slug be generated from the name;
+ * #2952's import passes the slug its archive carries, so an exported provider
+ * keeps its identity in the database it is imported into.
+ */
+export async function createPaymentProvider(
+  req: AuditRequest,
+  input: Record<string, any>,
+  opts: { slug?: string } = {},
+): Promise<PaymentProviderWriteResult> {
+  const { name, provider_key, description, status, is_default } = input ?? {};
 
   const nameResult = readName(name);
-  if ('error' in nameResult) return res.status(400).json({ error: nameResult.error });
+  if ('error' in nameResult) return refusal(400, { error: nameResult.error });
 
   if (typeof provider_key !== 'string' || !isSupportedPaymentProviderKey(provider_key)) {
-    return res.status(400).json({
+    return refusal(400, {
       error: `provider_key must be one of: ${SUPPORTED_PAYMENT_PROVIDER_KEYS.join(', ')}`,
     });
   }
 
   const descriptionResult = readDescription(description);
-  if ('error' in descriptionResult) return res.status(400).json({ error: descriptionResult.error });
+  if ('error' in descriptionResult) return refusal(400, { error: descriptionResult.error });
 
   if (status !== undefined && !(STATUSES as readonly string[]).includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+    return refusal(400, { error: `status must be one of: ${STATUSES.join(', ')}` });
   }
 
   // An inactive provider must not be the default: every new gym is
@@ -177,16 +193,16 @@ paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
   const wantsDefault = is_default === true;
   const nextStatus: string = status ?? 'active';
   if (wantsDefault && nextStatus !== 'active') {
-    return res.status(400).json({ error: 'Only an active payment provider can be the default' });
+    return refusal(400, { error: 'Only an active payment provider can be the default' });
   }
 
-  const actor = resolvePlatformActor(req.superadminName);
+  const actor = resolvePlatformActor(req.superadminName ?? null);
 
   try {
     const id = await db.transaction(async (tx) => {
       if (wantsDefault) await clearDefault(tx, actor);
       // #2951: generated once from the name; PUT never touches it.
-      const slug = await allocateGlobalSlug('payment_providers', nameResult.value, tx);
+      const slug = opts.slug ?? await allocateGlobalSlug('payment_providers', nameResult.value, tx);
       const { insertId } = await tx.query(
         `INSERT INTO payment_providers
            (name, slug, provider_key, description, is_default, status, created_at, created_by)
@@ -198,38 +214,50 @@ paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
 
     const row = await loadProvider(String(id));
     recordAudit(req, { action: 'create', entityType: 'payment_provider', entityId: id, next: row });
-    res.status(201).json(shapeProvider(row!));
+    return { ok: true, id };
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return duplicateResponse(res, err);
+    if (err.code === 'ER_DUP_ENTRY') return duplicateRefusal(err);
     throw err;
   }
+}
+
+paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
+  const result = await createPaymentProvider(req, req.body ?? {});
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.status(201).json(shapeProvider((await loadProvider(String(result.id)))!));
 });
 
 // ─── Update ──────────────────────────────────────────────────────────────────
 
-paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
-  const { name, provider_key, description, status, is_default } = req.body ?? {};
+/**
+ * Writes a provider's own fields. The slug never moves, and the rules the route
+ * has always applied (the default must be active, a provider gyms use cannot go
+ * inactive) hold for #2952's import exactly as for the editor.
+ */
+export async function updatePaymentProvider(
+  req: AuditRequest,
+  existing: ProviderRow,
+  input: Record<string, any>,
+): Promise<PaymentProviderWriteResult> {
+  const { name, provider_key, description, status, is_default } = input ?? {};
   if (
     name === undefined && provider_key === undefined && description === undefined
     && status === undefined && is_default === undefined
   ) {
-    return res.status(400).json({ error: 'At least one field must be provided' });
+    return { ok: false, status: 400, body: { error: 'At least one field must be provided' } };
   }
-
-  const existing = await loadProvider(req.params.id);
-  if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment provider not found' });
 
   let nextName = existing.name;
   if (name !== undefined) {
     const nameResult = readName(name);
-    if ('error' in nameResult) return res.status(400).json({ error: nameResult.error });
+    if ('error' in nameResult) return refusal(400, { error: nameResult.error });
     nextName = nameResult.value;
   }
 
   let nextProviderKey = existing.provider_key;
   if (provider_key !== undefined) {
     if (typeof provider_key !== 'string' || !isSupportedPaymentProviderKey(provider_key)) {
-      return res.status(400).json({
+      return refusal(400, {
         error: `provider_key must be one of: ${SUPPORTED_PAYMENT_PROVIDER_KEYS.join(', ')}`,
       });
     }
@@ -239,31 +267,31 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
   let nextDescription = existing.description;
   if (description !== undefined) {
     const descriptionResult = readDescription(description);
-    if ('error' in descriptionResult) return res.status(400).json({ error: descriptionResult.error });
+    if ('error' in descriptionResult) return refusal(400, { error: descriptionResult.error });
     nextDescription = descriptionResult.value;
   }
 
   let nextStatus = existing.status;
   if (status !== undefined) {
     if (!(STATUSES as readonly string[]).includes(status)) {
-      return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+      return refusal(400, { error: `status must be one of: ${STATUSES.join(', ')}` });
     }
     nextStatus = status;
   }
 
   let nextIsDefault = !!existing.is_default;
   if (is_default !== undefined) {
-    if (typeof is_default !== 'boolean') return res.status(400).json({ error: 'is_default must be a boolean' });
+    if (typeof is_default !== 'boolean') return refusal(400, { error: 'is_default must be a boolean' });
     // Clearing the flag directly would leave the platform with no default for
     // the next gym — make another provider the default instead.
     if (!is_default && existing.is_default) {
-      return res.status(400).json({ error: 'Set another payment provider as the default instead of clearing this one' });
+      return refusal(400, { error: 'Set another payment provider as the default instead of clearing this one' });
     }
     nextIsDefault = is_default;
   }
 
   if (nextIsDefault && nextStatus !== 'active') {
-    return res.status(400).json({ error: 'Only an active payment provider can be the default' });
+    return refusal(400, { error: 'Only an active payment provider can be the default' });
   }
 
   // A provider gyms already use cannot go inactive: their field would point at
@@ -271,7 +299,7 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
   if (nextStatus === 'inactive' && existing.status === 'active') {
     const { usageCount, references } = await gymsUsingProvider(existing.id);
     if (usageCount > 0) {
-      return res.status(409).json({
+      return refusal(409, {
         error: `This payment provider is used by ${usageCount} gym(s) and cannot be deactivated. Move them to another provider first.`,
         usageCount,
         references,
@@ -279,7 +307,7 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
     }
   }
 
-  const actor = resolvePlatformActor(req.superadminName);
+  const actor = resolvePlatformActor(req.superadminName ?? null);
 
   try {
     await db.transaction(async (tx) => {
@@ -298,16 +326,31 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
       );
     });
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return duplicateResponse(res, err);
+    if (err.code === 'ER_DUP_ENTRY') return duplicateRefusal(err);
     throw err;
   }
 
-  const row = await loadProvider(req.params.id);
+  const row = await loadProvider(existing.id);
   recordAudit(req, {
     action: 'update', entityType: 'payment_provider', entityId: existing.id,
     previous: existing, next: row,
   });
-  res.json(shapeProvider(row!));
+  return { ok: true, id: existing.id };
+}
+
+paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
+  const { name, provider_key, description, status, is_default } = req.body ?? {};
+  if (
+    name === undefined && provider_key === undefined && description === undefined
+    && status === undefined && is_default === undefined
+  ) {
+    return res.status(400).json({ error: 'At least one field must be provided' });
+  }
+  const existing = await loadProvider(req.params.id);
+  if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment provider not found' });
+  const result = await updatePaymentProvider(req, existing, req.body ?? {});
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.json(shapeProvider((await loadProvider(existing.id))!));
 });
 
 // ─── Delete (soft) ───────────────────────────────────────────────────────────
@@ -371,11 +414,15 @@ async function clearDefault(tx: Tx, actor: string | null) {
   );
 }
 
-function duplicateResponse(res: any, err: { message?: string }) {
+function refusal(status: number, body: Record<string, unknown>): PaymentProviderWriteResult {
+  return { ok: false, status, body };
+}
+
+function duplicateRefusal(err: { message?: string }): PaymentProviderWriteResult {
   // Both unique keys are generated columns; only the name one is reachable
   // through a request (the default flag is cleared in the same transaction).
   const isDefaultClash = (err.message ?? '').includes('payment_providers_one_default');
-  return res.status(409).json({
+  return refusal(409, {
     error: isDefaultClash
       ? 'Another payment provider is already the default'
       : 'A payment provider with this name already exists',
