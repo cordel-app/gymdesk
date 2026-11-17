@@ -123,6 +123,8 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
+  // Unlike 437/438, whose slug columns predate them, this migration created `slug`, so `down`
+  // drops it to leave the table as it found it.
   if (await hasIndex(knex, 'professional_services', UNIQUE_KEY)) {
     await knex.raw(`ALTER TABLE professional_services DROP INDEX ${UNIQUE_KEY}`);
   }

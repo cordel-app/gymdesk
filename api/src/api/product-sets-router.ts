@@ -1,3 +1,4 @@
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
@@ -87,7 +88,8 @@ async function loadSet(gymId: string, id: unknown) {
   const numeric = Number(id);
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   const { rows } = await db.query<any>(
-    `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
+    `SELECT ps.*, ${productSetLegacyAssignmentIdSql()} AS linked_user_membership_id,
+            (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [numeric, gymId]);
   return rows[0] ?? null;
 }
@@ -189,8 +191,8 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
   }
   if (planId !== null && parseConflictResolution(req.body) !== 'add') {
     const { rows: own } = await db.query<{ user_membership_id: number | null }>(
-      `SELECT user_membership_id FROM product_sets
-        WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1`, [gymId, memberId]);
+      `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active' LIMIT 1`, [gymId, memberId]);
     const ownUmId = own[0]?.user_membership_id != null ? Number(own[0].user_membership_id) : null;
     const conflicts = await findLiveAssignmentsForMembers(db, gymId, [memberId],
       ownUmId != null ? { excludeUserMembershipId: ownUmId } : {});
@@ -287,8 +289,8 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
       // The Admin's Draft assignment is a cache of this version (#1325 PR
       // 3e-1), so it moves with it: left `draft`, the Member card's plan row
       // read Draft beside a PS status of Pending Payment.
-      if (out.kind === 'ok' && set.user_membership_id != null) {
-        await syncLinkedAssignmentToPendingPayment(tx, gymId, Number(set.user_membership_id), actorOf(req).name, opts.member ? 'member' : 'admin');
+      if (out.kind === 'ok' && set.linked_user_membership_id != null) {
+        await syncLinkedAssignmentToPendingPayment(tx, gymId, Number(set.linked_user_membership_id), actorOf(req).name, opts.member ? 'member' : 'admin');
       }
       return out;
     });
