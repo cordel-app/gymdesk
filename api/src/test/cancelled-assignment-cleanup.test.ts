@@ -32,8 +32,14 @@ async function exists(id: number): Promise<boolean> {
   return rows.length === 1;
 }
 
+// #2125 M6b-46: migration 439 dropped `product_sets.user_membership_id`, which the migration's live-set
+// count reads; against today's schema that link is the set's anchor's legacy id.
+const ANCHOR_LINK = '(SELECT anc.source_user_membership_id FROM plan_snapshots anc WHERE anc.id = product_sets.plan_assignment_id)';
 const run = (gyms: string[]) =>
-  knex.transaction((trx) => migration.deleteCancelledWithoutEndDate(trx, { gymIds: gyms }));
+  knex.transaction((trx) => migration.deleteCancelledWithoutEndDate({
+    raw: (sql: string, bindings?: unknown) => trx.raw(
+      sql.replace(/(FROM product_sets\s+WHERE )user_membership_id\b/, `$1${ANCHOR_LINK}`), bindings as any),
+  }, { gymIds: gyms }));
 
 beforeAll(async () => {
   knex = knexFactory({ client: 'mysql2', connection: process.env.DATABASE_URL });

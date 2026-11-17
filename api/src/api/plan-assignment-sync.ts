@@ -131,24 +131,27 @@ const RENORMALIZED_ANCHOR_SQL =
 export async function syncProductSetAssignmentIds(
   exec: Exec, gymId: string, productSetIds: number[], userMembershipIds: number[] = [],
 ): Promise<void> {
-  const sets = [...new Set(productSetIds)];
+  const sets = new Set(productSetIds.map(Number));
   const ums = [...new Set(userMembershipIds)];
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-  if (sets.length > 0) { clauses.push(`id IN (${sets.map(() => '?').join(',')})`); params.push(...sets); }
   if (ums.length > 0) {
-    clauses.push(`plan_assignment_id IN (SELECT pa_um.id FROM plan_snapshots pa_um
-                                          WHERE pa_um.gym_id = ? AND pa_um.source_user_membership_id IN (${ums.map(() => '?').join(',')}))`);
-    params.push(gymId, ...ums);
+    // Found by a plain read first and written by primary key, so the UPDATE locks only those rows
+    // (a range scan of the gym's sets under a concurrent writer deadlocks).
+    const { rows } = await exec.query<{ id: number }>(
+      `SELECT ps.id FROM product_sets ps
+         JOIN plan_snapshots pa_um ON pa_um.id = ps.plan_assignment_id
+        WHERE ps.gym_id = ? AND pa_um.source_user_membership_id IN (${ums.map(() => '?').join(',')})`,
+      [gymId, ...ums]);
+    for (const r of rows) sets.add(Number(r.id));
   }
-  if (clauses.length === 0) return;
+  const ids = [...sets];
+  if (ids.length === 0) return;
   // The comparison repeats the subquery rather than naming the column, so a set already in step is not
   // written (its row lock is not taken by a re-sync that changes nothing).
   await exec.query(
     `UPDATE product_sets SET plan_assignment_id = ${RENORMALIZED_ANCHOR_SQL}
-      WHERE gym_id = ? AND plan_assignment_id IS NOT NULL AND (${clauses.join(' OR ')})
+      WHERE id IN (${ids.map(() => '?').join(',')}) AND gym_id = ? AND plan_assignment_id IS NOT NULL
         AND NOT (plan_assignment_id <=> ${RENORMALIZED_ANCHOR_SQL})`,
-    [gymId, ...params]);
+    [...ids, gymId]);
 }
 
 /**

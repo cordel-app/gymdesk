@@ -601,7 +601,7 @@ export async function billingEventsOfAssignment<T = any>(gymId: string, umId: nu
               SELECT ps.id FROM product_sets ps
                WHERE ps.gym_id = ? AND ps.owner_member_id IN (
                        SELECT p2.owner_member_id FROM product_sets p2
-                        WHERE p2.gym_id = ? AND p2.user_membership_id = ?))
+                        WHERE p2.gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'p2')}))
       ORDER BY be.id ASC`,
     [gymId, gymId, gymId, umId],
   );
