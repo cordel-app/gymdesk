@@ -28,6 +28,7 @@ const TYPE_LABEL_KEYS: Record<string, string> = {
   base_professional_services: 'type_base_professional_services',
   base_personal_goals: 'type_base_personal_goals',
   base_nutrition_goals: 'type_base_nutrition_goals',
+  base_nutrition_library: 'type_base_nutrition_library',
 };
 
 /** A type's label key, or null when the type has none (the page then shows the type as is). */
