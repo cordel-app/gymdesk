@@ -56,6 +56,11 @@ export interface InitialPaymentLike {
     tax_rate_percent: number | null; tax_amount: number; amount: number;
     /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
     prepaid_periods?: number | null; prepaid_cadence?: { interval: number; unit: string } | null;
+    /** #2970 — the prorated stretch and the full prepaid periods of a Membership Fee's first charge. */
+    fee_split?: {
+      prorated: { days: number; period_days: number; start: string; end: string; amount: number };
+      prepaid: { periods: number; start: string; end: string; amount: number } | null;
+    } | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;

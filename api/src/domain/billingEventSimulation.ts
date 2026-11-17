@@ -25,7 +25,7 @@
 // `advanceBillingDate()`, `classifyPlanDurationPeriod()`). Nothing is persisted
 // and nothing is charged.
 
-import { BillingSimulationResult, SimulationBenefit } from './billingSimulation';
+import { BillingSimulationResult, FeeChargeSplit, SimulationBenefit } from './billingSimulation';
 import { ExampleTimelineCycle } from './exampleTimeline';
 
 /**
@@ -64,6 +64,8 @@ export interface BillingEventLine {
   prepaid_cadence: { interval: number; unit: string } | null;
   /** #1867 stage 4 — the partial first period of a Product that joined an existing schedule; `null` otherwise. */
   proration?: { prorated_days: number; period_days: number } | null;
+  /** #2970 — a Membership Fee's first charge as a prorated stretch plus full prepaid periods; `null` otherwise. */
+  fee_split?: FeeChargeSplit | null;
   /** Why `actual_charge` differs from `regular_price`; empty at the regular price. */
   benefits: SimulationBenefit[];
 }
@@ -202,6 +204,7 @@ export function groupBillingEventsByDate(
           prepaid_periods: line.prepaid_periods,
           prepaid_cadence: line.prepaid_cadence ?? null,
           proration: line.proration ?? null,
+          fee_split: line.fee_split ?? null,
           benefits: line.benefits,
         });
       }
