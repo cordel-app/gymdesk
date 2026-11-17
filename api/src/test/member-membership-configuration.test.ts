@@ -20,6 +20,7 @@
 // come back is the whole history with `is_live` true on at most one row.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -437,9 +438,9 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
     expect(res.body.promotions).toBeUndefined();
     // Both applications are untouched in the database — only the read changed.
     const { rows } = await db.query(
-      `SELECT DISTINCT ps.user_membership_id AS user_membership_id, ump.promotion_id
+      `SELECT DISTINCT ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id, ump.promotion_id
          FROM user_membership_promotions ump JOIN product_sets ps ON ps.id = ump.product_set_id
-        WHERE ps.user_membership_id IN (?, ?) AND ump.status = 'applied'`,
+        WHERE (${productSetOfLegacyAssignmentSql('?', 'ps')} OR ${productSetOfLegacyAssignmentSql('?', 'ps')}) AND ump.status = 'applied'`,
       [standardUm, premiumUm],
     );
     expect(rows.map((r: any) => Number(r.promotion_id)).sort(byNumber))

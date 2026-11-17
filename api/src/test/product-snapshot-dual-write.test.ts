@@ -1,6 +1,7 @@
 // #2126 stage 2: the Product snapshot tables follow every write of a Draft's recurring lines (since
 // stage 5d-6 they are the only tables a line lives in).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment, createTestGym,
@@ -39,7 +40,7 @@ beforeAll(async () => {
     `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`, [gymId, `PDW-Prod-${uniq()}`])).insertId as number;
   umId = await createTestDraftAssignment(gymId, owner, planId, { config: { membership_fee_price: 0 } as any });
-  setId = (await db.query<any>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umId])).rows[0].id;
+  setId = (await db.query<any>(`SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [umId])).rows[0].id;
 });
 
 describe('recurring Product lines follow the Draft (#2126 stage 2)', () => {

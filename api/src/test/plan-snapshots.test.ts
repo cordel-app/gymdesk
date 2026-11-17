@@ -1,6 +1,7 @@
 // #2125 stage 1: the plan snapshot tables and their repeatable backfill, against real MySQL
 // (since stage 17 the snapshots are written by the real writers; the backfill only has promotions left to copy).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
@@ -49,13 +50,13 @@ beforeAll(async () => {
   planA = await plan(gymId);
   planB = await plan(gymId);
   umA = await createTestDraftAssignment(gymId, owner, planA, { config: { membership_fee_price: 49.9 } as any });
-  const { rows: a } = await db.query<{ id: number }>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umA]);
+  const { rows: a } = await db.query<{ id: number }>(`SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [umA]);
   setA = a[0].id;
   // A second plan of the same owner in a version of its own: the model must allow it.
   // (a member has one in-flight version at a time, so it is built for another and handed over)
   const other = await member(gymId, 'Other');
   umB = await createTestDraftAssignment(gymId, other, planB, { startsAt: '2030-01-01' });
-  const { rows: b } = await db.query<{ id: number }>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umB]);
+  const { rows: b } = await db.query<{ id: number }>(`SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [umB]);
   setB = b[0].id;
   await db.query("UPDATE product_sets SET status = 'superseded', owner_member_id = ? WHERE id = ?", [owner, setB]);
   await db.query('INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) SELECT gym_id, MIN(id), ?, 0 FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?) GROUP BY gym_id', [kid, setA]);

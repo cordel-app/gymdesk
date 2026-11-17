@@ -6,6 +6,7 @@
 // lines as they were. Integration: the real routers against MySQL.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateAssignment, cleanupTestGyms, createTestGym, createTestMembership, request,
@@ -189,7 +190,7 @@ describe('Individual plan lines per member (#2657 stage 3)', () => {
     await activateAssignment(gymId, umId);
     const { rows: [prev] } = await db.query<{ plan_snapshot_id: number }>(
       `SELECT psj.plan_snapshot_id FROM product_sets ps JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
-        WHERE ps.user_membership_id = ? AND ps.status = 'active'`, [umId]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ps.status = 'active'`, [umId]);
     const res = await put(umId, [
       { product_id: lockerId, assigned_member_id: owner, quantity: 1 },
       { product_id: lockerId, assigned_member_id: partner, quantity: 1 },

@@ -2,6 +2,7 @@
 // Integration: the member's first plan joins the Draft their Products are on, judged by the
 // immediate purchase's own checks; one Draft is one purchase, and nothing is charged.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
@@ -85,7 +86,7 @@ describe('POST /me/product-sets/:id/plans', () => {
     // Committing the Draft activates the plan and the Product together.
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: draft.id, today: TODAY }));
     const { rows: um } = await db.query<any>(
-      `SELECT um.status FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id
+      `SELECT um.status FROM user_memberships um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
         WHERE ps.id = ?`, [draft.id]);
     expect(um[0]?.status).toBe('active');
     const { rows: lines } = await db.query<any>(

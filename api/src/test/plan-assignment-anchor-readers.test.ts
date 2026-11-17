@@ -4,6 +4,7 @@
 // two columns disagree (the anchor cleared, the legacy id left) and asserts the reader follows the
 // anchor: the Member card's Product Sets list (end date) and the cancellation preview (start date).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
@@ -45,7 +46,7 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;
   });
-  const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
+  const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
   return Number(rows[0].user_membership_id);
 }
 
@@ -56,7 +57,7 @@ const setAnchor = (setId: number, value: number | null) =>
   db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [value, setId]);
 const activeSetOf = async (um: number): Promise<{ id: number; anchor: number | null }> => {
   const { rows } = await db.query<any>(
-    "SELECT id, plan_assignment_id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'active'", [gymId, um]);
+    `SELECT id, plan_assignment_id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [gymId, um]);
   return { id: Number(rows[0].id), anchor: rows[0].plan_assignment_id == null ? null : Number(rows[0].plan_assignment_id) };
 };
 

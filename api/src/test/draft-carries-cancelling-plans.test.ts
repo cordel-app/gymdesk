@@ -3,6 +3,7 @@
 // never projected, never re-opened — and stops carrying them once the sweep has
 // moved them to `cancelled`.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
@@ -58,7 +59,7 @@ async function links(setId: number) {
 }
 async function setOf(um: number, status: string): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? AND status = ? ORDER BY id DESC LIMIT 1', [um, status]);
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = ? ORDER BY id DESC LIMIT 1`, [um, status]);
   return Number(rows[0].id);
 }
 async function activeSetOf(memberId: number): Promise<number> {

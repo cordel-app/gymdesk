@@ -8,7 +8,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
-import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { currentAssignmentSnapshotSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { legacyProductInsert } from './legacyProductFixture';
 
 let gymId: string;
@@ -77,7 +77,7 @@ const services = async (um: number) =>
   must(await auth(request.get(`/user-memberships/${um}/services`)), 'services').body as any[];
 /** Marks the assignment's linked version superseded, as an Add leaves it. */
 const supersedeVersion = (um: number) =>
-  db.query("UPDATE product_sets SET status = 'superseded' WHERE gym_id = ? AND user_membership_id = ?", [gymId, um]);
+  db.query(`UPDATE product_sets SET status = 'superseded' WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, um]);
 
 describe('assignmentLineVersionId() reads the assignment\'s status from plan_snapshots', () => {
   it('a running plan on its Active version lists its recurring line', async () => {

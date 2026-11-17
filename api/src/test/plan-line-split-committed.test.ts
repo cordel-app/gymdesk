@@ -5,6 +5,7 @@
 // Integration: the real routers and the module against MySQL.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { splitCommittedPlanLines } from '../api/plan-line-split-committed';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
@@ -169,7 +170,7 @@ describe('splitting committed Individual plan lines (#2657 stage 4)', () => {
     const { umId } = await duoDraft();
     const { rows: [d] } = await db.query<{ plan_snapshot_id: number }>(
       `SELECT psj.plan_snapshot_id FROM product_sets ps JOIN product_set_plan_snapshots psj ON psj.product_set_id = ps.id
-        WHERE ps.user_membership_id = ? AND ps.status = 'in_cart'`, [umId]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ps.status = 'in_cart'`, [umId]);
     await splitCommittedPlanLines({ execute: true, gymId });
     expect(await linesOf('plan_periodical_snapshots', Number(d.plan_snapshot_id), lockerId))
       .toEqual([expect.objectContaining({ member: null, quantity: 2 })]);

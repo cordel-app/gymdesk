@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 
 // Only the call that would reach Monei is stubbed (Save & Pay raises the hosted page).
@@ -87,7 +88,7 @@ describe('readers see a ProductSet-billed assignment (#1325)', () => {
     expect(created.status).toBe(201);
     expect((await auth(request.post(`/product-sets/${created.body.id}/save-and-pay`)).send({})).status).toBe(201);
     expect((await auth(request.post(`/product-sets/${created.body.id}/record-payment`)).send({})).status).toBe(200);
-    const { rows: link } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [created.body.id]);
+    const { rows: link } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [created.body.id]);
     const umId = Number(link[0].user_membership_id);
     return { memberId: m.insertId as number, umId };
   }

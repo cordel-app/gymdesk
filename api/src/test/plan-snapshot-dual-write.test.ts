@@ -1,5 +1,6 @@
 // #2125 stage 2: the plan snapshot tables follow every ProductSet write, in the same transaction.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
@@ -51,7 +52,7 @@ beforeAll(async () => {
     `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`, [gymId, `DW-Prod-${uniq()}`])).insertId as number;
   umId = await createTestDraftAssignment(gymId, owner, planId, { config: { membership_fee_price: 0 } as any });
-  setId = (await db.query<any>('SELECT id FROM product_sets WHERE user_membership_id = ?', [umId])).rows[0].id;
+  setId = (await db.query<any>(`SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [umId])).rows[0].id;
 });
 
 describe('plan snapshot dual-write (#2125 stage 2)', () => {

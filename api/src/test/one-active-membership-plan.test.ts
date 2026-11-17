@@ -25,6 +25,7 @@
 // bookable and is not the member's plan — is `draft-membership-assignment.test.ts`.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { loadMemberProfessionalServiceGrants } from '../domain/memberProfessionalServices';
 import {
@@ -510,7 +511,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const { rows: initial } = await db.query<any>(
       `SELECT be.amount, be.product_set_id FROM billing_events be
         JOIN product_sets ps ON ps.id = be.product_set_id
-       WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`, [draft]);
+       WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.event_type = 'payment_recorded'`, [draft]);
     expect(initial).toHaveLength(1);
     expect(Number(initial[0].amount)).toBe(30);
 

@@ -2,6 +2,7 @@
 // Draft only: the values survive a reload, the catalogue Plan and a sibling
 // Draft are untouched, and nothing activates or bills.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
@@ -58,7 +59,7 @@ describe('saving an Assigned Plan Draft (#2093)', () => {
     const { rows: events } = await db.query<any>(
       `SELECT be.id FROM billing_events be
          JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ?`, [umId]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')}`, [umId]);
     expect(events).toHaveLength(0);
   });
 
