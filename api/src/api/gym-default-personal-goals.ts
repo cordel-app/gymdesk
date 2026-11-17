@@ -11,10 +11,12 @@
 //     (migration 315) and the live-name key make a repeated or concurrent import
 //     create it once. A deleted imported goal still counts as imported (the
 //     unique key would refuse a second one), so it stays deleted;
-//   * the copy is the gym's own: no slug (a System row's label handle), the
+//   * the copy is the gym's own: no `slug` (a System row's label handle), its
+//     `entity_slug` carried from the template (#2951 stage 3), the
 //     translations and the image objects are copied, never shared by reference.
 
 import { db } from '../infra/db';
+import { allocateGymGoalSlug } from './entity-slugs';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import {
   copyStorageObject,
@@ -106,13 +108,20 @@ export async function insertPersonalGoalFromTemplate(
   template: BasePersonalGoalRow,
   actor: string | null,
 ): Promise<boolean> {
+  // #2951 stage 3 §6: the copy carries its Base goal's slug, suffixed only when the gym holds it.
+  const { rows: baseRows } = await db.query<{ slug: string | null }>(
+    'SELECT slug FROM base_personal_goals WHERE id = ?', [template.id],
+  );
+  const entitySlug = await allocateGymGoalSlug('personal_goals', gymId, {
+    name: template.name, carried: baseRows[0]?.slug ?? null,
+  });
   const { rowCount, insertId } = await db.query(
     `INSERT IGNORE INTO personal_goals
-       (gym_id, base_personal_goal_id, name, description, target_value, target_unit, target_type,
+       (gym_id, base_personal_goal_id, entity_slug, name, description, target_value, target_unit, target_type,
         status, created_at, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(), ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(), ?)`,
     [
-      gymId, template.id, template.name, template.description,
+      gymId, template.id, entitySlug, template.name, template.description,
       template.target_value, template.target_unit, template.target_type, actor,
     ],
   );

@@ -1,3 +1,4 @@
+import { SYSTEM_GOALS } from '../domain/goalLibrary';
 import { db } from '../infra/db';
 
 /**
@@ -26,8 +27,15 @@ import { db } from '../infra/db';
  * row with no image reads `NULL`, and the food illustration (#932), then the
  * standard fallback, apply. Alias `g` is the plan-goal table.
  */
+/**
+ * #2951 stage 3: a Base goal Cordel creates now gets a slug generated from its name, so
+ * one named "Water" would read `water` and silently illustrate every plan's water goal.
+ * The join therefore matches only the seeded slugs, the only ones it ever matched.
+ */
+const SEEDED_GOAL_SLUGS = [...new Set([...SYSTEM_GOALS.personal, ...SYSTEM_GOALS.nutrition].map((g) => g.slug))];
 export const NUTRITION_GOAL_IMAGE_JOIN_SQL = `LEFT JOIN base_nutrition_goals ng
-            ON ng.slug = g.item_name AND ng.deleted_at IS NULL`;
+            ON ng.slug = g.item_name AND ng.deleted_at IS NULL
+           AND ng.slug IN (${SEEDED_GOAL_SLUGS.map((s) => `'${s}'`).join(', ')})`;
 export const NUTRITION_GOAL_IMAGE_COLUMNS_SQL = `ng.image_url AS goal_image_url, ng.image_thumbnail_url AS goal_image_thumbnail_url`;
 
 export function parseGoalIllustrationInput(value: unknown): { id: number | null } | { error: string } {

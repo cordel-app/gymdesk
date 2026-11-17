@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
+import { allocateGymGoalSlug } from './entity-slugs';
 import { getTenantContext, requireFeatureWrite, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import {
@@ -113,7 +114,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}${kind === 'personal' ? ' g.base_personal_goal_id, (g.gym_id IS NULL OR g.base_personal_goal_id IS NOT NULL) AS is_system,' : ''}
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.entity_slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}${kind === 'personal' ? ' g.base_personal_goal_id, (g.gym_id IS NULL OR g.base_personal_goal_id IS NOT NULL) AS is_system,' : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
@@ -242,14 +243,16 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       if (existing.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
 
       // `slug` is deliberately not written: it is a System row's label handle and
-      // `chk_<prefix>_slug_system_only` refuses one on a gym row.
+      // `chk_<prefix>_slug_system_only` refuses one on a gym row. The goal's own
+      // persistent slug is `entity_slug` (#2951 stage 3), generated once from its name.
       const insertId = await db.transaction(async (tx) => {
+        const entitySlug = await allocateGymGoalSlug(table, gymId, { name: name.value }, tx);
         const { insertId: goalId } = await tx.query(
-          `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
+          `INSERT INTO ${table} (gym_id, entity_slug, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
              status, created_by)
-           VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
+           VALUES (?, ?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
           [
-            gymId, name.value, description.value ?? null,
+            gymId, entitySlug, name.value, description.value ?? null,
             ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
             actor,
           ],
@@ -669,16 +672,18 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         );
         if (existing.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
 
-        // The definition fields and nothing else: no slug (a System row's label
-        // handle), no source ownership, no actors, no image yet — the object is
+        // The definition fields and nothing else: no `slug` (a System row's label
+        // handle; its own `entity_slug` is generated below), no source ownership, no actors, no image yet — the object is
         // copied once the row has the id its key is built from.
         const insertId = await db.transaction(async (tx) => {
+          // A duplicate is a new goal: its slug comes from its own name (#2951 stage 3).
+          const entitySlug = await allocateGymGoalSlug(table, gymId, { name: newName }, tx);
           const { insertId: goalId } = await tx.query(
-            `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
+            `INSERT INTO ${table} (gym_id, entity_slug, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
                status, created_by)
-             VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
+             VALUES (?, ?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
             [
-              gymId, newName, source.description ?? null,
+              gymId, entitySlug, newName, source.description ?? null,
               ...(measurable ? [source.target_value ?? null, source.target_unit ?? null, source.target_type ?? 'absolute'] : []),
               actor,
             ],

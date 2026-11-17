@@ -4398,6 +4398,7 @@
     "status_deleted": "Eliminado",
     "ownership": "Tipo",
     "ownership_system": "Sistema",
+    "details_slug": "Slug",
     "ownership_gym": "Gimnasio",
     "details": "Detalles",
     "edit": "Editar",
