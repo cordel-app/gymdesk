@@ -20,7 +20,8 @@
  * The columns stay nullable: the Base id reservation inserts a placeholder `exercises` row with no
  * gym (`reserveBaseExerciseId()`), and the writers are gated instead
  * (`exercise-slugs.unit.test.ts`). The migration still refuses to finish while a row has no slug.
- * Safe to re-run: a filled row is never rewritten.
+ * Safe to re-run: a filled row is never rewritten, except a later row of the same gym holding a slug
+ * an earlier one already holds (case-insensitively, as the index compares), which gets its own.
  */
 
 const SLUG_MAX = 120;
@@ -88,14 +89,16 @@ exports.up = async (knex) => {
   const toFill = [];
   for (const row of rows) {
     const used = usedFor(row.gym_id);
-    if (row.slug && !used.has(row.slug)) { used.add(row.slug); continue; }
+    // Keyed lowercase: the UNIQUE index compares under the column's case-insensitive collation.
+    if (row.slug && !used.has(row.slug.toLowerCase())) { used.add(row.slug.toLowerCase()); continue; }
     toFill.push(row);
   }
   for (const row of toFill) {
     const used = usedFor(row.gym_id);
     const preferred = row.base_slug || generateSlug(row.name, 'exercise');
-    const slug = nextAvailableSlug(preferred, used);
+    const slug = nextAvailableSlug(preferred.toLowerCase(), used);
     used.add(slug);
+    if (row.slug) console.log(`[437] exercise ${row.id} shared slug "${row.slug}" in its gym; now "${slug}"`);
     await knex.raw('UPDATE exercises SET slug = ? WHERE id = ?', [slug, row.id]);
   }
   const [[{ missingGym }]] = await knex.raw(
