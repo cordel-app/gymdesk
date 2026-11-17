@@ -2519,6 +2519,7 @@
     "detail_deleted_at": "Deleted At",
     "section_audit": "Audit",
     "detail_exercise_id": "Exercise ID",
+    "details_slug": "Slug",
     "close": "Close",
     "section_general": "General",
     "section_configuration": "Configuration",

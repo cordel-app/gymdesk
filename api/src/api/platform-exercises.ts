@@ -43,6 +43,7 @@ import {
 import { resolvePlatformActor } from '../domain/auditActor';
 import { BASE_EXERCISE_TABLES as B } from '../domain/exerciseTables';
 import { reserveBaseExerciseId } from './base-exercise-ids';
+import { allocateBaseExerciseSlug } from './entity-slugs';
 
 export const platformExercisesRouter = Router();
 
@@ -254,13 +255,14 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
     }
     const insertId = await db.transaction(async (tx) => {
       const newId = await reserveBaseExerciseId(tx);
+      const slug = await allocateBaseExerciseSlug(name.trim(), tx);
       await tx.query(
         `INSERT INTO ${B.exercises}
-          (id, name, description, short_description, category, equipment,
+          (id, name, slug, description, short_description, category, equipment,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
            created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [newId, name.trim(), description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId, name.trim(), slug, description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active',
          actor],

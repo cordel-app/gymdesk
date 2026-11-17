@@ -60,6 +60,8 @@ export function ExerciseDetailModal({ exercise, scope = 'gym', onClose }: {
         {/* §12: the internal identifier belongs here and nowhere else — it is the
             number a support request or an Audit Log filter is quoted by. */}
         <Field label={t('detail_exercise_id')} value={String(exercise.id)} />
+        {/* #2951 §8: the slug is read-only and shown here only — never on the card or in Edit. */}
+        <Field label={t('details_slug')} value={exerciseDisplayValue(exercise.slug ?? null)} />
         <Field label={t('col_created_at')} value={formatExerciseTimestamp(exercise.created_at, gymFmt)} />
         <Field label={t('col_created_by')} value={exerciseDisplayValue(exercise.created_by)} />
         {/* An exercise never modified since creation still shows both rows, with
