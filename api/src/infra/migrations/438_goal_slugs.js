@@ -121,6 +121,10 @@ exports.up = async (knex) => {
       if (row.entity_slug && !used.has(row.entity_slug.toLowerCase())) { used.add(row.entity_slug.toLowerCase()); continue; }
       toFill.push(row);
     }
+    // An imported copy is filled first, so it keeps its Base goal's slug over a gym's own goal
+    // whose name happens to slugify to the same value.
+    toFill.sort((a, b) => String(a.gym_id).localeCompare(String(b.gym_id))
+      || Number(!a.base_slug) - Number(!b.base_slug) || a.id - b.id);
     for (const row of toFill) {
       const used = usedFor(row.gym_id);
       const preferred = (row.base_slug || generateSlug(row.name, 'goal')).toLowerCase();
