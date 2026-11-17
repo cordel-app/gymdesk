@@ -1,6 +1,7 @@
 import type { Tx } from '../infra/db';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 import { assignmentPlanSnapshotId } from './assignment-config';
+import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 
 /**
  * #2659 stage 3 — a Product Set carries the plans the owner is cancelling at their period end.
@@ -29,25 +30,45 @@ export const billablePlanLinkSql = (alias: string): string => `${alias}.entitlem
  * their period end and not yet past it. Idempotent (`INSERT IGNORE` on the junction's unique pair),
  * appended after the set's own links so the primary plan keeps its place. Answers how many plans the
  * set now carries this way.
+ *
+ * #2125 M6b-49: the assignments are read from `plan_snapshots` (each one's current snapshot, its
+ * status and `ends_at`), never `user_memberships`, and the current snapshot is the one linked. A plan
+ * cancelled inside the calling transaction does not carry its status on a snapshot yet (the sync runs
+ * after the activation's projection), so the projection that closes it links it itself
+ * (`linkCancellingPlan()`), and this read only has to find the plans cancelled earlier.
  */
 export async function linkCancellingPlans(tx: Tx, gymId: string, productSetId: number): Promise<number> {
   const { rows: owner } = await tx.query<{ owner_member_id: number }>(
     'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
   if (!owner[0]) return 0;
-  const { rows } = await tx.query<{ snapshot_id: number | null }>(
-    `SELECT ${assignmentPlanSnapshotId('um.id', 'um.gym_id')} AS snapshot_id
-       FROM user_memberships um
-      WHERE um.gym_id = ? AND um.member_id = ? AND um.status = ?
-        AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE()
-      ORDER BY um.starts_at, um.id`,
+  const { rows } = await tx.query<{ snapshot_id: number }>(
+    `SELECT pa.id AS snapshot_id
+       FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = ?
+        AND pa.ends_at IS NOT NULL AND pa.ends_at >= UTC_DATE()
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
+      ORDER BY pa.starts_at, pa.assignment_id`,
     [gymId, Number(owner[0].owner_member_id), CANCELS_AT_PERIOD_END_STATUS]);
-  let linked = 0;
-  for (const r of rows) {
-    if (r.snapshot_id == null) continue;
-    await tx.query(
-      `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only)
-       VALUES (?, ?, 1)`, [productSetId, Number(r.snapshot_id)]);
-    linked += 1;
-  }
-  return linked;
+  for (const r of rows) await linkForEntitlement(tx, productSetId, Number(r.snapshot_id));
+  return rows.length;
+}
+
+/**
+ * #2125 M6b-49 — links, for entitlement only, the plan an activation's projection has just closed as
+ * `active_cancel_at_period_end` (`closeAssignment()`), by its legacy id. Its snapshot is the latest
+ * set's that links it (the predecessor's: the set being activated carries no plan of it yet), the one
+ * the sync then copies for the Active set and writes the cancellation on (M6b-2).
+ */
+export async function linkCancellingPlan(
+  tx: Tx, gymId: string, productSetId: number, userMembershipId: number,
+): Promise<void> {
+  const { rows } = await tx.query<{ snapshot_id: number | null }>(
+    `SELECT ${assignmentPlanSnapshotId('?', '?')} AS snapshot_id`, [userMembershipId, gymId]);
+  if (rows[0]?.snapshot_id != null) await linkForEntitlement(tx, productSetId, Number(rows[0].snapshot_id));
+}
+
+async function linkForEntitlement(tx: Tx, productSetId: number, snapshotId: number): Promise<void> {
+  await tx.query(
+    `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only)
+     VALUES (?, ?, 1)`, [productSetId, snapshotId]);
 }

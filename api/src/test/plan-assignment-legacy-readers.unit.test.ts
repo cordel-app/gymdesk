@@ -47,7 +47,6 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-commit.ts': 4,
   'api/assignment-draft-set.ts': 3,
   'api/assignment-lifecycle.ts': 1,
-  'api/entitlement-plan-links.ts': 1,
   'api/membership-plans.ts': 1,
   'api/membership-promotions.ts': 1,
   'api/one-active-plan.ts': 2,
@@ -286,5 +285,13 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       // What is left in each is the dual-write itself, guarded on the status it moves away from.
       expect(LEGACY_STATEMENTS[file]).toBe(1);
     }
+  });
+
+  it('M6b-49: the plans a Product Set carries for entitlement are read from plan_snapshots', () => {
+    expect(LEGACY_STATEMENTS['api/entitlement-plan-links.ts']).toBeUndefined();
+    const links = readFileSync(join(API_SRC, 'api/entitlement-plan-links.ts'), 'utf8');
+    expect(links).toContain("isCurrentAssignmentSnapshotSql('pa')");
+    // A plan the activation's projection has just cancelled is linked by the projection itself.
+    expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain('linkCancellingPlan(tx, gymId, productSetId, previousUmId)');
   });
 });
