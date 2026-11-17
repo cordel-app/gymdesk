@@ -73,7 +73,8 @@
     "base_products": "Productos base",
     "base_professional_services": "Servicios profesionales base",
     "jobs": "Tareas",
-    "tax_compliance": "Fiscalidad y cumplimiento"
+    "tax_compliance": "Fiscalidad y cumplimiento",
+    "transfer": "Exportar / Importar"
   },
   "dashboard": {
     "title": "Panel",
@@ -1284,7 +1285,6 @@
     "details_name": "Nombre",
     "details_description": "Descripción",
     "details_status": "Estado",
-    "details_slug": "Slug",
     "details_plan": "Plan",
     "details_theme": "Tema",
     "details_created_at": "Creado el",
@@ -6238,5 +6238,31 @@
     "event_credential_reference_created": "Credencial gestionada añadida",
     "event_credential_updated": "Credencial actualizada",
     "event_credential_deleted": "Credencial eliminada"
+  },
+  "transfer": {
+    "title": "Exportar / Importar",
+    "intro": "Exporta los tipos de entidad seleccionados a un archivo ZIP (un archivo JSON por entidad y sus imágenes) o importa un archivo así. Cada entidad se identifica por su slug: se crea si ninguna entidad tiene ese slug y se actualiza si ya existe. Una actualización sustituye el contenido y las imágenes de la entidad y nunca cambia sus relaciones con otras entidades.",
+    "entity_types": "Tipos de entidad",
+    "type_muscles": "Músculos",
+    "export": "Exportar",
+    "import": "Importar",
+    "choose_file": "Elegir archivo ZIP…",
+    "no_file": "Ningún archivo seleccionado",
+    "import_hint": "La importación solo lee del archivo los tipos de entidad seleccionados.",
+    "load_failed": "No se han podido cargar los tipos de entidad.",
+    "exporting": "Exportando…",
+    "importing": "Importando…",
+    "export_finished": "Exportación finalizada",
+    "import_finished": "Importación finalizada",
+    "summary_total": "{count, plural, one {# entidad procesada} other {# entidades procesadas}}",
+    "summary_succeeded": "{count} correctas",
+    "summary_failed": "{count} con error",
+    "image_failed": "imagen «{slot}»: {message}",
+    "unknown_error": "Error desconocido",
+    "archive_not_a_zip": "El archivo no es un ZIP",
+    "archive_invalid_json": "El archivo no es un JSON válido",
+    "archive_invalid_entity": "El archivo no es una entidad exportada",
+    "archive_unsupported_version": "El archivo se exportó con una versión de formato no admitida",
+    "archive_missing_image": "Una imagen que indica no está en el archivo"
   }
 }
