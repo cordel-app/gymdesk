@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, proratedToNextFirst } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -99,7 +99,8 @@ function expectPromotionReflected(body: any, s: Awaited<ReturnType<typeof setup>
   // A line the Promotion does not cover keeps its own price.
   expect(towel.final_price_incl_tax).toBe(10);
   expect(body.membership_fee).toBe(40);
-  expect(forecastCharge(body, 'membership_fee')).toBe(40);
+  // #2964: the forecast's first charge is prorated up to the plan's billing calendar (the 1st).
+  expect(forecastCharge(body, 'membership_fee')).toBe(proratedToNextFirst(40));
   expect(forecastCharge(body, 'product', s.locker)).toBe(0);
 }
 
