@@ -484,6 +484,7 @@
       "cancelled": "Cancelled",
       "expired": "Expired",
       "draft": "Draft",
+      "in_cart": "In Cart",
       "pending": "Pending",
       "pending_payment": "Pending Payment",
       "active_cancel_at_period_end": "Cancels on End Date",

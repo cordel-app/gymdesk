@@ -119,12 +119,12 @@ describe('planSnapshotInheritedSql (#2125 M4a)', () => {
     // A snapshot nobody else links, copied from nothing, is new.
     const { insertId } = await db.query(
       `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at)
-       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
+       SELECT gym_id, member_id, membership_plan_id, 'in_cart', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
     expect(await inherited(b, Number(insertId))).toBe(0);
     // A copy of an inherited snapshot (an edited inherited plan, M5a) is inherited through its lineage.
     const { insertId: copyId } = await db.query(
       `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, copied_from_plan_snapshot_id)
-       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at, id FROM plan_snapshots WHERE id = ?`, [snapshot]);
+       SELECT gym_id, member_id, membership_plan_id, 'in_cart', starts_at, id FROM plan_snapshots WHERE id = ?`, [snapshot]);
     expect(await inherited(b, Number(copyId))).toBe(1);
   });
 });
@@ -195,7 +195,7 @@ describe('discardDraftSet (#2125 M4b-0, M5b)', () => {
     await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, snapshot]);
     const { insertId: own } = await db.query(
       `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at)
-       SELECT gym_id, member_id, membership_plan_id, 'draft', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
+       SELECT gym_id, member_id, membership_plan_id, 'in_cart', starts_at FROM plan_snapshots WHERE id = ?`, [snapshot]);
     await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [b, own]);
     expect(await db.transaction((tx) => discardDraftSet(tx, gymId, b))).toBe(true);
     // The shared snapshot is A's, untouched; the Draft's own one is gone with it.
@@ -248,7 +248,7 @@ describe('syncPlanSnapshot and a shared plan snapshot (#2125 M4b-1)', () => {
     await db.transaction((tx) => syncPlanSnapshot(tx, gymId, b));
     expect(await linked(b)).toEqual([own]);
     const copy = await state(own);
-    expect(copy.status).toBe('draft');
+    expect(copy.status).toBe('in_cart');
     const { rows: setB } = await db.query<any>('SELECT starts_at FROM product_sets WHERE id = ?', [b]);
     expect(copy.starts_at).toEqual(setB[0].starts_at);
     expect(copy.starts_at).not.toEqual(before.starts_at);

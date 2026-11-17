@@ -116,7 +116,7 @@ describe('GET /me/membership reads the member\'s plans from plan_snapshots', () 
     const drafted = await createTestDraftAssignment(gymId, m, await plan());
     const body = await membership(m);
     expect(body.membership).toBeNull();
-    expect(body.other_memberships).toEqual([expect.objectContaining({ id: drafted, status: 'draft' })]);
+    expect(body.other_memberships).toEqual([expect.objectContaining({ id: drafted, status: 'in_cart' })]);
   });
 
   it('does not reach another gym\'s assignments', async () => {

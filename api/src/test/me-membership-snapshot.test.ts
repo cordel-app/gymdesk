@@ -489,7 +489,7 @@ describe('GET /me/membership — past_memberships', () => {
     // their plan nor their history (#1108 Q2).
     await historyAssignment(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, 'draft', '2026-11-01', 60)`,
+       VALUES (?, ?, ?, 'in_cart', '2026-11-01', 60)`,
       [gymId, memberId, oldPlanId],
     );
   });
@@ -516,9 +516,9 @@ describe('GET /me/membership — past_memberships', () => {
   it('lists the Draft beside the live plan under the Admin status (#2660)', async () => {
     const { body } = await getMembership(gymId);
     expect(body.membership.lifecycle_status).toBe('active');
-    const drafts = body.other_memberships.filter((p: any) => p.status === 'draft');
+    const drafts = body.other_memberships.filter((p: any) => p.status === 'in_cart');
     expect(drafts).toHaveLength(1);
-    expect(drafts[0].lifecycle_status).toBe('draft');
+    expect(drafts[0].lifecycle_status).toBe('in_cart');
     expect(drafts[0].membership_plan_id).toBe(oldPlanId);
   });
 

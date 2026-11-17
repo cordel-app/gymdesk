@@ -67,7 +67,7 @@ describe('GET /me/product-sets/:id — My Plans and My Products from one version
     expect(res.body.plans).toHaveLength(1);
     const p = res.body.plans[0];
     expect(p).toMatchObject({
-      membership_plan_id: planId, plan_description: 'Gym access', status: 'draft',
+      membership_plan_id: planId, plan_description: 'Gym access', status: 'in_cart',
       entitlement_only: false, membership_fee: 40,
     });
     expect(p.beneficiaries).toEqual([expect.objectContaining({ member_id: a.id, name: 'Owner A', is_owner: true })]);

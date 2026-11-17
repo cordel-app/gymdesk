@@ -49,7 +49,7 @@ import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql } from '../domain/pl
 // count — #1108 stage 1 added `draft` to both for that reason: a Draft is what
 // the staff are configuring, so it has to appear on the Member card beside the
 // forecast that projects it.
-const LIVE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'] as const;
+const LIVE_STATUSES = ['in_cart', 'pending_payment', 'active', 'paused'] as const;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts and
@@ -157,7 +157,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
-        AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+        AND ps.membership_plan_id IS NOT NULL AND ps.plan_assignment_id IS NULL
       ORDER BY ps.id DESC`,
     [gymId, memberId],
   );

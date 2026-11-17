@@ -84,7 +84,7 @@ import type {
 // is fully editable, #1108): a
 // cancelled or expired assignment is history — it bills nothing further, so its
 // configuration is read-only.
-const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
+const EDITABLE_STATUSES = ['in_cart', 'active', 'paused'];
 
 // Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
 // the same four fields, in the same order, as the Plan's own section. #892:
@@ -389,7 +389,7 @@ export function AssignedPlanConfiguration({
   const promotionToggle = useAppliedPromotionToggle(assignedPlanId, onChanged);
   const toggleGate = { cardEditing, canWrite, readOnlyTitle };
   // #2853: a Draft's Plan Promotions are chosen from the live catalogue, in Edit mode.
-  const draftPicker = cardEditing && planStatus === 'draft' && promotionsSelectable
+  const draftPicker = cardEditing && planStatus === 'in_cart' && promotionsSelectable
     && membershipPlanId != null && ownerMemberId != null;
   const [productDetail, setProductDetail] = useState<AssignedPlanSnapshotBenefit | null>(null);
   const [promotionDetail, setPromotionDetail] = useState<AppliedPromotion | null>(null);

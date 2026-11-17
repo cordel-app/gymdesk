@@ -4,7 +4,7 @@ import { showsBillingSimulations, viewBillingEventsPath } from '@/components/ass
 // #2553 — the rules both Admin entry points to an Assigned Plan share.
 describe('showsBillingSimulations', () => {
   it('shows for Draft and Pending Payment only', () => {
-    expect(showsBillingSimulations('draft')).toBe(true);
+    expect(showsBillingSimulations('in_cart')).toBe(true);
     expect(showsBillingSimulations('pending_payment')).toBe(true);
     for (const s of ['active', 'paused', 'cancelled', 'expired', '', null, undefined]) {
       expect(showsBillingSimulations(s as any)).toBe(false);

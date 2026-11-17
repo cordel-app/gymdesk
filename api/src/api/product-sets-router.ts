@@ -237,18 +237,18 @@ async function syncLinkedAssignmentToPendingPayment(
   tx: Tx, gymId: string, userMembershipId: number, actor: string | null, source: 'admin' | 'member' = 'admin',
 ) {
   const { rows } = await tx.query<{ member_id: number }>(
-    `SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft' FOR UPDATE`,
+    `SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart' FOR UPDATE`,
     [userMembershipId, gymId],
   );
   if (!rows[0]) return;
   await tx.query(
     `UPDATE user_memberships SET status = 'pending_payment', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = 'draft'`,
+      WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
     [actor, userMembershipId, gymId],
   );
   await recordStatusChange(tx, {
     gymId, userMembershipId, memberId: Number(rows[0].member_id),
-    previousStatus: 'draft', newStatus: 'pending_payment', source, actorUserId: null,
+    previousStatus: 'in_cart', newStatus: 'pending_payment', source, actorUserId: null,
   });
 }
 

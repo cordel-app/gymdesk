@@ -2301,7 +2301,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
          FROM product_sets ps
          LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
-          AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+          AND ps.membership_plan_id IS NOT NULL AND ps.plan_assignment_id IS NULL
         ORDER BY ps.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],
@@ -2310,7 +2310,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // with, read from its snapshots only (`attachPastPlanDetails()`).
     const past_memberships = await attachPastPlanDetails(gymId, withCancelledPlanSets(assignmentHistory, cancelledSetRows));
     // #2660: the member's Draft assignments are listed beside their live plans
-    // under the Admin's own status (`draft`), never as the member's plan — the
+    // under the Admin's own status (`in_cart`), never as the member's plan — the
     // ordering and filter above still decide `membership` without them.
     const { rows: draftRows } = await db.query<any>(
       `SELECT um.id, um.membership_plan_id, p.name AS plan_name, um.status,
@@ -2318,7 +2318,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               um.starts_at, um.ends_at, um.closed_at
          FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
          LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-        WHERE um.status = 'draft'
+        WHERE um.status = 'in_cart'
         ORDER BY um.starts_at DESC, um.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],

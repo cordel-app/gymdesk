@@ -236,7 +236,7 @@ export async function loadCardRemovalBlock(
     `SELECT COUNT(*) AS n
        FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
       WHERE be.gym_id = ? AND ${payerMemberSql('ps.owner_member_id', 'be.gym_id')} = ? AND ps.status = 'active'
-        AND ps.user_membership_id IS NULL
+        AND ps.plan_assignment_id IS NULL
         AND (be.is_scheduled = 1 OR (be.event_type = 'failed_billing'
              AND NOT EXISTS (SELECT 1 FROM payment_requests pr
                               WHERE pr.billing_event_id = be.id AND pr.status = 'completed')))`,

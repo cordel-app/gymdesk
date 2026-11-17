@@ -187,7 +187,7 @@ export function MemberExpandedRow({
   const [cancelEndsOn, setCancelEndsOn] = useState<string | null>(null);
   useEffect(() => {
     setCancelEndsOn(null);
-    if (!cancelling || cancelling.status === 'draft') return;
+    if (!cancelling || cancelling.status === 'in_cart') return;
     let live = true;
     apiFetch<{ ends_on: string | null }>(`/user-memberships/${cancelling.id}/cancellation-preview`)
       .then((r) => { if (live) setCancelEndsOn(r.ends_on); }).catch(() => {});
@@ -318,7 +318,7 @@ export function MemberExpandedRow({
     if (!cancelling) return;
     try {
       // #1706: a Draft is discarded (hard delete, nothing billed); any other status keeps the cancel path.
-      const isDraft = cancelling.status === 'draft';
+      const isDraft = cancelling.status === 'in_cart';
       await apiFetch(`/user-memberships/${cancelling.id}${isDraft ? '/draft' : ''}`, { method: 'DELETE' });
       setCancelling(null);
       reloadConfiguration();
@@ -934,12 +934,12 @@ export function MemberExpandedRow({
 
       <ConfirmDialog
         open={cancelling !== null}
-        title={cancelling && cancelling.status !== 'draft' ? t('members.cancel_plan_title') : undefined}
-        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft')
+        title={cancelling && cancelling.status !== 'in_cart' ? t('members.cancel_plan_title') : undefined}
+        message={cancelling?.status === 'in_cart' ? t('members.confirm_discard_draft')
           : cancelEndsOn ? t('members.confirm_cancel_plan_until', { date: formatGymDateOnly(cancelEndsOn, gymFmt) })
           : t('members.confirm_cancel_plan')}
-        confirmLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
-        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
+        confirmLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
+        cancelLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
       />
