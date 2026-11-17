@@ -4,7 +4,8 @@ import { syncPromotionAssignmentIds, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNM
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
-import { cancellationStatusFor } from '../domain/assignmentStatus';
+import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
+import { linkCancellingPlan } from './entitlement-plan-links';
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
@@ -65,12 +66,12 @@ async function closeAssignment(
   tx: Tx, gymId: string, id: number, endsAt: string, actor: string | null,
   /** `superseded` when a successor takes the plan over, `cancelled` when the member is left with none (#1991). */
   closedAs: 'cancelled' | 'superseded' = 'cancelled',
-) {
+): Promise<string | null> {
   const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
     `SELECT status, member_id, ends_at FROM user_memberships
       WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','in_cart') FOR UPDATE`,
     [id, gymId]);
-  if (!before[0]) return;
+  if (!before[0]) return null;
   // #2659 stage 2: a member's cancellation keeps the plan running to its last
   // paid day (`ends_at`) as `active_cancel_at_period_end` when that day is today
   // or later; the end-of-period sweep moves it to `cancelled` afterwards.
@@ -94,6 +95,7 @@ async function closeAssignment(
     gymId, userMembershipId: id, memberId: Number(before[0].member_id),
     previousStatus: before[0].status, newStatus: status, source: 'system', actorUserId: null,
   });
+  return status;
 }
 
 const SET_SELECT = `
@@ -184,7 +186,12 @@ export async function projectActiveProductSet(
 
   // A plan-less version has no assignment; a previous one is closed.
   if (set.membership_plan_id == null) {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
+    if (previousUmId != null) {
+      const closedAs = await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
+      // #2125 M6b-49: a plan still running to its last paid day is carried by this set for entitlement
+      // only; linked here because its snapshot does not say it is cancelling until the sync.
+      if (closedAs === CANCELS_AT_PERIOD_END_STATUS) await linkCancellingPlan(tx, gymId, productSetId, previousUmId);
+    }
     await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [productSetId]);
     return null;
   }
