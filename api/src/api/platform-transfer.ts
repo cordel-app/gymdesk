@@ -17,6 +17,9 @@ import {
   isTransferableObjectKey,
   BASE_PAYMENT_METHOD_TRANSFER_FIELDS,
   BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS,
+  BASE_NUTRITION_GOAL_TRANSFER_FIELDS,
+  BASE_PERSONAL_GOAL_TRANSFER_FIELDS,
+  isValidGoalSlug,
   PAYMENT_PROVIDER_TRANSFER_FIELDS,
   isValidEntitySlug,
   isValidMuscleSlug,
@@ -51,6 +54,18 @@ import {
   updateBaseProfessionalService,
 } from './platform-professional-services';
 import { attachTranslations } from './professional-service-translations';
+import {
+  createBasePersonalGoal,
+  loadBasePersonalGoal,
+  storeBasePersonalGoalImage,
+  updateBasePersonalGoal,
+} from './platform-base-personal-goals';
+import {
+  createBaseNutritionGoal,
+  loadBaseNutritionGoal,
+  storeBaseNutritionGoalImage,
+  updateBaseNutritionGoal,
+} from './platform-base-nutrition-goals';
 import { BASE_LOCALE } from '../infra/locale';
 
 /**
@@ -378,3 +393,139 @@ platformTransferRouter.post(
     } catch (err) { next(err); }
   },
 );
+
+// ── Base Goals (stage 4) ────────────────────────────────────────────────────
+
+type GoalWriteResult = { ok: true; id: number } | { ok: false; status: number; body: Record<string, unknown> };
+
+interface BaseGoalTransfer {
+  type: 'base_personal_goals' | 'base_nutrition_goals';
+  table: 'base_personal_goals' | 'base_nutrition_goals';
+  fields: readonly string[];
+  /** The archive's `data` for one goal as the reads answer it. */
+  data: (goal: any) => Record<string, unknown>;
+  load: (id: number) => Promise<any>;
+  create: (req: any, body: Record<string, any>, opts: { slug: string }) => Promise<GoalWriteResult>;
+  update: (req: any, id: number, body: Record<string, any>) => Promise<GoalWriteResult>;
+  storeImage: (req: any, goal: { id: number; name: string; image_url: string | null; image_thumbnail_url: string | null })
+    => Promise<GoalWriteResult>;
+}
+
+/**
+ * A goal's translations as an archive carries them: `{ <locale>: { name, description } }`,
+ * the shape the goal writers take back (absent keeps, `{}` clears).
+ */
+function goalTranslationsForArchive(translations: unknown): Record<string, { name: string; description: string | null }> {
+  const out: Record<string, { name: string; description: string | null }> = {};
+  if (!translations || typeof translations !== 'object') return out;
+  for (const [locale, entry] of Object.entries(translations as Record<string, any>)) {
+    if (entry && typeof entry.name === 'string') out[locale] = { name: entry.name, description: entry.description ?? null };
+  }
+  return out;
+}
+
+const BASE_GOAL_TRANSFERS: BaseGoalTransfer[] = [
+  {
+    type: 'base_personal_goals',
+    table: 'base_personal_goals',
+    fields: BASE_PERSONAL_GOAL_TRANSFER_FIELDS,
+    data: (g) => ({
+      name: g.name,
+      description: g.description ?? null,
+      target_value: g.target_value ?? null,
+      target_unit: g.target_unit ?? null,
+      target_type: g.target_type ?? 'absolute',
+      translations: goalTranslationsForArchive(g.translations),
+    }),
+    load: (id) => loadBasePersonalGoal(id),
+    create: createBasePersonalGoal,
+    update: updateBasePersonalGoal,
+    storeImage: storeBasePersonalGoalImage,
+  },
+  {
+    type: 'base_nutrition_goals',
+    table: 'base_nutrition_goals',
+    fields: BASE_NUTRITION_GOAL_TRANSFER_FIELDS,
+    data: (g) => ({
+      name: g.name,
+      description: g.description ?? null,
+      translations: goalTranslationsForArchive(g.translations),
+    }),
+    load: (id) => loadBaseNutritionGoal(id),
+    create: createBaseNutritionGoal,
+    update: updateBaseNutritionGoal,
+    storeImage: storeBaseNutritionGoalImage,
+  },
+];
+
+/**
+ * A Base goal's slug is unique among the Base goals of its kind, deleted rows
+ * included (#2951 stage 3); a live row is preferred should an older deleted one
+ * share it.
+ */
+async function findBaseGoalBySlug(table: BaseGoalTransfer['table'], slug: string) {
+  const { rows } = await db.query<{ id: number; deleted_at: string | null }>(
+    `SELECT id, deleted_at FROM ${table} WHERE slug = ? ORDER BY deleted_at IS NULL DESC, id ASC LIMIT 1`, [slug],
+  );
+  return rows[0] ?? null;
+}
+
+for (const goal of BASE_GOAL_TRANSFERS) {
+  platformTransferRouter.get(`/${goal.type}`, requireSuperadmin, async (_req, res, next) => {
+    try {
+      const { rows } = await db.query<{ id: number }>(
+        `SELECT id FROM ${goal.table} WHERE deleted_at IS NULL ORDER BY slug ASC`,
+      );
+      const entities = [];
+      for (const { id } of rows) {
+        const g = await goal.load(id);
+        if (!g) continue;
+        entities.push({ slug: g.slug, data: goal.data(g), images: { image: g.image_url ?? null } });
+      }
+      res.json({ type: goal.type, entities });
+    } catch (err) { next(err); }
+  });
+
+  platformTransferRouter.post(`/${goal.type}`, requireSuperadmin, async (req, res, next) => {
+    try {
+      const parsed = parseSlugTransferRecord(req.body, goal.fields, { goalSlug: true });
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { slug, input } = parsed.record;
+      const found = await findBaseGoalBySlug(goal.table, slug);
+      if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+      let action: TransferAction;
+      let result: GoalWriteResult;
+      if (found) {
+        action = 'updated';
+        result = await goal.update(req, found.id, input);
+      } else {
+        action = 'created';
+        result = await goal.create(req, input, { slug });
+      }
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.status(action === 'created' ? 201 : 200).json({ action, entity: await goal.load(result.id) });
+    } catch (err) { next(err); }
+  });
+
+  platformTransferRouter.post(
+    `/${goal.type}/:slug/image/:slot`,
+    requireSuperadmin,
+    transferImageLimiter,
+    memberImageBodyParser,
+    async (req, res, next) => {
+      try {
+        if (req.params.slot !== 'image') return res.status(400).json({ error: 'slot must be "image"' });
+        if (!isValidGoalSlug(req.params.slug)) return res.status(404).json({ error: 'Goal not found' });
+        const found = await findBaseGoalBySlug(goal.table, req.params.slug);
+        if (!found || found.deleted_at) return res.status(404).json({ error: 'Goal not found' });
+        const existing = await goal.load(found.id);
+        const result = await goal.storeImage(req, {
+          id: existing.id, name: existing.name,
+          image_url: existing.image_url ?? null, image_thumbnail_url: existing.image_thumbnail_url ?? null,
+        });
+        if (!result.ok) return res.status(result.status).json(result.body);
+        res.json({ entity: await goal.load(found.id) });
+      } catch (err) { next(err); }
+    },
+  );
+}
