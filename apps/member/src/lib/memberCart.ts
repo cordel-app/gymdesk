@@ -1,8 +1,11 @@
 // #2746 stage 2 — the member's shopping cart, decided.
 //
-// The cart **is** the member's Draft Product Set (#2496): the plans and
-// recurring lines the Draft adds and, since #2746 stage 1, the one-time
-// Products linked to it. This module only reads that Draft back — which items
+// The cart is the member's Draft Product Set (#2496): the plans and recurring
+// lines the Draft adds and, since #2746 stage 1, the one-time Products linked
+// to it — plus, since #2949 stage 6, the member's **standalone** one-time
+// purchases (`GET /me/cart/purchases`, linked to no Product Set): the Draft's
+// Save & Pay pays them too (#2949 stage 5), and with no Draft they are a cart
+// of their own, paid by `POST /me/cart/checkout`. This module only reads that Draft back — which items
 // it holds, how many plans and products that is, which action commits it and
 // which locale key explains a refusal. It resolves no `t()`, computes no money
 // (the total is the server's review, `commitCharge()`'s figure) and spells no
@@ -31,9 +34,30 @@ export interface MemberSetPurchase {
   image_thumbnail_url?: string | null;
 }
 
+/** A standalone one-time purchase in the cart (`GET /me/cart/purchases`, #2949 stage 4). */
+export interface MemberStandalonePurchase {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  amount: number;
+  currency?: string | null;
+  cart_expires_at?: string | null;
+}
+
+/** The member's standalone cart as `GET /me/cart/purchases` answers it; `total` is the server's. */
+export interface MemberStandaloneCart {
+  purchases: MemberStandalonePurchase[];
+  total: number | null;
+  currency: string | null;
+}
+
+export const EMPTY_STANDALONE_CART: MemberStandaloneCart = { purchases: [], total: null, currency: null };
+
 /** The Draft read as the cart needs it: the set view plus stage 1's two fields. */
 export type MemberCartView = MemberSetView & {
   purchases?: MemberSetPurchase[];
+  /** #2949 stage 6: the standalone purchases this version's checkout pays or is paying (the owner's read only). */
+  cart_purchases?: MemberStandalonePurchase[];
   cart?: { plans: number; products: number };
   /** #2746 stage 3: a version awaiting payment — its initial event's amount (the owner's read only). */
   pending_amount?: number | null;
@@ -45,7 +69,10 @@ export type MemberCartView = MemberSetView & {
 export type CartItem =
   | { kind: 'plan'; key: string; name: string; planSnapshotId: number; planId: number | null }
   | { kind: 'line'; key: string; name: string; lineId: number; productId: number }
-  | { kind: 'purchase'; key: string; name: string; purchaseId: number; productId: number | null; amount: number; currency: string };
+  | { kind: 'purchase'; key: string; name: string; purchaseId: number; productId: number | null; amount: number; currency: string; standalone: boolean };
+
+/** The cart's commit: the Draft's own (#2496 stage 5), or the standalone cart's checkout (#2949 stage 6). */
+export type CartCommitAction = SetCommitAction | 'cart_checkout';
 
 function isDraft(view: MemberCartView | null): view is MemberCartView {
   return !!view && view.status === 'in_cart';
@@ -65,7 +92,50 @@ function isCartVersion(view: MemberCartView | null): view is MemberCartView {
  * neither pay, cancel nor add to until staff choose **Members App** as its
  * payment method (that is Save & Pay, so it then reads `pending_payment`).
  */
-export type CartPhase = 'draft' | 'pending_payment' | 'awaiting_staff';
+export type CartPhase = 'draft' | 'pending_payment' | 'awaiting_staff' | 'standalone';
+
+function standaloneItems(purchases: MemberStandalonePurchase[] | undefined): CartItem[] {
+  return (purchases ?? []).map((p) => ({
+    kind: 'purchase', key: `standalone-${p.id}`, name: p.product_name,
+    purchaseId: Number(p.id), productId: p.product_id == null ? null : Number(p.product_id),
+    amount: Number(p.amount), currency: p.currency ?? 'EUR', standalone: true,
+  }));
+}
+
+/** The Draft's own items: what the Product Set adds, no standalone purchase. */
+function setItems(view: MemberCartView | null): CartItem[] {
+  if (!isCartVersion(view)) return [];
+  const plans: CartItem[] = (view.plans ?? [])
+    .filter((p) => p.change === 'added' && !p.entitlement_only)
+    .map((p) => ({
+      kind: 'plan', key: `plan-${p.plan_snapshot_id}`, name: p.plan_name ?? '—',
+      planSnapshotId: Number(p.plan_snapshot_id),
+      planId: p.membership_plan_id == null ? null : Number(p.membership_plan_id),
+    }));
+  const lines: CartItem[] = view.lines
+    .filter((l) => l.change === 'added')
+    .map((l) => ({
+      kind: 'line', key: `line-${l.id}`, name: l.product_name ?? '—',
+      lineId: Number(l.id), productId: Number(l.product_id),
+    }));
+  const purchases: CartItem[] = (view.purchases ?? []).map((p) => ({
+    kind: 'purchase', key: `purchase-${p.id}`, name: p.product_name,
+    purchaseId: Number(p.id), productId: p.product_id == null ? null : Number(p.product_id),
+    amount: Number(p.amount), currency: p.currency ?? 'EUR', standalone: false,
+  }));
+  return [...plans, ...lines, ...purchases];
+}
+
+/** The set's phase alone, ignoring standalone purchases (the pre-stage-6 answer). */
+function setPhase(view: MemberCartView | null, viewerMemberId: number | null): Exclude<CartPhase, 'standalone'> | null {
+  // #2949 stage 6: a checkout in flight may pay only standalone purchases it joined (stage 5).
+  const joined = view?.status === 'pending_payment' ? view.cart_purchases?.length ?? 0 : 0;
+  if (setItems(view).length + joined === 0) return null;
+  if (awaitsStaffSetup(view)) return 'awaiting_staff';
+  if (view!.status === 'in_cart') return 'draft';
+  if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;
+  return 'pending_payment';
+}
 
 /** #2895: whether the Draft is the gym's, still being set up — the server's flag, never derived here. */
 export function awaitsStaffSetup(view: MemberCartView | null): boolean {
@@ -78,12 +148,51 @@ export function awaitsStaffSetup(view: MemberCartView | null): boolean {
  * its owner (the owner pays, #2123): a covered family member reads the family's
  * version, but it is not their purchase to pay or cancel.
  */
-export function cartPhase(view: MemberCartView | null, viewerMemberId: number | null): CartPhase | null {
-  if (!hasCart(view)) return null;
-  if (awaitsStaffSetup(view)) return 'awaiting_staff';
-  if (view!.status === 'in_cart') return 'draft';
-  if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;
-  return 'pending_payment';
+export function cartPhase(
+  view: MemberCartView | null,
+  viewerMemberId: number | null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): CartPhase | null {
+  const phase = setPhase(view, viewerMemberId);
+  if (phase) return phase;
+  // #2949 stage 6: an owner's open Draft (even one adding nothing yet) is the cart the
+  // standalone purchases join — its Save & Pay pays them (stage 5).
+  if (standalone.purchases.length === 0) return null;
+  if (isDraft(view) && !awaitsStaffSetup(view) && (viewerMemberId == null || view.owner_member_id === viewerMemberId)) return 'draft';
+  return 'standalone';
+}
+
+/**
+ * #2949 stage 6 — whether the standalone purchases are a cart card of their own
+ * beside the set's: while the set's payment is in flight, or staff are still
+ * setting it up, a purchase added since is not part of that checkout (§6) and
+ * is paid on its own.
+ */
+export function separateStandaloneCart(
+  view: MemberCartView | null,
+  viewerMemberId: number | null,
+  standalone: MemberStandaloneCart,
+): boolean {
+  if (standalone.purchases.length === 0) return false;
+  const phase = setPhase(view, viewerMemberId);
+  return phase === 'pending_payment' || phase === 'awaiting_staff';
+}
+
+/** The standalone cart card's items (its own phase, or beside a set awaiting payment). */
+export function standaloneCartItems(standalone: MemberStandaloneCart): CartItem[] {
+  return standaloneItems(standalone.purchases);
+}
+
+/**
+ * #2949 stage 6 — seconds until the first standalone purchase leaves the cart
+ * (#2962's two hours, the server's `cart_expires_at`), or `null` with none.
+ */
+export function standaloneSecondsLeft(standalone: MemberStandaloneCart, nowMs: number): number | null {
+  const times = standalone.purchases
+    .map((p) => (p.cart_expires_at ? Date.parse(p.cart_expires_at) : NaN))
+    .filter((t) => Number.isFinite(t));
+  if (times.length === 0) return null;
+  return Math.max(0, Math.floor((Math.min(...times) - nowMs) / 1000));
 }
 
 /**
@@ -112,27 +221,20 @@ export function cartPendingAmount(view: MemberCartView | null): number | null {
  * plan's, never items of their own (§4). Empty outside a Draft or a version
  * awaiting payment (stage 3: the same items stay grouped while it is paid).
  */
-export function cartItems(view: MemberCartView | null): CartItem[] {
-  if (!isCartVersion(view)) return [];
-  const plans: CartItem[] = (view.plans ?? [])
-    .filter((p) => p.change === 'added' && !p.entitlement_only)
-    .map((p) => ({
-      kind: 'plan', key: `plan-${p.plan_snapshot_id}`, name: p.plan_name ?? '—',
-      planSnapshotId: Number(p.plan_snapshot_id),
-      planId: p.membership_plan_id == null ? null : Number(p.membership_plan_id),
-    }));
-  const lines: CartItem[] = view.lines
-    .filter((l) => l.change === 'added')
-    .map((l) => ({
-      kind: 'line', key: `line-${l.id}`, name: l.product_name ?? '—',
-      lineId: Number(l.id), productId: Number(l.product_id),
-    }));
-  const purchases: CartItem[] = (view.purchases ?? []).map((p) => ({
-    kind: 'purchase', key: `purchase-${p.id}`, name: p.product_name,
-    purchaseId: Number(p.id), productId: p.product_id == null ? null : Number(p.product_id),
-    amount: Number(p.amount), currency: p.currency ?? 'EUR',
-  }));
-  return [...plans, ...lines, ...purchases];
+export function cartItems(
+  view: MemberCartView | null,
+  viewerMemberId: number | null = null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): CartItem[] {
+  void viewerMemberId;
+  if (isCartVersion(view)) {
+    // #2949 stage 6: a checkout in flight lists the standalone purchases it joined (stage 5).
+    if (view.status === 'pending_payment') return [...setItems(view), ...standaloneItems(view.cart_purchases)];
+    // A Draft staff are still setting up is theirs; the member's standalone purchases stay beside it.
+    if (awaitsStaffSetup(view)) return setItems(view);
+    return [...setItems(view), ...standaloneItems(standalone.purchases)];
+  }
+  return standaloneItems(standalone.purchases);
 }
 
 /**
@@ -140,10 +242,17 @@ export function cartItems(view: MemberCartView | null): CartItem[] {
  * (`cartCounts()`) when the read carries it, else the same count over the
  * items above, so the two can only agree.
  */
-export function cartCounts(view: MemberCartView | null): { plans: number; products: number } {
-  if (!isCartVersion(view)) return { plans: 0, products: 0 };
-  if (view.cart) return { plans: Number(view.cart.plans), products: Number(view.cart.products) };
-  const items = cartItems(view);
+export function cartCounts(
+  view: MemberCartView | null,
+  viewerMemberId: number | null = null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): { plans: number; products: number } {
+  const items = cartItems(view, viewerMemberId, standalone);
+  if (isCartVersion(view) && view.cart) {
+    // The set's own count is the server's; the standalone purchases ride on top (#2949 stage 6).
+    const extra = items.filter((i) => i.kind === 'purchase' && i.standalone).length;
+    return { plans: Number(view.cart.plans), products: Number(view.cart.products) + extra };
+  }
   return {
     plans: items.filter((i) => i.kind === 'plan').length,
     products: items.filter((i) => i.kind !== 'plan').length,
@@ -151,9 +260,12 @@ export function cartCounts(view: MemberCartView | null): { plans: number; produc
 }
 
 /** Whether the version holds a cart at all: a Draft or a version awaiting payment, with at least one item. */
-export function hasCart(view: MemberCartView | null): boolean {
-  const { plans, products } = cartCounts(view);
-  return plans + products > 0;
+export function hasCart(
+  view: MemberCartView | null,
+  viewerMemberId: number | null = null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): boolean {
+  return cartPhase(view, viewerMemberId, standalone) != null;
 }
 
 /**
@@ -164,22 +276,54 @@ export function hasCart(view: MemberCartView | null): boolean {
  * nothing is. `null` while the review is missing, failed or not a Draft's —
  * the amount is never decided here.
  */
-export function cartCommitAction(view: MemberCartView | null, review: MemberSetReview | null): SetCommitAction | null {
-  if (awaitsStaffSetup(view)) return null;
+export function cartCommitAction(
+  view: MemberCartView | null,
+  review: MemberSetReview | null,
+  viewerMemberId: number | null = null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): CartCommitAction | null {
+  const phase = cartPhase(view, viewerMemberId, standalone);
+  // #2949 stage 6: standalone purchases alone are paid by their own checkout, for the server's total.
+  if (phase === 'standalone') return standalone.total != null && standalone.total > 0 ? 'cart_checkout' : null;
+  if (phase !== 'draft' || awaitsStaffSetup(view)) return null;
   const summary = setCommitAction(review);
   if (summary) return summary;
   if (!review || review.status !== 'in_cart' || review.error || review.amount_due == null) return null;
-  if (!hasCart(view) || awaitsStaffSetup(view)) return null;
   return review.payment_required ? 'save_and_pay' : 'activate';
 }
 
-/** Whether a one-time Product is already in the cart, and which purchase removes it. */
-export type CartProductState = { state: 'in_cart'; purchaseId: number } | { state: 'none' };
+/** The standalone card's own commit (beside a set awaiting payment): its checkout while something is owed. */
+export function standaloneCommitAction(standalone: MemberStandaloneCart): 'cart_checkout' | null {
+  return standalone.purchases.length > 0 && standalone.total != null && standalone.total > 0 ? 'cart_checkout' : null;
+}
 
-export function cartProductState(productId: number, view: MemberCartView | null): CartProductState {
-  if (!isDraft(view)) return { state: 'none' };
-  const p = (view.purchases ?? []).find((x) => Number(x.product_id) === productId);
-  return p ? { state: 'in_cart', purchaseId: Number(p.id) } : { state: 'none' };
+export type CartProductStateFull = { state: 'in_cart'; key: string } | { state: 'none' };
+
+/**
+ * Whether a one-time Product is in the cart, and the key of the item whose
+ * Cancel removes it: a purchase the Draft carries, else (#2949 stage 6) a
+ * standalone one.
+ */
+export function cartProductState(
+  productId: number,
+  view: MemberCartView | null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): CartProductStateFull {
+  if (isDraft(view)) {
+    const p = (view.purchases ?? []).find((x) => Number(x.product_id) === productId);
+    if (p) return { state: 'in_cart', key: `purchase-${p.id}` };
+  }
+  const s = standalone.purchases.find((x) => Number(x.product_id) === productId);
+  return s ? { state: 'in_cart', key: `standalone-${s.id}` } : { state: 'none' };
+}
+
+/** The route an item's own Cancel calls (the Draft's id for a set item). */
+export function cartItemRemovePath(item: CartItem, setId: number | null): string | null {
+  if (item.kind === 'purchase' && item.standalone) return `/me/cart/purchases/${item.purchaseId}`;
+  if (setId == null) return null;
+  if (item.kind === 'plan') return `/me/product-sets/${setId}/plans/${item.planSnapshotId}`;
+  if (item.kind === 'line') return `/me/product-sets/${setId}/services/${item.lineId}`;
+  return `/me/product-sets/${setId}/purchases/${item.purchaseId}`;
 }
 
 /**
@@ -194,6 +338,12 @@ export function cartErrorKey(message: string | null | undefined): string {
     case 'one_per_member': return 'membership.cart_error_one_per_member';
     case 'family_owner_only': return 'membership.family_owner_only';
     case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
+    // #2949 stage 6: the standalone cart's checkout refusals (`POST /me/cart/checkout`).
+    case 'cart_changed':
+    case 'cart_empty':
+    case 'nothing_to_pay':
+    case 'purchase_not_in_cart': return 'membership.cart_error_changed';
+    case 'family_owner_pays': return 'membership.cart_error_family_owner_pays';
     case 'in_flight':
     case 'edit_locked':
     case 'duplicate_submission':

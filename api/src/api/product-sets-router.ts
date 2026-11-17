@@ -40,6 +40,7 @@ import { toMinorUnits } from '../payments/money';
 import { getRequestLocale } from '../infra/locale';
 import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
+import { cartPurchasesForCharge } from './cart-checkout';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
 import { contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
@@ -697,7 +698,16 @@ async function reviewHandler(req: any, res: any, next: any) {
       id: Number(set.id), status: String(set.status),
       previous_product_set_id: set.previous_product_set_id != null ? Number(set.previous_product_set_id) : null,
     });
-    const contractPurchases = await loadSetPurchases(db, gymId, Number(set.id));
+    // #2949 stage 6: the owner's standalone one-time purchases the same checkout pays (stage 5)
+    // are contracted too — one-time, for the owner unless assigned to a family member.
+    const standalone = await cartPurchasesForCharge(db, gymId, Number(set.id));
+    const contractPurchases = [
+      ...await loadSetPurchases(db, gymId, Number(set.id)),
+      ...standalone.map((p) => ({
+        product_name: p.product_name, units: null, billing_frequency: null,
+        assigned_member_id: p.assigned_member_id, member_id: Number(set.owner_member_id),
+      })),
+    ];
     const memberIds = [...new Set([
       ...contractView.lines.map((l) => l.assigned_member_id),
       ...contractPurchases.map((p) => p.assigned_member_id ?? p.member_id),
@@ -879,8 +889,17 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
     // the initial event Save & Pay wrote, never a figure re-priced for the read.
     const pending_amount = isOwner && owned.set.status === 'pending_payment'
       ? await loadPendingInitialAmount(gymId, Number(owned.set.id)) : null;
+    // #2949 stage 6: the owner's standalone one-time purchases this version's checkout pays or
+    // is paying (stage 5) — linked to no Product Set, so outside `purchases` and `cart`.
+    const cart_purchases = isOwner && (owned.set.status === 'in_cart' || owned.set.status === 'pending_payment')
+      ? (await cartPurchasesForCharge(db, gymId, Number(owned.set.id))).map((p) => ({
+        id: p.id, product_id: p.product_id, product_name: p.product_name, product_type: p.product_type,
+        amount: p.amount, list_price: p.list_price, currency: p.currency, assigned_member_id: p.assigned_member_id,
+      }))
+      : [];
     res.json({
       ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }), pending_amount,
+      cart_purchases,
       // #2895: a Draft staff are still setting up — readable, not payable or editable here.
       awaiting_staff_setup: awaitsStaffSetup(owned.set),
     });
