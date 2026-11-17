@@ -1206,7 +1206,8 @@
     "confirm_delete": "Eliminar",
     "error_load": "No se han podido cargar los proveedores de pago",
     "error_name_required": "El nombre es obligatorio.",
-    "error_generic": "Algo ha ido mal."
+    "error_generic": "Algo ha ido mal.",
+    "details_slug": "Slug"
   },
   "deleted_members": {
     "title": "Miembros eliminados",
@@ -5958,7 +5959,8 @@
     "translations_save": "Guardar",
     "translations_empty": "Sin traducción (se usa el inglés)",
     "label_name": "Nombre",
-    "label_description": "Descripción"
+    "label_description": "Descripción",
+    "details_slug": "Slug"
   },
   "base_professional_services": {
     "title": "Servicios profesionales base",

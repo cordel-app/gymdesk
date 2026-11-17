@@ -70,8 +70,8 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(wide395).toBeTruthy();
     const wideValues = [...values(wide!), ...values(narrow!), 'superseded', 'active_cancel_at_period_end'];
     expect(new Set([...values(wide395!), 'active_cancel_at_period_end'])).toEqual(new Set(wideValues));
-    // #2949 stage 3: migration 435 renames `draft` to `in_cart` and keeps every other value.
-    const m435 = readFileSync(join(API_SRC, 'infra', 'migrations', '435_assignment_status_in_cart.js'), 'utf8');
+    // #2949 stage 3: migration 436 renames `draft` to `in_cart` and keeps every other value.
+    const m435 = readFileSync(join(API_SRC, 'infra', 'migrations', '436_assignment_status_in_cart.js'), 'utf8');
     expect(m435).toContain("move(knex, 'draft', 'in_cart')");
     const current = wideValues.map((v) => (v === 'draft' ? 'in_cart' : v));
 
@@ -99,10 +99,10 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(USER_MEMBERSHIPS).not.toContain('awaiting_payment');
   });
 
-  it('declares draft -> pending_payment / active / cancelled, and pending_payment -> active / cancelled, and nothing else', () => {
+  it('declares in_cart -> pending_payment / active / cancelled, and pending_payment -> active / cancelled, and nothing else', () => {
     const table = USER_MEMBERSHIPS.match(/const ALLOWED_TRANSITIONS[\s\S]*?\n\};/);
     expect(table).toBeTruthy();
-    const draftRow = table![0].match(/draft: \[([^\]]*)\]/);
+    const draftRow = table![0].match(/in_cart: \[([^\]]*)\]/);
     expect(draftRow).toBeTruthy();
     const targets = [...draftRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
     expect(targets.sort()).toEqual(['active', 'cancelled', 'pending_payment']);

@@ -1758,7 +1758,7 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   });
 
   it('rejects active -> in_cart as a transition rather than as an unknown status (#1108)', async () => {
-    // `in_cart` (`draft` until migration 435) is a status the router knows, so the 400 is
+    // `in_cart` (`draft` until migration 436) is a status the router knows, so the 400 is
     // the transition table's and not the vocabulary's: nothing ever goes *back*
     // into a Draft, which is why it has no inbound edge.
     const { res, umId } = await seedAndPut('active', 'in_cart');
@@ -1853,9 +1853,9 @@ describe('retired pre-activation statuses (#786)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('the list filter accepts lifecycle_status=draft', async () => {
+  it('the list filter accepts lifecycle_status=in_cart (#2949 stage 3)', async () => {
     const res = await request
-      .get('/user-memberships?lifecycle_status=draft')
+      .get('/user-memberships?lifecycle_status=in_cart')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);

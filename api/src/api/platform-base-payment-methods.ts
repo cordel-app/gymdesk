@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { allocateGlobalSlug } from './entity-slugs';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -36,6 +37,7 @@ export const platformBasePaymentMethodsRouter = Router();
 interface MethodRow {
   id: number;
   code: string;
+  slug: string;
   status: string;
   image_url: string | null;
   image_thumbnail_url: string | null;
@@ -137,10 +139,14 @@ platformBasePaymentMethodsRouter.post('/', requireSuperadmin, async (req, res) =
   const actor = resolvePlatformActor(req.superadminName);
   try {
     const id = await db.transaction(async (tx) => {
+      // #2951: generated once from the English name (else the code); never rewritten.
+      const slug = await allocateGlobalSlug(
+        'base_payment_methods', translations.value.en?.name || code.value, tx,
+      );
       const { insertId } = await tx.query(
-        `INSERT INTO base_payment_methods (code, status, created_at, created_by)
-         VALUES (?, ?, UTC_TIMESTAMP(), ?)`,
-        [code.value, status.value, actor],
+        `INSERT INTO base_payment_methods (code, slug, status, created_at, created_by)
+         VALUES (?, ?, ?, UTC_TIMESTAMP(), ?)`,
+        [code.value, slug, status.value, actor],
       );
       await writeTranslations(tx, insertId, translations.value);
       return insertId;

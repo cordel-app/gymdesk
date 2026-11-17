@@ -1206,7 +1206,8 @@
     "confirm_delete": "Delete",
     "error_load": "Failed to load payment providers",
     "error_name_required": "Name is required.",
-    "error_generic": "Something went wrong."
+    "error_generic": "Something went wrong.",
+    "details_slug": "Slug"
   },
   "deleted_members": {
     "title": "Deleted Members",
@@ -5972,7 +5973,8 @@
     "translations_save": "Save",
     "translations_empty": "No translation (falls back to English)",
     "label_name": "Name",
-    "label_description": "Description"
+    "label_description": "Description",
+    "details_slug": "Slug"
   },
   "base_professional_services": {
     "title": "Base Professional Services",

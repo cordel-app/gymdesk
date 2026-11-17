@@ -1,4 +1,6 @@
 import { resolvePlatformActor } from '../domain/auditActor';
+import { generateSlug } from '../domain/entitySlug';
+import { allocateGlobalSlug } from './entity-slugs';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
@@ -135,23 +137,6 @@ async function assertAssignablePaymentProvider(id: unknown): Promise<number | nu
 const PAYMENT_PROVIDER_REQUIRED_ERROR =
   'payment_provider_id must reference an active payment provider';
 
-/** Slugify a name: lowercase, spaces→hyphens, strip non-alphanumeric. */
-function slugify(name: string): string {
-  return name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-}
-
-/** Generate a unique slug from a base, appending -2, -3, … as needed. */
-async function uniqueSlug(base: string): Promise<string> {
-  const safe = slugify(base) || 'gym';
-  let candidate = safe;
-  let i = 2;
-  for (;;) {
-    const { rows } = await db.query<{ id: string }>('SELECT id FROM gyms WHERE slug = ?', [candidate]);
-    if (rows.length === 0) return candidate;
-    candidate = `${safe}-${i++}`;
-  }
-}
-
 // ─── User-facing: list gyms for the authenticated user ───────────────────────
 
 gymsRouter.get('/', async (req, res) => {
@@ -264,7 +249,12 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     if (themeRows.length === 0) return res.status(400).json({ error: 'theme_id must reference an active theme' });
   }
 
-  const slug = rawSlug?.trim() ? rawSlug.trim() : await uniqueSlug(name);
+  // #2951: generated once from the name by the shared rule and never changed
+  // afterwards (PUT does not read it). An explicit slug is still accepted on
+  // create, normalised by the same rule, and a taken one is a 409.
+  const slug = typeof rawSlug === 'string' && rawSlug.trim()
+    ? generateSlug(rawSlug, 'gym')
+    : await allocateGlobalSlug('gyms', name);
   const id = randomUUID();
   const actorName = resolvePlatformActor(req.superadminName);
 
@@ -444,7 +434,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   if (source.length === 0) return res.status(404).json({ error: 'Gym not found' });
   const src = source[0];
   const newName = `Copy of ${src.name}`;
-  const newSlug = await uniqueSlug(newName);
+  const newSlug = await allocateGlobalSlug('gyms', newName);
   const newId = randomUUID();
   const actorName = resolvePlatformActor(req.superadminName);
   // #636: the copy keeps the source gym's Payment Provider — the column is NOT

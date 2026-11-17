@@ -1207,7 +1207,8 @@
     "confirm_delete": "Eliminar",
     "error_load": "No s'han pogut carregar els proveïdors de pagament",
     "error_name_required": "El nom és obligatori.",
-    "error_generic": "Alguna cosa ha anat malament."
+    "error_generic": "Alguna cosa ha anat malament.",
+    "details_slug": "Slug"
   },
   "deleted_members": {
     "title": "Membres eliminats",
@@ -5985,7 +5986,8 @@
     "translations_save": "Desa",
     "translations_empty": "Sense traducció (s'usa l'anglès)",
     "label_name": "Nom",
-    "label_description": "Descripció"
+    "label_description": "Descripció",
+    "details_slug": "Slug"
   },
   "base_professional_services": {
     "title": "Serveis professionals base",
