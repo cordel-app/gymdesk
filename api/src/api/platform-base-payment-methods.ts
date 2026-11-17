@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { allocateGlobalSlug } from './entity-slugs';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -80,10 +80,19 @@ async function shape(rows: MethodRow[], locale: string) {
   });
 }
 
-async function loadOne(id: unknown, locale: string) {
+export async function loadBasePaymentMethod(id: unknown, locale: string) {
   const { rows } = await db.query<MethodRow>('SELECT * FROM base_payment_methods WHERE id = ?', [id]);
   if (!rows[0]) return null;
   return (await shape(rows, locale))[0];
+}
+
+/** One method as the reads answer it: the row, its translations and its display name. */
+export type BasePaymentMethod = NonNullable<Awaited<ReturnType<typeof loadBasePaymentMethod>>>;
+
+/** Every method, deleted ones included, shaped as the reads answer them (#2952's export). */
+export async function loadAllBasePaymentMethods(locale: string) {
+  const { rows } = await db.query<MethodRow>('SELECT * FROM base_payment_methods ORDER BY slug ASC');
+  return shape(rows, locale);
 }
 
 platformBasePaymentMethodsRouter.get('/', requireSuperadmin, async (req, res) => {
@@ -107,7 +116,7 @@ platformBasePaymentMethodsRouter.get('/', requireSuperadmin, async (req, res) =>
 });
 
 platformBasePaymentMethodsRouter.get('/:id', requireSuperadmin, async (req, res) => {
-  const row = await loadOne(req.params.id, resolveLocale(req));
+  const row = await loadBasePaymentMethod(req.params.id, resolveLocale(req));
   if (!row || row.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
   res.json(row);
 });
@@ -127,20 +136,35 @@ async function writeTranslations(tx: { query: (sql: string, params?: any[]) => P
   }
 }
 
-platformBasePaymentMethodsRouter.post('/', requireSuperadmin, async (req, res) => {
-  const body = req.body ?? {};
-  const code = parseCode(body.code);
-  if ('error' in code) return res.status(400).json({ error: code.error });
-  const status = body.status === undefined ? { value: 'active' as const } : parseStatus(body.status);
-  if ('error' in status) return res.status(400).json({ error: status.error });
-  const translations = parseTranslations(body.translations);
-  if ('error' in translations) return res.status(400).json({ error: translations.error });
+/** What a write answered: the row's id, or the HTTP refusal a route returns as is. */
+export type BasePaymentMethodWriteResult =
+  | { ok: true; id: number }
+  | { ok: false; status: number; body: Record<string, unknown> };
 
-  const actor = resolvePlatformActor(req.superadminName);
+type AuditRequest = Request & { superadminName?: string | null };
+
+/**
+ * Creates a method. The route lets the slug be generated from the English name;
+ * #2952's import passes the slug its archive carries, so an exported method keeps
+ * its identity in the database it is imported into.
+ */
+export async function createBasePaymentMethod(
+  req: AuditRequest,
+  body: Record<string, any>,
+  opts: { slug?: string } = {},
+): Promise<BasePaymentMethodWriteResult> {
+  const code = parseCode(body.code);
+  if ('error' in code) return { ok: false, status: 400, body: { error: code.error } };
+  const status = body.status === undefined ? { value: 'active' as const } : parseStatus(body.status);
+  if ('error' in status) return { ok: false, status: 400, body: { error: status.error } };
+  const translations = parseTranslations(body.translations);
+  if ('error' in translations) return { ok: false, status: 400, body: { error: translations.error } };
+
+  const actor = resolvePlatformActor(req.superadminName ?? null);
   try {
     const id = await db.transaction(async (tx) => {
       // #2951: generated once from the English name (else the code); never rewritten.
-      const slug = await allocateGlobalSlug(
+      const slug = opts.slug ?? await allocateGlobalSlug(
         'base_payment_methods', translations.value.en?.name || code.value, tx,
       );
       const { insertId } = await tx.query(
@@ -151,42 +175,48 @@ platformBasePaymentMethodsRouter.post('/', requireSuperadmin, async (req, res) =
       await writeTranslations(tx, insertId, translations.value);
       return insertId;
     });
-    const row = await loadOne(id, resolveLocale(req));
+    const row = await loadBasePaymentMethod(id, resolveLocale(req));
     recordAudit(req, { action: 'create', entityType: 'base_payment_method', entityId: id, next: row });
-    res.status(201).json(row);
+    return { ok: true, id };
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A payment method with this code already exists' });
+    if (err.code === 'ER_DUP_ENTRY') {
+      return { ok: false, status: 409, body: { error: 'A payment method with this code already exists' } };
+    }
     throw err;
   }
-});
+}
 
-platformBasePaymentMethodsRouter.put('/:id', requireSuperadmin, async (req, res) => {
-  const body = req.body ?? {};
+/**
+ * Writes a method's status and translations. The code and the slug never move;
+ * the image key carries the English name, so a rename moves it (#1702).
+ */
+export async function updateBasePaymentMethod(
+  req: AuditRequest,
+  existing: BasePaymentMethod,
+  body: Record<string, any>,
+): Promise<BasePaymentMethodWriteResult> {
   if (body.status === undefined && body.translations === undefined && body.code === undefined) {
-    return res.status(400).json({ error: 'At least one field must be provided' });
+    return { ok: false, status: 400, body: { error: 'At least one field must be provided' } };
   }
   const locale = resolveLocale(req);
-  const existing = await loadOne(req.params.id, locale);
-  if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
-
   // The code is the stable identifier: it may be echoed back but never changed.
   if (body.code !== undefined && body.code !== existing.code) {
-    return res.status(400).json({ error: 'code cannot be changed after creation' });
+    return { ok: false, status: 400, body: { error: 'code cannot be changed after creation' } };
   }
   let nextStatus = existing.status;
   if (body.status !== undefined) {
     const status = parseStatus(body.status);
-    if ('error' in status) return res.status(400).json({ error: status.error });
+    if ('error' in status) return { ok: false, status: 400, body: { error: status.error } };
     nextStatus = status.value;
   }
   let translations: TranslationsInput | null = null;
   if (body.translations !== undefined) {
     const parsed = parseTranslations(body.translations);
-    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    if ('error' in parsed) return { ok: false, status: 400, body: { error: parsed.error } };
     translations = parsed.value;
   }
 
-  const actor = resolvePlatformActor(req.superadminName);
+  const actor = resolvePlatformActor(req.superadminName ?? null);
   await db.transaction(async (tx) => {
     await tx.query(
       `UPDATE base_payment_methods
@@ -196,7 +226,7 @@ platformBasePaymentMethodsRouter.put('/:id', requireSuperadmin, async (req, res)
     );
     if (translations) await writeTranslations(tx, existing.id, translations);
   });
-  let row = await loadOne(existing.id, locale);
+  let row = await loadBasePaymentMethod(existing.id, locale);
   // #1702: the image key carries the (English) name, so a rename moves it.
   if (row && row.image_url) {
     const nextName = paymentMethodImageName(row.translations, row.code);
@@ -204,15 +234,62 @@ platformBasePaymentMethodsRouter.put('/:id', requireSuperadmin, async (req, res)
       const moved = await migratePaymentMethodImageOnRename({
         id: row.id, name: nextName, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url,
       });
-      if (moved) row = await loadOne(existing.id, locale);
+      if (moved) row = await loadBasePaymentMethod(existing.id, locale);
     }
   }
   recordAudit(req, { action: 'update', entityType: 'base_payment_method', entityId: existing.id, previous: existing, next: row });
-  res.json(row);
+  return { ok: true, id: existing.id };
+}
+
+/**
+ * Processes the request's picture and stores it as the method's image (the
+ * editor's upload and #2952's import both write through this).
+ */
+export async function storeBasePaymentMethodImage(
+  req: AuditRequest,
+  existing: BasePaymentMethod,
+): Promise<BasePaymentMethodWriteResult> {
+  const parsed = await parseMemberImageRequest(req);
+  if (isMemberImageRefusal(parsed)) return { ok: false, status: parsed.status, body: parsed.body };
+  const stored = await storePaymentMethodImage({
+    method: {
+      id: existing.id,
+      name: paymentMethodImageName(existing.translations, existing.code),
+      image_url: existing.image_url,
+      image_thumbnail_url: existing.image_thumbnail_url,
+    },
+    images: parsed,
+    modifiedBy: resolvePlatformActor(req.superadminName ?? null),
+  });
+  if (isMemberImageRefusal(stored)) return { ok: false, status: stored.status, body: stored.body };
+  recordAudit(req, {
+    action: 'update', entityType: 'base_payment_method', entityId: existing.id,
+    previous: { image_url: existing.image_url }, next: { image_url: stored.image_url },
+  });
+  return { ok: true, id: existing.id };
+}
+
+platformBasePaymentMethodsRouter.post('/', requireSuperadmin, async (req, res) => {
+  const result = await createBasePaymentMethod(req, req.body ?? {});
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.status(201).json(await loadBasePaymentMethod(result.id, resolveLocale(req)));
+});
+
+platformBasePaymentMethodsRouter.put('/:id', requireSuperadmin, async (req, res) => {
+  const body = req.body ?? {};
+  if (body.status === undefined && body.translations === undefined && body.code === undefined) {
+    return res.status(400).json({ error: 'At least one field must be provided' });
+  }
+  const locale = resolveLocale(req);
+  const existing = await loadBasePaymentMethod(req.params.id, locale);
+  if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
+  const result = await updateBasePaymentMethod(req, existing, body);
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.json(await loadBasePaymentMethod(existing.id, locale));
 });
 
 platformBasePaymentMethodsRouter.delete('/:id', requireSuperadmin, async (req, res) => {
-  const existing = await loadOne(req.params.id, resolveLocale(req));
+  const existing = await loadBasePaymentMethod(req.params.id, resolveLocale(req));
   if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
   const actor = resolvePlatformActor(req.superadminName);
   await db.query(
@@ -228,7 +305,7 @@ platformBasePaymentMethodsRouter.delete('/:id', requireSuperadmin, async (req, r
 /* ── Image (#1702 — WebP master 1080 × 1080 + thumbnail 256 × 256, cordel/payment_method/) ── */
 
 async function loadForImage(req: any, res: any) {
-  const row = await loadOne(req.params.id, resolveLocale(req));
+  const row = await loadBasePaymentMethod(req.params.id, resolveLocale(req));
   if (!row || row.deleted_at) { res.status(404).json({ error: 'Payment method not found' }); return null; }
   return {
     row,
@@ -243,19 +320,11 @@ async function loadForImage(req: any, res: any) {
 
 platformBasePaymentMethodsRouter.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = await parseMemberImageRequest(req);
-    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
-    const loaded = await loadForImage(req, res);
-    if (!loaded) return;
-    const stored = await storePaymentMethodImage({
-      method: loaded.method, images: parsed, modifiedBy: resolvePlatformActor(req.superadminName),
-    });
-    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
-    recordAudit(req, {
-      action: 'update', entityType: 'base_payment_method', entityId: loaded.row.id,
-      previous: { image_url: loaded.row.image_url }, next: { image_url: stored.image_url },
-    });
-    res.json(await loadOne(loaded.row.id, resolveLocale(req)));
+    const existing = await loadBasePaymentMethod(req.params.id, resolveLocale(req));
+    if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment method not found' });
+    const result = await storeBasePaymentMethodImage(req, existing);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.json(await loadBasePaymentMethod(existing.id, resolveLocale(req)));
   } catch (err) { next(err); }
 });
 
@@ -268,6 +337,6 @@ platformBasePaymentMethodsRouter.delete('/:id/image', requireSuperadmin, async (
       action: 'update', entityType: 'base_payment_method', entityId: loaded.row.id,
       previous: { image_url: loaded.row.image_url }, next: { image_url: null },
     });
-    res.json(await loadOne(loaded.row.id, resolveLocale(req)));
+    res.json(await loadBasePaymentMethod(loaded.row.id, resolveLocale(req)));
   } catch (err) { next(err); }
 });

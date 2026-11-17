@@ -1,4 +1,5 @@
 import { PLATFORM_STORAGE_ROOT } from '../infra/storage';
+import { ENTITY_SLUG_MAX } from './entitySlug';
 import { MUSCLE_SEXES, MuscleSex } from './muscleImages';
 import { parseMuscleTranslations } from './muscleTranslations';
 
@@ -16,12 +17,14 @@ import { parseMuscleTranslations } from './muscleTranslations';
  * `GET /platform/transfer/types` answers, so a type that cannot be moved yet is
  * absent rather than offered and broken.
  */
-export const TRANSFER_ENTITY_TYPES = ['muscles'] as const;
+export const TRANSFER_ENTITY_TYPES = ['muscles', 'payment_providers', 'base_payment_methods'] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
 /** The image slots each type carries, in the order an archive lists them. */
 export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]> = {
   muscles: MUSCLE_SEXES,
+  payment_providers: [],
+  base_payment_methods: ['image'],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -90,4 +93,42 @@ export const TRANSFER_IMAGE_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 export function transferImageRateLimitMax(env: NodeJS.ProcessEnv = process.env): number {
   const n = Number(env.TRANSFER_IMAGE_RATE_LIMIT_MAX);
   return Number.isInteger(n) && n > 0 ? n : TRANSFER_IMAGE_RATE_LIMIT_DEFAULT_MAX;
+}
+
+/**
+ * A slug of #2951's shape: lowercase letters and digits in hyphen-separated
+ * runs, at most `ENTITY_SLUG_MAX` — what `generateSlug()` produces for every
+ * entity but Muscles. An imported slug of any other shape is refused rather
+ * than normalised, for the reason `isValidMuscleSlug()` gives.
+ */
+const ENTITY_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isValidEntitySlug(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= ENTITY_SLUG_MAX && ENTITY_SLUG_PATTERN.test(value);
+}
+
+/** The fields of a Payment Provider an archive carries: its own content, never `is_default`. */
+export const PAYMENT_PROVIDER_TRANSFER_FIELDS = ['name', 'provider_key', 'description', 'status'] as const;
+
+/** The fields of a Base Payment Method an archive carries. */
+export const BASE_PAYMENT_METHOD_TRANSFER_FIELDS = ['code', 'status', 'translations'] as const;
+
+/**
+ * Splits one imported record into its slug and the writer's input: only the
+ * listed fields are kept, so anything else an archive carries (an id, a flag
+ * that is the platform's own setting, a relationship) never reaches a writer.
+ * The values themselves are judged by the entity's own writer.
+ */
+export function parseSlugTransferRecord(
+  body: unknown,
+  fields: readonly string[],
+): { record: { slug: string; input: Record<string, unknown> } } | { error: string } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'body must be an object' };
+  const b = body as Record<string, unknown>;
+  if (!isValidEntitySlug(b.slug)) {
+    return { error: `slug must be lowercase letters and digits separated by hyphens (at most ${ENTITY_SLUG_MAX})` };
+  }
+  const input: Record<string, unknown> = {};
+  for (const field of fields) if (b[field] !== undefined) input[field] = b[field];
+  return { record: { slug: b.slug, input } };
 }
