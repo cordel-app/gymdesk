@@ -244,21 +244,21 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   it('M6b-26: an assignment\'s version-level lines are chosen by its plan snapshot\'s status', () => {
     expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8'))
-      .toContain("assignmentOfLegacyIdSql('p9.user_membership_id', 'u9')");
+      .toContain("assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')");
   });
 
   it('M6b-27: the bridge\'s closed-assignment check and the cancellation start date read plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/product-set-bridge.ts']).toBeUndefined();
     const bridge = readFileSync(join(API_SRC, 'api/product-set-bridge.ts'), 'utf8');
     expect(bridge).toContain("assignmentOfLegacyIdSql('?', 'pa')");
-    expect(bridge).toContain("assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')");
+    expect(bridge).toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(7);
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
-      .toContain("assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')");
+      .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
   });
 
   it('M6b-31: the Member card\'s plan history reads plan_snapshots, creator and modifier included', () => {

@@ -63,6 +63,17 @@ export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): str
   `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
 
 /**
+ * #2125 M6b-37 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
+ * assignment an anchor names (`plan_snapshots.assignment_id`, the id of its first snapshot). For a
+ * reader that already holds the anchor, which since M6b-36 is `product_sets.plan_assignment_id`:
+ * it asks the assignment by its own identity rather than through the legacy `user_memberships` id
+ * (`assignmentOfLegacyIdSql()`), which is how a Product Set's readers stop reading
+ * `product_sets.user_membership_id` before that column is dropped.
+ */
+export const assignmentOfAnchorSql = (anchorExpr: string, alias = 'pa'): string =>
+  `(${alias}.assignment_id = ${anchorExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
+
+/**
  * #2125 M6b-13 — the current snapshot of every assignment a Member **owns**, as rows shaped like
  * the `user_memberships` row they replace, for the readers that need a closed plan's status and
  * dates (the New Member rule, the enrollment status). Needs the settle run (M6b-6/7), which is
