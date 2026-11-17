@@ -3,7 +3,8 @@
 // `product_sets.user_membership_id`, the column the re-key drops. The readers left are pinned: the
 // snapshot sync (which is what names a Draft's snapshot from the set's link, before an anchor exists),
 // the projection (a writer of the link, moved with the writers), the drift report (which compares the
-// two columns) and the beneficiaries fallback. The list may only shrink.
+// two columns) and the beneficiaries fallback. The list may only shrink: since M6b-43 the projection
+// and the beneficiaries fallback read the anchor too, leaving the snapshot sync and the drift report.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,9 +29,7 @@ const READ = /\b(?:ps|prev)\.user_membership_id\b/g;
 
 const ALLOWED: Record<string, number> = {
   'api/plan-snapshot-sync.ts': 2,
-  'api/product-set-projection.ts': 1,
   'api/plan-assignment-drift.ts': 2,
-  'domain/assignmentBeneficiaries.ts': 1,
 };
 
 function readsOf(file: string): number {
