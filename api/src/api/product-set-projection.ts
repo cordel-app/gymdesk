@@ -5,7 +5,7 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 import { cancellationStatusFor } from '../domain/assignmentStatus';
-import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -98,7 +98,8 @@ async function closeAssignment(
 
 const SET_SELECT = `
   SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.previous_product_set_id,
-         ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
+         ps.membership_plan_id, ps.starts_at, ps.ends_at,
+         ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id,
          ps.created_by,
          snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
          snap.pay_beforehand_periods, snap.auto_renew,
@@ -167,8 +168,10 @@ export async function projectActiveProductSet(
   let previousUmId: number | null = set.user_membership_id != null ? Number(set.user_membership_id) : null;
   let previousPlanId: number | null = null;
   if (previousUmId == null && set.previous_product_set_id != null) {
+    // #2125 M6b-43: the predecessor's link is read off its anchor, as the set's own is (SET_SELECT).
     const { rows: prev } = await tx.query<{ user_membership_id: number | null }>(
-      'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
+      `SELECT ${productSetLegacyAssignmentIdSql('prev')} AS user_membership_id
+         FROM product_sets prev WHERE prev.id = ? AND prev.gym_id = ?`,
       [set.previous_product_set_id, gymId]);
     previousUmId = prev[0]?.user_membership_id != null ? Number(prev[0].user_membership_id) : null;
   }
