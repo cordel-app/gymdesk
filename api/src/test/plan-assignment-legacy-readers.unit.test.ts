@@ -55,9 +55,9 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
-  'api/product-set-cancellation.ts': 2,
+  'api/product-set-cancellation.ts': 1,
   'api/product-set-projection.ts': 7,
-  'api/product-sets-router.ts': 2,
+  'api/product-sets-router.ts': 1,
   'api/product-sets.ts': 3,
   'api/scheduled-event-execution.ts': 1,
   'api/user-memberships.ts': 17,
@@ -276,6 +276,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       .toContain("assignmentOfLegacyIdSql('?', 'pa')");
     // What is left in each is the dual-write itself, guarded on the status it moves away from.
     for (const file of ['api/assignment-lifecycle.ts', 'api/scheduled-event-execution.ts', 'domain/billingEventPayments.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBe(1);
+    }
+  });
+
+  it('M6b-48: the Save & Pay link sync and the Pending Payment cancel read the owner from plan_snapshots', () => {
+    for (const file of ['api/product-sets-router.ts', 'api/product-set-cancellation.ts']) {
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+      // What is left in each is the dual-write itself, guarded on the status it moves away from.
       expect(LEGACY_STATEMENTS[file]).toBe(1);
     }
   });

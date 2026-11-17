@@ -68,3 +68,31 @@ export function pendingPaymentPlanSets(productSets: readonly ProductSetRow[]): P
     && ps.user_membership_id == null
     && ps.membership_plan_id != null);
 }
+
+export interface PastPlans {
+  /** The ended assignments, drawn by the Assigned Plans table under Past. */
+  history: MemberPlanRow[];
+  /** Plans cancelled while awaiting their first payment, never assigned (#2747). */
+  cancelledSets: ProductSetRow[];
+  /** How many past plans the heading reports: exactly the entries the two lists draw. */
+  count: number;
+}
+
+const uniqueById = <T extends { id: number }>(rows: readonly T[]): T[] => {
+  const seen = new Set<number>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+};
+
+/**
+ * #2887 — the Past plans section: which entries it lists and the count beside
+ * its heading, decided together so the two cannot disagree. A plan is listed
+ * once (an id read twice is one plan), and the count is the number of entries
+ * drawn — never the length of a list the section does not render. Which
+ * cancelled Product Sets are past plans at all is the server's
+ * (`CANCELLED_PLAN_SET_SQL`); this only keeps the count to what is shown.
+ */
+export function pastPlans(plans: readonly MemberPlanRow[], cancelledSets: readonly ProductSetRow[]): PastPlans {
+  const history = uniqueById(plans.filter((p) => !p.is_live && !p.is_current));
+  const sets = uniqueById(cancelledSets.filter((ps) => ps.membership_plan_id != null));
+  return { history, cancelledSets: sets, count: history.length + sets.length };
+}
