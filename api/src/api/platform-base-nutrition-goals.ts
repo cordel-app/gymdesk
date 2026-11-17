@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { allocateBaseGoalSlug } from './entity-slugs';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { GOAL_LIBRARY_AUDIT_ENTITIES, normalizeGoalName } from '../domain/goalLibrary';
@@ -48,7 +49,7 @@ const entityType = GOAL_LIBRARY_AUDIT_ENTITIES.nutrition;
 const TABLE = 'base_nutrition_goals';
 const KIND = 'base_nutrition' as const;
 
-const columnsFor = (locale: SupportedLocale) => `g.id, NULL AS gym_id, g.slug, g.name,
+const columnsFor = (locale: SupportedLocale) => `g.id, NULL AS gym_id, g.slug, g.slug AS entity_slug, g.name,
     IF(g.deleted_at IS NULL, 'active', 'deleted') AS status,
     g.image_url, g.image_thumbnail_url,
     ${localizedGoalExprs('g', locale, KIND)}, ${goalTranslationsExpr('g', 'translations', KIND)},
@@ -130,10 +131,12 @@ export function createPlatformBaseNutritionGoalsRouter(): Router {
       const insertId = await db.transaction(async (tx) => {
         const values = [name.value, description.value ?? null];
         const goalId = await allocateGoalId(tx);
+        // #2951 stage 3 — generated once from the name, never rewritten by an edit.
+        const slug = await allocateBaseGoalSlug(TABLE, name.value, tx);
         await tx.query(
-          `INSERT INTO ${TABLE} (id, name, description, created_by)
-           VALUES (?, ?, ?, ?)`,
-          [goalId, ...values, actor],
+          `INSERT INTO ${TABLE} (id, slug, name, description, created_by)
+           VALUES (?, ?, ?, ?, ?)`,
+          [goalId, slug, ...values, actor],
         );
         if (goalTranslations.translations) {
           await replaceGoalTranslations(tx, goalId, goalTranslations.translations, KIND);

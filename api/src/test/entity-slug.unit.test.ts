@@ -96,3 +96,41 @@ describe('every production exercise insert writes a slug (#2951 stage 2)', () =>
     });
   }
 });
+
+describe('migration 438 spells the same rule', () => {
+  const source = readFileSync(join(__dirname, '../infra/migrations/438_goal_slugs.js'), 'utf8');
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const load = new Function(`${source.split('const GYM_TABLES')[0]}; return { generateSlug, nextAvailableSlug, SLUG_MAX };`);
+  const migration = load() as {
+    generateSlug: (n: string, f: string) => string;
+    nextAvailableSlug: (b: string, used: Set<string>) => string;
+    SLUG_MAX: number;
+  };
+
+  it('agrees with the domain module', () => {
+    expect(migration.SLUG_MAX).toBe(ENTITY_SLUG_MAX);
+    for (const name of ['Weight Loss', 'Équilibre Musculaire', 'Personal Training (1:1)', '', 'c'.repeat(200)]) {
+      expect(migration.generateSlug(name, 'goal')).toBe(generateSlug(name, 'goal'));
+    }
+    expect(migration.nextAvailableSlug('water', new Set(['water']))).toBe('water-2');
+  });
+});
+
+describe('every production goal insert writes a slug (#2951 stage 3)', () => {
+  // `entity_slug` stays nullable (the Base id reservation inserts a placeholder gym row with no
+  // gym), so the writers are what guarantee one. The placeholder itself names neither.
+  const cases: [string, RegExp, RegExp][] = [
+    ['../api/goal-library.ts', /INSERT INTO \$\{table\}[\s\S]*?VALUES/g, /\bentity_slug\b/],
+    ['../api/gym-default-personal-goals.ts', /INSERT IGNORE INTO personal_goals\b[\s\S]*?VALUES/g, /\bentity_slug\b/],
+    ['../api/platform-base-personal-goals.ts', /INSERT INTO \$\{TABLE\}[\s\S]*?VALUES/g, /\bslug\b/],
+    ['../api/platform-base-nutrition-goals.ts', /INSERT INTO \$\{TABLE\}[\s\S]*?VALUES/g, /\bslug\b/],
+  ];
+  for (const [file, pattern, column] of cases) {
+    it(`${file} names the slug in each goal INSERT`, () => {
+      const source = readFileSync(join(__dirname, file), 'utf8');
+      const inserts = source.match(pattern) ?? [];
+      expect(inserts.length).toBeGreaterThan(0);
+      for (const sql of inserts) expect(sql).toMatch(column);
+    });
+  }
+});
