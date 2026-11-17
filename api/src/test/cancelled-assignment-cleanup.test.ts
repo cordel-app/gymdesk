@@ -32,7 +32,7 @@ async function exists(id: number): Promise<boolean> {
   return rows.length === 1;
 }
 
-// #2125 M6b-46: migration 439 dropped `product_sets.user_membership_id`, which the migration's live-set
+// #2125 M6b-46: migration 441 dropped `product_sets.user_membership_id`, which the migration's live-set
 // count reads; against today's schema that link is the set's anchor's legacy id.
 const ANCHOR_LINK = '(SELECT anc.source_user_membership_id FROM plan_snapshots anc WHERE anc.id = product_sets.plan_assignment_id)';
 const run = (gyms: string[]) =>

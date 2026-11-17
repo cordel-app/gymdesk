@@ -44,7 +44,7 @@ exports.up = async (knex) => {
     const sample = bad.map((r) =>
       `set ${r.id} (gym ${r.gym_id}): user_membership_id=${r.user_membership_id}, anchor names ${r.anchor_user_membership_id}`).join('; ');
     throw new Error(
-      `migration 439: ${bad.length}${bad.length === 20 ? '+' : ''} Product Set(s) whose user_membership_id disagrees `
+      `migration 441: ${bad.length}${bad.length === 20 ? '+' : ''} Product Set(s) whose user_membership_id disagrees `
       + `with their plan_assignment_id anchor; repair before dropping the column (${sample})`);
   }
   await knex.raw(`

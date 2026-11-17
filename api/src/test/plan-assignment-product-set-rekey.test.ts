@@ -1,7 +1,7 @@
 /**
  * #2125 M6b-36 — a Product Set carries the `plan_snapshots` anchor of the assignment it projects
  * (`product_sets.plan_assignment_id`, migration 432), written by every link writer and kept on the
- * anchor by the assignment sync. Since M6b-46 (migration 439) it is the only link: the legacy id is
+ * anchor by the assignment sync. Since M6b-46 (migration 441) it is the only link: the legacy id is
  * read off the anchor.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

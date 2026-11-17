@@ -250,7 +250,7 @@ describe('the drift check', () => {
     expect((await check('snapshot_without_assignment_id')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(other.snapshot);
 
     // The migration's backfill, run again: it converges on the same identities (repeatable).
-    // M6b-46: migration 439 dropped `product_sets.user_membership_id`, which the backfill's last
+    // M6b-46: migration 441 dropped `product_sets.user_membership_id`, which the backfill's last
     // statement falls back to; against today's schema that link is the set's anchor's legacy id.
     // A derived table (materialized by DISTINCT) because the statement updates plan_snapshots itself.
     const anchorLink = '(SELECT anc.source_user_membership_id FROM (SELECT DISTINCT id, source_user_membership_id FROM plan_snapshots) anc WHERE anc.id = ps.plan_assignment_id)';

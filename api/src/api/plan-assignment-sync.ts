@@ -106,7 +106,7 @@ export async function syncPaymentRequestAssignmentIds(exec: Exec, gymId: string,
  * `plan_assignment_id` (migration 432) becomes the anchor (lowest plan snapshot id) naming the
  * legacy assignment id bound to its one `?`. An unaliased `product_sets` is required. None where no
  * snapshot names that assignment yet; `nameAssignmentSnapshot()` names the set's primary snapshot and
- * re-links it. Since M6b-46 (migration 439) `product_sets.user_membership_id` is gone and this is the
+ * re-links it. Since M6b-46 (migration 441) `product_sets.user_membership_id` is gone and this is the
  * only way a set is linked; a writer that unlinks a set writes `plan_assignment_id = NULL`.
  */
 export const PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL =

@@ -1270,7 +1270,7 @@
     "label_name": "Nom",
     "label_description": "Descripció",
     "label_status": "Estat",
-    "label_slug": "Slug",
+    "details_slug": "Slug",
     "label_plan": "Pla",
     "label_theme": "Tema",
     "label_payment_provider": "Proveïdor de pagament",
@@ -4326,6 +4326,7 @@
     "assign_to_member": "Assignar pla a membre"
   },
   "nutrition_library": {
+    "details_slug": "Slug",
     "show_deleted": "Mostra eliminats",
     "delete": "Elimina",
     "delete_confirm": "Vols eliminar \"{name}\"? Aquesta acció no es pot desfer.",
@@ -5476,6 +5477,7 @@
     "system_badge": "Sistema",
     "label_name": "Nom",
     "label_status": "Estat",
+    "details_slug": "Slug",
     "label_description": "Descripció",
     "placeholder_name": "p. ex. Massatge esportiu",
     "placeholder_description": "Descripció opcional",

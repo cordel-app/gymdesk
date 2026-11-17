@@ -21,6 +21,7 @@ import {
   buildBaseNutritionImageKey,
 } from '../domain/baseNutritionImages';
 import { buildStorageObjectUrl } from '../infra/storage';
+import { allocateBaseFoodSlug } from './entity-slugs';
 import {
   isNutritionImageRefusal,
   nutritionImageBodyParser,
@@ -50,7 +51,7 @@ export const platformNutritionLibraryRouter = Router();
  * own folder, and the ownership of the row is what decides which — see
  * `domain/baseNutritionImages.ts`.
  */
-const ITEM_COLUMNS = `nli.id, nli.name, IF(nli.deleted_at IS NULL, 'active', 'deleted') AS status, nli.image_url, nli.created_at, nli.modified_at,
+const ITEM_COLUMNS = `nli.id, nli.name, nli.slug, IF(nli.deleted_at IS NULL, 'active', 'deleted') AS status, nli.image_url, nli.created_at, nli.modified_at,
   ${itemDetailColumnsSql('nli')}`;
 
 /**
@@ -178,9 +179,10 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
     );
     await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [reserved]);
     const insertId = reserved as number;
+    const slug = await allocateBaseFoodSlug(name.trim());
     await db.query(
-      `INSERT INTO base_nutrition_library_items (id, name, description, created_by) VALUES (?, ?, ?, ?)`,
-      [insertId, name.trim(), description.value ?? null, actor],
+      `INSERT INTO base_nutrition_library_items (id, name, slug, description, created_by) VALUES (?, ?, ?, ?, ?)`,
+      [insertId, name.trim(), slug, description.value ?? null, actor],
     );
 
     await replaceCategories(insertId, category_ids, BASE_FOOD_TABLES);

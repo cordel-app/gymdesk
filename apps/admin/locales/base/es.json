@@ -1269,7 +1269,7 @@
     "label_name": "Nombre",
     "label_description": "Descripción",
     "label_status": "Estado",
-    "label_slug": "Slug",
+    "details_slug": "Slug",
     "label_plan": "Plan",
     "label_theme": "Tema",
     "label_payment_provider": "Proveedor de pago",
@@ -4299,6 +4299,7 @@
     "assign_to_member": "Asignar plan a miembro"
   },
   "nutrition_library": {
+    "details_slug": "Slug",
     "show_deleted": "Mostrar eliminados",
     "delete": "Eliminar",
     "delete_confirm": "¿Eliminar \"{name}\"? Esta acción no se puede deshacer.",
@@ -5449,6 +5450,7 @@
     "system_badge": "Sistema",
     "label_name": "Nombre",
     "label_status": "Estado",
+    "details_slug": "Slug",
     "label_description": "Descripción",
     "placeholder_name": "p. ej. Masaje deportivo",
     "placeholder_description": "Descripción opcional",

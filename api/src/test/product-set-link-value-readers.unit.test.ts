@@ -9,7 +9,7 @@
 // link a set, `nameAssignmentSnapshot()`), leaving the drift report, which compares the two columns.
 // Since M6b-45 the gate also catches a statement that names the column bare (`SELECT user_membership_id
 // FROM product_sets`) or reads it through `ps.*`, so no statement but the drift report and the writers'
-// `SET user_membership_id = …` reads it before the column is dropped. Since M6b-46 (migration 439) the
+// `SET user_membership_id = …` reads it before the column is dropped. Since M6b-46 (migration 441) the
 // column is gone: nothing reads it, and the last test fails the build if a writer names it again.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -68,7 +68,7 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
     expect(found).toEqual([]);
   });
 
-  it('no statement writes product_sets.user_membership_id (#2125 M6b-46, migration 439)', () => {
+  it('no statement writes product_sets.user_membership_id (#2125 M6b-46, migration 441)', () => {
     const found: string[] = [];
     for (const f of sourceFiles(API_SRC)) {
       const rel = f.slice(API_SRC.length + 1).replace(/\\/g, '/');

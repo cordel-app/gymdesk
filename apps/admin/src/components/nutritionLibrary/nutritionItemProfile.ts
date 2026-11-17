@@ -35,6 +35,8 @@ export interface NutritionLibraryItemRow {
   description: string | null;
   status: 'active' | 'deleted';
   image_url: string | null;
+  /** #2951: the persistent slug, shown read-only in Details and nowhere else. */
+  slug?: string | null;
   /** Per-locale names keyed by locale (#643). Absent locales fall back to `name`. */
   translations?: Record<string, string>;
   /** Per-locale descriptions keyed by locale (#1720). Absent locales fall back to `description`. */

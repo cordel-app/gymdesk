@@ -155,7 +155,7 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       ORDER BY pr.id`);
 
   // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
-  // names. Since migration 439 dropped `product_sets.user_membership_id`, the check is that the link
+  // names. Since migration 441 dropped `product_sets.user_membership_id`, the check is that the link
   // is the lowest snapshot naming the same legacy assignment as the snapshot it points at.
   await add('product_set_assignment_mismatch',
     'A Product Set whose plan_assignment_id is not the anchor (lowest snapshot) of the assignment it names.',
