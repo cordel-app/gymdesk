@@ -1,7 +1,7 @@
 import { resolvePlatformActor } from '../domain/auditActor';
 import { generateSlug } from '../domain/entitySlug';
 import { allocateGlobalSlug } from './entity-slugs';
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
 import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantContext';
@@ -224,9 +224,37 @@ platformRouter.get('/gyms/:id', requireSuperadmin, async (req, res) => {
   res.json(attachTheme(rows[0]));
 });
 
-platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
-  const { name, slug: rawSlug, plan, theme_id, description, payment_provider_id } = req.body;
-  if (!name) return res.status(400).json({ error: 'name is required' });
+export type GymWriteResult =
+  | { ok: true; id: string; row: any }
+  | { ok: false; status: number; body: Record<string, unknown> };
+
+type GymWriteRequest = Request & { superadminName?: string | null };
+
+const refuseGym = (status: number, body: Record<string, unknown>): GymWriteResult => ({ ok: false, status, body });
+
+/** Reads one gym as the superadmin routes answer it (theme and provider joined). */
+export async function loadPlatformGym(id: string): Promise<any | null> {
+  const { rows } = await db.query(
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
+    [id],
+  );
+  return rows[0] ? attachTheme(rows[0]) : null;
+}
+
+/**
+ * Creates a gym with everything a new gym is seeded with. The one creator of a
+ * gym from a request: `POST /platform/gyms` and #2952's import both call it.
+ * `opts.slug` is an archive's slug, kept as it is (#2951: a slug is never
+ * regenerated); otherwise an explicit `slug` input is normalised by the shared
+ * rule and none is allocated from the name.
+ */
+export async function createGym(
+  req: GymWriteRequest,
+  input: Record<string, any>,
+  opts: { slug?: string } = {},
+): Promise<GymWriteResult> {
+  const { name, slug: rawSlug, plan, theme_id, description, payment_provider_id } = input ?? {};
+  if (!name) return refuseGym(400, { error: 'name is required' });
 
   // #636: pre-populated with the default provider when the caller sends none,
   // so the Cordel "Add gym" form does not have to.
@@ -234,7 +262,7 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     ? await resolveDefaultPaymentProviderId()
     : await assertAssignablePaymentProvider(payment_provider_id);
   if (providerId === null) {
-    return res.status(400).json({
+    return refuseGym(400, {
       error: payment_provider_id === undefined || payment_provider_id === null
         ? 'No default payment provider is configured. Create one under Cordel → Payment Providers first.'
         : PAYMENT_PROVIDER_REQUIRED_ERROR,
@@ -246,17 +274,17 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       "SELECT id FROM themes WHERE id = ? AND status = 'active' AND deleted_at IS NULL",
       [theme_id],
     );
-    if (themeRows.length === 0) return res.status(400).json({ error: 'theme_id must reference an active theme' });
+    if (themeRows.length === 0) return refuseGym(400, { error: 'theme_id must reference an active theme' });
   }
 
   // #2951: generated once from the name by the shared rule and never changed
   // afterwards (PUT does not read it). An explicit slug is still accepted on
   // create, normalised by the same rule, and a taken one is a 409.
-  const slug = typeof rawSlug === 'string' && rawSlug.trim()
+  const slug = opts.slug ?? (typeof rawSlug === 'string' && rawSlug.trim()
     ? generateSlug(rawSlug, 'gym')
-    : await allocateGlobalSlug('gyms', name);
+    : await allocateGlobalSlug('gyms', name));
   const id = randomUUID();
-  const actorName = resolvePlatformActor(req.superadminName);
+  const actorName = resolvePlatformActor(req.superadminName ?? null);
 
   try {
     await db.query(
@@ -264,86 +292,99 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, name, slug, plan ?? 'free', theme_id ?? null, providerId, description?.trim() || null, 'active', actorName],
     );
-    // #59: every gym needs at least one Center — mirrors migration 046's
-    // backfill for pre-existing gyms, so resolveCenterId()'s "sole active
-    // center" fallback works from day one for gyms created after this ships.
-    await db.query(
-      "INSERT INTO centers (gym_id, name, status, created_by) VALUES (?, ?, 'active', ?)",
-      [id, name, actorName],
-    );
-    // #1149: the tax rate is seeded **before** the Products, because their
-    // prices are stored VAT-inclusive of it — a seed that ran the other way
-    // round would leave every default Product un-rated.
-    await db.query(
-      `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at, created_by)
-       VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP(), ?)`,
-      [id, actorName],
-    );
-    await db.query(
-      `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at, created_by)
-       SELECT ?, id, 'active', UTC_TIMESTAMP(), ? FROM professional_services WHERE is_system = 1`,
-      [id, actorName],
-    );
-    // #1181: every System Personal Goal starts available to the new gym — an
-    // explicit `active` row per goal, `gym_professional_services`' pattern. A
-    // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
-    await db.query(
-      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
-       SELECT ?, NULL, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
-      [id, actorName],
-    );
-    // #1149: the gym's default Products — one writer for both creation paths,
-    // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
-    // a System Product's name and type still come from `charge_types`).
-    await seedDefaultGymProducts(id);
-    // #1850: every live Base Personal Goal becomes a gym-owned goal of the new gym.
-    await seedDefaultGymPersonalGoals(id, actorName);
-    const { rows } = await db.query(
-      `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
-      [id],
-    );
-    recordAudit(req, { action: 'create', entityType: 'gym', entityId: id, next: attachTheme(rows[0]) });
-    res.status(201).json(attachTheme(rows[0]));
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Slug already taken' });
+    if (err.code === 'ER_DUP_ENTRY') return refuseGym(409, { error: 'Slug already taken' });
     throw err;
   }
+  // #59: every gym needs at least one Center — mirrors migration 046's
+  // backfill for pre-existing gyms, so resolveCenterId()'s "sole active
+  // center" fallback works from day one for gyms created after this ships.
+  await db.query(
+    "INSERT INTO centers (gym_id, name, status, created_by) VALUES (?, ?, 'active', ?)",
+    [id, name, actorName],
+  );
+  // #1149: the tax rate is seeded **before** the Products, because their
+  // prices are stored VAT-inclusive of it — a seed that ran the other way
+  // round would leave every default Product un-rated.
+  await db.query(
+    `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at, created_by)
+     VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP(), ?)`,
+    [id, actorName],
+  );
+  await db.query(
+    `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at, created_by)
+     SELECT ?, id, 'active', UTC_TIMESTAMP(), ? FROM professional_services WHERE is_system = 1`,
+    [id, actorName],
+  );
+  // #1181: every System Personal Goal starts available to the new gym — an
+  // explicit `active` row per goal, `gym_professional_services`' pattern. A
+  // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
+  await db.query(
+    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, base_personal_goal_id, status, created_by)
+     SELECT ?, NULL, id, 'active', ? FROM base_personal_goals WHERE deleted_at IS NULL`,
+    [id, actorName],
+  );
+  // #1149: the gym's default Products — one writer for both creation paths,
+  // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
+  // a System Product's name and type still come from `charge_types`).
+  await seedDefaultGymProducts(id);
+  // #1850: every live Base Personal Goal becomes a gym-owned goal of the new gym.
+  await seedDefaultGymPersonalGoals(id, actorName);
+  const row = await loadPlatformGym(id);
+  recordAudit(req, { action: 'create', entityType: 'gym', entityId: id, next: row });
+  return { ok: true, id, row };
+}
+
+platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
+  const result = await createGym(req, req.body ?? {});
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.status(201).json(result.row);
 });
 
-platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
-  const { name, theme_id, description, status, payment_provider_id } = req.body;
+/**
+ * Writes a gym's own fields (name, description, status) and the two references
+ * the editor sets (theme, payment provider). The slug is never written. The one
+ * updater of a gym from a request: `PUT /platform/gyms/:id` and #2952's import.
+ */
+export async function updateGym(
+  req: GymWriteRequest,
+  gymId: string,
+  input: Record<string, any>,
+): Promise<GymWriteResult> {
+  const body = input ?? {};
+  const { name, theme_id, description, status, payment_provider_id } = body;
   if (
     name === undefined && theme_id === undefined && description === undefined
     && status === undefined && payment_provider_id === undefined
   ) {
-    return res.status(400).json({ error: 'At least one field must be provided' });
+    return refuseGym(400, { error: 'At least one field must be provided' });
   }
   // #636: mandatory and never nullable — an explicit null is a 400, not a clear.
   let providerId: number | undefined;
   if (payment_provider_id !== undefined) {
     const resolved = payment_provider_id === null ? null : await assertAssignablePaymentProvider(payment_provider_id);
-    if (resolved === null) return res.status(400).json({ error: PAYMENT_PROVIDER_REQUIRED_ERROR });
+    if (resolved === null) return refuseGym(400, { error: PAYMENT_PROVIDER_REQUIRED_ERROR });
     providerId = resolved;
   }
   if (status !== undefined && !['active', 'inactive'].includes(status)) {
-    return res.status(400).json({ error: "status must be 'active' or 'inactive'" });
+    return refuseGym(400, { error: "status must be 'active' or 'inactive'" });
   }
   if (theme_id !== undefined && theme_id !== null) {
     const { rows: themeRows } = await db.query(
       "SELECT id FROM themes WHERE id = ? AND status = 'active' AND deleted_at IS NULL",
       [theme_id],
     );
-    if (themeRows.length === 0) return res.status(400).json({ error: 'theme_id must reference an active theme' });
+    if (themeRows.length === 0) return refuseGym(400, { error: 'theme_id must reference an active theme' });
   }
 
   const { rows: existing } = await db.query(
     'SELECT * FROM gyms WHERE id = ? AND deleted_at IS NULL',
-    [req.params.id],
+    [gymId],
   );
-  if (existing.length === 0) return res.status(404).json({ error: 'Gym not found' });
+  if (existing.length === 0) return refuseGym(404, { error: 'Gym not found' });
 
-  const themeIdValue = 'theme_id' in req.body ? (theme_id ?? null) : undefined;
-  const actorName = resolvePlatformActor(req.superadminName);
+  const themeIdValue = 'theme_id' in body ? (theme_id ?? null) : undefined;
+  const actorName = resolvePlatformActor(req.superadminName ?? null);
 
   await db.query(
     `UPDATE gyms SET
@@ -364,16 +405,19 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
       themeIdValue ?? null,
       providerId ?? null,
       actorName,
-      req.params.id,
+      gymId,
     ],
   );
 
-  const { rows } = await db.query(
-    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
-    [req.params.id],
-  );
-  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
-  res.json(attachTheme(rows[0]));
+  const row = await loadPlatformGym(gymId);
+  recordAudit(req, { action: 'update', entityType: 'gym', entityId: gymId, previous: stripGymSecrets(existing[0]), next: row });
+  return { ok: true, id: gymId, row };
+}
+
+platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
+  const result = await updateGym(req, String(req.params.id), req.body ?? {});
+  if (!result.ok) return res.status(result.status).json(result.body);
+  res.json(result.row);
 });
 
 /** Kept for backwards compatibility — delegates to PUT logic. */

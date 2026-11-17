@@ -6267,6 +6267,7 @@
     "type_base_nutrition_goals": "Nutrition Goals",
     "type_base_nutrition_library": "Nutrition Library",
     "type_base_exercises": "Base Exercises",
+    "type_gyms": "Gyms",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",
