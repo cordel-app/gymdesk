@@ -1758,6 +1758,7 @@
     "expired": "Caducado",
     "pending": "Pendiente",
     "draft": "Borrador",
+    "in_cart": "En el carrito",
     "pending_payment": "Pendiente de pago",
     "deleted": "Eliminado",
     "completed": "Completado",

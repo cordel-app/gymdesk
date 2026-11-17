@@ -45,7 +45,7 @@ const MEMBER_PLAN_NAMES_SQL = `(SELECT GROUP_CONCAT(mp.name ORDER BY pa.assignme
           FROM plan_snapshots pa
           JOIN membership_plans mp ON mp.id = pa.membership_plan_id
          WHERE pa.member_id = m.id AND pa.gym_id = m.gym_id
-           AND pa.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')
+           AND pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'superseded')
            AND ${isCurrentAssignmentSnapshotSql('pa')})`;
 
 /**

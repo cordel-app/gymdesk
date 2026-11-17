@@ -41,7 +41,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // a Draft is for — they are added before the purchase is committed and they
 // show up in its Billing Event Forecast. They bill nothing while the assignment
 // is a Draft, because the nightly run reads `status = 'active'`.
-const ATTACHABLE_STATUSES = ['draft', 'active', 'paused'];
+const ATTACHABLE_STATUSES = ['in_cart', 'active', 'paused'];
 
 const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan for that period';
 

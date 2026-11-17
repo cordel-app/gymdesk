@@ -120,7 +120,7 @@ type Status = AssignmentStatus;
 // `PUT` reaches neither, for the reason above. A pending row is cancelled
 // through DELETE / close, as a Draft is.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
-  draft: ['pending_payment', 'active', 'cancelled'],
+  in_cart: ['pending_payment', 'active', 'cancelled'],
   pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
@@ -137,11 +137,11 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
  * `POST /membership-plans/:id/assign` all write it, and stage 2's Save & Pay is
  * what moves a row out of it.
  */
-export const ASSIGNMENT_CREATION_STATUS = 'draft';
+export const ASSIGNMENT_CREATION_STATUS = 'in_cart';
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancels_on_end_date', 'cancelled', 'superseded'] as const;
+const LIFECYCLE_STATUSES = ['in_cart', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancels_on_end_date', 'cancelled', 'superseded'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -229,7 +229,7 @@ export const LIFECYCLE_STATUS_SQL = `
   CASE
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
-    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
+    WHEN um.status IN ('in_cart', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -955,7 +955,7 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       `SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um WHERE um.id = ?`,
       [gymId, req.params.id],
     );
-    if (pre[0]?.status === 'draft') {
+    if (pre[0]?.status === 'in_cart') {
       return res.status(400).json({
         error: 'A Draft membership is activated through POST /user-memberships/:id/activate, '
           + 'which replaces the member\'s current plan.',
@@ -1603,13 +1603,13 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
         [req.params.id, gymId]);
       const um = rows[0];
       if (!um) return { kind: 'not_found' as const };
-      if (um.status === 'draft') return { kind: 'created' as const, id: Number(um.id), reused: true };
+      if (um.status === 'in_cart') return { kind: 'created' as const, id: Number(um.id), reused: true };
       if (!['active', 'paused'].includes(um.status)) return { kind: 'invalid' as const, status: String(um.status) };
       const active = await projectedSetFor(tx, gymId, Number(um.id));
       if (!active) return { kind: 'not_projected' as const };
       const { rows: owned } = await tx.query<any>(
         `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
-          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND um.status = 'draft' FOR UPDATE`,
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND um.status = 'in_cart' FOR UPDATE`,
         [gymId, active.owner_member_id]);
       if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
       // #2858: a plain Draft the owner already holds (their recurring products, cloned from this
@@ -1717,7 +1717,7 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // that is not activation. Closing one is also always warning-free, because
 // `computeUnusedValueWarnings()` reads the derived next billing date, which a
 // Draft never has.
-const CLOSEABLE_FROM: readonly Status[] = ['draft', 'pending_payment', 'active', 'paused'];
+const CLOSEABLE_FROM: readonly Status[] = ['in_cart', 'pending_payment', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4
@@ -1851,7 +1851,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // as ATTACHABLE_STATUSES in user-membership-services.ts.
 // #1108 §2: a Draft is *fully editable* — it is the pre-checkout configuration
 // state, so every section of its snapshot is writable until it is committed.
-const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'active', 'paused'];
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['in_cart', 'active', 'paused'];
 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
@@ -2041,7 +2041,7 @@ userMembershipsRouter.get('/:id/benefit-assignees', async (req, res, next) => {
     const { rows } = await db.query<{ id: number }>(
       `SELECT ${assignmentPlanSnapshotId('?', '?')} AS id`, [um.id, gymId]);
     const snapId = rows[0]?.id != null ? Number(rows[0].id) : null;
-    res.json({ editable: um.status === 'draft', eligible: await loadAssignmentAssigneeOptions(gymId, snapId) });
+    res.json({ editable: um.status === 'in_cart', eligible: await loadAssignmentAssigneeOptions(gymId, snapId) });
   } catch (err) { next(err); }
 });
 
@@ -2050,7 +2050,7 @@ userMembershipsRouter.put('/:id/benefit-assignees', requireModuleWrite('PAYMENTS
   try {
     const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
     if (!um) return res.status(404).json({ error: 'Membership not found' });
-    if (um.status !== 'draft') {
+    if (um.status !== 'in_cart') {
       return res.status(409).json({ error: 'not_a_draft', message: 'Family members are chosen per unit only before the plan is confirmed' });
     }
     const section = parseUnitSection(req.body?.section);
@@ -2098,7 +2098,7 @@ userMembershipsRouter.get('/:id/beneficiaries', async (req, res, next) => {
     if (!um) return res.status(404).json({ error: 'Membership not found' });
     const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
     if (!state) return res.status(404).json({ error: 'Membership not found' });
-    res.json({ editable: um.status === 'draft', ...state });
+    res.json({ editable: um.status === 'in_cart', ...state });
   } catch (err) { next(err); }
 });
 
@@ -2107,7 +2107,7 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
   try {
     const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
     if (!um) return res.status(404).json({ error: 'Membership not found' });
-    if (um.status !== 'draft') {
+    if (um.status !== 'in_cart') {
       return res.status(409).json({ error: 'not_a_draft', message: 'The beneficiaries are chosen only before the plan is confirmed' });
     }
     const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));

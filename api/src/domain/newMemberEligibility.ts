@@ -54,7 +54,7 @@ const LIVE_STATUSES = new Set(['active', 'paused']);
  * The pre-activation status (#1108 stage 1). A Draft is deliberately not in
  * `LIVE_STATUSES` and is also not "recent": see `countsAsRecentMembership()`.
  */
-const DRAFT_STATUS = 'draft';
+const DRAFT_STATUS = 'in_cart';
 /** #1108 stage 2: a row awaiting its first payment is a Draft that is locked — still nobody's plan. */
 const PENDING_PAYMENT_STATUS = 'pending_payment';
 

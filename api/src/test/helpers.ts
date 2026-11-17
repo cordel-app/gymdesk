@@ -330,7 +330,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
           'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
           `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
-           VALUES (?, ?, ?, 'draft', ?, 'admin', ?)`,
+           VALUES (?, ?, ?, 'in_cart', ?, 'admin', ?)`,
           [resolved.gym_id, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
         await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
         rows.push({ id: Number(insertId) });
@@ -796,7 +796,7 @@ export async function createTestDraftAssignment(
   const umId = await db.transaction(async (tx) => {
     const { insertId } = await tx.query(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?)`,
+       VALUES (?, ?, ?, ?, ?, 'in_cart', ?)`,
       [memberId, gymId, planId, startsAt, opts.endsAt ?? null, 'Test fixture'],
     );
     await createDraftSetForAssignment(tx, {

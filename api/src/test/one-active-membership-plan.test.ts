@@ -102,7 +102,7 @@ async function assignDraft(
     member_id: memberId, membership_plan_id: planId, starts_at: startsAt,
   }, gym);
   expect(created.status).toBe(201);
-  expect(created.body.status).toBe('draft');
+  expect(created.body.status).toBe('in_cart');
   return created.body.id as number;
 }
 
@@ -115,7 +115,7 @@ async function assignDraft(
 async function legacyDraft(memberId: number, planId: number, startsAt: string, gym = gymId): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, starts_at, status)
-     VALUES (?, ?, ?, ?, 'draft')`,
+     VALUES (?, ?, ?, ?, 'in_cart')`,
     [gym, memberId, planId, startsAt],
   );
   await legacyChildQuery(
@@ -185,7 +185,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     expect(live.ends_at).toBe('2026-12-31');
     expect(live.closed_at).toBeNull();
     // And the refused Draft is still a Draft, ready to be committed or discarded.
-    expect(rows.find((r: any) => r.id === draftId).status).toBe('draft');
+    expect(rows.find((r: any) => r.id === draftId).status).toBe('in_cart');
   });
 
   it('confirm: true cancels the current plan, dates it, and leaves the new one the only live row', async () => {
@@ -278,7 +278,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const rows = await assignmentsOf(memberId);
     expect(liveRows(rows)).toHaveLength(1);
     expect(rows.find((r: any) => r.id === liveId).status).toBe('active');
-    expect(rows.find((r: any) => r.id === draftId).status).toBe('draft');
+    expect(rows.find((r: any) => r.id === draftId).status).toBe('in_cart');
   });
 
   it('another gym\'s live plan for a same-named member is not a conflict (tenant isolation)', async () => {
@@ -330,7 +330,7 @@ describe('POST /user-memberships/:id/assign-new-plan — supersede shape', () =>
     expect(res.status).toBe(201);
     // #1108 stage 1: the successor is a Draft and the plan it replaces is still
     // running — the supersede is the commit's.
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect((await assignmentsOf(memberId)).find((r: any) => r.id === liveId).status).toBe('active');
 
     expect((await commit(res.body.id, { confirm: true })).status).toBe(200);

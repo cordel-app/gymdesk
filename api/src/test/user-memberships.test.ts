@@ -398,7 +398,7 @@ describe('POST /user-memberships', () => {
     expect(res.body.member_id).toBe(memberId);
     // #1108 §1: assigning a plan creates it as a Draft, not an active
     // membership. Committing it is `POST /:id/activate`'s own transition.
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.plan_member_limit).toBe('1');
 
     const { rows } = await legacyChildQuery(
@@ -512,7 +512,7 @@ describe('POST /user-memberships', () => {
     );
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ membership_plan_id: standardId, status: 'active' });
-    expect(rows[1]).toMatchObject({ membership_plan_id: premiumId, status: 'draft' });
+    expect(rows[1]).toMatchObject({ membership_plan_id: premiumId, status: 'in_cart' });
   });
 
   // ── #634 §2 — only Active + Public plans are assignable ──
@@ -1155,7 +1155,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.body.member_id).toBe(memberId);
     // #1108 stage 1: the successor is a Draft, and the plan it replaces keeps
     // running while it is configured — the replacement is what the Draft is for.
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.membership_plan_id).toBe(newPlanId);
     const { rows: stillLive } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
     expect(stillLive[0].status).toBe('active');
@@ -1203,7 +1203,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .set('x-gym-id', gymId)
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     // `paused` counts as the one plan (#956 Q2), so the commit still confirms.
     await activateAssignment(gymId, res.body.id, { confirm: true });
 
@@ -1223,7 +1223,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .set('x-gym-id', gymId)
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.membership_plan_id).toBe(newPlanId);
 
     // Nothing is live, so the commit needs no confirmation at all.
@@ -1757,11 +1757,11 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     expect(rows[0].status).toBe('active');
   });
 
-  it('rejects active -> draft as a transition rather than as an unknown status (#1108)', async () => {
-    // `draft` is a status the router knows again (migration 227), so the 400 is
+  it('rejects active -> in_cart as a transition rather than as an unknown status (#1108)', async () => {
+    // `in_cart` (`draft` until migration 435) is a status the router knows, so the 400 is
     // the transition table's and not the vocabulary's: nothing ever goes *back*
     // into a Draft, which is why it has no inbound edge.
-    const { res, umId } = await seedAndPut('active', 'draft');
+    const { res, umId } = await seedAndPut('active', 'in_cart');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Cannot transition/);
     const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
@@ -1839,7 +1839,7 @@ describe('retired pre-activation statuses (#786)', () => {
     const planId = await createPlan(gymId);
     const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, 'draft', CURDATE(), 29.99)`,
+       VALUES (?, ?, ?, 'in_cart', CURDATE(), 29.99)`,
       [gymId, memberId, planId],
     );
     expect(insertId).toBeGreaterThan(0);

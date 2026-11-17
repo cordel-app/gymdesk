@@ -43,7 +43,7 @@ describe('latestEnrollmentStatusSql', () => {
   });
 
   it('excludes a Draft and a plan awaiting payment', () => {
-    expect(flat('m')).toContain("pa.status NOT IN ('draft', 'pending_payment')");
+    expect(flat('m')).toContain("pa.status NOT IN ('in_cart', 'pending_payment')");
   });
 
   it('orders by the assignment\'s creation, then its id, and takes a single row', () => {

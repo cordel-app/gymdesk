@@ -305,7 +305,7 @@ export default function MembershipsPage() {
           <button onClick={() => setLedgerFor(m)} style={primaryBtnSmall()}>{t('memberships.ledger')}</button>
           <button onClick={() => setMembersFor(m)} style={btnSmall('#2f8f6f')}>{t('memberships.members')}</button>
           {/* #1863 — the API refuses a Promotion on a plan that is not a Draft's own. */}
-          {canWrite && (m.status as string) === 'draft' && <button onClick={() => setPromotionsFor(m)} style={btnSmall('#7d3cbd')}>{t('memberships.promotions')}</button>}
+          {canWrite && (m.status as string) === 'in_cart' && <button onClick={() => setPromotionsFor(m)} style={btnSmall('#7d3cbd')}>{t('memberships.promotions')}</button>}
           {canWrite && <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('memberships.edit')}</button>}
           {isAdmin && m.status !== 'cancelled' && (
             <button onClick={() => setCancelling(m)} style={btnSmall('#c0392b')}>{t('memberships.cancel_action')}</button>

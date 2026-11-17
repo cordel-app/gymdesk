@@ -86,7 +86,7 @@ export async function createDraft(tx: Tx, input: {
       // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
       await tx.query(
         `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-          WHERE ps.id = ? AND um.status = 'draft'`, [inFlight.id]);
+          WHERE ps.id = ? AND um.status = 'in_cart'`, [inFlight.id]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
@@ -230,7 +230,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
     const um = linked[0]?.user_membership_id;
-    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`, [um, gymId]);
+    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`, [um, gymId]);
     return { kind: 'cancelled' };
   }
   if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
@@ -296,7 +296,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
       WHERE id = ? AND status = 'pending_payment'`, [id]);
   await tx.query(
     `UPDATE user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
-        SET um.status = 'draft', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
+        SET um.status = 'in_cart', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
       WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
   await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'cancelled' };

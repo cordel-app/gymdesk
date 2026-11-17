@@ -47,20 +47,6 @@ const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]
 /** #2949 stage 2: the status of a Product Set in the member's cart (it was `draft`). */
 export const IN_CART_SET_STATUS = 'in_cart';
 
-/**
- * #2949 stage 2: the status a plan snapshot takes from its Product Set. A plan snapshot holds its
- * assignment's status (`ASSIGNMENT_STATUSES`), where an assignment in the cart is still `draft` until
- * stage 3 renames it, so a set's `in_cart` is written onto its plan snapshots as `draft`.
- */
-export function planSnapshotStatusForSet(setStatus: string): string {
-  return setStatus === IN_CART_SET_STATUS ? 'draft' : setStatus;
-}
-
-/** `planSnapshotStatusForSet()` in SQL, over a Product Set's status column. */
-export function planSnapshotStatusForSetSql(col: string): string {
-  return `IF(${col} = '${IN_CART_SET_STATUS}', 'draft', ${col})`;
-}
-
 export function isProductSetStatus(value: unknown): value is ProductSetStatus {
   return typeof value === 'string' && (PRODUCT_SET_STATUSES as readonly string[]).includes(value);
 }

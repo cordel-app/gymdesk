@@ -120,7 +120,7 @@ describe('ProductSet versioning (#1325)', () => {
       gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor }));
     if (draft.kind !== 'created') throw new Error('expected created');
     const { insertId: umId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'draft', ?)`,
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, owner, today()]);
     await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, draft.productSet.id]);
     const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));

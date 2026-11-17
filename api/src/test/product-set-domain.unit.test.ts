@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DRAFT_TTL_MINUTES, canCancelPending, canTransition, pendingCancellation, isDraftExpired, isInFlight, isProductSetStatus,
-  planSnapshotStatusForSet,
 } from '../domain/productSet';
 import {
   RESET_AUDIT_ENTITY_TYPES, RESET_CONFIRMATION, RESET_STEPS, blockingReferences, evaluateResetGuard,
@@ -47,10 +46,6 @@ describe('ProductSet lifecycle (#1325)', () => {
   it('stores a set in the cart as in_cart, and no longer accepts draft (#2949 stage 2)', () => {
     expect(isProductSetStatus('in_cart')).toBe(true);
     expect(isProductSetStatus('draft')).toBe(false);
-    // A plan snapshot holds its assignment's status, still `draft` in the cart until stage 3.
-    expect(planSnapshotStatusForSet('in_cart')).toBe('draft');
-    expect(planSnapshotStatusForSet('pending_payment')).toBe('pending_payment');
-    expect(planSnapshotStatusForSet('active')).toBe('active');
   });
 
   it('expires a Draft only after more than two hours of inactivity', () => {

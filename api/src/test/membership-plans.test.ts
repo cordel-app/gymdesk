@@ -1531,7 +1531,7 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(res.status).toBe(201);
     // #1108 §1: the Plans page's Assign creates a Draft like every other
     // assignment path; committing it is `POST /user-memberships/:id/activate`.
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.member_id).toBe(memberId);
     expect(res.body.membership_plan_id).toBe(planId);
     expect(Array.isArray(res.body.members)).toBe(true);
@@ -1546,7 +1546,7 @@ describe('POST /membership-plans/:id/assign', () => {
       [userMembershipId],
     );
     expect(umRows).toHaveLength(1);
-    expect(umRows[0].status).toBe('draft');
+    expect(umRows[0].status).toBe('in_cart');
     expect(umRows[0].member_id).toBe(memberId);
 
     const { rows: ummRows } = await legacyChildQuery(
@@ -1565,7 +1565,7 @@ describe('POST /membership-plans/:id/assign', () => {
     );
     expect(beRows).toHaveLength(1);
     const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
-    expect(parse(beRows[0].new_values)).toMatchObject({ status: 'draft', member_id: memberId });
+    expect(parse(beRows[0].new_values)).toMatchObject({ status: 'in_cart', member_id: memberId });
     expect(parse(beRows[0].previous_values).status).toBeNull();
   });
 
@@ -1628,7 +1628,7 @@ describe('POST /membership-plans/:id/assign', () => {
       .set('x-gym-id', gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
 
     const commit = await request
       .post(`/user-memberships/${res.body.id}/activate`)
