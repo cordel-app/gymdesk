@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey,
+  billingMode, cancelRequestFor, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -107,5 +107,31 @@ describe('#2860 checkout summary', () => {
     expect(lineReducedToZero({ discount: 500, amount: 0 })).toBe(true);
     expect(lineReducedToZero({ discount: 3, amount: 27 })).toBe(false);
     expect(lineReducedToZero({ discount: 0, amount: 0 })).toBe(false);
+  });
+});
+
+describe('#2965 the standalone cart', () => {
+  it('counts only in-cart purchases no Product Set carries', () => {
+    expect(standaloneCartCount([
+      { status: 'in_cart', cart_expires_at: '2026-11-17T14:00:00Z' },
+      { status: 'in_cart', cart_expires_at: null },
+      { status: 'pending_payment', cart_expires_at: null },
+    ])).toBe(1);
+  });
+  it('a Draft with no changes but standalone purchases still opens the review', () => {
+    const w = { current: set('in_cart'), review: { changes: [], amount_due: 15 }, pendingOneOffs: 0, cartPurchases: 1 };
+    expect(saveAndPayTarget(w)).toBe('review');
+    expect(saveAndPayEnabled({ ...w, canWrite: true })).toBe(true);
+  });
+  it('with no Draft the standalone cart is paid on its own', () => {
+    for (const current of [null, set('active'), set('in_cart', true)]) {
+      const w = { current, review: null, pendingOneOffs: 0, cartPurchases: 2 };
+      expect(saveAndPayTarget(w)).toBe('cart');
+      expect(saveAndPayEnabled({ ...w, canWrite: true })).toBe(true);
+      expect(saveAndPayEnabled({ ...w, canWrite: false })).toBe(false);
+    }
+  });
+  it('a version awaiting payment keeps its own review', () => {
+    expect(saveAndPayTarget({ current: set('pending_payment'), review: null, pendingOneOffs: 0, cartPurchases: 1 })).toBe('review');
   });
 });

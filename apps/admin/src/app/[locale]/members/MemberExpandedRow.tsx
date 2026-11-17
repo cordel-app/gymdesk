@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -34,7 +34,8 @@ import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
-import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
+import { billingMode, pendingOneOffCount, saveAndPayTarget, standaloneCartCount } from './productsWorkflowView';
+import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
@@ -225,8 +226,29 @@ export function MemberExpandedRow({
     current: configuration.current_product_set,
     review: draftReview,
     pendingOneOffs: pendingOneOffCount(purchasedProducts),
+    // #2965 — standalone one-time Products waiting in the cart: a Draft's Save & Pay pays them,
+    // and with no Draft they are a cart of their own with its own Summary.
+    cartPurchases: standaloneCartCount(purchasedProducts),
   };
+  const [cartPaymentLink, setCartPaymentLink] = useState<string | null>(null);
+  const [cartPaying, setCartPaying] = useState(false);
+  async function payStandaloneCart() {
+    setCartPaying(true);
+    try {
+      const out = await apiFetch<{ checkoutUrl: string }>(`/members/${memberId}/product-purchases/checkout`, {
+        method: 'POST', body: JSON.stringify({}),
+      });
+      setCartPaymentLink(out.checkoutUrl);
+      try { await navigator.clipboard?.writeText(out.checkoutUrl); } catch { /* shown on screen */ }
+      await reloadProducts();
+    } catch (err: any) {
+      toast(apiErrorMessage(err) ?? t('members.error_generic'));
+    } finally {
+      setCartPaying(false);
+    }
+  }
   const billingSectionMode = billingMode(workflow);
+  const inFlightSetsShown = (configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment');
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -580,8 +602,11 @@ export function MemberExpandedRow({
 
           {/* #1660 — Summary: the pending draft's additions and removals, last on
               the tab, with Save & Pay / Cancel directly beneath. */}
-          {(configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment') && (
+          {(inFlightSetsShown || saveAndPayTarget(workflow) === 'cart' || cartPaymentLink != null) && (
             <Section label={t('members.section_summary')}>
+              {!inFlightSetsShown && (
+                <StandaloneCartSummary memberId={memberId} reloadKey={purchasedProducts} paymentLink={cartPaymentLink} />
+              )}
               <ProductSetsInFlight
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
@@ -593,9 +618,11 @@ export function MemberExpandedRow({
                 workflow={workflow}
                 canWrite={canWriteMembers && canManagePackages}
                 onDiscarded={reloadConfiguration}
+                busy={cartPaying}
                 onSaveAndPay={() => {
                   const target = saveAndPayTarget(workflow);
                   if (target === 'review') setReviewOpen(true);
+                  else if (target === 'cart') void payStandaloneCart();
                   else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
                 }}
               />
