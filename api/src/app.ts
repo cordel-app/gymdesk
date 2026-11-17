@@ -88,6 +88,7 @@ import {
   exerciseGenderMediaUploadRateLimit,
 } from './api/exercise-gender-media';
 import { platformMusclesRouter } from './api/platform-muscles';
+import { platformTransferRouter } from './api/platform-transfer';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
@@ -304,6 +305,7 @@ app.use('/platform/nutrition-goals', requireAuth(), platformNutritionGoalsRouter
 app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
 app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
 app.use('/platform/muscles', requireAuth(), platformMusclesRouter);
+app.use('/platform/transfer', requireAuth(), platformTransferRouter);
 app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
 app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);

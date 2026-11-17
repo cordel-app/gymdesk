@@ -74,7 +74,8 @@
     "base_products": "Productes base",
     "base_professional_services": "Serveis professionals base",
     "jobs": "Tasques",
-    "tax_compliance": "Fiscalitat i compliment"
+    "tax_compliance": "Fiscalitat i compliment",
+    "transfer": "Exportar / Importar"
   },
   "dashboard": {
     "title": "Tauler",
@@ -1285,7 +1286,6 @@
     "details_name": "Nom",
     "details_description": "Descripció",
     "details_status": "Estat",
-    "details_slug": "Slug",
     "details_plan": "Pla",
     "details_theme": "Tema",
     "details_created_at": "Creat el",
@@ -6265,5 +6265,31 @@
     "event_credential_reference_created": "Credencial gestionada afegida",
     "event_credential_updated": "Credencial actualitzada",
     "event_credential_deleted": "Credencial eliminada"
+  },
+  "transfer": {
+    "title": "Exportar / Importar",
+    "intro": "Exporta els tipus d'entitat seleccionats a un fitxer ZIP (un fitxer JSON per entitat i les seves imatges) o importa un fitxer així. Cada entitat s'identifica pel seu slug: es crea si cap entitat no té aquest slug i s'actualitza si ja existeix. Una actualització substitueix el contingut i les imatges de l'entitat i mai no canvia les seves relacions amb altres entitats.",
+    "entity_types": "Tipus d'entitat",
+    "type_muscles": "Músculs",
+    "export": "Exportar",
+    "import": "Importar",
+    "choose_file": "Tria un fitxer ZIP…",
+    "no_file": "Cap fitxer seleccionat",
+    "import_hint": "La importació només llegeix del fitxer els tipus d'entitat seleccionats.",
+    "load_failed": "No s'han pogut carregar els tipus d'entitat.",
+    "exporting": "Exportant…",
+    "importing": "Important…",
+    "export_finished": "Exportació finalitzada",
+    "import_finished": "Importació finalitzada",
+    "summary_total": "{count, plural, one {# entitat processada} other {# entitats processades}}",
+    "summary_succeeded": "{count} correctes",
+    "summary_failed": "{count} amb error",
+    "image_failed": "imatge «{slot}»: {message}",
+    "unknown_error": "Error desconegut",
+    "archive_not_a_zip": "El fitxer no és un ZIP",
+    "archive_invalid_json": "El fitxer no és un JSON vàlid",
+    "archive_invalid_entity": "El fitxer no és una entitat exportada",
+    "archive_unsupported_version": "El fitxer es va exportar amb una versió de format no admesa",
+    "archive_missing_image": "Una imatge que indica no és al fitxer"
   }
 }

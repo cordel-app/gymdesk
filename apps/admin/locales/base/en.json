@@ -73,7 +73,8 @@
     "base_products": "Base Products",
     "base_professional_services": "Base Professional Services",
     "jobs": "Jobs",
-    "tax_compliance": "Tax & Compliance"
+    "tax_compliance": "Tax & Compliance",
+    "transfer": "Export / Import"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1284,7 +1285,6 @@
     "details_name": "Name",
     "details_description": "Description",
     "details_status": "Status",
-    "details_slug": "Slug",
     "details_plan": "Plan",
     "details_theme": "Theme",
     "details_created_at": "Created At",
@@ -6252,5 +6252,31 @@
     "event_credential_reference_created": "Managed credential added",
     "event_credential_updated": "Credential updated",
     "event_credential_deleted": "Credential deleted"
+  },
+  "transfer": {
+    "title": "Export / Import",
+    "intro": "Export the selected entity types to a ZIP archive (one JSON file per entity plus its images), or import such an archive. An entity is matched by its slug: it is created when no entity has that slug and updated when one does. An update replaces the entity's own content and images and never changes its relationships with other entities.",
+    "entity_types": "Entity types",
+    "type_muscles": "Muscles",
+    "export": "Export",
+    "import": "Import",
+    "choose_file": "Choose ZIP file…",
+    "no_file": "No file selected",
+    "import_hint": "Import reads only the selected entity types from the archive.",
+    "load_failed": "The entity types could not be loaded.",
+    "exporting": "Exporting…",
+    "importing": "Importing…",
+    "export_finished": "Export finished",
+    "import_finished": "Import finished",
+    "summary_total": "{count, plural, one {# entity processed} other {# entities processed}}",
+    "summary_succeeded": "{count} successful",
+    "summary_failed": "{count} failed",
+    "image_failed": "image “{slot}”: {message}",
+    "unknown_error": "Unknown error",
+    "archive_not_a_zip": "The file is not a ZIP archive",
+    "archive_invalid_json": "The file is not valid JSON",
+    "archive_invalid_entity": "The file is not an exported entity",
+    "archive_unsupported_version": "The file was exported in an unsupported format version",
+    "archive_missing_image": "An image it names is not in the archive"
   }
 }
