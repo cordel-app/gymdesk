@@ -10,7 +10,9 @@
  *
  * Guard: the migration refuses to run — dropping nothing — while any Product Set's `user_membership_id`
  * disagrees with the legacy assignment its anchor names (`plan_snapshots.source_user_membership_id` of
- * the snapshot at `plan_assignment_id`), because the column would then be the only record of a link the
+ * the snapshot at `plan_assignment_id`) — a column the FK set NULL because its assignment was
+ * hard-deleted excepted — or whose anchor belongs to another gym, because the column would then be the
+ * only record of a link the
  * readers no longer see. Inspect with `npm run plan-assignments:validate` (on the previous release, whose
  * `product_set_assignment_mismatch` check compares the two) and repair before deploying. Nothing is
  * repaired here: which side is right is a judgment, not a rule.
@@ -24,7 +26,12 @@ async function disagreeingSets(knex) {
            anc.source_user_membership_id AS anchor_user_membership_id
       FROM product_sets ps
       LEFT JOIN plan_snapshots anc ON anc.id = ps.plan_assignment_id
-     WHERE NOT (ps.user_membership_id <=> anc.source_user_membership_id)
+     WHERE (NOT (ps.user_membership_id <=> anc.source_user_membership_id)
+            -- the column's FK set it NULL when its assignment was hard-deleted; the anchor's
+            -- source has no FK and still names the deleted id: no link is lost.
+            AND NOT (ps.user_membership_id IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM user_memberships um WHERE um.id = anc.source_user_membership_id)))
+        OR (ps.plan_assignment_id IS NOT NULL AND anc.gym_id <> ps.gym_id)
      ORDER BY ps.id
      LIMIT 20`);
   return rows;
