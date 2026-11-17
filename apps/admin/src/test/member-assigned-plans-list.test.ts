@@ -118,10 +118,20 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
 describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
   it('offers Assign New Plan, Cancel Plan and Details on a live plan', () => {
     expect(sectionSrc).toContain("t('action_assign_new_plan')");
-    expect(sectionSrc).toContain("t('action_cancel_plan')");
+    expect(sectionSrc).toContain("t('action_cancel_live_plan')");
     expect(sectionSrc).toContain("label: t('action_details'), onClick: () => setDetailsPlanId(plan.id)");
     // Cancel is the destructive one, and red comes from the menu's own flag.
-    expect(sectionSrc).toMatch(/action_cancel_plan'\), onClick: \(\) => onCancelPlan\(plan\), danger: true/);
+    expect(sectionSrc).toMatch(/action_cancel_live_plan'\), onClick: \(\) => onCancelPlan\(plan\), danger: true/);
+  });
+
+  it('#2971: a Draft offers Delete and never Cancel; other statuses offer Cancel', () => {
+    expect(sectionSrc).toMatch(/plan\.status === 'in_cart'\s*\n\s*\? \[\{ label: t\('action_delete_draft_plan'\)/);
+    expect(sectionSrc).not.toContain("t('action_cancel_plan')");
+    for (const l of ['en', 'es', 'ca']) {
+      const msgs = JSON.parse(readFileSync(join(__dirname, '../../locales/base', `${l}.json`), 'utf8'));
+      expect(msgs.members.action_delete_draft_plan).toBeTruthy();
+      expect(msgs.members.action_cancel_live_plan).toBeTruthy();
+    }
   });
 
   it('gives a historical row Details and nothing else', () => {

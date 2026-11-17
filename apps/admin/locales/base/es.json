@@ -254,6 +254,8 @@
     "unsaved_changes": "Tienes cambios sin guardar. ¿Descartarlos?",
     "unsaved_discard": "Descartar cambios",
     "action_cancel_plan": "Cancelar plan",
+    "action_delete_draft_plan": "Eliminar",
+    "action_cancel_live_plan": "Cancelar",
     "action_assign_new_plan": "Asignar nuevo plan",
     "action_edit_plan": "Editar",
     "edit_plan_error": "No se pudo iniciar la edición del plan.",

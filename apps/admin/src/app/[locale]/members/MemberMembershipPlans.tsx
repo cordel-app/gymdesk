@@ -175,7 +175,7 @@ export function MemberMembershipPlans({
 
   /**
    * The Member card's own actions on one of its plans. `Assign New Plan` and
-   * `Cancel Plan` are the live plan's lifecycle actions, so a historical row
+   * `Delete` (a Draft) / `Cancel` (any other status) are the live plan's lifecycle actions, so a historical row
    * carries neither — "the exact available actions should follow the plan's
    * status". `Details` is every row's: reading what a past assignment was
    * agreed with is the whole point of keeping it.
@@ -200,9 +200,14 @@ export function MemberMembershipPlans({
           disabled: assignBusy,
           title: assignBusy ? t('assign_new_plan_busy_hint') : undefined,
         },
-        ...(plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
-          ? [{ label: t('action_cancel_plan'), onClick: () => onCancelPlan(plan), danger: true }]
-          : []),
+        // #2971: a Draft is still in the cart, so it is deleted (`DELETE
+        // /:id/draft`, the host's discard confirmation); every other status is
+        // cancelled through the existing cancellation workflow.
+        ...(plan.status === 'in_cart'
+          ? [{ label: t('action_delete_draft_plan'), onClick: () => onCancelPlan(plan), danger: true }]
+          : plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
+            ? [{ label: t('action_cancel_live_plan'), onClick: () => onCancelPlan(plan), danger: true }]
+            : []),
       ]
       : [];
     return [
