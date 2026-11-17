@@ -26,7 +26,7 @@ import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
-import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -632,7 +632,7 @@ export async function applyPromotionToMembership(
  */
 export async function assignmentBeingEdited(tx: Tx, productSetId: number): Promise<number | null> {
   const { rows } = await tx.query<any>(
-    `SELECT COALESCE(ps.user_membership_id, prev.user_membership_id) AS um
+    `SELECT COALESCE(${productSetLegacyAssignmentIdSql()}, ${productSetLegacyAssignmentIdSql('prev')}) AS um
        FROM product_sets ps LEFT JOIN product_sets prev ON prev.id = ps.previous_product_set_id
       WHERE ps.id = ?`, [productSetId]);
   return rows[0]?.um != null ? Number(rows[0].um) : null;

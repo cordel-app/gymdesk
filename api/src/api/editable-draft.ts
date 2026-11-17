@@ -1,4 +1,5 @@
 import type { Tx } from '../infra/db';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 
@@ -45,7 +46,7 @@ export async function lockEditableDraft(
   tx: Pick<Tx, 'query'>, gymId: string, ownerMemberId: number,
 ): Promise<{ id: number; user_membership_id: number | null; previous_product_set_id: number | null } | null> {
   const { rows } = await tx.query<any>(
-    `SELECT ps.id, ps.user_membership_id, ps.previous_product_set_id FROM product_sets ps
+    `SELECT ps.id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.previous_product_set_id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${editableDraftSql('ps')}
       FOR UPDATE`,
     [gymId, ownerMemberId]);

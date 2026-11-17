@@ -1084,3 +1084,29 @@ export async function createTestFamily(gymId: string, ownerId: number, otherIds:
   }
   return insertId;
 }
+
+/**
+ * #2125 M6b-42 — links a Product Set to a hand-inserted assignment the way the real writers do: the
+ * set's `user_membership_id` **and** its anchor `plan_assignment_id`, the lowest plan snapshot naming
+ * that assignment. When no snapshot names it yet, the set's own first plan snapshot is named (as the
+ * snapshot sync does for a Draft), else `snapshotTestAssignment()` gives it one.
+ */
+export async function linkTestSetToAssignment(productSetId: number, umId: number): Promise<void> {
+  const { rows: named } = await db.query<{ id: number }>(
+    'SELECT id FROM plan_snapshots WHERE source_user_membership_id = ? LIMIT 1', [umId]);
+  if (!named[0]) {
+    const { rows: own } = await db.query<{ id: number }>(
+      `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND s.source_user_membership_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
+    if (own[0]) {
+      await db.query('UPDATE plan_snapshots SET source_user_membership_id = ? WHERE id = ?', [umId, own[0].id]);
+    } else {
+      await snapshotTestAssignment(umId);
+    }
+  }
+  await db.query(
+    `UPDATE product_sets SET user_membership_id = ?,
+            plan_assignment_id = (SELECT MIN(a.id) FROM plan_snapshots a
+                                   WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
+      WHERE id = ?`, [umId, umId, productSetId]);
+}

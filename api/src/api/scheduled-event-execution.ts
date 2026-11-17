@@ -1,4 +1,5 @@
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { recordPaymentAttempt } from './payment-attempt';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
@@ -100,7 +101,7 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
 
   const { rows } = await tx.query<{ id: number; member_id: number; status: string }>(
     `SELECT um.id, um.member_id, um.status
-       FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id
+       FROM product_sets ps JOIN user_memberships um ON um.id = ${productSetLegacyAssignmentIdSql()} AND um.gym_id = ps.gym_id
       WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
     [event.product_set_id, event.gym_id],
   );
