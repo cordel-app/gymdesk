@@ -1270,8 +1270,19 @@ const memberOf = (item: BillableItem): { assigned_member_id?: number } =>
   (item.assignedMemberId != null ? { assigned_member_id: item.assignedMemberId } : {});
 
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
-  const cadence = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
-  if (!cadence) return null;
+  const base = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
+  if (!base) return null;
+  // #2964 — an included Product billed on the plan's own cadence bills on the plan's schedule: a
+  // plan joining the billing calendar mid-period charges it a prorated first stretch beside the
+  // fee's, then on the calendar's dates. Same join date and proration as `buildMembershipFeeStream()`.
+  const itemCadence = cadenceForFrequency(item.billingFrequency);
+  const onPlanCadence = itemCadence != null && a.recurringInterval != null && a.recurringUnit != null
+    && Number(itemCadence.interval) === Number(a.recurringInterval) && itemCadence.unit === a.recurringUnit;
+  const joinDate = a.alignTo && onPlanCadence ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
+  const proration = joinDate && itemCadence ? prorate(1, itemCadence, a.startsAt, joinDate) : null;
+  const cadence: Cadence = joinDate
+    ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
+    : base;
   const unit = round2(item.unitPrice);
   const regular = round2(unit * item.quantity);
   // The Plan's own treatment of the line. It applies to every occurrence for
@@ -1279,7 +1290,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
   // Benefit (#772) — it never sets `promotional`: a discount that never ends
   // *is* this contract's regular charge, and treating it as promotional would
   // push the horizon to the safety cap for every discounted item.
-  const base = applyLineBenefit(unit, item.quantity, item.benefit);
+  const lineBase = applyLineBenefit(unit, item.quantity, item.benefit);
   const planBenefitLines: SimulationBenefit[] = item.benefit.action === 'no_benefit' ? [] : [{
     source: 'membership_plan', name: null,
     action: item.benefit.action, value: item.benefit.value, period_status: null,
@@ -1297,8 +1308,12 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date, occurrence) => withLineDirectDiscount(
-      resolveCoveredCharge(coverage, base, planBenefitLines, date, occurrence), item.directDiscountPercent),
+    resolve: (date, occurrence) => {
+      const resolved = withLineDirectDiscount(
+        resolveCoveredCharge(coverage, lineBase, planBenefitLines, date, occurrence), item.directDiscountPercent);
+      if (!proration || occurrence !== 0) return resolved;
+      return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
+    },
     line: (date, resolved) => ({
       kind: 'product',
       label: item.name,
@@ -1312,6 +1327,8 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
       prepaid_periods: null,
+      ...(proration && date === a.startsAt
+        ? { proration: { prorated_days: proration.proratedDays, period_days: proration.periodDays } } : {}),
       ...memberOf(item),
     }),
   };

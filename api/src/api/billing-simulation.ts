@@ -82,6 +82,12 @@ interface AssignmentRow {
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
+  /**
+   * #2964 — the billing-calendar date the plan's schedule is anchored on (`ensureSchedule()`,
+   * #2125 M5c), NULL while the snapshot has none. Read so the forecast prorates the first
+   * stretch and bills on the calendar exactly as Save & Pay and the persisted events do.
+   */
+  schedule_anchor?: unknown;
   /** Resolved in SQL: the assignment's frozen cadence, else its Plan's live one. */
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
@@ -181,6 +187,7 @@ export async function loadSimulationAssignments(
             ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods, ${assignmentConfig('bonus_periods')} AS bonus_periods, ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
             ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action, ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
             p.name AS plan_name,
+            asch.anchor_date AS schedule_anchor,
             p.free_periods AS plan_free_periods,
             p.paid_periods AS plan_paid_periods,
             p.bonus_periods AS plan_bonus_periods,
@@ -196,6 +203,7 @@ export async function loadSimulationAssignments(
             ) AS has_billing_snapshot
      FROM ${GYM_ASSIGNMENT_ROWS_SQL} um${ASSIGNMENT_CONFIG_JOIN()}
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+     LEFT JOIN product_set_schedules asch ON asch.id = cfg.schedule_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
      WHERE ${scoped.sql}
@@ -258,6 +266,11 @@ export async function loadSimulationAssignments(
       // #2834 — the assignment's plan snapshot decides how many fees a cycle owes.
       membershipFeeUnits: Number(row.membership_fee_units ?? 1),
       membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
+      // #2964 — the alignment `loadProductSetSimulationAssignment()` gives the same plan, so the
+      // Assigned Plan card's forecast prorates the first stretch up to the billing calendar and
+      // then bills on it, as the persisted obligations and the Save & Pay charge do.
+      ...(row.schedule_anchor != null && toDateOnly(row.schedule_anchor) < startsAt
+        ? { alignTo: toDateOnly(row.schedule_anchor) } : {}),
     };
   }));
 }

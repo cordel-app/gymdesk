@@ -49,6 +49,13 @@ function dayOffset(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * #2964 — assignments start on the 1st of the current month, a date of the billing calendar, so
+ * the first period is a whole one; a start between calendar dates is prorated up to the next one
+ * (`billing-calendar-alignment.test.ts`), which is not what this file asserts.
+ */
+const PLAN_START = `${dayOffset(0).slice(0, 8)}01`;
+
 async function createMember(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
@@ -160,7 +167,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
     await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionsId, 10);
 
     const res = await assign(gymId, {
-      member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0),
+      member_id: memberId, membership_plan_id: planId, starts_at: PLAN_START,
     });
     expect(res.status).toBe(201);
   });
@@ -169,7 +176,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
     const res = await getSimulation(gymId, memberId);
     expect(res.status).toBe(200);
     const monthly = sectionOf(res.body, 'month');
-    expect(monthly.events[0].date).toBe(dayOffset(0));
+    expect(monthly.events[0].date).toBe(PLAN_START);
     const lines = firstEventLines(res.body, 'month');
     expect(Object.keys(lines)).toHaveLength(2);
     expect(lines[lockerName]).toMatchObject({ quantity: 1, unit_price: 20, regular_price: 20, actual_charge: 20 });
@@ -320,7 +327,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     await setBillingPolicy(gymId, planId, 1, 'month');
 
     const res = await assign(gymId, {
-      member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0),
+      member_id: memberId, membership_plan_id: planId, starts_at: PLAN_START,
     });
     expect(res.status).toBe(201);
 
@@ -328,7 +335,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     serviceItemId = await createProduct(gymId, { amount: 40, billingFrequency: 'month', name: serviceName });
     const attached = await request.post(`/user-memberships/${res.body.id}/services`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
-      .send({ product_id: serviceItemId, quantity: 2, starts_at: dayOffset(0) });
+      .send({ product_id: serviceItemId, quantity: 2, starts_at: PLAN_START });
     expect(attached.status).toBe(201);
   });
 
@@ -442,7 +449,7 @@ describe('tenant isolation', () => {
     const itemId = await createProduct(gymA, { amount: 25, billingFrequency: 'month' });
     await addPlanBenefit(gymA, 'membership_plan_periodical', planId, itemId, 1);
     const res = await assign(gymA, {
-      member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0),
+      member_id: memberId, membership_plan_id: planId, starts_at: PLAN_START,
     });
     expect(res.status).toBe(201);
 

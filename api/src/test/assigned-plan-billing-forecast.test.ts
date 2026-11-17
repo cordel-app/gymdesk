@@ -26,6 +26,7 @@ import {
   createTestMembership,
   request,
   activateAssignment,
+  proratedToNextFirst,
 } from './helpers';
 
 afterAll(async () => {
@@ -166,7 +167,8 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     for (const date of dates) expect(date >= TODAY()).toBe(true);
     // The first group is today's Membership Fee, at the agreed price.
     const fee = forecast.dates[0].lines.find((l: any) => l.kind === 'membership_fee');
-    expect(fee).toMatchObject({ actual_charge: 70, regular_price: 70, product_id: null });
+    // #2964: a start between billing-calendar dates is prorated up to the next one (the 1st).
+    expect(fee).toMatchObject({ actual_charge: proratedToNextFirst(70), regular_price: 70, product_id: null });
   });
 
   it('serves the same forecast on its own route', async () => {
@@ -187,7 +189,8 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     const forecast = await forecastOf(gymId, umId);
     const today = forecast.dates.find((g: any) => g.date === TODAY());
     expect(today.lines).toHaveLength(2);
-    expect(today.total).toBe(90);
+    // #2964: both lines bill on the plan's calendar, prorated up to the 1st.
+    expect(today.total).toBe(Math.round((proratedToNextFirst(70) + proratedToNextFirst(20)) * 100) / 100);
     expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'product']);
   });
 
