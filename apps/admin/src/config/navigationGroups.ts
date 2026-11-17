@@ -419,6 +419,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.jobs',
       },
       {
+        // #2952: export and import the platform catalogues as a ZIP, by slug.
+        href: '/{{locale}}/cordel/transfer',
+        labelKey: 'nav.transfer',
+      },
+      {
         href: '/{{locale}}/cordel/nutrition-library',
         labelKey: 'nav.base_nutrition_library',
         separatorAbove: true,
