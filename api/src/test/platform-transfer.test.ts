@@ -60,7 +60,7 @@ describe('Cordel → Export / Import (#2952)', () => {
   it('lists the transferable types', async () => {
     const res = await request.get('/platform/transfer/types').set(H);
     expect(res.status).toBe(200);
-    expect(res.body.types).toEqual(['muscles', 'payment_providers', 'base_payment_methods']);
+    expect(res.body.types).toEqual(['muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services']);
   });
 
   it('exports every muscle as a slug, its content and its image URLs', async () => {

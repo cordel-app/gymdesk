@@ -16,6 +16,7 @@ import {
   TransferAction,
   isTransferableObjectKey,
   BASE_PAYMENT_METHOD_TRANSFER_FIELDS,
+  BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS,
   PAYMENT_PROVIDER_TRANSFER_FIELDS,
   isValidEntitySlug,
   isValidMuscleSlug,
@@ -43,6 +44,13 @@ import {
   updateBasePaymentMethod,
 } from './platform-base-payment-methods';
 import { memberImageBodyParser } from './member-image-storage';
+import {
+  createBaseProfessionalService,
+  loadBaseProfessionalService,
+  storeBaseProfessionalServiceImage,
+  updateBaseProfessionalService,
+} from './platform-professional-services';
+import { attachTranslations } from './professional-service-translations';
 import { BASE_LOCALE } from '../infra/locale';
 
 /**
@@ -288,6 +296,85 @@ platformTransferRouter.post(
       const result = await storeBasePaymentMethodImage(req, existing!);
       if (!result.ok) return res.status(result.status).json(result.body);
       res.json({ entity: await loadBasePaymentMethod(found.id, BASE_LOCALE) });
+    } catch (err) { next(err); }
+  },
+);
+
+// ── Base Professional Services (stage 3) ────────────────────────────────────
+
+platformTransferRouter.get('/base_professional_services', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<any>(
+      `SELECT id, slug, name, description, max_capacity, min_participants, booking_type, image_url
+         FROM professional_services
+        WHERE gym_id IS NULL AND deleted_at IS NULL
+        ORDER BY slug ASC`,
+    );
+    const shaped = await attachTranslations(rows, BASE_LOCALE);
+    res.json({
+      type: 'base_professional_services',
+      entities: shaped.map((s) => ({
+        slug: s.slug,
+        data: {
+          name: s.name,
+          description: s.description,
+          max_capacity: s.max_capacity,
+          min_participants: s.min_participants,
+          booking_type: s.booking_type,
+          translations: s.translations,
+        },
+        images: { image: s.image_url ?? null },
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
+/** The Base catalogue is one slug scope (`gym_id IS NULL`, #2951 stage 4), deleted rows included. */
+async function findBaseProfessionalServiceBySlug(slug: string) {
+  const { rows } = await db.query<{ id: number; deleted_at: string | null }>(
+    'SELECT id, deleted_at FROM professional_services WHERE gym_id IS NULL AND slug = ?', [slug],
+  );
+  return rows[0] ?? null;
+}
+
+platformTransferRouter.post('/base_professional_services', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const found = await findBaseProfessionalServiceBySlug(slug);
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      action = 'updated';
+      const existing = await loadBaseProfessionalService(found.id, BASE_LOCALE);
+      result = await updateBaseProfessionalService(req, existing!, input);
+    } else {
+      action = 'created';
+      result = await createBaseProfessionalService(req, input, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200)
+      .json({ action, entity: await loadBaseProfessionalService(result.id, BASE_LOCALE) });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post(
+  '/base_professional_services/:slug/image/:slot',
+  requireSuperadmin,
+  transferImageLimiter,
+  memberImageBodyParser,
+  async (req, res, next) => {
+    try {
+      if (req.params.slot !== 'image') return res.status(400).json({ error: 'slot must be "image"' });
+      if (!isValidEntitySlug(req.params.slug)) return res.status(404).json({ error: 'Professional service not found' });
+      const found = await findBaseProfessionalServiceBySlug(req.params.slug);
+      if (!found || found.deleted_at) return res.status(404).json({ error: 'Professional service not found' });
+      const existing = await loadBaseProfessionalService(found.id, BASE_LOCALE);
+      const result = await storeBaseProfessionalServiceImage(req, existing!);
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.json({ entity: await loadBaseProfessionalService(found.id, BASE_LOCALE) });
     } catch (err) { next(err); }
   },
 );

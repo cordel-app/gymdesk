@@ -1,5 +1,5 @@
 import { DEFAULT_SERVICE_BOOKING_TYPE, parseServiceBookingType, type ServiceBookingType } from '../domain/serviceBookingType';
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { allocateProfessionalServiceSlug } from './entity-slugs';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -96,31 +96,56 @@ platformProfessionalServicesRouter.get('/:id', requireSuperadmin, async (req, re
   } catch (err) { next(err); }
 });
 
-platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res, next) => {
-  const body = req.body ?? {};
+/** What a write answered: the row's id, or the HTTP refusal a route returns as is. */
+export type BaseProfessionalServiceWriteResult =
+  | { ok: true; id: number }
+  | { ok: false; status: number; body: Record<string, unknown> };
+
+type AuditRequest = Request & { superadminName?: string | null };
+
+const DUPLICATE_NAME = { error: 'A professional service with this name already exists.' };
+const refuse = (status: number, body: Record<string, unknown>): BaseProfessionalServiceWriteResult =>
+  ({ ok: false, status, body });
+
+/** One Base service as the reads answer it. */
+export type BaseProfessionalService = NonNullable<Awaited<ReturnType<typeof loadOne>>>;
+
+/** Loads a Base service by id as the reads answer it (#2952's import). */
+export const loadBaseProfessionalService = loadOne;
+
+/**
+ * Creates a Base service. The route lets the slug be generated from the name;
+ * #2952's import passes the slug its archive carries, so an exported service
+ * keeps its identity in the database it is imported into.
+ */
+export async function createBaseProfessionalService(
+  req: AuditRequest,
+  body: Record<string, any>,
+  opts: { slug?: string } = {},
+): Promise<BaseProfessionalServiceWriteResult> {
   const name = parseBaseName(body.name);
-  if ('error' in name) return res.status(400).json({ error: name.error });
+  if ('error' in name) return refuse(400, { error: name.error });
   const description = parseBaseDescription(body.description);
-  if ('error' in description) return res.status(400).json({ error: description.error });
+  if ('error' in description) return refuse(400, { error: description.error });
   const capacity = parseMaxCapacity(body.max_capacity === undefined ? null : body.max_capacity);
-  if ('error' in capacity) return res.status(400).json({ error: capacity.error });
+  if ('error' in capacity) return refuse(400, { error: capacity.error });
   const minParticipants = parseMinParticipants(body.min_participants === undefined ? null : body.min_participants);
-  if ('error' in minParticipants) return res.status(400).json({ error: minParticipants.error });
+  if ('error' in minParticipants) return refuse(400, { error: minParticipants.error });
   const minVsCap = minParticipantsError(minParticipants.value, capacity.value);
-  if (minVsCap) return res.status(400).json({ error: minVsCap });
+  if (minVsCap) return refuse(400, { error: minVsCap });
   // #2664: required; a request that does not name it takes the default (no family restriction).
   const bookingType = body.booking_type === undefined
     ? { value: DEFAULT_SERVICE_BOOKING_TYPE }
     : parseServiceBookingType(body.booking_type);
-  if ('error' in bookingType) return res.status(400).json({ error: bookingType.error });
+  if ('error' in bookingType) return refuse(400, { error: bookingType.error });
   // #2441: English (the base name) is the only required language.
   const translations = body.translations === undefined ? { value: {} } : parsePsTranslations(body.translations, { requireAll: false });
-  if ('error' in translations) return res.status(400).json({ error: translations.error });
+  if ('error' in translations) return refuse(400, { error: translations.error });
 
-  const actor = resolvePlatformActor(req.superadminName);
+  const actor = resolvePlatformActor(req.superadminName ?? null);
   try {
     const id = await db.transaction(async (tx) => {
-      const slug = await allocateProfessionalServiceSlug(null, { name: name.value }, tx);
+      const slug = opts.slug ?? await allocateProfessionalServiceSlug(null, { name: name.value }, tx);
       const { insertId } = await tx.query(
         `INSERT INTO professional_services
            (gym_id, name, slug, description, is_system, system_key, max_capacity, min_participants, booking_type, created_by)
@@ -139,62 +164,66 @@ platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res,
     });
     const row = await loadOne(id, resolveLocale(req));
     recordAudit(req, { action: 'create', entityType: 'professional_service', entityId: String(id), entityName: name.value, next: row });
-    res.status(201).json(row);
+    return { ok: true, id };
   } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A professional service with this name already exists.' });
-    next(err);
+    if (err?.code === 'ER_DUP_ENTRY') return refuse(409, DUPLICATE_NAME);
+    throw err;
   }
-});
+}
 
-platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
-  const body = req.body ?? {};
+/**
+ * Writes a Base service's own content; a field the body does not name keeps
+ * what is stored. The slug never moves, and the image key carries the name, so
+ * a rename moves the image (#2010).
+ */
+export async function updateBaseProfessionalService(
+  req: AuditRequest,
+  existing: BaseProfessionalService,
+  body: Record<string, any>,
+): Promise<BaseProfessionalServiceWriteResult> {
+  let name = existing.name;
+  if (body.name !== undefined) {
+    const p = parseBaseName(body.name);
+    if ('error' in p) return refuse(400, { error: p.error });
+    name = p.value;
+  }
+  let description = existing.description;
+  if (body.description !== undefined) {
+    const p = parseBaseDescription(body.description);
+    if ('error' in p) return refuse(400, { error: p.error });
+    description = p.value;
+  }
+  let capacity = existing.max_capacity;
+  if (body.max_capacity !== undefined) {
+    const p = parseMaxCapacity(body.max_capacity);
+    if ('error' in p) return refuse(400, { error: p.error });
+    capacity = p.value;
+  }
+  let minParticipants = existing.min_participants;
+  if (body.min_participants !== undefined) {
+    const p = parseMinParticipants(body.min_participants);
+    if ('error' in p) return refuse(400, { error: p.error });
+    minParticipants = p.value;
+  }
+  const minVsCap = minParticipantsError(minParticipants, capacity);
+  if (minVsCap) return refuse(400, { error: minVsCap });
+  let bookingType = existing.booking_type;
+  if (body.booking_type !== undefined) {
+    const p = parseServiceBookingType(body.booking_type);
+    if ('error' in p) return refuse(400, { error: p.error });
+    bookingType = p.value;
+  }
+  let translations: BasePsTranslations | null = null;
+  let clearedLocales: string[] = [];
+  if (body.translations !== undefined) {
+    const p = parsePsTranslations(body.translations, { requireAll: false });
+    if ('error' in p) return refuse(400, { error: p.error });
+    translations = p.value;
+    clearedLocales = Object.keys(body.translations).filter((l) => !(l in p.value));
+  }
+
+  const actor = resolvePlatformActor(req.superadminName ?? null);
   try {
-    const locale = resolveLocale(req);
-    const existing = await loadOne(req.params.id, locale);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-
-    let name = existing.name;
-    if (body.name !== undefined) {
-      const p = parseBaseName(body.name);
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      name = p.value;
-    }
-    let description = existing.description;
-    if (body.description !== undefined) {
-      const p = parseBaseDescription(body.description);
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      description = p.value;
-    }
-    let capacity = existing.max_capacity;
-    if (body.max_capacity !== undefined) {
-      const p = parseMaxCapacity(body.max_capacity);
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      capacity = p.value;
-    }
-    let minParticipants = existing.min_participants;
-    if (body.min_participants !== undefined) {
-      const p = parseMinParticipants(body.min_participants);
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      minParticipants = p.value;
-    }
-    const minVsCap = minParticipantsError(minParticipants, capacity);
-    if (minVsCap) return res.status(400).json({ error: minVsCap });
-    let bookingType = existing.booking_type;
-    if (body.booking_type !== undefined) {
-      const p = parseServiceBookingType(body.booking_type);
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      bookingType = p.value;
-    }
-    let translations: BasePsTranslations | null = null;
-    let clearedLocales: string[] = [];
-    if (body.translations !== undefined) {
-      const p = parsePsTranslations(body.translations, { requireAll: false });
-      if ('error' in p) return res.status(400).json({ error: p.error });
-      translations = p.value;
-      clearedLocales = Object.keys(body.translations).filter((l) => !(l in p.value));
-    }
-
-    const actor = resolvePlatformActor(req.superadminName);
     await db.transaction(async (tx) => {
       await tx.query(
         `UPDATE professional_services
@@ -205,20 +234,61 @@ platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, re
       if (translations) await writeTranslations(tx, existing.id, translations);
       await deleteTranslations(tx, existing.id, clearedLocales);
     });
-    // #2010: the image key carries the service's name, so a rename moves it.
-    if (name !== existing.name && existing.image_url) {
-      await migrateProfessionalServiceImageOnRename(
-        { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
-        { id: existing.id, name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url },
-      );
-    }
-    const row = await loadOne(existing.id, locale);
-    recordAudit(req, { action: 'update', entityType: 'professional_service', entityId: String(existing.id), entityName: name, previous: existing, next: row });
-    res.json(row);
   } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A professional service with this name already exists.' });
-    next(err);
+    if (err?.code === 'ER_DUP_ENTRY') return refuse(409, DUPLICATE_NAME);
+    throw err;
   }
+  // #2010: the image key carries the service's name, so a rename moves it.
+  if (name !== existing.name && existing.image_url) {
+    await migrateProfessionalServiceImageOnRename(
+      { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
+      { id: existing.id, name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url },
+    );
+  }
+  const row = await loadOne(existing.id, resolveLocale(req));
+  recordAudit(req, { action: 'update', entityType: 'professional_service', entityId: String(existing.id), entityName: name, previous: existing, next: row });
+  return { ok: true, id: existing.id };
+}
+
+/**
+ * Processes the request's picture and stores it as the Base service's image
+ * (the editor's upload and #2952's import both write through this).
+ */
+export async function storeBaseProfessionalServiceImage(
+  req: AuditRequest,
+  service: { id: number; name: string; image_url: string | null; image_thumbnail_url: string | null },
+): Promise<BaseProfessionalServiceWriteResult> {
+  const parsed = await parseMemberImageRequest(req);
+  if (isMemberImageRefusal(parsed)) return refuse(parsed.status, parsed.body);
+  const stored = await storeProfessionalServiceImage({
+    scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT }, service, images: parsed,
+    modifiedBy: resolvePlatformActor(req.superadminName ?? null),
+  });
+  if (isMemberImageRefusal(stored)) return refuse(stored.status, stored.body);
+  recordAudit(req, {
+    action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
+    previous: { image_url: service.image_url }, next: { image_url: stored.image_url },
+  });
+  return { ok: true, id: service.id };
+}
+
+platformProfessionalServicesRouter.post('/', requireSuperadmin, async (req, res, next) => {
+  try {
+    const result = await createBaseProfessionalService(req, req.body ?? {});
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(201).json(await loadOne(result.id, resolveLocale(req)));
+  } catch (err) { next(err); }
+});
+
+platformProfessionalServicesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
+  try {
+    const locale = resolveLocale(req);
+    const existing = await loadOne(req.params.id, locale);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const result = await updateBaseProfessionalService(req, existing, req.body ?? {});
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.json(await loadOne(existing.id, locale));
+  } catch (err) { next(err); }
 });
 
 // ─── Image (#2010) ────────────────────────────────────────────────────────────
@@ -236,19 +306,10 @@ async function loadBaseForImage(req: any, res: any) {
 
 platformProfessionalServicesRouter.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = await parseMemberImageRequest(req);
-    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
     const service = await loadBaseForImage(req, res);
     if (!service) return;
-    const stored = await storeProfessionalServiceImage({
-      scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT }, service, images: parsed,
-      modifiedBy: resolvePlatformActor(req.superadminName),
-    });
-    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
-    recordAudit(req, {
-      action: 'update', entityType: 'professional_service', entityId: String(service.id), entityName: service.name,
-      previous: { image_url: service.image_url }, next: { image_url: stored.image_url },
-    });
+    const result = await storeBaseProfessionalServiceImage(req, service);
+    if (!result.ok) return res.status(result.status).json(result.body);
     res.json(await loadOne(service.id, resolveLocale(req)));
   } catch (err) { next(err); }
 });
