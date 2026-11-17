@@ -28,8 +28,10 @@ export async function loadDerivedBilling(gymId: string, assignmentIds: number[])
   if (ids.length === 0) return out;
 
   const { rows: sets } = await db.query<{ user_membership_id: number; owner_member_id: number }>(
-    `SELECT user_membership_id, owner_member_id FROM product_sets
-      WHERE gym_id = ? AND status = 'active' AND user_membership_id IN (${ids.map(() => '?').join(',')})`,
+    `SELECT anc.source_user_membership_id AS user_membership_id, ps.owner_member_id FROM product_sets ps
+       JOIN plan_snapshots anc ON anc.id = ps.plan_assignment_id AND anc.gym_id = ps.gym_id
+      WHERE ps.gym_id = ? AND ps.status = 'active'
+        AND anc.source_user_membership_id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids]);
   if (sets.length === 0) return out;
 

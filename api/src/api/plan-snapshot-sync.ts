@@ -9,6 +9,7 @@ import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { syncPlanAssignment } from './plan-assignment-sync';
 import { settleSharedPlanLifecycle } from './plan-assignment-lifecycle';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 const PROMOTION_PRODUCTS: Array<{ target: string; source: string }> = [
   { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
@@ -168,7 +169,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
  */
 export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number }>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?
+    `SELECT ps.id FROM product_sets ps WHERE ps.gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')}
      UNION
      SELECT p.id FROM product_sets p
        JOIN product_set_plan_snapshots j ON j.product_set_id = p.id

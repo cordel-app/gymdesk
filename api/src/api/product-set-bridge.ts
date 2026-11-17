@@ -21,7 +21,7 @@ import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { assignmentOfAnchorSql, assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -187,7 +187,7 @@ export async function importAssignmentAsProductSet(
   opts: { pending?: boolean; /** #1182: the plain-text actor of the commit; omitted = System. */ actor?: string | null } = {},
 ): Promise<number | null> {
   const { rows: linked } = await tx.query<any>(
-    'SELECT id, status FROM product_sets WHERE gym_id = ? AND user_membership_id = ? FOR UPDATE', [gymId, userMembershipId]);
+    `SELECT id, status FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} FOR UPDATE`, [gymId, userMembershipId]);
   if (linked.length > 0) {
     const set = linked[0];
     // #1325 PR 3e: a Draft assignment is created set-first, so its version is
@@ -235,7 +235,7 @@ export async function openInitialEventForAssignment(
        JOIN billing_events be ON be.product_set_id = ps.id AND be.gym_id = ps.gym_id
         AND be.event_type = 'payment_recorded'
         AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
-      WHERE ps.gym_id = ? AND ps.user_membership_id = ? AND ps.status = 'pending_payment'
+      WHERE ps.gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND ps.status = 'pending_payment'
       ORDER BY be.id DESC LIMIT 1`,
     [gymId, userMembershipId]);
   if (!rows[0]) return null;
@@ -255,7 +255,7 @@ export async function pendingSetIdForAssignment(
   exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
 ): Promise<number | null> {
   const { rows } = await exec.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'pending_payment'
+    `SELECT id FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'pending_payment'
       ORDER BY id DESC LIMIT 1`, [gymId, userMembershipId]);
   return rows[0] ? Number(rows[0].id) : null;
 }
@@ -265,7 +265,7 @@ export async function productSetIdForAssignment(
   exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
 ): Promise<number | null> {
   const { rows } = await exec.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('pending_payment','active')
+    `SELECT id FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status IN ('pending_payment','active')
       ORDER BY FIELD(status, 'pending_payment', 'active'), id DESC LIMIT 1`, [gymId, userMembershipId]);
     return rows[0] ? Number(rows[0].id) : null;
 }
@@ -293,8 +293,8 @@ export async function activeProductSetIdForMember(
  */
 export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows: sets } = await tx.query<any>(
-    `SELECT id, starts_at FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' LIMIT 1`, [gymId, userMembershipId]);
+    `SELECT id, starts_at FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'active' LIMIT 1`, [gymId, userMembershipId]);
   const set = sets[0];
   if (!set) return;
   const { rows: ev } = await tx.query<any>(
@@ -341,8 +341,8 @@ export type ReconfigureOutcome =
 /** The Active ProductSet an assignment is the projection of, if any. */
 export async function projectedSetFor(tx: Tx, gymId: string, userMembershipId: number): Promise<{ id: number; owner_member_id: number; membership_plan_id: number | null } | null> {
   const { rows } = await tx.query<any>(
-    `SELECT id, owner_member_id, membership_plan_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'active' FOR UPDATE`, [gymId, userMembershipId]);
+    `SELECT id, owner_member_id, membership_plan_id FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'active' FOR UPDATE`, [gymId, userMembershipId]);
   return rows[0] ? { id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id), membership_plan_id: rows[0].membership_plan_id != null ? Number(rows[0].membership_plan_id) : null } : null;
 }
 

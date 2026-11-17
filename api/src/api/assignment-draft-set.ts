@@ -9,6 +9,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { linkCancellingPlans } from './entitlement-plan-links';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -109,8 +110,8 @@ export async function linkedDraftSetFor(
   tx: Tx, gymId: string, userMembershipId: number,
 ): Promise<{ id: number; owner_member_id: number } | null> {
   const { rows } = await tx.query<{ id: number; owner_member_id: number }>(
-    `SELECT id, owner_member_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status = 'in_cart' FOR UPDATE`,
+    `SELECT id, owner_member_id FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'in_cart' FOR UPDATE`,
     [gymId, userMembershipId],
   );
   return rows[0] ? { id: Number(rows[0].id), owner_member_id: Number(rows[0].owner_member_id) } : null;
@@ -123,7 +124,7 @@ export async function linkedDraftSetFor(
  */
 export async function deleteLinkedDraftSet(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number }>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'in_cart'`,
+    `SELECT id FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status = 'in_cart'`,
     [gymId, userMembershipId],
   );
   for (const r of rows) await discardDraftSet(tx, gymId, Number(r.id));

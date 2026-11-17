@@ -18,6 +18,7 @@ import { assignmentPlanSnapshotId } from './assignment-config';
 import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { isPlanSnapshotShared, planSnapshotOfAssignment, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 export async function ownPlanSnapshot(
   tx: Tx, gymId: string, productSetId: number, planSnapshotId: number,
@@ -63,7 +64,7 @@ export async function ownAssignmentSnapshot(tx: Tx, gymId: string, userMembershi
     `SELECT j.product_set_id AS set_id, s.id
        FROM plan_snapshots s
        JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
-       JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = s.gym_id AND p.user_membership_id = ?
+       JOIN product_sets p ON p.id = j.product_set_id AND p.gym_id = s.gym_id AND ${productSetOfLegacyAssignmentSql('?', 'p')}
       WHERE s.id = ${assignmentPlanSnapshotId('?', '?')}
       ORDER BY p.id DESC LIMIT 1`,
     [userMembershipId, userMembershipId, gymId]);
