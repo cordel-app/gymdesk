@@ -6244,6 +6244,8 @@
     "intro": "Exporta los tipos de entidad seleccionados a un archivo ZIP (un archivo JSON por entidad y sus imágenes) o importa un archivo así. Cada entidad se identifica por su slug: se crea si ninguna entidad tiene ese slug y se actualiza si ya existe. Una actualización sustituye el contenido y las imágenes de la entidad y nunca cambia sus relaciones con otras entidades.",
     "entity_types": "Tipos de entidad",
     "type_muscles": "Músculos",
+    "type_payment_providers": "Proveedores de pago",
+    "type_base_payment_methods": "Métodos de pago",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Elegir archivo ZIP…",
