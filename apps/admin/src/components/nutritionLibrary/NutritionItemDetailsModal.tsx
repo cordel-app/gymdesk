@@ -46,6 +46,8 @@ export function NutritionItemDetailsModal({ item, scope = 'gym', onClose }: {
         {/* The full value, never the truncated one the list header may show (§10, §11). */}
         <Field label={t('label_name')} value={displayValue(item.display_name || item.name)} />
         <Field label={t('label_description')} value={displayValue(item.description)} wrap />
+        {/* #2951 §8: the persistent slug is read-only and shown here only — never on the card or in Edit. */}
+        <Field label={t('details_slug')} value={displayValue(item.slug)} />
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{t('section_audit')}</p>

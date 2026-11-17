@@ -4299,6 +4299,7 @@
     "assign_to_member": "Asignar plan a miembro"
   },
   "nutrition_library": {
+    "details_slug": "Slug",
     "show_deleted": "Mostrar eliminados",
     "delete": "Eliminar",
     "delete_confirm": "¿Eliminar \"{name}\"? Esta acción no se puede deshacer.",

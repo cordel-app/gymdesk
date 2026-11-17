@@ -34,7 +34,7 @@ export async function allocateGlobalSlug(
 /** The `[a-z0-9-]` slugs of `rows` matching `base` or `base-<n>`, for `nextAvailableSlug()`. */
 async function takenSlugs(
   exec: Pick<Tx, 'query'>,
-  table: 'base_exercises' | 'exercises' | GoalSlugTable | 'professional_services',
+  table: 'base_exercises' | 'exercises' | GoalSlugTable | 'professional_services' | FoodSlugTable,
   base: string,
   scope: { gymId: number | string } | null | 'base_rows',
   column: 'slug' | 'entity_slug' = 'slug',
@@ -127,4 +127,33 @@ export async function allocateProfessionalServiceSlug(
   const base = source.carried?.trim() || generateSlug(source.name, 'professional-service');
   const scope = gymId === null ? 'base_rows' as const : { gymId };
   return nextAvailableSlug(base, await takenSlugs(exec, 'professional_services', base, scope));
+}
+
+type FoodSlugTable = 'base_nutrition_library_items' | 'nutrition_library_items';
+
+/**
+ * #2951 stage 5: the slug a new Base Nutrition Library food is created with — from its name, unique
+ * among the Base foods (deleted ones included, so a slug is never reused; `base_nli_slug_unique` is
+ * the backstop).
+ */
+export async function allocateBaseFoodSlug(
+  name: string | null | undefined,
+  exec: Pick<Tx, 'query'> = db,
+): Promise<string> {
+  const base = generateSlug(name, 'food');
+  return nextAvailableSlug(base, await takenSlugs(exec, 'base_nutrition_library_items', base, null));
+}
+
+/**
+ * #2951 stage 5: the slug a new gym-owned food is created with — from its name, unique within that
+ * gym (deleted rows included; `nli_gym_slug_unique` is the backstop). A gym does not import Base
+ * foods (it reads them through the catalogue view), so there is no carried slug here.
+ */
+export async function allocateGymFoodSlug(
+  gymId: number | string,
+  name: string | null | undefined,
+  exec: Pick<Tx, 'query'> = db,
+): Promise<string> {
+  const base = generateSlug(name, 'food');
+  return nextAvailableSlug(base, await takenSlugs(exec, 'nutrition_library_items', base, { gymId }));
 }
