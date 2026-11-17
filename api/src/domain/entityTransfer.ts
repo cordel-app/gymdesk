@@ -17,7 +17,9 @@ import { parseMuscleTranslations } from './muscleTranslations';
  * `GET /platform/transfer/types` answers, so a type that cannot be moved yet is
  * absent rather than offered and broken.
  */
-export const TRANSFER_ENTITY_TYPES = ['muscles', 'payment_providers', 'base_payment_methods'] as const;
+export const TRANSFER_ENTITY_TYPES = [
+  'muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services',
+] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
 /** The image slots each type carries, in the order an archive lists them. */
@@ -25,6 +27,7 @@ export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]>
   muscles: MUSCLE_SEXES,
   payment_providers: [],
   base_payment_methods: ['image'],
+  base_professional_services: ['image'],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -132,3 +135,12 @@ export function parseSlugTransferRecord(
   for (const field of fields) if (b[field] !== undefined) input[field] = b[field];
   return { record: { slug: b.slug, input } };
 }
+
+/**
+ * The fields of a Base Professional Service an archive carries: its own content.
+ * Never `is_system`, `system_key` or a gym's availability row
+ * (`gym_professional_services`), which are the platform's and each gym's own.
+ */
+export const BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS = [
+  'name', 'description', 'max_capacity', 'min_participants', 'booking_type', 'translations',
+] as const;

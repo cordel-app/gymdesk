@@ -6273,6 +6273,7 @@
     "type_muscles": "Músculs",
     "type_payment_providers": "Proveïdors de pagament",
     "type_base_payment_methods": "Mètodes de pagament",
+    "type_base_professional_services": "Serveis professionals",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Tria un fitxer ZIP…",

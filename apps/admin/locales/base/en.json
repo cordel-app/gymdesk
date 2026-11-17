@@ -6260,6 +6260,7 @@
     "type_muscles": "Muscles",
     "type_payment_providers": "Payment Providers",
     "type_base_payment_methods": "Payment Methods",
+    "type_base_professional_services": "Professional Services",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",

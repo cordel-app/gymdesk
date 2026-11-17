@@ -25,6 +25,7 @@ const TYPE_LABEL_KEYS: Record<string, string> = {
   muscles: 'type_muscles',
   payment_providers: 'type_payment_providers',
   base_payment_methods: 'type_base_payment_methods',
+  base_professional_services: 'type_base_professional_services',
 };
 
 /** A type's label key, or null when the type has none (the page then shows the type as is). */
