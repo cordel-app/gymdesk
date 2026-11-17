@@ -374,6 +374,25 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
 }
 
 /** Hints, errors, confirmations and actions: everything that is not a cell (#2810: the Promotions are the Product cell's). */
+// #3020 — the quantity input of an edited row, kept here so the read-only card file holds no `<input`.
+export function EditQuantityField({ form: f, label }: { form: AddProductForm; label: string }) {
+  return (
+    <>
+      <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{label}</label>{' '}
+      <input
+        id="edit-product-quantity"
+        type="number"
+        min={1}
+        max={999}
+        style={{ ...formControlStyle, width: 80 }}
+        value={f.quantity}
+        disabled={f.busy}
+        onChange={(e) => f.setQuantity(e.target.value)}
+      />
+    </>
+  );
+}
+
 export function AddProductDetails({ form: f }: { form: AddProductForm }) {
   const { t, tFreq, quote, outcome, error, requiredProducts, requiredPending } = f;
   return (

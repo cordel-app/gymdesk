@@ -52,8 +52,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductDetails, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
-import { formControlStyle } from '@/components/formChrome';
+import { AddProductDetails, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
@@ -369,19 +368,8 @@ export function MemberPurchasedProducts({
       product: (
         <div style={{ minWidth: 0 }}>
           {c.product}
-          <div style={{ marginTop: 8 }}>
-            <label style={cardMutedTextStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>{' '}
-            <input
-              id="edit-product-quantity"
-              type="number"
-              min={1}
-              max={999}
-              style={{ ...formControlStyle, width: 80 }}
-              value={editForm.quantity}
-              disabled={editForm.busy}
-              onChange={(e) => editForm.setQuantity(e.target.value)}
-              data-edit-product-quantity
-            />
+          <div style={{ marginTop: 8 }} data-edit-product-quantity>
+            <EditQuantityField form={editForm} label={t('draft_line_quantity')} />
           </div>
         </div>
       ),
