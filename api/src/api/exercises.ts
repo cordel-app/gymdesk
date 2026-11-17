@@ -1,3 +1,4 @@
+import { allocateGymExerciseSlug } from './entity-slugs';
 import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { parseExerciseEquipmentInput } from '../domain/exerciseEquipment';
 import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
@@ -466,12 +467,13 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     }
     const actor = resolveRequestActor(getTenantContext(req));
     const insertId = await db.transaction(async (tx) => {
+      const slug = await allocateGymExerciseSlug(gymId, { name: name.trim() }, tx);
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, short_description, category, equipment,
+          (gym_id, name, slug, description, short_description, category, equipment,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, name.trim(), slug, description ?? null, shortDescription.value, categoryInput.value, equipmentInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active', actor],
       );
@@ -613,18 +615,20 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
     const copyName = `${src.name} (Copy)`;
 
     const insertId = await db.transaction(async (tx) => {
+      // #2951: a duplicate is a new exercise, slugged from its own name.
+      const slug = await allocateGymExerciseSlug(gymId, { name: copyName }, tx);
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description,
+          (gym_id, name, slug, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
         // #719: both copies point at the *same* objects (a thumbnail or preview
         // is derived from its master's URL, so it travels with it) — nothing is duplicated in R2 — which is
         // why removing one exercise's media only deletes an object when no
         // other exercise still references it (`isMediaStillReferenced()`).
-        [gymId, copyName, src.description,
+        [gymId, copyName, slug, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor],
@@ -669,17 +673,19 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
     const copyName = `${src.name} (Copy)`;
 
     const insertId = await db.transaction(async (tx) => {
+      // #2951 §6: the copy carries the Base Exercise's slug, not one from its "(Copy)" name.
+      const slug = await allocateGymExerciseSlug(gymId, { name: src.name, carried: src.slug }, tx);
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description,
+          (gym_id, name, slug, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by, cloned_from_id, base_exercise_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?))`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?))`,
         // #719 §2: the copy takes the Base Exercise's media *references*, not
         // its bytes — no System object is duplicated into the gym's folder, and
         // the copy owns the references from here on (§3's snapshot rule).
-        [gymId, copyName, src.description,
+        [gymId, copyName, slug, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor, id],
@@ -927,15 +933,17 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           });
           continue;
         }
+        // #2951 §6: the imported copy keeps the Base Exercise's slug.
+        const slug = await allocateGymExerciseSlug(gymId, { name: src.name, carried: src.slug }, tx);
         const { insertId } = await tx.query(
           `INSERT INTO exercises
-            (gym_id, name, description,
+            (gym_id, name, slug, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
              status, created_by, cloned_from_id, base_exercise_id, category, equipment)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
-          [gymId, src.name, src.description,
+          [gymId, src.name, slug, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
            actor, id, src.category ?? null, src.equipment ?? null],

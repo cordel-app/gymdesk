@@ -2504,6 +2504,7 @@
     "detail_deleted_at": "Eliminado el",
     "section_audit": "Auditoría",
     "detail_exercise_id": "ID del ejercicio",
+    "details_slug": "Slug",
     "close": "Cerrar",
     "section_general": "General",
     "section_configuration": "Configuración",
