@@ -21,7 +21,7 @@ import { DraftExpiryIndicator } from './DraftExpiryIndicator';
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
   const { apiFetch } = useApiClient();
   const [review, setReview] = useState<ReviewSummary | null>(null);
-  const id = current?.status === 'draft' && !current.expired ? current.id : null;
+  const id = current?.status === 'in_cart' && !current.expired ? current.id : null;
   useEffect(() => {
     if (id == null) { setReview(null); return; }
     let cancelled = false;
@@ -71,7 +71,7 @@ export function ProductsWorkflowBar({
       ) : (
         <StatusBadge status="none" label={t('ps_status_none')} />
       )}
-      {!loading && !error && current?.status === 'draft' && !current.expired && (
+      {!loading && !error && current?.status === 'in_cart' && !current.expired && (
         <DraftExpiryIndicator seconds={current.expires_in_seconds} onExpire={onDraftExpired} />
       )}
     </div>

@@ -116,7 +116,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
       `SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j WHERE j.product_set_id IN (?, ?) ORDER BY j.product_set_id`, [v1, draft]);
     expect(links).toHaveLength(2);
     expect(Number(links[0].plan_snapshot_id)).toBe(Number(links[1].plan_snapshot_id));
-    expect(await statusOf('product_sets', draft)).toBe('draft');
+    expect(await statusOf('product_sets', draft)).toBe('in_cart');
 
     await db.transaction(async (tx) => {
       expect((await cancelInFlight(tx, gymId, draft)).kind).toBe('cancelled');

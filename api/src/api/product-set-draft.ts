@@ -58,13 +58,13 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<LockedDraft | DraftRefusal> {
   const { rows } = await tx.query<any>(
     `SELECT id, gym_id, owner_member_id, previous_product_set_id, membership_plan_id, starts_at, status,
-            (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired
+            (status = 'in_cart' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
   );
   const r = rows[0];
   if (!r) return { kind: 'not_found' };
-  if (r.status !== 'draft') return { kind: 'not_a_draft', status: String(r.status) };
+  if (r.status !== 'in_cart') return { kind: 'not_a_draft', status: String(r.status) };
   if (Number(r.expired) === 1) return { kind: 'expired' };
   // #2125 M4b-2: locking copies nothing. A plan snapshot another set shares stays shared until a writer
   // edits that plan, which owns it (`ownPlanSnapshot()`) right before its write — so a Draft that reuses

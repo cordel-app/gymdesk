@@ -102,7 +102,7 @@ export function MemberRecurringProducts({
 
   /** The Draft every edit goes to: the member's own, created on the first edit. */
   async function ensureDraft(): Promise<number> {
-    if (current?.status === 'draft' && !current.expired) return current.id;
+    if (current?.status === 'in_cart' && !current.expired) return current.id;
     const res = await apiFetch<{ id: number }>('/product-sets/draft', {
       method: 'POST', body: JSON.stringify({ member_id: memberId }),
     });

@@ -127,7 +127,7 @@ describe('one-time Products in the member cart', () => {
     await cancelAbandonedPurchases();
     expect(await purchaseStatus(oneOffId)).toBe('pending_payment');
     expect((await db.transaction((tx) => returnPendingToDraft(tx, gymId, id))).kind).toBe('cancelled');
-    expect(await setStatus(id)).toBe('draft');
+    expect(await setStatus(id)).toBe('in_cart');
     expect(await purchaseStatus(oneOffId)).toBe('in_cart');
 
     // Paid on the second try: the purchases become the member's with the set.

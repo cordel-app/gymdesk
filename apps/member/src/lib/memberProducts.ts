@@ -522,7 +522,7 @@ export interface MemberSetRow {
  * in-flight version, else the active one). A superseded version is history and
  * is never selected (#2663 Scenario E: no arbitrary fallback).
  */
-export const SELECTABLE_SET_STATUSES = ['draft', 'pending_payment', 'active'] as const;
+export const SELECTABLE_SET_STATUSES = ['in_cart', 'pending_payment', 'active'] as const;
 
 /**
  * #2663 — the one Product Set the *My Plans* and *My Products* sections both
@@ -613,7 +613,7 @@ export type DraftProductState =
 export function draftProductState(product: Pick<MemberProduct, 'id'>, view: MemberSetView | null): DraftProductState {
   if (!view) return { state: 'none' };
   const lines = view.lines.filter((l) => Number(l.product_id) === product.id);
-  const added = view.status === 'draft' ? lines.find((l) => l.change === 'added') : undefined;
+  const added = view.status === 'in_cart' ? lines.find((l) => l.change === 'added') : undefined;
   if (added) return { state: 'added', lineId: Number(added.id) };
   if (lines.length > 0) return { state: 'held' };
   return { state: 'none' };
@@ -626,7 +626,7 @@ export function showsAddToDraft(product: MemberProduct, view: MemberSetView | nu
 
 /** The lines and the plan this Draft added (what the selection notice counts); 0 outside a Draft. */
 export function draftAddedCount(view: MemberSetView | null): number {
-  if (!view || view.status !== 'draft') return 0;
+  if (!view || view.status !== 'in_cart') return 0;
   return view.lines.filter((l) => l.change === 'added').length
     + (view.plans ?? []).filter((p) => p.change === 'added').length;
 }
@@ -647,7 +647,7 @@ export type DraftPlanState =
   | { state: 'no_draft' };
 
 export function draftPlanState(planId: number, view: MemberSetView | null): DraftPlanState {
-  if (!view || view.status !== 'draft') return { state: 'no_draft' };
+  if (!view || view.status !== 'in_cart') return { state: 'no_draft' };
   const plans = view.plans ?? [];
   const added = plans.find((p) => p.change === 'added' && Number(p.membership_plan_id) === planId);
   if (added) return { state: 'added', planSnapshotId: Number(added.plan_snapshot_id) };
@@ -739,7 +739,7 @@ export type SetCommitAction = 'save_and_pay' | 'activate';
  * decided here.
  */
 export function setCommitAction(review: MemberSetReview | null): SetCommitAction | null {
-  if (!review || review.status !== 'draft' || review.error || review.amount_due == null) return null;
+  if (!review || review.status !== 'in_cart' || review.error || review.amount_due == null) return null;
   const { contracted, cancelled } = reviewSections(review);
   if (contracted.length + cancelled.length === 0) return null;
   return review.payment_required ? 'save_and_pay' : 'activate';

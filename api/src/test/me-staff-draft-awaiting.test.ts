@@ -70,7 +70,7 @@ describe('#2895 a staff assignment Draft in the Members App', () => {
     const m = await memberWithStaffDraft();
     const res = await as(m.clerk, 'get', `/me/product-sets/${m.setId}`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.awaiting_staff_setup).toBe(true);
     expect(res.body.cart.plans).toBe(1);
   });
@@ -86,7 +86,7 @@ describe('#2895 a staff assignment Draft in the Members App', () => {
       expect(res.status, path).toBe(409);
       expect(res.body.error, path).toBe('awaiting_staff_setup');
     }
-    expect(await setStatus(m.setId)).toBe('draft');
+    expect(await setStatus(m.setId)).toBe('in_cart');
     const { rows } = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ? AND member_id = ?', [gymId, m.id]);
     expect(Number(rows[0].n)).toBe(0);
   });

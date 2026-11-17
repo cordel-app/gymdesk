@@ -132,8 +132,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ps.user_membership_id, ps.membership_plan_id,
-            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'draft'
+            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name,
             (SELECT be.amount FROM billing_events be
@@ -141,7 +141,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
               ORDER BY be.id DESC LIMIT 1) AS amount_due
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('draft', 'pending_payment')
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('in_cart', 'pending_payment')
       ORDER BY ps.id DESC`,
     [gymId, memberId],
   );
@@ -172,8 +172,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const { rows: setRows } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
-            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'draft'
+            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps

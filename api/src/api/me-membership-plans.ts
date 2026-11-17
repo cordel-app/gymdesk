@@ -304,8 +304,8 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // payment already in flight blocks a second purchase (stage 4's shared Draft
     // takes a plan through `POST /me/product-sets/:id/plans` instead).
     const { rows: inFlight } = await db.query<{ id: number; status: string; user_membership_id: number | null }>(
-      `SELECT id, status, user_membership_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')
-        AND NOT (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
+      `SELECT id, status, user_membership_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
+        AND NOT (status = 'in_cart' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
       [gymId, memberId],
     );
     if (inFlight[0]) {
@@ -356,7 +356,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // reported is the initial charge that commit will take (`initialCharge()`,
     // the same engine), so the member sees it before paying.
     const charge = await initialCharge(gymId, setId, startsAt);
-    const status = 'draft';
+    const status = 'in_cart';
 
     const { rows: planNameRows } = await db.query<{ name: string }>(
       'SELECT name FROM membership_plans WHERE id = ?', [planId]);

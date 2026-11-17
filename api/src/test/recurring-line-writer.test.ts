@@ -80,7 +80,7 @@ describe('recurring line writer (#2126 stage 5c)', () => {
     expect(snap.origin).toBe('admin');
     expect(Number(snap.assigned_member_id)).toBe(owner);
     expect(Number(snap.product_set_id)).toBe(setId);
-    expect(snap.status).toBe('draft');
+    expect(snap.status).toBe('in_cart');
     expect(Number(snap.member_id)).toBe(owner);
     expect(await linked(setId)).toEqual([lineId]);
 

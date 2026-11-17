@@ -428,7 +428,7 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
       `SELECT s.product_id FROM product_sets ps
          JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
          JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
-        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft' AND s.source_id = ?`,
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND s.source_id = ?`,
       [gymId, memberId, lineId]);
     if (!lineRows[0]) return res.status(404).json({ error: 'Draft line not found' });
     const productId = Number(lineRows[0].product_id);
@@ -499,7 +499,7 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
     try {
       draftId = await db.transaction(async (tx) => {
         const { rows } = await tx.query<any>(
-          `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'
+          `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'
             ORDER BY id DESC LIMIT 1`, [gymId, memberId]);
         if (!rows[0]) throw new Refused({ kind: 'no_draft' });
         const locked = await lockDraft(tx, gymId, Number(rows[0].id));

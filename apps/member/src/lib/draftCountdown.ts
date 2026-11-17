@@ -45,5 +45,5 @@ export function showsDraftExactTime(seconds: number): boolean {
  * expired Draft"); the server refuses its writes with `410 draft_expired` anyway.
  */
 export function isExpiredDraft(view: { status: string; expires_in_seconds?: number | null } | null): boolean {
-  return view?.status === 'draft' && view.expires_in_seconds != null && Number(view.expires_in_seconds) <= 0;
+  return view?.status === 'in_cart' && view.expires_in_seconds != null && Number(view.expires_in_seconds) <= 0;
 }

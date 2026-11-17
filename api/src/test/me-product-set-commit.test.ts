@@ -132,7 +132,7 @@ describe('POST /me/product-sets/:id/save-and-pay', () => {
     expect((await as(other.clerk, 'post', `/${id}/save-and-pay`).send({})).status).toBe(404);
     expect((await as(other.clerk, 'post', `/${id}/activate`).send({})).status).toBe(404);
     const { rows } = await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id]);
-    expect(rows[0].status).toBe('draft');
+    expect(rows[0].status).toBe('in_cart');
     expect(await count('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [id])).toBe(0);
   });
 

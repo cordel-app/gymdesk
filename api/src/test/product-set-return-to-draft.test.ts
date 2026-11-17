@@ -89,7 +89,7 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     const del = await auth(request.delete(`/product-sets/${p.id}`));
     expect(del.status).toBe(204);
     const { rows } = await db.query<any>('SELECT status, membership_plan_id, payment_request_id FROM product_sets WHERE id = ?', [p.id]);
-    expect(rows[0].status).toBe('draft');
+    expect(rows[0].status).toBe('in_cart');
     expect(Number(rows[0].membership_plan_id)).toBe(p.planId);
     expect(rows[0].payment_request_id).toBeNull();
     expect(await eventCount(p.id)).toBe(0);
@@ -129,7 +129,7 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     await db.query(`UPDATE payment_requests SET status = 'failed' WHERE id = ?`, [failed.requestId]);
     expect(await expirePendingPayments()).toBeGreaterThanOrEqual(1);
     const st = async (id: number) => (await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id])).rows[0].status;
-    expect(await st(expired.id)).toBe('draft');
+    expect(await st(expired.id)).toBe('in_cart');
     expect(await eventCount(expired.id)).toBe(0);
     expect(await st(failed.id)).toBe('pending_payment');
   });
@@ -151,7 +151,7 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     await db.query(`UPDATE product_sets SET pending_at = UTC_TIMESTAMP() - INTERVAL 90 MINUTE WHERE id = ?`, [early.id]);
     await expirePendingPayments();
     const st = async (id: number) => (await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id])).rows[0].status;
-    expect(await st(late.id)).toBe('draft');
+    expect(await st(late.id)).toBe('in_cart');
     expect(await eventCount(late.id)).toBe(0);
     expect(await st(early.id)).toBe('pending_payment');
   });

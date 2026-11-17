@@ -27,9 +27,10 @@ export function productLineStatus(input: {
   /** Today's date (YYYY-MM-DD), in the same calendar as the two dates above. */
   today: string;
 }): ProductLineStatus {
-  if (input.change === 'added' && (input.setStatus === 'draft' || input.setStatus === 'pending_payment')) {
-    return input.setStatus;
-  }
+  // #2949 stage 2: a set in the cart is `in_cart`; the line keeps reading `draft`, the word a plan
+  // in the cart still reads until the assignments are renamed (stage 3).
+  if (input.change === 'added' && input.setStatus === 'in_cart') return 'draft';
+  if (input.change === 'added' && input.setStatus === 'pending_payment') return 'pending_payment';
   if (input.endsAt != null) return 'cancels_on_end_date';
   if (input.startsAt != null && input.startsAt > input.today) return 'pending';
   return 'active';

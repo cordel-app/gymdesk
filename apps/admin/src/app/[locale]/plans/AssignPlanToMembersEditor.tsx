@@ -228,7 +228,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
               const notAssignable = p.lifecycle_status != null && p.lifecycle_status !== 'active';
               return (
                 <option key={p.id} value={p.id} disabled={notAssignable}>
-                  {notAssignable ? `${p.name} (${t('members.product_set_status_draft')})` : p.name}
+                  {notAssignable ? `${p.name} (${t('status.draft')})` : p.name}
                 </option>
               );
             })}

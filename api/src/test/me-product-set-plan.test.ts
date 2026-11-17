@@ -77,7 +77,7 @@ describe('POST /me/product-sets/:id/plans', () => {
 
     // Still one in-flight version for the member, and nothing billed yet.
     const { rows: sets } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft'`, [gymId, m.id]);
+      `SELECT COUNT(*) AS n FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'`, [gymId, m.id]);
     expect(Number(sets[0].n)).toBe(1);
     const { rows: events } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [draft.id]);
     expect(Number(events[0].n)).toBe(0);

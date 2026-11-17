@@ -47,7 +47,7 @@ export async function repriceOnVersion(tx: Tx, input: {
   const status = await latestLinkedStatus(tx, gymId, userMembershipId);
   if (status == null) return 'skipped';
 
-  if (status === 'draft') {
+  if (status === 'in_cart') {
     const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);
     if (!draft) return 'skipped';
     await writePrice(tx, gymId, draft.id, price, planPriceId);

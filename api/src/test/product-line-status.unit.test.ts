@@ -8,11 +8,11 @@ const base = { today, endsAt: null, startsAt: '2026-10-01' };
 
 describe('productLineStatus', () => {
   it('reads an inherited line of a Draft as active, not as the Draft', () => {
-    expect(productLineStatus({ ...base, setStatus: 'draft', change: 'inherited' })).toBe('active');
+    expect(productLineStatus({ ...base, setStatus: 'in_cart', change: 'inherited' })).toBe('active');
     expect(productLineStatus({ ...base, setStatus: 'pending_payment', change: 'inherited' })).toBe('active');
   });
   it('reads a line the Draft or pending version added as not yet contracted', () => {
-    expect(productLineStatus({ ...base, setStatus: 'draft', change: 'added' })).toBe('draft');
+    expect(productLineStatus({ ...base, setStatus: 'in_cart', change: 'added' })).toBe('draft');
     expect(productLineStatus({ ...base, setStatus: 'pending_payment', change: 'added' })).toBe('pending_payment');
   });
   it('reads a line of an Active version as active, whichever version added it', () => {

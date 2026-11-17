@@ -11,23 +11,23 @@ describe('#1613 products workflow', () => {
     expect(billingMode({ current: null, review: null, pendingOneOffs: 0 })).toBe('events');
     expect(billingMode({ current: set('active'), review: null, pendingOneOffs: 0 })).toBe('events');
     // an opened-but-unchanged Draft is a dirty form, not a billing change
-    expect(billingMode({ current: set('draft'), review: { changes: [], amount_due: 0 }, pendingOneOffs: 0 })).toBe('events');
+    expect(billingMode({ current: set('in_cart'), review: { changes: [], amount_due: 0 }, pendingOneOffs: 0 })).toBe('events');
   });
   it('switches to simulation on a billing-affecting change or a pending one-off', () => {
-    expect(billingMode({ current: set('draft'), review: changed, pendingOneOffs: 0 })).toBe('simulation');
+    expect(billingMode({ current: set('in_cart'), review: changed, pendingOneOffs: 0 })).toBe('simulation');
     expect(billingMode({ current: set('active'), review: null, pendingOneOffs: 1 })).toBe('simulation');
     expect(billingMode({ current: set('pending_payment'), review: null, pendingOneOffs: 0 })).toBe('simulation');
-    expect(billingMode({ current: set('draft', true), review: changed, pendingOneOffs: 0 })).toBe('events');
+    expect(billingMode({ current: set('in_cart', true), review: changed, pendingOneOffs: 0 })).toBe('events');
   });
   it('enables Save & Pay by the same pending state and respects write access', () => {
-    const w = { current: set('draft'), review: changed, pendingOneOffs: 0 };
+    const w = { current: set('in_cart'), review: changed, pendingOneOffs: 0 };
     expect(saveAndPayEnabled({ ...w, canWrite: true })).toBe(true);
     expect(saveAndPayEnabled({ ...w, canWrite: false })).toBe(false);
     expect(saveAndPayEnabled({ current: set('active'), review: null, pendingOneOffs: 0, canWrite: true })).toBe(false);
   });
   it('routes a lone one-off to its own payment link', () => {
     expect(saveAndPayTarget({ current: set('active'), review: null, pendingOneOffs: 1 })).toBe('purchases');
-    expect(saveAndPayTarget({ current: set('draft'), review: changed, pendingOneOffs: 1 })).toBe('review');
+    expect(saveAndPayTarget({ current: set('in_cart'), review: changed, pendingOneOffs: 1 })).toBe('review');
   });
   it('counts only purchases awaiting payment', () => {
     expect(pendingOneOffCount([{ status: 'pending_payment' }, { status: 'active' }])).toBe(1);
@@ -56,13 +56,13 @@ describe('#1613 products workflow', () => {
     // only, so it names no primary plan either: still Active.
     expect(psStatusKey({ ...set('active'), plan_name: null, plan_status: null } as any)).toBe('active');
     expect(psStatusKey({ ...set('active'), plan_name: 'Gold' } as any)).toBe('active');
-    expect(psStatusKey({ ...set('draft'), plan_name: null } as any)).toBe('draft');
+    expect(psStatusKey({ ...set('in_cart'), plan_name: null } as any)).toBe('in_cart');
   });
 });
 
 describe('#2747 stage 2 — what Cancel does to the in-flight version', () => {
   it('discards a Draft and cancels-and-keeps a version awaiting payment', () => {
-    expect(cancelRequestFor({ id: 4, status: 'draft' })).toEqual({ kind: 'discard_draft', path: '/product-sets/4', method: 'DELETE' });
+    expect(cancelRequestFor({ id: 4, status: 'in_cart' })).toEqual({ kind: 'discard_draft', path: '/product-sets/4', method: 'DELETE' });
     expect(cancelRequestFor({ id: 4, status: 'pending_payment' })).toEqual({ kind: 'cancel_pending', path: '/product-sets/4/cancel', method: 'POST' });
   });
 
