@@ -128,6 +128,7 @@ describe('gate: audited tables', () => {
     { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },
     { file: 'api/service-consumption.ts', table: 'professional_service_consumptions', why: 'a ledger row is never edited: returned_at/returned_by is the return stamp of the append-only row' },
     { file: 'api/me-products.ts', table: 'payment_requests', why: 'billing_event_id link written right after the same transaction inserted the request and its event (both carry created_by)' },
+    { file: 'api/cart-checkout.ts', table: 'payment_requests', why: 'billing_event_id link written right after the same transaction inserted the request and its event (#2949 stage 4)' },
     { file: 'api/payment-page.ts', table: 'payment_requests', why: 'page_token = NULL when the hosted page is opened: token consumption, not a change; the settle UPDATEs record modified_by' },
     { file: 'api/product-set-bridge.ts', table: 'billing_events', why: 'linkInitialPaymentToSet re-keys product_set_id/schedule_id/period_start on the first payment event inside the commit that already records the actor' },
     { file: 'api/schedule-realignment.ts', table: 'billing_events', why: 'consolidateSetOwnerSchedules re-points an untouched event onto the surviving schedule of its cadence (#2125 M5c-2); a schedule re-key by the operator script, not a business edit of the event' },
