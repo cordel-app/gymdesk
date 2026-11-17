@@ -34,7 +34,7 @@ export function exerciseGenderFromSlot(slot: string): ExerciseGender | null {
  */
 export const TRANSFER_ENTITY_TYPES = [
   'muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services',
-  'base_personal_goals', 'base_nutrition_goals', 'base_nutrition_library', 'base_exercises',
+  'base_personal_goals', 'base_nutrition_goals', 'base_nutrition_library', 'base_exercises', 'gyms',
 ] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
@@ -48,6 +48,7 @@ export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]>
   base_nutrition_goals: ['image'],
   base_nutrition_library: ['image'],
   base_exercises: BASE_EXERCISE_IMAGE_SLOTS,
+  gyms: [],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -233,3 +234,13 @@ export const BASE_EXERCISE_TRANSFER_FIELDS = [
   'min_reps_default', 'max_reps_default', 'rest_default_seconds', 'sets_default', 'status',
   'translations', 'description_translations',
 ] as const;
+
+/**
+ * The fields of a Gym an archive carries (#2952 stage 7): its own general content.
+ * Never a reference to another entity (`theme_id`, `payment_provider_id`), a
+ * secret (`website_api_key_hash`), the storage prefix of the gym's bucket, nor
+ * what the gym's own settings screens write (fiscal identity, localization),
+ * which have writers of their own. `plan` is set only when the import creates
+ * the gym, because the gym's updater does not write it.
+ */
+export const GYM_TRANSFER_FIELDS = ['name', 'description', 'plan', 'status'] as const;

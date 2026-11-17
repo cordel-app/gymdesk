@@ -32,7 +32,9 @@ import {
   parseSlugTransferRecord,
   parseMuscleTransferRecord,
   transferImageRateLimitMax,
+  GYM_TRANSFER_FIELDS,
 } from '../domain/entityTransfer';
+import { createGym, loadPlatformGym, updateGym } from './gyms';
 import { muscleImageMaxBytes } from '../domain/muscleImages';
 import { muscleTranslationsExpr, withMuscleTranslations } from '../domain/muscleTranslations';
 import {
@@ -798,3 +800,58 @@ platformTransferRouter.post(
     } catch (err) { next(err); }
   },
 );
+
+// ── Gyms (stage 7) ──────────────────────────────────────────────────────────
+
+/**
+ * A gym is moved as its own general fields only. An update writes them through
+ * the gym's own updater and never its theme, payment provider, storage prefix,
+ * fiscal or localization settings; a created gym is seeded exactly as one made
+ * from Cordel → Gyms (default payment provider, a Center, the default Products…).
+ */
+platformTransferRouter.get('/gyms', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<any>(
+      'SELECT slug, name, description, plan, status FROM gyms WHERE deleted_at IS NULL ORDER BY slug ASC',
+    );
+    res.json({
+      type: 'gyms',
+      entities: rows.map((g: any) => ({
+        slug: g.slug,
+        data: { name: g.name, description: g.description ?? null, plan: g.plan, status: g.status },
+        images: {},
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post('/gyms', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, GYM_TRANSFER_FIELDS);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const { rows } = await db.query<{ id: string; deleted_at: string | null }>(
+      'SELECT id, deleted_at FROM gyms WHERE slug = ?', [slug],
+    );
+    const found = rows[0];
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    const { plan, ...content } = input;
+    if (content.status !== undefined && !['active', 'inactive'].includes(content.status as string)) {
+      return res.status(400).json({ error: "status must be 'active' or 'inactive'" });
+    }
+    let action: TransferAction;
+    let result;
+    if (found) {
+      action = 'updated';
+      result = await updateGym(req, found.id, content);
+    } else {
+      action = 'created';
+      const { status, ...create } = content;
+      result = await createGym(req, { ...create, ...(plan !== undefined ? { plan } : {}) }, { slug });
+      // A gym is created active; an archive's `inactive` is then written by the updater.
+      if (result.ok && status === 'inactive') result = await updateGym(req, result.id, { status });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200).json({ action, entity: await loadPlatformGym(result.id) });
+  } catch (err) { next(err); }
+});
