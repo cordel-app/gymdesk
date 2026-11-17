@@ -37,9 +37,9 @@ describe('Draft expiry countdown (#2477)', () => {
   });
 
   it('reads a Draft the server reports at 0 seconds as expired, and nothing else', () => {
-    expect(member.isExpiredDraft({ status: 'draft', expires_in_seconds: 0 })).toBe(true);
-    expect(member.isExpiredDraft({ status: 'draft', expires_in_seconds: 60 })).toBe(false);
-    expect(member.isExpiredDraft({ status: 'draft', expires_in_seconds: null })).toBe(false);
+    expect(member.isExpiredDraft({ status: 'in_cart', expires_in_seconds: 0 })).toBe(true);
+    expect(member.isExpiredDraft({ status: 'in_cart', expires_in_seconds: 60 })).toBe(false);
+    expect(member.isExpiredDraft({ status: 'in_cart', expires_in_seconds: null })).toBe(false);
     expect(member.isExpiredDraft({ status: 'active', expires_in_seconds: 0 })).toBe(false);
     expect(member.isExpiredDraft(null)).toBe(false);
   });

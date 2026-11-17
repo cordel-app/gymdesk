@@ -82,7 +82,7 @@ exports.up = async (knex) => {
     }
 
     const [[{ missing }]] = await knex.raw(`SELECT COUNT(*) AS missing FROM ${table} WHERE slug IS NULL OR slug = ''`);
-    if (Number(missing) > 0) throw new Error(`[434] ${missing} row(s) of ${table} have no slug`);
+    if (Number(missing) > 0) throw new Error(`[435] ${missing} row(s) of ${table} have no slug`);
 
     await knex.raw(`ALTER TABLE ${table} MODIFY COLUMN slug VARCHAR(${SLUG_MAX}) NOT NULL`);
     if (!(await hasIndex(knex, table, key))) {

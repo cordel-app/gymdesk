@@ -27,7 +27,7 @@ async function loadHeldProductIds(gymId: string, memberId: number): Promise<Set<
        JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = r.id
        JOIN product_sets ps ON ps.id = lnk.product_set_id AND ps.gym_id = r.gym_id
       WHERE r.gym_id = ? AND ps.owner_member_id = ? AND r.source_id IS NOT NULL AND r.ends_at IS NULL
-        AND ps.status IN ('draft', 'pending_payment', 'active')`,
+        AND ps.status IN ('in_cart', 'pending_payment', 'active')`,
     [gymId, memberId, gymId, memberId, gymId, memberId],
   );
   return new Set(rows.map((r) => Number(r.product_id)));

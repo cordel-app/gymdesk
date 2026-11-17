@@ -590,14 +590,14 @@ async function loadRecurringPurchases(
        JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
        JOIN product_periodical_snapshots s
          ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
         AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
       ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],
   );
   const hasDraft = draftRows.length > 0 || (await db.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'draft' LIMIT 1`,
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' LIMIT 1`,
     [gymId, memberId],
   )).rows.length > 0;
   const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));

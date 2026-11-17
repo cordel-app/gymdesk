@@ -27,7 +27,7 @@ export function cartCounts(view: {
  * (`pending_payment`), and that is no longer a Draft. Pure.
  */
 export function awaitsStaffSetup(set: { status: string; user_membership_id?: unknown }): boolean {
-  return set.status === 'draft' && set.user_membership_id != null;
+  return set.status === 'in_cart' && set.user_membership_id != null;
 }
 
 /** The refusal a member's write on such a Draft answers, and the code an add answers while one exists. */

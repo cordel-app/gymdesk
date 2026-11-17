@@ -14,8 +14,8 @@ describe('productSetView (#1463)', () => {
   });
 
   it('maps statuses to keys, an expired draft included', () => {
-    expect(productSetStatusKey('draft', false)).toBe('product_set_status_draft');
-    expect(productSetStatusKey('draft', true)).toBe('product_set_status_expired');
+    expect(productSetStatusKey('in_cart', false)).toBe('product_set_status_in_cart');
+    expect(productSetStatusKey('in_cart', true)).toBe('product_set_status_expired');
     expect(productSetStatusKey('active', false)).toBe('product_set_status_active');
     expect(productSetStatusKey('superseded', false)).toBe('product_set_status_superseded');
     expect(productSetStatusKey('weird', false)).toBeNull();

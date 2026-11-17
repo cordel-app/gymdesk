@@ -49,7 +49,7 @@ describe('reusing the owner\'s Draft (#2858)', () => {
     expect(edit.body.error).toBeUndefined();
 
     const sets = await setsOf(memberId);
-    expect(sets.map((s: any) => s.status)).toEqual(['active', 'draft']);
+    expect(sets.map((s: any) => s.status)).toEqual(['active', 'in_cart']);
     expect(Number(sets[1].id)).toBe(Number(draft.body.id));
     expect(Number(sets[1].user_membership_id)).toBe(edit.body.id);
 
@@ -69,7 +69,7 @@ describe('reusing the owner\'s Draft (#2858)', () => {
     const { memberId, umId } = await memberWithPlan(true);
     const edit = await post(`/user-memberships/${umId}/edit-draft`);
     expect(edit.status).toBe(201);
-    const draftId = Number((await setsOf(memberId)).find((s: any) => s.status === 'draft').id);
+    const draftId = Number((await setsOf(memberId)).find((s: any) => s.status === 'in_cart').id);
 
     const products = await post('/product-sets/draft', { member_id: memberId });
     expect(products.status).toBe(200);

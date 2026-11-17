@@ -137,7 +137,7 @@ async function mergeOwnerVersionForAdd(
 ): Promise<boolean> {
   const { rows: drafts } = await tx.query<any>(
     `SELECT id, owner_member_id, previous_product_set_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment')
+      WHERE gym_id = ? AND user_membership_id = ? AND status IN ('in_cart','pending_payment')
       ORDER BY id DESC LIMIT 1 FOR UPDATE`,
     [gymId, row.id]);
   const { rows: actives } = await tx.query<any>(

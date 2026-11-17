@@ -820,14 +820,14 @@ describe('GET /user-memberships/member/:memberId/configuration — ProductSets (
       return insertId as number;
     };
     const first = await insert('superseded');
-    const second = await insert('draft', first);
+    const second = await insert('in_cart', first);
 
     const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
     const res = await getConfiguration(gymId, memberId);
     const after = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
 
     expect(res.status).toBe(200);
-    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', created_by: 'Tester' });
+    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'in_cart', created_by: 'Tester' });
     expect(res.body.past_product_sets.map((p: any) => p.id)).toEqual([first]);
     expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
   });

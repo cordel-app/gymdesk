@@ -32,7 +32,7 @@ const PAGE = join(MEMBER, 'src', 'app', '[locale]', 'membership', 'page.tsx');
 function draft(over: Partial<MemberCartView> = {}): MemberCartView {
   return {
     id: 7,
-    status: 'draft',
+    status: 'in_cart',
     lines: [
       { id: 11, product_id: 3, change: 'added', product_name: 'Locker' },
       { id: 12, product_id: 4, change: 'inherited', product_name: 'Towel' },
@@ -49,7 +49,7 @@ function draft(over: Partial<MemberCartView> = {}): MemberCartView {
 
 function review(over: Partial<MemberSetReview> = {}): MemberSetReview {
   return {
-    product_set_id: 7, status: 'draft', summary_items: [], immediate_lines: [],
+    product_set_id: 7, status: 'in_cart', summary_items: [], immediate_lines: [],
     amount_due: 120, payment_required: true, tax_total: null, currency: 'EUR', error: null,
     ...over,
   };

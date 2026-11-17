@@ -44,9 +44,9 @@ describe('nextAvailableSlug()', () => {
   });
 });
 
-describe('migration 434 spells the same rule', () => {
+describe('migration 435 spells the same rule', () => {
   // A migration imports no application code, so it carries its own copy.
-  const source = readFileSync(join(__dirname, '../infra/migrations/434_platform_entity_slugs.js'), 'utf8');
+  const source = readFileSync(join(__dirname, '../infra/migrations/435_platform_entity_slugs.js'), 'utf8');
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const load = new Function(`${source.split('const TABLES')[0]}; return { generateSlug, nextAvailableSlug, SLUG_MAX };`);
   const migration = load() as {

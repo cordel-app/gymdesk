@@ -14,7 +14,7 @@ describe('resolveCurrentProductSet (#1582)', () => {
     expect(r).toMatchObject({ kind: 'current', current: { id: 3 } });
   });
   it('in-flight outranks active', () => {
-    const r = resolveCurrentProductSet([s(4, 'draft'), s(3, 'active')]);
+    const r = resolveCurrentProductSet([s(4, 'in_cart'), s(3, 'active')]);
     expect(r).toMatchObject({ kind: 'current', current: { id: 4 } });
   });
   it('two active is ambiguous, never a silent pick', () => {
@@ -23,7 +23,7 @@ describe('resolveCurrentProductSet (#1582)', () => {
     });
   });
   it('two in-flight is ambiguous', () => {
-    expect(resolveCurrentProductSet([s(4, 'draft'), s(5, 'pending_payment')])).toMatchObject({
+    expect(resolveCurrentProductSet([s(4, 'in_cart'), s(5, 'pending_payment')])).toMatchObject({
       kind: 'ambiguous', reason: 'multiple_in_flight',
     });
   });

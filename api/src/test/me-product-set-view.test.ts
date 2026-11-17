@@ -49,7 +49,7 @@ describe('GET /me/product-sets/:id', () => {
 
     const res = await as(A, 'get', `/${draft.id}`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expect(res.body.expires_in_seconds).toBeGreaterThan(60 * 110);
     expect(res.body.expires_in_seconds).toBeLessThanOrEqual(60 * 120);
     expect(res.body.lines).toHaveLength(1);

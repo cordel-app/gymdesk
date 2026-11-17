@@ -140,7 +140,7 @@ describe('automatic Draft creation (#1537)', () => {
     const m = await member();
     const a = await auth(request.post('/product-sets/draft')).send({ member_id: m });
     expect(a.status).toBe(201);
-    expect(a.body).toMatchObject({ status: 'draft', created: true, membership_plan_id: null });
+    expect(a.body).toMatchObject({ status: 'in_cart', created: true, membership_plan_id: null });
     const b = await auth(request.post('/product-sets/draft')).send({ member_id: m });
     expect(b.status).toBe(200);
     expect(b.body.id).toBe(a.body.id);
@@ -177,7 +177,7 @@ describe('automatic Draft creation (#1537)', () => {
     expect((await auth(request.get(mset(activeId)))).body.status).toBe('active');
     expect(await openLines(activeId)).toHaveLength(0);
     const { rows } = await db.query<any>(
-      `SELECT COUNT(*) AS n FROM product_sets WHERE owner_member_id = ? AND status = 'draft'`, [m]);
+      `SELECT COUNT(*) AS n FROM product_sets WHERE owner_member_id = ? AND status = 'in_cart'`, [m]);
     expect(Number(rows[0].n)).toBe(1);
   });
 

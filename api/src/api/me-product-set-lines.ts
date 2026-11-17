@@ -1,5 +1,5 @@
 import { db } from '../infra/db';
-import { draftExpiresInSeconds, DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { draftExpiresInSeconds, DRAFT_TTL_MINUTES, planSnapshotStatusForSet } from '../domain/productSet';
 import { loadRecurringLinePromotions } from './member-product-promotions';
 import { assignedMemberSql } from '../domain/productAssignee';
 import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
@@ -193,7 +193,7 @@ export async function loadMemberProductSetView(
   };
 
   let expiresIn: number | null = null;
-  if (set.status === 'draft') {
+  if (set.status === 'in_cart') {
     const { rows } = await db.query<any>(
       `SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), last_activity_at + INTERVAL ${DRAFT_TTL_MINUTES} MINUTE) AS s
          FROM product_sets WHERE id = ? AND gym_id = ?`, [Number(set.id), gymId]);
@@ -289,7 +289,8 @@ export async function loadMemberProductSetView(
         billing_interval: r.billing_interval == null ? null : Number(r.billing_interval),
         billing_unit: r.billing_unit ?? null,
         change: Number(r.inherited) === 1 ? 'inherited' as const : 'added' as const,
-        status: r.lifecycle_status ?? String(set.status),
+        // #2949 stage 2: a plan in the cart reads `draft`, an assignment's word, until stage 3.
+        status: r.lifecycle_status ?? planSnapshotStatusForSet(String(set.status)),
         entitlement_only: Number(r.entitlement_only) === 1,
         starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
         ends_at: dateOnly(r.um_ends_at ?? r.snapshot_ends_at),

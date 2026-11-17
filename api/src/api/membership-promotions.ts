@@ -669,7 +669,7 @@ export async function applyPromotionToProductSet(
   );
   if (setRows.length === 0) throw Object.assign(new Error('ProductSet not found'), { status: 404 });
   const set = setRows[0];
-  if (set.status !== 'draft') {
+  if (set.status !== 'in_cart') {
     throw Object.assign(new Error('A Promotion can only be applied to a Draft ProductSet'), { status: 409 });
   }
 
@@ -1053,7 +1053,7 @@ export async function assignmentPromotionEditability(
       WHERE ps.id = ${assignmentVersionId('?')} AND ps.gym_id = ?`,
     [umId, gymId],
   );
-  const draftVersion = versionRows.length > 0 && versionRows[0].status === 'draft';
+  const draftVersion = versionRows.length > 0 && versionRows[0].status === 'in_cart';
   const planTakesPromotions = draftVersion
     && !versionRows.some((r: any) => Number(r.is_inherited ?? 0) === 1);
   return { draftVersion, planTakesPromotions };
