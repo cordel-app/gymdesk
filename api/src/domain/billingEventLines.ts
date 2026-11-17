@@ -11,7 +11,7 @@
  * Pure.
  */
 
-import type { SimulationBenefit, SimulationLine } from './billingSimulation';
+import type { FeeChargeSplit, SimulationBenefit, SimulationLine } from './billingSimulation';
 
 export interface BillingEventLineRow {
   kind: 'membership_fee' | 'product' | 'service' | 'adjustment';
@@ -36,6 +36,8 @@ export interface BillingEventLineRow {
    */
   prepaid_periods?: number | null;
   prepaid_cadence?: { interval: number; unit: string } | null;
+  /** #2970 — a Membership Fee's prorated stretch and prepaid periods kept apart; carried, never persisted. */
+  fee_split?: FeeChargeSplit | null;
 }
 
 export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -79,6 +81,7 @@ export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}):
     amount: roundCents(ctx.proration ? ctx.proration.amount : line.actual_charge),
     prepaid_periods: line.prepaid_periods ?? null,
     prepaid_cadence: line.prepaid_cadence ?? null,
+    fee_split: line.fee_split ?? null,
   };
 }
 
