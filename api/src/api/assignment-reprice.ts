@@ -3,6 +3,7 @@ import { linkedDraftSetFor } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import { reconfigureProjected } from './product-set-bridge';
 import { ownPrimaryPlanSnapshot, ownAssignmentSnapshot } from './plan-snapshot-ownership';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3e-2 — the Plan's *Apply new price to assigned plans* writes the new
@@ -22,7 +23,7 @@ export type RepriceOutcome = 'updated' | 'skipped';
 
 async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: number): Promise<string | null> {
   const { rows } = await tx.query<{ status: string }>(
-    `SELECT status FROM product_sets WHERE gym_id = ? AND user_membership_id = ?
+    `SELECT status FROM product_sets ps WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')}
       ORDER BY id DESC LIMIT 1`,
     [gymId, userMembershipId],
   );
