@@ -238,6 +238,8 @@
     "membership_next_billing": "Next billing",
     "no_membership": "No plans on record.",
     "action_cancel_plan": "Cancel Plan",
+    "action_delete_draft_plan": "Delete",
+    "action_cancel_live_plan": "Cancel",
     "action_assign_new_plan": "Assign New Plan",
     "action_edit_plan": "Edit",
     "edit_plan_error": "Could not start editing the plan.",

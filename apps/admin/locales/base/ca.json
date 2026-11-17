@@ -255,6 +255,8 @@
     "unsaved_changes": "Tens canvis sense desar. Descartar-los?",
     "unsaved_discard": "Descartar canvis",
     "action_cancel_plan": "Cancel·lar pla",
+    "action_delete_draft_plan": "Eliminar",
+    "action_cancel_live_plan": "Cancel·lar",
     "action_assign_new_plan": "Assignar nou pla",
     "action_edit_plan": "Editar",
     "edit_plan_error": "No s'ha pogut iniciar l'edició del pla.",
