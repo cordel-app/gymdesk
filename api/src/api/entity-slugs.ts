@@ -30,3 +30,48 @@ export async function allocateGlobalSlug(
   );
   return nextAvailableSlug(base, rows.map((r) => r.slug));
 }
+
+/** The `[a-z0-9-]` slugs of `rows` matching `base` or `base-<n>`, for `nextAvailableSlug()`. */
+async function takenSlugs(
+  exec: Pick<Tx, 'query'>,
+  table: 'base_exercises' | 'exercises',
+  base: string,
+  scope: { gymId: number | string } | null,
+): Promise<string[]> {
+  const where = scope ? 'gym_id = ? AND ' : '';
+  // A slug carried over from a Base Exercise may hold characters a LIKE pattern reads (`_`), so
+  // the suffix pattern escapes them; the exact match needs no escaping.
+  const like = `${base.replace(/[\\%_]/g, (c) => `\\${c}`)}-%`;
+  const { rows } = await exec.query<{ slug: string }>(
+    `SELECT slug FROM ${table} WHERE ${where}(slug = ? OR slug LIKE ?)`,
+    [...(scope ? [scope.gymId] : []), base, like],
+  );
+  return rows.map((r) => r.slug);
+}
+
+/**
+ * #2951 stage 2: the slug a new Base Exercise is created with — from its name, unique among the
+ * Base Exercises (deleted ones included, so a slug is never reused).
+ */
+export async function allocateBaseExerciseSlug(
+  name: string | null | undefined,
+  exec: Pick<Tx, 'query'> = db,
+): Promise<string> {
+  const base = generateSlug(name, 'exercise');
+  return nextAvailableSlug(base, await takenSlugs(exec, 'base_exercises', base, null));
+}
+
+/**
+ * #2951 stage 2: the slug a new gym exercise is created with, unique within that gym (deleted
+ * rows included; `exercises_gym_slug_unique` is the backstop). A copy of a Base Exercise passes
+ * the Base Exercise's own slug as `carried` and keeps it (§6), suffixed only when the gym already
+ * holds it; any other exercise is slugged from its name.
+ */
+export async function allocateGymExerciseSlug(
+  gymId: number | string,
+  source: { name: string | null | undefined; carried?: string | null },
+  exec: Pick<Tx, 'query'> = db,
+): Promise<string> {
+  const base = source.carried?.trim() || generateSlug(source.name, 'exercise');
+  return nextAvailableSlug(base, await takenSlugs(exec, 'exercises', base, { gymId }));
+}

@@ -351,6 +351,8 @@ export interface ExerciseAuditRow {
   name: string;
   /** #967: the resolved name, which is what the modal's subtitle reads. */
   display_name?: string | null;
+  /** #2951: the persistent slug, shown in Details and nowhere else. */
+  slug?: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;

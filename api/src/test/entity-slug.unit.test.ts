@@ -63,3 +63,36 @@ describe('migration 435 spells the same rule', () => {
     expect(migration.nextAvailableSlug('squat', new Set(['squat', 'squat-2']))).toBe('squat-3');
   });
 });
+
+describe('migration 437 spells the same rule', () => {
+  const source = readFileSync(join(__dirname, '../infra/migrations/437_exercise_slugs.js'), 'utf8');
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const load = new Function(`${source.split('const GYM_KEY')[0]}; return { generateSlug, nextAvailableSlug, SLUG_MAX };`);
+  const migration = load() as {
+    generateSlug: (n: string, f: string) => string;
+    nextAvailableSlug: (b: string, used: Set<string>) => string;
+    SLUG_MAX: number;
+  };
+
+  it('agrees with the domain module', () => {
+    expect(migration.SLUG_MAX).toBe(ENTITY_SLUG_MAX);
+    for (const name of ['Romanian Deadlift', 'Équilibre Musculaire', 'Personal Training (1:1)', '', 'b'.repeat(200)]) {
+      expect(migration.generateSlug(name, 'exercise')).toBe(generateSlug(name, 'exercise'));
+    }
+    expect(migration.nextAvailableSlug('squat', new Set(['squat']))).toBe('squat-2');
+  });
+});
+
+describe('every production exercise insert writes a slug (#2951 stage 2)', () => {
+  // The slug columns stay nullable (the Base id reservation inserts a placeholder row with no gym),
+  // so the writers are what guarantee a slug; a new INSERT that forgot it would read back with none.
+  const files = ['../api/exercises.ts', '../api/platform-exercises.ts'];
+  for (const file of files) {
+    it(`${file} names slug in each INSERT`, () => {
+      const source = readFileSync(join(__dirname, file), 'utf8');
+      const inserts = source.match(/INSERT INTO (?:exercises\b|\$\{B\.exercises\})[\s\S]*?VALUES/g) ?? [];
+      expect(inserts.length).toBeGreaterThan(0);
+      for (const sql of inserts) expect(sql).toMatch(/\bslug\b/);
+    });
+  }
+});
