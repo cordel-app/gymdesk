@@ -30,7 +30,7 @@ import {
   storeNutritionImagePair,
   sweepReplacedNutritionImage,
 } from './nutrition-image-storage';
-import { getRequestLocale, SUPPORTED_LOCALES, BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
+import { getRequestLocale, SUPPORTED_LOCALES, BASE_LOCALE, TRANSLATABLE_LOCALES, SupportedLocale } from '../infra/locale';
 
 /**
  * #1849 stage F2 — Cordel's Base Foods, on `base_nutrition_library_items` and its
@@ -144,158 +144,238 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
   } catch (err) { next(err); }
 });
 
-/* ── Create ───────────────────────────────────────────────────────────────── */
+/* ── Shared writers (#2952 stage 5) ─────────────────────────────────────── */
+//
+// The editor's routes and Cordel → Export / Import (`platform-transfer.ts`) write a
+// Base food through these, so an imported food passes exactly the editor's rules.
 
-platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, next) => {
-  const { name, category_ids, quality_ids, translations } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
-  const description = normalizeDescription(req.body.description);
-  if ('error' in description) return res.status(400).json({ error: description.error });
-  const descTr = parseDescriptionTranslations(req.body);
-  if (descTr.error) return res.status(400).json({ error: descTr.error });
+export type BaseFoodWriteResult = { ok: true; id: number } | { ok: false; status: number; body: Record<string, unknown> };
+
+/** One Base food as every item-shaped response answers it, or `null`. */
+export async function loadBaseFood(id: number, locale: SupportedLocale): Promise<Record<string, any> | null> {
+  const { rows } = await db.query<any>(
+    `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale, BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', locale, BASE_FOOD_TABLES)} AS display_description
+     FROM base_nutrition_library_items nli WHERE nli.id = ?`,
+    [id],
+  );
+  if (!rows[0]) return null;
+  const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
+    loadCategoriesMap([id], BASE_FOOD_TABLES), loadQualitiesMap([id], BASE_FOOD_TABLES), loadTranslationsMap([id], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([id], BASE_FOOD_TABLES),
+  ]);
+  return {
+    ...rows[0],
+    categories: categoriesMap[id] ?? [],
+    qualities: qualitiesMap[id] ?? [],
+    translations: translationsMap[id] ?? {},
+    description_translations: descMap[id] ?? {},
+  };
+}
+
+/**
+ * Creates a Base food. `opts.slug` is the slug an import carries (#2951's
+ * "never regenerated", across databases); without it the slug is allocated
+ * from the name, as the editor always did.
+ */
+export async function createBaseFood(
+  req: any,
+  body: Record<string, any>,
+  opts: { slug?: string } = {},
+): Promise<BaseFoodWriteResult> {
+  const { name, category_ids, quality_ids, translations } = body;
+  const refuse = (status: number, b: Record<string, unknown>): BaseFoodWriteResult => ({ ok: false, status, body: b });
+  if (typeof name !== 'string' || !name.trim()) return refuse(400, { error: 'name is required' });
+  const description = normalizeDescription(body.description);
+  if ('error' in description) return refuse(400, { error: description.error });
+  const descTr = parseDescriptionTranslations(body);
+  if (descTr.error) return refuse(400, { error: descTr.error });
   const catErr = await validateCategoryIds(category_ids);
-  if (catErr) return res.status(400).json(catErr);
+  if (catErr) return refuse(400, catErr);
   if (quality_ids !== undefined) {
     const err = await validateQualityIds(quality_ids);
-    if (err) return res.status(400).json(err);
+    if (err) return refuse(400, err);
   }
   if (translations !== undefined) {
     const err = validateTranslations(translations);
-    if (err) return res.status(400).json(err);
+    if (err) return refuse(400, err);
   }
+  const { rows: existing } = await db.query(
+    "SELECT id FROM base_nutrition_library_items WHERE name = ? AND deleted_at IS NULL",
+    [name.trim()],
+  );
+  if (existing.length > 0) return refuse(409, { error: 'An item with this name already exists' });
+
+  const actor = platformActor(req);
+  // The id comes from the legacy table's sequence (reserved and released) so a Base id never
+  // collides with a gym-owned food, which the catalogue views and the plan tables address by bare id.
+  const { insertId: reserved } = await db.query(
+    `INSERT INTO nutrition_library_items (gym_id, name, status, created_by)
+     VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')`,
+  );
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [reserved]);
+  const insertId = reserved as number;
+  const slug = opts.slug ?? await allocateBaseFoodSlug(name.trim());
+  await db.query(
+    `INSERT INTO base_nutrition_library_items (id, name, slug, description, created_by) VALUES (?, ?, ?, ?, ?)`,
+    [insertId, name.trim(), slug, description.value ?? null, actor],
+  );
+
+  await replaceCategories(insertId, category_ids, BASE_FOOD_TABLES);
+  if (Array.isArray(quality_ids) && quality_ids.length > 0) {
+    await replaceQualities(insertId, quality_ids, BASE_FOOD_TABLES);
+  }
+  if (translations !== undefined) {
+    await replaceTranslations(insertId, translations, BASE_FOOD_TABLES);
+  }
+  if (descTr.value !== undefined) {
+    await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!, BASE_FOOD_TABLES));
+  }
+  recordAudit(req, {
+    action: 'create', entityType: 'nutrition_library_item', entityId: insertId,
+    next: await loadBaseFood(insertId, getRequestLocale(req)),
+  });
+  return { ok: true, id: insertId };
+}
+
+/** Updates a Base food's content; a field the body does not mention keeps what is stored. */
+export async function updateBaseFood(req: any, id: number, body: Record<string, any>): Promise<BaseFoodWriteResult> {
+  const { name, category_ids, quality_ids, translations } = body;
+  const refuse = (status: number, b: Record<string, unknown>): BaseFoodWriteResult => ({ ok: false, status, body: b });
+
+  if (category_ids !== undefined) {
+    const err = await validateCategoryIds(category_ids);
+    if (err) return refuse(400, err);
+  }
+  if (quality_ids !== undefined) {
+    const err = await validateQualityIds(quality_ids);
+    if (err) return refuse(400, err);
+  }
+  if (translations !== undefined) {
+    const err = validateTranslations(translations);
+    if (err) return refuse(400, err);
+  }
+  const description = normalizeDescription(body.description);
+  if ('error' in description) return refuse(400, { error: description.error });
+  const descTr = parseDescriptionTranslations(body);
+  if (descTr.error) return refuse(400, { error: descTr.error });
+
+  const { rows: existing } = await db.query(
+    "SELECT id, name, description, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
+    [id],
+  );
+  if (existing.length === 0) return refuse(404, { error: 'Item not found' });
+  if (existing[0].status === 'deleted') return refuse(409, { error: 'Item is deleted' });
+
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (trimmed) {
+    const { rows: conflict } = await db.query(
+      "SELECT id FROM base_nutrition_library_items WHERE name = ? AND id != ? AND deleted_at IS NULL",
+      [trimmed, id],
+    );
+    if (conflict.length > 0) return refuse(409, { error: 'An item with this name already exists' });
+  }
+
+  // The actor pair moves with every edit, so `modified_by` always names
+  // whoever `modified_at` refers to (#799 §13).
+  const actor = platformActor(req);
+  const updates: string[] = [];
+  const params: any[] = [actor];
+  if (trimmed) { updates.push('name = ?'); params.push(trimmed); }
+  // Absent from the body means "leave it alone"; an empty string means "clear it".
+  if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
+
+  params.push(id);
+  await db.query(`UPDATE base_nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
+
+  if (Array.isArray(category_ids)) {
+    await replaceCategories(id, category_ids, BASE_FOOD_TABLES);
+  }
+  if (Array.isArray(quality_ids)) {
+    await replaceQualities(id, quality_ids, BASE_FOOD_TABLES);
+  }
+  if (translations !== undefined) {
+    await replaceTranslations(id, translations, BASE_FOOD_TABLES);
+  }
+  if (descTr.value !== undefined) {
+    await db.transaction((conn) => replaceDescriptionTranslations(conn, id, descTr.value!, BASE_FOOD_TABLES));
+  }
+  recordAudit(req, {
+    action: 'update', entityType: 'nutrition_library_item', entityId: id,
+    previous: existing[0], next: await loadBaseFood(id, getRequestLocale(req)),
+  });
+  return { ok: true, id };
+}
+
+/**
+ * Stores a Base food's image from the request's raw body: judged and converted
+ * before anything is uploaded or written, so a refused upload leaves the
+ * current image untouched.
+ */
+export async function storeBaseFoodImage(req: any, id: number): Promise<BaseFoodWriteResult> {
+  const { rows: existing } = await db.query<{ id: number; name: string; status: string; image_url: string | null }>(
+    "SELECT id, name, IF(deleted_at IS NULL, 'active', 'deleted') AS status, image_url FROM base_nutrition_library_items WHERE id = ?",
+    [id],
+  );
+  if (existing.length === 0) return { ok: false, status: 404, body: { error: 'Item not found' } };
+  if (existing[0].status === 'deleted') return { ok: false, status: 409, body: { error: 'Item is deleted' } };
+
+  const processed = await parseNutritionImageRequest(req);
+  if (isNutritionImageRefusal(processed)) return { ok: false, status: processed.status, body: processed.body };
+
+  const food = existing[0];
+  const key = buildBaseNutritionImageKey(food.id, food.name);
+  const url = buildStorageObjectUrl(key);
+
+  const refusal = await storeNutritionImagePair({
+    key,
+    processed,
+    folderKeys: baseNutritionFolderKeys(),
+    currentUrl: food.image_url,
+    logContext: { itemId: food.id },
+  });
+  if (refusal) return { ok: false, status: refusal.status, body: refusal.body };
+
+  // Only after both files are stored does the row move; the replaced objects
+  // are swept afterwards, best-effort, and only under `cordel/nutrition/`.
+  const staleUrl = food.image_url;
+  const actor = platformActor(req);
+  await db.query(
+    `UPDATE base_nutrition_library_items
+     SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE id = ?`,
+    [url, actor, food.id],
+  );
+  await sweepReplacedNutritionImage(
+    staleUrl, key, (k) => k.toLowerCase().startsWith(`${PLATFORM_NUTRITION_PREFIX}/`), { itemId: food.id },
+  );
+  recordAudit(req, {
+    action: 'update',
+    entityType: 'nutrition_library_item',
+    entityId: food.id,
+    previous: { image_url: staleUrl },
+    next: { image_url: url },
+  });
+  return { ok: true, id: food.id };
+}
+
+/* ── Create ───────────────────────────────────────────────────────────────── */
+
+platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, next) => {
   try {
-    const { rows: existing } = await db.query(
-      "SELECT id FROM base_nutrition_library_items WHERE name = ? AND deleted_at IS NULL",
-      [name.trim()],
-    );
-    if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
-
-    const actor = platformActor(req);
-    // The id comes from the legacy table's sequence (reserved and released) so a Base id never
-    // collides with a gym-owned food, which the catalogue views and the plan tables address by bare id.
-    const { insertId: reserved } = await db.query(
-      `INSERT INTO nutrition_library_items (gym_id, name, status, created_by)
-       VALUES (NULL, CONCAT('__reserved_id_', UUID()), 'deleted', 'System')`,
-    );
-    await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [reserved]);
-    const insertId = reserved as number;
-    const slug = await allocateBaseFoodSlug(name.trim());
-    await db.query(
-      `INSERT INTO base_nutrition_library_items (id, name, slug, description, created_by) VALUES (?, ?, ?, ?, ?)`,
-      [insertId, name.trim(), slug, description.value ?? null, actor],
-    );
-
-    await replaceCategories(insertId, category_ids, BASE_FOOD_TABLES);
-    if (Array.isArray(quality_ids) && quality_ids.length > 0) {
-      await replaceQualities(insertId, quality_ids, BASE_FOOD_TABLES);
-    }
-    if (translations !== undefined) {
-      await replaceTranslations(insertId, translations, BASE_FOOD_TABLES);
-    }
-    if (descTr.value !== undefined) {
-      await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!, BASE_FOOD_TABLES));
-    }
-
-    const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
-       FROM base_nutrition_library_items nli WHERE nli.id = ?`,
-      [insertId],
-    );
-    const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-      loadCategoriesMap([insertId], BASE_FOOD_TABLES), loadQualitiesMap([insertId], BASE_FOOD_TABLES), loadTranslationsMap([insertId], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([insertId], BASE_FOOD_TABLES),
-    ]);
-    const item = {
-      ...rows[0],
-      categories: categoriesMap[insertId] ?? [],
-      qualities: qualitiesMap[insertId] ?? [],
-      translations: translationsMap[insertId] ?? {},
-        description_translations: descMap[insertId] ?? {},
-    };
-    recordAudit(req, { action: 'create', entityType: 'nutrition_library_item', entityId: insertId, next: item });
-    res.status(201).json(item);
+    const result = await createBaseFood(req, req.body ?? {});
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(201).json(await loadBaseFood(result.id, getRequestLocale(req)));
   } catch (err) { next(err); }
 });
 
 /* ── Update ───────────────────────────────────────────────────────────────── */
 
 platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
-  const { id } = req.params;
-  const { name, category_ids, quality_ids, translations } = req.body;
-
-  if (category_ids !== undefined) {
-    const err = await validateCategoryIds(category_ids);
-    if (err) return res.status(400).json(err);
-  }
-  if (quality_ids !== undefined) {
-    const err = await validateQualityIds(quality_ids);
-    if (err) return res.status(400).json(err);
-  }
-  if (translations !== undefined) {
-    const err = validateTranslations(translations);
-    if (err) return res.status(400).json(err);
-  }
-  const description = normalizeDescription(req.body.description);
-  if ('error' in description) return res.status(400).json({ error: description.error });
-  const descTr = parseDescriptionTranslations(req.body);
-  if (descTr.error) return res.status(400).json({ error: descTr.error });
   try {
-    const { rows: existing } = await db.query(
-      "SELECT id, name, description, IF(deleted_at IS NULL, 'active', 'deleted') AS status FROM base_nutrition_library_items WHERE id = ?",
-      [id],
-    );
-    if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
-    if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
-
-    if (name?.trim()) {
-      const { rows: conflict } = await db.query(
-        "SELECT id FROM base_nutrition_library_items WHERE name = ? AND id != ? AND deleted_at IS NULL",
-        [name.trim(), id],
-      );
-      if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
-    }
-
-    // The actor pair moves with every edit, so `modified_by` always names
-    // whoever `modified_at` refers to (#799 §13).
-    const actor = platformActor(req);
-    const updates: string[] = [];
-    const params: any[] = [actor];
-    if (name?.trim())  { updates.push('name = ?');     params.push(name.trim()); }
-    // Absent from the body means "leave it alone"; an empty string means "clear it".
-    if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
-
-    params.push(id);
-    await db.query(`UPDATE base_nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
-
-    if (Array.isArray(category_ids)) {
-      await replaceCategories(Number(id), category_ids, BASE_FOOD_TABLES);
-    }
-    if (Array.isArray(quality_ids)) {
-      await replaceQualities(Number(id), quality_ids, BASE_FOOD_TABLES);
-    }
-    if (translations !== undefined) {
-      await replaceTranslations(Number(id), translations, BASE_FOOD_TABLES);
-    }
-    if (descTr.value !== undefined) {
-      await db.transaction((conn) => replaceDescriptionTranslations(conn, Number(id), descTr.value!, BASE_FOOD_TABLES));
-    }
-
-    const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
-       FROM base_nutrition_library_items nli WHERE nli.id = ?`,
-      [id],
-    );
-    const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-      loadCategoriesMap([Number(id)], BASE_FOOD_TABLES), loadQualitiesMap([Number(id)], BASE_FOOD_TABLES), loadTranslationsMap([Number(id)], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([Number(id)], BASE_FOOD_TABLES),
-    ]);
-    const item = {
-      ...rows[0],
-      categories: categoriesMap[Number(id)] ?? [],
-      qualities: qualitiesMap[Number(id)] ?? [],
-      translations: translationsMap[Number(id)] ?? {},
-        description_translations: descMap[Number(id)] ?? {},
-    };
-    recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, previous: existing[0], next: item });
-    res.json(item);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Item not found' });
+    const result = await updateBaseFood(req, id, req.body ?? {});
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.json(await loadBaseFood(result.id, getRequestLocale(req)));
   } catch (err) { next(err); }
 });
 
@@ -400,68 +480,11 @@ platformNutritionLibraryRouter.post(
   nutritionImageBodyParser,
   async (req, res, next) => {
     try {
-      const { rows: existing } = await db.query<{ id: number; name: string; status: string; image_url: string | null }>(
-        "SELECT id, name, IF(deleted_at IS NULL, 'active', 'deleted') AS status, image_url FROM base_nutrition_library_items WHERE id = ?",
-        [req.params.id],
-      );
-      if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
-      if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
-
-      // The picture is judged and converted before anything is uploaded or
-      // written, so a refused upload leaves the current image untouched.
-      const processed = await parseNutritionImageRequest(req);
-      if (isNutritionImageRefusal(processed)) return res.status(processed.status).json(processed.body);
-
-      const food = existing[0];
-      const key = buildBaseNutritionImageKey(food.id, food.name);
-      const url = buildStorageObjectUrl(key);
-
-      const refusal = await storeNutritionImagePair({
-        key,
-        processed,
-        folderKeys: baseNutritionFolderKeys(),
-        currentUrl: food.image_url,
-        logContext: { itemId: food.id },
-      });
-      if (refusal) return res.status(refusal.status).json(refusal.body);
-
-      // Only after both files are stored does the row move; the replaced objects
-      // are swept afterwards, best-effort, and only under `cordel/nutrition/`.
-      const staleUrl = food.image_url;
-      const actor = platformActor(req);
-      await db.query(
-        `UPDATE base_nutrition_library_items
-         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-         WHERE id = ?`,
-        [url, actor, food.id],
-      );
-      await sweepReplacedNutritionImage(
-        staleUrl, key, (k) => k.toLowerCase().startsWith(`${PLATFORM_NUTRITION_PREFIX}/`), { itemId: food.id },
-      );
-
-      const { rows } = await db.query(
-        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req), BASE_FOOD_TABLES)} AS display_description
-         FROM base_nutrition_library_items nli WHERE nli.id = ?`,
-        [food.id],
-      );
-      const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
-        loadCategoriesMap([food.id], BASE_FOOD_TABLES), loadQualitiesMap([food.id], BASE_FOOD_TABLES), loadTranslationsMap([food.id], BASE_FOOD_TABLES), loadDescriptionTranslationsMap([food.id], BASE_FOOD_TABLES),
-      ]);
-      const item = {
-        ...rows[0],
-        categories: categoriesMap[food.id] ?? [],
-        qualities: qualitiesMap[food.id] ?? [],
-        translations: translationsMap[food.id] ?? {},
-        description_translations: descMap[food.id] ?? {},
-      };
-      recordAudit(req, {
-        action: 'update',
-        entityType: 'nutrition_library_item',
-        entityId: food.id,
-        previous: { image_url: staleUrl },
-        next: { image_url: url },
-      });
-      res.json(item);
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Item not found' });
+      const result = await storeBaseFoodImage(req, id);
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.json(await loadBaseFood(result.id, getRequestLocale(req)));
     } catch (err) { next(err); }
   },
 );

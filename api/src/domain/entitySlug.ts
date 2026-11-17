@@ -25,11 +25,21 @@ export function generateSlug(name: string | null | undefined, fallback: string =
   const folded = String(name ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
   const slug = folded
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, ENTITY_SLUG_MAX)
-    .replace(/-+$/g, '');
-  return slug || fallback;
+    .replace(/[^a-z0-9]+/g, '-');
+  return trimHyphens(trimHyphens(slug).slice(0, ENTITY_SLUG_MAX)) || fallback;
+}
+
+/**
+ * Leading and trailing hyphens removed, in one linear pass. A loop rather than
+ * an anchored `-+$` regex, which backtracks polynomially on a long run of
+ * hyphens in a name a caller supplies (CodeQL `js/polynomial-redos`).
+ */
+function trimHyphens(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value.charCodeAt(start) === 45) start++;
+  while (end > start && value.charCodeAt(end - 1) === 45) end--;
+  return value.slice(start, end);
 }
 
 /**
@@ -41,7 +51,7 @@ export function nextAvailableSlug(base: string, taken: Iterable<string>): string
   if (!used.has(base)) return base;
   for (let n = 2; ; n++) {
     const suffix = `-${n}`;
-    const candidate = `${base.slice(0, ENTITY_SLUG_MAX - suffix.length).replace(/-+$/g, '')}${suffix}`;
+    const candidate = `${trimHyphens(base.slice(0, ENTITY_SLUG_MAX - suffix.length))}${suffix}`;
     if (!used.has(candidate)) return candidate;
   }
 }
