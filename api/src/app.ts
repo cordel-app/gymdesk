@@ -9,6 +9,7 @@ import { memberProductPurchasesRouter } from './api/member-product-purchases';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { productSetsRouter, meProductSetsRouter } from './api/product-sets-router';
+import { meCartRouter } from './api/me-cart';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { superadminsRouter } from './api/superadmins';
 import { orphanedAccountsRouter } from './api/orphaned-accounts';
@@ -344,6 +345,8 @@ app.use('/me/muscles', requireAuth(), tenantContext, centerContext, meMusclesRou
 app.use('/me/profile/image', requireAuth(), tenantContext, centerContext, meProfileImageRouter);
 // #1122: the Members App's Add Plan — the member's own Draft, Promotions and Save & Pay.
 app.use('/me/membership-plans', requireAuth(), tenantContext, centerContext, meMembershipPlansRouter);
+// #2949 stage 4: the member's standalone cart purchases (no Product Set). Mounted BEFORE /me.
+app.use('/me/cart', requireAuth(), tenantContext, centerContext, meCartRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE

@@ -101,3 +101,15 @@ export async function productPurchaseEventNameFor(
     gymName: await loadGymName(exec, gymId), purchaseDate, items: { plans: [], products: [productName] },
   });
 }
+
+/**
+ * #2949 stage 4 — a cart checkout of several standalone one-time purchases (no ProductSet):
+ * `Gym - Product Name` for one, `Gym - Compra dd/mm/yyyy` for several (§4.1's purchase rule).
+ */
+export async function cartPurchaseEventNameFor(
+  exec: Exec, gymId: string, productNames: string[], purchaseDate: string,
+): Promise<string> {
+  return purchaseEventName({
+    gymName: await loadGymName(exec, gymId), purchaseDate, items: { plans: [], products: productNames },
+  });
+}
