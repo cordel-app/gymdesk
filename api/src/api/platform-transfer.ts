@@ -19,6 +19,9 @@ import {
   BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS,
   BASE_NUTRITION_GOAL_TRANSFER_FIELDS,
   BASE_FOOD_TRANSFER_FIELDS,
+  BASE_EXERCISE_TRANSFER_FIELDS,
+  exerciseGenderFromSlot,
+  isValidExerciseSlug,
   parseLookupSlugs,
   BASE_PERSONAL_GOAL_TRANSFER_FIELDS,
   isValidGoalSlug,
@@ -78,6 +81,16 @@ import {
   updateBaseFood,
 } from './platform-base-nutrition-library';
 import { nutritionImageBodyParser } from './nutrition-image-storage';
+import {
+  baseExerciseMedia,
+  createBaseExercise,
+  loadBaseExercise,
+  updateBaseExercise,
+} from './platform-exercises';
+import { respondMetricRemoval } from './exercise-result-types';
+import { exerciseImageMaxBytes } from '../domain/exerciseGenderMedia';
+import { BASE_EXERCISE_TABLES as BX } from '../domain/exerciseTables';
+import { MUSCLE_SLUG_SQL } from './exercise-muscles';
 
 /**
  * #2952 — Cordel → Export / Import, the API half (superadmin only). The Admin
@@ -644,6 +657,144 @@ platformTransferRouter.post(
       const result = await storeBaseFoodImage(req, found.id);
       if (!result.ok) return res.status(result.status).json(result.body);
       res.json({ entity: await loadBaseFood(found.id, BASE_LOCALE) });
+    } catch (err) { next(err); }
+  },
+);
+
+// ── Base Exercises (stage 6) ────────────────────────────────────────────────
+
+platformTransferRouter.get('/base_exercises', requireSuperadmin, async (req, res, next) => {
+  try {
+    const { rows } = await db.query<{ id: number; slug: string }>(
+      `SELECT id, slug FROM ${BX.exercises} WHERE status != 'deleted' ORDER BY slug ASC`,
+    );
+    const ids = rows.map((r) => r.id);
+    const muscles = new Map<number, { key: string; role: string }[]>();
+    const resultTypes = new Map<number, string[]>();
+    if (ids.length > 0) {
+      const marks = ids.map(() => '?').join(',');
+      const { rows: muscleRows } = await db.query<{ exercise_id: number; key: string; role: string }>(
+        `SELECT em.exercise_id, ${MUSCLE_SLUG_SQL} AS \`key\`, em.role
+           FROM ${BX.muscles} em WHERE em.exercise_id IN (${marks}) ORDER BY em.exercise_id, em.role, \`key\``,
+        ids,
+      );
+      for (const m of muscleRows) {
+        if (!m.key) continue;
+        muscles.set(m.exercise_id, [...(muscles.get(m.exercise_id) ?? []), { key: m.key, role: m.role }]);
+      }
+      const { rows: metricRows } = await db.query<{ exercise_id: number; slug: string }>(
+        `SELECT eart.exercise_id, rt.slug
+           FROM ${BX.resultTypes} eart JOIN result_types rt ON rt.id = eart.result_type_id
+          WHERE eart.exercise_id IN (${marks}) ORDER BY eart.exercise_id, rt.id`,
+        ids,
+      );
+      for (const m of metricRows) resultTypes.set(m.exercise_id, [...(resultTypes.get(m.exercise_id) ?? []), m.slug]);
+    }
+    const entities = [];
+    for (const { id } of rows) {
+      const e: any = await loadBaseExercise(req, id);
+      if (!e) continue;
+      entities.push({
+        slug: e.slug,
+        data: {
+          name: e.name,
+          description: e.description ?? null,
+          short_description: e.short_description ?? null,
+          category: e.category ?? null,
+          equipment: e.equipment ?? null,
+          min_reps_default: e.min_reps_default ?? null,
+          max_reps_default: e.max_reps_default ?? null,
+          rest_default_seconds: e.rest_default_seconds ?? null,
+          sets_default: e.sets_default ?? null,
+          status: e.status,
+          translations: e.translations ?? {},
+          description_translations: e.description_translations ?? {},
+          muscles: muscles.get(id) ?? [],
+          result_type_slugs: resultTypes.get(id) ?? [],
+        },
+        images: { image_male: e.image_male_url ?? null, image_female: e.image_female_url ?? null },
+      });
+    }
+    res.json({ type: 'base_exercises', entities });
+  } catch (err) { next(err); }
+});
+
+/** A Base Exercise's slug is unique within `base_exercises`, deleted rows included (#2951 stage 2). */
+async function findBaseExerciseBySlug(slug: string) {
+  const { rows } = await db.query<{ id: number; status: string }>(
+    `SELECT id, status FROM ${BX.exercises} WHERE slug = ? ORDER BY id DESC LIMIT 1`, [slug],
+  );
+  return rows[0] ?? null;
+}
+
+/** Resolves Recorded Metric slugs to `result_types` ids; `{ error }` names the first unknown one. */
+async function resultTypeIdsBySlug(slugs: string[]): Promise<{ ids: number[] } | { error: string }> {
+  if (slugs.length === 0) return { ids: [] };
+  const { rows } = await db.query<{ id: number; slug: string }>(
+    `SELECT id, slug FROM result_types WHERE slug IN (${slugs.map(() => '?').join(',')})`, slugs,
+  );
+  const bySlug = new Map(rows.map((r) => [r.slug, r.id]));
+  const missing = slugs.find((s) => !bySlug.has(s));
+  if (missing) return { error: `result_type_slugs names an unknown slug: ${missing}` };
+  return { ids: slugs.map((s) => bySlug.get(s)!) };
+}
+
+platformTransferRouter.post('/base_exercises', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, BASE_EXERCISE_TRANSFER_FIELDS, { exerciseSlug: true });
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const metrics = parseLookupSlugs(req.body.result_type_slugs, 'result_type_slugs');
+    if ('error' in metrics) return res.status(400).json({ error: metrics.error });
+    const found = await findBaseExerciseBySlug(slug);
+    if (found?.status === 'deleted') return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      // An update writes the exercise's own content; its muscles and Recorded
+      // Metrics are relationships and are left exactly as they are.
+      action = 'updated';
+      result = await updateBaseExercise(req, found.id, input);
+    } else {
+      action = 'created';
+      const create: Record<string, unknown> = { ...input };
+      if (req.body.muscles !== undefined) create.muscles = req.body.muscles;
+      if (metrics.slugs && metrics.slugs.length > 0) {
+        const ids = await resultTypeIdsBySlug(metrics.slugs);
+        if ('error' in ids) return res.status(400).json({ error: ids.error });
+        create.allowed_result_type_ids = ids.ids;
+      }
+      result = await createBaseExercise(req, create, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200).json({ action, entity: await loadBaseExercise(req, result.id) });
+  } catch (err) { if (respondMetricRemoval(err, res)) return; next(err); }
+});
+
+const exerciseTransferImageBodyParser = express.raw({
+  type: (req) => (req.headers['content-type'] ?? '').startsWith('image/'),
+  limit: exerciseImageMaxBytes() + 64 * 1024,
+});
+
+platformTransferRouter.post(
+  '/base_exercises/:slug/image/:slot',
+  requireSuperadmin,
+  transferImageLimiter,
+  exerciseTransferImageBodyParser,
+  async (req, res, next) => {
+    try {
+      const gender = exerciseGenderFromSlot(String(req.params.slot));
+      if (!gender) return res.status(400).json({ error: 'slot must be "image_male" or "image_female"' });
+      if (!isValidExerciseSlug(req.params.slug)) return res.status(404).json({ error: 'Exercise not found' });
+      const raw: unknown = req.body;
+      if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw) || raw.length === 0) {
+        return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      }
+      const found = await findBaseExerciseBySlug(req.params.slug);
+      if (!found || found.status === 'deleted') return res.status(404).json({ error: 'Exercise not found' });
+      // The exercise's own image writer: the same processing, keys, sweep and audit
+      // row as an editor upload; it answers with the exercise.
+      await baseExerciseMedia.storeImage(req, res, found.id, gender, raw);
     } catch (err) { next(err); }
   },
 );

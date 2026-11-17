@@ -132,6 +132,20 @@ export interface ExerciseGenderMediaOptions {
 }
 
 export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOptions): Router {
+  return createExerciseGenderMedia(options).router;
+}
+
+/**
+ * The media routes plus the image writer behind `POST /:id/image/:gender`, for a
+ * caller that already holds the picture's bytes and the exercise's id (Cordel's
+ * import, #2952): `storeImage()` answers on `res` exactly as that route does.
+ */
+export interface ExerciseGenderMedia {
+  router: Router;
+  storeImage: (req: Request, res: Response, exerciseId: number | string, gender: ExerciseGender, original: Buffer) => Promise<void>;
+}
+
+export function createExerciseGenderMedia(options: ExerciseGenderMediaOptions): ExerciseGenderMedia {
   const { scope, guard, respond } = options;
   const router = Router();
 
@@ -140,12 +154,12 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
       ? resolvePlatformActor((req as any).superadminName)
       : resolveRequestActor(getTenantContext(req));
 
-  async function load(req: Request, res: Response, requireStoragePrefix: boolean, label: 'images' | 'videos'): Promise<MediaContext | null> {
+  async function load(req: Request, res: Response, requireStoragePrefix: boolean, label: 'images' | 'videos', id: number | string = String(req.params.id)): Promise<MediaContext | null> {
     const columns = 'id, gym_id, name, status, image_male_url, image_female_url, video_male_url, video_female_url';
     if (scope === 'platform') {
       const { rows } = await db.query<MediaRow & { status: string }>(
         `SELECT ${columns.replace('gym_id', 'NULL AS gym_id')} FROM base_exercises WHERE id = ?`,
-        [req.params.id],
+        [id],
       );
       const row = rows[0];
       if (!row || row.status === 'deleted') {
@@ -157,11 +171,11 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
     const { gymId } = getTenantContext(req);
     const { rows } = await db.query<MediaRow & { gym_id: string | null; status: string }>(
       `SELECT ${columns} FROM exercises WHERE id = ?`,
-      [req.params.id],
+      [id],
     );
     const row = rows[0];
     // A Base exercise has no row in `exercises` any more (#1849 E6): answer it as before.
-    const isBase = !row && (await db.query('SELECT 1 FROM base_exercises WHERE id = ?', [req.params.id])).rows.length > 0;
+    const isBase = !row && (await db.query('SELECT 1 FROM base_exercises WHERE id = ?', [id])).rows.length > 0;
     if (isBase || (row && row.gym_id === null)) {
       res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
       return null;
@@ -341,6 +355,51 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
     return processed;
   }
 
+  /** Stores one gendered image from its original bytes and answers on `res`. */
+  async function storeImage(req: Request, res: Response, exerciseId: number | string, gender: ExerciseGender, original: Buffer): Promise<void> {
+    if (storageUnconfigured(res)) return;
+
+    // The row, the gym and the storage prefix are judged before any CPU is spent
+    // decoding a picture nobody may store.
+    const ctx = await load(req, res, true, 'images', exerciseId);
+    if (!ctx) return;
+    const processed = await processPicture(res, original, 'image');
+    if (!processed) return;
+    const { exercise } = ctx;
+    const col = column(gender, 'image');
+    const previous = (exercise as any)[col] as string | null;
+
+    const imageKey = scope === 'platform'
+      ? buildBaseExerciseGenderImageKey(exercise.id, exercise.name, gender)
+      : buildGymExerciseGenderImageKey(ctx.folderPrefix as string, exercise.id, exercise.name, gender);
+    const imageUrl = buildStorageObjectUrl(imageKey);
+
+    const failure = await uploadAll(
+      [
+        { key: imageKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.image },
+        { key: thumbnailKeyFor(imageKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.thumbnail },
+      ],
+      scope === 'platform' ? baseExerciseGenderFolderKeys('image') : gymExerciseGenderFolderKeys(ctx.folderPrefix as string, 'image'),
+      ctx,
+      imageObjectUrls(previous),
+    );
+    if (failure) { res.status(failure.status).json(failure.body); return; }
+
+    await writeColumn(ctx, col, imageUrl, req);
+    // The key is deterministic, so a replacement normally overwrites its own
+    // objects; the sweep matters only for an exercise renamed since its last upload.
+    await sweep(previous, 'image', [imageUrl, ...othersOf(exercise, col)], ctx);
+
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'exercise',
+      entityId: exercise.id,
+      previous: { [col]: previous },
+      next: { [col]: imageUrl },
+    });
+    await respond(req, res, exercise.id, ctx.gymId);
+  }
+
   router.post('/:id/image/:gender', guard, async (req, res, next) => {
     try {
       const gender = badGender(req, res);
@@ -349,47 +408,7 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
       if (!original) {
         return res.status(400).json({ error: '`image` (the picture, base64-encoded) is required.' });
       }
-      if (storageUnconfigured(res)) return;
-
-      // The row, the gym and the storage prefix are judged before any CPU is spent
-      // decoding a picture nobody may store.
-      const ctx = await load(req, res, true, 'images');
-      if (!ctx) return;
-      const processed = await processPicture(res, original, 'image');
-      if (!processed) return;
-      const { exercise } = ctx;
-      const col = column(gender, 'image');
-      const previous = (exercise as any)[col] as string | null;
-
-      const imageKey = scope === 'platform'
-        ? buildBaseExerciseGenderImageKey(exercise.id, exercise.name, gender)
-        : buildGymExerciseGenderImageKey(ctx.folderPrefix as string, exercise.id, exercise.name, gender);
-      const imageUrl = buildStorageObjectUrl(imageKey);
-
-      const failure = await uploadAll(
-        [
-          { key: imageKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.image },
-          { key: thumbnailKeyFor(imageKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.thumbnail },
-        ],
-        scope === 'platform' ? baseExerciseGenderFolderKeys('image') : gymExerciseGenderFolderKeys(ctx.folderPrefix as string, 'image'),
-        ctx,
-        imageObjectUrls(previous),
-      );
-      if (failure) return res.status(failure.status).json(failure.body);
-
-      await writeColumn(ctx, col, imageUrl, req);
-      // The key is deterministic, so a replacement normally overwrites its own
-      // objects; the sweep matters only for an exercise renamed since its last upload.
-      await sweep(previous, 'image', [imageUrl, ...othersOf(exercise, col)], ctx);
-
-      recordAudit(req, {
-        action: 'update',
-        entityType: 'exercise',
-        entityId: exercise.id,
-        previous: { [col]: previous },
-        next: { [col]: imageUrl },
-      });
-      await respond(req, res, exercise.id, ctx.gymId);
+      await storeImage(req, res, String(req.params.id), gender, original);
     } catch (err) { next(err); }
   });
 
@@ -494,5 +513,5 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
     } catch (err) { next(err); }
   });
 
-  return router;
+  return { router, storeImage };
 }
