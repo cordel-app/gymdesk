@@ -9,7 +9,7 @@ import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligib
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql } from '../domain/planAssignments';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -167,7 +167,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // one, with every Superseded version as history. A pure read: nothing here
   // creates a Billing Event. `ends_at` is the plan's end date of the assignment
   // the version projects (null while open-ended or never projected). #2125 M6b-28: read off the
-  // assignment's current plan snapshot, never the `user_memberships` row.
+  // assignment's current plan snapshot, never the `user_memberships` row; M6b-37: found through
+  // the set's anchor `ps.plan_assignment_id`, not `ps.user_membership_id`.
   const { rows: setRows } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
@@ -177,7 +178,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
       ORDER BY ps.id DESC`,
     [gymId, memberId],
