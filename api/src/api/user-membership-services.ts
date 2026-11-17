@@ -76,6 +76,7 @@ const DISPLAY_SELECT = `
          ums.billing_frequency AS snapshot_billing_frequency,
          ums.unit_price AS snapshot_unit_price,
          ums.currency AS snapshot_currency,
+         sch.anchor_date AS schedule_anchor,
          ${LIVE_PRODUCT_COLUMNS}
   FROM plan_snapshots pa
   JOIN product_set_periodical_snapshots lnk
@@ -85,6 +86,7 @@ const DISPLAY_SELECT = `
     ON ums.id = lnk.product_periodical_snapshot_id AND ums.gym_id = pa.gym_id
        AND ums.source_id IS NOT NULL
   JOIN products gc ON gc.id = ums.product_id
+  LEFT JOIN product_set_schedules sch ON sch.id = ums.schedule_id
 `;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
@@ -226,6 +228,9 @@ export async function loadServicesForSimulation(
       quantity: shaped.quantity,
       startsOn: shaped.starts_at,
       endsOn: shaped.ends_at,
+      // #2964 — the line's schedule, as `loadProductSetSimulationAssignment()` reads it, so a line
+      // joining mid-cycle is prorated up to the billing calendar in this forecast too.
+      alignTo: row.schedule_anchor != null ? toDateOnly(row.schedule_anchor) : null,
     });
     byAssignment.set(shaped.user_membership_id, list);
   }
