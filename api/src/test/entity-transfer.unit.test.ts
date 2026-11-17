@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  PAYMENT_PROVIDER_TRANSFER_FIELDS,
   isTransferableObjectKey,
+  isValidEntitySlug,
+  parseSlugTransferRecord,
   isValidMuscleSlug,
   parseMuscleTransferRecord,
   parseTransferEntityType,
@@ -41,5 +44,24 @@ describe('entity transfer rules', () => {
     expect(transferImageRateLimitMax({})).toBe(600);
     expect(transferImageRateLimitMax({ TRANSFER_IMAGE_RATE_LIMIT_MAX: '50' })).toBe(50);
     expect(transferImageRateLimitMax({ TRANSFER_IMAGE_RATE_LIMIT_MAX: 'x' })).toBe(600);
+  });
+
+  it('accepts only #2951\'s hyphen slug shape for the entities beyond Muscles (#2952 stage 2)', () => {
+    expect(isValidEntitySlug('monei')).toBe(true);
+    expect(isValidEntitySlug('personal-training-1-1')).toBe(true);
+    expect(isValidEntitySlug('Monei')).toBe(false);
+    expect(isValidEntitySlug('-monei')).toBe(false);
+    expect(isValidEntitySlug('a--b')).toBe(false);
+    expect(isValidEntitySlug('x'.repeat(121))).toBe(false);
+  });
+
+  it('keeps only the listed fields of an imported record, so no flag or id reaches a writer', () => {
+    const parsed = parseSlugTransferRecord(
+      { slug: 'monei', name: 'Monei', provider_key: 'monei', is_default: true, id: 7 },
+      PAYMENT_PROVIDER_TRANSFER_FIELDS,
+    );
+    expect(parsed).toEqual({ record: { slug: 'monei', input: { name: 'Monei', provider_key: 'monei' } } });
+    expect(parseSlugTransferRecord({ slug: 'Bad' }, PAYMENT_PROVIDER_TRANSFER_FIELDS)).toHaveProperty('error');
+    expect(parseSlugTransferRecord([], PAYMENT_PROVIDER_TRANSFER_FIELDS)).toHaveProperty('error');
   });
 });

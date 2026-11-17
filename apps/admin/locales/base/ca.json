@@ -6271,6 +6271,8 @@
     "intro": "Exporta els tipus d'entitat seleccionats a un fitxer ZIP (un fitxer JSON per entitat i les seves imatges) o importa un fitxer així. Cada entitat s'identifica pel seu slug: es crea si cap entitat no té aquest slug i s'actualitza si ja existeix. Una actualització substitueix el contingut i les imatges de l'entitat i mai no canvia les seves relacions amb altres entitats.",
     "entity_types": "Tipus d'entitat",
     "type_muscles": "Músculs",
+    "type_payment_providers": "Proveïdors de pagament",
+    "type_base_payment_methods": "Mètodes de pagament",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Tria un fitxer ZIP…",

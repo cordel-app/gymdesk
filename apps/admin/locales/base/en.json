@@ -6258,6 +6258,8 @@
     "intro": "Export the selected entity types to a ZIP archive (one JSON file per entity plus its images), or import such an archive. An entity is matched by its slug: it is created when no entity has that slug and updated when one does. An update replaces the entity's own content and images and never changes its relationships with other entities.",
     "entity_types": "Entity types",
     "type_muscles": "Muscles",
+    "type_payment_providers": "Payment Providers",
+    "type_base_payment_methods": "Payment Methods",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",

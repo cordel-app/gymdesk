@@ -59,7 +59,7 @@ async function member(clerk: string | null = null): Promise<number> {
     [gymId, 'Cancel Member', `cancel-${uniq()}@test.com`, clerk]);
   return insertId;
 }
-async function plan(price: number): Promise<number> {
+async function plan(price: number, cadence: [number, string] = [1, 'month']): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
@@ -68,14 +68,14 @@ async function plan(price: number): Promise<number> {
     `INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status) VALUES (?, ?, ?, '2020-01-01', 'active')`,
     [gymId, insertId, price]);
   await db.query(
-    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit) VALUES (?, ?, 1, 'month')`,
-    [gymId, insertId]);
+    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit) VALUES (?, ?, ?, ?)`,
+    [gymId, insertId, cadence[0], cadence[1]]);
   return insertId;
 }
 
-async function pending(memberId?: number, opts: { assignment?: boolean } = {}) {
+async function pending(memberId?: number, opts: { assignment?: boolean; cadence?: [number, string] } = {}) {
   const ownerId = memberId ?? await member();
-  const c = await auth(request.post('/product-sets')).send({ member_id: ownerId, membership_plan_id: await plan(40), starts_at: TODAY });
+  const c = await auth(request.post('/product-sets')).send({ member_id: ownerId, membership_plan_id: await plan(40, opts.cadence), starts_at: TODAY });
   expect(c.status).toBe(201);
   const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
   expect(pay.body.status).toBe('pending_payment');
@@ -277,7 +277,9 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     expect((await asMember(clerk, `/${chosen.id}/cancel`)).status).toBe(200);
     // A later cart whose plan is the previous set's own snapshot, linked rather than
     // added (#2125 M4b-3): cancelling it cancels no plan.
-    const cart = await pending(memberId, { assignment: false });
+    // A 4-weekly plan bills on a schedule of its own, so this Save & Pay does not
+    // collide with the cancelled set's initial event on the monthly schedule.
+    const cart = await pending(memberId, { assignment: false, cadence: [4, 'week'] });
     await db.query('UPDATE product_sets SET previous_product_set_id = ? WHERE id = ?', [chosen.id, cart.id]);
     await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ?', [cart.id]);
     await db.query(
