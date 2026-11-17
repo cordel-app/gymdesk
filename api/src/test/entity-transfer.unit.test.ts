@@ -5,6 +5,7 @@ import {
   PAYMENT_PROVIDER_TRANSFER_FIELDS,
   isTransferableObjectKey,
   isValidEntitySlug,
+  isValidGoalSlug,
   parseSlugTransferRecord,
   isValidMuscleSlug,
   parseMuscleTransferRecord,
@@ -53,6 +54,17 @@ describe('entity transfer rules', () => {
     expect(isValidEntitySlug('-monei')).toBe(false);
     expect(isValidEntitySlug('a--b')).toBe(false);
     expect(isValidEntitySlug('x'.repeat(121))).toBe(false);
+  });
+
+  it('accepts a seeded goal\'s snake_case slug beside the hyphen shape for goals only (#2952 stage 4)', () => {
+    expect(isValidGoalSlug('weight_loss')).toBe(true);
+    expect(isValidGoalSlug('my-goal-2')).toBe(true);
+    expect(isValidGoalSlug('Weight_Loss')).toBe(false);
+    expect(isValidGoalSlug('a__b')).toBe(false);
+    expect(isValidGoalSlug('_a')).toBe(false);
+    expect('error' in parseSlugTransferRecord({ slug: 'weight_loss', name: 'W' }, ['name'])).toBe(true);
+    const parsed = parseSlugTransferRecord({ slug: 'weight_loss', name: 'W' }, ['name'], { goalSlug: true });
+    expect(parsed).toEqual({ record: { slug: 'weight_loss', input: { name: 'W' } } });
   });
 
   it('keeps only the listed fields of an imported record, so no flag or id reaches a writer', () => {

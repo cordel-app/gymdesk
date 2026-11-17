@@ -6274,6 +6274,8 @@
     "type_payment_providers": "Proveïdors de pagament",
     "type_base_payment_methods": "Mètodes de pagament",
     "type_base_professional_services": "Serveis professionals",
+    "type_base_personal_goals": "Objectius personals",
+    "type_base_nutrition_goals": "Objectius nutricionals",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Tria un fitxer ZIP…",

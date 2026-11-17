@@ -6247,6 +6247,8 @@
     "type_payment_providers": "Proveedores de pago",
     "type_base_payment_methods": "Métodos de pago",
     "type_base_professional_services": "Servicios profesionales",
+    "type_base_personal_goals": "Objetivos personales",
+    "type_base_nutrition_goals": "Objetivos nutricionales",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Elegir archivo ZIP…",

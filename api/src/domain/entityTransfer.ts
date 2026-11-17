@@ -19,6 +19,7 @@ import { parseMuscleTranslations } from './muscleTranslations';
  */
 export const TRANSFER_ENTITY_TYPES = [
   'muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services',
+  'base_personal_goals', 'base_nutrition_goals',
 ] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
@@ -28,6 +29,8 @@ export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]>
   payment_providers: [],
   base_payment_methods: ['image'],
   base_professional_services: ['image'],
+  base_personal_goals: ['image'],
+  base_nutrition_goals: ['image'],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -125,15 +128,17 @@ export const BASE_PAYMENT_METHOD_TRANSFER_FIELDS = ['code', 'status', 'translati
 export function parseSlugTransferRecord(
   body: unknown,
   fields: readonly string[],
+  opts: { goalSlug?: boolean } = {},
 ): { record: { slug: string; input: Record<string, unknown> } } | { error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'body must be an object' };
   const b = body as Record<string, unknown>;
-  if (!isValidEntitySlug(b.slug)) {
-    return { error: `slug must be lowercase letters and digits separated by hyphens (at most ${ENTITY_SLUG_MAX})` };
+  if (opts.goalSlug ? !isValidGoalSlug(b.slug) : !isValidEntitySlug(b.slug)) {
+    const separators = opts.goalSlug ? 'hyphens or underscores' : 'hyphens';
+    return { error: `slug must be lowercase letters and digits separated by ${separators} (at most ${ENTITY_SLUG_MAX})` };
   }
   const input: Record<string, unknown> = {};
   for (const field of fields) if (b[field] !== undefined) input[field] = b[field];
-  return { record: { slug: b.slug, input } };
+  return { record: { slug: b.slug as string, input } };
 }
 
 /**
@@ -144,3 +149,22 @@ export function parseSlugTransferRecord(
 export const BASE_PROFESSIONAL_SERVICE_TRANSFER_FIELDS = [
   'name', 'description', 'max_capacity', 'min_participants', 'booking_type', 'translations',
 ] as const;
+
+/**
+ * A Base goal's slug: #2951's hyphenated shape for a goal Cordel created, or the
+ * snake_case label handle a seeded goal kept (`weight_loss`, migration 438), at
+ * most `ENTITY_SLUG_MAX`. Any other shape is refused, never normalised.
+ */
+const GOAL_SLUG_PATTERN = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
+
+export function isValidGoalSlug(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= ENTITY_SLUG_MAX && GOAL_SLUG_PATTERN.test(value);
+}
+
+/** The fields of a Base Personal Goal an archive carries: its own content (never a gym's copy or availability). */
+export const BASE_PERSONAL_GOAL_TRANSFER_FIELDS = [
+  'name', 'description', 'target_value', 'target_unit', 'target_type', 'translations',
+] as const;
+
+/** The fields of a Base Nutrition Goal an archive carries. */
+export const BASE_NUTRITION_GOAL_TRANSFER_FIELDS = ['name', 'description', 'translations'] as const;
