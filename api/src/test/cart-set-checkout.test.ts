@@ -214,3 +214,50 @@ describe('Product Set Save & Pay with standalone cart purchases (#2949 stage 5)'
     expect(await linkedToSet(p.body.purchase_id)).toBe(false);
   });
 });
+
+// #2949 stage 6 — the screens: the member's set read and the Admin's review list the standalone
+// purchases the set's checkout pays (or is paying), so both apps' cart views show the whole cart.
+describe('the cart views list the standalone purchases (#2949 stage 6)', () => {
+  const memberSet = (clerk: string, setId: number) => {
+    // `/me` (meRouter) authenticates first, then falls through to this router: two verifications.
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any).mockResolvedValueOnce({ sub: clerk } as any);
+    return request.get(`/me/product-sets/${setId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+  };
+
+  it('reports them on the member\'s set read and in the review\'s contracted items, while in the cart and once paying', async () => {
+    const m = await memberWithDraft();
+    const p = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('11.00') });
+    expect(p.status).toBe(201);
+    const name = (await db.query<any>(`SELECT product_name FROM ${TEST_PURCHASES} AS legacy WHERE id = ?`, [p.body.purchase_id])).rows[0].product_name;
+
+    const view = await memberSet(m.clerk, m.setId);
+    expect(view.status).toBe(200);
+    expect(view.body.cart_purchases.map((x: any) => x.id)).toEqual([p.body.purchase_id]);
+    expect(view.body.cart_purchases[0].amount).toBeCloseTo(11, 2);
+    // Linked to no Product Set: never one of the set's own purchases.
+    expect(view.body.purchases.map((x: any) => x.id)).not.toContain(p.body.purchase_id);
+
+    const review = await staff('get', `/product-sets/${m.setId}/review`);
+    expect(review.status).toBe(200);
+    const contracted = review.body.contracted_items.filter((i: any) => i.name === name);
+    expect(contracted).toHaveLength(1);
+    expect(contracted[0]).toMatchObject({ kind: 'product', period: 'one_off' });
+    expect(contracted[0].members.map((x: any) => x.member_id)).toEqual([m.id]);
+
+    // Once Save & Pay joined it, the pending read still lists it; one added later is not part of it.
+    expect((await staff('post', `/product-sets/${m.setId}/save-and-pay`).send({})).status).toBe(201);
+    const late = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('4.00') });
+    expect(late.status).toBe(201);
+    const pending = await memberSet(m.clerk, m.setId);
+    expect(pending.body.status).toBe('pending_payment');
+    expect(pending.body.cart_purchases.map((x: any) => x.id)).toEqual([p.body.purchase_id]);
+  });
+
+  it('shows another member no cart purchases of the owner', async () => {
+    const m = await memberWithDraft();
+    await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('3.00') });
+    const other = await member();
+    const res = await memberSet(other.clerk, m.setId);
+    expect(res.status === 404 || (res.body.cart_purchases ?? []).length === 0).toBe(true);
+  });
+});

@@ -20,8 +20,13 @@ import {
   cartPendingAmount,
   cartPhase,
   cartProductState,
+  cartItemRemovePath,
   hasCart,
   pendingCartCancelErrorKey,
+  separateStandaloneCart,
+  standaloneCommitAction,
+  standaloneSecondsLeft,
+  type MemberStandaloneCart,
 } from '../../../apps/member/src/lib/memberCart';
 import type { MemberSetReview } from '../../../apps/member/src/lib/memberProducts';
 
@@ -75,7 +80,7 @@ describe('what the cart holds (§3/§4)', () => {
   });
 
   it('knows which one-time Product is in the cart and which purchase removes it', () => {
-    expect(cartProductState(9, draft())).toEqual({ state: 'in_cart', purchaseId: 31 });
+    expect(cartProductState(9, draft())).toEqual({ state: 'in_cart', key: 'purchase-31' });
     expect(cartProductState(3, draft())).toEqual({ state: 'none' });
     expect(cartProductState(9, draft({ status: 'pending_payment' }))).toEqual({ state: 'none' });
   });
@@ -195,8 +200,10 @@ describe('refusals', () => {
 describe('the page (§1–§2)', () => {
   const page = readFileSync(PAGE, 'utf-8');
 
-  it('adds a one-time Product to the Draft instead of starting its own payment', () => {
-    expect(page).toContain('/purchases`');
+  it('adds a one-time Product to the cart instead of starting its own payment (#2949 stage 6: standalone, no Product Set)', () => {
+    const confirm = page.slice(page.indexOf('async function confirmPurchase('), page.indexOf('// ── #1122 — Add Plan'));
+    expect(confirm).toContain("apiFetch('/me/cart/purchases', {");
+    expect(confirm).not.toContain('/me/product-sets/');
     expect(page).not.toContain('/me/products/${product.id}/purchase`');
   });
 
@@ -224,5 +231,82 @@ describe('the page (§1–§2)', () => {
   it('spells no colour of its own: the cart card is memberChrome’s', () => {
     expect(readFileSync(join(MEMBER, 'src', 'lib', 'memberCart.ts'), 'utf-8')).not.toMatch(/['"`]#[0-9a-fA-F]{3,8}\b/);
     expect(page).toContain('cartSummaryStyle');
+  });
+});
+
+// #2949 stage 6 — the member's standalone one-time purchases (`GET /me/cart/purchases`,
+// linked to no Product Set) are part of the one cart.
+describe('standalone purchases in the cart (#2949 stage 6)', () => {
+  const standalone = (over: Partial<MemberStandaloneCart> = {}): MemberStandaloneCart => ({
+    purchases: [
+      { id: 41, product_id: 15, product_name: 'Water bottle', amount: 12, currency: 'EUR', cart_expires_at: '2026-11-17T08:00:00.000Z' },
+      { id: 42, product_id: 16, product_name: 'Towel', amount: 8, currency: 'EUR', cart_expires_at: '2026-11-17T07:30:00.000Z' },
+    ],
+    total: 20, currency: 'EUR', ...over,
+  });
+  const empty = draft({ lines: [], plans: [], purchases: [], owner_member_id: 5 } as any);
+
+  it('are a cart of their own when there is no Draft, paid by their own checkout', () => {
+    expect(cartPhase(null, 5, standalone())).toBe('standalone');
+    expect(cartItems(null, 5, standalone()).map((i) => i.key)).toEqual(['standalone-41', 'standalone-42']);
+    expect(cartCounts(null, 5, standalone())).toEqual({ plans: 0, products: 2 });
+    expect(hasCart(null, 5, standalone())).toBe(true);
+    expect(cartCommitAction(null, null, 5, standalone())).toBe('cart_checkout');
+    expect(cartCommitAction(null, null, 5, standalone({ total: 0 }))).toBeNull();
+  });
+
+  it('join the member’s Draft, whose Save & Pay pays them (stage 5), even a Draft adding nothing yet', () => {
+    const v = draft({ owner_member_id: 5 } as any);
+    expect(cartPhase(v, 5, standalone())).toBe('draft');
+    expect(cartItems(v, 5, standalone()).map((i) => i.key))
+      .toEqual(['plan-21', 'line-11', 'purchase-31', 'standalone-41', 'standalone-42']);
+    expect(cartCounts(v, 5, standalone({}))).toEqual({ plans: 1, products: 4 });
+    expect(cartPhase(empty, 5, standalone())).toBe('draft');
+    expect(cartCommitAction(empty, review(), 5, standalone())).toBe('save_and_pay');
+  });
+
+  it('list the purchases a checkout in flight joined, and a later one beside it as its own cart (§6)', () => {
+    const pending = draft({ status: 'pending_payment', owner_member_id: 5, lines: [], plans: [], purchases: [],
+      cart_purchases: [{ id: 41, product_id: 15, product_name: 'Water bottle', amount: 12 }] } as any);
+    expect(cartPhase(pending, 5)).toBe('pending_payment');
+    expect(cartItems(pending, 5).map((i) => i.key)).toEqual(['standalone-41']);
+    const later = standalone({ purchases: [{ id: 43, product_id: 17, product_name: 'Lock', amount: 5 }], total: 5 });
+    expect(cartPhase(pending, 5, later)).toBe('pending_payment');
+    expect(separateStandaloneCart(pending, 5, later)).toBe(true);
+    expect(standaloneCommitAction(later)).toBe('cart_checkout');
+    expect(separateStandaloneCart(draft({ owner_member_id: 5 } as any), 5, later)).toBe(false);
+  });
+
+  it('never fold into a Draft staff are still setting up', () => {
+    const staff = draft({ awaiting_staff_setup: true, owner_member_id: 5 } as any);
+    expect(cartPhase(staff, 5, standalone())).toBe('awaiting_staff');
+    expect(cartItems(staff, 5, standalone()).some((i) => i.key.startsWith('standalone-'))).toBe(false);
+    expect(separateStandaloneCart(staff, 5, standalone())).toBe(true);
+    expect(cartCommitAction(staff, review(), 5, standalone())).toBeNull();
+  });
+
+  it('knows a standalone Product is in the cart, and removes it through its own route', () => {
+    expect(cartProductState(15, null, standalone())).toEqual({ state: 'in_cart', key: 'standalone-41' });
+    const item = cartItems(null, 5, standalone())[0];
+    expect(cartItemRemovePath(item, null)).toBe('/me/cart/purchases/41');
+    const line = cartItems(draft(), 5)[1];
+    expect(cartItemRemovePath(line, 7)).toBe('/me/product-sets/7/services/11');
+  });
+
+  it('count down to the first purchase leaving the cart (#2962)', () => {
+    expect(standaloneSecondsLeft(standalone(), Date.parse('2026-11-17T07:00:00.000Z'))).toBe(1800);
+    expect(standaloneSecondsLeft(standalone({ purchases: [] }), Date.now())).toBeNull();
+  });
+
+  it('read the standalone checkout’s refusals in the member’s language', () => {
+    expect(cartErrorKey('cart_changed')).toBe('membership.cart_error_changed');
+    expect(cartErrorKey('nothing_to_pay')).toBe('membership.cart_error_changed');
+    expect(cartErrorKey('family_owner_pays')).toBe('membership.cart_error_family_owner_pays');
+  });
+
+  it('the page reads them and pays them through their own checkout', () => {
+    const page = readFileSync(PAGE, 'utf-8');
+    expect(page).toContain("apiFetch<MemberStandaloneCart>('/me/cart/purchases')");
+    expect(page).toContain("'/me/cart/checkout', { method: 'POST' }");
   });
 });

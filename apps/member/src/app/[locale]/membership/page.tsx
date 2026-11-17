@@ -51,9 +51,12 @@ function productsQuery(ids: number[]): string {
 import {
   type CartItem,
   type MemberCartView,
+  type MemberStandaloneCart,
+  EMPTY_STANDALONE_CART,
   cartCommitAction,
   cartCounts,
   cartErrorKey,
+  cartItemRemovePath,
   cartItems,
   cartItemsRemovable,
   cartPendingAmount,
@@ -61,6 +64,10 @@ import {
   cartProductState,
   hasCart,
   pendingCartCancelErrorKey,
+  separateStandaloneCart,
+  standaloneCartItems,
+  standaloneCommitAction,
+  standaloneSecondsLeft,
 } from '@/lib/memberCart';
 import { RETRY_PAYMENT_PARAM, wantsPaymentRetry } from '@/lib/paymentReturn';
 import {
@@ -345,6 +352,10 @@ export default function MembershipPage() {
   // for, and the refusal of the last one (keyed by Product). Every figure and
   // every rule stays the server's; this is which card says what.
   const [setView, setSetView] = useState<MemberCartView | null>(null);
+  // #2949 stage 6 — the member's standalone one-time purchases (`GET /me/cart/purchases`),
+  // read with the set view; the seconds until the first leaves the cart, taken at that read.
+  const [standaloneCart, setStandaloneCart] = useState<MemberStandaloneCart>(EMPTY_STANDALONE_CART);
+  const [standaloneSeconds, setStandaloneSeconds] = useState<number | null>(null);
   // #2663 — `My Plans` and `My Products` render only once the one selected version is known.
   const [setViewLoaded, setSetViewLoaded] = useState(false);
   const [draftBusy, setDraftBusy] = useState<number | null>(null);
@@ -458,6 +469,11 @@ export default function MembershipPage() {
 
   // #2496 stage 3 — read with the page and after every Draft edit.
   async function loadSetView() {
+    // #2949 stage 6: a failed read is an empty standalone cart, never a reason to hide the set's.
+    const standalone = apiFetch<MemberStandaloneCart>('/me/cart/purchases')
+      .then((c) => ({ purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null }))
+      .catch(() => EMPTY_STANDALONE_CART)
+      .then((c) => { setStandaloneCart(c); setStandaloneSeconds(standaloneSecondsLeft(c, Date.now())); });
     try {
       const rows = await apiFetch<MemberSetRow[]>('/me/product-sets');
       const id = currentSetId(rows);
@@ -476,6 +492,7 @@ export default function MembershipPage() {
       // still judges the add itself.
       setSetView(null);
     } finally {
+      await standalone;
       setSetViewLoaded(true);
     }
   }
@@ -487,10 +504,13 @@ export default function MembershipPage() {
 
   // #2477 stage 3 — the Draft's live countdown, from the server's seconds; at
   // zero the page re-reads, so an expired Draft stops being offered for editing.
+  // #2949 stage 6: with standalone purchases in the cart, the first of them to leave it counts too.
+  const setSeconds = setView?.status === 'in_cart' ? setView.expires_in_seconds ?? null : null;
   const draftSecondsLeft = useDraftCountdown(
-    setView?.status === 'in_cart' ? setView.expires_in_seconds ?? null : null,
+    setSeconds == null ? standaloneSeconds : standaloneSeconds == null ? setSeconds : Math.min(setSeconds, standaloneSeconds),
     loadSetView,
   );
+  const viewerId = appMember?.id ?? null;
 
   /** Adds a recurring Product to the member's Draft, creating it if there is none. */
   async function addToDraft(product: MemberProduct) {
@@ -584,7 +604,8 @@ export default function MembershipPage() {
    * nothing owed activates. The amount is the server's; the body names nothing.
    */
   async function commitSet() {
-    const action = cartCommitAction(setView, review);
+    const action = cartCommitAction(setView, review, viewerId, standaloneCart);
+    if (action === 'cart_checkout') return checkoutStandalone();
     if (!review || !action || commitBusy) return;
     setCommitBusy(true);
     setCommitError(null);
@@ -603,13 +624,42 @@ export default function MembershipPage() {
     setCommitBusy(false);
   }
 
-  /** Discards the whole selection: the member's unpaid Draft, through its own route. */
+  /**
+   * #2949 stage 6 — the standalone purchases' own checkout (no Draft to pay them):
+   * one payment for all of them, at the server's total, on the hosted page.
+   */
+  async function checkoutStandalone() {
+    if (commitBusy) return;
+    setCommitBusy(true);
+    setCommitError(null);
+    try {
+      const out = await apiFetch<{ checkoutUrl: string }>('/me/cart/checkout', { method: 'POST' });
+      window.location.href = out.checkoutUrl;
+      return; // stays busy while the browser leaves for the payment page
+    } catch (err: any) {
+      setCommitError(cartErrorKey(err?.message));
+      await loadSetView();
+    }
+    setCommitBusy(false);
+  }
+
+  /**
+   * Discards the whole selection: the member's unpaid Draft, through its own
+   * route, and (#2949 stage 6) every standalone purchase in the cart. A Draft
+   * staff are still setting up, or a set awaiting payment, is never touched.
+   */
   async function discardDraft() {
-    if (!setView || setView.status !== 'in_cart') return;
+    const phase = cartPhase(setView, viewerId, standaloneCart);
+    if (phase == null) return;
     setDraftBusy(-1);
     setDraftError(null);
     try {
-      await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+      if (phase === 'draft' && setView && setView.status === 'in_cart') {
+        await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
+      }
+      for (const p of standaloneCart.purchases) {
+        await apiFetch(`/me/cart/purchases/${p.id}`, { method: 'DELETE' });
+      }
     } catch (err: any) {
       setDraftError({ productId: null, key: draftErrorKey(err?.message) });
     } finally {
@@ -625,14 +675,14 @@ export default function MembershipPage() {
    * server keeps every other item and re-prices the cart.
    */
   async function removeCartItem(item: CartItem) {
-    if (!setView || setView.status !== 'in_cart' || cartBusy !== null) return;
+    if (cartBusy !== null) return;
+    // #2949 stage 6: a standalone purchase leaves through its own route; a set item only from a Draft.
+    const standalone = item.kind === 'purchase' && item.standalone;
+    if (!standalone && (!setView || setView.status !== 'in_cart')) return;
+    const path = cartItemRemovePath(item, setView?.id ?? null);
+    if (!path) return;
     setCartBusy(item.key);
     setCartError(null);
-    const path = item.kind === 'plan'
-      ? `/me/product-sets/${setView.id}/plans/${item.planSnapshotId}`
-      : item.kind === 'line'
-        ? `/me/product-sets/${setView.id}/services/${item.lineId}`
-        : `/me/product-sets/${setView.id}/purchases/${item.purchaseId}`;
     try {
       await apiFetch(path, { method: 'DELETE' });
     } catch (err: any) {
@@ -1237,7 +1287,7 @@ export default function MembershipPage() {
         {/* #2746 stage 2 — the cart card above carries the one Pay; the
             button stays here only for a Draft that changes something without
             adding an item (it only cancels one). */}
-        {action && !hasCart(setView) && (
+        {action && !hasCart(setView, viewerId, standaloneCart) && (
           <button type="button" style={{ ...styles.buyBtn, width: '100%', marginTop: 10 }} disabled={commitBusy} onClick={commitSet}>
             {t(action === 'save_and_pay' ? 'membership.summary_save_and_pay' : 'membership.summary_confirm')}
           </button>
@@ -1255,7 +1305,7 @@ export default function MembershipPage() {
     // #2746 stage 2 — the cart card carries the count, the countdown and the
     // global Cancel; this notice is left for a refusal with no cart to show it.
     const generalError = draftError && draftError.productId === null ? draftError.key : null;
-    if (hasCart(setView) || !generalError) return null;
+    if (hasCart(setView, viewerId, standaloneCart) || !generalError) return null;
     return (
       <div style={{ ...noticeStyle('info'), marginTop: 12 }}>
         <span role="alert" style={styles.draftError}>{t(generalError as any)}</span>
@@ -1272,8 +1322,8 @@ export default function MembershipPage() {
    * cannot start beside it. The server refuses every write to it as well.
    */
   function renderStaffDraftCart() {
-    const { plans, products } = cartCounts(setView);
-    const items = cartItems(setView);
+    const { plans, products } = cartCounts(setView, viewerId);
+    const items = cartItems(setView, viewerId);
     const counts = [
       plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
       products > 0 ? t('membership.cart_products', { count: products }) : null,
@@ -1312,8 +1362,8 @@ export default function MembershipPage() {
    * whole purchase after a confirmation (#2747). No item leaves on its own.
    */
   function renderPendingCart() {
-    const { plans, products } = cartCounts(setView);
-    const items = cartItems(setView);
+    const { plans, products } = cartCounts(setView, viewerId);
+    const items = cartItems(setView, viewerId);
     const amount = cartPendingAmount(setView);
     const total = amount == null ? '—' : formatPaymentAmount(amount, 'EUR', gymFmt);
     const busy = commitBusy || submitting;
@@ -1371,6 +1421,84 @@ export default function MembershipPage() {
   }
 
   /**
+   * #2949 stage 6 — the member's standalone one-time purchases as a cart of
+   * their own: when there is no Draft to pay them (`phase === 'standalone'`),
+   * or `beside` a set whose checkout is in flight, which they are not part of.
+   * The total is the server's (`GET /me/cart/purchases`), Pay is
+   * `POST /me/cart/checkout`, each item has its own Cancel and the global
+   * Cancel removes them all after the same confirmation. Nothing is priced here.
+   */
+  function renderStandaloneCart(beside: boolean) {
+    const items = standaloneCartItems(standaloneCart);
+    const action = standaloneCommitAction(standaloneCart);
+    const total = standaloneCart.total == null ? '—' : formatPaymentAmount(standaloneCart.total, standaloneCart.currency ?? 'EUR', gymFmt);
+    const remaining = formatDraftRemaining(draftSecondsLeft);
+    const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
+    const busy = commitBusy || draftBusy !== null || cartBusy !== null;
+    const error = beside ? cartError : (cartError ?? commitError);
+    return (
+      <section style={styles.section} data-cart data-cart-standalone>
+        <div style={cartSummaryStyle}>
+          <div style={styles.cartTop}>
+            <div style={styles.cartInfo}>
+              <h2 style={cartHeadingStyle}>{t(beside ? 'membership.cart_standalone_heading' : 'membership.cart_heading')}</h2>
+              <span style={cartMutedStyle}>{t('membership.cart_products', { count: items.length })}</span>
+              <span style={cartTotalStyle} data-cart-total>{total}</span>
+              {beside && <span style={cartMutedStyle}>{t('membership.cart_standalone_hint')}</span>}
+              {!beside && remaining != null && (
+                <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+                  {t('membership.draft_expires_in')} {remaining}
+                </span>
+              )}
+            </div>
+            <div style={styles.cartActions}>
+              <button
+                type="button"
+                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
+                disabled={busy || !action}
+                onClick={checkoutStandalone}
+              >
+                {commitBusy ? t('membership.cart_paying') : t('membership.cart_pay')}
+              </button>
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
+                disabled={busy}
+                onClick={() => setConfirmDiscard(true)}
+              >
+                {t('membership.cart_cancel')}
+              </button>
+            </div>
+          </div>
+          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
+            {items.map((item) => (
+              <li key={item.key} style={styles.cartItem}>
+                <span style={styles.cartItemName}>
+                  <span style={cartMutedStyle}>{t('membership.cart_kind_product')}</span>
+                  {' '}{item.name}
+                  {item.kind === 'purchase' && (
+                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
+                  disabled={busy}
+                  onClick={() => removeCartItem(item)}
+                >
+                  {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!beside && renderCartAddButtons()}
+          {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
+        </div>
+      </section>
+    );
+  }
+
+  /**
    * #2746 stage 2 — the shopping cart (§4): the member's Draft Product Set as
    * one purchase, at the top of My Products. The counts are the server's
    * (`cart`), the total is the server's review (`commitCharge()`, the figure
@@ -1378,13 +1506,17 @@ export default function MembershipPage() {
    * actions commit or discard the whole Draft. Nothing here prices anything.
    */
   function renderCart() {
-    const phase = cartPhase(setView, appMember?.id ?? null);
+    const phase = cartPhase(setView, viewerId, standaloneCart);
     if (phase == null) return null;
-    if (phase === 'pending_payment') return renderPendingCart();
-    if (phase === 'awaiting_staff') return renderStaffDraftCart();
-    const { plans, products } = cartCounts(setView);
-    const items = cartItems(setView);
-    const action = cartCommitAction(setView, review);
+    // #2949 stage 6: purchases added while the set's checkout is in flight (or staff are
+    // setting it up) are not part of it, so they are a cart card of their own beside it.
+    const beside = separateStandaloneCart(setView, viewerId, standaloneCart) ? renderStandaloneCart(true) : null;
+    if (phase === 'pending_payment') return <>{renderPendingCart()}{beside}</>;
+    if (phase === 'awaiting_staff') return <>{renderStaffDraftCart()}{beside}</>;
+    if (phase === 'standalone') return renderStandaloneCart(false);
+    const { plans, products } = cartCounts(setView, viewerId, standaloneCart);
+    const items = cartItems(setView, viewerId, standaloneCart);
+    const action = cartCommitAction(setView, review, viewerId, standaloneCart);
     const currency = review?.currency ?? 'EUR';
     const total = review?.amount_due == null ? '—' : formatPaymentAmount(review.amount_due, currency, gymFmt);
     const remaining = formatDraftRemaining(draftSecondsLeft);
@@ -1443,7 +1575,7 @@ export default function MembershipPage() {
                     <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
                   )}
                 </span>
-                {cartItemsRemovable(setView) && (<button
+                {(cartItemsRemovable(setView) || (item.kind === 'purchase' && item.standalone)) && (<button
                   type="button"
                   style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
                   disabled={busy}
@@ -1765,10 +1897,10 @@ export default function MembershipPage() {
     // Product Set, never bought on its own (the server's `addable_to_draft`).
     if (product.addable_to_draft) return draftAction(product);
     // #2746 stage 2 — a one-time Product joins the cart, or is already in it.
-    const inCart = cartProductState(product.id, setView);
+    const inCart = cartProductState(product.id, setView, standaloneCart);
     if (inCart.state === 'in_cart') {
-      const key = `purchase-${inCart.purchaseId}`;
-      const item = cartItems(setView).find((i) => i.key === key);
+      const item = [...cartItems(setView, viewerId, standaloneCart), ...standaloneCartItems(standaloneCart)]
+        .find((i) => i.key === inCart.key);
       return (
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <StatusPill status="pending" label={t('membership.cart_in_cart')} />
@@ -1849,9 +1981,10 @@ export default function MembershipPage() {
   }
 
   /**
-   * #2746 stage 2 — a one-time Product goes into the member's cart (their Draft
-   * Product Set, created if there is none) instead of starting a payment of its
-   * own: nothing is charged until the cart's Pay (§2). The body names the
+   * #2746 stage 2 — a one-time Product goes into the member's cart instead of
+   * starting a payment of its own: nothing is charged until the cart's Pay (§2).
+   * Since #2949 stage 6 it is a standalone purchase (`/me/cart/purchases`), never
+   * linked to a Product Set; a Draft's Save & Pay pays it with the rest. The body names the
    * Product, the applied Promotion and who it is for — the route re-reads and
    * re-prices the Promotion (#1118 §8), so the browser never names a price.
    */
@@ -1860,8 +1993,9 @@ export default function MembershipPage() {
     setPurchaseError(null);
     try {
       const applied = appliedPromotionFor(product);
-      const draft = await apiFetch<{ id: number }>('/me/product-sets/draft', { method: 'POST' });
-      await apiFetch(`/me/product-sets/${draft.id}/purchases`, {
+      // #2949 stage 6: a one-time Product enters the cart on its own (stage 4), never a
+      // Product Set; the Draft's Save & Pay pays it with the rest when there is one (stage 5).
+      await apiFetch('/me/cart/purchases', {
         method: 'POST',
         body: JSON.stringify({
           product_id: product.id,
@@ -1953,7 +2087,7 @@ export default function MembershipPage() {
    */
   function renderPlansHeader() {
     // #2814 — while the cart is shown the two actions live inside it.
-    if (cartPhase(setView, appMember?.id ?? null) != null) return null;
+    if (cartPhase(setView, appMember?.id ?? null, standaloneCart) != null) return null;
     const buttons = renderAddButtons(primaryButtonStyle);
     return buttons && <div style={styles.addPlanRow}>{buttons}</div>;
   }
