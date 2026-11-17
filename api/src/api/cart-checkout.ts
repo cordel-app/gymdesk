@@ -47,7 +47,7 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { payerCheckoutUrl } from './checkout-url';
-import { lockPurchase, purchaseSnapshotTable, updatePurchase } from './purchase-writer';
+import { deletePurchase, lockPurchase, purchaseSnapshotTable, updatePurchase } from './purchase-writer';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
 import { purchaseSnapshotParams, purchaseSnapshotsSql } from './purchase-snapshots';
 import { cartPurchaseEventNameFor } from './billing-event-name';
@@ -94,6 +94,20 @@ export async function loadCartPurchases(exec: Conn, gymId: string, memberId: num
     purchaseSnapshotParams([gymId, memberId, IN_CART_PURCHASE_STATUS]),
   );
   return rows.map(toCartPurchase);
+}
+
+/**
+ * #2967 — cancelling the cart removes its standalone In Cart one-time purchases too (they have
+ * charged nothing, so a hard delete, as the member's own removal does). Only this member's
+ * standalone ones: purchases of a cart Product Set go with that set, and active ones are untouched.
+ */
+export async function deleteStandaloneCartPurchases(tx: Tx, gymId: string, memberId: number): Promise<number> {
+  let n = 0;
+  for (const p of await loadCartPurchases(tx, gymId, memberId)) {
+    if (await lockPurchase(tx, gymId, memberId, p.id)
+      && await deletePurchase(tx, gymId, p.id, { memberId, status: IN_CART_PURCHASE_STATUS })) n++;
+  }
+  return n;
 }
 
 function toCartPurchase(r: any): CartPurchase {
