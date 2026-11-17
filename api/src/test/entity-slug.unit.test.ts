@@ -171,3 +171,41 @@ describe('every production Professional Service insert writes a slug (#2951 stag
     expect(sql).toMatch(/\bslug\b/);
   });
 });
+
+describe('migration 440 carries the same slug rule (#2951 stage 5)', () => {
+  const source = readFileSync(join(__dirname, '../infra/migrations/440_food_slugs.js'), 'utf8');
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const load = new Function(`${source.split('const FALLBACK')[0]}; return { generateSlug, nextAvailableSlug, SLUG_MAX };`);
+  const migration = load() as {
+    generateSlug: (name: string, fallback: string) => string;
+    nextAvailableSlug: (base: string, used: Set<string>) => string;
+    SLUG_MAX: number;
+  };
+
+  it('agrees with the domain module', () => {
+    expect(migration.SLUG_MAX).toBe(ENTITY_SLUG_MAX);
+    for (const name of ['Salmon, Atlantic', 'Crème Brûlée', 'Yogurt (0% fat)', '***', 'c'.repeat(200)]) {
+      expect(migration.generateSlug(name, 'food')).toBe(generateSlug(name, 'food'));
+    }
+    expect(migration.nextAvailableSlug('apple', new Set(['apple', 'apple-2']))).toBe('apple-3');
+  });
+});
+
+describe('every production food insert writes a slug (#2951 stage 5)', () => {
+  // `slug` stays nullable (the Base id reservation inserts a placeholder legacy row with no gym), so
+  // the writers are what guarantee one. The placeholder itself (`'__reserved_id_'`) names none.
+  const root = join(__dirname, '..');
+  const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.ts') && !f.startsWith('test') && !f.includes('infra/migrations'));
+  const inserts = files.flatMap((f) =>
+    (readFileSync(join(root, f), 'utf8').match(/INSERT (?:IGNORE )?INTO (?:base_)?nutrition_library_items\b[\s\S]*?VALUES[^\n]*/g) ?? [])
+      .filter((sql) => !sql.includes('__reserved_id_'))
+      .map((sql) => [f, sql] as const));
+
+  it('finds the two writers', () => {
+    expect(inserts.length).toBeGreaterThanOrEqual(2);
+  });
+  it.each(inserts)('%s names slug', (_file, sql) => {
+    expect(sql.split('VALUES')[0]).toMatch(/\bslug\b/);
+  });
+});

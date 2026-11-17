@@ -4313,6 +4313,7 @@
     "assign_to_member": "Assign plan to member"
   },
   "nutrition_library": {
+    "details_slug": "Slug",
     "show_deleted": "Show deleted",
     "delete": "Delete",
     "delete_confirm": "Delete \"{name}\"? This cannot be undone.",

@@ -4326,6 +4326,7 @@
     "assign_to_member": "Assignar pla a membre"
   },
   "nutrition_library": {
+    "details_slug": "Slug",
     "show_deleted": "Mostra eliminats",
     "delete": "Elimina",
     "delete_confirm": "Vols eliminar \"{name}\"? Aquesta acció no es pot desfer.",
