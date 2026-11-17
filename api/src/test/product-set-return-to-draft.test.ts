@@ -19,7 +19,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, linkTestSetToAssignment } from './helpers';
 
 const SECRET = 'test-return-to-draft';
 let gymId: string;
@@ -73,7 +73,7 @@ async function pending() {
   const { insertId: umId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
     [gymId, memberId, TODAY]);
-  await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, c.body.id]);
+  await linkTestSetToAssignment(Number(c.body.id), Number(umId));
   return { id: Number(c.body.id), memberId, planId, umId, requestId: Number(pay.body.payment_request_id) };
 }
 const eventCount = async (id: number) =>

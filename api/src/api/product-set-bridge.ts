@@ -21,7 +21,7 @@ import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -355,7 +355,7 @@ async function editableSetFor(tx: Tx, gymId: string, userMembershipId: number) {
   const direct = await projectedSetFor(tx, gymId, userMembershipId);
   if (direct) return { ...direct, linked: userMembershipId };
   const { rows } = await tx.query<any>(
-    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.user_membership_id
+    `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
        FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.status = 'active'
         AND EXISTS (SELECT 1 FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id

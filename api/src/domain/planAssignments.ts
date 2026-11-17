@@ -169,3 +169,14 @@ export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'p
   `${alias}.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc
                                    WHERE ps_anc.gym_id = ${alias}.gym_id
                                      AND ps_anc.source_user_membership_id = ${legacyIdExpr})`;
+
+/**
+ * #2125 M6b-42 — the legacy `user_memberships` id of the assignment the Product Set `alias` is
+ * linked to, read off the set's anchor (`product_sets.plan_assignment_id`, M6b-36): the anchor
+ * snapshot's own `source_user_membership_id`, which is that legacy id by construction (the anchor is
+ * the lowest snapshot naming it). NULL for a set linked to no assignment. For a reader that needs the
+ * value of the link, never `product_sets.user_membership_id`, the column the re-key drops.
+ */
+export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string =>
+  `(SELECT ps_lid.source_user_membership_id FROM plan_snapshots ps_lid
+     WHERE ps_lid.id = ${alias}.plan_assignment_id AND ps_lid.gym_id = ${alias}.gym_id)`;

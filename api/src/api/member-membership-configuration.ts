@@ -9,7 +9,7 @@ import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligib
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -131,7 +131,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // beside `plans` for the Member card to show and act on. A Draft idle past two
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ps.user_membership_id, ps.membership_plan_id,
+    `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.membership_plan_id,
             (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
