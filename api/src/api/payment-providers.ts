@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { allocateGlobalSlug } from './entity-slugs';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { db, Tx } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -35,6 +36,7 @@ const STATUSES = ['active', 'inactive'] as const;
 interface ProviderRow {
   id: number;
   name: string;
+  slug: string;
   provider_key: string;
   description: string | null;
   is_default: number;
@@ -183,11 +185,13 @@ paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
   try {
     const id = await db.transaction(async (tx) => {
       if (wantsDefault) await clearDefault(tx, actor);
+      // #2951: generated once from the name; PUT never touches it.
+      const slug = await allocateGlobalSlug('payment_providers', nameResult.value, tx);
       const { insertId } = await tx.query(
         `INSERT INTO payment_providers
-           (name, provider_key, description, is_default, status, created_at, created_by)
-         VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
-        [nameResult.value, provider_key, descriptionResult.value, wantsDefault ? 1 : 0, nextStatus, actor],
+           (name, slug, provider_key, description, is_default, status, created_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+        [nameResult.value, slug, provider_key, descriptionResult.value, wantsDefault ? 1 : 0, nextStatus, actor],
       );
       return insertId;
     });

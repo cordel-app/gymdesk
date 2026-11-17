@@ -575,3 +575,4 @@ Constraints that are purely about how the code is organised stay in `CLAUDE.md` 
 - **The Assigned Plan card lists the access a plan grants each beneficiary (its centers, or On-line) as rows at quantity 1 and €0 under the Membership Fee; they are information only and never change a price or a permission** (#2802) — `api/src/domain/planAccessBenefit.ts`.
 
 - **A payment attempt records its method by name and the Billing Event counts attempts** (#2451, migration 376). Every `payment_requests` insert is followed by `recordPaymentAttempt()` (`api/src/api/payment-attempt.ts`, mapping in `domain/paymentAttemptSnapshot.ts`), which copies the catalogue method's English name onto the attempt for good and increments `billing_events.attempt_count` atomically.
+- **A slug is generated once from an entity's name and never changes; it is unique within its entity type (and gym, for gym-owned rows) and shown only in Details** (#2951) — `api/src/domain/entitySlug.ts`.
