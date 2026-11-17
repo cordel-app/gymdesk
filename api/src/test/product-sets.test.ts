@@ -163,7 +163,7 @@ describe('Draft expiry (#1325)', () => {
     const ownerB = await member(`ps-e-${Date.now()}@example.com`);
     const idle = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
-       VALUES (?, ?, 'draft', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerA, today()]);
+       VALUES (?, ?, 'in_cart', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerA, today()]);
     const pending = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
        VALUES (?, ?, 'pending_payment', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerB, today()]);

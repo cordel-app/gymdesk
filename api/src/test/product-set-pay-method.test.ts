@@ -82,7 +82,7 @@ describe('POST /product-sets/:id/pay (#1664)', () => {
     expect(res.body.payment_methods.find((m: any) => m.code === 'monei')).toMatchObject({ available: false, reason: 'monei_token_missing' });
     expect(res.body.amount_due).toBe(proratedToNextFirst(30));
     expect(typeof res.body.net_total).toBe('number');
-    expect(await statusOf(id)).toBe('draft');
+    expect(await statusOf(id)).toBe('in_cart');
   });
 
   it.each([['cash', 'cash'], ['card', 'card_terminal']])('%s is confirmed by staff: active, method kept, no provider call', async (code, method) => {
@@ -106,7 +106,7 @@ describe('POST /product-sets/:id/pay (#1664)', () => {
     const id = await draft(await member());
     const res = await auth(request.post(`/product-sets/${id}/pay`)).send({ method: 'google_pay' });
     expect(res.status).toBe(400);
-    expect(await statusOf(id)).toBe('draft');
+    expect(await statusOf(id)).toBe('in_cart');
   });
 
   it('monei without a token is refused before any write or provider call', async () => {
@@ -116,7 +116,7 @@ describe('POST /product-sets/:id/pay (#1664)', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('monei_token_missing');
     expect(providerCalls).toBe(0);
-    expect(await statusOf(id)).toBe('draft');
+    expect(await statusOf(id)).toBe('in_cart');
   });
 
   it('monei with a token activates only when the provider settles', async () => {

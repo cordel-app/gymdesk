@@ -79,7 +79,7 @@ describe('adding a recurring Product to a new-plan Draft (#2891)', () => {
     expect(res.body.product_set_id).toBe(draftId);
 
     // One Draft, no second version.
-    expect((await setsOf(memberId)).map((s: any) => s.status)).toEqual(['draft']);
+    expect((await setsOf(memberId)).map((s: any) => s.status)).toEqual(['in_cart']);
 
     // The plan is still the Draft's.
     const { rows: plans } = await db.query<any>(
@@ -138,6 +138,6 @@ describe('adding a recurring Product to a new-plan Draft (#2891)', () => {
     const res = await auth(request.post(`/members/${memberId}/product-purchases`)).send({ product_id: productId });
     expect(res.status).toBe(201);
     expect(res.body.product_set_id).not.toBe(draftId);
-    expect((await setsOf(memberId)).map((s: any) => s.status)).toEqual(['draft']);
+    expect((await setsOf(memberId)).map((s: any) => s.status)).toEqual(['in_cart']);
   });
 });
