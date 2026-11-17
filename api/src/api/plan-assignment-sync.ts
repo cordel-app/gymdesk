@@ -15,7 +15,7 @@
  * sides disagree, and M6b-4 may only drop `user_memberships` once that is clean.
  */
 import type { Tx } from '../infra/db';
-import { planSnapshotSharedSql } from './plan-snapshot-lines';
+import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 type Exec = { query: Tx['query'] };
@@ -138,6 +138,30 @@ export async function syncProductSetAssignmentIds(
     `UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL}
       WHERE gym_id = ? AND (${clauses.join(' OR ')}) AND NOT (plan_assignment_id <=> ${anchor})`,
     [gymId, ...params]);
+}
+
+/**
+ * #2125 M6b-44 — names a Product Set's primary plan snapshot after the assignment the set is linked
+ * to, so the assignment's anchor exists as soon as the link does. Called by every writer that links a
+ * set to a `user_memberships` row, once the set's primary snapshot is the one it will keep (after it
+ * was frozen, cloned or owned), and before the set is synced. Until M6b-43 the snapshot sync named it
+ * from `product_sets.user_membership_id`; since M6b-44 the sync reads the set's anchor, which only
+ * exists once a snapshot names the assignment, so a link to an assignment no snapshot names yet (a new
+ * Draft assignment, one the projection opens) is named here. A snapshot another Product Set links is
+ * left alone, as the sync always left it, and the set's `plan_assignment_id` is re-derived after.
+ */
+export async function nameAssignmentSnapshot(
+  exec: Exec, gymId: string, productSetId: number, userMembershipId: number,
+): Promise<void> {
+  const primary = await primaryPlanSnapshotId(exec, gymId, productSetId);
+  if (primary != null && !(await isPlanSnapshotShared(exec, productSetId, primary))) {
+    await exec.query(
+      `UPDATE plan_snapshots SET source_user_membership_id = ?
+        WHERE id = ? AND gym_id = ? AND NOT (source_user_membership_id <=> ?)`,
+      [userMembershipId, primary, gymId, userMembershipId]);
+    await stampAssignmentIds(exec, gymId, [primary]);
+  }
+  await syncProductSetAssignmentIds(exec, gymId, [productSetId]);
 }
 
 /** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
