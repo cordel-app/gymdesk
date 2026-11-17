@@ -5,6 +5,7 @@
 // review the cart and Save & Pay read and the Draft's forecast quote the same figure, and
 // reading them commits nothing.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request,
@@ -56,7 +57,7 @@ async function assign(planId: number, owner: number, beneficiaries: number[]): P
 
 async function setOf(userMembershipId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, status, previous_product_set_id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1',
+    `SELECT id, status, previous_product_set_id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`,
     [userMembershipId]);
   return rows[0];
 }
@@ -96,7 +97,7 @@ describe('Draft initial payment and simulation (#2899)', () => {
     expect(initial?.total).toBe(review.body.amount_due);
 
     // Reading the review and the forecast commits and charges nothing.
-    expect((await setOf((await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [set.id])).rows[0].user_membership_id)).status).toBe('in_cart');
+    expect((await setOf((await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [set.id])).rows[0].user_membership_id)).status).toBe('in_cart');
     const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [set.id]);
     expect(Number(rows[0].n)).toBe(0);
   });

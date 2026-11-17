@@ -9,7 +9,8 @@
 // link a set, `nameAssignmentSnapshot()`), leaving the drift report, which compares the two columns.
 // Since M6b-45 the gate also catches a statement that names the column bare (`SELECT user_membership_id
 // FROM product_sets`) or reads it through `ps.*`, so no statement but the drift report and the writers'
-// `SET user_membership_id = …` reads it before the column is dropped.
+// `SET user_membership_id = …` reads it before the column is dropped. Since M6b-46 (migration 441) the
+// column is gone: nothing reads it, and the last test fails the build if a writer names it again.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -32,9 +33,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
 
 const READ = /\b(?:ps|prev)\.user_membership_id\b/g;
 
-const ALLOWED: Record<string, number> = {
-  'api/plan-assignment-drift.ts': 2,
-};
+const ALLOWED: Record<string, number> = {};
 
 function readsOf(file: string): number {
   return readFileSync(file, 'utf8').split('\n')
@@ -56,7 +55,6 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
     const found: string[] = [];
     for (const f of sourceFiles(API_SRC)) {
       const rel = f.slice(API_SRC.length + 1).replace(/\\/g, '/');
-      if (rel === 'api/plan-assignment-drift.ts') continue;
       const src = readFileSync(f, 'utf8');
       for (const m of src.matchAll(/`[^`]*`|'[^'\n]*'/g)) {
         const stmt = m[0];
@@ -65,6 +63,21 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
         // qualified column of another table and the `source_user_membership_id` of a snapshot are fine.
         const bare = stmt.replace(/\bAS\s+user_membership_id\b/g, '').match(/(?<![.\w])user_membership_id\b/);
         if (bare) found.push(`${rel}: ${stmt.slice(0, 80)}`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+
+  it('no statement writes product_sets.user_membership_id (#2125 M6b-46, migration 441)', () => {
+    const found: string[] = [];
+    for (const f of sourceFiles(API_SRC)) {
+      const rel = f.slice(API_SRC.length + 1).replace(/\\/g, '/');
+      const src = readFileSync(f, 'utf8');
+      for (const m of src.matchAll(/`[^`]*`|'[^'\n]*'/g)) {
+        const stmt = m[0];
+        const write = /\bUPDATE\s+product_sets\b[^`']*?\bSET\b[^`']*?(?<![.\w])user_membership_id\s*=/.test(stmt)
+          || /\bINSERT\s+INTO\s+product_sets\s*\([^)]*(?<![.\w])user_membership_id\b/.test(stmt);
+        if (write) found.push(`${rel}: ${stmt.slice(0, 80)}`);
       }
     }
     expect(found).toEqual([]);

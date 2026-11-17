@@ -2,6 +2,7 @@
 // amount (its plan's own rate, else the gym's system rate), taxed on the line's final
 // amount, and Total VAT is their sum. Before the fix every line read `—` / 0.00 €.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
@@ -53,7 +54,7 @@ async function reviewOfNewAssignment(planId: number) {
     .send({ starts_at: firstOfNextMonth(), owner_member_id: memberId, beneficiary_member_ids: [memberId] });
   expect(res.status).toBe(201);
   const { rows } = await db.query<any>(
-    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [res.body.id]);
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [res.body.id]);
   const review = await staff('get', `/product-sets/${rows[0].id}/review`);
   expect(review.status).toBe(200);
   return review.body;

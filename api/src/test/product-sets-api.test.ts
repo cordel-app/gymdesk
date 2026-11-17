@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 
@@ -275,7 +276,7 @@ describe('Save & Pay on an assignment’s version moves the assignment to Pendin
       .send({ member_id: m, membership_plan_id: await plan(12), starts_at: TODAY });
     expect(created.status).toBe(201);
     const { rows: sets } = await db.query<any>(
-      'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, created.body.id]);
+      `SELECT id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, created.body.id]);
 
     const pay = await auth(request.post(`/product-sets/${sets[0].id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);

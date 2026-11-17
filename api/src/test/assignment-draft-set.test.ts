@@ -1,5 +1,6 @@
 // #1325 PR 3e — the Admin's Draft assignment is a ProductSet Draft from birth.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 import { expireDrafts } from '../api/product-sets';
@@ -33,7 +34,7 @@ const api = (method: 'post' | 'put' | 'delete', path: string) =>
 
 async function draftSetOf(umId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, status, owner_member_id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
+    `SELECT id, status, owner_member_id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, umId]);
   return rows[0] ?? null;
 }
 

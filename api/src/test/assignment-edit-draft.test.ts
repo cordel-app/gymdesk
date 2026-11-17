@@ -1,5 +1,6 @@
 // #2091 — ⋮ → Edit on a running plan copies the Active version's own configuration.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment,
@@ -49,7 +50,7 @@ describe('POST /user-memberships/:id/edit-draft', () => {
     expect(res.body.id).not.toBe(umId);
 
     const { rows: sets } = await db.query<any>(
-      `SELECT ps.status, ps.user_membership_id, snap.membership_fee_price
+      `SELECT ps.status, ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id, snap.membership_fee_price
          FROM product_sets ps JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id JOIN plan_snapshots snap ON snap.id = j.plan_snapshot_id
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.id`, [gymId, memberId]);
     expect(sets.map((s: any) => s.status)).toEqual(['active', 'in_cart']);

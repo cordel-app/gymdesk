@@ -3,6 +3,7 @@
 // second purchase beside it, until staff choose Members App (which makes it Pending Payment).
 // Integration: the real member routes against MySQL; nothing is charged or committed.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import {
@@ -50,7 +51,7 @@ async function memberWithStaffDraft(): Promise<{ clerk: string; id: number; setI
   const m = await member();
   const umId = await createTestDraftAssignment(gymId, m.id, await plan());
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
+    `SELECT id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, umId]);
   return { ...m, setId: Number(rows[0].id) };
 }
 

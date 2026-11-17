@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft, addCoverage } from '../api/product-sets';
@@ -32,7 +33,7 @@ async function commit(owner: number): Promise<{ setId: number; um: number }> {
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;
   });
-  const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
+  const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
   return { setId, um: Number(rows[0].user_membership_id) };
 }
 /** Raises a payment request the way every writer does: INSERT, then `recordPaymentAttempt()`. */

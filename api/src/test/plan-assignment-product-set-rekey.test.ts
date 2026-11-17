@@ -1,17 +1,17 @@
 /**
  * #2125 M6b-36 — a Product Set carries the `plan_snapshots` anchor of the assignment it projects
- * (`product_sets.plan_assignment_id`, migration 432) beside `user_membership_id`, written by every
- * writer of that column and kept in step by the assignment sync. Nothing reads it yet.
+ * (`product_sets.plan_assignment_id`, migration 432), written by every link writer and kept on the
+ * anchor by the assignment sync. Since M6b-46 (migration 441) it is the only link: the legacy id is
+ * read off the anchor.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 import { createDraft, addCoverage } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
-import { syncPlanAssignment } from '../api/plan-assignment-sync';
+import { syncPlanAssignment, syncProductSetAssignmentIds } from '../api/plan-assignment-sync';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { backfillProductSetAssignmentIds } = require('../infra/migrations/432_product_set_plan_assignment_id.js');
 
 let gymId: string;
 let planId: number;
@@ -55,7 +55,7 @@ async function anchorOf(um: number): Promise<number> {
   return Number(rows[0].a);
 }
 async function setOf(setId: number): Promise<{ um: number | null; key: number | null }> {
-  const { rows } = await db.query<any>('SELECT user_membership_id, plan_assignment_id FROM product_sets WHERE id = ?', [setId]);
+  const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id, plan_assignment_id FROM product_sets WHERE id = ?`, [setId]);
   const n = (v: unknown) => (v == null ? null : Number(v));
   return { um: n(rows[0].user_membership_id), key: n(rows[0].plan_assignment_id) };
 }
@@ -100,7 +100,7 @@ describe('#2125 M6b-36: a Product Set carries its plan_assignment_id beside user
       .send({ member_id: owner, membership_plan_id: planId, starts_at: TODAY });
     expect(first.status).toBe(201);
     const { rows: drafts } = await db.query<any>(
-      'SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, first.body.id]);
+      `SELECT id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, first.body.id]);
     expect(await setOf(Number(drafts[0].id))).toEqual({ um: Number(first.body.id), key: await anchorOf(first.body.id) });
     expect((await auth(request.post(`/user-memberships/${first.body.id}/activate`)).send({})).status).toBe(200);
     const second = await auth(request.post(`/user-memberships/${first.body.id}/assign-new-plan`))
@@ -110,24 +110,35 @@ describe('#2125 M6b-36: a Product Set carries its plan_assignment_id beside user
     expect((await setDrift()).count).toBe(0);
   });
 
-  it('the assignment sync puts a drifted set back in step', async () => {
-    const setId = await commit(await member());
-    await db.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [setId]);
-    await db.transaction((tx) => syncPlanAssignment(tx, gymId, setId));
+  /** A second snapshot naming the set's assignment, above its anchor: a link pointing there is drift. */
+  async function strayLink(setId: number): Promise<{ um: number; stray: number }> {
     const { um, key } = await setOf(setId);
-    expect(key).toBe(await anchorOf(um!));
+    const { insertId } = await db.query(
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, source_user_membership_id, assignment_id)
+       SELECT gym_id, member_id, membership_plan_id, status, starts_at, source_user_membership_id, assignment_id
+         FROM plan_snapshots WHERE id = ?`, [key]);
+    await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [insertId, setId]);
+    return { um: um!, stray: Number(insertId) };
+  }
+
+  it('the assignment sync puts a set linked to a later snapshot back on the anchor (M6b-46)', async () => {
+    const setId = await commit(await member());
+    const { um } = await strayLink(setId);
+    await db.transaction((tx) => syncPlanAssignment(tx, gymId, setId));
+    const after = await setOf(setId);
+    expect(after.um).toBe(um);
+    expect(after.key).toBe(await anchorOf(um));
   });
 
-  it('plan-assignments:validate reports a drifted set, and the backfill repairs it', async () => {
+  it('plan-assignments:validate reports a set not linked to its anchor, and the sync repairs it (M6b-46)', async () => {
     expect((await setDrift()).count).toBe(0);
     const setId = await commit(await member());
-    const { um } = await setOf(setId);
-    await db.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [setId]);
+    const { um, stray } = await strayLink(setId);
     const drift = await setDrift();
-    expect(drift.sample.map((r: any) => [Number(r.product_set_id), r.plan_assignment_id, Number(r.expected_plan_assignment_id)]))
-      .toEqual([[setId, null, await anchorOf(um!)]]);
-    await backfillProductSetAssignmentIds({ raw: (sql: string) => db.query(sql) });
+    expect(drift.sample.map((r: any) => [Number(r.product_set_id), Number(r.plan_assignment_id), Number(r.expected_plan_assignment_id)]))
+      .toEqual([[setId, stray, await anchorOf(um)]]);
+    await syncProductSetAssignmentIds(db as any, gymId, [], [um]);
     expect((await setDrift()).count).toBe(0);
-    expect((await setOf(setId)).key).toBe(await anchorOf(um!));
+    expect((await setOf(setId)).key).toBe(await anchorOf(um));
   });
 });

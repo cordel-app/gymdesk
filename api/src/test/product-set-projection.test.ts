@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft } from '../api/product-sets';
@@ -50,7 +51,7 @@ async function assignments(owner: number) {
     `SELECT um.id, um.status, um.membership_plan_id,
             (SELECT s.membership_fee_price FROM product_sets ps
                JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-              WHERE ps.user_membership_id = um.id ORDER BY ps.id DESC LIMIT 1) AS membership_fee_price
+              WHERE ${productSetOfLegacyAssignmentSql('um.id', 'ps')} ORDER BY ps.id DESC LIMIT 1) AS membership_fee_price
        FROM user_memberships um WHERE um.member_id = ? ORDER BY um.id`, [owner]);
   return rows;
 }
@@ -71,7 +72,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     expect(rows.length).toBe(1);
     expect(rows[0]).toMatchObject({ status: 'active', membership_plan_id: p });
     expect(Number(rows[0].membership_fee_price)).toBe(30);
-    const { rows: link } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
+    const { rows: link } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
     expect(Number(link[0].user_membership_id)).toBe(Number(rows[0].id));
     const { rows: cover } = await legacyChildQuery('SELECT is_owner FROM user_membership_members WHERE user_membership_id = ?', [rows[0].id]);
     expect(cover.length).toBe(1);

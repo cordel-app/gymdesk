@@ -5,6 +5,7 @@
 // survives its own copy-on-write; a version that reuses a plan unchanged keeps the plan's assignment.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
@@ -344,7 +345,7 @@ describe('activating a version that reuses the plan unchanged keeps its assignme
       if (out.kind !== 'ok') throw new Error(out.kind);
       return d.productSet.id;
     });
-    const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [a]);
+    const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [a]);
     const snapshot = (await linked(a))[0];
     return { owner, planId, a, um: Number(rows[0].user_membership_id), snapshot };
   }
@@ -377,7 +378,7 @@ describe('activating a version that reuses the plan unchanged keeps its assignme
     const b = await successor(owner, planId, a, false);
     // Until M4b-3 every successor closed the assignment as superseded and opened a same-plan one.
     expect(await assignments(owner)).toEqual([{ id: um, status: 'active' }]);
-    const { rows } = await db.query<any>('SELECT id, status, user_membership_id AS um FROM product_sets WHERE id IN (?, ?) ORDER BY id', [a, b]);
+    const { rows } = await db.query<any>(`SELECT id, status, ${productSetLegacyAssignmentIdSql('product_sets')} AS um FROM product_sets WHERE id IN (?, ?) ORDER BY id`, [a, b]);
     expect(rows.map((r: any) => [String(r.status), Number(r.um)])).toEqual([['superseded', um], ['active', um]]);
     expect(await linked(a)).toEqual([snapshot]);
     expect(await linked(b)).toEqual([snapshot]);
@@ -391,7 +392,7 @@ describe('activating a version that reuses the plan unchanged keeps its assignme
     expect(rows.map((r) => r.status)).toEqual(['superseded', 'active']);
     expect(rows[0].id).toBe(um);
     const successorUm = rows[1].id;
-    const { rows: setB } = await db.query<any>('SELECT user_membership_id AS um FROM product_sets WHERE id = ?', [b]);
+    const { rows: setB } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS um FROM product_sets WHERE id = ?`, [b]);
     expect(Number(setB[0].um)).toBe(successorUm);
     const [copy] = await linked(b);
     expect(copy).not.toBe(snapshot);

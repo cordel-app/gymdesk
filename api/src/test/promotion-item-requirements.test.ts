@@ -20,6 +20,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import {
@@ -325,7 +326,7 @@ describe('Promotion item Requirement (#959)', () => {
     const { rows: setRows } = await db.query<any>(
       `SELECT ump.product_set_id FROM user_membership_promotions ump
          JOIN product_sets ps ON ps.id = ump.product_set_id
-        WHERE ps.user_membership_id = ? AND ump.promotion_id = ?`, [umId, promotion]);
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ?`, [umId, promotion]);
     await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, Number(setRows[0].product_set_id)));
     const { rows } = await legacyChildQuery(
       `SELECT s.product_id, s.requirement
