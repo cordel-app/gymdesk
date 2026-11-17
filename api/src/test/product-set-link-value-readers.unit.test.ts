@@ -5,6 +5,8 @@
 // the projection (a writer of the link, moved with the writers), the drift report (which compares the
 // two columns) and the beneficiaries fallback. The list may only shrink: since M6b-43 the projection
 // and the beneficiaries fallback read the anchor too, leaving the snapshot sync and the drift report.
+// Since M6b-44 the snapshot sync reads the anchor as well (the link writers name the snapshot when they
+// link a set, `nameAssignmentSnapshot()`), leaving the drift report, which compares the two columns.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +30,6 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
 const READ = /\b(?:ps|prev)\.user_membership_id\b/g;
 
 const ALLOWED: Record<string, number> = {
-  'api/plan-snapshot-sync.ts': 2,
   'api/plan-assignment-drift.ts': 2,
 };
 
