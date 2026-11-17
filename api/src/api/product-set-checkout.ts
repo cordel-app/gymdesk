@@ -260,6 +260,19 @@ export async function ensureInitialEvent(tx: Tx, input: {
   // #2940: the event's name, decided once from what this version adds or modifies.
   const name = await initialEventNameFor(tx, input.gymId, input.productSetId, input.startsAt,
     (input.charge.cartPurchases ?? []).map((p) => p.product_name));
+  if (scheduleId != null) {
+    // #2887 follow-up: a checkout cancelled before it was paid (#2747) keeps its
+    // initial event as history, but that event billed nothing, so it holds no
+    // period of the member's shared schedule. Without releasing it, a new Save &
+    // Pay the same period answered 500 on `billing_events_schedule_period_key`.
+    // A paid event (a refund's cancellation included) keeps its slot.
+    await tx.query(
+      `UPDATE billing_events be SET be.schedule_id = NULL
+        WHERE be.gym_id = ? AND be.schedule_id = ? AND be.period_start = ? AND be.cancelled_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM payment_requests pr
+                           WHERE pr.billing_event_id = be.id AND pr.status = 'completed')`,
+      [input.gymId, scheduleId, input.startsAt]);
+  }
   const { insertId } = await tx.query(
     `INSERT INTO billing_events
        (gym_id, member_id, event_type, name, source, amount, charge_type_id, product_set_id, schedule_id,

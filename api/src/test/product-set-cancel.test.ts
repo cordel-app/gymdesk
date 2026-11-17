@@ -267,6 +267,25 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     ]);
   });
 
+  it('a member who cancels a checkout can Save & Pay a plan on the same schedule the same day', async () => {
+    const memberId = await member();
+    const first = await pending(memberId, { assignment: false });
+    lookups.set(first.request.provider_ref, 'PENDING');
+    expect((await auth(request.post(`/product-sets/${first.id}/cancel`)).send({})).status).toBe(200);
+    const firstEvent = await one('SELECT schedule_id, cancelled_at FROM billing_events WHERE product_set_id = ?', [first.id]);
+    expect(firstEvent.schedule_id).not.toBeNull();
+
+    // Same monthly cadence, same day: the cancelled, unpaid initial event held that period.
+    const second = await pending(memberId, { assignment: false });
+    const secondEvent = await one('SELECT schedule_id, period_start FROM billing_events WHERE product_set_id = ?', [second.id]);
+    expect(secondEvent.schedule_id).toBe(firstEvent.schedule_id);
+
+    // The cancelled event stays as history, released from the schedule.
+    const released = await one('SELECT schedule_id, cancelled_at FROM billing_events WHERE product_set_id = ?', [first.id]);
+    expect(released.schedule_id).toBeNull();
+    expect(released.cancelled_at).not.toBeNull();
+  });
+
   it('#2887: a cancelled cart that only carried the previous set\'s plan is no past plan of its own', async () => {
     const clerk = `ps-cancel-carried-${uniq()}`;
     await createTestMembership(gymId, 'member', clerk);
