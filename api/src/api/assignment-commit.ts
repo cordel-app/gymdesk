@@ -37,7 +37,7 @@ import { assignmentReplacementOf, writeAssignmentReplacement } from './plan-assi
  */
 
 export const PENDING_PAYMENT_STATUS = 'pending_payment';
-export const DRAFT_STATUS = 'draft';
+export const DRAFT_STATUS = 'in_cart';
 
 interface CommitInput {
   gymId: string;

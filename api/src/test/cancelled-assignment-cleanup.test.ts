@@ -59,7 +59,7 @@ describe('migration 297 — cancelled assignments without an end date (#1694)', 
   it('deletes only cancelled rows with ends_at NULL, keeps payment requests, audits each delete, and is re-runnable', async () => {
     const target = await assignment(gymId, 'cancelled', null);
     const cancelledWithEnd = await assignment(gymId, 'cancelled', '2026-02-01');
-    const keep = await Promise.all(['active', 'paused', 'draft', 'expired', 'pending_payment']
+    const keep = await Promise.all(['active', 'paused', 'in_cart', 'expired', 'pending_payment']
       .map((s) => assignment(gymId, s, null)));
     const otherGym = await assignment(otherGymId, 'cancelled', null);
 

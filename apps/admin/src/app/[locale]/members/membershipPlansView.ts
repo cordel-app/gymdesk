@@ -9,7 +9,7 @@
 
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
 
-const IN_FLIGHT = new Set(['draft', 'pending_payment']);
+const IN_FLIGHT = new Set(['in_cart', 'pending_payment']);
 /** The stored status of a plan cancelling at its period end (`api/src/domain/assignmentStatus.ts`). */
 const CANCELS_AT_PERIOD_END = 'active_cancel_at_period_end';
 
@@ -34,7 +34,7 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   // #2742: a version awaiting its first payment is listed in the Active category (its own
   // `Pending Payment` badge tells it apart); only a Draft takes the view out of it.
   if (inFlight.length > 0) {
-    const heading = inFlight.some((p) => p.status === 'draft') ? 'draft' : 'active';
+    const heading = inFlight.some((p) => p.status === 'in_cart') ? 'draft' : 'active';
     return { rows: [...inFlight, ...cancelling], heading, showInFlightList: false };
   }
   // #2549: a cancelled plan stays in Active until its end date passes (status badge unchanged).

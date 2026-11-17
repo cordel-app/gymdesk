@@ -6,7 +6,7 @@
  */
 
 /** Statuses in which the plan is still being drafted or awaiting its first payment. */
-const SIMULATION_STATUSES = ['draft', 'pending_payment'];
+const SIMULATION_STATUSES = ['in_cart', 'pending_payment'];
 
 /** Membership Fee Simulation and Billing Event Forecast: Draft / Pending Payment only. */
 export function showsBillingSimulations(status: string | null | undefined): boolean {

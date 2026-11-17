@@ -76,7 +76,7 @@ export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
  * Draft replacement would have had the Draft described to them as their
  * membership.
  */
-export const MEMBER_CURRENT_ASSIGNMENT_FILTER = "AND um.status NOT IN ('draft', 'pending_payment')";
+export const MEMBER_CURRENT_ASSIGNMENT_FILTER = "AND um.status NOT IN ('in_cart', 'pending_payment')";
 
 /**
  * Why a member has no forecast. A member with no plan at all, and one whose

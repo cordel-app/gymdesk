@@ -128,7 +128,7 @@ describe('Promotions selected at assignment survive ⋮ → Edit (#2946)', () =>
 
     const res = await api('get', `/user-memberships/${draftId}`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('draft');
+    expect(res.body.status).toBe('in_cart');
     expectPromotionReflected(res.body, s);
 
     // One application each: the running plan keeps its own, the Draft holds a copy.

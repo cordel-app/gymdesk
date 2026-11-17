@@ -183,7 +183,7 @@ export function MemberMembershipPlans({
     const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live && plan.assignment_relationship !== 'linked'
       ? [
         // #1725: a Draft is configured in place — the row's own Edit opens it.
-        ...(plan.status === 'draft'
+        ...(plan.status === 'in_cart'
           ? [{ label: t('action_edit_plan'), onClick: () => helpers.startEdit(plan.id) }]
           : []),
         ...(canEditLivePlan(plan)

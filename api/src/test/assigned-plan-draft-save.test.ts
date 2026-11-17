@@ -53,7 +53,7 @@ describe('saving an Assigned Plan Draft (#2093)', () => {
 
     const reload = await headers(request.get(`/user-memberships/${umId}`));
     expect(reload.status).toBe(200);
-    expect(reload.body.status).toBe('draft');
+    expect(reload.body.status).toBe('in_cart');
 
     const { rows: events } = await db.query<any>(
       `SELECT be.id FROM billing_events be

@@ -61,12 +61,12 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     `SELECT ps.id, ps.user_membership_id
        FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
-        AND um.status = 'draft' AND ps.user_membership_id <> ? FOR UPDATE`,
+        AND um.status = 'in_cart' AND ps.user_membership_id <> ? FOR UPDATE`,
     [input.gymId, input.ownerMemberId, input.userMembershipId],
   );
   for (const old of stale) {
     await discardDraftSet(tx, input.gymId, Number(old.id));
-    await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`,
+    await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
       [old.user_membership_id, input.gymId]);
   }
   const created = await createDraft(tx, {

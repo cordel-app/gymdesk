@@ -93,7 +93,7 @@ describe('plan snapshots (#2125)', () => {
     expect(a.member_id).toBe(owner);
     expect(a.membership_plan_id).toBe(planA);
     expect(Number(a.membership_fee_price)).toBeCloseTo(49.9);
-    expect(a.status).toBe('draft');
+    expect(a.status).toBe('in_cart');
     expect(rows.find((r) => r.product_set_id === setB).status).toBe('superseded');
   });
 

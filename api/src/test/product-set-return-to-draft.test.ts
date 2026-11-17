@@ -96,7 +96,7 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     const { rows: pr } = await db.query<any>('SELECT id FROM payment_requests WHERE id = ?', [p.requestId]);
     expect(pr).toHaveLength(0);
     const { rows: um } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [p.umId]);
-    expect(um[0].status).toBe('draft');
+    expect(um[0].status).toBe('in_cart');
     // It is a real Draft again: it can be paid once more, or discarded for good.
     const again = await auth(request.post(`/product-sets/${p.id}/save-and-pay`)).send({});
     expect(again.status).toBe(201);

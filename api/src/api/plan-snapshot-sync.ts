@@ -4,7 +4,6 @@
  * from). What is left to keep in step is derived from the version and its neighbours: status,
  * dates and the linked assignment, coverage, and the Membership Plan Promotion applications.
  */
-import { planSnapshotStatusForSetSql } from '../domain/productSet';
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { syncPlanAssignment } from './plan-assignment-sync';
@@ -66,7 +65,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
         SET s.status = CASE WHEN ps.status = 'active'
                                  AND um.status IN ('paused','active_cancel_at_period_end','cancelled','expired') THEN um.status
                             WHEN ps.status = 'superseded' AND um.status IN ('cancelled','expired') THEN um.status
-                            ELSE ${planSnapshotStatusForSetSql('ps.status')} END,
+                            ELSE ps.status END,
             s.closed_at = um.closed_at,
             s.ends_at = IF(ps.status IN ('superseded','cancelled') AND um.status IN ('cancelled','expired','superseded'), um.ends_at, s.ends_at)
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,

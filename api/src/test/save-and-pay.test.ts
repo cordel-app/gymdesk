@@ -70,7 +70,7 @@ async function createFreePlan(): Promise<number> {
 async function assignDraft(memberId: number, planId: number, startsAt = '2026-03-01'): Promise<number> {
   const res = await api('post', '/user-memberships').send({ member_id: memberId, membership_plan_id: planId, starts_at: startsAt });
   expect(res.status).toBe(201);
-  expect(res.body.status).toBe('draft');
+  expect(res.body.status).toBe('in_cart');
   return res.body.id;
 }
 
@@ -153,8 +153,8 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
     expect(res.body.lifecycle_status).toBe('pending_payment');
     expect(Number(res.body.membership_fee)).toBe(30);
     expect(await statusChanges(umId)).toEqual([
-      { previous_status: null, new_status: 'draft' },
-      { previous_status: 'draft', new_status: 'pending_payment' },
+      { previous_status: null, new_status: 'in_cart' },
+      { previous_status: 'in_cart', new_status: 'pending_payment' },
     ]);
   });
 
@@ -184,7 +184,7 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
     const refused = await api('post', `/user-memberships/${second}/save-and-pay`).send({});
     expect(refused.status).toBe(409);
     expect(refused.body.error).toBe('active_plan_exists');
-    expect(await status(second)).toBe('draft');
+    expect(await status(second)).toBe('in_cart');
 
     const confirmed = await api('post', `/user-memberships/${second}/save-and-pay`).send({ confirm: true });
     expect(confirmed.status).toBe(200);

@@ -70,13 +70,18 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(wide395).toBeTruthy();
     const wideValues = [...values(wide!), ...values(narrow!), 'superseded', 'active_cancel_at_period_end'];
     expect(new Set([...values(wide395!), 'active_cancel_at_period_end'])).toEqual(new Set(wideValues));
+    // #2949 stage 3: migration 436 renames `draft` to `in_cart` and keeps every other value.
+    const m435 = readFileSync(join(API_SRC, 'infra', 'migrations', '436_assignment_status_in_cart.js'), 'utf8');
+    expect(m435).toContain("move(knex, 'draft', 'in_cart')");
+    const current = wideValues.map((v) => (v === 'draft' ? 'in_cart' : v));
 
     // …and the router's own list, now the domain declaration it aliases.
     expect(USER_MEMBERSHIPS).toContain('const STATUSES = ASSIGNMENT_STATUSES;');
     const routerValues = [...ASSIGNMENT_STATUSES];
 
-    expect(new Set(routerValues)).toEqual(new Set(wideValues));
-    expect(routerValues).toContain('draft');
+    expect(new Set(routerValues)).toEqual(new Set(current));
+    expect(routerValues).toContain('in_cart');
+    expect(routerValues).not.toContain('draft');
   });
 
   it('compares the stored CHECK as an exact set, so a six-value one is not accepted', () => {
@@ -94,10 +99,10 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(USER_MEMBERSHIPS).not.toContain('awaiting_payment');
   });
 
-  it('declares draft -> pending_payment / active / cancelled, and pending_payment -> active / cancelled, and nothing else', () => {
+  it('declares in_cart -> pending_payment / active / cancelled, and pending_payment -> active / cancelled, and nothing else', () => {
     const table = USER_MEMBERSHIPS.match(/const ALLOWED_TRANSITIONS[\s\S]*?\n\};/);
     expect(table).toBeTruthy();
-    const draftRow = table![0].match(/draft: \[([^\]]*)\]/);
+    const draftRow = table![0].match(/in_cart: \[([^\]]*)\]/);
     expect(draftRow).toBeTruthy();
     const targets = [...draftRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
     expect(targets.sort()).toEqual(['active', 'cancelled', 'pending_payment']);
@@ -113,7 +118,7 @@ describe('every assignment path creates a Draft', () => {
   const MEMBERSHIP_PLANS = code(API_SRC, 'api', 'membership-plans.ts');
 
   it('names the creation status once rather than in three INSERTs', () => {
-    expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'draft';");
+    expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'in_cart';");
   });
 
   it('has no INSERT INTO user_memberships that omits the status column or hardcodes a literal', () => {
@@ -165,11 +170,11 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     };
     // A Draft's `starts_at` is by definition inside the window, so without the
     // explicit answer it would disqualify every member it is configured for.
-    expect(countsAsRecentMembership({ ...base, status: 'draft' }, cutoff)).toBe(false);
+    expect(countsAsRecentMembership({ ...base, status: 'in_cart' }, cutoff)).toBe(false);
     expect(countsAsRecentMembership({ ...base, status: 'active' }, cutoff)).toBe(true);
     // And an old Draft does not read as a lapsed membership either.
     expect(countsAsRecentMembership(
-      { ...base, status: 'draft', starts_at: '2020-01-01', created_at: '2020-01-01 10:00:00' },
+      { ...base, status: 'in_cart', starts_at: '2020-01-01', created_at: '2020-01-01 10:00:00' },
       cutoff,
     )).toBe(false);
   });
@@ -179,12 +184,12 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     // Active member would otherwise overwrite their status on the Members list
     // and drop them out of the Nutrition Dashboard's active count.
     expect(latestEnrollmentStatusSql('m').replace(/\s+/g, ' '))
-      .toContain("pa.status NOT IN ('draft', 'pending_payment')");
+      .toContain("pa.status NOT IN ('in_cart', 'pending_payment')");
   });
 
   it('is excluded from the two member-facing reads, by the constant beside the ordering', () => {
     const forecast = code(API_SRC, 'api', 'me-billing-forecast.ts');
-    expect(forecast).toContain("export const MEMBER_CURRENT_ASSIGNMENT_FILTER = \"AND um.status NOT IN ('draft', 'pending_payment')\";");
+    expect(forecast).toContain("export const MEMBER_CURRENT_ASSIGNMENT_FILTER = \"AND um.status NOT IN ('in_cart', 'pending_payment')\";");
     // Both callers append both halves: the ordering alone would sort a Draft
     // first, because FIELD() answers 0 for a value it does not list.
     for (const source of [forecast, code(API_SRC, 'api', 'me.ts')]) {
@@ -196,7 +201,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     // #2125 M6b-8: the count reads the assignment's current plan snapshot (alias pa).
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("pa.status NOT IN ('draft', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')");
+      .toContain("pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')");
   });
 });
 
@@ -243,7 +248,7 @@ describe('a Draft is editable and projected', () => {
     for (const [source, name] of lists) {
       const match = source.match(new RegExp(`${name}[^=]*= \\[([^\\]]*)\\]`));
       expect(match, name).toBeTruthy();
-      expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), name).toContain('draft');
+      expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), name).toContain('in_cart');
     }
   });
 
@@ -251,14 +256,14 @@ describe('a Draft is editable and projected', () => {
     const simulation = code(API_SRC, 'api', 'billing-simulation.ts');
     const match = simulation.match(/const SIMULATED_STATUSES = \[([^\]]*)\]/);
     expect(match).toBeTruthy();
-    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('draft');
+    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('in_cart');
   });
 
   it('appears in the Member card\'s own configuration read', () => {
     const configuration = code(API_SRC, 'api', 'member-membership-configuration.ts');
     const match = configuration.match(/const LIVE_STATUSES = \[([^\]]*)\]/);
     expect(match).toBeTruthy();
-    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('draft');
+    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('in_cart');
   });
 });
 
@@ -269,12 +274,12 @@ describe('the admin app mirrors the status model', () => {
     for (const name of ['EDITABLE_STATUSES', 'CLOSEABLE_STATUSES']) {
       const match = CARD.match(new RegExp(`${name} = \\[([^\\]]*)\\]`));
       expect(match, name).toBeTruthy();
-      expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), name).toContain('draft');
+      expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), name).toContain('in_cart');
     }
   });
 
   it('offers Save & Pay for a Draft and routes it through the commit endpoint (#1108 stage 2)', () => {
-    expect(CARD).toContain("detail.status === 'draft'");
+    expect(CARD).toContain("detail.status === 'in_cart'");
     expect(CARD).toContain('/save-and-pay');
     expect(CARD).toContain('/record-payment');
     // #956's one dialog, raised by the activation now that the four assignment
@@ -286,7 +291,7 @@ describe('the admin app mirrors the status model', () => {
     const page = code(ADMIN_SRC, 'app', '[locale]', 'financials', 'assigned-plans', 'page.tsx');
     const match = page.match(/const LIFECYCLE_STATUSES: LifecycleStatus\[\] = \[([^\]]*)\]/);
     expect(match).toBeTruthy();
-    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('draft');
+    expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).toContain('in_cart');
   });
 
   it('has a label for the status and for the action in every locale', () => {
@@ -294,7 +299,7 @@ describe('the admin app mirrors the status model', () => {
       const messages = JSON.parse(read(ADMIN_LOCALES, `${locale}.json`));
       // next-intl prints a missing key verbatim, so an absent one renders as
       // `status.draft` on screen rather than falling back to anything.
-      expect(messages.status?.draft, locale).toBeTruthy();
+      expect(messages.status?.in_cart, locale).toBeTruthy();
       expect(messages.assigned_plans_page?.action_activate, locale).toBeTruthy();
     }
   });

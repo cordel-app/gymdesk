@@ -1,4 +1,3 @@
-import { planSnapshotStatusForSet } from '../domain/productSet';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
@@ -214,7 +213,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
           member_limit, source_user_membership_id, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, set.owner_member_id, membershipPlanId, planSnapshotStatusForSet(set.status), toDateOnly(set.starts_at),
+      [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
         set.created_by ?? null]);
     snapshotId = Number(insertId);

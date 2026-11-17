@@ -67,7 +67,7 @@ describe('One per Member on Membership Plans', () => {
     const res = await post(`/user-memberships/${umId}/activate`, { confirm: true });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/one assignment of this product: Locker OPM Plan/);
-    expect(await status(umId)).toBe('draft');
+    expect(await status(umId)).toBe('in_cart');
   });
 
   it('a plan gives the Product once: a second plan is refused as an add, a replacement is allowed', async () => {
@@ -83,7 +83,7 @@ describe('One per Member on Membership Plans', () => {
     const add = await post(`/user-memberships/${second}/activate`, { on_conflict: 'add' });
     expect(add.status).toBe(409);
     expect(add.body.error).toMatch(/one assignment of this product/);
-    expect(await status(second)).toBe('draft');
+    expect(await status(second)).toBe('in_cart');
     expect(await status(first)).toBe('active');
 
     const replace = await post(`/user-memberships/${second}/activate`, { on_conflict: 'replace' });

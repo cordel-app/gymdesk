@@ -68,7 +68,7 @@ async function closeAssignment(
 ) {
   const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
     `SELECT status, member_id, ends_at FROM user_memberships
-      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
+      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','in_cart') FOR UPDATE`,
     [id, gymId]);
   if (!before[0]) return;
   // #2659 stage 2: a member's cancellation keeps the plan running to its last
