@@ -2,6 +2,7 @@
 // already holds a Draft reuses it instead of answering `This member already has a ProductSet
 // version in flight`; a genuinely new configuration still keeps the one-in-flight rule.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment,
@@ -35,7 +36,7 @@ async function memberWithPlan(active: boolean) {
 }
 
 const setsOf = async (memberId: number) => (await db.query<any>(
-  'SELECT id, status, user_membership_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? ORDER BY id',
+  `SELECT id, status, ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? ORDER BY id`,
   [gymId, memberId])).rows;
 
 describe('reusing the owner\'s Draft (#2858)', () => {

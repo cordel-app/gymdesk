@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 
@@ -50,7 +51,7 @@ async function assign(memberId: number, planId: number): Promise<number> {
 }
 async function setsOf(memberId: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, previous_product_set_id, status, user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY id', [memberId]);
+    `SELECT id, previous_product_set_id, status, ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE owner_member_id = ? ORDER BY id`, [memberId]);
   return rows;
 }
 async function um(id: number) {

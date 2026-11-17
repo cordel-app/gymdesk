@@ -18,6 +18,7 @@
 // into real Billing Events are stage 2's; nothing here anticipates them.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -355,7 +356,7 @@ describe('#1108 stage 1 — a Draft is editable, projected, and not billable', (
     const { rows } = await db.query<{ n: number }>(
       `SELECT COUNT(*) AS n FROM billing_events be
          JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ? AND be.is_scheduled = 1`,
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.is_scheduled = 1`,
       [draft.id],
     );
     expect(Number(rows[0].n)).toBe(0);

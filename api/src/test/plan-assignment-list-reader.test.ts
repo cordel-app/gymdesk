@@ -4,6 +4,7 @@
 // `user_memberships` row: the lifecycle, the creator and the last modifier, plus the three facts the
 // list read off `um.*` (`purchased_at`, `replace_on_activation`, `replaces_user_membership_id`).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import {
@@ -125,7 +126,7 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     expect(one.body.status).toBe('cancelled');
 
     const { rows: sets } = await db.query<any>(
-      'SELECT status FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, um]);
+      `SELECT status FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, um]);
     expect(sets.map((r: any) => r.status)).toEqual(['cancelled']);
     const { rows: audits } = await db.query<any>(
       `SELECT COUNT(*) AS n FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership'

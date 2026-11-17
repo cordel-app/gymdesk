@@ -10,6 +10,7 @@
 // and each writes the money and the status in one transaction.
 
 import crypto from 'crypto';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -269,7 +270,7 @@ describe('the payment activates', () => {
     expect(pr[0].status).toBe('completed');
     // #1325 PR 3: the activation hands the assignment to a ProductSet, whose
     // persisted events are the schedule.
-    const { rows: sets } = await db.query("SELECT status FROM product_sets WHERE user_membership_id = ? AND status = 'active'", [umId]);
+    const { rows: sets } = await db.query(`SELECT status FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [umId]);
     expect(sets).toHaveLength(1);
     const changes = await statusChanges(umId);
     expect(changes[changes.length - 1]).toEqual({ previous_status: 'pending_payment', new_status: 'active' });
@@ -297,7 +298,7 @@ describe('the payment activates', () => {
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.amount FROM billing_events be
          JOIN product_sets ps ON ps.id = be.product_set_id
-        WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`,
+        WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND be.event_type = 'payment_recorded'`,
       [umId],
     );
     expect(rows).toHaveLength(1);

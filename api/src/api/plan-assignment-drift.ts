@@ -154,17 +154,20 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE NOT (pr.plan_assignment_id <=> a.anchor_id)${scope('pr')}
       ORDER BY pr.id`);
 
-  // #2125 M6b-36: a Product Set's re-keyed assignment (migration 432), by the same rule.
+  // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
+  // names. Since migration 439 dropped `product_sets.user_membership_id`, the check is that the link
+  // is the lowest snapshot naming the same legacy assignment as the snapshot it points at.
   await add('product_set_assignment_mismatch',
-    'A Product Set whose plan_assignment_id is not the anchor of its user_membership_id.',
-    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.user_membership_id, ps.plan_assignment_id,
+    'A Product Set whose plan_assignment_id is not the anchor (lowest snapshot) of the assignment it names.',
+    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.plan_assignment_id,
             a.anchor_id AS expected_plan_assignment_id
        FROM product_sets ps
+       JOIN plan_snapshots cur ON cur.id = ps.plan_assignment_id
        LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
                     FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
                    GROUP BY gym_id, source_user_membership_id) a
-              ON a.gym_id = ps.gym_id AND a.um_id = ps.user_membership_id
-      WHERE NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
+              ON a.gym_id = cur.gym_id AND a.um_id = cur.source_user_membership_id
+      WHERE cur.source_user_membership_id IS NULL OR NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
       ORDER BY ps.id`);
 
   return { clean: checks.every((c) => c.count === 0), checks };

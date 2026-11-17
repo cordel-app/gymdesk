@@ -250,7 +250,13 @@ describe('the drift check', () => {
     expect((await check('snapshot_without_assignment_id')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(other.snapshot);
 
     // The migration's backfill, run again: it converges on the same identities (repeatable).
-    const knex = { raw: async (sql: string) => { const r: any = await db.query(sql); return [{ affectedRows: Number(r.rowCount ?? 0) }]; } };
+    // M6b-46: migration 439 dropped `product_sets.user_membership_id`, which the backfill's last
+    // statement falls back to; against today's schema that link is the set's anchor's legacy id.
+    const anchorLink = '(SELECT anc.source_user_membership_id FROM plan_snapshots anc WHERE anc.id = ps.plan_assignment_id)';
+    const knex = { raw: async (sql: string) => {
+      const r: any = await db.query(sql.replace(/\bps\.user_membership_id\b/g, anchorLink));
+      return [{ affectedRows: Number(r.rowCount ?? 0) }];
+    } };
     await migration.backfillPlanAssignmentIdentity(knex);
     await migration.backfillPlanAssignmentIdentity(knex);
     expect(await assignmentIdOf(snap.id)).toBe(snap.id);

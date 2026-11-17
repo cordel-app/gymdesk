@@ -2,6 +2,7 @@
 // written per beneficiary through the Assigned Plan's fee-benefit route, read back per member,
 // and charged per fee unit by the billing engine.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
@@ -45,7 +46,7 @@ async function assignment(scope: 'per_member' | 'per_family') {
   const { rows } = await db.query<any>(
     `SELECT j.plan_snapshot_id, j.product_set_id FROM product_sets ps
        JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id
-      WHERE ps.user_membership_id = ? ORDER BY ps.id DESC LIMIT 1`, [umId]);
+      WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} ORDER BY ps.id DESC LIMIT 1`, [umId]);
   const snapshotId = Number(rows[0].plan_snapshot_id);
   await db.query('UPDATE plan_snapshots SET membership_fee_price = 50 WHERE id = ?', [snapshotId]);
   await db.query(

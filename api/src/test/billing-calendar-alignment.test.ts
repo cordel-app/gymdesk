@@ -6,6 +6,7 @@
 // against real MySQL; only the provider's `createPaymentRequest` is stubbed.
 
 import crypto from 'crypto';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 
@@ -212,7 +213,7 @@ describe('the Assigned Plan card forecasts the calendar-aligned charge Save & Pa
       expect(sp.status).toBe(200);
       const { rows } = await db.query<any>(
         `SELECT be.amount FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
-          WHERE ps.user_membership_id = ?`, [assigned.body.id]);
+          WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')}`, [assigned.body.id]);
       expect(rows.map((r: any) => Number(r.amount))).toEqual([amount]);
     });
   }

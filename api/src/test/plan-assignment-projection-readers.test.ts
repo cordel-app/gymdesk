@@ -5,6 +5,7 @@
 // /user-memberships/member/:id/configuration`). Each test makes the snapshot and the legacy row
 // disagree and asserts the reader follows the snapshot.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
@@ -46,7 +47,7 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;
   });
-  const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
+  const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
   return Number(rows[0].user_membership_id);
 }
 

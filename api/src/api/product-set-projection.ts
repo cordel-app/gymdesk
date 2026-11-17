@@ -185,7 +185,7 @@ export async function projectActiveProductSet(
   // A plan-less version has no assignment; a previous one is closed.
   if (set.membership_plan_id == null) {
     if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
-    await tx.query('UPDATE product_sets SET user_membership_id = NULL, plan_assignment_id = NULL WHERE id = ?', [productSetId]);
+    await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [productSetId]);
     return null;
   }
 
@@ -211,7 +211,7 @@ export async function projectActiveProductSet(
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
     await attachApplications(tx, gymId, productSetId, umId);
-    if (continuedUmId != null) await tx.query(`UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+    if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
     return umId;
   }
 
@@ -250,7 +250,7 @@ export async function projectActiveProductSet(
   // ids, the grant snapshots) belong to the assignment it projects.
   await attachApplications(tx, gymId, productSetId, umId);
 
-  await tx.query(`UPDATE product_sets SET user_membership_id = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+  await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
   // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
   await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
   return umId;

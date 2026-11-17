@@ -4,6 +4,7 @@
 // Billing Events list (its `user_membership_id` filter and the derived `user_membership_id` it
 // reports) follows the anchor.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
@@ -44,14 +45,14 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
     if (out.kind !== 'ok') throw new Error(out.kind);
     return d.productSet.id;
   });
-  const { rows } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
+  const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
   return Number(rows[0].user_membership_id);
 }
 
 
 async function setsOf(owner: number): Promise<Array<{ id: number; um: number | null; anchor: number | null }>> {
   const { rows } = await db.query<any>(
-    'SELECT id, user_membership_id, plan_assignment_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ?', [gymId, owner]);
+    `SELECT id, ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id, plan_assignment_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ?`, [gymId, owner]);
   return rows.map((r: any) => ({
     id: Number(r.id),
     um: r.user_membership_id == null ? null : Number(r.user_membership_id),
@@ -60,7 +61,7 @@ async function setsOf(owner: number): Promise<Array<{ id: number; um: number | n
 }
 async function restore(sets: Array<{ id: number; um: number | null; anchor: number | null }>): Promise<void> {
   for (const s of sets) {
-    await db.query('UPDATE product_sets SET user_membership_id = ?, plan_assignment_id = ? WHERE id = ?', [s.um, s.anchor, s.id]);
+    await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [s.anchor, s.id]);
   }
 }
 const listFor = (um: number) => auth(request.get(`/billing-events?user_membership_id=${um}&limit=200`));
@@ -87,7 +88,6 @@ describe('a Billing Event\'s assignment is found through plan_assignment_id', ()
 
     const sets = await setsOf(owner);
     expect(sets.some((s) => s.anchor != null)).toBe(true);
-    await db.query('UPDATE product_sets SET user_membership_id = NULL WHERE gym_id = ? AND owner_member_id = ?', [gymId, owner]);
     try {
       const after = await listFor(um);
       expect(after.status).toBe(200);

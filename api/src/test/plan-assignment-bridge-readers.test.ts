@@ -5,6 +5,7 @@
 // the cancellation itself). Each test makes the snapshot and the legacy row disagree and asserts
 // the route follows the snapshot.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
@@ -42,7 +43,7 @@ const setSnapshots = (um: number, column: string, value: string) =>
 /** The version the assignment is linked to (a new version takes the link over from its predecessor). */
 const linkedVersion = async (um: number): Promise<number> => {
   const { rows } = await db.query<any>(
-    'SELECT MAX(id) AS id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, um]);
+    `SELECT MAX(id) AS id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, um]);
   return Number(rows[0].id);
 };
 const feeBenefit = (um: number) =>
