@@ -35,6 +35,13 @@ function dayOffset(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * #2964 — assignments start on the 1st of the current month, a date of the billing calendar, so
+ * the first period is a whole one; a start between calendar dates is prorated up to the next one
+ * (`billing-calendar-alignment.test.ts`), which is not what this file asserts.
+ */
+const PLAN_START = `${dayOffset(0).slice(0, 8)}01`;
+
 async function createPlan(gymId: string, price = 100): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans
@@ -71,7 +78,7 @@ const assign = async (gymId: string, planId: number, memberId: number) => {
     .post('/user-memberships')
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0) });
+    .send({ member_id: memberId, membership_plan_id: planId, starts_at: PLAN_START });
   if (res.status === 201) await activateAssignment(gymId, res.body.id);
   return res;
 };

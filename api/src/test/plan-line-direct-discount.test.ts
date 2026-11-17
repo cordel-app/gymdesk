@@ -6,8 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
-} from './helpers';
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, proratedToNextFirst } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -122,8 +121,9 @@ describe('Membership Plan line Direct Discount (%)', () => {
     expect(sim.status).toBe(200);
     const lockerLines = sim.body.dates.flatMap((g: any) => g.lines).filter((l: any) => l.product_id === lockerId);
     expect(lockerLines.length).toBeGreaterThan(0);
-    // quantity 2 × €20 → 50% treatment → €20 → 10% direct → €18
-    for (const l of lockerLines) expect(l.actual_charge).toBe(18);
+    // quantity 2 × €20 → 50% treatment → €20 → 10% direct → €18 a full period; the first stretch
+    // is prorated up to the plan's billing calendar (#2964).
+    for (const l of lockerLines) expect(l.actual_charge).toBe(l.proration ? proratedToNextFirst(18) : 18);
   });
 
   it('null clears it', async () => {

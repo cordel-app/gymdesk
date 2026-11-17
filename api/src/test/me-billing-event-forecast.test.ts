@@ -21,7 +21,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  activateAssignment, ensureTestProductSet } from './helpers';
+  activateAssignment, ensureTestProductSet, proratedToNextFirst } from './helpers';
 
 const ROOT = '/me/billing-event-forecast';
 
@@ -145,7 +145,8 @@ describe('GET /me/billing-event-forecast', () => {
     for (const date of dates) expect(date >= TODAY()).toBe(true);
 
     const fee = res.body.dates[0].lines.find((l: any) => l.kind === 'membership_fee');
-    expect(fee).toMatchObject({ actual_charge: 70, regular_price: 70, product_id: null });
+    // #2964: a start between billing-calendar dates is prorated up to the next one (the 1st).
+    expect(fee).toMatchObject({ actual_charge: proratedToNextFirst(70), regular_price: 70, product_id: null });
 
     // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
     await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
@@ -187,7 +188,8 @@ describe('GET /me/billing-event-forecast', () => {
 
     const res = await asMember();
     const today = res.body.dates.find((g: any) => g.date === TODAY());
-    expect(today.total).toBe(90);
+    // #2964: both lines bill on the plan's calendar, prorated up to the 1st.
+    expect(today.total).toBe(Math.round((proratedToNextFirst(70) + proratedToNextFirst(20)) * 100) / 100);
     expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'product']);
 
     // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
