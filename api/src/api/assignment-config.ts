@@ -44,12 +44,13 @@ export const assignmentVersionId = (idExpr: string) =>
  * both would count each line (and its sessions) twice. A closed assignment keeps its own version's
  * lines, as the record of what it billed.
  *
- * #2125 M6b-26 — the assignment's status is its current plan snapshot's (`assignmentOfLegacyIdSql()`),
- * never the `user_memberships` row's.
+ * #2125 M6b-26 — the assignment's status is its current plan snapshot's, never the `user_memberships` row's.
+ * #2125 M6b-37 — that snapshot is found through the set's own anchor (`p9.plan_assignment_id`,
+ * `assignmentOfAnchorSql()`), not through `product_sets.user_membership_id`.
  */
 export const assignmentLineVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
-      JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfLegacyIdSql('p9.user_membership_id', 'u9')}
+      JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')}
      WHERE p9.user_membership_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
      ORDER BY p9.id DESC LIMIT 1)`;
 
@@ -93,7 +94,7 @@ export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
 
 import { db } from '../infra/db';
-import { assignmentOfLegacyIdSql, currentAssignmentSnapshotSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, currentAssignmentSnapshotSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 
 const OVERLAID: AssignmentConfigColumn[] = [
   'membership_fee_price', 'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at',

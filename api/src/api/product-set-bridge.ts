@@ -21,7 +21,7 @@ import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -438,13 +438,14 @@ export async function reconfigureProjected(
  * #1196 / #2481: the day a cancelled plan keeps its entitlement through (inclusive) — the end of the last paid
  * period, or yesterday when nothing was paid. The one computation behind both the cancellation and the
  * confirmation dialog's preview, so the date shown is the date applied. #2125 M6b-27: the assignment's
- * start date is its current plan snapshot's.
+ * start date is its current plan snapshot's,
+ * found since M6b-37 through the set's anchor `ps.plan_assignment_id`.
  */
 export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: number }): Promise<string> {
   const { rows: info } = await tx.query<any>(
     `SELECT pa.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
        FROM product_sets ps
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfLegacyIdSql('ps.user_membership_id', 'pa')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
       WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
   const paidThrough = await loadPaidThrough(tx, gymId, set.id);
   return cancellationEndDate({
