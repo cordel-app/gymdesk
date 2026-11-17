@@ -1078,7 +1078,36 @@ created). `startCartCheckout()` (`api/src/api/cart-checkout.ts`) pays all of the
    (`completeProductPurchase()`); a failure or expiry cancels every one, as before.
 
 A purchase a cart Product Set carries is never selected: it is paid by that set's Save & Pay
-(#2746). Paying the set and the standalone purchases in one checkout is stage 5.
+(#2746).
+
+### D3. A Product Set's Save & Pay pays the whole cart (#2949 stage 5)
+
+A Product Set's initial charge (`initialCharge()`, so the *Review your changes* amount, Save & Pay
+and every `/pay` method take the same figure) adds, beside the set's own lines and its linked
+purchases, one line per **standalone `in_cart` purchase of the set's owner** at its frozen amount
+(`cartPurchasesForCharge()`, `cartChargeLine()` in `api/src/api/cart-checkout.ts`), and lists them
+in `InitialCharge.cartPurchases`. `ensureInitialEvent()` then **joins** exactly those to the set's
+initial event (`joinCartPurchasesToEvent()`): each one is locked and re-checked (the owner's, still
+standalone and `in_cart`, at the amount charged; `409 cart_changed` otherwise), moved to
+`pending_payment` and linked through its `billing_event_{oneoff,session}_snapshots` junction. It is
+**never** linked to the Product Set. So one Billing Event and one payment cover the plan, the
+recurring Products, the set's own one-time purchases and the standalone ones.
+
+From then on a joined purchase follows the set's checkout, found through the set's events
+(`loadJoinedCartPurchases()`):
+
+| The set's checkout | A joined purchase |
+|---|---|
+| paid (webhook, cash, card terminal) → `activate()` | `active`, with its purchase day and validity (`activateSetPurchases()`) |
+| returned to Draft (`returnPendingToDraft()`) or deleted (`cancelInFlight()`) | back to `in_cart`, its event link removed (`releaseJoinedCartPurchases(…, 'in_cart')`) |
+| cancelled and kept (`cancelPendingProductSet()`) | `cancelled`, link kept |
+
+`cancelAbandonedPurchases()` skips a purchase whose request's event belongs to a Product Set, so
+an expired set checkout returns it to the cart rather than cancelling it. A purchase added to the
+cart after Save & Pay is not part of that checkout and stays `in_cart`. Not included, by default:
+the Admin assignment card's own Save & Pay (`importAssignmentAsProductSet(…, { pending: true })`
+moves the set to Pending Payment before its charge is computed) and the Members App plan choice's
+`membership_fee` preview (`includeCart: false`).
 
 ---
 
