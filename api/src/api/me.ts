@@ -2301,7 +2301,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
          FROM product_sets ps
          LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
         WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'cancelled'
-          AND ps.membership_plan_id IS NOT NULL AND ps.user_membership_id IS NULL
+          AND ps.membership_plan_id IS NOT NULL AND ps.plan_assignment_id IS NULL
         ORDER BY ps.id DESC
         LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],

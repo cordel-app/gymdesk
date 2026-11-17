@@ -88,10 +88,10 @@ export async function ensureRecurringDraft(tx: Tx, input: {
   if (created.kind === 'in_flight') {
     if (created.status === 'in_cart') {
       const { rows } = await tx.query<any>(
-        `SELECT ps.user_membership_id, ${staffProductDraftSql('ps')} AS editable
+        `SELECT ps.plan_assignment_id, ${staffProductDraftSql('ps')} AS editable
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
-      if (rows[0] && (rows[0].user_membership_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
+      if (rows[0] && (rows[0].plan_assignment_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
         await tx.query(
           'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
           [created.productSetId, input.gymId]);

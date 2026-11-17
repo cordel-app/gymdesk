@@ -22,7 +22,7 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 export const editableDraftSql = (ps: string): string =>
   `(${ps}.status = 'in_cart'
     AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
-    AND (${ps}.user_membership_id IS NULL OR NOT EXISTS (
+    AND (${ps}.plan_assignment_id IS NULL OR NOT EXISTS (
       SELECT 1 FROM product_set_plan_snapshots ej_ JOIN plan_snapshots es_ ON es_.id = ej_.plan_snapshot_id
        WHERE ej_.product_set_id = ${ps}.id AND ej_.entitlement_only = 0
          AND NOT ${planSnapshotInheritedSql('es_', `${ps}.id`)})))`;
