@@ -8,6 +8,7 @@ import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentReplacementOf, writeAssignmentReplacement } from './plan-assignment-sync';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -136,8 +137,8 @@ async function mergeOwnerVersionForAdd(
   tx: Tx, gymId: string, row: { id: number; member_id: number }, excludeUserMembershipIds: readonly number[] = [],
 ): Promise<boolean> {
   const { rows: drafts } = await tx.query<any>(
-    `SELECT id, owner_member_id, previous_product_set_id FROM product_sets
-      WHERE gym_id = ? AND user_membership_id = ? AND status IN ('in_cart','pending_payment')
+    `SELECT id, owner_member_id, previous_product_set_id FROM product_sets ps
+      WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?')} AND status IN ('in_cart','pending_payment')
       ORDER BY id DESC LIMIT 1 FOR UPDATE`,
     [gymId, row.id]);
   const { rows: actives } = await tx.query<any>(

@@ -156,3 +156,16 @@ export const GYM_ASSIGNMENT_ROWS_SQL = `(
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
    WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
+
+/**
+ * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment a legacy
+ * `user_memberships` id names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
+ * M6b-36), the lowest snapshot naming that legacy id (the rule `PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`
+ * writes), never of `product_sets.user_membership_id`, the column the re-key drops. For the
+ * lookups that are handed a legacy id and want the sets linked to it; `legacyIdExpr` is a column
+ * or a `?`.
+ */
+export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'ps'): string =>
+  `${alias}.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc
+                                   WHERE ps_anc.gym_id = ${alias}.gym_id
+                                     AND ps_anc.source_user_membership_id = ${legacyIdExpr})`;
