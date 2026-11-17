@@ -1,4 +1,4 @@
-import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import type { logger } from '../lib/logger';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db, type Tx } from '../infra/db';
@@ -158,15 +158,21 @@ export async function cancelPendingProductSet(
     [actor, productSetId]);
 
   if (set.user_membership_id != null) {
-    const { rows: um } = await tx.query<{ id: number; member_id: number; status: string }>(
-      'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-      [set.user_membership_id, gymId]);
-    if (um[0] && um[0].status === 'pending_payment') {
-      await tx.query(
+    // #2125 M6b-48: the assignment's owner is read off its current plan snapshot, never from
+    // `user_memberships`; the legacy row is still dual-written, by an UPDATE guarded on
+    // `pending_payment`, which decides whether it moves (it replaces the `FOR UPDATE` read).
+    const { rows: um } = await tx.query<{ id: number; member_id: number }>(
+      `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
+        WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+      [gymId, set.user_membership_id]);
+    const { rowCount } = um[0]
+      ? await tx.query(
         `UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP(),
                 modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND status = 'pending_payment'`,
-        [actor, um[0].id]);
+          WHERE id = ? AND gym_id = ? AND status = 'pending_payment'`,
+        [actor, um[0].id, gymId])
+      : { rowCount: 0 };
+    if (rowCount > 0) {
       await recordStatusChange(tx, {
         gymId, userMembershipId: Number(um[0].id), memberId: Number(um[0].member_id),
         previousStatus: 'pending_payment', newStatus: 'cancelled', source: who.source, actorUserId: who.actorUserId,
