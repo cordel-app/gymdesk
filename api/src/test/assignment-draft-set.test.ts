@@ -68,6 +68,20 @@ describe('a Draft assignment is created set-first', () => {
     expect(ev).toHaveLength(0);
   });
 
+  it('assigning a plan joins the owner\'s plain Draft (their cart) instead of answering in_flight (#2966)', async () => {
+    const m = await member();
+    const { insertId: cartId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, created_by)
+       VALUES (?, ?, 'in_cart', '2026-06-01', 'test')`, [gymId, m]);
+    const res = await api('post', '/user-memberships')
+      .send({ member_id: m, membership_plan_id: await plan('J'), starts_at: '2026-06-01' });
+    expect(res.status).toBe(201);
+    expect(await draftSetOf(res.body.id)).toMatchObject({ id: cartId, status: 'in_cart' });
+    const { rows: sets } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')`, [gymId, m]);
+    expect(sets).toHaveLength(1);
+  });
+
   it('still refuses a new Draft while a version is Pending Payment', async () => {
     const m = await member();
     const first = await api('post', '/user-memberships')
