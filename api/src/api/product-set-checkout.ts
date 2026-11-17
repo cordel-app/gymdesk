@@ -197,7 +197,7 @@ export async function initialCharge(
   };
 }
 
-async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
+export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
   for (const l of lines) {
     await tx.query(
       `INSERT INTO billing_event_lines
