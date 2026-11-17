@@ -362,16 +362,21 @@ export async function retryBillingEventPayment(
     // goes through the same append-only ledger row every other transition
     // writes (`recordStatusChange`), so the pause is explicable from the ledger.
     await db.transaction(async (tx) => {
+      // #2125 M6b-47: the assignment's status is read off its current snapshot
+      // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the legacy row is still
+      // dual-written, by an UPDATE guarded on `active`, which is what serialises two pauses.
       const { rows: current } = await tx.query<{ id: number; member_id: number; status: string }>(
-        'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [event.user_membership_id, gymId],
+        `SELECT pa.source_user_membership_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
+          WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
+        [gymId, event.user_membership_id],
       );
       if (current.length === 0 || current[0].status !== 'active') return;
-      await tx.query(
+      const { rowCount } = await tx.query(
         `UPDATE user_memberships
             SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ?`,
+          WHERE id = ? AND gym_id = ? AND status = 'active'`,
         ['paused', actor, current[0].id, gymId]);
+      if (rowCount === 0) return;
       await recordStatusChange(tx, {
         gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
         previousStatus: current[0].status, newStatus: 'paused',
