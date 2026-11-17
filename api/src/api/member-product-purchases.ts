@@ -52,7 +52,8 @@ import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
-import { CartCheckoutRefused, startCartCheckout } from './cart-checkout';
+import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
+import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { getRequestLocale } from '../infra/locale';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
@@ -516,6 +517,44 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
     }
     recordAudit(req, { action: 'update', entityType: 'product_set', entityId: draftId, next: { remove_recurring_line: lineId } });
     res.json({ product_set_id: draftId, deleted: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2965 — the Summary of a cart holding only standalone purchases (no Draft Product Set carries
+ * them; when one does, its `GET /product-sets/:id/review` already lists them): what `POST /checkout`
+ * would charge, line by line, and what it contracts. Read-only — no Billing Event, payment request
+ * or purchase is written (bar #2962's expiry, which every cart read applies).
+ */
+memberProductPurchasesRouter.get('/cart-summary', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const cart = await loadCartPurchases(db, gymId, memberId);
+    const amountDue = cartTotal(cart);
+    const memberIds = [...new Set(cart.map((p) => p.assigned_member_id ?? memberId))];
+    const names = new Map<number, string | null>();
+    if (memberIds.length > 0) {
+      const { rows } = await db.query<any>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND id IN (${memberIds.map(() => '?').join(',')})`,
+        [gymId, ...memberIds]);
+      for (const r of rows) names.set(Number(r.id), r.name ?? null);
+    }
+    res.json({
+      purchase_ids: cart.map((p) => p.id),
+      initial_payment: initialPaymentBreakdown(cart.map((p) => chargeLineView(cartChargeLine(p).line)), amountDue),
+      contracted_items: contractedItems({
+        plans: [], lines: [],
+        purchases: cart.map((p) => ({
+          product_name: p.product_name, units: null, billing_frequency: null,
+          assigned_member_id: p.assigned_member_id, member_id: memberId,
+        })),
+      }, names),
+      amount_due: amountDue,
+      currency: cart[0]?.currency ?? 'EUR',
+    });
   } catch (err) { next(err); }
 });
 
