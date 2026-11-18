@@ -19,7 +19,7 @@ type Translate = (key: string, values?: Record<string, string | number>) => stri
 
 export function BillingEventSimulationPanel({
   simulation, chartSimulation, t, formatDate, cycleNote, zeroToggle, chartShowZero, continuousMonths,
-  detailsTitle,
+  detailsTitle, hideDetails,
 }: {
   simulation: BillingEventSimulationData | null | undefined;
   /** The unfiltered simulation the chart plots, when the host filters the details. */
@@ -34,6 +34,8 @@ export function BillingEventSimulationPanel({
   continuousMonths?: boolean;
   /** The details heading, already worded by the host. */
   detailsTitle: string;
+  /** #3028 — render the chart alone (the Save & Pay modal repeats no details). */
+  hideDetails?: boolean;
 }) {
   const [showZero, setShowZero] = useState(false);
   const [open, setOpen] = useState(false);
@@ -46,7 +48,7 @@ export function BillingEventSimulationPanel({
         t={t}
         formatDate={formatDate}
       />
-      <div style={{ marginTop: 12 }}>
+      {!hideDetails && <div style={{ marginTop: 12 }}>
         <button
           type="button"
           aria-expanded={open}
@@ -56,8 +58,8 @@ export function BillingEventSimulationPanel({
           <span aria-hidden="true" style={{ color: '#888', fontSize: 11, width: 10 }}>{open ? '▾' : '▸'}</span>
           <CardSectionHeader title={detailsTitle} />
         </button>
-      </div>
-      {open && (
+      </div>}
+      {!hideDetails && open && (
         <BillingEventSimulation
           simulation={simulation}
           collapsible={false}
