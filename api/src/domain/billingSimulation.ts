@@ -68,7 +68,7 @@ import { applyLineDirectDiscount } from './lineDirectDiscount';
 import { feeUnitBenefits, type FeeMemberDiscount } from './feeMemberDiscounts';
 import { advanceBillingDate } from './billingDate';
 import { cadenceForFrequency } from './scheduleAllocation';
-import { prorate } from './proration';
+import { prorate, promotionCycleShift } from './proration';
 import {
   PlanDuration,
   PlanDurationStatus,
@@ -1338,6 +1338,9 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
   // *is* this contract's regular charge, and treating it as promotional would
   // push the horizon to the safety cap for every discounted item.
   const lineBase = applyLineBenefit(unit, item.quantity, item.benefit);
+  // #3024 — a Monthly line joined on or after the 15th: the stretch takes the promotion without
+  // consuming a cycle.
+  const cycleShift = itemCadence ? promotionCycleShift(itemCadence, a.startsAt, proration != null) : 0;
   const planBenefitLines: SimulationBenefit[] = item.benefit.action === 'no_benefit' ? [] : [{
     source: 'membership_plan', name: null,
     action: item.benefit.action, value: item.benefit.value, period_status: null,
@@ -1357,7 +1360,8 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     end: a.endsAt,
     resolve: (date, occurrence) => {
       const resolved = withLineDirectDiscount(
-        resolveCoveredCharge(coverage, lineBase, planBenefitLines, date, occurrence), item.directDiscountPercent);
+        resolveCoveredCharge(coverage, lineBase, planBenefitLines, date, occurrence > 0 ? occurrence - cycleShift : occurrence),
+        item.directDiscountPercent);
       if (!proration || occurrence !== 0) return resolved;
       return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
     },
@@ -1416,6 +1420,8 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
     ? { ...base, advance: (d) => (d === start ? joinDate : base.advance(d)) }
     : base;
 
+  // #3024 — see `buildItemStream`.
+  const cycleShift = scheduleCadence ? promotionCycleShift(scheduleCadence, start, proration != null) : 0;
   const quantity = Math.max(1, Math.trunc(service.quantity) || 1);
   const unit = round2(service.unitPrice);
   const regular = round2(unit * quantity);
@@ -1431,7 +1437,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
     start,
     end,
     resolve: (date, occurrence) => {
-      const resolved = resolveCoveredCharge(coverage, regular, [], date, occurrence);
+      const resolved = resolveCoveredCharge(coverage, regular, [], date, occurrence > 0 ? occurrence - cycleShift : occurrence);
       if (!proration || occurrence !== 0) return resolved;
       return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
     },

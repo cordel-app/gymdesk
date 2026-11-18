@@ -53,3 +53,17 @@ export function prorate(price: number, cadence: Cadence, purchaseDate: string, n
   const amount = Math.round(((price / period) * days) * 100) / 100;
   return { proratedDays: days, periodDays: period, amount };
 }
+
+/**
+ * #3024 — the 15th-day rule. A Monthly line joined mid-period on or after the 15th does not
+ * consume a promotional cycle with its prorated first stretch (which still takes the promotion);
+ * the first full billing date consumes the first one. Joined on the 1st–14th, the stretch is the
+ * first cycle. Other cadences are untouched. Returns how many occurrences to take off the
+ * occurrence index (after the prorated one) when counting a grant's cycles.
+ */
+export const PROMOTION_CYCLE_CUTOFF_DAY = 15;
+
+export function promotionCycleShift(cadence: Cadence, startsOn: string, prorated: boolean): 0 | 1 {
+  if (!prorated || cadence.unit !== 'month' || cadence.interval !== 1) return 0;
+  return Number(startsOn.slice(8, 10)) >= PROMOTION_CYCLE_CUTOFF_DAY ? 1 : 0;
+}
