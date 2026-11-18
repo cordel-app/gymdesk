@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { CartSummary } from '@/components/CartSummary';
 import {
   EMPTY_STANDALONE_CART,
   cartCounts,
@@ -67,8 +68,17 @@ export function HomeCartCard({ viewerId }: { viewerId: number | null }) {
     read();
     // The cart changes elsewhere (My Products): re-read when the tab regains focus.
     const onFocus = () => { read(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') read(); };
     window.addEventListener('focus', onFocus);
-    return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
+    document.addEventListener('visibilitychange', onVisible);
+    // #2973 stage 2: a cart changed in another tab or by the gym shows up without a reload.
+    const timer = window.setInterval(onVisible, 30000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(timer);
+    };
   }, [apiFetch]);
 
   const phase = cartPhase(view, viewerId, standalone);
@@ -98,6 +108,7 @@ export function HomeCartCard({ viewerId }: { viewerId: number | null }) {
       <div style={{ ...cartMutedStyle, marginTop: 4 }}>{counts}</div>
       {total && <div style={{ ...cartTotalStyle, marginTop: 6 }} data-cart-total>{total}</div>}
       {phase === 'awaiting_staff' && <div style={{ ...cartMutedStyle, marginTop: 6 }}>{t('membership.cart_staff_hint')}</div>}
+      {review && phase === 'draft' && <div style={{ marginTop: 10 }}><CartSummary review={review} /></div>}
       <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {items.map((item) => (
           <li key={item.key} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
