@@ -53,7 +53,9 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductActions, AddProductDetails, AddProductFeedback, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
+import { PRODUCT_SELECT_THUMBNAIL_SIZE, AddProductActions, AddProductDetails, AddProductFeedback, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
@@ -95,6 +97,7 @@ export function MemberPurchasedProducts({
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
   // does not carry — the labels live where they were written.
   const tp = useTranslations('promotions');
+  const tFreq = useTranslations('billing_frequency');
   const locale = useLocale();
   const router = useRouter();
   const gymFmt = useGymFormatSettings();
@@ -121,6 +124,7 @@ export function MemberPurchasedProducts({
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [imageOf, setImageOf] = useState<PurchasedProduct | null>(null);
   // #2856 — a line of the open Draft Product Set: `⋮ → Edit` opens the add form on it, `⋮ → Delete` removes it.
   const [editing, setEditing] = useState<{ rowId: number; edit: DraftLineEdit } | null>(null);
   const [deleting, setDeleting] = useState<PurchasedProduct | null>(null);
@@ -201,7 +205,23 @@ export function MemberPurchasedProducts({
       // #3020 — the applied Promotions share the product line: indented under the name, as when adding a Product.
       render: (item) => (
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            {/* #3021 — the Product's thumbnail (initial placeholder with none), as when adding a Product; a click opens the Product modal. */}
+            <button
+              type="button"
+              data-product-thumbnail
+              aria-label={item.product_name}
+              onClick={(e) => { e.stopPropagation(); setImageOf(item); }}
+              style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+            >
+              <MemberAvatar name={item.product_name} imageUrl={item.product_image_thumbnail_url ?? item.product_image_url ?? null} size={PRODUCT_SELECT_THUMBNAIL_SIZE} />
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>
+              {/* #3021 — the billing frequency sits in the header, under the name. */}
+              <div data-product-frequency style={{ ...cardMutedTextStyle, fontSize: 12 }}>{billingFrequencyLabel(item.billing_frequency, tFreq) ?? dash}</div>
+            </div>
+          </div>
           {promotionsArea(item)}
         </div>
       ),
@@ -243,12 +263,6 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_price_incl_vat'),
       mobile: 'secondary',
       render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.regular_amount, item.currency)}</span>,
-    },
-    {
-      key: 'tax',
-      header: t('purchase_col_applied_tax'),
-      mobile: 'secondary',
-      render: (item) => formatAppliedTax(item.tax_rate_percent) ?? dash,
     },
     {
       key: 'promotion',
@@ -301,7 +315,7 @@ export function MemberPurchasedProducts({
       width: 48,
       mobile: 'actions',
       render: (item) => {
-        if (editing?.rowId === item.id) return <AddProductActions form={editForm} />;
+        if (editing?.rowId === item.id) return null; // #3021 — Save / Cancel sit bottom-left of the product (the expanded area)
         const billingPath = billingEventPath(locale, item);
         const isOneTimeDraft = item.status === 'in_cart' && item.source !== 'recurring';
         const draftLineId = editableDraftLineId(item);
@@ -416,6 +430,13 @@ export function MemberPurchasedProducts({
 
   return (
     <div>
+      <ProfessionalServiceImageModal
+        target={imageOf ? { name: imageOf.product_name, imageUrl: imageOf.product_image_url, description: imageOf.product_description } : null}
+        onClose={() => setImageOf(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('purchase_exp_image_none')}
+        noDescriptionLabel={t('purchase_exp_no_description')}
+      />
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
       {deleteError && <p role="alert" style={formErrorStyle}>{deleteError}</p>}
@@ -457,7 +478,7 @@ export function MemberPurchasedProducts({
           })() : undefined}
           renderExpanded={(item) => (
             <div>
-              {editing?.rowId === item.id ? <AddProductFeedback form={editForm} /> : null}
+              {editing?.rowId === item.id ? (<><AddProductFeedback form={editForm} /><div style={{ padding: '4px 16px 8px' }}><AddProductActions form={editForm} /></div></>) : null}
               {expandedIds.has(item.id) && editing?.rowId !== item.id
                 ? <ExpandedProductFacts item={item} gymFmt={gymFmt} />
                 : null}
@@ -529,30 +550,36 @@ export function MemberPurchasedProducts({
  */
 function ExpandedProductFacts({ item, gymFmt }: { item: PurchasedProduct; gymFmt: GymFormatSettings }) {
   const t = useTranslations('members');
-  const tFreq = useTranslations('billing_frequency');
   const dash = '—';
   const yn = (v: boolean | null | undefined) => {
     const k = yesNoKey(v);
     return k ? t(`purchase_exp_${k}` as any) : dash;
   };
   const sharing = sharingTypeKey(item.product_sharing_type);
-  const sectionTitle = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, margin: '6px 0 2px', opacity: 0.7 };
+  const sectionTitle = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, margin: '0 0 2px', opacity: 0.7 };
+  const price = [money(item.regular_amount, item.currency), formatAppliedTax(item.tax_rate_percent) ? `${t('purchase_exp_tax')} ${formatAppliedTax(item.tax_rate_percent)}` : null].filter(Boolean).join(' · ');
+  // #3021 — compact: three sections side by side (wrapping on a phone), the way the creation layout is one dense block.
   return (
-    <div style={{ padding: '4px 0' }}>
-      <div style={sectionTitle}>{t('purchase_exp_assignment')}</div>
-      <CardDetailRow label={t('purchase_exp_start')} value={date(purchaseDate(item), gymFmt)} />
-      <CardDetailRow label={t('purchase_exp_end')} value={formatGymDateOnly(item.valid_until, gymFmt)} />
-      <CardDetailRow label={t('purchase_exp_quantity')} value={item.quantity ?? 1} />
-      <CardDetailRow label={t('purchase_exp_description')} value={item.product_description || dash} />
-      <div style={sectionTitle}>{t('purchase_exp_configuration')}</div>
-      <CardDetailRow label={t('purchase_exp_mandatory')} value={yn(item.product_mandatory)} />
-      <CardDetailRow label={t('purchase_exp_one_time')} value={yn(item.product_one_time_purchase)} />
-      <CardDetailRow label={t('purchase_exp_one_per_member')} value={yn(item.product_one_per_member)} />
-      <CardDetailRow label={t('purchase_exp_sharing')} value={sharing ? t(`purchase_exp_sharing_${sharing}` as any) : dash} />
-      <div style={sectionTitle}>{t('purchase_exp_billing')}</div>
-      <CardDetailRow label={t('purchase_exp_price')} value={money(item.regular_amount, item.currency)} />
-      <CardDetailRow label={t('purchase_exp_frequency')} value={billingFrequencyLabel(item.billing_frequency, tFreq) ?? dash} />
-      {item.product_notes ? <CardDetailRow label={t('purchase_exp_notes')} value={item.product_notes} /> : null}
+    <div style={{ padding: '6px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '4px 24px' }} data-product-facts>
+      <div>
+        <div style={sectionTitle}>{t('purchase_exp_assignment')}</div>
+        <CardDetailRow label={t('purchase_exp_start')} value={date(purchaseDate(item), gymFmt)} />
+        <CardDetailRow label={t('purchase_exp_end')} value={formatGymDateOnly(item.valid_until, gymFmt)} />
+        <CardDetailRow label={t('purchase_exp_quantity')} value={item.quantity ?? 1} />
+        <CardDetailRow label={t('purchase_exp_description')} value={item.product_description || dash} />
+      </div>
+      <div>
+        <div style={sectionTitle}>{t('purchase_exp_configuration')}</div>
+        <CardDetailRow label={t('purchase_exp_mandatory')} value={yn(item.product_mandatory)} />
+        <CardDetailRow label={t('purchase_exp_one_time')} value={yn(item.product_one_time_purchase)} />
+        <CardDetailRow label={t('purchase_exp_one_per_member')} value={yn(item.product_one_per_member)} />
+        <CardDetailRow label={t('purchase_exp_sharing')} value={sharing ? t(`purchase_exp_sharing_${sharing}` as any) : dash} />
+      </div>
+      <div>
+        <div style={sectionTitle}>{t('purchase_exp_billing')}</div>
+        <CardDetailRow label={t('purchase_exp_price')} value={price} />
+        {item.product_notes ? <CardDetailRow label={t('purchase_exp_notes')} value={item.product_notes} /> : null}
+      </div>
     </div>
   );
 }
