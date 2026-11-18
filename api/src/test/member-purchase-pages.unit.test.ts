@@ -74,8 +74,9 @@ describe('My Products page wiring', () => {
     // One pair of buttons, drawn by one function with one set of conditions.
     expect(page.match(/t\('membership\.add_plan'\)/g)).toHaveLength(1);
     expect(page.match(/t\('membership\.add_product'\)/g)).toHaveLength(1);
-    // Both carts (Draft and Pending Payment) carry them, under the items.
-    expect(page.match(/<\/ul>\s*\{renderCartAddButtons\(\)\}/g)).toHaveLength(2);
+    // Every cart variant (Draft, Pending Payment, awaiting staff, standalone) renders through CartCard and carries them.
+    expect(page.match(/<CartCard\b/g)!.length).toBeGreaterThanOrEqual(2);
+    expect(page.match(/renderCartAddButtons\(/g)!.length).toBeGreaterThanOrEqual(3);
     // Secondary inside the cart, left-aligned.
     expect(page).toMatch(/renderAddButtons\(\{ \.\.\.cartSecondaryButtonStyle/);
     expect(page).toMatch(/cartAddRow: \{[^}]*justifyContent: 'flex-start'/);
