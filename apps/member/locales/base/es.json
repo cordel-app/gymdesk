@@ -1,6 +1,5 @@
 {
   "home": {
-    "cart_open": "Abrir mi carrito",
     "title": "Gymdesk",
     "subtitle": "Tu gimnasio, en tu bolsillo.",
     "sign_in": "Iniciar sesión",
@@ -594,6 +593,7 @@
     "cart_pending_heading": "Tienes un pago pendiente",
     "cart_pending_hint": "El pago de esta compra ya se ha iniciado. Paga para completarla o cancela la compra entera.",
     "cart_staff_heading": "Tu gimnasio está preparando un cambio",
+    "cart_staff_editing": "Tu gimnasio está editando este carrito en este momento.",
     "cart_staff_hint": "Tu gimnasio todavía lo está preparando. Podrás pagarlo aquí cuando tu gimnasio lo ponga a tu disposición.",
     "cart_error_awaiting_staff": "Tu gimnasio está preparando un cambio en tu plan. Podrás añadir planes o productos cuando esté listo para que lo pagues, o cuando tu gimnasio lo cancele.",
     "cart_pending_cancel_title": "¿Cancelar esta compra?",
