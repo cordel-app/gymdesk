@@ -6,6 +6,8 @@ describe('draft countdown (#2477)', () => {
     expect(formatDraftRemaining(105 * 60)).toBe('1h 45m');
     expect(formatDraftRemaining(32 * 60)).toBe('32m');
     expect(formatDraftRemaining(5 * 60)).toBe('5m');
+    expect(formatDraftRemaining(4 * 60 + 5)).toBe('4m 05s');
+    expect(formatDraftRemaining(45)).toBe('45s');
     expect(formatDraftRemaining(0)).toBeNull();
   });
   it('counts down from the server value without the browser clock deciding', () => {

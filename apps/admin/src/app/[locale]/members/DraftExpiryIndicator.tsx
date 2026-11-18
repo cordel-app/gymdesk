@@ -19,7 +19,7 @@ export function DraftExpiryIndicator({ seconds, onExpire }: {
 
   useEffect(() => { receivedAt.current = Date.now(); setNow(Date.now()); fired.current = false; }, [seconds]);
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 15_000);
+    const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
 
