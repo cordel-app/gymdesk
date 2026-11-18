@@ -80,3 +80,14 @@ describe('a recurring Product joining an existing schedule', () => {
     expect(rows[1].date).toBe('2026-10-29');
   });
 });
+
+// #3046 — a yearly Product is charged in full on its contract date and keeps its own anniversary.
+describe('a yearly Product joining an existing schedule', () => {
+  it('is charged 100% on its start date and again on its own anniversary', () => {
+    const rows = lines(forecast(service({ billingFrequency: 'year', unitPrice: 120 })));
+    expect(rows[0].date).toBe(TODAY);
+    expect(rows[0].l.actual_charge).toBe(120);
+    expect(rows[0].l.proration ?? null).toBeNull();
+    if (rows[1]) expect(rows[1].date).toBe('2027-10-20');
+  });
+});

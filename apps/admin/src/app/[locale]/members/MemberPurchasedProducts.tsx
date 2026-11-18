@@ -53,7 +53,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductActions, AddProductDetails, AddProductFeedback, EditQuantityField, addProductDraftCells, productPromotionsCell, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { AddProductActions, AddProductDetails, AddProductFeedback, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
@@ -198,8 +198,13 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_product'),
       mobile: 'name',
       title: (item) => item.product_name,
-      // #3020 — the Promotions applied sit in the Promotions area below the row (and in the Applied promotion column).
-      render: (item) => <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>,
+      // #3020 — the applied Promotions share the product line: indented under the name, as when adding a Product.
+      render: (item) => (
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>
+          {promotionsArea(item)}
+        </div>
+      ),
     },
     {
       // #3020 — the quantity of a recurring line; a one-off purchase is one unit.
@@ -359,7 +364,7 @@ export function MemberPurchasedProducts({
 
   // #3020 — the edited row draws the form's cells in the columns' own places; every other row reads as before.
   const editCells: Record<string, React.ReactNode> | null = editing ? (() => {
-    const c = addProductDraftCells(editForm, null, { promotionsInCell: false });
+    const c = addProductDraftCells(editForm, null);
     const chosen = (editForm.product?.promotions ?? []).filter((pr) => editForm.promotionIds.includes(pr.promotion_id));
     const benefit = chosen.length === 0 ? dash : chosen.map((pr) => [
       benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
@@ -374,7 +379,7 @@ export function MemberPurchasedProducts({
   // #3020 — the Promotions area below the row: checkbox, image and name, in read-only and in edit mode.
   // Edit mode offers the Product's eligible Promotions; read-only lists the ones applied, unchangeable.
   const promotionsArea = (item: PurchasedProduct): React.ReactNode => {
-    if (editing?.rowId === item.id && editForm.product) return productPromotionsCell(editForm);
+    if (editing?.rowId === item.id) return null; // the edited row's cell already carries the picker
     const applied = item.promotions && item.promotions.length > 0 ? item.promotions : item.promotion ? [item.promotion] : [];
     if (applied.length === 0) return null;
     return (
@@ -399,11 +404,9 @@ export function MemberPurchasedProducts({
       </div>
     );
   };
-  // Rows with a Promotion, and the row being edited, always show that area; the chevron adds the facts.
+  // The Promotions live in the product cell; the expanded area holds the facts and the edit feedback only.
   const shownExpanded = new Set(expandedIds);
-  for (const item of items) {
-    if (editing?.rowId === item.id || (item.promotions && item.promotions.length > 0) || item.promotion) shownExpanded.add(item.id);
-  }
+  if (editing) shownExpanded.add(editing.rowId);
 
   const columns: Column<PurchasedProduct>[] = baseColumns.map((col) => {
     const key = col.key;
@@ -454,7 +457,6 @@ export function MemberPurchasedProducts({
           })() : undefined}
           renderExpanded={(item) => (
             <div>
-              {promotionsArea(item)}
               {editing?.rowId === item.id ? <AddProductFeedback form={editForm} /> : null}
               {expandedIds.has(item.id) && editing?.rowId !== item.id
                 ? <ExpandedProductFacts item={item} gymFmt={gymFmt} />
