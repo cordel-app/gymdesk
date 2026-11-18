@@ -76,6 +76,7 @@ import {
 } from '@/components/MemberProfessionalServices';
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
+import { CartSummary } from '@/components/CartSummary';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -1212,20 +1213,6 @@ export default function MembershipPage() {
     const { contracted, cancelled } = reviewSections(review);
     if (contracted.length + cancelled.length === 0 && !commitError) return null;
     const action = setCommitAction(review);
-    const currency = review.currency ?? 'EUR';
-    const money = (n: number | null | undefined) => (n == null ? '—' : formatPaymentAmount(n, currency, gymFmt));
-    const itemRow = (i: typeof contracted[number], k: string) => {
-      const freqKey = reviewFrequencyKey(i.billing_frequency);
-      const price = i.final_price ?? i.regular_price;
-      return (
-        <li key={k} style={styles.summaryItem}>
-          <span style={i.state === 'cancelling' ? { ...styles.summaryText, textDecoration: 'line-through' } : styles.summaryText}>{i.name}</span>
-          {i.quantity != null && i.quantity > 1 && <span style={styles.benefitMeta}>× {i.quantity}</span>}
-          {price != null && <span style={styles.benefitMeta}>· {money(price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
-          {i.promotions.filter(Boolean).length > 0 && <span style={styles.benefitMeta}>· {i.promotions.filter(Boolean).join(', ')}</span>}
-        </li>
-      );
-    };
     const reviewError = review.error ? setCommitErrorKey(review.error) : null;
     // #2894 — the Summary sits near the top of the page (right under the cart)
     // as a collapsible card, closed by default with the total beside its title.
@@ -1235,52 +1222,7 @@ export default function MembershipPage() {
     // button stay outside the card, so a closed Summary never hides either.
     return (
       <div data-set-summary>
-        <MemberCollapsibleCard
-          title={t('membership.summary_heading')}
-          summary={t('membership.summary_total_short', { amount: money(review.amount_due) })}
-          bodyStyle={styles.summaryBody}
-        >
-          <p style={styles.summaryLabel}>{t('membership.summary_contracted')}</p>
-          {contracted.length === 0
-            ? <p style={styles.summaryHint}>{t('membership.summary_none')}</p>
-            : <ul style={styles.summaryList}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
-          {cancelled.length > 0 && (<>
-            <p style={styles.summaryLabel}>{t('membership.summary_cancelled')}</p>
-            <ul style={styles.summaryList}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
-          </>)}
-          <p style={styles.summaryLabel}>{t('membership.summary_initial_payment')}</p>
-          {review.immediate_lines.length === 0
-            ? <p style={styles.summaryHint}>{t('membership.summary_nothing_due')}</p>
-            : (
-              <ul style={styles.summaryList}>
-                {review.immediate_lines.map((l, n) => {
-                  const discount = reviewLineDiscount(l);
-                  const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
-                  const sub = [
-                    // #2883 — a Membership Fee collecting a Pre-paid Duration says how many periods it covers.
-                    prepaidKey ? t(`payments.${prepaidKey}` as any, { count: l.prepaid_periods as number }) : null,
-                    l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
-                    l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
-                    discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
-                    l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,
-                  ].filter(Boolean).join(' · ');
-                  return (
-                    <li key={`l-${n}`} style={styles.summaryLine}>
-                      <div style={styles.eventLine}>
-                        <span style={styles.summaryText}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
-                        <span style={styles.summaryAmount}>{money(l.amount)}</span>
-                      </div>
-                      {sub && <div style={styles.summarySub}>{sub}</div>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          <div style={styles.summaryTotal}>
-            <span style={{ ...styles.summaryText, fontWeight: 700 }}>{t('membership.summary_total')}</span>
-            <span style={{ ...styles.summaryAmount, fontWeight: 700 }}>{money(review.amount_due)}</span>
-          </div>
-        </MemberCollapsibleCard>
+        <CartSummary review={review} />
         {(reviewError || commitError) && (
           <p role="alert" style={{ ...styles.draftError, margin: '8px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
         )}
