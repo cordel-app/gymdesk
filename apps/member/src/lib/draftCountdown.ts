@@ -14,11 +14,16 @@ export const DRAFT_WARNING_SECONDS = 15 * 60;
 /** When the exact expiry time is shown beside the countdown (§4: under an hour). */
 export const DRAFT_EXACT_TIME_SECONDS = 60 * 60;
 
-/** `1h 45m`, `32m`, `5m`, `<1m`; null when there is nothing to count down. */
+/** `1h 45m`, `32m`, `5m`, `4m 05s`, `45s`; null when there is nothing to count down. */
 export function formatDraftRemaining(seconds: number | null | undefined): string | null {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null;
+  // #3025 — under five minutes the countdown shows seconds, so it visibly ticks.
+  if (seconds < 5 * 60) {
+    const s = Math.ceil(seconds);
+    const mm = Math.floor(s / 60);
+    return mm > 0 ? `${mm}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+  }
   const minutes = Math.ceil(seconds / 60);
-  if (minutes < 1) return '<1m';
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
