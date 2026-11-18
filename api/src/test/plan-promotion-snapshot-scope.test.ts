@@ -18,7 +18,7 @@ const actor = { name: 'T', type: 'staff' };
 beforeAll(async () => {
   gymId = await createTestGym();
   const { insertId: plan } = await db.query(
-    'INSERT INTO membership_plans (gym_id, name, status) VALUES (?, ?, ?)', [gymId, `P-${Date.now()}`, 'active']);
+    'INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, ?, ?, ?)', [gymId, `P-${Date.now()}`, 'active', 'public']);
   planId = plan;
   const { insertId: m } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
     [gymId, 'M', `scope-${Date.now()}@example.com`]);
