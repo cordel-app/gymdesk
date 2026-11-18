@@ -39,14 +39,14 @@
  * new lifecycle too (`isCancellationInPlace()`). Pause, resume, expiry and a superseded record still copy.
  */
 import type { Tx } from '../infra/db';
-import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
+import { CANCELS_AT_PERIOD_END_STATUS, PENDING_CANCELLATION_STATUS } from '../domain/assignmentStatus';
 import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from './plan-snapshot-add';
 import { planSnapshotSharedSql } from './plan-snapshot-lines';
 
 /** The assignment statuses a snapshot of an Active set takes from its assignment (the sync's own list). */
-const MOVED_ON = ['paused', CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired'] as const;
+const MOVED_ON = ['paused', PENDING_CANCELLATION_STATUS, CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired'] as const;
 const MOVED_ON_SQL = MOVED_ON.map((s) => `'${s}'`).join(',');
 
 /**

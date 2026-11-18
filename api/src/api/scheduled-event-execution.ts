@@ -1,3 +1,4 @@
+import { isRunningAssignmentStatus } from '../domain/assignmentStatus';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { assignmentOfAnchorSql } from '../domain/planAssignments';
 import { recordPaymentAttempt } from './payment-attempt';
@@ -109,7 +110,7 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
     [event.product_set_id, event.gym_id],
   );
   const um = rows[0];
-  if (!um || um.id == null || um.status !== 'active') return false;
+  if (!um || um.id == null || !isRunningAssignmentStatus(um.status)) return false;
   // A pause the nightly run decided is the system's act (#1182).
   const { rowCount } = await tx.query(
     `UPDATE user_memberships

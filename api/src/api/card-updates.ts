@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import crypto from 'crypto';
 import { recordPaymentAttempt } from './payment-attempt';
 import { payerCheckoutUrl } from './checkout-url';
@@ -67,7 +68,7 @@ export async function resolveCardUpdateMembership(
   const { rows } = await db.query<{ id: number }>(
     `SELECT um.id
        FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
-      ORDER BY (um.status = 'active') DESC, um.starts_at DESC, um.id DESC
+      ORDER BY (um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})) DESC, um.starts_at DESC, um.id DESC
       LIMIT 1`,
     [gymId, memberId],
   );

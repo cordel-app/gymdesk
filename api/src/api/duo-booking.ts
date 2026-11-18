@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import type { Tx } from '../infra/db';
 import { db } from '../infra/db';
 import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
@@ -13,7 +14,7 @@ import { recordNotifications } from '../infra/notifications';
 export async function membersShareCoverage(tx: Tx, gymId: string, a: number, b: number): Promise<boolean> {
   const { rows } = await tx.query(
     `SELECT 1 FROM plan_snapshots pa
-      WHERE pa.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+      WHERE pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})
         AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})
       LIMIT 1`,

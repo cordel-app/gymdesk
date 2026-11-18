@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -158,7 +159,7 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
          FROM plan_allowance_renewals par
          JOIN plan_session_snapshots umss ON umss.id = par.plan_session_snapshot_id
          JOIN plan_snapshots pa ON pa.id = umss.plan_snapshot_id AND pa.gym_id = par.gym_id
-        WHERE par.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+        WHERE par.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
           AND (pa.member_id IN ${inList(ids)}
                OR EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries umm
                           WHERE umm.plan_snapshot_id = pa.id AND umm.gym_id = pa.gym_id AND umm.member_id IN ${inList(ids)}))

@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { db } from '../infra/db';
 import { canAccess, type AppRole } from '../infra/permissions';
 import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
@@ -40,7 +41,7 @@ export async function loadMemberTabCounts(
     const { rows } = await db.query(
       // #2125 M6b-5: an assignment is its current plan snapshot (owner, or a beneficiary of it).
       `SELECT COUNT(*) AS c FROM plan_snapshots pa
-        WHERE pa.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+        WHERE pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
           AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})`,
       [gymId, memberId, memberId]);
     out.products_services = n(rows[0]?.c);
