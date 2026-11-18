@@ -22,7 +22,7 @@ import {
   SimulationGrant,
   SimulationPlanBenefit,
 } from '../domain/billingSimulation';
-import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
+import { computeAssignmentBillingEventSimulation, sharedCycleHorizon } from '../domain/assignmentBillingEventSimulation';
 import { SIMULATED_CYCLES } from '../domain/billingEventSimulation';
 import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
@@ -247,5 +247,30 @@ describe('computeAssignmentBillingEventSimulation', () => {
   it('totals the groups it reports, and only those', () => {
     const result = forecast();
     expect(result.total).toBe(result.dates.reduce((sum, g) => sum + g.total, 0));
+  });
+});
+
+describe('draft shared horizon (#3030)', () => {
+  const draft = (over: Partial<SimulationAssignment> = {}) =>
+    assignment({ startsAt: '2026-10-05', ...over });
+
+  it('covers exactly two complete cycles of a 12-period repeating plan, past the 36-month default cap', () => {
+    const a = draft({ planDuration: toPlanDuration(0, 12, 0, 0, MONTHLY, true) });
+    const until = sharedCycleHorizon([a], TODAY);
+    expect(until).toBe('2028-09-05');
+    const r = computeAssignmentBillingEventSimulation({ assignment: a, from: TODAY, dynamicHorizon: true, sharedHorizonUntil: until });
+    expect(r.dates[r.dates.length - 1].date).toBe('2028-09-05');
+    expect(r.truncated).toBe(false);
+  });
+
+  it('is decided by the plan with the longest actual cycle', () => {
+    const short = draft({ planDuration: toPlanDuration(0, 6, 0, 0, MONTHLY, true) });
+    const long = draft({ planDuration: toPlanDuration(0, 12, 0, 0, MONTHLY, true) });
+    expect(sharedCycleHorizon([short, long], TODAY)).toBe(sharedCycleHorizon([long], TODAY));
+    expect(sharedCycleHorizon([short], TODAY)).toBe('2027-09-05');
+  });
+
+  it('is null when no plan repeats, keeping the dynamic fallback', () => {
+    expect(sharedCycleHorizon([draft({ planDuration: toPlanDuration(0, 12, 0, 0, MONTHLY, false) })], TODAY)).toBeNull();
   });
 });

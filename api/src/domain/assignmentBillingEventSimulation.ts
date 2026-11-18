@@ -90,6 +90,32 @@ export interface AssignmentBillingEventSimulationInput {
    * cycle-bounded projection.
    */
   dynamicHorizon?: boolean;
+  /**
+   * #3030 — with `dynamicHorizon`, the shared horizon of a Draft: the end of two
+   * complete cycles of the longest recurring plan (`sharedCycleHorizon()`).
+   * Absent when no plan repeats, which keeps the dynamic fallback. The engine
+   * raises its safety cap to contain it.
+   */
+  sharedHorizonUntil?: string | null;
+}
+
+/**
+ * #3030 — one horizon for every plan of a Draft: the latest of each repeating
+ * plan's own two-cycle horizon (`timelineCycleHorizon()` from the period
+ * containing `from`), so the plan with the longest actual calendar cycle decides
+ * and a plan with another billing frequency does not extend it. `null` when no
+ * plan has a repeating cycle. Dates are compared as `YYYY-MM-DD` strings.
+ */
+export function sharedCycleHorizon(assignments: SimulationAssignment[], from?: string): string | null {
+  const day = (from ?? todayUtc()).slice(0, 10);
+  let latest: string | null = null;
+  for (const a of assignments) {
+    const d = a.planDuration;
+    const { startOn } = periodContaining(a.startsAt.slice(0, 10), day, d.cadence);
+    const h = timelineCycleHorizon(startOn, d.cadence, timelineCycleFor(d));
+    if (h != null && (latest == null || h > latest)) latest = h;
+  }
+  return latest;
 }
 
 const NOTHING_TO_BILL_REASON =
@@ -122,7 +148,7 @@ export function computeAssignmentBillingEventSimulation(
     assignments: [input.assignment],
     minimumCycles: SIMULATED_CYCLES,
     horizonFrom: from,
-    horizonUntil: input.dynamicHorizon ? undefined : (timelineCycleHorizon(startOn, duration.cadence, cycle) ?? undefined),
+    horizonUntil: input.dynamicHorizon ? (input.sharedHorizonUntil ?? undefined) : (timelineCycleHorizon(startOn, duration.cadence, cycle) ?? undefined),
     maxMonths: input.maxMonths,
   });
   if (!simulation.available) return emptyBillingEventSimulation(NOTHING_TO_BILL_REASON);
