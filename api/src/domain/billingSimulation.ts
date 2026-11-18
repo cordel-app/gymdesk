@@ -1316,6 +1316,10 @@ function resolveCoveredCharge(
 const memberOf = (item: BillableItem): { assigned_member_id?: number } =>
   (item.assignedMemberId != null ? { assigned_member_id: item.assignedMemberId } : {});
 
+function isYearlyCadence(c: { interval: number | string; unit: string } | null): boolean {
+  return c != null && Number(c.interval) === 1 && c.unit === 'year';
+}
+
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
   const base = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
   if (!base) return null;
@@ -1325,7 +1329,8 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
   const itemCadence = cadenceForFrequency(item.billingFrequency);
   const onPlanCadence = itemCadence != null && a.recurringInterval != null && a.recurringUnit != null
     && Number(itemCadence.interval) === Number(a.recurringInterval) && itemCadence.unit === a.recurringUnit;
-  const joinDate = a.alignTo && onPlanCadence ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
+  // #3046 — a yearly Product keeps its own contract anniversary: charged in full on its start date, never prorated.
+  const joinDate = a.alignTo && onPlanCadence && !isYearlyCadence(itemCadence) ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
   const proration = joinDate && itemCadence ? prorate(1, itemCadence, a.startsAt, joinDate) : null;
   const cadence: Cadence = joinDate
     ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
@@ -1412,7 +1417,8 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   // #1867 stage 4 — a line starting between two dates of its schedule bills a
   // prorated first stretch on its start date and then follows the schedule.
   const scheduleCadence = cadenceForFrequency(service.billingFrequency);
-  const joinDate = service.alignTo && scheduleCadence
+  // #3046 — a yearly Product keeps its own contract anniversary: charged in full, never prorated.
+  const joinDate = service.alignTo && scheduleCadence && !isYearlyCadence(scheduleCadence)
     ? nextAlignedDate(service.alignTo, start, base.advance)
     : null;
   const proration = joinDate && scheduleCadence ? prorate(1, scheduleCadence, start, joinDate) : null;
