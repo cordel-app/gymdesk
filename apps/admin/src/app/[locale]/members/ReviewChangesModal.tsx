@@ -209,7 +209,7 @@ export function ReviewChangesModal({
 
           <div style={cardSectionLabelStyle}>{t('review_future')}</div>
           <p style={cardHintStyle}>{t('review_future_hint')}</p>
-          <ProductSetForecast forecast={forecast} loading={false} error={forecast == null} />
+          <ProductSetForecast forecast={forecast} loading={false} error={forecast == null} hideDetails />
         </div>
       )}
     </CrudModal>

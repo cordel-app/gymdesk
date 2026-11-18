@@ -144,10 +144,12 @@ export function ProductSetProducts({ lines, loading, error }: { lines: ProductSe
 }
 
 /** The Billing Events Forecast: expected events, computed on read and persisted nowhere. */
-export function ProductSetForecast({ forecast, loading, error, chartSimulation }: {
+export function ProductSetForecast({ forecast, loading, error, chartSimulation, hideDetails }: {
   forecast: BillingEventSimulationData | null; loading: boolean; error: boolean;
   /** #1951 — the unfiltered simulation the chart plots; defaults to `forecast`. */
   chartSimulation?: BillingEventSimulationData | null;
+  /** #3028 — chart only, no Billing Simulation Details. */
+  hideDetails?: boolean;
 }) {
   const t = useTranslations('members');
   const tPlan = useTranslations('assigned_plans_page');
@@ -168,6 +170,7 @@ export function ProductSetForecast({ forecast, loading, error, chartSimulation }
         t={translate}
         formatDate={formatDate}
         detailsTitle={tPlan('section_billing_simulation_details')}
+        hideDetails={hideDetails}
       />
     </>
   );
