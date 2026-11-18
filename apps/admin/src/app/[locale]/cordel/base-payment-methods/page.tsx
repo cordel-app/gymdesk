@@ -388,20 +388,63 @@ export default function BasePaymentMethodsPage() {
         extraFooter={details ? <ViewAuditLogButton entityType="base_payment_method" entityId={details.id} /> : null}
       >
         {details && (
-          <div style={{ fontSize: 14 }}>
-            <p><strong>{t('col_code')}:</strong> {details.code}</p>
-            <p><strong>{t('details_slug')}:</strong> <code>{details.slug}</code></p>
-            <p><strong>{t('col_status')}:</strong> {t(details.status)}</p>
-            {LOCALES.map((l) => (
-              <p key={l}><strong>{l.toUpperCase()}:</strong> {details.translations[l]?.name ?? dash}
-                {details.translations[l]?.description ? ` — ${details.translations[l]?.description}` : ''}</p>
-            ))}
-            <p><strong>{t('created_at')}:</strong> {when(details.created_at)}</p>
-            <p><strong>{t('created_by')}:</strong> {details.created_by ?? dash}</p>
-            <p><strong>{t('modified_at')}:</strong> {when(details.modified_at)}</p>
-            <p><strong>{t('modified_by')}:</strong> {details.modified_by ?? dash}</p>
-            <p><strong>{t('deleted_at')}:</strong> {when(details.deleted_at)}</p>
-            <p><strong>{t('deleted_by')}:</strong> {details.deleted_by ?? dash}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={detailSectionLabelStyle}>{t('section_general')}</div>
+            <div>
+              <span style={detailLabelStyle}>{t('col_name')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{details.display_name}</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('col_code')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}><code>{details.code}</code></p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_slug')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}><code>{details.slug}</code></p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('col_status')}</span>
+                <div style={{ marginTop: 4 }}>
+                  <StatusBadge status={details.status} label={t(details.status)} />
+                </div>
+              </div>
+            </div>
+            <div>
+              <span style={detailLabelStyle}>{t('col_description')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap', color: details.display_description ? '#333' : '#aaa' }}>
+                {details.display_description ?? dash}
+              </p>
+            </div>
+
+            <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+            <div style={detailSectionLabelStyle}>{t('section_audit')}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('created_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{when(details.created_at)}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('created_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by ?? dash}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('modified_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{when(details.modified_at)}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('modified_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by ?? dash}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('deleted_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{when(details.deleted_at)}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('deleted_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by ?? dash}</p>
+              </div>
+            </div>
           </div>
         )}
       </CrudModal>
@@ -425,3 +468,11 @@ export default function BasePaymentMethodsPage() {
     </div>
   );
 }
+
+const detailLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
+};
+
+const detailSectionLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em',
+};
