@@ -1,6 +1,5 @@
 {
   "home": {
-    "cart_open": "Open my cart",
     "title": "Gymdesk",
     "subtitle": "Your gym, in your pocket.",
     "sign_in": "Sign in",
@@ -594,6 +593,7 @@
     "cart_pending_heading": "You have a pending payment",
     "cart_pending_hint": "Payment has started for this purchase. Pay to complete it, or cancel the whole purchase.",
     "cart_staff_heading": "Your gym is preparing a change",
+    "cart_staff_editing": "Your gym is currently editing this cart.",
     "cart_staff_hint": "Your gym is still setting this up. You will be able to pay for it here once your gym makes it available.",
     "cart_error_awaiting_staff": "Your gym is preparing a change to your plan. You can add plans or products once it is ready for you to pay, or after your gym cancels it.",
     "cart_pending_cancel_title": "Cancel this purchase?",
