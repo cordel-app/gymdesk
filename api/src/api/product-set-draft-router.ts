@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { nameSimulatedEvents } from './billing-event-name';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
 import { db } from '../infra/db';
@@ -185,7 +186,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
       `SELECT id, status, owner_member_id, previous_product_set_id, starts_at
          FROM product_sets WHERE id = ? AND gym_id = ?`, [id, gymId]);
     const set = rows[0];
-    if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(base);
+    if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(await nameSimulatedEvents(db, gymId, base));
 
     let initial: { date: string; lines: BillingEventLine[] } | null = null;
     try {
@@ -213,7 +214,7 @@ export async function simulationHandler(req: any, res: any, next: any) {
       }
     }
 
-    res.json(composeDraftSimulation({ base, initial, oneOffs, today: new Date().toISOString().slice(0, 10) }));
+    res.json(await nameSimulatedEvents(db, gymId, composeDraftSimulation({ base, initial, oneOffs, today: new Date().toISOString().slice(0, 10) })));
   } catch (err) { next(err); }
 }
 productSetDraftRouter.get('/billing-event-simulation', simulationHandler);

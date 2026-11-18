@@ -29,11 +29,15 @@ describe('#3020 inline product row editing', () => {
     expect(src).toContain('if (editing?.rowId === item.id) return <AddProductActions form={editForm} />;');
     expect(src).not.toContain('setExpandedIds((prev) => new Set(prev).add(item.id))');
   });
-  it('shows applied Promotions in their column and in the area below the row, read-only and editing', () => {
+  it('shows applied Promotions in their column and indented in the product line, read-only and editing (#3020 stage 3)', () => {
     expect(src).toContain("list.map((p) => p.promotion_name).join(', ')");
     expect(src).toContain('data-product-promotions');
     expect(src).toContain('disabled\n          emptyText=""\n          showThumbnails');
-    expect(src).toContain('productPromotionsCell(editForm)');
+    // The area is drawn inside the product cell, not as a block below the row.
+    expect(src).toContain('{promotionsArea(item)}');
+    expect(src).not.toContain('              {promotionsArea(item)}\n              {editing?.rowId');
+    expect(src).toContain('addProductDraftCells(editForm, null)');
+    expect(src).not.toContain('promotionsInCell: false');
   });
   it('does not show the draft hint while editing a row', () => {
     const feedback = form.slice(form.indexOf('export function AddProductFeedback'), form.indexOf('export function AddProductActions'));

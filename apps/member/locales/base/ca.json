@@ -1,6 +1,5 @@
 {
   "home": {
-    "cart_open": "Obrir el meu carret",
     "title": "Gymdesk",
     "subtitle": "El teu gimnàs, a la teva butxaca.",
     "sign_in": "Inicia sessió",
@@ -594,6 +593,7 @@
     "cart_pending_heading": "Tens un pagament pendent",
     "cart_pending_hint": "El pagament d'aquesta compra ja s'ha iniciat. Paga per completar-la o cancel·la la compra sencera.",
     "cart_staff_heading": "El teu gimnàs està preparant un canvi",
+    "cart_staff_editing": "El teu gimnàs està editant aquest carret ara mateix.",
     "cart_staff_hint": "El teu gimnàs encara ho està preparant. Podràs pagar-ho aquí quan el teu gimnàs ho posi a la teva disposició.",
     "cart_error_awaiting_staff": "El teu gimnàs està preparant un canvi al teu pla. Podràs afegir plans o productes quan estigui llest perquè el paguis, o quan el teu gimnàs el cancel·li.",
     "cart_pending_cancel_title": "Vols cancel·lar aquesta compra?",
