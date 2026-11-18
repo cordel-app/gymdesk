@@ -1,4 +1,4 @@
-import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
@@ -743,12 +743,28 @@ export async function applyPromotionToProductSet(
   // The owner decides what a duplicate or a stacking conflict is: the line for a
   // Product-target application, the plan (no line) for a Plan one (#1991).
   const lineId = opts.productTarget && opts.lineId != null ? opts.lineId : null;
-  const { rows: existing } = await tx.query(
-    `SELECT id, promotion_id FROM user_membership_promotions
-      WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'
-        AND ${lineId != null ? 'recurrent_snapshot_id = ?' : 'recurrent_snapshot_id IS NULL'}`,
-    lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
-  );
+  // #3026 stage 1: what a Plan Promotion is already applied to is the plan snapshot being edited (read
+  // from its `plan_promotion_snapshots`), never every Plan application of the whole Product Set, so a
+  // Promotion on another plan or snapshot cannot make this plan refuse it or read as not stackable.
+  let existing: any[];
+  if (opts.productTarget) {
+    ({ rows: existing } = await tx.query(
+      `SELECT id, promotion_id FROM user_membership_promotions
+        WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'
+          AND ${lineId != null ? 'recurrent_snapshot_id = ?' : 'recurrent_snapshot_id IS NULL'}`,
+      lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
+    ));
+  } else {
+    const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
+    const primary = await primaryPlanSnapshotId(tx, gymId, productSetId);
+    ({ rows: existing } = primary == null
+      ? { rows: [] as any[] }
+      : await tx.query(
+        `SELECT id, promotion_id FROM plan_promotion_snapshots
+          WHERE gym_id = ? AND plan_snapshot_id = ${promotionHolderSql('?')} AND status = 'applied'`,
+        [gymId, primary],
+      ));
+  }
   if (existing.some((r: any) => Number(r.promotion_id) === promotionId)) {
     // #2893: a Promotion is applied to a Membership Plan or to a Product, never to the ProductSet
     // that holds them, so the refusal names the target it was applied to.
