@@ -10,6 +10,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request,
 } from './helpers';
+import { legacyProductInsert } from './legacyProductFixture';
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -111,5 +112,21 @@ describe('Draft initial payment and simulation (#2899)', () => {
     expect(review.status).toBe(200);
     expect(review.body.immediate_lines.some((l: any) => l.item_name === runningName)).toBe(false);
     expect(review.body.amount_due).toBe(0);
+  });
+
+  // #3031 — the simulation lists what the current cart carries and nothing else: a pending
+  // purchase left behind by an earlier, cancelled draft is not part of it.
+  it('leaves a stale purchase of another draft out of the simulation', async () => {
+    const { owner } = await familyWithRunningPlan();
+    const draft = await staff('post', '/product-sets/draft').send({ member_id: owner });
+    expect([200, 201]).toContain(draft.status);
+    await legacyProductInsert(`INSERT INTO member_products_oneoff_snapshot
+         (gym_id, member_id, status, product_name, product_type, amount, currency)
+       VALUES (?, ?, 'pending_payment', 'Stale Locker 3031', 'fee', 15.00, 'EUR')`, [gymId, owner]);
+
+    const sim = await staff('get', `/product-sets/${draft.body.id}/billing-event-simulation`);
+    expect(sim.status).toBe(200);
+    const labels = sim.body.dates.flatMap((d: any) => d.lines.map((l: any) => l.label));
+    expect(labels).not.toContain('Stale Locker 3031');
   });
 });
