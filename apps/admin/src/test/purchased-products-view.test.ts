@@ -10,6 +10,8 @@ import {
   purchaseDate,
   purchaseErrorKey,
   showsAssigneeSelector,
+  sharingTypeKey,
+  yesNoKey,
 } from '@/app/[locale]/members/purchasedProductsView';
 
 // #1521 — the Products card's pure rules: stored values only, `null` where the
@@ -106,5 +108,20 @@ describe('#2962 — cartCountdown', () => {
   it('recognises the server refusal to pay an expired purchase', () => {
     expect(isPurchaseExpiredError({ status: 410, body: { error: 'purchase_expired' } })).toBe(true);
     expect(isPurchaseExpiredError({ status: 410, body: { error: 'draft_expired' } })).toBe(false);
+  });
+});
+
+describe('expanded product row facts (#3021)', () => {
+  it('maps booleans to yes/no and leaves an unreadable Product as null', () => {
+    expect(yesNoKey(true)).toBe('yes');
+    expect(yesNoKey(false)).toBe('no');
+    expect(yesNoKey(null)).toBeNull();
+    expect(yesNoKey(undefined)).toBeNull();
+  });
+  it('knows only the two sharing types, never printing a missing key', () => {
+    expect(sharingTypeKey('individual')).toBe('individual');
+    expect(sharingTypeKey('shared')).toBe('shared');
+    expect(sharingTypeKey('family_x')).toBeNull();
+    expect(sharingTypeKey(null)).toBeNull();
   });
 });

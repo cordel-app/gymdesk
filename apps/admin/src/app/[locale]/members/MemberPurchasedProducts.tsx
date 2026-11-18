@@ -46,6 +46,7 @@ import { CardDetailRow } from '@/components/CardDetailRow';
 import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle, formErrorStyle } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -69,6 +70,8 @@ import {
   type PurchasedProductPromotion,
   displayPurchaseStatus,
   editableDraftLineId,
+  yesNoKey,
+  sharingTypeKey,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -456,7 +459,7 @@ export function MemberPurchasedProducts({
             <div>
               {editing?.rowId === item.id ? <AddProductFeedback form={editForm} /> : null}
               {expandedIds.has(item.id) && editing?.rowId !== item.id
-                ? <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />
+                ? <ExpandedProductFacts item={item} gymFmt={gymFmt} />
                 : null}
             </div>
           )}
@@ -519,7 +522,42 @@ export function MemberPurchasedProducts({
   );
 }
 
-/** The purchase record, read-only: the expanded row and the Details modal. */
+/**
+ * #3021 — the expanded row: the assignment, the Product's configuration and the billing
+ * configuration, compactly. Everything else (audit, tax, payment, status) stays in `⋮ → Details`,
+ * which renders `PurchaseFacts` unchanged.
+ */
+function ExpandedProductFacts({ item, gymFmt }: { item: PurchasedProduct; gymFmt: GymFormatSettings }) {
+  const t = useTranslations('members');
+  const tFreq = useTranslations('billing_frequency');
+  const dash = '—';
+  const yn = (v: boolean | null | undefined) => {
+    const k = yesNoKey(v);
+    return k ? t(`purchase_exp_${k}` as any) : dash;
+  };
+  const sharing = sharingTypeKey(item.product_sharing_type);
+  const sectionTitle = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, margin: '6px 0 2px', opacity: 0.7 };
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <div style={sectionTitle}>{t('purchase_exp_assignment')}</div>
+      <CardDetailRow label={t('purchase_exp_start')} value={date(purchaseDate(item), gymFmt)} />
+      <CardDetailRow label={t('purchase_exp_end')} value={formatGymDateOnly(item.valid_until, gymFmt)} />
+      <CardDetailRow label={t('purchase_exp_quantity')} value={item.quantity ?? 1} />
+      <CardDetailRow label={t('purchase_exp_description')} value={item.product_description || dash} />
+      <div style={sectionTitle}>{t('purchase_exp_configuration')}</div>
+      <CardDetailRow label={t('purchase_exp_mandatory')} value={yn(item.product_mandatory)} />
+      <CardDetailRow label={t('purchase_exp_one_time')} value={yn(item.product_one_time_purchase)} />
+      <CardDetailRow label={t('purchase_exp_one_per_member')} value={yn(item.product_one_per_member)} />
+      <CardDetailRow label={t('purchase_exp_sharing')} value={sharing ? t(`purchase_exp_sharing_${sharing}` as any) : dash} />
+      <div style={sectionTitle}>{t('purchase_exp_billing')}</div>
+      <CardDetailRow label={t('purchase_exp_price')} value={money(item.regular_amount, item.currency)} />
+      <CardDetailRow label={t('purchase_exp_frequency')} value={billingFrequencyLabel(item.billing_frequency, tFreq) ?? dash} />
+      {item.product_notes ? <CardDetailRow label={t('purchase_exp_notes')} value={item.product_notes} /> : null}
+    </div>
+  );
+}
+
+/** The purchase record, read-only: the Details modal. */
 function PurchaseFacts({
   item, gymFmt, promotionLabel,
 }: {

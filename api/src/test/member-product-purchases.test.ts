@@ -310,6 +310,23 @@ describe('a one-time purchase (#1521)', () => {
     expect(read.body.items[0].promotions).toHaveLength(1);
   });
 
+  it('#3021 — the staff read also reports the Product configuration for the expanded row', async () => {
+    const m = await member();
+    const p = await product({ name: 'Config Pass', amount: '25.00' });
+    await db.query(
+      `UPDATE products SET description = ?, mandatory = 1, one_time_purchase = 1, one_per_member = 1,
+              sharing_type = 'shared', notes = ? WHERE id = ?`, ['A pass', 'Bring a towel', p]);
+    const res = await auth(request.post(base(m))).send({ product_id: p });
+    expect(res.status).toBe(201);
+    const read = await auth(request.get(`/members/${m}/products`));
+    expect(read.status).toBe(200);
+    expect(read.body.items[0]).toMatchObject({
+      product_description: 'A pass', product_mandatory: true, product_one_time_purchase: true,
+      product_one_per_member: true, product_sharing_type: 'shared', product_notes: 'Bring a towel',
+      amount: 25,
+    });
+  });
+
   it('sells the same one-time Product again once it is held, while a checkout in flight still blocks (#1864)', async () => {
     const m = await member();
     const p = await product({ name: 'Registration fee 2' });
