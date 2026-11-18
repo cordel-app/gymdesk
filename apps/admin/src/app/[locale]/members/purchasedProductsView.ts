@@ -71,6 +71,23 @@ export interface PurchasedProduct {
   /** #2609 — the family member the Product is for (the purchaser when none was chosen). */
   assigned_member_id?: number | null;
   assigned_member_name?: string | null;
+  /** #3021 — the Product's configuration as it stands now (`GET /members/:id/products` only). */
+  product_description?: string | null;
+  product_mandatory?: boolean | null;
+  product_one_time_purchase?: boolean | null;
+  product_one_per_member?: boolean | null;
+  product_sharing_type?: string | null;
+  product_notes?: string | null;
+}
+
+/** #3021 — `true`/`false` → `yes`/`no`; `null` (no Product row to read) → `null`, rendered `—`. */
+export function yesNoKey(value: boolean | null | undefined): 'yes' | 'no' | null {
+  return value == null ? null : value ? 'yes' : 'no';
+}
+
+/** #3021 — the sharing-type locale suffix, `null` for an absent or unknown value (never a missing key). */
+export function sharingTypeKey(value: string | null | undefined): 'individual' | 'shared' | null {
+  return value === 'individual' || value === 'shared' ? value : null;
 }
 
 /** The statuses `payment_requests.status` can hold (chk_payment_requests_status). */

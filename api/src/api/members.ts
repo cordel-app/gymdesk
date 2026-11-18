@@ -23,7 +23,7 @@ import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-lin
 import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
-import { loadMemberPurchases } from './member-product-promotions';
+import { loadMemberPurchases, withProductConfiguration } from './member-product-promotions';
 import { expireStandalonePurchaseDrafts } from './me-products';
 import { loadMemberTabCounts } from './member-tab-counts';
 // A Member's profile image (#1374): the key and the bytes are
@@ -305,7 +305,7 @@ membersRouter.get('/:id/products', async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
     // #2962: a standalone cart purchase past its two hours is deleted before it can be listed.
     await expireStandalonePurchaseDrafts({ gymId, memberId });
-    res.json({ items: await loadMemberPurchases(gymId, memberId) });
+    res.json({ items: await withProductConfiguration(gymId, await loadMemberPurchases(gymId, memberId)) });
   } catch (err) {
     next(err);
   }

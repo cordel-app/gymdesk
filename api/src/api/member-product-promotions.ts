@@ -358,6 +358,17 @@ export interface MemberPurchasedProduct {
    */
   assigned_member_id: number | null;
   assigned_member_name: string | null;
+  /**
+   * #3021 — the Product's configuration as it stands now, for the expanded row (a live read of
+   * `products` by `product_id`, so it can differ from what was bought; the frozen price, frequency,
+   * dates and quantity above stay the purchase's own). Null when the Product row is gone.
+   */
+  product_description?: string | null;
+  product_mandatory?: boolean | null;
+  product_one_time_purchase?: boolean | null;
+  product_one_per_member?: boolean | null;
+  product_sharing_type?: string | null;
+  product_notes?: string | null;
 }
 
 /**
@@ -443,9 +454,37 @@ export async function loadMemberPurchases(
     };
   });
   const recurring = await loadRecurringPurchases(gymId, memberId);
-  return [...oneOff, ...recurring].sort(
+  const all = [...oneOff, ...recurring].sort(
     (a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')),
   );
+  return all;
+}
+
+/** #3021 — attach each row's Product configuration (one query for the whole list); the staff read only, never `/me`. */
+export async function withProductConfiguration(
+  gymId: string,
+  items: MemberPurchasedProduct[],
+): Promise<MemberPurchasedProduct[]> {
+  const ids = [...new Set(items.map((i) => i.product_id).filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length === 0) return items;
+  const { rows } = await db.query<any>(
+    `SELECT id, description, mandatory, one_time_purchase, one_per_member, sharing_type, notes
+       FROM products WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
+    [gymId, ...ids],
+  );
+  const byId = new Map<number, any>((rows as any[]).map((r) => [Number(r.id), r]));
+  return items.map((item) => {
+    const p = byId.get(item.product_id);
+    return {
+      ...item,
+      product_description: p ? p.description ?? null : null,
+      product_mandatory: p ? Boolean(p.mandatory) : null,
+      product_one_time_purchase: p ? Boolean(p.one_time_purchase) : null,
+      product_one_per_member: p ? Boolean(p.one_per_member) : null,
+      product_sharing_type: p ? p.sharing_type ?? null : null,
+      product_notes: p ? p.notes ?? null : null,
+    };
+  });
 }
 
 
