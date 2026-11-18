@@ -124,6 +124,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
   pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
+  to_be_canceled: [],
   [CANCELS_AT_PERIOD_END_STATUS]: [],
   cancelled: [],
   superseded: [],
@@ -1717,7 +1718,7 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // that is not activation. Closing one is also always warning-free, because
 // `computeUnusedValueWarnings()` reads the derived next billing date, which a
 // Draft never has.
-const CLOSEABLE_FROM: readonly Status[] = ['in_cart', 'pending_payment', 'active', 'paused'];
+const CLOSEABLE_FROM: readonly Status[] = ['in_cart', 'pending_payment', 'active', 'to_be_canceled', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4
@@ -1851,7 +1852,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // as ATTACHABLE_STATUSES in user-membership-services.ts.
 // #1108 §2: a Draft is *fully editable* — it is the pre-checkout configuration
 // state, so every section of its snapshot is writable until it is committed.
-const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['in_cart', 'active', 'paused'];
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['in_cart', 'active', 'to_be_canceled', 'paused'];
 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 

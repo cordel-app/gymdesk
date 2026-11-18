@@ -11,6 +11,7 @@
  * Mounted with auth + tenantContext only (any staff role may open Home); the
  * response simply omits what the caller may not read.
  */
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { themeHomeImageUrl } from '../domain/themeHomeImage';
 import { effectiveImageUrlSql } from '../domain/effectiveExerciseImage';
 import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
@@ -216,7 +217,7 @@ async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
         AND (m.id = pa.member_id OR EXISTS (
               SELECT 1 FROM plan_snapshot_beneficiaries pab
                WHERE pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id AND pab.member_id = m.id))
-      WHERE pa.gym_id = ? AND pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+      WHERE pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND pa.starts_at <= UTC_DATE() AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())
       ORDER BY m.name ASC
       LIMIT ${SERVICE_TASK_MEMBER_CAP * 4}`,

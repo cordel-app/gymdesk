@@ -73,7 +73,9 @@ describe('the status CHECK and the API\'s status list agree', () => {
     // #2949 stage 3: migration 436 renames `draft` to `in_cart` and keeps every other value.
     const m435 = readFileSync(join(API_SRC, 'infra', 'migrations', '436_assignment_status_in_cart.js'), 'utf8');
     expect(m435).toContain("move(knex, 'draft', 'in_cart')");
-    const current = wideValues.map((v) => (v === 'draft' ? 'in_cart' : v));
+    // #3007 stage 2a: migration 442 adds `to_be_canceled`.
+    expect(readFileSync(join(API_SRC, 'infra', 'migrations', '442_assignment_status_to_be_canceled.js'), 'utf8')).toContain("'to_be_canceled'");
+    const current = [...wideValues.map((v) => (v === 'draft' ? 'in_cart' : v)), 'to_be_canceled'];
 
     // …and the router's own list, now the domain declaration it aliases.
     expect(USER_MEMBERSHIPS).toContain('const STATUSES = ASSIGNMENT_STATUSES;');
@@ -160,7 +162,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     const live = oneActivePlan.match(/export const LIVE_ASSIGNMENT_STATUSES = \[([^\]]*)\]/);
     expect(live).toBeTruthy();
     const values = [...live![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
-    expect(values).toEqual(['active', 'paused']);
+    expect(values).toEqual(['active', 'to_be_canceled', 'paused']);
   });
 
   it('counts as nothing for New Member eligibility, in either direction', () => {
@@ -227,7 +229,7 @@ describe('a Draft bills nothing and books nothing', () => {
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
-    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(pa.status = 'active' OR (pa.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))\"");
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(pa.status IN ('active', 'to_be_canceled') OR (pa.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))\"");
     // #2125 M6b-4/M6b-19: every assignment leg reads the assignment's current plan snapshot. The
     // Additional Services leg keeps the wallet's paid-through predicate; the plan's own sessions and
     // a Promotion's take the access readers' one. A Draft or Pending Payment snapshot satisfies neither.

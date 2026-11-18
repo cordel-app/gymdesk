@@ -43,7 +43,7 @@
  * `expired` are history and never block a new assignment — a member may hold
  * any number of those.
  */
-export const LIVE_ASSIGNMENT_STATUSES = ['active', 'paused'] as const;
+export const LIVE_ASSIGNMENT_STATUSES = ['active', 'to_be_canceled', 'paused'] as const;
 export type LiveAssignmentStatus = (typeof LIVE_ASSIGNMENT_STATUSES)[number];
 
 export function isLiveAssignmentStatus(value: unknown): value is LiveAssignmentStatus {

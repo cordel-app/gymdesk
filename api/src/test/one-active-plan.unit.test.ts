@@ -32,10 +32,10 @@ function assignment(over: Partial<LiveAssignment> = {}): LiveAssignment {
 }
 
 describe('LIVE_ASSIGNMENT_STATUSES (#956 Q2)', () => {
-  it('counts active and paused, and nothing else', () => {
+  it('counts active, a pending cancellation (#3007) and paused, and nothing else', () => {
     // A paused assignment is live, not cancelled — if it did not count, pausing
     // would be a way around the rule. cancelled/expired are history.
-    expect([...LIVE_ASSIGNMENT_STATUSES]).toEqual(['active', 'paused']);
+    expect([...LIVE_ASSIGNMENT_STATUSES]).toEqual(['active', 'to_be_canceled', 'paused']);
   });
 
   it('isLiveAssignmentStatus accepts only those two', () => {
@@ -129,7 +129,9 @@ describe('migration 213 and the rule agree on what "live" means', () => {
   );
 
   it('the migration hardcodes exactly the live statuses this module declares', () => {
-    const literal = `(${LIVE_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+    // Migration 213 is history: it hardcodes the two statuses that were live then; #3007's
+    // `to_be_canceled` did not exist, and no row could hold it when 213 ran.
+    const literal = `(${LIVE_ASSIGNMENT_STATUSES.filter((s) => s !== 'to_be_canceled').map((s) => `'${s}'`).join(', ')})`;
     expect(literal).toBe("('active', 'paused')");
     // Both places the migration narrows to live rows: the orphan pre-check and
     // the sweep's own read.

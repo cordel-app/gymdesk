@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { Router, Request, Response } from 'express';
@@ -47,7 +48,7 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
        FROM plan_snapshots pa
        JOIN plan_session_snapshots umss
          ON umss.plan_snapshot_id = pa.id AND umss.gym_id = pa.gym_id
-      WHERE pa.status = 'active' AND ${isCurrentAssignmentSnapshotSql('pa')}
+      WHERE pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND umss.frequency IS NOT NULL AND umss.frequency <> 'once'
         AND umss.quantity > 0
         AND pa.starts_at <= ?`,

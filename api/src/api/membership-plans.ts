@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { ownerFamilyMemberIds } from './owner-family';
 import { nameSimulatedEvents } from './billing-event-name';
 import { parseLineDirectDiscountInput, toLineDirectDiscount } from '../domain/lineDirectDiscount';
@@ -333,7 +334,7 @@ export async function enrichPlan(
     db.query(
       // #2125 M6b-22: each assignment counted once, from its current plan snapshot.
       `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
-       WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+       WHERE um.membership_plan_id = ? AND um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})`,
       [gymId, plan.id],
     ).then(r => Number(r.rows[0].n)),
     // Full catalog of active products for this gym, so the admin UI can
@@ -684,7 +685,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
          SELECT pa.id
          FROM plan_snapshots pa
          JOIN plan_snapshot_beneficiaries pab ON pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id
-         WHERE pa.membership_plan_id = ? AND pa.gym_id = ? AND pa.status = 'active'
+         WHERE pa.membership_plan_id = ? AND pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
            AND pa.source_user_membership_id IS NOT NULL
            AND ${isCurrentAssignmentSnapshotSql('pa')}
          GROUP BY pa.id
@@ -822,7 +823,7 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { rows: active } = await db.query(
     // #2125 M6b-22: the assignments' current plan snapshots.
     `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
-     WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+     WHERE um.membership_plan_id = ? AND um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})`,
     [gymId, req.params.id],
   );
   if (Number(active[0].n) > 0) {
@@ -1153,7 +1154,7 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
   const { rows: active } = await db.query(
     // #2125 M6b-22: the assignments' current plan snapshots.
     `SELECT COUNT(*) AS n FROM ${GYM_ASSIGNMENT_ROWS_SQL} um
-     WHERE um.membership_plan_id = ? AND um.status = 'active'`,
+     WHERE um.membership_plan_id = ? AND um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})`,
     [gymId, req.params.id],
   );
   if (Number(active[0].n) > 0) {
@@ -1491,7 +1492,7 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
 // price stays in the history exactly as it was (req. 15 — historical rows are
 // never recomputed, only closed).
 
-const ASSIGNABLE_STATUSES = ['active', 'paused'];
+const ASSIGNABLE_STATUSES = ['active', 'to_be_canceled', 'paused'];
 
 function round2(value: number): number {
   return parseFloat(value.toFixed(2));

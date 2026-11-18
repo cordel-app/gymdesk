@@ -1,3 +1,4 @@
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
 import { memberMayAddPlansAndProducts, memberMayViewPayments, refuseUnlessMayAdd, refuseUnlessMayViewPayments } from './family-add-rights';
@@ -2191,7 +2192,7 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
        JOIN user_membership_promotions ump
          ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id
        JOIN promotions p ON p.id = ump.promotion_id
-       WHERE ump.status = 'applied' AND um.status = 'active'
+       WHERE ump.status = 'applied' AND um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
        ORDER BY ump.applied_at DESC`,
       [gymId, memberId],
     );
@@ -2750,7 +2751,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     let sql = `SELECT um.id, um.status, m.email AS member_email
        FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
        JOIN members m ON m.id = um.member_id
-       WHERE um.status IN ('pending_payment', 'active')`;
+       WHERE um.status IN ('pending_payment', ${RUNNING_ASSIGNMENT_STATUSES_SQL})`;
     if (requestedId !== null) { sql += ' AND um.id = ?'; params.push(requestedId); }
     // #1108 stage 2: a row awaiting its first payment is the one Pay now is
     // for, ahead of a plan already active.
