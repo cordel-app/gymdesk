@@ -5,6 +5,7 @@ import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
 import { cancelAbandonedPurchases, expireStandalonePurchaseDrafts } from './me-products';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
+import { buildJobMetrics } from '../domain/jobRuns';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { issueDueSimplifiedInvoices } from './billing-invoices';
 import { expireDrafts, expirePendingPayments } from './product-sets';
@@ -285,7 +286,14 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       refunds_completed: refunds.completed,
       refunds_failed: refunds.failed,
     };
-    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: cleanupBody });
+    // #3009: every step selects the records it changes (its own WHERE or lookup), so the
+    // records it reports are the ones it considered; a refund the provider did not confirm
+    // was considered and left pending, which is not counted anywhere.
+    const metrics = buildJobMetrics(
+      expired + reconciled + purchasesCancelled + draftsExpired + purchaseDraftsExpired
+        + pendingReturned + refunds.completed + refunds.failed,
+    );
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { ...cleanupBody, metrics } });
     res.json(cleanupBody);
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });

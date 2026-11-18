@@ -69,6 +69,71 @@ export interface JobRun {
   result: JobRunResult | null;
   /** What made a Warning one; empty for any other result. */
   issues: JobRunIssue[];
+  /** Processed / updated / skipped; `null` when the run stored nothing to count from. */
+  metrics: JobMetrics | null;
+}
+
+/**
+ * #3009: the three processing metrics every job reports. A record is *considered* when it
+ * matches the job's own selection and is counted once, so `processed = updated + skipped`
+ * always holds; `skipped` is a record considered and not changed.
+ */
+export interface JobMetrics {
+  processed: number;
+  updated: number;
+  skipped: number;
+}
+
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+}
+
+/** Builds the metrics a job stores under `details.metrics`; `processed` is derived, never passed. */
+export function buildJobMetrics(updated: number, skipped = 0): JobMetrics {
+  const u = Math.max(0, Math.floor(updated));
+  const sk = Math.max(0, Math.floor(skipped));
+  return { processed: u + sk, updated: u, skipped: sk };
+}
+
+/** Sums metrics of several categories of one job into its aggregate. */
+export function sumJobMetrics(parts: JobMetrics[]): JobMetrics {
+  return buildJobMetrics(
+    parts.reduce((a, m) => a + m.updated, 0),
+    parts.reduce((a, m) => a + m.skipped, 0),
+  );
+}
+
+/**
+ * The metrics of one run: the job's own stored `metrics`, or for the two nightly logs the
+ * counters their tables keep (a record that failed is not updated, so it reads as skipped).
+ * `null` when the run stored nothing to count from — never an estimate.
+ */
+export function jobRunMetrics(
+  job: string,
+  details: Record<string, unknown>,
+): JobMetrics | null {
+  const stored = details.metrics as Record<string, unknown> | undefined;
+  if (stored && typeof stored === 'object') {
+    const processed = count(stored.processed);
+    const updated = count(stored.updated);
+    const skipped = count(stored.skipped);
+    if (processed !== null && updated !== null && skipped !== null && processed === updated + skipped) {
+      return { processed, updated, skipped };
+    }
+    return null;
+  }
+  const processed = count(details.processed);
+  if (processed === null) return null;
+  let updated: number | null = null;
+  if (job === 'billing_run') {
+    const succeeded = count(details.succeeded);
+    const waived = count(details.waived);
+    if (succeeded !== null && waived !== null) updated = succeeded + waived;
+  } else if (job === 'recurring_bookings') {
+    updated = count(details.created);
+  }
+  if (updated === null || updated > processed) return null;
+  return { processed, updated, skipped: processed - updated };
 }
 
 export const DEFAULT_JOB_RUN_LIMIT = 25;
@@ -230,5 +295,6 @@ export function normalizeJobRun(row: JobRunRow): JobRun {
     error_summary: row.error_summary ?? null,
     details,
     ...classifyJobRun(row.job, row.status, details),
+    metrics: jobRunMetrics(row.job, details),
   };
 }

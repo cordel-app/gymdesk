@@ -33,7 +33,10 @@ describe('job_run_log (#1996)', () => {
     expect(row.finished_at).not.toBeNull();
     expect(row.http_status).toBe(200);
     const details = typeof row.details === 'string' ? JSON.parse(row.details) : row.details;
-    expect(details).toEqual({ expired: res.body.expired });
+    expect(details.expired).toBe(res.body.expired);
+    // #3009: processed = updated + skipped, with updated the expired count.
+    expect(details.metrics.updated).toBe(res.body.expired);
+    expect(details.metrics.processed).toBe(details.metrics.updated + details.metrics.skipped);
   });
 
   it('records the billing cleanup run', async () => {

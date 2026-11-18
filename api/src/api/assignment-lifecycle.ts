@@ -4,6 +4,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CANCELS_AT_PERIOD_END_STATUS, cancelAtPeriodEndDueSql } from '../domain/assignmentStatus';
 import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
+import { buildJobMetrics } from '../domain/jobRuns';
 import { recordStatusChange } from './billing-events';
 
 /**
@@ -46,6 +47,11 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  * re-syncs the snapshot.
  */
 export async function endCancelledAtPeriodEnd(): Promise<number> {
+  return (await sweepCancelledAtPeriodEnd()).moved;
+}
+
+/** The sweep with its count of assignments considered (#3009): `considered - moved` were left as they were. */
+export async function sweepCancelledAtPeriodEnd(): Promise<{ moved: number; considered: number }> {
   return db.transaction(async (tx) => {
     const { rows } = await tx.query<{ id: number; gym_id: string; member_id: number; status: string }>(
       `SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.status FROM plan_snapshots pa
@@ -66,7 +72,7 @@ export async function endCancelledAtPeriodEnd(): Promise<number> {
       });
       moved += 1;
     }
-    return moved;
+    return { moved, considered: rows.length };
   });
 }
 
@@ -80,9 +86,10 @@ assignmentLifecycleRouter.post('/run', async (req: Request, res: Response) => {
 
   const jobRunId = await startJobRun('assignment_lifecycle');
   try {
-    const cancelled = await endCancelledAtPeriodEnd();
+    const { moved: cancelled, considered } = await sweepCancelledAtPeriodEnd();
+    const metrics = buildJobMetrics(cancelled, considered - cancelled);
     req.log.info({ cancelled }, 'assignment lifecycle sweep: plans past their cancellation end date');
-    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { cancelled } });
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { cancelled, metrics } });
     res.json({ cancelled });
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });

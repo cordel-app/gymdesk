@@ -5,6 +5,7 @@ import { convertStartedReservations } from './service-reservation';
 import { expireDrafts } from './product-sets';
 import { submitPendingVerifactuRecords } from './verifactu-submission';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
+import { buildJobMetrics, sumJobMetrics } from '../domain/jobRuns';
 import {
   BOOKING_REMINDER_LEAD_MINUTES,
   BOOKING_REMINDER_MAX_PER_RUN,
@@ -164,8 +165,17 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       capped: candidates.length >= BOOKING_REMINDER_MAX_PER_RUN,
       ...(failures.length > 0 ? { failures } : {}),
     };
+    // #3009: each category is counted by what it considered. Reminders: candidates, of which
+    // `created` were written. The other categories' selections are their own filters, so what
+    // they report changing is what they considered.
+    const metrics = sumJobMetrics([
+      buildJobMetrics(created, candidates.length - created),
+      buildJobMetrics((conversion?.consumed ?? 0) + (conversion?.released ?? 0)),
+      buildJobMetrics(draftsExpired ?? 0),
+      buildJobMetrics(verifactu?.records_sent ?? 0),
+    ]);
     req.log.info(body, 'booking reminder run');
-    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: body });
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { ...body, metrics } });
     res.json(body);
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });

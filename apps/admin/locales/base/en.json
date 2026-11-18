@@ -6088,7 +6088,16 @@
     "field_warning": "Warning",
     "issue_failed_records": "Some records failed to process.",
     "issue_partial_failures": "Some gyms failed and were skipped.",
-    "issue_capped": "The batch limit was reached; remaining items wait for the next run."
+    "issue_capped": "The batch limit was reached; remaining items wait for the next run.",
+    "col_job": "Job",
+    "col_description": "Description",
+    "col_updated": "Updated Items",
+    "col_date": "Date / Time",
+    "col_duration": "Duration",
+    "col_status": "Status",
+    "summary_processed": "Total Processed",
+    "summary_updated": "Updated",
+    "summary_skipped": "Skipped"
   },
   "training_dashboard": {
     "title": "Training Dashboard",

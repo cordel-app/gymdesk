@@ -5,6 +5,7 @@ import { db } from '../infra/db';
 import { dueRenewals, type RenewalLine } from '../domain/planAllowanceRenewals';
 import { toSessionBenefitFrequency } from '../domain/sessionBenefitFrequency';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
+import { buildJobMetrics } from '../domain/jobRuns';
 
 /**
  * #1227 stage 2: the nightly renewal of Membership Plan Session Benefit
@@ -32,7 +33,7 @@ function checkInternalSecret(req: Request, res: Response): boolean {
 }
 
 /** Writes every renewal owed as of `today`; returns the counters the workflow reads. */
-export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: number; renewed: number }> {
+export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: number; renewed: number; lines_renewed: number }> {
   // Only an `active` assignment renews (the plan_session grant itself needs
   // `active`); a renewing frequency is the only line that can be owed one.
   // #2125 M6b-4: the assignment is its current plan snapshot, whose lines are the ones the wallet reads.
@@ -54,6 +55,7 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
   );
 
   let renewed = 0;
+  let linesRenewed = 0;
   for (const r of rows as Array<Record<string, any>>) {
     const line: RenewalLine = {
       line_id: Number(r.line_id),
@@ -63,6 +65,7 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
       quantity: Number(r.quantity),
       last_renewal_date: r.last_renewal_date ?? null,
     };
+    let lineRenewed = 0;
     for (const due of dueRenewals(line, today)) {
       const { rowCount } = await db.query(
         `INSERT IGNORE INTO plan_allowance_renewals
@@ -71,9 +74,11 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
         [r.gym_id, due.line_id, due.renewal_date, due.quantity, SYSTEM_ACTOR],
       );
       renewed += rowCount ?? 0;
+      lineRenewed += rowCount ?? 0;
     }
+    if (lineRenewed > 0) linesRenewed += 1;
   }
-  return { lines: rows.length, renewed };
+  return { lines: rows.length, renewed, lines_renewed: linesRenewed };
 }
 
 /**
@@ -87,7 +92,9 @@ planAllowanceRenewalsRouter.post('/run', async (req: Request, res: Response) => 
     const { rows } = await db.query<{ today: string }>("SELECT DATE_FORMAT(UTC_DATE(), '%Y-%m-%d') AS today");
     const result = await runPlanAllowanceRenewals(rows[0].today);
     req.log.info(result, 'plan allowance renewals');
-    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: result });
+    // #3009: a line is a record; one renewed (at least one new renewal row) is updated, the rest skipped.
+    const metrics = buildJobMetrics(result.lines_renewed, result.lines - result.lines_renewed);
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { ...result, metrics } });
     res.json(result);
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
