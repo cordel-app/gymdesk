@@ -718,6 +718,24 @@ export interface MemberSetReview {
   tax_total: number | null;
   currency: string;
   error: string | null;
+  /** #2860 — what the Draft contracts and for whom (the server's; `members` empty = nobody named). */
+  contracted_items?: { kind: 'plan' | 'product'; name: string; members: { member_id: number; name: string | null }[] }[];
+}
+
+/**
+ * #2973 stage 3 — who a Summary line is for: the member's name when exactly one named
+ * member holds it, `'family'` when it covers the family (several members, or none named),
+ * and `null` when the review carries nothing to say. Decided from the server's
+ * `contracted_items`; nothing is derived from a price.
+ */
+export function reviewBeneficiary(
+  review: Pick<MemberSetReview, 'contracted_items'>,
+  item: Pick<MemberSetReviewItem, 'type' | 'name'>,
+): { family: true } | { name: string } | null {
+  const found = review.contracted_items?.find((c) => c.kind === item.type && c.name === item.name);
+  if (!found) return null;
+  if (found.members.length === 1 && found.members[0].name) return { name: found.members[0].name };
+  return { family: true };
 }
 
 /** §8 — *Products Contracted* is what the Draft adds, *Products Cancelled* what it takes away. */
