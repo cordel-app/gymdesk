@@ -553,6 +553,7 @@
     "summary_line_tax": "VAT {rate}% incl.",
     "summary_total": "Total initial payment",
     "summary_total_short": "Total {amount}",
+    "summary_beneficiary_family": "Family",
     "summary_save_and_pay": "Save & Pay",
     "summary_confirm": "Confirm",
     "summary_pending": "Your selection is awaiting payment.",

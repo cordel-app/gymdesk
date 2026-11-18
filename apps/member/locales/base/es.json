@@ -553,6 +553,7 @@
     "summary_line_tax": "IVA {rate}% incl.",
     "summary_total": "Total pago inicial",
     "summary_total_short": "Total {amount}",
+    "summary_beneficiary_family": "Familia",
     "summary_save_and_pay": "Guardar y pagar",
     "summary_confirm": "Confirmar",
     "summary_pending": "Tu selección está pendiente de pago.",

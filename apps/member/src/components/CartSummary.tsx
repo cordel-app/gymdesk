@@ -8,9 +8,10 @@ import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
-import { memberTheme, rowDividerStyle } from '@/lib/memberChrome';
+import { memberTheme } from '@/lib/memberChrome';
 import {
   reviewFrequencyKey,
+  reviewBeneficiary,
   reviewLineDiscount,
   reviewSections,
   type MemberSetReview,
@@ -26,9 +27,11 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
   const itemRow = (i: typeof contracted[number], k: string) => {
     const freqKey = reviewFrequencyKey(i.billing_frequency);
     const price = i.final_price ?? i.regular_price;
+    const beneficiary = reviewBeneficiary(review, i);
     return (
       <li key={k} style={S.item}>
         <span style={i.state === 'cancelling' ? { ...S.text, textDecoration: 'line-through' } : S.text}>{i.name}</span>
+        {beneficiary && <span style={S.meta}>· {'family' in beneficiary ? t('membership.summary_beneficiary_family') : beneficiary.name}</span>}
         {i.quantity != null && i.quantity > 1 && <span style={S.meta}>× {i.quantity}</span>}
         {price != null && <span style={S.meta}>· {money(price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
         {i.promotions.filter(Boolean).length > 0 && <span style={S.meta}>· {i.promotions.filter(Boolean).join(', ')}</span>}
@@ -91,10 +94,10 @@ const S: Record<string, CSSProperties> = {
   label: { margin: '10px 0 4px', fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: memberTheme.textMuted },
   hint: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0 },
-  item: { ...rowDividerStyle, padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
-  line: { ...rowDividerStyle, padding: '5px 0' },
+  item: { padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
+  line: { padding: '5px 0' },
   text: { fontSize: 13, color: memberTheme.text },
-  meta: { fontSize: 13, color: memberTheme.textMuted },
+  meta: { fontSize: 11.5, color: memberTheme.textMuted },
   amount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text },
   sub: { fontSize: 11.5, color: memberTheme.textMuted, marginTop: 2 },
   total: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingTop: 8 },
