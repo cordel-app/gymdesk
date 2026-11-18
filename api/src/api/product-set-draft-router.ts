@@ -13,7 +13,9 @@ import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { mergeBillingEventForecasts } from './me-billing-forecast';
-import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
+import { loadSetPurchases } from './set-purchases';
+import { cartPurchasesForCharge } from './cart-checkout';
+import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
   removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
@@ -193,17 +195,23 @@ export async function simulationHandler(req: any, res: any, next: any) {
       }
     } catch { initial = null; }
 
-    const { rows: oneOffRows } = await db.query<any>(
-      // #2126 stage 3d: the one-time purchases are read from the Product snapshot tables.
-      `SELECT product_id, product_name, amount, list_price FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp
-        WHERE status IN ('in_cart', 'pending_payment')
-        ORDER BY id`, memberPurchaseSnapshotParams(gymId, Number(set.owner_member_id)));
-    const oneOffs = oneOffRows.map((r: any) => ({
-      product_id: r.product_id != null ? Number(r.product_id) : null,
-      name: String(r.product_name),
-      amount: Number(r.amount),
-      list_price: r.list_price != null ? Number(r.list_price) : null,
-    }));
+    // #3031: only what the current cart carries — this Draft's own purchases and the owner's standalone
+    // In Cart ones (`cartPurchasesForCharge()`, the Summary's and Save & Pay's rule), never every
+    // draft / pending purchase of the member. When the initial payment was computed it already holds
+    // each of them exactly once (`commitCharge()`), so they are listed separately only as a fallback.
+    const oneOffs: Array<{ product_id: number | null; name: string; amount: number; list_price: number | null }> = [];
+    if (!initial) {
+      const cart = [
+        ...(await loadSetPurchases(db, gymId, id)).filter((p) => p.status === IN_CART_PURCHASE_STATUS || p.status === PENDING_PURCHASE_STATUS),
+        ...(await cartPurchasesForCharge(db, gymId, id)),
+      ];
+      const seen = new Set<number>();
+      for (const p of cart) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        oneOffs.push({ product_id: p.product_id, name: p.product_name, amount: Number(p.amount), list_price: p.list_price });
+      }
+    }
 
     res.json(composeDraftSimulation({ base, initial, oneOffs, today: new Date().toISOString().slice(0, 10) }));
   } catch (err) { next(err); }
