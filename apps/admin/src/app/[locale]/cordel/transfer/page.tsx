@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
@@ -21,25 +21,23 @@ import {
   type TransferSummary,
   archiveFileName,
   buildArchive,
-  emptySummary,
   imageExtensionFromUrl,
   imageSlotsToCollect,
   importPayload,
   progressPercent,
   readArchive,
-  recordOutcome,
   stepsForEntities,
   transferTypeLabelKey,
 } from '@/lib/entityTransfer';
-
-type Operation = 'export' | 'import';
-
-interface Progress {
-  operation: Operation;
-  done: number;
-  total: number;
-  finished: boolean;
-}
+import {
+  TransferCancelled,
+  type TransferJobContext,
+  cancelTransferJob,
+  clearTransferJob,
+  getTransferJob,
+  startTransferJob,
+  subscribeTransferJob,
+} from '@/lib/transferJob';
 
 /**
  * #2952 — Cordel → Export / Import. The selected entity types are exported into a
@@ -59,9 +57,7 @@ export default function CordelTransferPage() {
   const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState<Progress | null>(null);
-  const [summary, setSummary] = useState<TransferSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const job = useSyncExternalStore(subscribeTransferJob, getTransferJob, () => null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,7 +78,7 @@ export default function CordelTransferPage() {
 
   if (gymLoading || !isSuperadmin) return null;
 
-  const busy = progress !== null && !progress.finished;
+  const busy = job !== null && !job.finished;
   const chosen = (types ?? []).filter((type) => selected.has(type));
 
   function typeLabel(type: string): string {
@@ -98,53 +94,42 @@ export default function CordelTransferPage() {
     });
   }
 
-  function start(operation: Operation): void {
-    setError(null);
-    setSummary(null);
-    setProgress({ operation, done: 0, total: 0, finished: false });
-  }
-
-  function advance(steps = 1): void {
-    setProgress((p) => (p ? { ...p, done: p.done + steps } : p));
-  }
-
-  async function runExport() {
-    if (!chosen.length) return;
-    start('export');
-    let result = emptySummary();
+  // The runners below only report through `ctx`; they are held by the job store,
+  // not by this component, so they keep going after the page is left (#2952).
+  async function runExport(ctx: TransferJobContext, chosenTypes: string[]) {
     try {
       const lists: { type: string; records: ExportRecord[] }[] = [];
-      for (const type of chosen) {
-        const res = (await apiFetch(`/platform/transfer/${type}`)) as { entities: ExportRecord[] };
+      for (const type of chosenTypes) {
+        const res = (await ctx.guard(apiFetch(`/platform/transfer/${type}`))) as { entities: ExportRecord[] };
         lists.push({ type, records: res.entities });
       }
-      const total = lists.reduce((n, l) => n + stepsForEntities(l.records), 0);
-      setProgress((p) => (p ? { ...p, total } : p));
+      ctx.setTotal(lists.reduce((n, l) => n + stepsForEntities(l.records), 0));
 
       const collected: CollectedEntity[] = [];
       for (const { type, records } of lists) {
         for (const record of records) {
           const entity: CollectedEntity = { type, record, images: {} };
           let failure: string | null = null;
-          advance();
+          ctx.advance();
           for (const { slot, url } of imageSlotsToCollect(record)) {
-            if (failure) { advance(); continue; }
+            if (failure) { ctx.advance(); continue; }
             try {
-              const blob = await pdfFetch(`/platform/transfer/object?url=${encodeURIComponent(url)}`);
-              entity.images[slot] = { bytes: new Uint8Array(await blob.arrayBuffer()), extension: imageExtensionFromUrl(url) };
+              const blob = await ctx.guard(pdfFetch(`/platform/transfer/object?url=${encodeURIComponent(url)}`));
+              entity.images[slot] = { bytes: new Uint8Array(await ctx.guard(blob.arrayBuffer())), extension: imageExtensionFromUrl(url) };
             } catch (err: any) {
+              if (err instanceof TransferCancelled) throw err;
               failure = t('image_failed', { slot, message: apiErrorMessage(err) ?? t('unknown_error') });
             }
-            advance();
+            ctx.advance();
           }
           // An entity whose image could not be read is left out of the archive, so
           // an import of it can never strip an image the source still holds.
           if (!failure) collected.push(entity);
-          result = recordOutcome(result, { type, slug: record.slug, error: failure });
+          ctx.record({ type, slug: record.slug, error: failure });
         }
       }
 
-      const zip = buildArchive(chosen, collected, new Date());
+      const zip = buildArchive(chosenTypes, collected, new Date());
       const url = URL.createObjectURL(new Blob([zip.slice()], { type: 'application/zip' }));
       const a = document.createElement('a');
       a.href = url;
@@ -154,62 +139,73 @@ export default function CordelTransferPage() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('unknown_error'));
-    } finally {
-      setSummary(result);
-      setProgress((p) => (p ? { ...p, done: p.total, finished: true } : p));
+      if (err instanceof TransferCancelled) throw err;
+      ctx.setError(apiErrorMessage(err) ?? t('unknown_error'));
     }
   }
 
-  async function importEntity(entity: ArchiveEntity): Promise<string | null> {
+  async function importEntity(ctx: TransferJobContext, entity: ArchiveEntity): Promise<string | null> {
     const slots = Object.keys(entity.images);
     try {
-      await apiFetch(`/platform/transfer/${entity.type}`, { method: 'POST', body: JSON.stringify(importPayload(entity)) });
+      await ctx.guard(apiFetch(`/platform/transfer/${entity.type}`, { method: 'POST', body: JSON.stringify(importPayload(entity)) }));
     } catch (err: any) {
-      advance(1 + slots.length);
+      if (err instanceof TransferCancelled) throw err;
+      ctx.advance(1 + slots.length);
       return apiErrorMessage(err) ?? t('unknown_error');
     }
-    advance();
+    ctx.advance();
     let failure: string | null = null;
     for (const slot of slots) {
-      if (failure) { advance(); continue; }
+      if (failure) { ctx.advance(); continue; }
       const image = entity.images[slot];
       try {
-        await uploadFetch(
+        await ctx.guard(uploadFetch(
           `/platform/transfer/${entity.type}/${encodeURIComponent(entity.slug)}/image/${encodeURIComponent(slot)}`,
           new Blob([image.bytes.slice()], { type: image.mime }),
-        );
+        ));
       } catch (err: any) {
+        if (err instanceof TransferCancelled) throw err;
         failure = t('image_failed', { slot, message: apiErrorMessage(err) ?? t('unknown_error') });
       }
-      advance();
+      ctx.advance();
     }
     return failure;
   }
 
-  async function runImport() {
-    if (!chosen.length || !file) return;
-    start('import');
-    let result = emptySummary();
+  async function runImport(ctx: TransferJobContext, chosenTypes: string[], archive: File) {
     try {
-      const { entities, problems } = readArchive(new Uint8Array(await file.arrayBuffer()), chosen);
-      setProgress((p) => (p ? { ...p, total: stepsForEntities(entities) } : p));
+      const { entities, problems } = readArchive(new Uint8Array(await ctx.guard(archive.arrayBuffer())), chosenTypes);
+      ctx.setTotal(stepsForEntities(entities));
       for (const problem of problems) {
-        result = recordOutcome(result, { type: '', slug: problem.path, error: t(`archive_${problem.message}`) });
+        ctx.record({ type: '', slug: problem.path, error: t(`archive_${problem.message}`) });
       }
       for (const entity of entities) {
-        const failure = await importEntity(entity);
-        result = recordOutcome(result, { type: entity.type, slug: entity.slug, error: failure });
+        const failure = await importEntity(ctx, entity);
+        ctx.record({ type: entity.type, slug: entity.slug, error: failure });
       }
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('unknown_error'));
-    } finally {
-      setSummary(result);
-      setProgress((p) => (p ? { ...p, done: p.total, finished: true } : p));
+      if (err instanceof TransferCancelled) throw err;
+      ctx.setError(apiErrorMessage(err) ?? t('unknown_error'));
     }
   }
 
-  const percent = progress ? (progress.finished ? 100 : progressPercent(progress.done, progress.total)) : 0;
+  function startExport() {
+    if (!chosen.length) return;
+    const chosenTypes = [...chosen];
+    startTransferJob('export', (ctx) => runExport(ctx, chosenTypes));
+  }
+
+  function startImport() {
+    if (!chosen.length || !file) return;
+    const chosenTypes = [...chosen];
+    const archive = file;
+    startTransferJob('import', (ctx) => runImport(ctx, chosenTypes, archive));
+  }
+
+  const progress = job;
+  const summary = job?.summary ?? null;
+  const error = job?.error ?? null;
+  const percent = progress ? (progress.finished && !progress.cancelled ? 100 : progressPercent(progress.done, progress.total)) : 0;
 
   return (
     <div>
@@ -220,9 +216,11 @@ export default function CordelTransferPage() {
         <div style={{ ...cardSurfaceStyle, padding: 16, marginBottom: 16 }} aria-live="polite">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
             <span>
-              {progress.finished
-                ? t(progress.operation === 'export' ? 'export_finished' : 'import_finished')
-                : t(progress.operation === 'export' ? 'exporting' : 'importing')}
+              {progress.cancelled
+                ? t('cancelled')
+                : progress.finished
+                  ? t(progress.operation === 'export' ? 'export_finished' : 'import_finished')
+                  : t(progress.operation === 'export' ? 'exporting' : 'importing')}
             </span>
             <span>{percent}%</span>
           </div>
@@ -259,6 +257,18 @@ export default function CordelTransferPage() {
             </div>
           )}
           {error && <div style={{ ...formErrorStyle, marginTop: 8 }}>{error}</div>}
+          <div style={{ marginTop: 12 }}>
+            {!progress.finished ? (
+              <button type="button" style={secondaryBtnStyle} disabled={progress.cancelled} onClick={cancelTransferJob}>
+                {t('cancel_process')}
+              </button>
+            ) : (
+              <button type="button" style={secondaryBtnStyle} onClick={clearTransferJob}>
+                {t('dismiss')}
+              </button>
+            )}
+          </div>
+          {!progress.finished && <p style={{ ...cardHintStyle, margin: '8px 0 0' }}>{t('background_hint')}</p>}
         </div>
       )}
 
@@ -282,7 +292,7 @@ export default function CordelTransferPage() {
             type="button"
             style={{ ...primaryBtnStyle(), opacity: busy || !chosen.length ? 0.5 : 1 }}
             disabled={busy || !chosen.length}
-            onClick={runExport}
+            onClick={startExport}
           >
             {t('export')}
           </button>
@@ -301,7 +311,7 @@ export default function CordelTransferPage() {
             type="button"
             style={{ ...primaryBtnStyle(), opacity: busy || !chosen.length || !file ? 0.5 : 1 }}
             disabled={busy || !chosen.length || !file}
-            onClick={runImport}
+            onClick={startImport}
           >
             {t('import')}
           </button>
