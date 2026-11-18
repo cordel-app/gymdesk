@@ -4,7 +4,7 @@ import { ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
+import { computeAssignmentBillingEventSimulation, sharedCycleHorizon } from '../domain/assignmentBillingEventSimulation';
 import { emptyBillingEventSimulation, BillingEventLine } from '../domain/billingEventSimulation';
 import { composeDraftSimulation, toBillingEventLine } from '../domain/draftBillingSimulation';
 import { commitCharge } from './product-set-checkout';
@@ -171,8 +171,10 @@ export async function simulationHandler(req: any, res: any, next: any) {
     // a running one forecasts both rather than whichever plan the one-plan loader happened to read.
     const assignments = await loadProductSetSimulationAssignments(gymId, id);
     if (assignments.length === 0) return res.status(404).json({ error: 'not_found' });
+    // #3030: one shared horizon — two complete cycles of the plan with the longest cycle.
+    const sharedHorizonUntil = sharedCycleHorizon(assignments);
     const base = mergeBillingEventForecasts(assignments.map((assignment) =>
-      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true })));
+      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil })));
 
     // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
     // committing asks for today, the figure Save & Pay charges) and the member's
