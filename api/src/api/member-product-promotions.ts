@@ -548,6 +548,8 @@ async function loadRecurringPurchases(
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
             s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status, ps.id AS set_id,
+            COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
+                                           WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref,
             ps.created_by AS set_created_by,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
@@ -583,6 +585,8 @@ async function loadRecurringPurchases(
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
             s.currency, s.starts_at, s.created_at, s.origin, ps.id AS set_id,
+            COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
+                                           WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
             ${assignedMemberSql('s', 'ps.owner_member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('s', 'ps.owner_member_id')}) AS assigned_member_name
@@ -655,7 +659,7 @@ async function loadRecurringPurchases(
         list_price: listPrice,
         direct_discount_percent: pct,
         direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
-        tax_rate_percent: null,
+        tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
         payment_status: null,
         billing_event_id: null,
         source: 'recurring' as const,
@@ -691,7 +695,7 @@ async function loadRecurringPurchases(
       list_price: listPrice,
       direct_discount_percent: pct,
       direct_discount_amount: pct != null && listPrice != null ? Math.round(((lp ? lp.promotions[lp.promotions.length - 1].final_amount : listPrice) * pct / 100) * 100) / 100 : null,
-      tax_rate_percent: null,
+      tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: active.payment_status ?? null,
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       source: 'recurring' as const,
