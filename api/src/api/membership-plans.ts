@@ -1,4 +1,5 @@
 import { ownerFamilyMemberIds } from './owner-family';
+import { nameSimulatedEvents } from './billing-event-name';
 import { parseLineDirectDiscountInput, toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import { parseCenterAccessInput, isPlanCenterAccessMode } from '../domain/planCenterAccess';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
@@ -488,7 +489,7 @@ export async function enrichPlan(
   // engine, so it cannot price a cycle differently from the nightly run; the
   // durations, the cadence and the price are the ones the Example Timeline
   // above already read.
-  const billingEventSimulation = computePlanBillingEventSimulation({
+  const billingEventSimulation = await nameSimulatedEvents(db, gymId, computePlanBillingEventSimulation({
     planName: plan.name,
     duration: exampleTimelineDuration,
     cadence: planCadence,
@@ -499,7 +500,7 @@ export async function enrichPlan(
       { category: 'session', rows: withoutDeclined('session', sessionSection, opts.declined) },
       { category: 'periodical', rows: withoutDeclined('periodical', periodicalSection, opts.declined) },
     ], products),
-  });
+  }));
 
   return {
     ...plan,

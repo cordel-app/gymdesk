@@ -174,13 +174,19 @@ describe('#955 — the presentation is one component, in the Example Timeline’
     }
   });
 
-  it('puts the total in the card header and keeps no Total row under the lines', () => {
-    expect(componentSrc).toContain("t('simulation_total')");
+  it('#3045: the main table has exactly Date, Name, Remarks, Status and Amount, and every row says Simulated', () => {
+    const order = ['simulation_col_date', 'simulation_col_name', 'simulation_col_remarks',
+      'simulation_col_status', 'simulation_col_amount'];
+    const at = order.map((k) => componentSrc.indexOf(`t('${k}')`, componentSrc.indexOf('function MainTableHeader')));
+    for (let i = 0; i < at.length; i++) {
+      expect(at[i]).toBeGreaterThan(-1);
+      if (i) expect(at[i]).toBeGreaterThan(at[i - 1]);
+    }
+    expect(componentSrc).toContain("t('simulation_status_simulated')");
     expect(componentSrc).not.toMatch(/totalRow/);
-    // The header summary is the ticket's three facts.
-    expect(componentSrc).toContain('simulation_items_count');
-    expect(componentSrc).toContain('group.lines.length');
+    // The row's amount is the server's group total; the name is the server's.
     expect(componentSrc).toContain('group.total');
+    expect(componentSrc).toContain('group.name');
   });
 
   it('makes the whole header the expand control, operable by keyboard', () => {

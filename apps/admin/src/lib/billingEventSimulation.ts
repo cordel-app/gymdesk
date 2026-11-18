@@ -52,6 +52,8 @@ export interface BillingEventSimulationDate {
   date: string;
   lines: BillingEventSimulationLine[];
   total: number;
+  /** #3045 — the simulated Billing Event's name, decided by the API's `simulatedEventNames()`; shown as is. */
+  name?: string | null;
   /**
    * #1130 stage 3 — which iteration of the contract's configured cycle this
    * billing date falls in, or `null` where there is none to name it with. The
