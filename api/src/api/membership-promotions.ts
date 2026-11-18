@@ -116,6 +116,10 @@ interface PromotionSnapshot {
   // carry two (a Charge Benefit and a Period Benefit on the membership fee,
   // both applied), and folding them loses what that assignment was charged.
   membership_fee_benefits: SnapshotMembershipFeeBenefit[];
+  // #3020 stage 4: the Promotion's image, frozen with the rest. Absent on a
+  // snapshot taken before this stage, which keeps reading the live image.
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
 }
 
 type Queryable = { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> };
@@ -197,7 +201,8 @@ export function membershipFeeBenefitsFromSnapshot(snap: any): SnapshotMembership
 // against for business logic.
 async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number): Promise<PromotionSnapshot | null> {
   const { rows: promoRows } = await tx.query(
-    `SELECT name, description, stackable, starts_at, ends_at, free_months, paid_months, bonus_months
+    `SELECT name, description, stackable, starts_at, ends_at, free_months, paid_months, bonus_months,
+            image_url, image_thumbnail_url
      FROM promotions WHERE id = ? AND gym_id = ?`,
     [promotionId, gymId],
   );
@@ -214,6 +219,8 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
     free_months: promo.free_months ?? null,
     paid_months: promo.paid_months ?? null,
     bonus_months: promo.bonus_months ?? null,
+    image_url: promo.image_url ?? null,
+    image_thumbnail_url: promo.image_thumbnail_url ?? null,
     ...benefits,
   };
 }
@@ -298,6 +305,12 @@ async function withSnapshot(row: any) {
       paid_months: snap.paid_months,
       bonus_months: snap.bonus_months,
       membership_fee_benefits: membershipFeeBenefitsFromSnapshot(snap),
+      // #3020 stage 4: a snapshot that froze its image reports it; an older one
+      // (key absent) keeps the live-joined image.
+      ...(snap.image_url !== undefined ? {
+        promotion_image_url: snap.image_url,
+        promotion_image_thumbnail_url: snap.image_thumbnail_url ?? snap.image_url,
+      } : {}),
     };
   }
   const live = await fetchLiveBenefits(db, row.promotion_id);
