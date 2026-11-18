@@ -8,6 +8,7 @@
  * Mounted under the Financials group feature flag (not `financials.plans`), so
  * the Dashboard keeps working for a gym that has the Plans page turned off.
  */
+import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
@@ -46,7 +47,7 @@ const ASSIGNED_JOIN = `
          ON pa.membership_plan_id = p.id
         AND pa.gym_id = p.gym_id
         AND pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'cancelled', 'expired', 'superseded')
-        AND NOT (pa.status = 'active' AND pa.ends_at IS NOT NULL AND pa.ends_at < CURDATE())
+        AND NOT (pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND pa.ends_at IS NOT NULL AND pa.ends_at < CURDATE())
         AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND EXISTS (
               SELECT 1 FROM members m

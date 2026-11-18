@@ -50,7 +50,7 @@ import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAss
 // count — #1108 stage 1 added `draft` to both for that reason: a Draft is what
 // the staff are configuring, so it has to appear on the Member card beside the
 // forecast that projects it.
-const LIVE_STATUSES = ['in_cart', 'pending_payment', 'active', 'paused'] as const;
+const LIVE_STATUSES = ['in_cart', 'pending_payment', 'active', 'to_be_canceled', 'paused'] as const;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts and

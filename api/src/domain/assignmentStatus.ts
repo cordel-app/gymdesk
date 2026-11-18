@@ -15,11 +15,31 @@
  */
 export const CANCELS_AT_PERIOD_END_STATUS = 'active_cancel_at_period_end' as const;
 
+/**
+ * #3007 stage 2(a): a plan with a cancellation pending, still running exactly like an `active` one
+ * until the cancellation is committed. Stage 2(a) adds the value and teaches every reader to give
+ * it the answer it gives `active`; nothing writes it yet (the writer is the next stage).
+ */
+export const PENDING_CANCELLATION_STATUS = 'to_be_canceled' as const;
+
 export const ASSIGNMENT_STATUSES = [
-  'in_cart', 'pending_payment', 'active', 'paused',
+  'in_cart', 'pending_payment', 'active', PENDING_CANCELLATION_STATUS, 'paused',
   CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired', 'superseded',
 ] as const;
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
+
+/**
+ * The statuses of a plan that is running: `active`, and `to_be_canceled` (a pending cancellation
+ * changes nothing until it is committed). Every reader that asks "is this plan running" asks this
+ * set, never `'active'` alone.
+ */
+export const RUNNING_ASSIGNMENT_STATUSES = ['active', PENDING_CANCELLATION_STATUS] as const;
+/** `RUNNING_ASSIGNMENT_STATUSES` as a SQL list body, for `status IN (…)`. */
+export const RUNNING_ASSIGNMENT_STATUSES_SQL = RUNNING_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ');
+
+export function isRunningAssignmentStatus(status: unknown): boolean {
+  return (RUNNING_ASSIGNMENT_STATUSES as readonly unknown[]).includes(status);
+}
 
 /**
  * The statuses a member's cancellation leaves an assignment in: the one still
@@ -53,7 +73,7 @@ export function cancellationStatusFor(endsAt: string | null, today: string): 'ac
  * the nightly sweep moving the row to `cancelled`.
  */
 export function entitledAssignmentSql(alias = 'um'): string {
-  return `(${alias}.status = 'active' OR (${alias}.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND ${alias}.ends_at >= UTC_DATE()))`;
+  return `(${alias}.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) OR (${alias}.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND ${alias}.ends_at >= UTC_DATE()))`;
 }
 
 /**

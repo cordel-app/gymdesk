@@ -23,7 +23,7 @@ export async function productIsOnePerMember(q: Queryable, gymId: string, product
 }
 
 /** Assignment statuses under which a Membership Plan's Products are the member's (stage 2). */
-const PLAN_HOLDING_STATUSES = ['active', 'paused', 'pending_payment'] as const;
+const PLAN_HOLDING_STATUSES = ['active', 'to_be_canceled', 'paused', 'pending_payment'] as const;
 
 /** The included-Product lines of every plan snapshot, as one derived table (`plan_snapshot_id`, `product_id`). */
 const PLAN_LINES_SQL = Object.values(PLAN_LINE_TABLE)
