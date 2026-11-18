@@ -4,7 +4,7 @@ import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
   JOB_RUN_JOBS, JOB_RUN_STATUSES, defaultJobRunFilters, detailEntries, filtersError, formatDuration,
-  formatHttpStatus, jobLabelKey, jobRunsQuery, pageCount, statusLabelKey, statusTone,
+  formatHttpStatus, jobLabelKey, metricsSummary, updatedItemsLabel, jobRunsQuery, pageCount, statusLabelKey, statusTone,
 } from '../lib/jobRuns';
 
 describe('Jobs page decisions (#1996 stage 3)', () => {
@@ -68,5 +68,28 @@ describe('job descriptions and result chip (#2156)', () => {
     expect(_rl('warning')).toBe('result_warning');
     expect(_rl(null)).toBeNull();
     expect(_rl(undefined)).toBeNull();
+  });
+});
+
+describe('Jobs table metrics (#3009)', () => {
+  it('shows the updated count, and an em dash where no metrics were kept', () => {
+    expect(updatedItemsLabel({ metrics: { processed: 5, updated: 2, skipped: 3 } })).toBe('2');
+    expect(updatedItemsLabel({ metrics: { processed: 0, updated: 0, skipped: 0 } })).toBe('0');
+    expect(updatedItemsLabel({ metrics: null })).toBe('—');
+    expect(updatedItemsLabel({})).toBe('—');
+  });
+  it('summarises processed, updated and skipped, and nothing without metrics', () => {
+    expect(metricsSummary({ metrics: { processed: 5, updated: 2, skipped: 3 } })).toEqual([
+      { key: 'processed', value: 5 }, { key: 'updated', value: 2 }, { key: 'skipped', value: 3 },
+    ]);
+    expect(metricsSummary({ metrics: null })).toBeNull();
+  });
+  it('words the columns and the summary in every locale', () => {
+    for (const l of [en, es, ca] as any[]) {
+      for (const k of ['col_job', 'col_description', 'col_updated', 'col_date', 'col_duration', 'col_status',
+        'summary_processed', 'summary_updated', 'summary_skipped']) {
+        expect(typeof l.job_runs[k]).toBe('string');
+      }
+    }
   });
 });

@@ -6101,7 +6101,16 @@
     "field_warning": "Avís",
     "issue_failed_records": "Alguns registres no s'han pogut processar.",
     "issue_partial_failures": "Alguns gimnasos han fallat i s'han omès.",
-    "issue_capped": "S'ha assolit el límit del lot; la resta espera a la propera execució."
+    "issue_capped": "S'ha assolit el límit del lot; la resta espera a la propera execució.",
+    "col_job": "Tasca",
+    "col_description": "Descripció",
+    "col_updated": "Elements actualitzats",
+    "col_date": "Data / Hora",
+    "col_duration": "Durada",
+    "col_status": "Estat",
+    "summary_processed": "Total processats",
+    "summary_updated": "Actualitzats",
+    "summary_skipped": "Omesos"
   },
   "training_dashboard": {
     "title": "Tauler d'entrenament",

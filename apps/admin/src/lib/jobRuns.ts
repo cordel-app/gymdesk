@@ -39,7 +39,34 @@ export interface JobRun {
   /** The API's derived outcome; `null` when it cannot be told (never invented here). */
   result?: JobRunResult | null;
   issues?: JobRunIssue[];
+  /** #3009: `processed = updated + skipped`; `null` when the run stored nothing to count from. */
+  metrics?: JobMetrics | null;
 }
+
+export interface JobMetrics {
+  processed: number;
+  updated: number;
+  skipped: number;
+}
+
+/** The Updated Items cell: the updated count, or an em dash where the run kept no metrics. */
+export function updatedItemsLabel(run: Pick<JobRun, 'metrics'>): string {
+  return run.metrics ? String(run.metrics.updated) : '—';
+}
+
+/** The summary shown at the top of an expanded run; `null` when there is nothing to show. */
+export function metricsSummary(run: Pick<JobRun, 'metrics'>): Array<{ key: 'processed' | 'updated' | 'skipped'; value: number }> | null {
+  const m = run.metrics;
+  if (!m) return null;
+  return [
+    { key: 'processed', value: m.processed },
+    { key: 'updated', value: m.updated },
+    { key: 'skipped', value: m.skipped },
+  ];
+}
+
+/** The grid of the table header and every row, so the columns stay aligned. */
+export const JOB_RUNS_GRID = 'minmax(120px,1.1fr) minmax(180px,2.4fr) 90px minmax(140px,1fr) 80px minmax(150px,1fr)';
 
 export interface JobRunsResponse {
   items: JobRun[];
@@ -147,6 +174,7 @@ export function formatHttpStatus(status: number | null | undefined): string {
 export function detailEntries(details: Record<string, unknown> | null | undefined): Array<{ key: string; value: string }> {
   if (!details || typeof details !== 'object') return [];
   return Object.entries(details)
+    .filter(([k]) => k !== 'metrics')
     .filter(([, v]) => v !== null && v !== undefined && v !== '')
     .map(([key, v]) => ({ key, value: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
 }
