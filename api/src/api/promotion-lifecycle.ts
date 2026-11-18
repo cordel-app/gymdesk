@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { promotionExpiryWhereSql } from '../domain/promotionLifecycle';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
+import { buildJobMetrics } from '../domain/jobRuns';
 
 /**
  * #900: the scheduled sweep that moves a Promotion past its End Date to
@@ -83,8 +84,14 @@ promotionLifecycleRouter.post('/run', async (req: Request, res: Response) => {
       [SYSTEM_ACTOR],
     );
 
+    // #3009: every promotion still `active` after the sweep was considered and left alone.
+    const { rows: stillActive } = await db.query(
+      `SELECT COUNT(*) AS n FROM promotions WHERE lifecycle_status = 'active'`,
+    );
+    const metrics = buildJobMetrics(Number(expired), Number(stillActive[0].n));
+
     req.log.info({ expired }, 'promotion lifecycle sweep: expired promotions past their end date');
-    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { expired } });
+    await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { expired, metrics } });
     res.json({ expired });
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });

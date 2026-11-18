@@ -6074,7 +6074,16 @@
     "field_warning": "Aviso",
     "issue_failed_records": "Algunos registros no se pudieron procesar.",
     "issue_partial_failures": "Algunos gimnasios fallaron y se omitieron.",
-    "issue_capped": "Se alcanzó el límite del lote; el resto espera a la siguiente ejecución."
+    "issue_capped": "Se alcanzó el límite del lote; el resto espera a la siguiente ejecución.",
+    "col_job": "Trabajo",
+    "col_description": "Descripción",
+    "col_updated": "Elementos actualizados",
+    "col_date": "Fecha / Hora",
+    "col_duration": "Duración",
+    "col_status": "Estado",
+    "summary_processed": "Total procesados",
+    "summary_updated": "Actualizados",
+    "summary_skipped": "Omitidos"
   },
   "training_dashboard": {
     "title": "Panel de entrenamiento",
