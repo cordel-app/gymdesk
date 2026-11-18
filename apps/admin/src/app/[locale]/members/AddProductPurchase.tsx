@@ -260,7 +260,7 @@ type AddProductForm = ReturnType<typeof useAddProductForm>;
  * selector: each Product row carries only its own Promotions, and there is no block of
  * Promotions below the row. Absent when the Product has none to offer (#2783).
  */
-function productPromotionsCell(f: AddProductForm): React.ReactNode {
+export function productPromotionsCell(f: AddProductForm): React.ReactNode {
   const { t, product, outcome } = f;
   if (!product || outcome || !hasPromotionBlock(product)) return null;
   return (
@@ -296,7 +296,11 @@ function productPromotionsCell(f: AddProductForm): React.ReactNode {
 }
 
 /** The form's fields as the cells of the Products table's draft row (#2372 follow-up). */
-export function addProductDraftCells(f: AddProductForm, today: React.ReactNode): Record<string, React.ReactNode> {
+export function addProductDraftCells(
+  f: AddProductForm,
+  today: React.ReactNode,
+  opts: { promotionsInCell?: boolean } = {},
+): Record<string, React.ReactNode> {
   const { t, quote, product } = f;
   return {
     product: (
@@ -330,7 +334,7 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
         ))}
       </select>
       </div>
-      {productPromotionsCell(f)}
+      {opts.promotionsInCell === false ? null : productPromotionsCell(f)}
       </div>
     ),
     // #2786 — the Assigned to column's own cell; absent when the selector does not apply.
@@ -378,9 +382,9 @@ export function addProductDraftCells(f: AddProductForm, today: React.ReactNode):
 export function EditQuantityField({ form: f, label }: { form: AddProductForm; label: string }) {
   return (
     <>
-      <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{label}</label>{' '}
       <input
         id="edit-product-quantity"
+        aria-label={label}
         type="number"
         min={1}
         max={999}
@@ -393,20 +397,12 @@ export function EditQuantityField({ form: f, label }: { form: AddProductForm; la
   );
 }
 
-export function AddProductDetails({ form: f }: { form: AddProductForm }) {
-  const { t, tFreq, quote, outcome, error, requiredProducts, requiredPending } = f;
+/** Error line and the confirmations a save may raise (no actions, no hints). */
+export function AddProductFeedback({ form: f }: { form: AddProductForm }) {
+  const { t, tFreq, error, requiredProducts, requiredPending, outcome } = f;
   return (
-    <div style={{ padding: '12px 16px' }} data-add-product-form>
-      {f.catalogue != null && f.catalogue.length === 0 && <p style={cardHintStyle}>{t('add_product_none_available')}</p>}
-      {quote && (
-        <p style={cardHintStyle}>
-          {quote.recurring ? t('add_product_simulation_recurring_hint') : t('add_product_simulation_one_time', { amount: money(quote.final_price, quote.currency) })}
-        </p>
-      )}
-      {outcome?.kind === 'one_time_draft' && <p style={{ fontSize: 14 }}>{t('add_product_purchase_draft_saved')}</p>}
-      {outcome?.kind === 'draft_updated' && <p style={{ fontSize: 14 }}>{t('add_product_draft_updated')}</p>}
+    <>
       {error && <p role="alert" style={formErrorStyle}>{error}</p>}
-
       <ConfirmDialog
         open={requiredPending && !outcome}
         message={`${t('required_products_title')}. ${t('required_products_message')}`}
@@ -433,16 +429,42 @@ export function AddProductDetails({ form: f }: { form: AddProductForm }) {
         onCancel={() => f.setFrequencyPrompt(null)}
         busy={f.busy}
       />
+    </>
+  );
+}
 
-      <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
-        {!outcome && (
-          <button type="button" style={{ ...primaryBtnSmall(), opacity: f.canCreate ? 1 : 0.5 }} disabled={!f.canCreate} onClick={() => f.create()}>
-            {f.edit ? t('draft_line_save') : t('add_product_save_draft')}
-          </button>
-        )}
-        <button type="button" style={secondaryBtnSmall} disabled={f.busy} onClick={f.onClose}>
-          {outcome ? t('close') : t('add_product_cancel')}
+/** Save / Cancel of the form (#3020: also drawn in the edited row's own action cell). */
+export function AddProductActions({ form: f }: { form: AddProductForm }) {
+  const { t, outcome } = f;
+  return (
+    <div style={{ ...inlineActionsRowStyle, flexWrap: 'wrap' }} data-product-row-actions>
+      {!outcome && (
+        <button type="button" style={{ ...primaryBtnSmall(), opacity: f.canCreate ? 1 : 0.5 }} disabled={!f.canCreate} onClick={() => f.create()}>
+          {f.edit ? t('draft_line_save') : t('add_product_save_draft')}
         </button>
+      )}
+      <button type="button" style={secondaryBtnSmall} disabled={f.busy} onClick={f.onClose}>
+        {outcome ? t('close') : t('add_product_cancel')}
+      </button>
+    </div>
+  );
+}
+
+export function AddProductDetails({ form: f }: { form: AddProductForm }) {
+  const { t, quote, outcome } = f;
+  return (
+    <div style={{ padding: '12px 16px' }} data-add-product-form>
+      {f.catalogue != null && f.catalogue.length === 0 && <p style={cardHintStyle}>{t('add_product_none_available')}</p>}
+      {quote && (
+        <p style={cardHintStyle}>
+          {quote.recurring ? t('add_product_simulation_recurring_hint') : t('add_product_simulation_one_time', { amount: money(quote.final_price, quote.currency) })}
+        </p>
+      )}
+      {outcome?.kind === 'one_time_draft' && <p style={{ fontSize: 14 }}>{t('add_product_purchase_draft_saved')}</p>}
+      {outcome?.kind === 'draft_updated' && <p style={{ fontSize: 14 }}>{t('add_product_draft_updated')}</p>}
+      <AddProductFeedback form={f} />
+      <div style={{ marginTop: 12 }}>
+        <AddProductActions form={f} />
       </div>
     </div>
   );

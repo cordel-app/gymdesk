@@ -52,7 +52,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
-import { AddProductDetails, EditQuantityField, addProductDraftCells, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { AddProductActions, AddProductDetails, AddProductFeedback, EditQuantityField, addProductDraftCells, productPromotionsCell, useAddProductForm, type DraftLineEdit } from './AddProductPurchase';
+import { PromotionPicker } from '@/components/PromotionPicker';
 import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
@@ -143,7 +144,6 @@ export function MemberPurchasedProducts({
         directDiscountPercent: item.direct_discount_percent ?? null,
       },
     });
-    setExpandedIds((prev) => new Set(prev).add(item.id));
   }
 
   async function deleteLine(item: PurchasedProduct) {
@@ -195,19 +195,15 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_product'),
       mobile: 'name',
       title: (item) => item.product_name,
-      // #2810 — the Promotion a purchase was bought with sits inside its own Product cell,
-      // under the name; a purchase with none draws nothing there.
-      render: (item) => (
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 500 }}>{item.product_name}</div>
-          {(item.promotions && item.promotions.length > 0 ? item.promotions : item.promotion ? [item.promotion] : []).map((promo) => (
-            <div key={promo.promotion_id} data-product-promotion style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 13 }}>
-              <span style={cardMutedTextStyle}>{t('purchase_col_applied_promotion')}:</span>
-              <span>{promotionLabel(promo)}</span>
-            </div>
-          ))}
-        </div>
-      ),
+      // #3020 — the Promotions applied sit in the Promotions area below the row (and in the Applied promotion column).
+      render: (item) => <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>,
+    },
+    {
+      // #3020 — the quantity of a recurring line; a one-off purchase is one unit.
+      key: 'quantity',
+      header: t('draft_line_quantity'),
+      mobile: 'secondary',
+      render: (item) => item.quantity ?? 1,
     },
     {
       // #2609 — who the Product is for; the server answers the purchaser when nobody was chosen.
@@ -250,7 +246,10 @@ export function MemberPurchasedProducts({
       key: 'promotion',
       header: t('purchase_col_applied_promotion'),
       mobile: 'secondary',
-      render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
+      render: (item) => {
+        const list = item.promotions && item.promotions.length > 0 ? item.promotions : item.promotion ? [item.promotion] : [];
+        return list.length > 0 ? list.map((p) => p.promotion_name).join(', ') : dash;
+      },
     },
     {
       // #2494 — what that Promotion gave this purchase, from the purchase's own frozen application.
@@ -294,6 +293,7 @@ export function MemberPurchasedProducts({
       width: 48,
       mobile: 'actions',
       render: (item) => {
+        if (editing?.rowId === item.id) return <AddProductActions form={editForm} />;
         const billingPath = billingEventPath(locale, item);
         const isOneTimeDraft = item.status === 'in_cart' && item.source !== 'recurring';
         const draftLineId = editableDraftLineId(item);
@@ -356,24 +356,52 @@ export function MemberPurchasedProducts({
 
   // #3020 — the edited row draws the form's cells in the columns' own places; every other row reads as before.
   const editCells: Record<string, React.ReactNode> | null = editing ? (() => {
-    const c = addProductDraftCells(editForm, null);
+    const c = addProductDraftCells(editForm, null, { promotionsInCell: false });
     const chosen = (editForm.product?.promotions ?? []).filter((pr) => editForm.promotionIds.includes(pr.promotion_id));
     const benefit = chosen.length === 0 ? dash : chosen.map((pr) => [
       benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
       pr.duration_cycles != null ? t('purchase_promotion_cycles', { count: pr.duration_cycles }) : null,
     ].filter(Boolean).join(' · ')).join(', ');
     return {
-      product: (
-        <div style={{ minWidth: 0 }}>
-          {c.product}
-          <div style={{ marginTop: 8 }} data-edit-product-quantity>
-            <EditQuantityField form={editForm} label={t('draft_line_quantity')} />
-          </div>
-        </div>
-      ),
+      product: c.product,
+      quantity: <span data-edit-product-quantity><EditQuantityField form={editForm} label={t('draft_line_quantity')} /></span>,
       price: c.price, tax: c.tax, promotion: c.promotion, promotion_benefit: benefit, discount: c.discount, final: c.final,
     };
   })() : null;
+  // #3020 — the Promotions area below the row: checkbox, image and name, in read-only and in edit mode.
+  // Edit mode offers the Product's eligible Promotions; read-only lists the ones applied, unchangeable.
+  const promotionsArea = (item: PurchasedProduct): React.ReactNode => {
+    if (editing?.rowId === item.id && editForm.product) return productPromotionsCell(editForm);
+    const applied = item.promotions && item.promotions.length > 0 ? item.promotions : item.promotion ? [item.promotion] : [];
+    if (applied.length === 0) return null;
+    return (
+      <div style={{ padding: '4px 0' }} data-product-promotions>
+        <PromotionPicker
+          promotions={applied.map((p) => ({
+            id: p.promotion_id,
+            name: p.promotion_name,
+            stackable: true,
+            description: [
+              benefitTreatmentLabel(tp as any, 'promotion', { action: p.benefit_action, value: p.benefit_value } as any),
+              p.duration_cycles != null ? t('purchase_promotion_cycles', { count: p.duration_cycles }) : null,
+            ].filter(Boolean).join(' · '),
+            imageUrl: null, // the purchase list carries no Product image (no API change here): the initial placeholder shows
+          }))}
+          selectedIds={applied.map((p) => p.promotion_id)}
+          onToggle={() => {}}
+          disabled
+          emptyText=""
+          showThumbnails
+        />
+      </div>
+    );
+  };
+  // Rows with a Promotion, and the row being edited, always show that area; the chevron adds the facts.
+  const shownExpanded = new Set(expandedIds);
+  for (const item of items) {
+    if (editing?.rowId === item.id || (item.promotions && item.promotions.length > 0) || item.promotion) shownExpanded.add(item.id);
+  }
+
   const columns: Column<PurchasedProduct>[] = baseColumns.map((col) => {
     const key = col.key;
     if (!key || !editCells || !(key in editCells)) return col;
@@ -403,7 +431,7 @@ export function MemberPurchasedProducts({
           rowKey={(item) => item.id}
           loadingText=""
           emptyText={t('purchased_products_none')}
-          expandedRowKeys={expandedIds}
+          expandedRowKeys={shownExpanded}
           onToggleExpand={toggleExpand}
           draftRow={adding ? (() => {
             const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
@@ -421,11 +449,15 @@ export function MemberPurchasedProducts({
             };
             return { cells, form: <AddProductDetails form={addForm} /> };
           })() : undefined}
-          renderExpanded={(item) => (editing?.rowId === item.id ? (
-            <div data-draft-line-edit>
-              <AddProductDetails form={editForm} />
+          renderExpanded={(item) => (
+            <div>
+              {promotionsArea(item)}
+              {editing?.rowId === item.id ? <AddProductFeedback form={editForm} /> : null}
+              {expandedIds.has(item.id) && editing?.rowId !== item.id
+                ? <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />
+                : null}
             </div>
-          ) : <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />)}
+          )}
       />
       {/* #1640: the action sits below the list, at the bottom of the section. */}
       <div style={{ marginTop: 8 }}>

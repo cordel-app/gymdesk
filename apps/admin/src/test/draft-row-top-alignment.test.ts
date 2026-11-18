@@ -25,6 +25,6 @@ describe('#2855 draft row top alignment', () => {
   it('keeps the promotions inside the Product cell, under the dropdown', () => {
     const form = readFileSync(join(__dirname, '..', 'app', '[locale]', 'members', 'AddProductPurchase.tsx'), 'utf8');
     const cell = form.slice(form.indexOf('data-product-cell'));
-    expect(cell.indexOf('</select>')).toBeLessThan(cell.indexOf('{productPromotionsCell(f)}'));
+    expect(cell.indexOf('</select>')).toBeLessThan(cell.indexOf('productPromotionsCell(f)}'));
   });
 });
