@@ -77,6 +77,7 @@ import {
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { CartSummary } from '@/components/CartSummary';
+import { CartCard, toCartCardItems } from '@/components/CartCard';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -1272,26 +1273,14 @@ export default function MembershipPage() {
     ].filter(Boolean).join(' · ');
     return (
       <section style={styles.section} data-cart data-cart-awaiting-staff>
-        <div style={cartSummaryStyle}>
-          <div style={styles.cartTop}>
-            <div style={styles.cartInfo}>
-              <h2 style={cartHeadingStyle}>{t('membership.cart_staff_heading')}</h2>
-              <span style={cartMutedStyle}>{counts}</span>
-              <span style={cartMutedStyle}>{t('membership.cart_staff_hint')}</span>
-            </div>
-          </div>
-          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
-            {items.map((item) => (
-              <li key={item.key} style={styles.cartItem}>
-                <span style={styles.cartItemName}>
-                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
-                  {' '}{item.name}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
-        </div>
+        <CartCard
+          headingKey="membership.cart_staff_heading"
+          counts={counts}
+          staffEditing
+          hintKeys={['membership.cart_staff_hint']}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          footer={renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
+        />
       </section>
     );
   }
@@ -1315,15 +1304,14 @@ export default function MembershipPage() {
     ].filter(Boolean).join(' · ');
     return (
       <section style={styles.section} data-cart data-cart-pending>
-        <div style={cartSummaryStyle}>
-          <div style={styles.cartTop}>
-            <div style={styles.cartInfo}>
-              <h2 style={cartHeadingStyle}>{t('membership.cart_pending_heading')}</h2>
-              <span style={cartMutedStyle}>{counts}</span>
-              <span style={cartTotalStyle} data-cart-total>{total}</span>
-              <span style={cartMutedStyle}>{t('membership.cart_pending_hint')}</span>
-            </div>
-            <div style={styles.cartActions}>
+        <CartCard
+          headingKey="membership.cart_pending_heading"
+          counts={counts}
+          total={total}
+          hintKeys={['membership.cart_pending_hint']}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          actions={(
+            <>
               <button
                 type="button"
                 style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy ? styles.busy : null) }}
@@ -1340,24 +1328,15 @@ export default function MembershipPage() {
               >
                 {t('membership.cart_cancel')}
               </button>
-            </div>
-          </div>
-          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
-            {items.map((item) => (
-              <li key={item.key} style={styles.cartItem}>
-                <span style={styles.cartItemName}>
-                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
-                  {' '}{item.name}
-                  {item.kind === 'purchase' && (
-                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {renderCartAddButtons()}
-          {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
-        </div>
+            </>
+          )}
+          footer={(
+            <>
+              {renderCartAddButtons()}
+              {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
+            </>
+          )}
+        />
       </section>
     );
   }
@@ -1380,20 +1359,19 @@ export default function MembershipPage() {
     const error = beside ? cartError : (cartError ?? commitError);
     return (
       <section style={styles.section} data-cart data-cart-standalone>
-        <div style={cartSummaryStyle}>
-          <div style={styles.cartTop}>
-            <div style={styles.cartInfo}>
-              <h2 style={cartHeadingStyle}>{t(beside ? 'membership.cart_standalone_heading' : 'membership.cart_heading')}</h2>
-              <span style={cartMutedStyle}>{t('membership.cart_products', { count: items.length })}</span>
-              <span style={cartTotalStyle} data-cart-total>{total}</span>
-              {beside && <span style={cartMutedStyle}>{t('membership.cart_standalone_hint')}</span>}
-              {!beside && remaining != null && (
-                <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
-                  {t('membership.draft_expires_in')} {remaining}
-                </span>
-              )}
-            </div>
-            <div style={styles.cartActions}>
+        <CartCard
+          headingKey={beside ? 'membership.cart_standalone_heading' : 'membership.cart_heading'}
+          counts={t('membership.cart_products', { count: items.length })}
+          total={total}
+          hintKeys={beside ? ['membership.cart_standalone_hint'] : []}
+          extra={!beside && remaining != null ? (
+            <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+              {t('membership.draft_expires_in')} {remaining}
+            </span>
+          ) : undefined}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          actions={(
+            <>
               <button
                 type="button"
                 style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
@@ -1410,32 +1388,29 @@ export default function MembershipPage() {
               >
                 {t('membership.cart_cancel')}
               </button>
-            </div>
-          </div>
-          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
-            {items.map((item) => (
-              <li key={item.key} style={styles.cartItem}>
-                <span style={styles.cartItemName}>
-                  <span style={cartMutedStyle}>{t('membership.cart_kind_product')}</span>
-                  {' '}{item.name}
-                  {item.kind === 'purchase' && (
-                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
-                  disabled={busy}
-                  onClick={() => removeCartItem(item)}
-                >
-                  {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {!beside && renderCartAddButtons()}
-          {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
-        </div>
+            </>
+          )}
+          itemAction={(ci) => {
+            const item = items.find((x) => x.key === ci.key);
+            if (!item) return null;
+            return (
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
+                disabled={busy}
+                onClick={() => removeCartItem(item)}
+              >
+                {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+              </button>
+            );
+          }}
+          footer={(
+            <>
+              {!beside && renderCartAddButtons()}
+              {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
+            </>
+          )}
+        />
       </section>
     );
   }
@@ -1476,19 +1451,18 @@ export default function MembershipPage() {
     ].filter(Boolean).join(' · ');
     return (
       <section style={styles.section} data-cart>
-        <div style={cartSummaryStyle}>
-          <div style={styles.cartTop}>
-            <div style={styles.cartInfo}>
-              <h2 style={cartHeadingStyle}>{t('membership.cart_heading')}</h2>
-              <span style={cartMutedStyle}>{counts}</span>
-              <span style={cartTotalStyle} data-cart-total>{total}</span>
-              {remaining != null && (
-                <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
-                  {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
-                </span>
-              )}
-            </div>
-            <div style={styles.cartActions}>
+        <CartCard
+          headingKey="membership.cart_heading"
+          counts={counts}
+          total={total}
+          extra={remaining != null ? (
+            <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+              {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
+            </span>
+          ) : undefined}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          actions={(
+            <>
               <button
                 type="button"
                 style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
@@ -1505,32 +1479,29 @@ export default function MembershipPage() {
               >
                 {t('membership.cart_cancel')}
               </button>
-            </div>
-          </div>
-          <ul style={{ ...styles.cartList, ...cartDividerStyle }}>
-            {items.map((item) => (
-              <li key={item.key} style={styles.cartItem}>
-                <span style={styles.cartItemName}>
-                  <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
-                  {' '}{item.name}
-                  {item.kind === 'purchase' && (
-                    <span style={cartMutedStyle}> · {formatPaymentAmount(item.amount, item.currency, gymFmt)}</span>
-                  )}
-                </span>
-                {(cartItemsRemovable(setView) || (item.kind === 'purchase' && item.standalone)) && (<button
-                  type="button"
-                  style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
-                  disabled={busy}
-                  onClick={() => removeCartItem(item)}
-                >
-                  {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-                </button>)}
-              </li>
-            ))}
-          </ul>
-          {renderCartAddButtons()}
-          {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
-        </div>
+            </>
+          )}
+          itemAction={(ci) => {
+            const item = items.find((x) => x.key === ci.key);
+            if (!item || !(cartItemsRemovable(setView) || (item.kind === 'purchase' && item.standalone))) return null;
+            return (
+              <button
+                type="button"
+                style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
+                disabled={busy}
+                onClick={() => removeCartItem(item)}
+              >
+                {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+              </button>
+            );
+          }}
+          footer={(
+            <>
+              {renderCartAddButtons()}
+              {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
+            </>
+          )}
+        />
       </section>
     );
   }
