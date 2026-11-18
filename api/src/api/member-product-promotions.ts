@@ -369,6 +369,9 @@ export interface MemberPurchasedProduct {
   product_one_per_member?: boolean | null;
   product_sharing_type?: string | null;
   product_notes?: string | null;
+  /** #3021 — the Product's image (live read, like the rest of its configuration): opens the Product modal from the row. */
+  product_image_url?: string | null;
+  product_image_thumbnail_url?: string | null;
 }
 
 /**
@@ -468,7 +471,7 @@ export async function withProductConfiguration(
   const ids = [...new Set(items.map((i) => i.product_id).filter((id) => Number.isInteger(id) && id > 0))];
   if (ids.length === 0) return items;
   const { rows } = await db.query<any>(
-    `SELECT id, description, mandatory, one_time_purchase, one_per_member, sharing_type, notes
+    `SELECT id, description, mandatory, one_time_purchase, one_per_member, sharing_type, notes, image_url, image_thumbnail_url
        FROM products WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
   );
@@ -483,6 +486,8 @@ export async function withProductConfiguration(
       product_one_per_member: p ? Boolean(p.one_per_member) : null,
       product_sharing_type: p ? p.sharing_type ?? null : null,
       product_notes: p ? p.notes ?? null : null,
+      product_image_url: p ? p.image_url ?? null : null,
+      product_image_thumbnail_url: p ? p.image_thumbnail_url ?? null : null,
     };
   });
 }

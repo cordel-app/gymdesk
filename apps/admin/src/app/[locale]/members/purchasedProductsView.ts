@@ -78,6 +78,9 @@ export interface PurchasedProduct {
   product_one_per_member?: boolean | null;
   product_sharing_type?: string | null;
   product_notes?: string | null;
+  /** #3021 — the Product's image, for the thumbnail in the row and the Product modal. */
+  product_image_url?: string | null;
+  product_image_thumbnail_url?: string | null;
 }
 
 /** #3021 — `true`/`false` → `yes`/`no`; `null` (no Product row to read) → `null`, rendered `—`. */

@@ -25,8 +25,9 @@ describe('#3020 inline product row editing', () => {
     expect(src).toContain('item.quantity ?? 1');
     expect(src).toContain('data-edit-product-quantity');
   });
-  it('keeps Save and Cancel in the edited row, never behind the expander', () => {
-    expect(src).toContain('if (editing?.rowId === item.id) return <AddProductActions form={editForm} />;');
+  it('places Save and Cancel bottom-left of the edited product, never behind the expander (#3021)', () => {
+    expect(src).toContain('<div style={{ padding: \'4px 16px 8px\' }}><AddProductActions form={editForm} /></div>');
+    expect(src).toContain('if (editing?.rowId === item.id) return null;');
     expect(src).not.toContain('setExpandedIds((prev) => new Set(prev).add(item.id))');
   });
   it('shows applied Promotions in their column and indented in the product line, read-only and editing (#3020 stage 3)', () => {
@@ -42,5 +43,14 @@ describe('#3020 inline product row editing', () => {
   it('does not show the draft hint while editing a row', () => {
     const feedback = form.slice(form.indexOf('export function AddProductFeedback'), form.indexOf('export function AddProductActions'));
     expect(feedback).not.toContain('add_product_simulation_recurring_hint');
+  });
+  it('shows the thumbnail (opens the Product modal), the frequency in the header and the tax in the expanded row (#3021)', () => {
+    expect(src).toContain('data-product-thumbnail');
+    expect(src).toContain('setImageOf(item)');
+    expect(src).toContain('<ProfessionalServiceImageModal');
+    expect(src).toContain('data-product-frequency');
+    expect(src).toContain("t('purchase_exp_tax')");
+    expect(src).not.toContain("key: 'tax'");
+    expect(src).toContain('data-product-facts');
   });
 });
