@@ -127,7 +127,7 @@ describe('the cart awaiting payment (#2746 stage 3, §6)', () => {
     const page = readFileSync(PAGE, 'utf-8');
     expect(page).toContain('/cancel`, { method: \'POST\' }');
     expect(page).toContain('setConfirmPendingCancel(true)');
-    expect(page).toContain("t('membership.cart_pending_heading')");
+    expect(page).toContain('headingKey="membership.cart_pending_heading"');
   });
 });
 
