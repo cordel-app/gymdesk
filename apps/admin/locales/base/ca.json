@@ -5952,6 +5952,8 @@
     "translations_help": "Traduccions (opcional — si un idioma queda buit s'usa l'anglès)"
   },
   "base_payment_methods": {
+    "section_general": "General",
+    "section_audit": "Auditoria",
     "title": "Mètodes de pagament",
     "add": "+ Afegeix mètode de pagament",
     "empty": "No hi ha mètodes de pagament.",

@@ -5925,6 +5925,8 @@
     "translations_help": "Traducciones (opcional — si un idioma queda vacío se usa el inglés)"
   },
   "base_payment_methods": {
+    "section_general": "General",
+    "section_audit": "Auditoría",
     "title": "Métodos de pago",
     "add": "+ Añadir método de pago",
     "empty": "No hay métodos de pago.",

@@ -5939,6 +5939,8 @@
     "translations_help": "Translations (optional — English is used when a language is left empty)"
   },
   "base_payment_methods": {
+    "section_general": "General",
+    "section_audit": "Audit",
     "title": "Payment Methods",
     "add": "+ Add Payment Method",
     "empty": "No payment methods.",
