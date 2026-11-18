@@ -174,13 +174,15 @@ export function BillingEventTable({
         <colgroup>
           <col style={{ width: COL_WIDTHS.date }} />
           <col />
+          <col style={{ width: COL_WIDTHS.remarks }} />
           <col style={{ width: COL_WIDTHS.status }} />
           <col style={{ width: COL_WIDTHS.amount }} />
         </colgroup>
         <thead>
           <tr>
             <th style={timelineThStyle}>{t('simulation_col_date')}</th>
-            <th style={timelineThStyle}>{t('simulation_col_event')}</th>
+            <th style={timelineThStyle}>{t('simulation_col_product')}</th>
+            <th style={timelineThStyle}>{t('simulation_col_remarks')}</th>
             <th style={timelineThStyle}>{t('simulation_col_status')}</th>
             <th style={{ ...timelineThStyle, textAlign: 'right' }}>{t('simulation_col_amount')}</th>
           </tr>
@@ -206,6 +208,7 @@ export function BillingEventTable({
                   )}
                 </td>
                 <td style={timelineTdStyle}>{statusCell(line, t, tFreq as any)}</td>
+                <td style={timelineTdStyle}>{t('simulation_status_simulated')}</td>
                 <td style={{ ...timelineTdStyle, textAlign: 'right', color: TIMELINE_TONE_TEXT[tone] }}>
                   {fmtMoney(line.actual_charge)}
                 </td>
@@ -480,7 +483,7 @@ const mainGrid: React.CSSProperties = {
 };
 const mainCell: React.CSSProperties = { minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left' };
 const mainHead: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#666', letterSpacing: '0.04em' };
-const COL_WIDTHS = { date: 120, status: 300, amount: 90 } as const;
+const COL_WIDTHS = { date: 120, remarks: 300, status: 100, amount: 90 } as const;
 const tableStyle: React.CSSProperties = {
   width: '100%', minWidth: 640, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13,
 };
