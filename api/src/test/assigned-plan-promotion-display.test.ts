@@ -144,6 +144,40 @@ describe('Assigned Plan card display data (#2478)', () => {
     ]);
   });
 
+  it('reports the image a confirmed snapshot froze, not the Promotion\'s current one (#3020)', async () => {
+    const umId = await createAssignment();
+    const apply = await request
+      .post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ promotion_id: promotionId });
+    expect(apply.status).toBe(201);
+    // The application is the assignment's version's (#1995): find it by the Promotion.
+    const { rows: apps } = await db.query(
+      `SELECT ump.id FROM user_membership_promotions ump
+         JOIN promotions p ON p.id = ump.promotion_id
+        WHERE ump.gym_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
+        ORDER BY ump.id DESC LIMIT 1`, [gymId, promotionId]);
+    // A confirmed snapshot carries the image it was taken with.
+    await db.query(
+      `UPDATE user_membership_promotions
+          SET snapshot = JSON_OBJECT('name', 'Frozen', 'description', NULL, 'stackable', 1,
+                'starts_at', '2026-01-01', 'ends_at', '2099-12-31',
+                'free_months', NULL, 'paid_months', 6, 'bonus_months', NULL,
+                'membership_fee_benefits', JSON_ARRAY(),
+                'image_url', 'https://img.test/promotions/frozen.webp',
+                'image_thumbnail_url', 'https://img.test/promotions/frozen-thumbnail.webp'),
+              snapshot_confirmed_at = NOW()
+        WHERE id = ? AND gym_id = ?`,
+      [apps[0].id, gymId],
+    );
+    const res = await getDetail(umId);
+    const application = res.body.promotions.find((p: any) => p.promotion_id === promotionId);
+    expect(application).toMatchObject({
+      promotion_image_url: 'https://img.test/promotions/frozen.webp',
+      promotion_image_thumbnail_url: 'https://img.test/promotions/frozen-thumbnail.webp',
+    });
+  });
+
   it('leaves the frozen line prices exactly as they were', async () => {
     const umId = await createAssignment();
     const line = (await getDetail(umId)).body.snapshot.oneoff_benefits
