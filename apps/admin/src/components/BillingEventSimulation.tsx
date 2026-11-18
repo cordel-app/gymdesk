@@ -254,9 +254,37 @@ function CycleGutter({ cell, label }: { cell: ExampleTimelineRowCycle | null; la
 }
 
 /**
- * One billing period. The whole header is the expand/collapse control, so the
- * summary itself is clickable and keyboard-operable (`<button>` + `aria-expanded`,
- * the shape the list rows use); the chevron beside the date is decorative.
+ * #3045 — the Remarks cell: a concise summary of how the event's amount comes
+ * about, assembled from what the server already reported on its lines (the
+ * promotions and benefits applied, proration, pre-payment). It words facts and
+ * computes nothing; the full item-level breakdown stays in the expanded table.
+ */
+function remarksFor(
+  group: BillingEventSimulationDate, t: Translate,
+  tFreq: (key: string, values?: Record<string, number>) => string,
+): string {
+  const parts: string[] = [];
+  const add = (s: string | null | undefined) => { if (s && !parts.includes(s)) parts.push(s); };
+  for (const line of group.lines) {
+    for (const b of line.benefits) {
+      add(t(simulationPriceLabelKey(b), { value: b.value ?? 0, amount: fmtMoney(b.value ?? 0) })
+        + (b.name ? ` (${b.name})` : ''));
+    }
+    if (line.prepaid_periods != null) {
+      add(prepaidPaymentLabel(line.prepaid_periods, line.prepaid_cadence ?? null, tFreq));
+    }
+    if (line.proration != null) {
+      add(t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days }));
+    }
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * One billing period: a row of the five-column main table (Date, Name, Remarks,
+ * Status, Amount). The whole row is the expand/collapse control (`<button>` +
+ * `aria-expanded`); the open row shows the unchanged item-level table. Status is
+ * always "Simulated" (#3045): a projection is never an actual billing event.
  */
 function BillingPeriodCard({
   group, expanded, onToggle, t, formatDate,
@@ -267,24 +295,32 @@ function BillingPeriodCard({
   t: Translate;
   formatDate: (date: string) => string;
 }) {
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   return (
     <div style={periodCard}>
-      <button type="button" onClick={onToggle} aria-expanded={expanded} style={periodHeader}>
-        <span aria-hidden="true" style={chevron}>{expanded ? '▾' : '▸'}</span>
-        <span style={{ fontWeight: 600 }}>{formatDate(group.date)}</span>
-        {group.kind === 'initial_payment' && (
-          <span style={{ color: '#888' }}>{t('simulation_initial_payment')}</span>
-        )}
-        <span style={periodSummary}>
-          <span style={{ color: '#888' }}>
-            {t('simulation_items_count', { count: group.lines.length })}
-          </span>
-          <span style={{ fontWeight: 600 }}>
-            {t('simulation_total')} {fmtMoney(group.total)}
-          </span>
+      <button type="button" onClick={onToggle} aria-expanded={expanded} style={{ ...periodHeader, ...mainGrid }}>
+        <span style={{ fontWeight: 600 }}>
+          <span aria-hidden="true" style={chevron}>{expanded ? '▾' : '▸'}</span> {formatDate(group.date)}
         </span>
+        <span style={mainCell}>{group.name ?? (group.kind === 'initial_payment' ? t('simulation_initial_payment') : '')}</span>
+        <span style={{ ...mainCell, color: '#666' }}>{remarksFor(group, t, tFreq as any)}</span>
+        <span style={mainCell}>{t('simulation_status_simulated')}</span>
+        <span style={{ ...mainCell, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(group.total)}</span>
       </button>
       {expanded && <BillingEventTable group={group} t={t} formatDate={formatDate} />}
+    </div>
+  );
+}
+
+/** The main table's header row — exactly five columns, in this order. */
+function MainTableHeader({ t }: { t: Translate }) {
+  return (
+    <div style={{ ...mainGrid, padding: '4px 12px' }} role="row">
+      <span style={mainHead}>{t('simulation_col_date')}</span>
+      <span style={mainHead}>{t('simulation_col_name')}</span>
+      <span style={mainHead}>{t('simulation_col_remarks')}</span>
+      <span style={mainHead}>{t('simulation_col_status')}</span>
+      <span style={{ ...mainHead, textAlign: 'right' }}>{t('simulation_col_amount')}</span>
     </div>
   );
 }
@@ -380,6 +416,7 @@ export function BillingEventSimulation({
         </div>
       )}
 
+      <div style={{ paddingLeft: showCycle ? CYCLE_GUTTER_WIDTH : 0 }}><MainTableHeader t={t} /></div>
       {dates.map((group, i) => {
         const card = (
           <BillingPeriodCard
@@ -436,6 +473,13 @@ const cycleNoteStyle: React.CSSProperties = {
   margin: '6px 0 0', paddingLeft: CYCLE_GUTTER_WIDTH, fontSize: 11, color: TIMELINE_CYCLE_TEXT,
 };
 
+/** #3045 — the five main columns: Date · Name · Remarks · Status · Amount. */
+const mainGrid: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: '130px minmax(120px, 1.2fr) minmax(120px, 2fr) 90px 90px',
+  columnGap: 8, alignItems: 'start',
+};
+const mainCell: React.CSSProperties = { minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left' };
+const mainHead: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#666', letterSpacing: '0.04em' };
 const COL_WIDTHS = { date: 120, status: 300, amount: 90 } as const;
 const tableStyle: React.CSSProperties = {
   width: '100%', minWidth: 640, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13,
@@ -464,10 +508,6 @@ const periodHeader: React.CSSProperties = {
 const periodTableWrap: React.CSSProperties = {
   overflowX: 'auto', padding: '0 4px 4px',
   borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
-};
-/** The summary half: it drops under the date when the card is too narrow for one line. */
-const periodSummary: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto',
 };
 const chevron: React.CSSProperties = { color: '#888', fontSize: 11, width: 10 };
 const footnote: React.CSSProperties = {

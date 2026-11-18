@@ -14,6 +14,8 @@
 // card, and on its own for the refetch the card does after a configuration or
 // promotion edit.
 
+import { nameSimulatedEvents } from './billing-event-name';
+import { db } from '../infra/db';
 import {
   AssignmentBillingEventSimulationResult,
   computeAssignmentBillingEventSimulation,
@@ -43,5 +45,5 @@ export async function assignedPlanBillingForecast(
   const assignments = await loadSimulationAssignments(gymId, { userMembershipId: umId });
   const assignment = assignments[0];
   if (!assignment) return emptyBillingEventSimulation(NOT_SIMULATED_REASON);
-  return computeAssignmentBillingEventSimulation({ assignment });
+  return nameSimulatedEvents(db, gymId, computeAssignmentBillingEventSimulation({ assignment }));
 }

@@ -90,3 +90,29 @@ export function initialEventName(input: {
   if (input.added.plans.length + input.added.products.length === 0) return INITIAL_ENGAGEMENT_NAME;
   return purchaseEventName({ gymName: input.gymName, purchaseDate: input.purchaseDate, items: input.added });
 }
+
+/**
+ * #3045 — the name a *simulated* Billing Event carries: the existing naming
+ * rules, not a second convention. A date the projection marks as the initial
+ * payment is `Initial Engagement`; every other date is a recurring obligation,
+ * named by `recurringEventName()`. A simulation date does not carry its
+ * schedule's cadence, so it is read off the dates themselves: a date exactly 28
+ * days from a neighbouring one belongs to a 4-weekly schedule, anything else to
+ * a monthly one (the plan's two offered cadences, #820).
+ */
+export function simulatedEventNames(
+  dates: { date: string; kind?: string | null }[],
+  gymName: string,
+): (string | null)[] {
+  const day = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000;
+  return dates.map((group, i) => {
+    if (group.kind === 'initial_payment') return INITIAL_ENGAGEMENT_NAME;
+    const near = [dates[i - 1], dates[i + 1]].filter((n) => n && n.kind !== 'initial_payment') as { date: string }[];
+    const fourWeekly = near.some((n) => Math.abs(day(n.date) - day(group.date)) === 28);
+    return recurringEventName({
+      gymName,
+      billingDate: group.date,
+      cadence: { interval: fourWeekly ? 4 : 1, unit: fourWeekly ? 'week' : 'month' },
+    });
+  });
+}

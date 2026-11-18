@@ -7,7 +7,7 @@ import { Tx } from '../infra/db';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 import { recurringLineInheritedSql } from './recurring-line-sharing';
 import { chargeableSetPurchases } from './set-purchases';
-import { initialEventName, purchaseEventName, recurringEventName } from '../domain/billingEventName';
+import { initialEventName, purchaseEventName, recurringEventName, simulatedEventNames } from '../domain/billingEventName';
 
 type Exec = { query: Tx['query'] };
 
@@ -116,4 +116,18 @@ export async function cartPurchaseEventNameFor(
   return purchaseEventName({
     gymName: await loadGymName(exec, gymId), purchaseDate, items: { plans: [], products: productNames },
   });
+}
+
+/**
+ * #3045 — gives every date of a Billing Event Simulation its name, by the same
+ * rules the real events are named with (`simulatedEventNames()`). Presentation
+ * only: it reads the gym's name and changes no amount, date or line.
+ */
+export async function nameSimulatedEvents<T extends { dates: { date: string; kind?: string | null; name?: string | null }[] }>(
+  exec: Exec, gymId: string, simulation: T,
+): Promise<T> {
+  if (!simulation || simulation.dates.length === 0) return simulation;
+  const names = simulatedEventNames(simulation.dates, await loadGymName(exec, gymId));
+  simulation.dates.forEach((d, i) => { d.name = names[i]; });
+  return simulation;
 }

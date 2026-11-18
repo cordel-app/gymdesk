@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { nameSimulatedEvents } from './billing-event-name';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import {
@@ -524,7 +525,7 @@ promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) =
       }
     }
 
-    res.json(computePromotionBillingEventSimulation({
+    res.json(await nameSimulatedEvents(db, gymId, computePromotionBillingEventSimulation({
       promotionName: promo.name,
       startsAt: promo.starts_at == null
         ? null
@@ -536,6 +537,6 @@ promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) =
       payBeforehandMonths: promo.pay_beforehand_months,
       bonusMonths: promo.bonus_months,
       grants,
-    }));
+    })));
   } catch (err) { next(err); }
 });
