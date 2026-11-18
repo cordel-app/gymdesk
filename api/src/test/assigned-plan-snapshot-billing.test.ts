@@ -293,8 +293,14 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     const { body } = await getSimulation(gymId, memberId);
     const events = sectionOf(body, 'month').events;
     expect(events.length).toBeGreaterThanOrEqual(3);
-    const third = events[2].lines.find((l: any) => l.label === lockerName);
-    expect(third).toMatchObject({ actual_charge: 20 });
+    // The assignment starts today, and since #3024 a Monthly line joined on or after the 15th
+    // takes the promotion on its prorated stretch without consuming a cycle, so which event is
+    // the first charged one depends on the day of the month: assert the order, not the index.
+    const charges = events.map((e: any) => e.lines.find((l: any) => l.label === lockerName)?.actual_charge);
+    const firstCharged = charges.findIndex((c: number | undefined) => c === 20);
+    expect(firstCharged).toBeGreaterThanOrEqual(2);
+    expect(charges.slice(0, firstCharged).every((c: number | undefined) => c === 0 || c != null)).toBe(true);
+    expect(charges[0]).toBe(0);
   });
 
   it('does not move when the Promotion or its benefit is edited or deleted afterwards', async () => {
