@@ -28,4 +28,15 @@ describe('shared cart renderer', () => {
       expect(msgs.home.cart_open).toBeUndefined();
     }
   });
+
+  it('#2973 stage 4: the Summary sits inside the card on both pages and lines name their beneficiary', () => {
+    const home = read('src/components/HomeCartCard.tsx');
+    const page = read('src/app/[locale]/membership/page.tsx');
+    const card = read('src/components/CartCard.tsx');
+    expect(home).toContain('cartBeneficiaryLabel');
+    expect(page).toContain('cartBeneficiaryLabel');
+    expect(card).toContain('data-cart-beneficiary');
+    expect(page).toContain("summary={review && setView?.status === 'in_cart' ? <CartSummary review={review} /> : undefined}");
+    expect(page).toContain('!hasCart(setView, viewerId, standaloneCart) && <CartSummary');
+  });
 });
