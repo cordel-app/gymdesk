@@ -570,7 +570,7 @@
     "product_set_no_plan": "Products only",
     "product_set_status_in_cart": "In Cart",
     "product_set_status_pending_payment": "Awaiting payment",
-    "product_set_status_expired": "Draft expired",
+    "product_set_status_expired": "Cart expired",
     "section_product_set": "Current Product Set",
     "section_one_off_products": "One-off Products",
     "section_recurring_products": "Recurring Products",
