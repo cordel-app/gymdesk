@@ -74,7 +74,6 @@ interface Props {
   /** #1325 PR 3b: the member's in-flight ProductSet versions. */
   productSets?: ProductSetRow[];
   /** #2747 stage 2: plans cancelled while awaiting their first payment, never assigned. */
-  cancelledSets?: ProductSetRow[];
   canWrite: boolean;
   /** Re-reads the Member's configuration and re-runs the Billing Simulation (§12). */
   onChanged: () => void;
@@ -86,7 +85,7 @@ interface Props {
 }
 
 export function MemberMembershipPlans({
-  memberId, memberName, memberEmail, plans, productSets = [], cancelledSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
+  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
   const locale = useLocale();
@@ -137,9 +136,8 @@ export function MemberMembershipPlans({
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
   // #2887: the Past list and its count come from one decision.
-  const past = pastPlans(plans, cancelledSets);
+  const past = pastPlans(plans, []);
   const history = past.history;
-  const pastCancelledSets = past.cancelledSets;
   // #2742: a plan the member chose in the Members App and has not paid yet has no
   // assignment row until the payment activates it; it is listed in Active from its
   // ProductSet version, labelled by that version's own `pending_payment` status.
@@ -307,11 +305,6 @@ export function MemberMembershipPlans({
             <span>({past.count})</span>
             <span aria-hidden="true" style={{ marginLeft: 'auto' }}>{pastOpen ? '▾' : '▸'}</span>
           </button>
-          {pastOpen && pastCancelledSets.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <PendingPaymentPlans sets={pastCancelledSets} spaced={history.length > 0} status="cancelled" />
-            </div>
-          )}
           {pastOpen && history.length > 0 && (
             <AssignedPlansTable
               rows={history}
