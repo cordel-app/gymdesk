@@ -23,6 +23,7 @@ import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tena
 import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
+import { markPlanForCancellation, unmarkPlanForCancellation } from './plan-pending-cancellation';
 import { handleDupEntry } from '../infra/db-helpers';
 import { resolveRequestActor } from '../domain/auditActor';
 import { cancelPendingProductSet, reconcileSetPayments } from './product-set-cancellation';
@@ -1735,6 +1736,47 @@ function computeUnusedValueWarnings(
   }
   return warnings;
 }
+
+/**
+ * #3007 stage 2(b): marks a running plan as pending cancellation in the member's open Draft
+ * (`to_be_canceled`, opening a Draft when there is none) and un-marks it again. Nothing is cancelled and
+ * nothing charged until the Draft is committed (Save & Pay / activation); discarding the Draft restores
+ * the plan. `POST /:id/close` and `DELETE /:id` are unchanged.
+ */
+userMembershipsRouter.post('/:id/mark-cancel', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const out = await db.transaction((tx) => markPlanForCancellation(tx, {
+      gymId, userMembershipId: id, today: new Date().toISOString().slice(0, 10),
+      actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (out.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (out.kind === 'not_running') return res.status(409).json({ error: 'not_running', status: out.status });
+    if (out.kind === 'in_flight') return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
+    if (out.kind === 'ok') {
+      recordAudit(req, { action: 'mark_cancel', entityType: 'user_membership', entityId: id, next: { status: 'to_be_canceled', product_set_id: out.productSetId } });
+      return res.json({ status: 'to_be_canceled', product_set_id: out.productSetId });
+    }
+    return res.json({ status: 'to_be_canceled' });
+  } catch (err) { next(err); }
+});
+
+userMembershipsRouter.post('/:id/unmark-cancel', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const n = await db.transaction((tx) => unmarkPlanForCancellation(tx, {
+      gymId, userMembershipId: id, actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (n === 0) return res.status(409).json({ error: 'not_marked' });
+    recordAudit(req, { action: 'unmark_cancel', entityType: 'user_membership', entityId: id, next: { status: 'active' } });
+    return res.json({ status: 'active' });
+  } catch (err) { next(err); }
+});
+
 
 userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);

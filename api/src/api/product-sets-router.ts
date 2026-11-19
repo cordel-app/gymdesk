@@ -717,7 +717,16 @@ async function reviewHandler(req: any, res: any, next: any) {
       for (const r of mRows) memberNames.set(Number(r.id), r.name ?? null);
     }
 
+    // #3007 stage 2(b): the plans the owner marked as pending cancellation are part of what this commit
+    // does; nothing is charged for them.
+    const { rows: cancelling } = await db.query<any>(
+      `SELECT pa.source_user_membership_id AS user_membership_id, mp.name AS plan_name
+         FROM plan_snapshots pa LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled' AND pa.source_user_membership_id IS NOT NULL
+        GROUP BY pa.source_user_membership_id, mp.name`,
+      [gymId, Number(set.owner_member_id)]);
     res.json({
+      plans_to_cancel: cancelling.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       initial_payment: initialPaymentBreakdown(lines, amountDue),
       contracted_items: contractedItems({ plans: contractView.plans, lines: contractView.lines, purchases: contractPurchases }, memberNames),
       payment_methods: paymentMethods,

@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { restorePendingCancellations } from './plan-pending-cancellation';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
@@ -90,6 +91,7 @@ export async function createDraft(tx: Tx, input: {
         `DELETE um FROM user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
           WHERE ps.id = ? AND um.status = 'in_cart'`, [inFlight.id]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
+      await restorePendingCancellations(tx, input.gymId, input.ownerMemberId);
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
     }
@@ -228,6 +230,8 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
       `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
     await discardDraftSet(tx, gymId, id);
+    // #3007: the plans the discarded Draft marked as pending cancellation run on as they were.
+    await restorePendingCancellations(tx, gymId, Number(row.owner_member_id));
     // #2967: Cancel is the whole cart, so the owner's standalone In Cart purchases go with it.
     await deleteStandaloneCartPurchases(tx, gymId, Number(row.owner_member_id));
     // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of

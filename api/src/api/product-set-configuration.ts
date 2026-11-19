@@ -1,4 +1,5 @@
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { commitPendingCancellations } from './plan-pending-cancellation';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
@@ -714,6 +715,10 @@ export async function activateWithEvents(tx: Tx, input: {
 
   const moved = await activate(tx, input.gymId, input.productSetId);
   if (moved.kind !== 'ok') return moved;
+
+  // #3007 stage 2(b): the plans the owner marked as pending cancellation are cancelled by this commit,
+  // before any obligation is generated for them.
+  await commitPendingCancellations(tx, { gymId: input.gymId, productSetId: input.productSetId, today: input.today, actor: input.actor ?? null });
 
   let replaced = 0;
   if (previousId != null) {
