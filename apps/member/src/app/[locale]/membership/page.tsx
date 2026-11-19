@@ -77,7 +77,7 @@ import {
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { CartSummary } from '@/components/CartSummary';
-import { CartCard, toCartCardItems } from '@/components/CartCard';
+import { CartCard, toCartCardItems, cartBeneficiaryLabel } from '@/components/CartCard';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -1223,7 +1223,8 @@ export default function MembershipPage() {
     // button stay outside the card, so a closed Summary never hides either.
     return (
       <div data-set-summary>
-        <CartSummary review={review} />
+        {/* #2973 stage 4: with a cart card the Summary lives inside it. */}
+        {!hasCart(setView, viewerId, standaloneCart) && <CartSummary review={review} />}
         {(reviewError || commitError) && (
           <p role="alert" style={{ ...styles.draftError, margin: '8px 0 0' }}>{t((commitError ?? reviewError) as any)}</p>
         )}
@@ -1278,7 +1279,7 @@ export default function MembershipPage() {
           counts={counts}
           staffEditing
           hintKeys={['membership.cart_staff_hint']}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
           footer={renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
         />
       </section>
@@ -1309,7 +1310,7 @@ export default function MembershipPage() {
           counts={counts}
           total={total}
           hintKeys={['membership.cart_pending_hint']}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
           actions={(
             <>
               <button
@@ -1369,7 +1370,7 @@ export default function MembershipPage() {
               {t('membership.draft_expires_in')} {remaining}
             </span>
           ) : undefined}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
           actions={(
             <>
               <button
@@ -1455,12 +1456,13 @@ export default function MembershipPage() {
           headingKey="membership.cart_heading"
           counts={counts}
           total={total}
+          summary={review && setView?.status === 'in_cart' ? <CartSummary review={review} /> : undefined}
           extra={remaining != null ? (
             <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
               {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
             </span>
           ) : undefined}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)))}
+          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
           actions={(
             <>
               <button
