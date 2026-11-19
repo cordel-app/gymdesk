@@ -62,14 +62,14 @@ interface SetRow {
 const dateOnly = (v: unknown): string | null =>
   v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
-async function closeAssignment(
+export async function closeAssignment(
   tx: Tx, gymId: string, id: number, endsAt: string, actor: string | null,
   /** `superseded` when a successor takes the plan over, `cancelled` when the member is left with none (#1991). */
   closedAs: 'cancelled' | 'superseded' = 'cancelled',
 ): Promise<string | null> {
   const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
     `SELECT status, member_id, ends_at FROM user_memberships
-      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','in_cart') FOR UPDATE`,
+      WHERE id = ? AND gym_id = ? AND status IN ('active','to_be_canceled','paused','pending_payment','in_cart') FOR UPDATE`,
     [id, gymId]);
   if (!before[0]) return null;
   // #2659 stage 2: a member's cancellation keeps the plan running to its last

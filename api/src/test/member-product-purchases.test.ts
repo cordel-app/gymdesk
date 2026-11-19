@@ -371,6 +371,8 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     const asked = await auth(request.post(base(m))).send({ product_id: fourWeekly });
     expect(asked.status).toBe(409);
     expect(asked.body).toMatchObject({ error: 'billing_frequency_differs', existing: ['month'], incoming: 'four_weeks' });
+    expect(asked.body.existing_items).toMatchObject([{ product_id: duo, name: 'Duo class', billing_frequency: 'month' }]);
+    expect(asked.body.incoming_item).toMatchObject({ product_id: fourWeekly, name: 'Four weekly locker', billing_frequency: 'four_weeks' });
     const lines = async () => (await db.query<any>(
       `SELECT COUNT(*) AS n FROM ${TEST_RECURRING_LINES} AS legacy WHERE gym_id = ? AND product_set_id = ?`,
       [gymId, first.body.product_set_id])).rows[0].n;
