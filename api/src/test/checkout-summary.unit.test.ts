@@ -104,3 +104,23 @@ describe('contractedItems', () => {
     expect(item.members).toEqual([]);
   });
 });
+
+describe('contractedItems — pending deletion (#3007 stage 4)', () => {
+  it('marks a plan and a recurring line the Draft ends, with their effective end date, and leaves the rest alone', () => {
+    const names = new Map<number, string | null>();
+    const items = contractedItems({
+      plans: [
+        { plan_name: 'Gold', billing_interval: 1, billing_unit: 'month', entitlement_only: false, beneficiaries: [], benefits: [], pending_deletion: true, ends_at: '2026-12-31' },
+        { plan_name: 'Silver', billing_interval: 1, billing_unit: 'month', entitlement_only: false, beneficiaries: [], benefits: [] },
+      ],
+      lines: [
+        { product_name: 'Locker', quantity: 1, billing_frequency: 'month', assigned_member_id: null, pending_deletion: true, ends_at: '2026-12-31' },
+        { product_name: 'Towel', quantity: 1, billing_frequency: 'month', assigned_member_id: null },
+      ],
+      purchases: [],
+    }, names);
+    expect(items.map((i) => i.pending_deletion)).toEqual([
+      { ends_on: '2026-12-31' }, null, { ends_on: '2026-12-31' }, null,
+    ]);
+  });
+});

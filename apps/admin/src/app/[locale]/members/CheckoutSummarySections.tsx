@@ -16,7 +16,7 @@
 
 import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
-import { cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
+import { alertTextColor, cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
 import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -123,6 +123,7 @@ function TotalRow({ label, value, strong }: { label: string; value: string; stro
 export function ContractedItemsSection({ items }: { items: ContractedItemLike[] | null | undefined }) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
+  const gymFmt = useGymFormatSettings();
   if (!items) return null;
   if (items.length === 0) return <p style={cardHintStyle}>{t('checkout_contracted_none')}</p>;
   const { recurring, oneOff } = splitContracted(items);
@@ -136,8 +137,15 @@ export function ContractedItemsSection({ items }: { items: ContractedItemLike[] 
       <div style={cardSubLabelStyle}>{label}</div>
       <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 14 }}>
         {list.map((i, n) => (
-          <li key={n} data-contracted-kind={i.kind}>
+          <li key={n} data-contracted-kind={i.kind} {...(i.pending_deletion ? { 'data-pending-deletion': true } : {})}
+            style={i.pending_deletion ? { color: alertTextColor } : undefined}>
             <strong>{i.name}</strong>
+            {i.pending_deletion && (
+              <>
+                {' '}<span data-deleted-chip style={{ border: `1px solid ${alertTextColor}`, borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 600 }}>{t('checkout_deleted')}</span>
+                {i.pending_deletion.ends_on ? ` · ${t('checkout_ends_on', { date: formatGymDateOnly(i.pending_deletion.ends_on, gymFmt) })}` : ''}
+              </>
+            )}
             {i.quantity != null && i.quantity > 1 ? ` × ${i.quantity}` : ''}
             {' · '}{i.period === 'one_off' ? t('checkout_one_off') : period(i)}
             {' · '}{members(i.members)}
