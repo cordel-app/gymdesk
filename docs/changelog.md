@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3063 (Members → Products Summary reads `Cart expired` instead of `Draft expired` for an expired in-cart Product Set; label only, en/es/ca)
 - **Done**: #3057 (Billing Event Simulation: Product / Plan has a fixed width and Remarks takes the leftover space, so Remarks sits next to Product / Plan instead of far right; column order unchanged; presentation only)
 - **Done**: #3058 (`+ Add Product` on Members → Products puts the new product row at the bottom of the table, after the existing products, instead of the top; `DataTable` takes `draftRowPosition`, default `top`; presentation only)
 - **Done**: #3045 follow-up 2 (Billing Event Simulation: the main table drops the Remarks column and is Date · Billing Event · Status · Amount; `Simulated` is a chip in the header row and in the item table; presentation only)
