@@ -21,6 +21,7 @@ import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, i
 import { primaryBtnSmall } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { MemberAvatar } from '@/components/MemberAvatar';
@@ -39,6 +40,13 @@ const valueCellStyle: React.CSSProperties = { padding: '8px 0', fontSize: 14, wh
 
 /** #2854: the selected Product's circular thumbnail, left of the Product selector. */
 export const PRODUCT_SELECT_THUMBNAIL_SIZE = 40;
+
+/** #3059: an item named in the billing-frequency confirmation. */
+export interface FrequencyPromptItem {
+  product_id: number; name: string; billing_frequency: string | null;
+  description: string | null; image_url: string | null; image_thumbnail_url: string | null;
+}
+interface FrequencyPrompt { existing: string[]; incoming: string; existingItems: FrequencyPromptItem[]; incomingItem: FrequencyPromptItem | null }
 
 type Outcome =
   | { kind: 'one_time_draft' }
@@ -98,7 +106,7 @@ export function useAddProductForm({
   // #2374: the Promotion toggled last, and the promotion selection whose required Products were confirmed.
   const [lastToggled, setLastToggled] = useState<number | null>(null);
   const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
-  const [frequencyPrompt, setFrequencyPrompt] = useState<{ existing: string[]; incoming: string } | null>(null);
+  const [frequencyPrompt, setFrequencyPrompt] = useState<FrequencyPrompt | null>(null);
 
   const product = useMemo(() => catalogue?.find((p) => p.id === productId) ?? null, [catalogue, productId]);
   const discountValue = parseDiscountInput(discount);
@@ -232,7 +240,11 @@ export function useAddProductForm({
       }
     } catch (err: any) {
       if (err?.body?.error === 'billing_frequency_differs' && Array.isArray(err.body.existing)) {
-        setFrequencyPrompt({ existing: err.body.existing, incoming: String(err.body.incoming) });
+        setFrequencyPrompt({
+          existing: err.body.existing, incoming: String(err.body.incoming),
+          existingItems: Array.isArray(err.body.existing_items) ? err.body.existing_items : [],
+          incomingItem: err.body.incoming_item ?? null,
+        });
       } else {
         setError(describe(err));
       }
@@ -419,10 +431,17 @@ export function AddProductFeedback({ form: f }: { form: AddProductForm }) {
       />
       <ConfirmDialog
         open={f.frequencyPrompt != null}
-        message={t('frequency_differs_message', {
-          existing: (f.frequencyPrompt?.existing ?? []).map((x) => billingFrequencyLabel(x, tFreq) ?? x).join(', '),
-          incoming: f.frequencyPrompt ? (billingFrequencyLabel(f.frequencyPrompt.incoming, tFreq) ?? f.frequencyPrompt.incoming) : '',
-        })}
+        title={t('frequency_differs_title')}
+        message={t('frequency_differs_message')}
+        details={f.frequencyPrompt ? (
+          <FrequencyMismatchItems
+            prompt={f.frequencyPrompt}
+            label={(x) => billingFrequencyLabel(x, tFreq) ?? x}
+            currentTitle={t('frequency_differs_current')}
+            addingTitle={t('frequency_differs_adding')}
+          />
+        ) : null}
+        question={t('frequency_differs_question')}
         confirmLabel={t('frequency_differs_continue')}
         cancelLabel={t('add_product_cancel')}
         onConfirm={() => f.create(true)}
@@ -537,4 +556,49 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
  */
 export function EditDraftLineForm(props: Omit<Parameters<typeof useAddProductForm>[0], 'recurringOnly' | 'edit'> & { edit: DraftLineEdit }) {
   return <AddProductPurchase {...props} recurringOnly />;
+}
+
+/**
+ * #3059 — the items behind a billing-frequency mismatch: the ones already in the cart or active,
+ * then the one being added, each a circular thumbnail (click: the Product modal), name and frequency.
+ */
+function FrequencyMismatchItems({ prompt, label, currentTitle, addingTitle }: {
+  prompt: FrequencyPrompt; label: (f: string) => string; currentTitle: string; addingTitle: string;
+}) {
+  const t = useTranslations('members');
+  const [shown, setShown] = useState<FrequencyPromptItem | null>(null);
+  const row = (it: FrequencyPromptItem) => (
+    <li key={it.product_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+      <button type="button" data-frequency-item-thumbnail aria-label={it.name}
+        onClick={(e) => { e.stopPropagation(); setShown(it); }}
+        style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+        <MemberAvatar name={it.name} imageUrl={it.image_thumbnail_url ?? it.image_url ?? null} size={32} />
+      </button>
+      <span style={{ fontSize: 14, minWidth: 0 }}>
+        {it.name}{it.billing_frequency ? ` — ${label(it.billing_frequency)}` : ''}
+      </span>
+    </li>
+  );
+  const list = (items: FrequencyPromptItem[]) => (
+    <ul style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', maxHeight: 180, overflowY: 'auto' }}>{items.map(row)}</ul>
+  );
+  return (
+    <div data-frequency-mismatch>
+      <ProfessionalServiceImageModal
+        target={shown ? { name: shown.name, imageUrl: shown.image_url, description: shown.description } : null}
+        onClose={() => setShown(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('purchase_exp_image_none')}
+        noDescriptionLabel={t('purchase_exp_no_description')}
+      />
+      <div style={{ fontWeight: 600, fontSize: 14 }}>{currentTitle}</div>
+      {list(prompt.existingItems)}
+      {prompt.incomingItem && (
+        <>
+          <div style={{ fontWeight: 600, fontSize: 14, marginTop: 12 }}>{addingTitle}</div>
+          {list([prompt.incomingItem])}
+        </>
+      )}
+    </div>
+  );
 }
