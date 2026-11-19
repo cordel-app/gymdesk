@@ -719,7 +719,7 @@ export interface MemberSetReview {
   currency: string;
   error: string | null;
   /** #2860 — what the Draft contracts and for whom (the server's; `members` empty = nobody named). */
-  contracted_items?: { kind: 'plan' | 'product'; name: string; members: { member_id: number; name: string | null }[] }[];
+  contracted_items?: { kind: 'plan' | 'product'; name: string; members: { member_id: number; name: string | null }[]; pending_deletion?: { ends_on: string | null } | null }[];
 }
 
 /**
@@ -736,6 +736,13 @@ export function reviewBeneficiary(
   if (!found) return null;
   if (found.members.length === 1 && found.members[0].name) return { name: found.members[0].name };
   return { family: true };
+}
+
+/** #3007 stage 5 — the items the Draft marks for deletion (the server's `pending_deletion`), kept visible until Save & Pay. */
+export function reviewPendingDeletions(review: Pick<MemberSetReview, 'contracted_items'> | null): { kind: 'plan' | 'product'; name: string; ends_on: string | null }[] {
+  return (review?.contracted_items ?? [])
+    .filter((c) => c.pending_deletion)
+    .map((c) => ({ kind: c.kind, name: c.name, ends_on: c.pending_deletion?.ends_on ?? null }));
 }
 
 /** §8 — *Products Contracted* is what the Draft adds, *Products Cancelled* what it takes away. */

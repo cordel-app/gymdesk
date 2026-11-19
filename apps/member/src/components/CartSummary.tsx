@@ -8,12 +8,14 @@ import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { memberTheme } from '@/lib/memberChrome';
 import {
   reviewFrequencyKey,
   reviewBeneficiary,
   reviewLineDiscount,
   reviewSections,
+  reviewPendingDeletions,
   type MemberSetReview,
 } from '@/lib/memberProducts';
 import { formatPaymentAmount, prepaidPaymentKey } from '@/lib/memberPayments';
@@ -22,6 +24,7 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
   const t = useTranslations();
   const gymFmt = useGymFormatSettings();
   const { contracted, cancelled } = reviewSections(review);
+  const pendingDeletions = reviewPendingDeletions(review);
   const currency = review.currency ?? 'EUR';
   const money = (n: number | null | undefined) => (n == null ? '—' : formatPaymentAmount(n, currency, gymFmt));
   const itemRow = (i: typeof contracted[number], k: string) => {
@@ -52,6 +55,18 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
       {cancelled.length > 0 && (<>
         <p style={S.label}>{t('membership.summary_cancelled')}</p>
         <ul style={S.list}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
+      </>)}
+      {pendingDeletions.length > 0 && (<>
+        <p style={S.label}>{t('membership.summary_deleted')}</p>
+        <ul style={S.list}>
+          {pendingDeletions.map((d, n) => (
+            <li key={`d-${n}`} data-pending-deletion style={{ ...S.item, color: memberTheme.statusError }}>
+              <span style={{ ...S.text, color: memberTheme.statusError }}>{d.name}</span>
+              <span style={{ ...S.meta, color: memberTheme.statusError, border: `1px solid ${memberTheme.statusError}`, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{t('membership.summary_deleted_chip')}</span>
+              {d.ends_on && <span style={{ ...S.meta, color: memberTheme.statusError }}>· {t('membership.summary_ends_on', { date: formatGymDateOnly(d.ends_on, gymFmt) })}</span>}
+            </li>
+          ))}
+        </ul>
       </>)}
       <p style={S.label}>{t('membership.summary_initial_payment')}</p>
       {review.immediate_lines.length === 0
