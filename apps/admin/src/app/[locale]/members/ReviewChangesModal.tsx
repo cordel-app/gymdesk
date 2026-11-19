@@ -25,6 +25,8 @@ interface Review extends ReviewLike {
   status: string;
   has_previous: boolean;
   changes: ChangeLike[];
+  /** #3007 — plans marked to be cancelled in this Draft; they end at Save & Pay and cost nothing. */
+  plans_to_cancel?: Array<{ user_membership_id: number; plan_name: string | null }>;
   immediate_lines: Array<{
     item_name: string | null; quantity: number; amount: number;
     regular_unit_price?: number | null; promotion_name?: string | null;
@@ -153,6 +155,7 @@ export function ReviewChangesModal({
         <div data-review-changes>
           {(() => {
             const { contracted, cancelled } = splitChanges(review.changes);
+            const planCancels = review.plans_to_cancel ?? [];
             const list = (items: ChangeLike[]) => (
               <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }}>
                 {items.map((c, i) => {
@@ -161,7 +164,7 @@ export function ReviewChangesModal({
                 })}
               </ul>
             );
-            if (review.changes.length === 0) {
+            if (review.changes.length === 0 && planCancels.length === 0) {
               return (<><div style={cardSectionLabelStyle}>{t('review_changes')}</div><p style={cardHintStyle}>{t('review_no_changes')}</p></>);
             }
             return (
@@ -169,7 +172,14 @@ export function ReviewChangesModal({
                 <div style={cardSectionLabelStyle}>{t('review_contracted')}</div>
                 {contracted.length === 0 ? <p style={cardHintStyle}>{t('review_contracted_none')}</p> : list(contracted)}
                 <div style={cardSectionLabelStyle}>{t('review_cancelled')}</div>
-                {cancelled.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+                {cancelled.length === 0 && planCancels.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+                {planCancels.length > 0 && (
+                  <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }} data-review-plan-cancels>
+                    {planCancels.map((p) => (
+                      <li key={p.user_membership_id}>{t('review_plan_cancelled', { plan: p.plan_name ?? '—' })}</li>
+                    ))}
+                  </ul>
+                )}
               </>
             );
           })()}
