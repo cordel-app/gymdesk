@@ -64,11 +64,13 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     `INSERT INTO product_promotion_snapshots
        (gym_id, member_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
         status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
-        modified_at, modified_by)
+        modified_at, modified_by, promotion_image_url, promotion_image_thumbnail_url)
      SELECT ump.gym_id, par.member_id, par.id, ump.id, ump.promotion_id,
             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), pr.name), ump.status, ump.snapshot, ump.applied_at,
             ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
-            ump.modified_by
+            ump.modified_by,
+            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_url')), pr.image_url),
+            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_thumbnail_url')), pr.image_thumbnail_url)
        FROM user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
        JOIN product_periodical_snapshots par ON par.source_id = ump.recurrent_snapshot_id AND par.gym_id = ump.gym_id
@@ -76,6 +78,8 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
      ON DUPLICATE KEY UPDATE
        member_id = VALUES(member_id), promotion_name = VALUES(promotion_name), status = VALUES(status),
        snapshot = VALUES(snapshot),
+       promotion_image_url = COALESCE(promotion_image_url, VALUES(promotion_image_url)),
+       promotion_image_thumbnail_url = COALESCE(promotion_image_thumbnail_url, VALUES(promotion_image_thumbnail_url)),
        consumed_at = VALUES(consumed_at), revoked_at = VALUES(revoked_at),
        modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
     [gymId, productSetId]);

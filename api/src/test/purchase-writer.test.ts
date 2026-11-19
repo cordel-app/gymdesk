@@ -146,6 +146,29 @@ afterAll(async () => {
   await db.end();
 });
 
+describe('a purchase Promotion freezes its image (#2624 stage 5)', () => {
+  it('keeps the image the Promotion had when applied, whatever happens to it later', async () => {
+    const m = await member();
+    const p = await product({ name: `Img ${uniq()}`, amount: '80.00', type: 'fee' });
+    const promo = await promotion({ name: `Img promo ${uniq()}` });
+    await grant(promo, p, 'oneoff', 'percentage_discount', 50);
+    await db.query('UPDATE promotions SET image_url = ?, image_thumbnail_url = ? WHERE id = ?',
+      ['https://img.test/full.webp', 'https://img.test/thumb.webp', promo]);
+    const saved = await auth(request.post(base(m))).send({ product_id: p, promotion_ids: [promo], draft: true });
+    expect(saved.status).toBe(201);
+    await db.query('UPDATE promotions SET image_url = ?, image_thumbnail_url = NULL WHERE id = ?',
+      ['https://img.test/other.webp', promo]);
+    const { rows } = await db.query<any>(
+      `SELECT pp.promotion_image_url u, pp.promotion_image_thumbnail_url t FROM product_promotion_snapshots pp
+         JOIN product_oneoff_snapshots s ON s.id = pp.product_oneoff_snapshot_id
+        WHERE s.source_id = ?`, [Number(saved.body.purchaseId)]);
+    expect(rows).toEqual([{ u: 'https://img.test/full.webp', t: 'https://img.test/thumb.webp' }]);
+    const list = await auth(request.get(`/members/${m}/products`));
+    const item = (list.body.items as any[]).find((r) => Number(r.id) === Number(saved.body.purchaseId));
+    expect(item.promotions[0].promotion_image_url).toBe('https://img.test/full.webp');
+  });
+});
+
 describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
   for (const type of ['fee', 'sessions'] as const) {
     it(`writes the ${SNAPSHOT_TABLE[type]} row, through draft, pay, completion and cancel`, async () => {

@@ -22,6 +22,9 @@ export interface PurchasedProductPromotion {
   regular_amount: number;
   final_amount: number;
   applied_at: string | null;
+  /** #2624 stage 5 — the Promotion's image as frozen with the application. */
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }
 
 /** One purchase, exactly as `GET /members/:id/products` answers it. */

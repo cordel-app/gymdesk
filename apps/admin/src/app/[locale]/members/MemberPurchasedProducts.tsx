@@ -407,7 +407,7 @@ export function MemberPurchasedProducts({
               benefitTreatmentLabel(tp as any, 'promotion', { action: p.benefit_action, value: p.benefit_value } as any),
               p.duration_cycles != null ? t('purchase_promotion_cycles', { count: p.duration_cycles }) : null,
             ].filter(Boolean).join(' · '),
-            imageUrl: null, // the purchase list carries no Product image (no API change here): the initial placeholder shows
+            imageUrl: p.promotion_image_thumbnail_url ?? p.promotion_image_url ?? null, // #2624 stage 5: the snapshot's frozen image
           }))}
           selectedIds={applied.map((p) => p.promotion_id)}
           onToggle={() => {}}
