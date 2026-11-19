@@ -382,7 +382,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
       return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
     }
     if (err instanceof BillingFrequencyDiffers) {
-      return res.status(409).json({ error: 'billing_frequency_differs', existing: err.existing, incoming: err.incoming });
+      return res.status(409).json({ error: 'billing_frequency_differs', existing: err.existing, incoming: err.incoming, existing_items: err.existingItems, incoming_item: err.incomingItem });
     }
     if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
     if (err?.status === 404) return res.status(404).json({ error: err.message });
