@@ -31,6 +31,7 @@ import {
   grossPrice,
   deletePurchaseDraft,
   expireStandalonePurchaseDrafts,
+  replacePurchaseDraft,
   saveProductPurchaseDraft,
   startProductPurchase,
 } from './me-products';
@@ -655,6 +656,75 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     if (err instanceof PricingRefused) {
       const { status, ...body } = pricingRefusalResponse(err.refusal);
       return res.status(status).json(body);
+    }
+    if (err instanceof PromotionRefused) {
+      return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
+    }
+    if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
+    if (err?.status === 404) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * #3070 — Edit of a saved one-time draft: its Promotions, direct discount and assignee. The offer is
+ * re-resolved and re-priced as a fresh Save does and the draft replaced atomically
+ * (`replacePurchaseDraft()`); the Product itself is fixed. Only an `in_cart` row of this member.
+ */
+memberProductPurchasesRouter.put('/:purchaseId', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const purchaseId = parseInt(String(req.params.purchaseId), 10);
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
+    const discount = directDiscountFrom(req, res);
+    if (!discount) return;
+    const promotionIds = promotionIdsFrom(req, res);
+    if (!promotionIds) return;
+    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId });
+    if (expired.some((e) => e.id === purchaseId)) {
+      return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
+    }
+    const { rows } = await db.query<any>(
+      `SELECT id, product_id, assigned_member_id FROM (
+         SELECT source_id AS id, product_id, assigned_member_id, gym_id, member_id, status FROM product_session_snapshots
+         UNION ALL
+         SELECT source_id AS id, product_id, assigned_member_id, gym_id, member_id, status FROM product_oneoff_snapshots
+       ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'in_cart'`,
+      [purchaseId, gymId, memberId],
+    );
+    const draft = rows[0];
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    const body = req.body ?? {};
+    const saved = await replacePurchaseDraft({
+      gymId,
+      memberId,
+      memberName: member.name,
+      memberEmail: member.email ?? '',
+      productId: Number(draft.product_id),
+      promotionIds,
+      directDiscountPercent: discount.percent,
+      staff: { actorName: resolveRequestActor(tenantCtx) ?? member.name },
+      assignedMemberInput: body.assigned_member_id !== undefined ? body.assigned_member_id : (draft.assigned_member_id ?? null),
+    }, purchaseId);
+    if (!saved) return res.status(404).json({ error: 'Draft not found' });
+    recordAudit(req, {
+      action: 'update', entityType: 'member', entityId: memberId,
+      previous: { product_purchase_draft: purchaseId },
+      next: { product_purchase_draft: saved.purchaseId, product_id: Number(draft.product_id), direct_discount_percent: discount.percent },
+    });
+    res.json({ kind: 'one_time_draft', ...saved });
+  } catch (err: any) {
+    if (err instanceof PurchaseRefused) {
+      const { status, ...b } = purchaseBlockResponse(err.block);
+      return res.status(status).json(b);
+    }
+    if (err instanceof PricingRefused) {
+      const { status, ...b } = pricingRefusalResponse(err.refusal);
+      return res.status(status).json(b);
     }
     if (err instanceof PromotionRefused) {
       return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });

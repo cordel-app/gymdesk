@@ -479,8 +479,8 @@ export async function saveProductPurchaseDraft(
  * read and pricing (outside any transaction, the very `resolvePurchase()` a paid
  * purchase runs) and the write (the record, its snapshot and its Promotions).
  */
-export async function resolveDraftPurchase(input: StartPurchaseInput) {
-  return resolvePurchase(input);
+export async function resolveDraftPurchase(input: StartPurchaseInput, ignoreDraftId?: number) {
+  return resolvePurchase(input, ignoreDraftId);
 }
 
 export async function writeDraftPurchase(
@@ -527,6 +527,31 @@ export async function deletePurchaseDraft(
     if (!rows[0]) return false;
     await deletePurchase(tx, gymId, purchaseId, { memberId, status: IN_CART_PURCHASE_STATUS });
     return true;
+  });
+}
+
+/**
+ * #3070 — **Edit** of a staff one-time draft: its Promotions, direct discount and assignee are
+ * changed by re-resolving and re-pricing the offer exactly as a fresh Save does, and the draft is
+ * replaced in one transaction (a refused offer leaves the old draft untouched). Only this member's
+ * own `in_cart` row can be replaced, so a pending or paid purchase is never reachable. The
+ * replacement is a new draft row, so its cart clock starts again.
+ */
+export async function replacePurchaseDraft(
+  input: StartPurchaseInput,
+  purchaseId: number,
+): Promise<{ purchaseId: number; amount: number; currency: string } | null> {
+  const resolved = await resolveDraftPurchase(input, purchaseId);
+  return db.transaction(async (tx) => {
+    if (!(await lockPurchase(tx, input.gymId, input.memberId, purchaseId))) return null;
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.id = ? AND mp.status = ?`,
+      [...memberPurchaseSnapshotParams(input.gymId, input.memberId), purchaseId, IN_CART_PURCHASE_STATUS],
+    );
+    if (!rows[0]) return null;
+    await deletePurchase(tx, input.gymId, purchaseId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
+    const id = await writeDraftPurchase(tx, input, resolved);
+    return { purchaseId: id, amount: resolved.snapshot.amount, currency: resolved.snapshot.currency };
   });
 }
 

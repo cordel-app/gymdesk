@@ -163,3 +163,31 @@ describe('Cancel hard-deletes only the draft', () => {
     expect(await statusOf(paid.body.purchaseId)).toBe('pending_payment');
   });
 });
+
+describe('Edit replaces only the draft (#3070)', () => {
+  it('re-prices the draft with a direct discount and keeps one draft for the Product', async () => {
+    const m = await member();
+    const p = await product('Edit draft', '40.00');
+    const saved = await auth(request.post(base(m))).send({ product_id: p, draft: true });
+    const edited = await auth(request.put(`${base(m)}/${saved.body.purchaseId}`)).send({ promotion_ids: [], direct_discount_percent: 50 });
+    expect(edited.status).toBe(200);
+    expect(edited.body.kind).toBe('one_time_draft');
+    expect(Number(edited.body.amount)).toBe(20);
+    expect(await statusOf(edited.body.purchaseId)).toBe('in_cart');
+    if (edited.body.purchaseId !== saved.body.purchaseId) expect(await statusOf(saved.body.purchaseId)).toBeNull();
+    const { rows } = await db.query<any>(`SELECT COUNT(*) AS n FROM ${TEST_PURCHASES} AS legacy WHERE member_id = ? AND product_id = ?`, [m, p]);
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it('404s for a pending purchase, another member’s draft and without auth', async () => {
+    const m = await member();
+    const other = await member();
+    const p = await product('Edit guard');
+    const saved = await auth(request.post(base(m))).send({ product_id: p, draft: true });
+    expect((await auth(request.put(`${base(other)}/${saved.body.purchaseId}`)).send({ promotion_ids: [] })).status).toBe(404);
+    expect((await request.put(`${base(m)}/${saved.body.purchaseId}`).send({ promotion_ids: [] })).status).toBe(401);
+    const paid = await auth(request.post(`${base(m)}/${saved.body.purchaseId}/pay`)).send({});
+    expect((await auth(request.put(`${base(m)}/${paid.body.purchaseId}`)).send({ promotion_ids: [] })).status).toBe(404);
+    expect(await statusOf(paid.body.purchaseId)).toBe('pending_payment');
+  });
+});
