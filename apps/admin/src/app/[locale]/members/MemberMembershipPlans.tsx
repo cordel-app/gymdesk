@@ -205,6 +205,8 @@ export function MemberMembershipPlans({
         // cancelled through the existing cancellation workflow.
         ...(plan.status === 'in_cart'
           ? [{ label: t('action_delete_draft_plan'), onClick: () => onCancelPlan(plan), danger: true }]
+          : plan.status === 'to_be_canceled'
+            ? [{ label: t('action_undo_cancel_plan'), onClick: () => onCancelPlan(plan) }]
           : plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
             ? [{ label: t('action_cancel_live_plan'), onClick: () => onCancelPlan(plan), danger: true }]
             : []),

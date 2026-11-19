@@ -188,7 +188,7 @@ export function MemberExpandedRow({
   const [cancelEndsOn, setCancelEndsOn] = useState<string | null>(null);
   useEffect(() => {
     setCancelEndsOn(null);
-    if (!cancelling || cancelling.status === 'in_cart') return;
+    if (!cancelling || cancelling.status === 'in_cart' || cancelling.status === 'to_be_canceled') return;
     let live = true;
     apiFetch<{ ends_on: string | null }>(`/user-memberships/${cancelling.id}/cancellation-preview`)
       .then((r) => { if (live) setCancelEndsOn(r.ends_on); }).catch(() => {});
@@ -341,7 +341,15 @@ export function MemberExpandedRow({
     try {
       // #1706: a Draft is discarded (hard delete, nothing billed); any other status keeps the cancel path.
       const isDraft = cancelling.status === 'in_cart';
-      await apiFetch(`/user-memberships/${cancelling.id}${isDraft ? '/draft' : ''}`, { method: 'DELETE' });
+      if (cancelling.status === 'to_be_canceled') {
+        // #3007: undo a pending cancellation; the plan was never cancelled.
+        await apiFetch(`/user-memberships/${cancelling.id}/unmark-cancel`, { method: 'POST', body: JSON.stringify({}) });
+      } else if (!isDraft && cancelling.status === 'active') {
+        // #3007: Cancel Plan marks the plan in the member's open Draft; it ends at Save & Pay.
+        await apiFetch(`/user-memberships/${cancelling.id}/mark-cancel`, { method: 'POST', body: JSON.stringify({}) });
+      } else {
+        await apiFetch(`/user-memberships/${cancelling.id}${isDraft ? '/draft' : ''}`, { method: 'DELETE' });
+      }
       setCancelling(null);
       reloadConfiguration();
     } catch (err: any) {
@@ -961,11 +969,13 @@ export function MemberExpandedRow({
 
       <ConfirmDialog
         open={cancelling !== null}
-        title={cancelling && cancelling.status !== 'in_cart' ? t('members.cancel_plan_title') : undefined}
+        title={cancelling && cancelling.status !== 'in_cart' ? (cancelling.status === 'to_be_canceled' ? t('members.action_undo_cancel_plan') : t('members.cancel_plan_title')) : undefined}
         message={cancelling?.status === 'in_cart' ? t('members.confirm_discard_draft')
+          : cancelling?.status === 'to_be_canceled' ? t('members.confirm_undo_cancel_plan')
+          : cancelling?.status === 'active' ? t('members.confirm_mark_cancel_plan')
           : cancelEndsOn ? t('members.confirm_cancel_plan_until', { date: formatGymDateOnly(cancelEndsOn, gymFmt) })
           : t('members.confirm_cancel_plan')}
-        confirmLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
+        confirmLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_confirm') : cancelling?.status === 'to_be_canceled' ? t('members.action_undo_cancel_plan') : t('members.action_cancel_plan')}
         cancelLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
