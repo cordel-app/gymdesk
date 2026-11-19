@@ -8,6 +8,8 @@ import { GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../dom
 import { currentMembershipFees } from './membership-fee-pricing';
 import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
 import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } from '../domain/membershipFeeScope';
+import { cancellationEndDate } from '../domain/cancellationEntitlement';
+import { loadPaidThrough } from './cancellation-entitlement';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { toProductBenefit } from '../domain/productBenefitActions';
 
@@ -56,6 +58,11 @@ export interface MemberProductSetLine {
   /** #2781 — this line's own status (`productLineStatus()`), never the version's. */
   status: ProductLineStatus;
   ends_at: string | null;
+  /**
+   * #3007 stage 4 — the Draft ends this line (it ran with no end date in the version it was
+   * cloned from): the Summary shows it as deleted with `ends_at` as its effective end date.
+   */
+  pending_deletion: boolean;
 }
 
 const LINE_COLUMNS = `s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
@@ -105,6 +112,8 @@ export interface MemberProductSetPlan {
   entitlement_only: boolean;
   starts_at: string | null;
   ends_at: string | null;
+  /** #3007 stage 4 — the plan is marked `to_be_canceled` in this Draft; `ends_at` is then the date it would end on. */
+  pending_deletion: boolean;
   membership_fee: number | null;
   /**
    * #2834 stage 2 — the snapshot's Membership Fee scope and how many fees it owes per cycle
@@ -147,6 +156,7 @@ export async function loadMemberProductSetView(
   const previous = set.previous_product_set_id != null
     ? await linesOf(gymId, Number(set.previous_product_set_id), 'ps.owner_member_id') : [];
   const previousRefs = new Set(previous.map((r) => Number(r.line_ref)));
+  const previousEnds = new Map(previous.map((r) => [Number(r.line_ref), r.ends_on ?? null] as const));
   const currentRefs = new Set(allLines.map((r) => Number(r.line_ref)));
 
   const promos = await loadRecurringLinePromotions(gymId, lines.map((r) => {
@@ -189,6 +199,8 @@ export async function loadMemberProductSetView(
         endsAt: r.ends_on ?? null, startsAt: r.starts_on ?? null, today: String(r.today),
       }),
       ends_at: r.ends_on ?? null,
+      pending_deletion: set.status === 'in_cart' && change === 'inherited' && r.ends_on != null
+        && previousEnds.get(Number(r.line_ref)) == null,
     };
   };
 
@@ -274,6 +286,11 @@ export async function loadMemberProductSetView(
     ? planRows.filter((r) => r.user_membership_id != null && Number(r.entitlement_only) === 0).map((r) => Number(r.user_membership_id))
     : [];
   const fees = pricedIds.length > 0 ? await currentMembershipFees(gymId, pricedIds) : new Map<number, number>();
+  // #3007 stage 4: a plan marked `to_be_canceled` in this Draft shows the end date Save & Pay would
+  // give it — the one cancellation rule over the paid periods, nothing stored.
+  const marked = set.status === 'in_cart' ? planRows.filter((r) => r.lifecycle_status === 'to_be_canceled') : [];
+  const paidThrough = marked.length > 0 ? await loadPaidThrough(db as any, gymId, Number(set.id)) : null;
+  const todayIso = new Date().toISOString().slice(0, 10);
   const plans: MemberProductSetPlan[] = planRows
     .map((r) => {
       const umId = r.user_membership_id == null ? null : Number(r.user_membership_id);
@@ -292,7 +309,10 @@ export async function loadMemberProductSetView(
         status: r.lifecycle_status ?? String(set.status),
         entitlement_only: Number(r.entitlement_only) === 1,
         starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
-        ends_at: dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
+        ends_at: r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart'
+          ? cancellationEndDate({ paidThrough, today: todayIso, assignmentStart: dateOnly(r.um_starts_at ?? r.snapshot_starts_at) ?? todayIso })
+          : dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
+        pending_deletion: r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart',
         membership_fee: fee == null ? null : round2(fee),
         membership_fee_scope: toMembershipFeeScope(r.membership_fee_scope),
         membership_fee_units: membershipFeeUnits(

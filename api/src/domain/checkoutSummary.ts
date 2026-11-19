@@ -183,6 +183,8 @@ export interface ContractedItem {
   quantity: number | null;
   /** Who it is for; empty when it is the whole family's (a Shared line of a plan). */
   members: ContractedMember[];
+  /** #3007 stage 4 — the Draft ends this item; `ends_on` is its effective end date. Not yet cancelled. */
+  pending_deletion: { ends_on: string | null } | null;
   /** A plan's included Products, in the plan's own frozen lines. */
   included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMember[] }>;
 }
@@ -194,6 +196,8 @@ export interface ContractPlanLike {
   entitlement_only: boolean;
   beneficiaries: Array<{ member_id: number; name: string | null }>;
   benefits: Array<{ name: string; quantity: number; billing_frequency: string | null; assigned_member_id: number | null; member_name: string | null }>;
+  pending_deletion?: boolean;
+  ends_at?: string | null;
 }
 
 export interface ContractLineLike {
@@ -201,6 +205,8 @@ export interface ContractLineLike {
   quantity: number;
   billing_frequency: string | null;
   assigned_member_id: number | null;
+  pending_deletion?: boolean;
+  ends_at?: string | null;
 }
 
 export interface ContractPurchaseLike {
@@ -233,6 +239,7 @@ export function contractedItems(
       billing_frequency: null,
       cadence: p.billing_interval != null && p.billing_unit ? { interval: Number(p.billing_interval), unit: p.billing_unit } : null,
       quantity: null,
+      pending_deletion: p.pending_deletion ? { ends_on: p.ends_at ?? null } : null,
       members: p.beneficiaries.map((b) => ({ member_id: b.member_id, name: b.name })),
       included: p.benefits.map((b) => ({
         name: b.name, billing_frequency: b.billing_frequency, quantity: b.quantity,
@@ -245,6 +252,7 @@ export function contractedItems(
       kind: 'product', name: l.product_name,
       period: isRecurring(l.billing_frequency) ? 'recurring' : 'one_off',
       billing_frequency: l.billing_frequency, cadence: null, quantity: l.quantity,
+      pending_deletion: l.pending_deletion ? { ends_on: l.ends_at ?? null } : null,
       members: member(l.assigned_member_id), included: [],
     });
   }
@@ -252,6 +260,7 @@ export function contractedItems(
     out.push({
       kind: 'product', name: p.product_name, period: 'one_off',
       billing_frequency: p.billing_frequency, cadence: null, quantity: null,
+      pending_deletion: null,
       members: member(p.assigned_member_id ?? p.member_id), included: [],
     });
   }

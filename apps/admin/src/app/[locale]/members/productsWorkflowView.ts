@@ -79,6 +79,8 @@ export interface ContractedItemLike {
   billing_frequency: string | null;
   cadence: { interval: number; unit: string } | null;
   quantity: number | null;
+  /** #3007 stage 4 — the Draft ends this item; shown as deleted with this effective end date. */
+  pending_deletion?: { ends_on: string | null } | null;
   members: ContractedMemberLike[];
   included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMemberLike[] }>;
 }
