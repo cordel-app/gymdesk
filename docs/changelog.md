@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2624 stage 5 (a Promotion applied to a Product freezes its `image_url` / `image_thumbnail_url` in `product_promotion_snapshots` (migration 443, existing rows filled once from the live Promotion), written by `insertPurchasePromotion()` and the recurring-line sync and never moved after; `GET /members/:id/products` reports them on each applied Promotion and the Products row's Promotion thumbnail reads them, so a saved Product shows the same picture as the live Promotion did when it was applied)
 - **Done**: #3059 (the billing-frequency confirmation when adding a recurring Product names the cart / active items and the item being added, each with a circular thumbnail that opens the Product modal; `409 billing_frequency_differs` also returns `existing_items` and `incoming_item`; no billing rule changed)
 - **Done**: #3057 (Billing Event Simulation: Product / Plan has a fixed width and Remarks takes the leftover space, so Remarks sits next to Product / Plan instead of far right; column order unchanged; presentation only)
 - **Done**: #3058 (`+ Add Product` on Members → Products puts the new product row at the bottom of the table, after the existing products, instead of the top; `DataTable` takes `draftRowPosition`, default `top`; presentation only)
