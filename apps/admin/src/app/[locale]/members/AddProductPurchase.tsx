@@ -346,6 +346,12 @@ export function addProductDraftCells(
         ))}
       </select>
       </div>
+      {/* #3021 — the billing frequency stays in the product cell while adding or editing, as in the read-only row. */}
+      {product && (
+        <div data-product-frequency style={{ ...cardHintStyle, fontSize: 12, margin: '2px 0 0' }}>
+          {billingFrequencyLabel(product.billing_frequency, f.tFreq) ?? '—'}
+        </div>
+      )}
       {opts.promotionsInCell === false ? null : productPromotionsCell(f)}
       </div>
     ),
