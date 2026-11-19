@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { CartSummary } from '@/components/CartSummary';
-import { CartCard, toCartCardItems } from '@/components/CartCard';
+import { CartCard, toCartCardItems, cartBeneficiaryLabel } from '@/components/CartCard';
 import {
   EMPTY_STANDALONE_CART,
   cartCounts,
@@ -99,7 +99,7 @@ export function HomeCartCard({ viewerId }: { viewerId: number | null }) {
       staffEditing={phase === 'awaiting_staff'}
       hintKeys={phase === 'awaiting_staff' ? ['membership.cart_staff_hint'] : []}
       summary={review && phase === 'draft' ? <CartSummary review={review} /> : undefined}
-      items={toCartCardItems(items as any, (a, c) => (a == null ? null : formatPaymentAmount(a, c ?? currency, gymFormat)))}
+      items={toCartCardItems(items as any, (a, c) => (a == null ? null : formatPaymentAmount(a, c ?? currency, gymFormat)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
     />
   );
 }
