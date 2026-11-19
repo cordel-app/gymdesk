@@ -40,3 +40,13 @@ describe('shared cart renderer', () => {
     expect(page).toContain('!hasCart(setView, viewerId, standaloneCart) && <CartSummary');
   });
 });
+
+// #3007 stage 5 — the Summary draws what the Draft marks for deletion.
+describe('cart Summary pending deletions (#3007 stage 5)', () => {
+  it('reads pending_deletion from the review and renders it in CartSummary', () => {
+    const lib = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../../apps/member/src/lib/memberProducts.ts'), 'utf8');
+    const cmp = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../../apps/member/src/components/CartSummary.tsx'), 'utf8');
+    expect(lib).toContain('reviewPendingDeletions');
+    expect(cmp).toContain('data-pending-deletion');
+  });
+});
