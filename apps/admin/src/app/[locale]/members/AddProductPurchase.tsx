@@ -59,6 +59,8 @@ type Outcome =
  * changes that line of the same Draft and nothing else.
  */
 export interface DraftLineEdit {
+  /** #3070 — `one_time`: a saved one-time draft (`lineId` is the purchase id, no quantity); default `recurring`. */
+  kind?: 'recurring' | 'one_time';
   lineId: number;
   productId: number;
   quantity: number;
@@ -189,13 +191,14 @@ export function useAddProductForm({
     setBusy(true);
     setError(null);
     try {
-      await apiFetch(`${base}/recurring/${edit.lineId}`, {
+      const oneTime = edit.kind === 'one_time';
+      await apiFetch(oneTime ? `${base}/${edit.lineId}` : `${base}/recurring/${edit.lineId}`, {
         method: 'PUT',
         body: JSON.stringify({
-          quantity: quantityValue,
+          ...(oneTime ? {} : { quantity: quantityValue }),
           promotion_ids: promotionIds,
           // The direct discount is the Admin's alone; anyone else leaves it as stored.
-          ...(isAdmin ? { direct_discount_percent: discountValue } : {}),
+          ...(isAdmin ? { direct_discount_percent: discountValue } : oneTime ? { direct_discount_percent: edit.directDiscountPercent } : {}),
         }),
       });
       // The edited line is listed with its new figures; the form closes.
@@ -254,7 +257,7 @@ export function useAddProductForm({
   }
 
   const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue)
-    && (!edit || quantityValid);
+    && (!edit || edit.kind === 'one_time' || quantityValid);
   return {
     edit, quantity, setQuantity, quantityValid,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
@@ -509,7 +512,7 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
-        {form.edit && (
+        {form.edit && form.edit.kind !== 'one_time' && (
           <div style={{ flex: '0 0 96px' }}>
             <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>
             <input

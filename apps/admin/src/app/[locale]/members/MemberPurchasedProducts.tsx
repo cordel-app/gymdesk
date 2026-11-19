@@ -114,7 +114,6 @@ export function MemberPurchasedProducts({
   const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'), t('purchase_cart_expired_error'));
   const draftBusy = draft.busy;
   const draftError = draft.error;
-  const payDraft = (item: PurchasedProduct) => draft.pay(item.id);
   const discardDraft = async (item: PurchasedProduct) => { if (await draft.discard(item.id)) setDiscarding(null); };
   const [statusFilter, setStatusFilter] = useState<string>(PURCHASE_STATUS_FILTER_DEFAULT);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
@@ -136,14 +135,15 @@ export function MemberPurchasedProducts({
   useEffect(() => { if (committedKey) setEditing(null); }, [committedKey]);
   // #3020 — `⋮ → Edit` turns the row itself into the add form (same fields, same cells): no second panel below it.
   const editForm = useAddProductForm({
-    memberId, isAdmin, canPay, recurringOnly: true, embedded: true, enabled: editing !== null,
+    memberId, isAdmin, canPay, recurringOnly: editing?.edit.kind !== 'one_time', embedded: true, enabled: editing !== null,
     edit: editing?.edit ?? null, onClose: () => setEditing(null), onChanged,
   });
 
-  function startEdit(item: PurchasedProduct, lineId: number) {
+  function startEdit(item: PurchasedProduct, lineId: number, kind: 'recurring' | 'one_time' = 'recurring') {
     setEditing({
       rowId: item.id,
       edit: {
+        kind,
         lineId,
         productId: item.product_id,
         quantity: item.quantity ?? 1,
@@ -325,8 +325,10 @@ export function MemberPurchasedProducts({
             items={[
               ...(isOneTimeDraft ? [
                 {
-                  label: t('purchase_action_pay_draft'),
-                  onClick: () => { void payDraft(item); },
+                  // #3070 — a one-time draft is edited like any other product line; paying it is the cart's
+                  // Save & Pay (no Pay in this menu).
+                  label: t('edit'),
+                  onClick: () => startEdit(item, item.id, 'one_time'),
                   disabled: !canWrite || draftBusy,
                   title: canWrite ? undefined : t('products_add_read_only'),
                 },
@@ -386,7 +388,7 @@ export function MemberPurchasedProducts({
     ].filter(Boolean).join(' · ')).join(', ');
     return {
       product: c.product,
-      quantity: <span data-edit-product-quantity><EditQuantityField form={editForm} label={t('draft_line_quantity')} /></span>,
+      quantity: editing?.edit.kind === 'one_time' ? String(editing.edit.quantity) : <span data-edit-product-quantity><EditQuantityField form={editForm} label={t('draft_line_quantity')} /></span>,
       price: c.price, tax: c.tax, promotion: c.promotion, promotion_benefit: benefit, discount: c.discount, final: c.final,
     };
   })() : null;
