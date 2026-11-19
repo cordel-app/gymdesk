@@ -17,6 +17,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { BillingEventSimulationPanel } from '@/components/BillingEventSimulationPanel';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
+import { exampleTimelineCycleNote } from '@/lib/exampleTimeline';
+import { ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS } from '@/components/assignedPlan/types';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { cardHintStyle, cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -171,6 +173,12 @@ export function ProductSetForecast({ forecast, loading, error, chartSimulation, 
         formatDate={formatDate}
         detailsTitle={tPlan('section_billing_simulation_details')}
         hideDetails={hideDetails}
+        cycleNote={(() => {
+          // #3073 — the same cycle marker the Plan and Assigned Plan simulations carry,
+          // from the same rule and keys; the cycle itself is the server's.
+          const note = exampleTimelineCycleNote(forecast?.cycle ?? null);
+          return note ? translate(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note]) : null;
+        })()}
       />
     </>
   );
