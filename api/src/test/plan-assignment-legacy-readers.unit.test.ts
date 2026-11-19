@@ -190,7 +190,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   it('M6b-17: the pending-payment plan read and the Billing Simulation loader read plan_snapshots', () => {
     for (const file of ['api/me.ts', 'api/billing-simulation.ts']) expect(LEGACY_STATEMENTS[file]).toBeUndefined();
     const me = readFileSync(join(API_SRC, 'api/me.ts'), 'utf8');
-    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(5);
+    expect(me.split('FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
     expect(readFileSync(join(API_SRC, 'api/billing-simulation.ts'), 'utf8')).toContain('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um');
   });
 

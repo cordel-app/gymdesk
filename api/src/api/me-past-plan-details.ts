@@ -21,7 +21,7 @@ import {
 import { assignmentPlanSnapshotId } from './assignment-config';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { membershipFeeBenefitsFromSnapshot } from './membership-promotions';
-import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
+import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, promotionHolderSql } from './plan-snapshot-lines';
 
 export type MemberPastPlanWithDetails = MemberPastPlan & { details: PastPlanDetails };
 
@@ -95,46 +95,38 @@ export async function attachPastPlanDetails(
     }
   }
 
-  // 4. The Promotion applications: a plan Promotion belongs to the assignment it
-  //    was applied to (#1995); a cancelled set that never had one keeps its own.
-  //    Line-owned Product Promotions (`recurrent_snapshot_id`) are not the plan's.
-  const appsByAssignment = new Map<number, PastPlanPromotionRow[]>();
-  const appsBySet = new Map<number, PastPlanPromotionRow[]>();
-  const conditions: string[] = [];
-  const params: unknown[] = [gymId];
-  if (assignmentIds.length > 0) {
-    conditions.push(`ump.user_membership_id IN (${marks(assignmentIds.length)})`);
-    params.push(...assignmentIds);
+  // 4. The Promotion applications are the plan snapshot's own `plan_promotion_snapshots` rows
+  //    (#3026 stage 3b), read through the snapshot that holds them. `id` stays the legacy
+  //    application id (`source_id`), which the grant snapshot rows are keyed by.
+  const appsBySnapshot = new Map<number, PastPlanPromotionRow[]>();
+  if (snapshotIds.length > 0) {
+    const { rows: apps } = await db.query<any>(
+      `SELECT pa.id AS plan_snapshot_id, pps.source_id AS id, pps.status, pps.snapshot,
+              pps.applied_at, pps.revoked_at
+         FROM plan_snapshots pa
+         JOIN plan_promotion_snapshots pps
+           ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+        WHERE pa.gym_id = ? AND pa.id IN (${marks(snapshotIds.length)}) AND pps.source_id IS NOT NULL
+        ORDER BY pps.applied_at, pps.id`,
+      [gymId, ...snapshotIds],
+    );
+    for (const a of apps) {
+      const list = appsBySnapshot.get(Number(a.plan_snapshot_id)) ?? [];
+      list.push(a);
+      appsBySnapshot.set(Number(a.plan_snapshot_id), list);
+    }
   }
-  if (setIds.length > 0) {
-    conditions.push(`(ump.user_membership_id IS NULL AND ump.product_set_id IN (${marks(setIds.length)}))`);
-    params.push(...setIds);
-  }
-  const { rows: apps } = await db.query<any>(
-    `SELECT ump.id, ump.user_membership_id, ump.product_set_id, ump.status, ump.snapshot,
-            ump.applied_at, ump.revoked_at
-       FROM user_membership_promotions ump
-      WHERE ump.gym_id = ? AND ump.recurrent_snapshot_id IS NULL AND (${conditions.join(' OR ')})
-      ORDER BY ump.applied_at, ump.id`,
-    params,
-  );
-  for (const a of apps) {
-    const target = a.user_membership_id != null ? appsByAssignment : appsBySet;
-    const key = Number(a.user_membership_id ?? a.product_set_id);
-    const list = target.get(key) ?? [];
-    list.push(a);
-    target.set(key, list);
-  }
+  const allApps = [...appsBySnapshot.values()].flat();
 
   // 5. What each application granted, from its own grant snapshot rows.
-  const grants = await loadPromotionGrantSnapshots(gymId, apps.map((a: any) => Number(a.id)));
+  const grants = await loadPromotionGrantSnapshots(gymId, allApps.map((a: any) => Number(a.id)));
 
   return past.map((plan) => {
     const isSet = plan.product_set_id != null;
     const key = isSet ? Number(plan.product_set_id) : plan.id;
     const snapshotId = (isSet ? snapshotBySet : snapshotByAssignment).get(key);
     const planRow = snapshotId != null ? planById.get(snapshotId) : null;
-    const promotions = ((isSet ? appsBySet : appsByAssignment).get(key) ?? []).map((app) => {
+    const promotions = (appsBySnapshot.get(snapshotId ?? -1) ?? []).map((app) => {
       const granted: PastPlanPromotionGrant[] = (grants.get(Number(app.id)) ?? []).map((g) => ({
         product_name: g.name,
         quantity: g.quantity,
