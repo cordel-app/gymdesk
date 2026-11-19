@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3057 (Billing Event Simulation: Product / Plan has a fixed width and Remarks takes the leftover space, so Remarks sits next to Product / Plan instead of far right; column order unchanged; presentation only)
 - **Done**: #3058 (`+ Add Product` on Members → Products puts the new product row at the bottom of the table, after the existing products, instead of the top; `DataTable` takes `draftRowPosition`, default `top`; presentation only)
 - **Done**: #3045 follow-up 2 (Billing Event Simulation: the main table drops the Remarks column and is Date · Billing Event · Status · Amount; `Simulated` is a chip in the header row and in the item table; presentation only)
 - **Done**: #3021 stage 2 (Members → Products row follow-up: the Product's thumbnail opens the Product modal, the billing frequency sits in the header under the name, Applied tax moves to the expanded row, the expanded facts use a compact three-column layout, and Save / Cancel of an edited row sit bottom-left of the product. `GET /members/:id/products` also reports the Product's `image_url` / `image_thumbnail_url` as a live read like the rest of its configuration.)
