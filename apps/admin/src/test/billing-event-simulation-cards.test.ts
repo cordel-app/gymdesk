@@ -174,8 +174,8 @@ describe('#955 — the presentation is one component, in the Example Timeline’
     }
   });
 
-  it('#3045: the main table has exactly Date, Name, Remarks, Status and Amount, and every row says Simulated', () => {
-    const order = ['simulation_col_date', 'simulation_col_name', 'simulation_col_remarks',
+  it('#3045: the main table has exactly Date, Name, Status and Amount, with Status as a chip, and every row says Simulated', () => {
+    const order = ['simulation_col_date', 'simulation_col_name',
       'simulation_col_status', 'simulation_col_amount'];
     const at = order.map((k) => componentSrc.indexOf(`t('${k}')`, componentSrc.indexOf('function MainTableHeader')));
     for (let i = 0; i < at.length; i++) {

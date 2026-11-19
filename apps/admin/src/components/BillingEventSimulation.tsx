@@ -43,6 +43,7 @@ import {
   timelineThStyle,
 } from './ExampleTimeline';
 import { innerCardStyle, secondaryBtnSmall } from './formChrome';
+import { listNameBadgeStyle } from './listChrome';
 import {
   BillingEventSimulationBenefit,
   BillingEventSimulationData,
@@ -208,7 +209,7 @@ export function BillingEventTable({
                   )}
                 </td>
                 <td style={timelineTdStyle}>{statusCell(line, t, tFreq as any)}</td>
-                <td style={timelineTdStyle}>{t('simulation_status_simulated')}</td>
+                <td style={timelineTdStyle}><span style={{ ...listNameBadgeStyle, marginLeft: 0 }}>{t('simulation_status_simulated')}</span></td>
                 <td style={{ ...timelineTdStyle, textAlign: 'right', color: TIMELINE_TONE_TEXT[tone] }}>
                   {fmtMoney(line.actual_charge)}
                 </td>
@@ -257,34 +258,7 @@ function CycleGutter({ cell, label }: { cell: ExampleTimelineRowCycle | null; la
 }
 
 /**
- * #3045 — the Remarks cell: a concise summary of how the event's amount comes
- * about, assembled from what the server already reported on its lines (the
- * promotions and benefits applied, proration, pre-payment). It words facts and
- * computes nothing; the full item-level breakdown stays in the expanded table.
- */
-function remarksFor(
-  group: BillingEventSimulationDate, t: Translate,
-  tFreq: (key: string, values?: Record<string, number>) => string,
-): string {
-  const parts: string[] = [];
-  const add = (s: string | null | undefined) => { if (s && !parts.includes(s)) parts.push(s); };
-  for (const line of group.lines) {
-    for (const b of line.benefits) {
-      add(t(simulationPriceLabelKey(b), { value: b.value ?? 0, amount: fmtMoney(b.value ?? 0) })
-        + (b.name ? ` (${b.name})` : ''));
-    }
-    if (line.prepaid_periods != null) {
-      add(prepaidPaymentLabel(line.prepaid_periods, line.prepaid_cadence ?? null, tFreq));
-    }
-    if (line.proration != null) {
-      add(t('simulation_prorated', { days: line.proration.prorated_days, period: line.proration.period_days }));
-    }
-  }
-  return parts.join(' · ');
-}
-
-/**
- * One billing period: a row of the five-column main table (Date, Name, Remarks,
+ * One billing period: a row of the four-column main table (Date, Name,
  * Status, Amount). The whole row is the expand/collapse control (`<button>` +
  * `aria-expanded`); the open row shows the unchanged item-level table. Status is
  * always "Simulated" (#3045): a projection is never an actual billing event.
@@ -306,8 +280,7 @@ function BillingPeriodCard({
           <span aria-hidden="true" style={chevron}>{expanded ? '▾' : '▸'}</span> {formatDate(group.date)}
         </span>
         <span style={mainCell}>{group.name ?? (group.kind === 'initial_payment' ? t('simulation_initial_payment') : '')}</span>
-        <span style={{ ...mainCell, color: '#666' }}>{remarksFor(group, t, tFreq as any)}</span>
-        <span style={mainCell}>{t('simulation_status_simulated')}</span>
+        <span style={mainCell}><span style={listNameBadgeStyle}>{t('simulation_status_simulated')}</span></span>
         <span style={{ ...mainCell, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(group.total)}</span>
       </button>
       {expanded && <BillingEventTable group={group} t={t} formatDate={formatDate} />}
@@ -315,13 +288,12 @@ function BillingPeriodCard({
   );
 }
 
-/** The main table's header row — exactly five columns, in this order. */
+/** The main table's header row — exactly four columns, in this order. */
 function MainTableHeader({ t }: { t: Translate }) {
   return (
     <div style={{ ...mainGrid, padding: '4px 12px' }} role="row">
       <span style={mainHead}>{t('simulation_col_date')}</span>
       <span style={mainHead}>{t('simulation_col_name')}</span>
-      <span style={mainHead}>{t('simulation_col_remarks')}</span>
       <span style={mainHead}>{t('simulation_col_status')}</span>
       <span style={{ ...mainHead, textAlign: 'right' }}>{t('simulation_col_amount')}</span>
     </div>
@@ -476,9 +448,9 @@ const cycleNoteStyle: React.CSSProperties = {
   margin: '6px 0 0', paddingLeft: CYCLE_GUTTER_WIDTH, fontSize: 11, color: TIMELINE_CYCLE_TEXT,
 };
 
-/** #3045 — the five main columns: Date · Name · Remarks · Status · Amount. */
+/** #3045 — the four main columns: Date · Name · Status · Amount. */
 const mainGrid: React.CSSProperties = {
-  display: 'grid', gridTemplateColumns: '130px minmax(120px, 1.2fr) minmax(120px, 2fr) 90px 90px',
+  display: 'grid', gridTemplateColumns: '130px minmax(120px, 1fr) 100px 90px',
   columnGap: 8, alignItems: 'start',
 };
 const mainCell: React.CSSProperties = { minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left' };
