@@ -69,6 +69,7 @@ import { feeUnitBenefits, type FeeMemberDiscount } from './feeMemberDiscounts';
 import { advanceBillingDate } from './billingDate';
 import { cadenceForFrequency } from './scheduleAllocation';
 import { prorate, promotionCycleShift } from './proration';
+import { calendarAnchorOnOrBefore, calendarGridOf } from './calendarSchedule';
 import {
   PlanDuration,
   PlanDurationStatus,
@@ -1330,7 +1331,13 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
   const onPlanCadence = itemCadence != null && a.recurringInterval != null && a.recurringUnit != null
     && Number(itemCadence.interval) === Number(a.recurringInterval) && itemCadence.unit === a.recurringUnit;
   // #3046 — a yearly Product keeps its own contract anniversary: charged in full on its start date, never prorated.
-  const joinDate = a.alignTo && onPlanCadence && !isYearlyCadence(itemCadence) ? nextAlignedDate(a.alignTo, a.startsAt, base.advance) : null;
+  // #3075 — a Product on another cadence than the plan's (a 4-weekly line of a monthly plan) bills on
+  // its own cadence's calendar grid (the 1st of the month, the 28-day grid), never on the start
+  // date's anniversary: a prorated first stretch to the next grid date, then the grid.
+  const itemAnchor = a.alignTo && itemCadence && !onPlanCadence && calendarGridOf(itemCadence) != null
+    ? calendarAnchorOnOrBefore(itemCadence, a.startsAt) : a.alignTo;
+  const joinDate = itemAnchor && !isYearlyCadence(itemCadence) && (onPlanCadence || itemAnchor !== a.alignTo)
+    ? nextAlignedDate(itemAnchor, a.startsAt, base.advance) : null;
   const proration = joinDate && itemCadence ? prorate(1, itemCadence, a.startsAt, joinDate) : null;
   const cadence: Cadence = joinDate
     ? { ...base, advance: (d) => (d === a.startsAt ? joinDate : base.advance(d)) }
