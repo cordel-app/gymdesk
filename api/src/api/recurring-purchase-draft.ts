@@ -36,8 +36,17 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
  * it was) when the Product's billing frequency is not one the Draft's lines
  * already carry and the caller has not confirmed.
  */
+export interface FrequencyItem {
+  product_id: number; name: string; billing_frequency: string | null;
+  description: string | null; image_url: string | null; image_thumbnail_url: string | null;
+}
+
 export class BillingFrequencyDiffers extends Error {
-  constructor(readonly existing: string[], readonly incoming: string) {
+  constructor(
+    readonly existing: string[], readonly incoming: string,
+    /** #3059: the items behind the frequencies, so the dialog can name them. */
+    readonly existingItems: FrequencyItem[] = [], readonly incomingItem: FrequencyItem | null = null,
+  ) {
     super('billing_frequency_differs');
   }
 }
@@ -143,7 +152,21 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
       'SELECT billing_frequency FROM products WHERE id = ? AND gym_id = ?', [input.productId, input.gymId]);
     const incoming = prod[0]?.billing_frequency == null ? null : String(prod[0].billing_frequency);
     if (incoming && existing.length > 0 && !existing.includes(incoming)) {
-      throw new BillingFrequencyDiffers(existing, incoming);
+      const itemSql = `p.id AS product_id, p.name, p.billing_frequency, p.description, p.image_url, p.image_thumbnail_url`;
+      const shape = (r: any): FrequencyItem => ({
+        product_id: Number(r.product_id), name: String(r.name), billing_frequency: r.billing_frequency ?? null,
+        description: r.description ?? null, image_url: r.image_url ?? null, image_thumbnail_url: r.image_thumbnail_url ?? null,
+      });
+      const { rows: itemRows } = await tx.query<any>(
+        `SELECT DISTINCT ${itemSql} FROM product_set_periodical_snapshots lnk
+           JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+           JOIN products p ON p.id = s.product_id AND p.gym_id = s.gym_id
+          WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL AND s.billing_frequency IS NOT NULL
+          ORDER BY p.name`,
+        [input.gymId, draftId]);
+      const { rows: inRows } = await tx.query<any>(
+        `SELECT ${itemSql} FROM products p WHERE p.id = ? AND p.gym_id = ?`, [input.productId, input.gymId]);
+      throw new BillingFrequencyDiffers(existing, incoming, itemRows.map(shape), inRows[0] ? shape(inRows[0]) : null);
     }
   }
 

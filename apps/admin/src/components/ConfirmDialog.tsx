@@ -18,6 +18,8 @@ interface ConfirmDialogProps {
    * dialog of its own.
    */
   details?: React.ReactNode;
+  /** #3059: a closing question under the details. */
+  question?: string;
   confirmLabel: string;
   cancelLabel: string;
   onConfirm: () => void;
@@ -28,7 +30,7 @@ interface ConfirmDialogProps {
   busy?: boolean;
 }
 
-export function ConfirmDialog({ open, title, message, details, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, message, details, question, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
   if (!open) return null;
 
   return (
@@ -37,6 +39,7 @@ export function ConfirmDialog({ open, title, message, details, confirmLabel, can
         {title && <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>{title}</h3>}
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>{message}</p>
         {details && <div style={{ marginTop: 14 }}>{details}</div>}
+        {question && <p style={{ margin: '14px 0 0', fontSize: 15 }}>{question}</p>}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={busy}>{cancelLabel}</button>
