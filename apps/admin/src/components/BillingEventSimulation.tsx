@@ -174,8 +174,8 @@ export function BillingEventTable({
             never measured from a card's own content. */}
         <colgroup>
           <col style={{ width: COL_WIDTHS.date }} />
+          <col style={{ width: COL_WIDTHS.product }} />
           <col />
-          <col style={{ width: COL_WIDTHS.remarks }} />
           <col style={{ width: COL_WIDTHS.status }} />
           <col style={{ width: COL_WIDTHS.amount }} />
         </colgroup>
@@ -455,7 +455,9 @@ const mainGrid: React.CSSProperties = {
 };
 const mainCell: React.CSSProperties = { minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left' };
 const mainHead: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#666', letterSpacing: '0.04em' };
-const COL_WIDTHS = { date: 120, remarks: 300, status: 100, amount: 90 } as const;
+// #3057 — Product / Plan has a fixed width and Remarks takes the leftover space, so the two read
+// together instead of Remarks drifting to the far right of a wide table.
+const COL_WIDTHS = { date: 120, product: 260, status: 100, amount: 90 } as const;
 const tableStyle: React.CSSProperties = {
   width: '100%', minWidth: 640, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13,
 };
