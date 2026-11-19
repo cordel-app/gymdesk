@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3021 stage 3 (the billing frequency stays visible in the product cell while a Products row is being added or edited, from the selected Product's own frequency through `billingFrequencyLabel()`; the read-only row already showed it; no API or billing change)
 - **Done**: #3007 stage 5 (the Members App cart Summary lists the items the Draft marks for deletion from the review's `contracted_items[].pending_deletion`, in the error colour with a *Deleted* chip and the end date, through `reviewPendingDeletions()`; no API change)
 - **Done**: #3007 stage 4 (the Summary shows what the Draft ends: `contracted_items` carries `pending_deletion { ends_on }` for a plan marked `to_be_canceled` — its end date previewed by `cancellationEndDate()` over the paid periods, nothing stored — and for a recurring line the Draft ended that ran with no end date in the version it was cloned from; the Admin draws it in red with a *Deleted* chip and the end date. Members App Summary and the standalone-line case remain later stages)
 - **Done**: #3073 (the Members → Products Billing Simulation Details carries the cycle marker again: `ProductSetForecast` passes the same `cycleNote` the Plan and Assigned Plan simulations do, from the engine's own `cycle`; no calculation or API change)
