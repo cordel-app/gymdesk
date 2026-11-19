@@ -132,10 +132,13 @@ export async function insertPurchasePromotion(
   const { insertId } = await tx.query(
     `INSERT INTO product_promotion_snapshots
        (gym_id, member_id, ${parentColumn(table)}, promotion_id, promotion_name, status,
-        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at, created_at)
-     SELECT s.gym_id, s.member_id, s.id, ?, ?, 'applied', ?, ?, ?, ?, ?, ?, ?
+        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount, applied_at, created_at,
+        promotion_image_url, promotion_image_thumbnail_url)
+     SELECT s.gym_id, s.member_id, s.id, ?, ?, 'applied', ?, ?, ?, ?, ?, ?, ?,
+            (SELECT image_url FROM promotions WHERE id = ? AND gym_id = s.gym_id),
+            (SELECT image_thumbnail_url FROM promotions WHERE id = ? AND gym_id = s.gym_id)
        FROM ${table} s WHERE s.gym_id = ? AND s.source_id = ?`,
-    [...values, now, gymId, purchaseId],
+    [...values, now, step.promotion_id, step.promotion_id, gymId, purchaseId],
   );
   if (!insertId) throw new Error(`Purchase ${purchaseId} has no snapshot to freeze its Promotion onto`);
   const promotionId = Number(insertId);

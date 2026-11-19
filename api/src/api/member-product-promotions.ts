@@ -210,7 +210,8 @@ export async function resolvePurchasePromotion(
 const APPLICATION_COLUMNS = `
   pp.source_purchase_promotion_id AS id, par.source_id AS member_product_id,
   pp.promotion_id, pp.promotion_name, pp.benefit_action, pp.benefit_value,
-  pp.duration_cycles, pp.regular_amount, pp.final_amount, pp.applied_at`;
+  pp.duration_cycles, pp.regular_amount, pp.final_amount, pp.applied_at,
+  pp.promotion_image_url, pp.promotion_image_thumbnail_url`;
 
 function purchaseApplicationsSql(placeholders: string): string {
   const arm = (parent: string, parentCol: string) => `
@@ -513,9 +514,12 @@ export async function loadRecurringLinePromotions(
   const ids = lines.map((l) => l.id);
   const { rows: allRows } = await db.query<any>(
     `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.product_set_id, ump.applied_at, ump.snapshot,
-            pr.name AS promotion_name
+            pr.name AS promotion_name,
+            pps.promotion_image_url AS frozen_image_url, pps.promotion_image_thumbnail_url AS frozen_thumbnail_url,
+            pr.image_url AS live_image_url, pr.image_thumbnail_url AS live_thumbnail_url
        FROM user_membership_promotions ump
        LEFT JOIN promotions pr ON pr.id = ump.promotion_id
+       LEFT JOIN product_promotion_snapshots pps ON pps.source_application_id = ump.id AND pps.gym_id = ump.gym_id
       WHERE ump.gym_id = ? AND ump.status = 'applied'
         AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
       ORDER BY ump.id ASC`,
@@ -559,6 +563,10 @@ export async function loadRecurringLinePromotions(
       regular_amount: Math.round(before * line.quantity * 100) / 100,
       final_amount: Math.round(after * line.quantity * 100) / 100,
       applied_at: row.applied_at ?? null,
+      // #2624 stage 5: the frozen image first, then the one in the application's JSON snapshot; the live
+      // Promotion only for a Draft reference, which has no snapshot yet.
+      promotion_image_url: row.frozen_image_url ?? snap?.image_url ?? row.live_image_url ?? null,
+      promotion_image_thumbnail_url: row.frozen_thumbnail_url ?? snap?.image_thumbnail_url ?? row.live_thumbnail_url ?? null,
     }));
     out.set(lineId, entry);
   }

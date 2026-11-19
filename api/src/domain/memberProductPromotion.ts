@@ -218,6 +218,9 @@ export interface AppliedPromotion extends PromotionApplicationSnapshot {
   id: number;
   promotion_id: number;
   applied_at: string | null;
+  /** #2624 stage 5 — the Promotion's image as frozen with the application (null when it had none). */
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }
 
 /** One stored application, shaped for the wire. */
@@ -231,6 +234,8 @@ export function shapeAppliedPromotion(row: {
   regular_amount: number | string;
   final_amount: number | string;
   applied_at?: string | null;
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }): AppliedPromotion {
   const benefit = toProductBenefit('promotion', row.benefit_action, row.benefit_value);
   const duration = row.duration_cycles == null ? null : Number(row.duration_cycles);
@@ -248,6 +253,8 @@ export function shapeAppliedPromotion(row: {
     regular_amount: Number(row.regular_amount),
     final_amount: Number(row.final_amount),
     applied_at: row.applied_at ?? null,
+    promotion_image_url: row.promotion_image_url ?? null,
+    promotion_image_thumbnail_url: row.promotion_image_thumbnail_url ?? null,
   };
 }
 
