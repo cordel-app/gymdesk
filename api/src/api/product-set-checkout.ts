@@ -104,6 +104,8 @@ async function carriesInheritedNativePlans(gymId: string, productSetId: number, 
   return Number(rows[0]?.inherited ?? 0) > 0 && Number(rows[0]?.added ?? 0) > 0;
 }
 
+const todayUtc = () => new Date().toISOString().slice(0, 10);
+
 export interface InitialCharge {
   amount: number;
   /** The same lines in the simulation's own shape (#1867), for the Draft forecast. */
@@ -115,6 +117,32 @@ export interface InitialCharge {
    * with the amount each was charged at; the initial event joins exactly these.
    */
   cartPurchases?: Array<{ id: number; amount: number; product_name: string }>;
+  /**
+   * #3046: the date the first payment falls due when the version's lines start after its own
+   * start date (a Product added to a Draft later). Absent means the start date.
+   */
+  billingDate?: string;
+}
+
+/**
+ * #3046 — the events a version's first payment covers: those on its start date, plus, for a
+ * schedule with nothing on that date, its earliest event if it already fell due today. A line
+ * added to a Draft after it was created starts today, not on the Draft's own start date, and
+ * must still be charged (a yearly Product in a plan-less Draft was missing from the payment).
+ */
+export function firstCycleEvents<T extends { date: string; scheduleKey: string | null }>(
+  planned: T[], startsAt: string, today: string,
+): T[] {
+  const onStart = planned.filter((e) => e.date === startsAt);
+  const covered = new Set(onStart.map((e) => e.scheduleKey ?? '~'));
+  const late: T[] = [];
+  for (const e of planned) {
+    const key = e.scheduleKey ?? '~';
+    if (e.date <= startsAt || e.date > today || covered.has(key)) continue;
+    covered.add(key);
+    late.push(e);
+  }
+  return [...onStart, ...late];
 }
 
 /** What the version's first obligation is: every line dated on its start date. */
@@ -137,7 +165,7 @@ export async function initialCharge(
   // native snapshots; what it owes now is the added plan alone, never the plans already paid.
   const addsAPlan = opts.previousProductSetId == null && await carriesInheritedNativePlans(gymId, productSetId, exec);
   const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: addsAPlan });
-  let first = planned.filter((e) => e.date === startsAt);
+  let first = firstCycleEvents(planned, startsAt, todayUtc());
 
   if (opts.previousProductSetId != null) {
     // #2899: the fee of a plan this version *adds* (one the previous version does not carry) is
@@ -208,6 +236,8 @@ export async function initialCharge(
     simulationLines: [...first.flatMap((e) => e.lines), ...purchases.map((p) => p.simulation)],
     scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null,
     cartPurchases: cart.map((p) => ({ id: p.id, amount: p.amount, product_name: p.product_name })),
+    ...(first.length > 0 && first.every((e) => e.date !== startsAt)
+      ? { billingDate: first.map((e) => e.date).sort()[0] } : {}),
   };
 }
 
@@ -279,7 +309,7 @@ export async function ensureInitialEvent(tx: Tx, input: {
         period_start, billing_date, is_scheduled, created_by)
      VALUES (?, ?, 'payment_recorded', ?, 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
     [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
-      scheduleId, input.startsAt, input.startsAt, input.actor],
+      scheduleId, input.startsAt, input.charge.billingDate ?? input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
   // #2746: each one-time Product of the cart reaches its payment through this event.
@@ -355,8 +385,6 @@ export async function createProductSetCheckout(input: {
  * running one owes only what is new relative to it, dated today; a first
  * version owes its first cycle from its own start date.
  */
-const todayUtc = () => new Date().toISOString().slice(0, 10);
-
 export async function commitCharge(gymId: string, set: any) {
   const nextVersion = set.previous_product_set_id != null;
   const startsAt = nextVersion
