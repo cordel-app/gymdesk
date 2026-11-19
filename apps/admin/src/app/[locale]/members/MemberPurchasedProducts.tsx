@@ -460,6 +460,7 @@ export function MemberPurchasedProducts({
           emptyText={t('purchased_products_none')}
           expandedRowKeys={shownExpanded}
           onToggleExpand={toggleExpand}
+          draftRowPosition="bottom"
           draftRow={adding ? (() => {
             const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
             // #2538 — the benefit of each chosen Promotion, from the Promotion's own action/value/duration.

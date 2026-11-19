@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3058 (`+ Add Product` on Members → Products puts the new product row at the bottom of the table, after the existing products, instead of the top; `DataTable` takes `draftRowPosition`, default `top`; presentation only)
 - **Done**: #3045 follow-up 2 (Billing Event Simulation: the main table drops the Remarks column and is Date · Billing Event · Status · Amount; `Simulated` is a chip in the header row and in the item table; presentation only)
 - **Done**: #3021 stage 2 (Members → Products row follow-up: the Product's thumbnail opens the Product modal, the billing frequency sits in the header under the name, Applied tax moves to the expanded row, the expanded facts use a compact three-column layout, and Save / Cancel of an edited row sit bottom-left of the product. `GET /members/:id/products` also reports the Product's `image_url` / `image_thumbnail_url` as a live read like the rest of its configuration.)
 - **Done**: #3020 stage 4 (an applied Plan Promotion's snapshot freezes the Promotion's `image_url` / thumbnail in its JSON snapshot, so `plan_promotion_snapshots` copies it too; the Assigned Plan card reads the frozen image, keeping the live one for older snapshots, and its clickable thumbnail already opens the Promotion detail modal. No migration.)

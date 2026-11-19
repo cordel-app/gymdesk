@@ -51,6 +51,9 @@ interface DataTableProps<T> {
   // column added later cannot shift the cells after it); `form` is its
   // always-open expanded editor. It is outside `rows`, so a row filter never hides it.
   draftRow?: { cells: Record<string, React.ReactNode>; form: React.ReactNode };
+  // #3058: where the draft row sits. `top` (the default) keeps #1807's shape;
+  // `bottom` appends it after the real rows, where a new item will land.
+  draftRowPosition?: 'top' | 'bottom';
   // #2783: content that belongs to a row and is always shown, indented under it
   // as its child (a Product's Promotion). `null` draws nothing, so a row with
   // nothing to nest gets no empty block.
@@ -59,7 +62,7 @@ interface DataTableProps<T> {
 
 export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
-  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow, renderNested,
+  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow, draftRowPosition = 'top', renderNested,
 }: DataTableProps<T>) {
   if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
   if (rows.length === 0 && !draftRow) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
@@ -70,6 +73,27 @@ export function DataTable<T>({
   // they are hidden on a phone; a flat row has nowhere to read them, so they
   // stay and the block between the pinned cells scrolls instead (`Q2 scroll`).
   const scroller = listScrollerClass(expandable ? 'collapse' : 'scroll');
+
+  const draftRowNode = draftRow && (() => {
+            const cells = draftRowCells(columns, draftRow.cells);
+            return (
+            <React.Fragment>
+              <tr style={listRowDividerStyle} data-draft-row>
+                {expandable && <td style={draftTd} />}
+                {columns.map((col, i) => (
+                  <td key={i} className={listCellClass(col.mobile)} style={draftTd}>
+                    {col.mobile === 'name'
+                      ? <div className={LIST_NAME_VALUE_CLASS}>{cells[i]}</div>
+                      : <div style={draftCellLineStyle}>{cells[i]}</div>}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td colSpan={totalCols} style={expandedCell}>{draftRow.form}</td>
+              </tr>
+            </React.Fragment>
+            );
+  })();
 
   return (
     <div className={scroller}>
@@ -89,26 +113,7 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {draftRow && (() => {
-            const cells = draftRowCells(columns, draftRow.cells);
-            return (
-            <React.Fragment>
-              <tr style={listRowDividerStyle} data-draft-row>
-                {expandable && <td style={draftTd} />}
-                {columns.map((col, i) => (
-                  <td key={i} className={listCellClass(col.mobile)} style={draftTd}>
-                    {col.mobile === 'name'
-                      ? <div className={LIST_NAME_VALUE_CLASS}>{cells[i]}</div>
-                      : <div style={draftCellLineStyle}>{cells[i]}</div>}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td colSpan={totalCols} style={expandedCell}>{draftRow.form}</td>
-              </tr>
-            </React.Fragment>
-            );
-          })()}
+          {draftRowPosition === 'top' && draftRowNode}
           {rows.map((row) => {
             const key = rowKey(row);
             const isExpanded = expandable && !!expandedRowKeys?.has(key);
@@ -166,6 +171,7 @@ export function DataTable<T>({
               </React.Fragment>
             );
           })}
+          {draftRowPosition === 'bottom' && draftRowNode}
         </tbody>
       </table>
     </div>
