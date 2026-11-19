@@ -8,6 +8,7 @@
 // every colour is `memberChrome.ts`'s.
 import type { CSSProperties, ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
+import { reviewBeneficiary, type MemberSetReview } from '@/lib/memberProducts';
 import {
   cartHeadingStyle,
   cartMutedStyle,
@@ -22,6 +23,8 @@ export interface CartCardItem {
   name: string;
   /** Formatted amount, shown only where the item carries one. */
   amount?: string | null;
+  /** #2973 stage 4: who the line is for — `Family` or the member's name. */
+  beneficiary?: string | null;
 }
 
 export interface CartCardProps {
@@ -74,6 +77,7 @@ export function CartCard(p: CartCardProps) {
           <li key={item.key} style={row}>
             <span style={cartMutedStyle}>{t(item.kind === 'plan' ? 'membership.cart_kind_plan' : 'membership.cart_kind_product')}</span>
             <span style={{ fontSize: 14, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</span>
+            {item.beneficiary && <span style={cartMutedStyle} data-cart-beneficiary>· {item.beneficiary}</span>}
             {item.amount && <span style={cartMutedStyle}>· {item.amount}</span>}
             {p.itemAction && <span style={{ marginLeft: 'auto' }}>{p.itemAction(item)}</span>}
           </li>
@@ -88,11 +92,25 @@ export function CartCard(p: CartCardProps) {
 export function toCartCardItems(
   items: Array<{ key: string; kind: 'plan' | 'purchase'; name: string; amount?: number | null; currency?: string | null }>,
   money: (amount: number | null | undefined, currency?: string | null) => string | null,
+  beneficiary?: (kind: 'plan' | 'product', name: string) => string | null,
 ): CartCardItem[] {
   return items.map((i) => ({
     key: i.key,
     kind: i.kind === 'plan' ? 'plan' : 'product',
     name: i.name,
     amount: i.kind === 'purchase' ? money(i.amount, i.currency) : null,
+    beneficiary: beneficiary ? beneficiary(i.kind === 'plan' ? 'plan' : 'product', i.name) : null,
   }));
+}
+
+/** #2973 stage 4: the beneficiary label of a cart line, from the server's review (`null` when it names none). */
+export function cartBeneficiaryLabel(
+  review: Pick<MemberSetReview, 'contracted_items'> | null,
+  family: string,
+): (kind: 'plan' | 'product', name: string) => string | null {
+  return (kind, name) => {
+    if (!review) return null;
+    const b = reviewBeneficiary(review, { type: kind, name });
+    return b == null ? null : 'family' in b ? family : b.name;
+  };
 }

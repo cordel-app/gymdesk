@@ -122,9 +122,14 @@ describe('GET /me/promotions reads the member\'s plans from plan_snapshots', () 
     const { insertId } = await db.query(
       `INSERT INTO promotions (gym_id, name, lifecycle_status, starts_at, ends_at)
        VALUES (?, ?, 'active', '2020-01-01', '2099-12-31')`, [gymId, `PPR Promo ${uniq()}`]);
-    await db.query(
+    const ump = await db.query(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, status, applied_at)
        VALUES (?, ?, ?, 'applied', UTC_TIMESTAMP())`, [gymId, um, insertId]);
+    // #3026 stage 3b: the reader asks the plan snapshot's own application row.
+    await db.query(
+      `INSERT INTO plan_promotion_snapshots (gym_id, plan_snapshot_id, source_id, promotion_id, status, applied_at)
+       SELECT ?, MAX(id), ?, ?, 'applied', UTC_TIMESTAMP() FROM plan_snapshots
+        WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, ump.insertId, insertId, gymId, um]);
     return Number(insertId);
   }
 

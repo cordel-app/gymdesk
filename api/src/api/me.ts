@@ -6,7 +6,8 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
-import { OWNED_ASSIGNMENT_ROWS_SQL, assignmentOfLegacyIdSql, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, OWNED_ASSIGNMENT_ROWS_SQL, assignmentOfLegacyIdSql, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { promotionHolderSql } from './plan-snapshot-lines';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
@@ -2187,13 +2188,16 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       // #2125 M6b-15: the member's assignments come from `plan_snapshots` (each one's current snapshot).
+      // #3026 stage 3b: the applied Promotions are the current plan snapshot's own rows.
       `SELECT p.id, p.name, p.description
-       FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
-       JOIN user_membership_promotions ump
-         ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id
-       JOIN promotions p ON p.id = ump.promotion_id
-       WHERE ump.status = 'applied' AND um.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
-       ORDER BY ump.applied_at DESC`,
+       FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
+       JOIN plan_promotion_snapshots pps
+         ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+       JOIN promotions p ON p.id = pps.promotion_id
+       WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.source_user_membership_id IS NOT NULL
+         AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}
+         AND pps.status = 'applied' AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
+       ORDER BY pps.applied_at DESC`,
       [gymId, memberId],
     );
     res.json(rows);

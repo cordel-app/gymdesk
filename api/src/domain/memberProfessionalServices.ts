@@ -4,6 +4,7 @@ import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumpti
 import { familyWalletOf, inList } from '../api/family-wallet';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND, MANUAL_ADJUSTMENT_REFERENCE_ID } from './professionalServiceAdjustments';
 import { entitlingAssignmentSql, isCurrentAssignmentSnapshotSql } from './planAssignments';
+import { promotionHolderSql } from '../api/plan-snapshot-lines';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -218,7 +219,8 @@ export async function loadMemberProfessionalServiceGrants(
     [gymId, ...ids],
   );
 
-  // reference_id is the *application* (`user_membership_promotions.id`), not
+  // #3026 stage 3b: the applications are the plan snapshot's own `plan_promotion_snapshots` rows.
+  // reference_id is the *application* (its legacy id, `source_id`), not
   // the benefit row: the same Promotion applied to two active assignments
   // grants its sessions twice, and keying on the benefit row would collapse
   // them into one.
@@ -226,16 +228,17 @@ export async function loadMemberProfessionalServiceGrants(
     `SELECT ps.id               AS professional_service_id,
             ps.name             AS professional_service_name,
             'promotion_session' AS kind,
-            ump.id              AS reference_id,
+            pps.source_id       AS reference_id,
             gc.id               AS product_id,
             gc.name             AS product_name,
             psn.quantity        AS sessions,
             pa.member_id        AS holder_member_id
      FROM plan_snapshots pa
-     JOIN user_membership_promotions ump
-       ON ump.user_membership_id = pa.source_user_membership_id AND ump.gym_id = pa.gym_id AND ump.status IN ('applied', 'superseded')
+     JOIN plan_promotion_snapshots pps
+       ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+      AND pps.status IN ('applied', 'superseded') AND pps.source_id IS NOT NULL
      JOIN promotion_session psn
-       ON psn.promotion_id = ump.promotion_id AND psn.gym_id = pa.gym_id
+       ON psn.promotion_id = pps.promotion_id AND psn.gym_id = pa.gym_id
      JOIN products gc ON gc.id = psn.product_id
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = pa.gym_id
