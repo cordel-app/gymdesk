@@ -55,6 +55,8 @@ export interface MemberPlanRow {
   is_live: boolean;
   /** #2549 — live, or cancelled with an effective end date not yet passed: the Active/Past split. */
   is_current?: boolean;
+  /** #2887: the plan snapshot's end date is before today — the one rule behind Past Plans. */
+  is_past?: boolean;
   /**
    * #634 §3 — whether a Promotion flagged "Only applicable for new members"
    * would be accepted on this plan: the Member held no other Membership Plan
