@@ -3915,6 +3915,8 @@
     "confirm_propagate": "Update future events",
     "confirm_discontinue": "This activity will be discontinued. {events} future event(s) will be removed: the {booked} with bookings are cancelled and the rest are deleted. Waiting lists are cleared and affected members are notified.",
     "confirm_discontinue_accept": "Accept",
+    "apply_to_future_events": "Apply to future events",
+    "confirm_apply_future": "Applying this Activity to its future events moves {events} event(s) to another Professional Service and cancels {bookings} booking(s) on them. Nothing is changed unless you accept.",
     "error_required": "Name, duration and capacity are required.",
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",

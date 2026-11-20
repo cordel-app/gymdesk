@@ -3910,6 +3910,8 @@
     "confirm_propagate": "Actualizar eventos futuros",
     "confirm_discontinue": "Esta actividad se discontinuará. Se eliminarán {events} evento(s) futuro(s): los {booked} con reservas se cancelan y el resto se borra. Las listas de espera se vacían y se avisa a los miembros afectados.",
     "confirm_discontinue_accept": "Aceptar",
+    "apply_to_future_events": "Aplicar a eventos futuros",
+    "confirm_apply_future": "Aplicar esta actividad a sus eventos futuros mueve {events} evento(s) a otro servicio profesional y cancela {bookings} reserva(s) en ellos. No se cambia nada hasta que aceptes.",
     "error_required": "Nombre, duración y aforo son obligatorios.",
     "error_generic": "Algo ha ido mal.",
     "cancel": "Cancelar",

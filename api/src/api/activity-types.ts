@@ -11,6 +11,7 @@ import {
   discontinueFutureEvents,
 } from './activity-discontinuation';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
+import { releaseEventReservations } from './service-reservation';
 // #986: the Default Trainer is an active Staff record, and which ones those
 // are is decided in one place — the same module `GET /trainers` projects the
 // picker from, so a value the dropdown offers is a value this route accepts.
@@ -376,13 +377,53 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     default_center_id: centerId, color: colorVal, max_capacity: capacity,
     professional_service_id: serviceId,
   };
-  const propagations = PROPAGATABLE_FIELDS.filter(
-    (f) => submitted[f.atField] !== undefined && submitted[f.atField] !== current[f.atField],
-  ).map((f) => ({ ...f, value: submitted[f.atField] }));
+  // #3085: "Apply to future events" re-applies the Activity's whole resulting
+  // configuration (every propagatable field, not only the ones this request
+  // changed) to its future events and clears their per-occurrence overrides of
+  // the image and the waitlist mode. The button is the confirmation, so the
+  // field-propagation 409 below does not apply; a change of Professional
+  // Service that would cancel bookings has its own confirmation.
+  const applyAll = req.body.apply_to_future_events === true;
+  const propagations = PROPAGATABLE_FIELDS.filter((f) => applyAll
+    ? true
+    : submitted[f.atField] !== undefined && submitted[f.atField] !== current[f.atField],
+  ).map((f) => ({
+    ...f,
+    value: submitted[f.atField] !== undefined ? submitted[f.atField] : (current[f.atField] ?? null),
+  }));
+
+  let cancelEventIds: number[] = [];
+  let cancelBookingCount = 0;
+  if (applyAll) {
+    const newService = propagations.find((p) => p.atField === 'professional_service_id')?.value ?? null;
+    const { rows: hit } = await db.query(
+      `SELECT ce.id,
+         (SELECT COUNT(*) FROM calendar_event_bookings ceb
+           WHERE ceb.calendar_event_id = ce.id AND ceb.status IN ('booked', 'waitlisted')) AS bookings
+       FROM calendar_events ce
+       WHERE ce.activity_type_id = ? AND ce.gym_id = ? AND ce.starts_at > UTC_TIMESTAMP()
+         AND ce.deleted_at IS NULL AND ce.status <> 'cancelled'
+         AND NOT (ce.professional_service_id <=> ?)
+         AND EXISTS (SELECT 1 FROM calendar_event_bookings ceb
+           WHERE ceb.calendar_event_id = ce.id AND ceb.status IN ('booked', 'waitlisted'))`,
+      [req.params.id, gymId, newService],
+    );
+    cancelEventIds = hit.map((r: any) => Number(r.id));
+    cancelBookingCount = hit.reduce((n: number, r: any) => n + Number(r.bookings), 0);
+    if (cancelEventIds.length > 0 && req.body.confirm_cancel_bookings !== true) {
+      return res.status(409).json({
+        error: 'booking_cancellation_required',
+        message: `Applying this to future events moves ${cancelEventIds.length} event(s) to another Professional Service `
+          + `and cancels ${cancelBookingCount} booking(s). Resend with confirm_cancel_bookings: true to proceed.`,
+        impacted_events: cancelEventIds.length,
+        cancelled_bookings: cancelBookingCount,
+      });
+    }
+  }
 
   let impactedCount = 0;
   let bookedCount = 0;
-  if (propagations.length > 0) {
+  if (propagations.length > 0 && !applyAll) {
     const { rows: impact } = await db.query(
       `SELECT COUNT(*) AS cnt,
          SUM(CASE WHEN EXISTS (
@@ -472,12 +513,24 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       );
       if (rowCount === 0) throw Object.assign(new Error('Activity type not found'), { statusCode: 404 });
 
+      if (applyAll && cancelEventIds.length > 0) {
+        const inList = cancelEventIds.map(() => '?').join(',');
+        await tx.query(
+          `UPDATE calendar_event_bookings
+           SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+           WHERE gym_id = ? AND status IN ('booked', 'waitlisted') AND calendar_event_id IN (${inList})`,
+          [actor, gymId, ...cancelEventIds],
+        );
+        for (const eventId of cancelEventIds) await releaseEventReservations(tx, gymId, eventId);
+      }
       if (propagations.length > 0) {
         const setSql = propagations.map((p) => `${p.ceField} = ?`).join(', ');
+        const overrides = applyAll ? ', image_url = NULL, image_thumbnail_url = NULL, waitlist_mode = NULL' : '';
         await tx.query(
-          `UPDATE calendar_events SET ${setSql}, modified_at = UTC_TIMESTAMP(), modified_by = ?
-           WHERE activity_type_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL`,
-          [...propagations.map((p) => p.value), actor, req.params.id],
+          `UPDATE calendar_events SET ${setSql}${overrides}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+           WHERE activity_type_id = ? AND gym_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL
+             ${applyAll ? "AND status <> 'cancelled'" : ''}`,
+          [...propagations.map((p) => p.value), actor, req.params.id, gymId],
         );
       }
     });

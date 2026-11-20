@@ -282,6 +282,9 @@ export default function ActivityTypesPage() {
   const [discontinueConflict, setDiscontinueConflict] = useState<
     { kind: 'save' | 'delete'; row: ActivityType; events: number; booked: number } | null
   >(null);
+  // #3085: "Apply to future events" — the API answers 409 with the booking
+  // impact when the Professional Service change would cancel bookings.
+  const [applyConflict, setApplyConflict] = useState<{ row: ActivityType; events: number; bookings: number } | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -486,7 +489,10 @@ export default function ActivityTypesPage() {
     setDeleteRuleConflict(null);
   }
 
-  async function handleSave(row: ActivityType, confirmPropagate = false, confirmDiscontinue = false) {
+  async function handleSave(
+    row: ActivityType, confirmPropagate = false, confirmDiscontinue = false,
+    applyFuture = false, confirmCancelBookings = false,
+  ) {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
@@ -513,6 +519,8 @@ export default function ActivityTypesPage() {
           waitlist_mode: editForm.waitlist_mode,
           ...(confirmPropagate ? { confirm_propagate: true } : {}),
           ...(confirmDiscontinue ? { confirm_discontinue: true } : {}),
+          ...(applyFuture ? { apply_to_future_events: true } : {}),
+          ...(confirmCancelBookings ? { confirm_cancel_bookings: true } : {}),
         }),
       });
       await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
@@ -521,12 +529,17 @@ export default function ActivityTypesPage() {
       });
       setSaveConflict(null);
       setDiscontinueConflict(null);
+      setApplyConflict(null);
       setEditingId(null);
       resetScheduleEditing();
       load();
     } catch (err: any) {
       if (err.status === 409 && err.body?.error === 'future_events_impacted') {
         setSaveConflict({ row, message: err.body.message ?? err.message });
+      } else if (err.status === 409 && err.body?.error === 'booking_cancellation_required') {
+        setApplyConflict({
+          row, events: Number(err.body.impacted_events ?? 0), bookings: Number(err.body.cancelled_bookings ?? 0),
+        });
       } else if (err.status === 409 && err.body?.error === 'activity_discontinue_confirmation_required') {
         setDiscontinueConflict({
           kind: 'save', row, events: Number(err.body.impacted_events ?? 0), booked: Number(err.body.booked_events ?? 0),
@@ -1349,6 +1362,9 @@ export default function ActivityTypesPage() {
               <button onClick={() => handleSave(row)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
               </button>
+              <button onClick={() => handleSave(row, false, false, true)} disabled={editSaving} style={secondaryBtnSmall}>
+                {t('apply_to_future_events')}
+              </button>
             </div>
 
             {renderScheduleSection(row, true)}
@@ -1769,6 +1785,19 @@ export default function ActivityTypesPage() {
           else { setDeleting(discontinueConflict.row); handleDelete(true); }
         }}
         onCancel={() => setDiscontinueConflict(null)}
+        busy={editSaving}
+      />
+
+      {/* #3085: applying the Activity to its future events would cancel bookings */}
+      <ConfirmDialog
+        open={applyConflict !== null}
+        message={applyConflict
+          ? t('confirm_apply_future', { events: applyConflict.events, bookings: applyConflict.bookings })
+          : ''}
+        confirmLabel={t('confirm_discontinue_accept')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => { if (applyConflict) handleSave(applyConflict.row, false, false, true, true); }}
+        onCancel={() => setApplyConflict(null)}
         busy={editSaving}
       />
 
