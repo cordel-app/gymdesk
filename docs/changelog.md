@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3097 (Admin Home → Today's Classes: every class row keeps a calendar-icon link that opens the event in the Calendar, including after the class is completed or cancelled, when the Start button is no longer offered.)
 - **Done**: #3085 (Activity edit gets **Apply to future events**: `PUT /activity-types/:id` with `apply_to_future_events: true` re-applies the Activity's whole resulting configuration — space, trainer, center, color, capacity, Professional Service — to its future non-cancelled events and clears their image and waitlist-mode overrides; past events are untouched. A change of Professional Service that would cancel booked or waitlisted bookings answers `409 booking_cancellation_required` with the event and booking counts and writes nothing until `confirm_cancel_bookings: true`; the Admin shows that as an Accept/Cancel dialog.)
 
 - **Done**: #3111 (Members → Products: a newly added Membership Plan row is appended at the end of the Plans list; `GET /user-memberships/member/:id/configuration` now lists plans oldest first by creation; no other behaviour changed).

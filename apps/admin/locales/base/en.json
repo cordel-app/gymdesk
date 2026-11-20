@@ -5911,7 +5911,8 @@
     "cancel_class": "Cancel class",
     "class_celebrate": "Celebrate",
     "class_cancel": "Cancel",
-    "class_attendees": "View attendees"
+    "class_attendees": "View attendees",
+    "class_open_calendar": "Open in Calendar"
   },
   "base_products": {
     "no_description": "No description available.",
