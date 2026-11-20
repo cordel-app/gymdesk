@@ -350,8 +350,8 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       cards.new_members = { count: newOnDay };
       cards.attendance = await loadAttendanceKpis(gymId, today, zone, active);
 
-      const { rows: welcome } = await db.query<{ id: number; name: string }>(
-        `SELECT m.id, m.name FROM members m
+      const { rows: welcome } = await db.query<{ id: number; name: string; image_url: string | null; image_thumbnail_url: string | null }>(
+        `SELECT m.id, m.name, m.image_url, m.image_thumbnail_url FROM members m
           WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.welcomed_at IS NULL
           ORDER BY m.created_at DESC, m.id DESC`,
         [gymId],
@@ -359,7 +359,9 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       tasks.push({
         key: 'welcome_new_members',
         count: welcome.length,
-        samples: welcome.slice(0, SAMPLE_LIMIT).map((r) => ({ id: Number(r.id), name: r.name })),
+        samples: welcome.slice(0, SAMPLE_LIMIT).map((r) => ({
+          id: Number(r.id), name: r.name, image_url: r.image_url ?? null, image_thumbnail_url: r.image_thumbnail_url ?? null,
+        })),
       });
       tasks.push(await loadServicesNotScheduled(gymId));
 

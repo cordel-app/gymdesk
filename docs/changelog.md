@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3098 (Home → Today's tasks → New members to welcome shows each member's circular profile thumbnail; clicking it opens the 1080 × 1080 image in the shared image modal. `GET /dashboard/home` task samples gain `image_url` / `image_thumbnail_url`.)
 - **Done**: #3081 (the Membership Plan assignment's Promotion picker offers Membership Plan Promotions only: `GET /promotions?membership_plan_id=` also requires `applies_to = 'membership_plan'`, so a Product Promotion that kept its hidden Suitable Membership Plans rows (#926) no longer appears; regression test in `promotions.test.ts`; the Product-side half of #3082 is not part of this change)
 - **Done**: #3088 (Members → Products table: the billing frequency is its own Frequency column between Product and Quantity, in read-only and edit rows alike, and every value sits level with the product name instead of centred on a row that is taller because of its Promotions — `DataTable`'s opt-in `alignTop`; no API change)
 - **Done**: #2887 stage 2 (the Member card's Past plans section is read straight from the Member's plan snapshots whose end date is before today — `is_past` on each plan of `GET /user-memberships/member/:id/configuration`; the list and its count are the same array, a plan once, a null end date never past, and cancelled Product Sets are no longer a second source; regression: `past-plans-view.test.ts`)
