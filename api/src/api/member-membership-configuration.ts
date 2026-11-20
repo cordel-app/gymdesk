@@ -82,7 +82,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   );
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
-  // Every assignment, newest first — the Member page has shown the full plan
+  // Every assignment, oldest first, so a newly added plan lands at the end (#3111) — the Member page has shown the full plan
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
   // ones the Services section and the simulation act on. #2125 M6b-31: each assignment is read
   // off its current plan snapshot (`ASSIGNMENT_HISTORY_ROWS_SQL`), its creator off its anchor
@@ -101,7 +101,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
      FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
-     ORDER BY um.starts_at DESC, um.id DESC`,
+     ORDER BY um.created_at ASC, um.id ASC`,
     [...LIVE_STATUSES, gymId, gymId, memberId, memberId],
   );
 
