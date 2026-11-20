@@ -45,3 +45,17 @@ describe('#2372 Add Product fields are cells of the draft row', () => {
     expect(table).not.toContain('<AddProductPurchase');
   });
 });
+
+// #3101 — the Products table's add row carries an editable Quantity cell (default 1).
+describe('#3101 add row quantity', () => {
+  const tbl = readFileSync(join(DIR, 'MemberPurchasedProducts.tsx'), 'utf8');
+  const form = readFileSync(join(DIR, 'AddProductPurchase.tsx'), 'utf8');
+  it('draft row has a quantity cell using the editable field', () => {
+    const i = tbl.indexOf('data-add-product-quantity');
+    expect(i).toBeGreaterThan(-1);
+    expect(tbl.slice(i - 200, i + 200)).toContain('EditQuantityField form={addForm}');
+  });
+  it('the form starts the quantity at 1', () => {
+    expect(form).toContain("useState('1')");
+  });
+});

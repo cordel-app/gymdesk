@@ -482,6 +482,10 @@ export function MemberPurchasedProducts({
             // #2786 — keyed by each column's `key`, so a column added to the table cannot shift these cells.
             const cells: Record<string, React.ReactNode> = {
               ...c,
+              // #3101 — the add row's Quantity starts at 1 and stays editable; a one-time Product is one unit.
+              quantity: addForm.product && !addForm.product.recurring
+                ? '1'
+                : <span data-add-product-quantity><EditQuantityField form={addForm} label={t('draft_line_quantity')} /></span>,
               promotion_benefit: draftBenefit,
               status: <StatusBadge key="status" status="in_cart" label={t('add_product_draft_badge')} />,
             };
