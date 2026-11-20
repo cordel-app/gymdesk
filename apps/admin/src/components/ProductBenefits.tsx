@@ -824,17 +824,19 @@ export function ProductBenefitEditor({
  * the figure above it.
  */
 function BenefitPriceCell({
-  t, unit, line,
+  t, unit, line, note,
 }: {
   t: Translate;
   unit: number | null | undefined;
   line: number | null | undefined;
+  note?: string | null;
 }) {
   // An item with no price at all reads "—". €0.00 would claim it is free.
   if (unit == null) return <span style={mutedValueSt}>—</span>;
   return (
     <>
       <span style={moneySt}>{formatBenefitPrice(unit)}</span>
+      {note && <span style={lineTotalSt}>{note}</span>}
       {line != null && line !== unit && (
         <span style={lineTotalSt}>
           {t('benefit_total_price', { amount: formatBenefitPrice(line) })}
@@ -1010,6 +1012,7 @@ export function ProductBenefitView({
           <BenefitPriceCell
             t={t} unit={row.original_price_incl_tax}
             line={row.original_line_price_incl_tax}
+            note={row.original_price_note}
           />
         );
       case 'tax':
