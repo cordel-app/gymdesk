@@ -377,9 +377,12 @@ export default function MembersPage() {
 
   // #1754 — Home's "Add Member" quick action lands here with `?add=1` and opens
   // the same form the `+ Add Member` button does, once, when the page can write.
-  const addRequestedRef = useRef(
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('add') === '1',
-  );
+  // The param is read in an effect, not during render: on a client-side
+  // navigation from Home the URL is not committed yet at first render (#3103).
+  const addRequestedRef = useRef(false);
+  useEffect(() => {
+    addRequestedRef.current = new URLSearchParams(window.location.search).get('add') === '1';
+  }, []);
   useEffect(() => {
     if (!addRequestedRef.current || loading || !canWrite) return;
     addRequestedRef.current = false;

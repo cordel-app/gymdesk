@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3103 (Home's Add Member quick action reliably opens the Add Member form on the Members page: the `?add=1` param is read after mount instead of during the first render, which missed it on client-side navigation).
 - **Done**: #2973 stage 5 (the cart card's collapsible Summary is also shown for a cart of standalone one-time Products alone and for a cart awaiting payment, on Home and My Products; new member-scoped read `GET /me/cart/summary` in the review's shape, built from the lines checkout charges).
 - **Done**: #3101 (Members → Products → `+ Add Product`: a recurring Product's Quantity is an editable field defaulting to 1; `POST /members/:id/product-purchases` accepts an optional `quantity` 1–999 for a recurring Product, `400` otherwise, and the line is created with it; one-time Products are unchanged).
 - **Done**: #3094 (Admin → Members → Products: the access rows of an Assigned Plan (Access to … / All centers / On-line) show the Membership Fee's Billing Frequency instead of an empty value; the plan's other Products already show their own frequency)
