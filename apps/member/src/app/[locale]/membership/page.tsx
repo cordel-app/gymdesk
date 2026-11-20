@@ -77,7 +77,7 @@ import {
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberCollapsibleCard } from '@/components/MemberCollapsibleCard';
 import { CartSummary } from '@/components/CartSummary';
-import { CartCard, toCartCardItems, cartBeneficiaryLabel } from '@/components/CartCard';
+import { MemberCart } from '@/components/MemberCart';
 import { ImagePreviewButton } from '@/components/ImagePreview';
 import { MemberPlanCard, MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import type { PlanOverviewView } from '@/components/MemberPlanOverview';
@@ -366,15 +366,10 @@ export default function MembershipPage() {
   const [planDraftError, setPlanDraftError] = useState<{ planId: number; key: string } | null>(null);
   // #2496 stage 5 — the Draft's Summary (the Admin's own review) and its one commit.
   const [review, setReview] = useState<MemberSetReview | null>(null);
-  // #2973 stage 5 — the Summary of a cart with no Draft to review: one awaiting payment
-  // (the version's own review) or standalone purchases alone (`GET /me/cart/summary`).
-  // Display only: the commit logic keeps reading `review`.
-  const [cartSummary, setCartSummary] = useState<MemberSetReview | null>(null);
   const [commitBusy, setCommitBusy] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   // #2746 stage 2 — the cart's global Cancel asks first; the item a per-item
   // Cancel is in flight for, and the refusal of the last cart edit.
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [cartBusy, setCartBusy] = useState<string | null>(null);
   const [cartError, setCartError] = useState<string | null>(null);
   // #2746 stage 3 — the cart awaiting payment is cancelled as a whole (#2747), after a confirmation.
@@ -604,20 +599,6 @@ export default function MembershipPage() {
     return () => { cancelled = true; };
   }, [setView]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const done = (r: MemberSetReview | null) => { if (!cancelled) setCartSummary(r); };
-    if (setView?.status === 'pending_payment') {
-      apiFetch<MemberSetReview>(`/me/product-sets/${setView.id}/review`).then(done).catch(() => done(null));
-    } else if (!setView && standaloneCart.purchases.length > 0) {
-      apiFetch<MemberSetReview>('/me/cart/summary').then(done).catch(() => done(null));
-    } else {
-      done(null);
-    }
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setView, standaloneCart]);
-
   /**
    * #2496 stage 5 — one Save & Pay for the whole Draft: the Admin's own commit,
    * behind the member's routes. Something owed today goes to the hosted page;
@@ -661,32 +642,6 @@ export default function MembershipPage() {
       await loadSetView();
     }
     setCommitBusy(false);
-  }
-
-  /**
-   * Discards the whole selection: the member's unpaid Draft, through its own
-   * route, and (#2949 stage 6) every standalone purchase in the cart. A Draft
-   * staff are still setting up, or a set awaiting payment, is never touched.
-   */
-  async function discardDraft() {
-    const phase = cartPhase(setView, viewerId, standaloneCart);
-    if (phase == null) return;
-    setDraftBusy(-1);
-    setDraftError(null);
-    try {
-      if (phase === 'draft' && setView && setView.status === 'in_cart') {
-        await apiFetch(`/me/product-sets/${setView.id}`, { method: 'DELETE' });
-      }
-      for (const p of standaloneCart.purchases) {
-        await apiFetch(`/me/cart/purchases/${p.id}`, { method: 'DELETE' });
-      }
-    } catch (err: any) {
-      setDraftError({ productId: null, key: draftErrorKey(err?.message) });
-    } finally {
-      await loadSetView();
-      setDraftBusy(null);
-      setConfirmDiscard(false);
-    }
   }
 
   /**
@@ -1276,254 +1231,18 @@ export default function MembershipPage() {
   }
 
   /**
-   * #2895 — a Draft staff created by assigning a plan and are still setting
-   * up: the member sees what it holds, but there is nothing to pay or cancel
-   * yet (staff decide how it is paid; choosing **Members App** turns it into
-   * the pending cart above), no item leaves on its own and the two Add
-   * actions are shown disabled, with the reason, because a second purchase
-   * cannot start beside it. The server refuses every write to it as well.
-   */
-  function renderStaffDraftCart() {
-    const { plans, products } = cartCounts(setView, viewerId);
-    const items = cartItems(setView, viewerId);
-    const counts = [
-      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
-      products > 0 ? t('membership.cart_products', { count: products }) : null,
-    ].filter(Boolean).join(' · ');
-    return (
-      <section style={styles.section} data-cart data-cart-awaiting-staff>
-        <CartCard
-          headingKey="membership.cart_staff_heading"
-          counts={counts}
-          staffEditing
-          hintKeys={['membership.cart_staff_hint']}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
-          footer={renderCartAddButtons(t('membership.cart_error_awaiting_staff'))}
-        />
-      </section>
-    );
-  }
-
-  /**
-   * #2746 stage 3 (§6) — the cart once its payment has started: the same items,
-   * still grouped as one purchase, headed *You have a pending payment* with the
-   * amount being paid (the initial event's, `pending_amount`). Pay retries the
-   * one payment through the existing consent and checkout; Cancel cancels the
-   * whole purchase after a confirmation (#2747). No item leaves on its own.
-   */
-  function renderPendingCart() {
-    const { plans, products } = cartCounts(setView, viewerId);
-    const items = cartItems(setView, viewerId);
-    const amount = cartPendingAmount(setView);
-    const total = amount == null ? '—' : formatPaymentAmount(amount, 'EUR', gymFmt);
-    const busy = commitBusy || submitting;
-    const counts = [
-      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
-      products > 0 ? t('membership.cart_products', { count: products }) : null,
-    ].filter(Boolean).join(' · ');
-    return (
-      <section style={styles.section} data-cart data-cart-pending>
-        <CartCard
-          headingKey="membership.cart_pending_heading"
-          counts={counts}
-          total={total}
-          hintKeys={['membership.cart_pending_hint']}
-          summary={cartSummary ? <CartSummary review={cartSummary} /> : undefined}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
-          actions={(
-            <>
-              <button
-                type="button"
-                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy ? styles.busy : null) }}
-                disabled={busy}
-                onClick={openConsent}
-              >
-                {t('membership.cart_pay')}
-              </button>
-              <button
-                type="button"
-                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
-                disabled={busy}
-                onClick={() => setConfirmPendingCancel(true)}
-              >
-                {t('membership.cart_cancel')}
-              </button>
-            </>
-          )}
-          footer={(
-            <>
-              {renderCartAddButtons()}
-              {commitError && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(commitError as any)}</p>}
-            </>
-          )}
-        />
-      </section>
-    );
-  }
-
-  /**
-   * #2949 stage 6 — the member's standalone one-time purchases as a cart of
-   * their own: when there is no Draft to pay them (`phase === 'standalone'`),
-   * or `beside` a set whose checkout is in flight, which they are not part of.
-   * The total is the server's (`GET /me/cart/purchases`), Pay is
-   * `POST /me/cart/checkout`, each item has its own Cancel and the global
-   * Cancel removes them all after the same confirmation. Nothing is priced here.
-   */
-  function renderStandaloneCart(beside: boolean) {
-    const items = standaloneCartItems(standaloneCart);
-    const action = standaloneCommitAction(standaloneCart);
-    const total = standaloneCart.total == null ? '—' : formatPaymentAmount(standaloneCart.total, standaloneCart.currency ?? 'EUR', gymFmt);
-    const remaining = formatDraftRemaining(draftSecondsLeft);
-    const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
-    const busy = commitBusy || draftBusy !== null || cartBusy !== null;
-    const error = beside ? cartError : (cartError ?? commitError);
-    return (
-      <section style={styles.section} data-cart data-cart-standalone>
-        <CartCard
-          headingKey={beside ? 'membership.cart_standalone_heading' : 'membership.cart_heading'}
-          counts={t('membership.cart_products', { count: items.length })}
-          total={total}
-          hintKeys={beside ? ['membership.cart_standalone_hint'] : []}
-          summary={!beside && cartSummary ? <CartSummary review={cartSummary} /> : undefined}
-          extra={!beside && remaining != null ? (
-            <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
-              {t('membership.draft_expires_in')} {remaining}
-            </span>
-          ) : undefined}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
-          actions={(
-            <>
-              <button
-                type="button"
-                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
-                disabled={busy || !action}
-                onClick={checkoutStandalone}
-              >
-                {commitBusy ? t('membership.cart_paying') : t('membership.cart_pay')}
-              </button>
-              <button
-                type="button"
-                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
-                disabled={busy}
-                onClick={() => setConfirmDiscard(true)}
-              >
-                {t('membership.cart_cancel')}
-              </button>
-            </>
-          )}
-          itemAction={(ci) => {
-            const item = items.find((x) => x.key === ci.key);
-            if (!item) return null;
-            return (
-              <button
-                type="button"
-                style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
-                disabled={busy}
-                onClick={() => removeCartItem(item)}
-              >
-                {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-              </button>
-            );
-          }}
-          footer={(
-            <>
-              {!beside && renderCartAddButtons()}
-              {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
-            </>
-          )}
-        />
-      </section>
-    );
-  }
-
-  /**
-   * #2746 stage 2 — the shopping cart (§4): the member's Draft Product Set as
-   * one purchase, at the top of My Products. The counts are the server's
-   * (`cart`), the total is the server's review (`commitCharge()`, the figure
-   * Save & Pay charges), each item has its own Cancel and the two global
-   * actions commit or discard the whole Draft. Nothing here prices anything.
+   * #2973 stage 6 — the cart is the one shared `MemberCart` (Home draws the
+   * very same component); the page adds only what is NOT part of the cart: the
+   * `+ Add Plan` / `+ Add Product` actions, outside the card. #2895: disabled,
+   * with the reason, while staff are still setting up the Draft.
    */
   function renderCart() {
     const phase = cartPhase(setView, viewerId, standaloneCart);
     if (phase == null) return null;
-    // #2949 stage 6: purchases added while the set's checkout is in flight (or staff are
-    // setting it up) are not part of it, so they are a cart card of their own beside it.
-    const beside = separateStandaloneCart(setView, viewerId, standaloneCart) ? renderStandaloneCart(true) : null;
-    if (phase === 'pending_payment') return <>{renderPendingCart()}{beside}</>;
-    if (phase === 'awaiting_staff') return <>{renderStaffDraftCart()}{beside}</>;
-    if (phase === 'standalone') return renderStandaloneCart(false);
-    const { plans, products } = cartCounts(setView, viewerId, standaloneCart);
-    const items = cartItems(setView, viewerId, standaloneCart);
-    const action = cartCommitAction(setView, review, viewerId, standaloneCart);
-    const currency = review?.currency ?? 'EUR';
-    const total = review?.amount_due == null ? '—' : formatPaymentAmount(review.amount_due, currency, gymFmt);
-    const remaining = formatDraftRemaining(draftSecondsLeft);
-    const warn = draftSecondsLeft != null && isDraftWarning(draftSecondsLeft);
-    const exact = draftSecondsLeft != null && showsDraftExactTime(draftSecondsLeft)
-      ? formatGymTime(new Date(Date.now() + draftSecondsLeft * 1000), gymFmt)
-      : null;
-    const generalError = draftError && draftError.productId === null ? draftError.key : null;
-    const reviewError = review?.error ? setCommitErrorKey(review.error) : null;
-    const error = cartError ?? commitError ?? generalError ?? reviewError;
-    const busy = commitBusy || draftBusy !== null || cartBusy !== null;
-    const counts = [
-      plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
-      products > 0 ? t('membership.cart_products', { count: products }) : null,
-    ].filter(Boolean).join(' · ');
     return (
-      <section style={styles.section} data-cart>
-        <CartCard
-          headingKey="membership.cart_heading"
-          counts={counts}
-          total={total}
-          summary={review && setView?.status === 'in_cart' ? <CartSummary review={review} /> : undefined}
-          extra={remaining != null ? (
-            <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
-              {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
-            </span>
-          ) : undefined}
-          items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
-          actions={(
-            <>
-              <button
-                type="button"
-                style={{ ...primaryButtonStyle, ...styles.cartBtn, ...(busy || !action ? styles.busy : null) }}
-                disabled={busy || !action}
-                onClick={commitSet}
-              >
-                {commitBusy ? t('membership.cart_paying') : t('membership.cart_pay')}
-              </button>
-              <button
-                type="button"
-                style={{ ...cartSecondaryButtonStyle, ...styles.cartBtn }}
-                disabled={busy}
-                onClick={() => setConfirmDiscard(true)}
-              >
-                {t('membership.cart_cancel')}
-              </button>
-            </>
-          )}
-          itemAction={(ci) => {
-            const item = items.find((x) => x.key === ci.key);
-            if (!item || !(cartItemsRemovable(setView) || (item.kind === 'purchase' && item.standalone))) return null;
-            return (
-              <button
-                type="button"
-                style={{ ...cartSecondaryButtonStyle, ...styles.cartItemBtn }}
-                disabled={busy}
-                onClick={() => removeCartItem(item)}
-              >
-                {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-              </button>
-            );
-          }}
-          footer={(
-            <>
-              {renderCartAddButtons()}
-              {error && <p role="alert" style={{ ...cartMutedStyle, color: memberTheme.statusError, margin: '10px 0 0' }}>{t(error as any)}</p>}
-            </>
-          )}
-        />
+      <section style={styles.section} data-cart-host>
+        <MemberCart refreshKey={setView} onChanged={loadSetView} />
+        {renderCartAddButtons(phase === 'awaiting_staff' ? t('membership.cart_error_awaiting_staff') : null)}
       </section>
     );
   }
@@ -2375,37 +2094,6 @@ export default function MembershipPage() {
               )}
               <p style={styles.hintLeft}>{t('membership.cart_add_hint')}</p>
               {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
-            </MemberDialog>
-          )}
-
-          {/* #2746 stage 2 — the cart's global Cancel discards the whole Draft, so it asks first. */}
-          {confirmDiscard && (
-            <MemberDialog
-              labelledBy="cart-discard-title"
-              title={t('membership.cart_discard_title')}
-              onClose={draftBusy !== null ? () => {} : () => setConfirmDiscard(false)}
-              actions={(
-                <>
-                  <button
-                    type="button"
-                    style={styles.dialogSecondary}
-                    onClick={() => setConfirmDiscard(false)}
-                    disabled={draftBusy !== null}
-                  >
-                    {t('membership.cart_discard_keep')}
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...styles.dialogPrimary, ...(draftBusy !== null ? styles.busy : null) }}
-                    onClick={discardDraft}
-                    disabled={draftBusy !== null}
-                  >
-                    {t('membership.cart_discard_confirm')}
-                  </button>
-                </>
-              )}
-            >
-              <p style={styles.modalBody}>{t('membership.cart_discard_body')}</p>
             </MemberDialog>
           )}
 
