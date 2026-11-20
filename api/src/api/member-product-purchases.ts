@@ -336,6 +336,13 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     // Resolved here so a refusal carries its code; `addService()` asks the same rule again.
     const assignedMemberId = await resolveAssignedMember(db, gymId, memberId, productId, assignedMemberInput);
 
+    // #3101: the units of the new line, 1 when the request names none.
+    const rawQuantity = (req.body ?? {}).quantity;
+    const recurringQuantity = rawQuantity == null || rawQuantity === '' ? 1 : Number(rawQuantity);
+    if (!Number.isInteger(recurringQuantity) || recurringQuantity < 1 || recurringQuantity > 999) {
+      return res.status(400).json({ error: 'quantity must be a positive integer' });
+    }
+
     const today = todayUtc();
     const blocking = await loadEditLockForDraftEdit(gymId, memberId, today, { staff: true });
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
@@ -350,7 +357,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
         const r = await startRecurringPurchaseDraft(tx, {
           gymId, memberId, productId, promotionIds, directDiscountPercent: discount.percent,
           confirmFrequencyChange: (req.body ?? {}).confirm_billing_frequency === true,
-          actor: { name: actorName }, today, assignedMemberId, staff: true,
+          actor: { name: actorName }, today, assignedMemberId, staff: true, quantity: recurringQuantity,
         });
         if (r.kind !== 'ok') throw new DraftRefusal(r);
         return r;
@@ -367,7 +374,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
 
     recordAudit(req, {
       action: 'create', entityType: 'product_set', entityId: out.productSetId,
-      next: { recurring_purchase_product_id: productId, direct_discount_percent: discount.percent, assigned_member_id: assignedMemberId },
+      next: { recurring_purchase_product_id: productId, quantity: recurringQuantity, direct_discount_percent: discount.percent, assigned_member_id: assignedMemberId },
     });
     res.status(201).json({ kind: 'recurring_draft', product_set_id: out.productSetId, price: priced.price });
   } catch (err: any) {

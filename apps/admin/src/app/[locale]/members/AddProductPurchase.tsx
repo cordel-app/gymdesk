@@ -223,7 +223,7 @@ export function useAddProductForm({
         body: JSON.stringify({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
           ...(showAssignee ? { assigned_member_id: assignedMemberId } : {}),
-          ...(product.recurring ? {} : { draft: true }),
+          ...(product.recurring ? { quantity: quantityValue } : { draft: true }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
           ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
         }),
@@ -257,7 +257,7 @@ export function useAddProductForm({
   }
 
   const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue)
-    && (!edit || edit.kind === 'one_time' || quantityValid);
+    && (edit ? edit.kind === 'one_time' || quantityValid : !product?.recurring || quantityValid);
   return {
     edit, quantity, setQuantity, quantityValid,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
@@ -514,7 +514,7 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
-        {form.edit && form.edit.kind !== 'one_time' && (
+        {(form.edit ? form.edit.kind !== 'one_time' : form.product?.recurring) && (
           <div style={{ flex: '0 0 96px' }}>
             <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>
             <input

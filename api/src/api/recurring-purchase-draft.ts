@@ -131,6 +131,8 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   assignedMemberId?: number | null;
   /** #2858: a staff add also reuses the owner's `⋮ → Edit` Draft (`ensureRecurringDraft()`). */
   staff?: boolean;
+  /** #3101: units of the new line (1 when absent); the caller has validated it. */
+  quantity?: number;
 }): Promise<RecurringDraftOutcome> {
   const ensured = await ensureRecurringDraft(tx, input);
   if (ensured.kind === 'in_flight') return ensured;
@@ -177,7 +179,7 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
   // Buying a recurring Product the member already has is a line of its own
   // (#1865 stage 2): its own price, discount, schedule and lifecycle, so
   // changing or removing one purchase never touches another.
-  const added = await addService(tx, locked, { product_id: input.productId, quantity: 1, starts_at: startsAt, assigned_member_id: input.assignedMemberId ?? null }, { recurringByFrequency: true, allowRepeat: true });
+  const added = await addService(tx, locked, { product_id: input.productId, quantity: input.quantity ?? 1, starts_at: startsAt, assigned_member_id: input.assignedMemberId ?? null }, { recurringByFrequency: true, allowRepeat: true });
   if ('kind' in added) return added;
 
   if (input.directDiscountPercent != null) {
