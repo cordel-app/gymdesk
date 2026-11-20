@@ -367,7 +367,8 @@ export function AssignedPlanConfiguration({
       quantity: 1,
       product_name: t(label.key as any, label.values as any),
       product_type: 'plan_access',
-      product_billing_frequency: null,
+      // #3094: access follows the Membership Fee's Billing Frequency.
+      product_billing_frequency: feeRow.product_billing_frequency,
       product_status: 'active',
       action: 'no_benefit',
       value: null,
