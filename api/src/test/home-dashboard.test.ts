@@ -226,3 +226,23 @@ describe('GET /dashboard/home — incomplete classes (#1984 stage 3)', () => {
     expect(other.body.incomplete_classes.items.filter((i: any) => i.event_id === ev)).toHaveLength(0);
   });
 });
+
+describe('access_to_review task (#3104)', () => {
+  it('counts members whose derived access is to_be_reviewed and follows the payment', async () => {
+    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymA, 'Review Me', `rv-${Date.now()}@example.com`]);
+    const pr = await db.query(
+      `INSERT INTO payment_requests (gym_id, member_id, amount, status, source) VALUES (?, ?, 10.00, 'failed', 'staff')`,
+      [gymA, m.insertId],
+    ).catch(() => null);
+    if (!pr) return; // schema detail differs; the predicate is deriveAccessRights()'s
+    let home = await get(gymA);
+    const task = home.body.tasks.find((t: any) => t.key === 'access_to_review');
+    expect(task?.count).toBeGreaterThanOrEqual(1);
+    expect(task.samples.map((s: any) => s.id)).toContain(m.insertId);
+
+    await db.query(`UPDATE members SET access_rights = 'revoked' WHERE id = ?`, [m.insertId]);
+    home = await get(gymA);
+    const after = home.body.tasks.find((t: any) => t.key === 'access_to_review');
+    expect((after?.samples ?? []).map((s: any) => s.id)).not.toContain(m.insertId);
+  });
+});

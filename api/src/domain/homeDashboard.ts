@@ -90,6 +90,7 @@ export type HomeTaskKey =
   | 'events_without_space'
   | 'events_without_trainer'
   | 'welcome_new_members'
+  | 'access_to_review'
   | 'services_not_scheduled'
   | 'events_with_waitlist'
   | 'payments_with_issues';

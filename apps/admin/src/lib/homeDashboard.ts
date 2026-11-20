@@ -5,6 +5,7 @@ export type HomeTaskKey =
   | 'events_without_space'
   | 'events_without_trainer'
   | 'welcome_new_members'
+  | 'access_to_review'
   | 'services_not_scheduled'
   | 'events_with_waitlist'
   | 'payments_with_issues';
@@ -63,6 +64,8 @@ export function taskHref(key: HomeTaskKey, locale: string): string {
       return `/${locale}/calendar`;
     case 'welcome_new_members':
       return `/${locale}/members?welcomed=false`;
+    case 'access_to_review':
+      return `/${locale}/members?access_rights=to_be_reviewed`;
     case 'services_not_scheduled':
       return `/${locale}/members`;
     case 'payments_with_issues':
@@ -80,6 +83,7 @@ export const TASK_ACTION_KEY: Record<HomeTaskKey, 'action_review' | 'action_welc
   events_without_trainer: 'action_review',
   events_with_waitlist: 'action_review',
   welcome_new_members: 'action_welcome',
+  access_to_review: 'action_review',
   services_not_scheduled: 'action_view',
   payments_with_issues: 'action_review',
 };
@@ -89,6 +93,7 @@ export const TASK_ORDER: readonly HomeTaskKey[] = [
   'events_without_space',
   'events_without_trainer',
   'welcome_new_members',
+  'access_to_review',
   'services_not_scheduled',
   'events_with_waitlist',
   'payments_with_issues',

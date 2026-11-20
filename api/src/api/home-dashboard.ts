@@ -27,6 +27,7 @@ import {
   type HomeTask, type OutstandingEventRow, type UtcWindow,
 } from '../domain/homeDashboard';
 import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
+import { PAYMENT_PROBLEM_STATUSES } from '../domain/memberAccessRights';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 import { loadServiceCapacityViews } from './service-capacity';
 import { incompleteServiceRows, type IncompleteServiceRow } from '../domain/incompleteClasses';
@@ -360,6 +361,26 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
         key: 'welcome_new_members',
         count: welcome.length,
         samples: welcome.slice(0, SAMPLE_LIMIT).map((r) => ({
+          id: Number(r.id), name: r.name, image_url: r.image_url ?? null, image_thumbnail_url: r.image_thumbnail_url ?? null,
+        })),
+      });
+      // #3104: Access = To be Reviewed is derived (a stored `granted` with a failed/expired
+      // Payment Status), so the task counts with the very predicate deriveAccessRights() applies.
+      const { rows: review } = await db.query<{ id: number; name: string; image_url: string | null; image_thumbnail_url: string | null }>(
+        `SELECT t.id, t.name, t.image_url, t.image_thumbnail_url FROM (
+           SELECT m.id, m.name, m.image_url, m.image_thumbnail_url, m.created_at,
+                  ${memberPaymentStatusSql('m')} AS payment_status
+             FROM members m
+            WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.access_rights = 'granted'
+         ) t
+         WHERE t.payment_status IN (${PAYMENT_PROBLEM_STATUSES.map((s) => `'${s}'`).join(', ')})
+         ORDER BY t.created_at DESC, t.id DESC`,
+        [gymId],
+      );
+      tasks.push({
+        key: 'access_to_review',
+        count: review.length,
+        samples: review.slice(0, SAMPLE_LIMIT).map((r) => ({
           id: Number(r.id), name: r.name, image_url: r.image_url ?? null, image_thumbnail_url: r.image_thumbnail_url ?? null,
         })),
       });
