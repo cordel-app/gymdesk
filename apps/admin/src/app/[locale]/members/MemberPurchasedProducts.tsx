@@ -468,6 +468,7 @@ export function MemberPurchasedProducts({
           emptyText={t('purchased_products_none')}
           expandedRowKeys={shownExpanded}
           onToggleExpand={toggleExpand}
+          clickRowToExpand
           draftRowPosition="bottom"
           alignTop={PRODUCT_SELECT_THUMBNAIL_SIZE}
           draftRow={adding ? (() => {

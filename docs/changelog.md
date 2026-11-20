@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3102 (Admin → Members → Products: a Plan row and a Product row expand and collapse when clicked anywhere on the row, not only on the arrow — `clickRowToExpand` on the Assigned Plans table and the purchased Products table; the arrow stays, and clicks on buttons, links and the `⋮` menu still do not toggle)
+
 - **Done**: #3098 (Home → Today's tasks → New members to welcome shows each member's circular profile thumbnail; clicking it opens the 1080 × 1080 image in the shared image modal. `GET /dashboard/home` task samples gain `image_url` / `image_thumbnail_url`.)
 - **Done**: #3081 (the Membership Plan assignment's Promotion picker offers Membership Plan Promotions only: `GET /promotions?membership_plan_id=` also requires `applies_to = 'membership_plan'`, so a Product Promotion that kept its hidden Suitable Membership Plans rows (#926) no longer appears; regression test in `promotions.test.ts`; the Product-side half of #3082 is not part of this change)
 - **Done**: #3088 (Members → Products table: the billing frequency is its own Frequency column between Product and Quantity, in read-only and edit rows alike, and every value sits level with the product name instead of centred on a row that is taller because of its Promotions — `DataTable`'s opt-in `alignTop`; no API change)
