@@ -48,7 +48,11 @@ describe('latestEnrollmentStatusSql', () => {
 
   it('orders by the assignment\'s creation, then its id, and takes a single row', () => {
     const sql = flat('m');
-    expect(sql).toContain('ORDER BY anc.created_at DESC, pa.assignment_id DESC LIMIT 1');
+    expect(sql).toContain('anc.created_at DESC, pa.assignment_id DESC LIMIT 1');
+    // #3113: status priority comes first (Active, then Cancel on End Date, then Cancelled)
+    expect(sql.indexOf("'active_cancel_at_period_end' THEN 2")).toBeGreaterThan(sql.indexOf("'active', 'to_be_canceled') THEN 0"));
+    expect(sql.indexOf('ORDER BY CASE')).toBeGreaterThan(-1);
+    expect(sql.indexOf('ORDER BY CASE')).toBeLessThan(sql.indexOf('anc.created_at DESC'));
   });
 
   it('is deterministic — the same alias always yields the same fragment', () => {
