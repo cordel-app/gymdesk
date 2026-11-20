@@ -1,4 +1,5 @@
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { writeEventLines } from './billing-line-origins';
 import { commitPendingCancellations } from './plan-pending-cancellation';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
@@ -657,18 +658,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
       [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
         event.date, event.periodEnd, event.date, actor],
     );
-    for (const l of lines) {
-      await tx.query(
-        `INSERT INTO billing_event_lines
-           (gym_id, billing_event_id, kind, product_id, item_name, item_type, quantity, regular_unit_price,
-            treatment_action, treatment_value, promotion_name, prorated_days, period_days,
-            tax_rate_percent, tax_behavior, amount_excl_tax, amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, insertId, l.kind, l.product_id, l.item_name, l.item_type, l.quantity, l.regular_unit_price,
-          l.treatment_action, l.treatment_value, l.promotion_name, l.prorated_days, l.period_days,
-          l.tax_rate_percent, l.tax_behavior, l.amount_excl_tax, l.amount],
-      );
-    }
+    await writeEventLines(tx, gymId, Number(insertId), productSetId, lines);
     created += 1;
   }
   return { created };
