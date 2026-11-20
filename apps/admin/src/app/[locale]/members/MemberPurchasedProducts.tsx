@@ -218,13 +218,18 @@ export function MemberPurchasedProducts({
             </button>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 500, minWidth: 0 }}>{item.product_name}</div>
-              {/* #3021 — the billing frequency sits in the header, under the name. */}
-              <div data-product-frequency style={{ ...cardMutedTextStyle, fontSize: 12 }}>{billingFrequencyLabel(item.billing_frequency, tFreq) ?? dash}</div>
             </div>
           </div>
           {promotionsArea(item)}
         </div>
       ),
+    },
+    {
+      // #3088 — the billing frequency has a column of its own, between Product and Quantity.
+      key: 'frequency',
+      header: t('purchase_col_frequency'),
+      mobile: 'secondary',
+      render: (item) => <span data-product-frequency>{billingFrequencyLabel(item.billing_frequency, tFreq) ?? dash}</span>,
     },
     {
       // #3020 — the quantity of a recurring line; a one-off purchase is one unit.
@@ -380,7 +385,7 @@ export function MemberPurchasedProducts({
 
   // #3020 — the edited row draws the form's cells in the columns' own places; every other row reads as before.
   const editCells: Record<string, React.ReactNode> | null = editing ? (() => {
-    const c = addProductDraftCells(editForm, null);
+    const c = addProductDraftCells(editForm, null, { frequencyInCell: false });
     const chosen = (editForm.product?.promotions ?? []).filter((pr) => editForm.promotionIds.includes(pr.promotion_id));
     const benefit = chosen.length === 0 ? dash : chosen.map((pr) => [
       benefitTreatmentLabel(tp as any, 'promotion', { action: pr.action, value: pr.value } as any),
@@ -388,6 +393,7 @@ export function MemberPurchasedProducts({
     ].filter(Boolean).join(' · ')).join(', ');
     return {
       product: c.product,
+      frequency: c.frequency,
       quantity: editing?.edit.kind === 'one_time' ? String(editing.edit.quantity) : <span data-edit-product-quantity><EditQuantityField form={editForm} label={t('draft_line_quantity')} /></span>,
       price: c.price, tax: c.tax, promotion: c.promotion, promotion_benefit: benefit, discount: c.discount, final: c.final,
     };
@@ -462,9 +468,11 @@ export function MemberPurchasedProducts({
           emptyText={t('purchased_products_none')}
           expandedRowKeys={shownExpanded}
           onToggleExpand={toggleExpand}
+          clickRowToExpand
           draftRowPosition="bottom"
+          alignTop={PRODUCT_SELECT_THUMBNAIL_SIZE}
           draftRow={adding ? (() => {
-            const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt));
+            const c = addProductDraftCells(addForm, date(new Date().toISOString(), gymFmt), { frequencyInCell: false });
             // #2538 — the benefit of each chosen Promotion, from the Promotion's own action/value/duration.
             const chosen = (addForm.product?.promotions ?? []).filter((pr) => addForm.promotionIds.includes(pr.promotion_id));
             const draftBenefit = chosen.length === 0 ? dash : chosen.map((pr) => [

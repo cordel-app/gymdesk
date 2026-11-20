@@ -10,7 +10,7 @@ const FORM = readFileSync(join(__dirname, '..', 'app', '[locale]', 'members', 'A
 describe('Add/Edit Product cell shows the billing frequency (#3021)', () => {
   it('renders the selected Product’s frequency from the existing label helper, after the selector', () => {
     const cell = FORM.slice(FORM.indexOf('export function addProductDraftCells'));
-    expect(cell).toMatch(/\{product && \(\s*<div data-product-frequency/);
+    expect(cell).toMatch(/\{product && opts\.frequencyInCell !== false && \(\s*<div data-product-frequency/);
     expect(cell).toContain('billingFrequencyLabel(product.billing_frequency, f.tFreq)');
     expect(cell.indexOf('data-product-frequency')).toBeGreaterThan(cell.indexOf('id="add-product-select"'));
   });

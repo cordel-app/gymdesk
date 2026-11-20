@@ -123,6 +123,8 @@ export interface ProductBenefitRow {
    * price columns are then not rendered at all.
    */
   original_price_incl_tax?: number | null;
+  /** #3093: an already-translated note shown beside the Base Price (the Membership Fee's pre-paid multiplier). */
+  original_price_note?: string | null;
   final_price_incl_tax?: number | null;
   original_line_price_incl_tax?: number | null;
   final_line_price_incl_tax?: number | null;

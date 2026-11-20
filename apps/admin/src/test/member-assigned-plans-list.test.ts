@@ -93,7 +93,7 @@ describe('#1051: one Assigned Plans list, rendered by both screens', () => {
 describe('#1051: Active and Past are two instances of that list (§4)', () => {
   it('splits on is_live and renders a table for each', () => {
     expect(sectionSrc).toContain('const live = plans.filter((p) => p.is_live)');
-    expect(sectionSrc).toContain('const history = plans.filter((p) => !p.is_live && !p.is_current)');
+    expect(sectionSrc).toContain('const history = pastPlans(plans)');
     expect((sectionSrc.match(/<AssignedPlansTable/g) ?? []).length).toBe(2);
     expect(sectionSrc).toContain('rows={visible.rows}');
     expect(sectionSrc).toContain('rows={history}');
@@ -102,8 +102,9 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
   it('labels the two groups, and keeps Past out of the way when there is none', () => {
     expect(sectionSrc).toContain("t('membership_plans_active')");
     expect(sectionSrc).toContain("t('membership_plans_history')");
-    // #3086: Past lists the table only — no summary header above it.
-    expect(sectionSrc).toContain('{past.count > 0 && (');
+    // #3086: Past lists the table only — no summary header of cancelled plans above it.
+    expect(sectionSrc).toContain('{history.length > 0 && (');
+    expect(sectionSrc).not.toContain('cancelledSets');
     expect(sectionSrc).not.toContain('status="cancelled"');
   });
 
@@ -111,7 +112,7 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
     expect(sectionSrc).toContain('useState(false)');
     expect(sectionSrc).toContain('const [pastOpen, setPastOpen]');
     expect(sectionSrc).toContain('aria-expanded={pastOpen}');
-    expect(sectionSrc).toContain('({past.count})');
+    expect(sectionSrc).toContain('({history.length})');
     expect(sectionSrc).toContain('{pastOpen && history.length > 0 && (');
   });
 });

@@ -98,7 +98,7 @@ export interface HomeTask {
   key: HomeTaskKey;
   count: number;
   secondary?: number;
-  samples?: { id: number; name: string; detail?: string | null }[];
+  samples?: { id: number; name: string; detail?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
 }
 
 /** Server tasks in A–F order, with any zero-count one dropped (defence in depth). */

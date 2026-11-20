@@ -223,7 +223,7 @@ export function useAddProductForm({
         body: JSON.stringify({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
           ...(showAssignee ? { assigned_member_id: assignedMemberId } : {}),
-          ...(product.recurring ? {} : { draft: true }),
+          ...(product.recurring ? { quantity: quantityValue } : { draft: true }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
           ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
         }),
@@ -257,7 +257,7 @@ export function useAddProductForm({
   }
 
   const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue)
-    && (!edit || edit.kind === 'one_time' || quantityValid);
+    && (edit ? edit.kind === 'one_time' || quantityValid : !product?.recurring || quantityValid);
   return {
     edit, quantity, setQuantity, quantityValid,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
@@ -314,7 +314,7 @@ export function productPromotionsCell(f: AddProductForm): React.ReactNode {
 export function addProductDraftCells(
   f: AddProductForm,
   today: React.ReactNode,
-  opts: { promotionsInCell?: boolean } = {},
+  opts: { promotionsInCell?: boolean; frequencyInCell?: boolean } = {},
 ): Record<string, React.ReactNode> {
   const { t, quote, product } = f;
   return {
@@ -350,7 +350,7 @@ export function addProductDraftCells(
       </select>
       </div>
       {/* #3021 — the billing frequency stays in the product cell while adding or editing, as in the read-only row. */}
-      {product && (
+      {product && opts.frequencyInCell !== false && (
         <div data-product-frequency style={{ ...cardHintStyle, fontSize: 12, margin: '2px 0 0' }}>
           {billingFrequencyLabel(product.billing_frequency, f.tFreq) ?? '—'}
         </div>
@@ -358,6 +358,8 @@ export function addProductDraftCells(
       {opts.promotionsInCell === false ? null : productPromotionsCell(f)}
       </div>
     ),
+    // #3088 — the Products table's own Frequency column (its `frequencyInCell: false` keeps it out of the product cell).
+    frequency: product ? (billingFrequencyLabel(product.billing_frequency, f.tFreq) ?? '—') : null,
     // #2786 — the Assigned to column's own cell; absent when the selector does not apply.
     assigned_to: f.showAssignee && !f.outcome && !f.edit ? (
       <select
@@ -512,7 +514,7 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
-        {form.edit && form.edit.kind !== 'one_time' && (
+        {(form.edit ? form.edit.kind !== 'one_time' : form.product?.recurring) && (
           <div style={{ flex: '0 0 96px' }}>
             <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>
             <input

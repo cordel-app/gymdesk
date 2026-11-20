@@ -135,9 +135,9 @@ export function MemberMembershipPlans({
   const live = plans.filter((p) => p.is_live);
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
-  // #2887: the Past list and its count come from one decision.
-  const past = pastPlans(plans, []);
-  const history = past.history;
+  // #2887/#3086: the Past list and its count come from one decision. Cancelled
+  // never-assigned plans are not drawn as a summary above the table.
+  const history = pastPlans(plans);
   // #2742: a plan the member chose in the Members App and has not paid yet has no
   // assignment row until the payment activates it; it is listed in Active from its
   // ProductSet version, labelled by that version's own `pending_payment` status.
@@ -290,7 +290,7 @@ export function MemberMembershipPlans({
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
           live one does. Absent rather than empty, as the card group was. */}
-      {past.count > 0 && (
+      {history.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <button
             type="button"
@@ -302,7 +302,7 @@ export function MemberMembershipPlans({
             }}
           >
             <span>{t('membership_plans_history')}</span>
-            <span>({past.count})</span>
+            <span>({history.length})</span>
             <span aria-hidden="true" style={{ marginLeft: 'auto' }}>{pastOpen ? '▾' : '▸'}</span>
           </button>
           {pastOpen && history.length > 0 && (
